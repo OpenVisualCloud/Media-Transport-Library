@@ -422,7 +422,7 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       lender_dev->cb = req->drop_mbuf_cb;
       dev->nb_session++;
       dev->active = true;
-      rte_atomic32_inc(&mgr->num_dma_dev_active);
+      mt_atomic32_inc(&mgr->num_dma_dev_active);
       mt_pthread_mutex_unlock(&mgr->mutex);
       info("%s(%d), dma created with max share %u nb_desc %u\n", __func__, idx,
            dev->max_shared, dev->nb_desc);
@@ -452,7 +452,7 @@ int mt_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) 
 
   if (!dma_dev->nb_session) {
     dma_free(impl, dma_dev);
-    rte_atomic32_dec(&mgr->num_dma_dev_active);
+    mt_atomic32_dec(&mgr->num_dma_dev_active);
   }
 
   info("%s(%d,%d), nb_session now %u\n", __func__, dma_idx, idx, dma_dev->nb_session);

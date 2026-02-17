@@ -49,7 +49,7 @@ MT_TAILQ_HEAD(mur_client_list, mur_client);
 struct mur_queue {
   struct mtl_main_impl* parent;
   enum mtl_port port;
-  rte_atomic32_t refcnt;
+  mt_atomic32_t refcnt;
   int client_idx;        /* incremental idx fort client */
   pthread_mutex_t mutex; /* clients lock */
 

@@ -344,7 +344,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     cni = cni_get_entry(impl, i);
     if (!cni->rxq) continue;
-    if (rte_atomic32_read(&impl->inf[i].resetting)) continue;
+    if (mt_atomic32_read_acquire(&impl->inf[i].resetting)) continue;
 
     struct mt_rx_pcap* pcap = &cni->pcap;
     /* if any pcap progress */
@@ -394,7 +394,7 @@ static void* cni_traffic_thread(void* arg) {
   int ret;
 
   info("%s, start\n", __func__);
-  while (rte_atomic32_read(&cni->stop_thread) == 0) {
+  while (mt_atomic32_read_acquire(&cni->stop_thread) == 0) {
     ret = cni_traffic(impl);
     if (MTL_TASKLET_ALL_DONE == ret) mt_sleep_ms(cni->thread_sleep_ms);
   }
@@ -411,7 +411,7 @@ static int cni_traffic_thread_start(struct mtl_main_impl* impl, struct mt_cni_im
     return 0;
   }
 
-  rte_atomic32_set(&cni->stop_thread, 0);
+  mt_atomic32_set(&cni->stop_thread, 0);
   ret = pthread_create(&cni->tid, NULL, cni_traffic_thread, impl);
   if (ret < 0) {
     err("%s, cni_traffic thread create fail %d\n", __func__, ret);
@@ -422,7 +422,7 @@ static int cni_traffic_thread_start(struct mtl_main_impl* impl, struct mt_cni_im
 }
 
 static int cni_traffic_thread_stop(struct mt_cni_impl* cni) {
-  rte_atomic32_set(&cni->stop_thread, 1);
+  mt_atomic32_set_release(&cni->stop_thread, 1);
   if (cni->tid) {
     pthread_join(cni->tid, NULL);
     cni->tid = 0;
@@ -579,7 +579,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
       cni_impl->lcore_tasklet = false;
     }
   }
-  rte_atomic32_set(&cni_impl->stop_thread, 0);
+  mt_atomic32_set(&cni_impl->stop_thread, 0);
   cni_impl->thread_sleep_ms = 1;
 
   for (int i = 0; i < num_ports; i++) {

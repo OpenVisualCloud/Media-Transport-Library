@@ -68,9 +68,9 @@ static struct st_frame_trans* rx_audio_session_get_frame(
   for (int i = 0; i < s->st30_frames_cnt; i++) {
     frame_info = &s->st30_frames[i];
 
-    if (0 == rte_atomic32_read(&frame_info->refcnt)) {
+    if (0 == mt_atomic32_read_acquire(&frame_info->refcnt)) {
       dbg("%s(%d), find frame at %d\n", __func__, s->idx, i);
-      rte_atomic32_inc(&frame_info->refcnt);
+      mt_atomic32_inc(&frame_info->refcnt);
       return frame_info;
     }
   }
@@ -83,7 +83,7 @@ static int rx_audio_session_put_frame(struct st_rx_audio_session_impl* s,
                                       struct st_frame_trans* frame) {
   MTL_MAY_UNUSED(s);
   dbg("%s(%d), put frame at %d\n", __func__, s->idx, frame->idx);
-  rte_atomic32_dec(&frame->refcnt);
+  mt_atomic32_dec_release(&frame->refcnt);
   MT_USDT_ST30_RX_FRAME_PUT(s->mgr->idx, s->idx, frame->idx, frame->addr);
   return -EIO;
 }
@@ -124,7 +124,7 @@ static int rx_audio_session_alloc_frames(struct st_rx_audio_session_impl* s) {
 
   for (int i = 0; i < s->st30_frames_cnt; i++) {
     st30_frame = &s->st30_frames[i];
-    rte_atomic32_set(&st30_frame->refcnt, 0);
+    mt_atomic32_set(&st30_frame->refcnt, 0);
     st30_frame->idx = i;
   }
 
@@ -420,7 +420,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     }
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frames_received);
+    mt_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
     s->st30_cur_frame = NULL;
   }
@@ -545,7 +545,7 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->stat_pkts_received = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_frame_us = 0;
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
@@ -974,10 +974,10 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
   int m_idx = mgr->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frames_received = rte_atomic32_read(&s->stat_frames_received);
+  int frames_received = mt_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
 
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_pkts_redundant) {
     notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d (redundant %d)\n", m_idx,
@@ -1425,7 +1425,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
   s_impl->quota_mbs = quota_mbs;
   s->st30_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st30_rx_sessions_cnt);
+  mt_atomic32_inc(&impl->st30_rx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -1494,7 +1494,7 @@ int st30_rx_free(st30_rx_handle handle) {
   rx_audio_sessions_mgr_update(&sch->rx_a_mgr);
   mt_pthread_mutex_unlock(&sch->rx_a_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st30_rx_sessions_cnt);
+  mt_atomic32_dec(&impl->st30_rx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }

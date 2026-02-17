@@ -186,9 +186,9 @@ static struct mur_queue* urq_mgr_search(struct mudp_rxq_mgr* mgr, uint16_t dst_p
 static int urq_put(struct mur_queue* q) {
   struct mtl_main_impl* impl = q->parent;
 
-  if (!rte_atomic32_dec_and_test(&q->refcnt)) {
+  if (!mt_atomic32_dec_and_test(&q->refcnt)) {
     info("%s(%d,%u), refcnt %d\n", __func__, q->port, q->dst_port,
-         rte_atomic32_read(&q->refcnt));
+         mt_atomic32_read(&q->refcnt));
     return 0;
   }
 
@@ -238,10 +238,10 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
     /* reuse queue */
     q->client_idx++;
     *idx = q->client_idx;
-    rte_atomic32_inc(&q->refcnt);
+    mt_atomic32_inc(&q->refcnt);
     urq_mgr_unlock(mgr);
     info("%s(%d,%u), reuse cnt %d for q %p\n", __func__, port, dst_port,
-         rte_atomic32_read(&q->refcnt), q);
+         mt_atomic32_read(&q->refcnt), q);
     return q;
   }
 
@@ -258,7 +258,7 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   q->rx_burst_pkts = 128;
   MT_TAILQ_INIT(&q->client_head);
   mt_pthread_mutex_init(&q->mutex, NULL);
-  rte_atomic32_inc(&q->refcnt);
+  mt_atomic32_inc(&q->refcnt);
 
   /* create flow */
   struct mt_rxq_flow flow;

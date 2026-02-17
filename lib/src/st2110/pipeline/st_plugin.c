@@ -86,7 +86,7 @@ int st22_put_encoder(struct mtl_main_impl* impl,
   mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   encoder->session = NULL;
-  rte_atomic32_dec(&dev_impl->ref_cnt);
+  mt_atomic32_dec(&dev_impl->ref_cnt);
   mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, encoder->idx);
@@ -161,7 +161,7 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st22_get_encoder_session(dev_impl, req);
     if (session_impl) {
-      rte_atomic32_inc(&dev_impl->ref_cnt);
+      mt_atomic32_inc(&dev_impl->ref_cnt);
       mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
@@ -184,7 +184,7 @@ int st22_put_decoder(struct mtl_main_impl* impl,
   mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   decoder->session = NULL;
-  rte_atomic32_dec(&dev_impl->ref_cnt);
+  mt_atomic32_dec(&dev_impl->ref_cnt);
   mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, decoder->idx);
@@ -254,7 +254,7 @@ struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st22_get_decoder_session(dev_impl, req);
     if (session_impl) {
-      rte_atomic32_inc(&dev_impl->ref_cnt);
+      mt_atomic32_inc(&dev_impl->ref_cnt);
       mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
@@ -285,7 +285,7 @@ int st20_put_converter(struct mtl_main_impl* impl,
   mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   converter->session = NULL;
-  rte_atomic32_dec(&dev_impl->ref_cnt);
+  mt_atomic32_dec(&dev_impl->ref_cnt);
   mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, converter->idx);
@@ -355,7 +355,7 @@ struct st20_convert_session_impl* st20_get_converter(
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st20_get_converter_session(dev_impl, req);
     if (session_impl) {
-      rte_atomic32_inc(&dev_impl->ref_cnt);
+      mt_atomic32_inc(&dev_impl->ref_cnt);
       mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
@@ -369,7 +369,7 @@ struct st20_convert_session_impl* st20_get_converter(
 
 static int st22_encode_dev_dump(struct st22_encode_dev_impl* encode) {
   struct st22_encode_session_impl* session;
-  int ref_cnt = rte_atomic32_read(&encode->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&encode->ref_cnt);
 
   if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", encode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_ENCODER; i++) {
@@ -383,7 +383,7 @@ static int st22_encode_dev_dump(struct st22_encode_dev_impl* encode) {
 
 static int st22_decode_dev_dump(struct st22_decode_dev_impl* decode) {
   struct st22_decode_session_impl* session;
-  int ref_cnt = rte_atomic32_read(&decode->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&decode->ref_cnt);
 
   if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", decode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_DECODER; i++) {
@@ -397,7 +397,7 @@ static int st22_decode_dev_dump(struct st22_decode_dev_impl* decode) {
 
 static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   struct st20_convert_session_impl* session;
-  int ref_cnt = rte_atomic32_read(&convert->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&convert->ref_cnt);
 
   if (ref_cnt) notice("ST20 convert dev: %s with %d sessions\n", convert->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_CONVERTER; i++) {
@@ -456,7 +456,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
   mt_pthread_mutex_lock(&mgr->lock);
-  int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
@@ -488,7 +488,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
   mt_pthread_mutex_lock(&mgr->lock);
-  int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
@@ -520,7 +520,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
   mt_pthread_mutex_lock(&mgr->lock);
-  int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
+  int ref_cnt = mt_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
@@ -566,7 +566,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     encode_dev->type = MT_ST22_HANDLE_DEV_ENCODE;
     encode_dev->parent = impl;
     encode_dev->idx = i;
-    rte_atomic32_set(&encode_dev->ref_cnt, 0);
+    mt_atomic32_set(&encode_dev->ref_cnt, 0);
     snprintf(encode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     encode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_ENCODER; j++) {
@@ -624,7 +624,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     decode_dev->type = MT_ST22_HANDLE_DEV_DECODE;
     decode_dev->parent = impl;
     decode_dev->idx = i;
-    rte_atomic32_set(&decode_dev->ref_cnt, 0);
+    mt_atomic32_set(&decode_dev->ref_cnt, 0);
     snprintf(decode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     decode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_DECODER; j++) {
@@ -686,7 +686,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
     convert_dev->type = MT_ST20_HANDLE_DEV_CONVERT;
     convert_dev->parent = impl;
     convert_dev->idx = i;
-    rte_atomic32_set(&convert_dev->ref_cnt, 0);
+    mt_atomic32_set(&convert_dev->ref_cnt, 0);
     snprintf(convert_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     convert_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_CONVERTER; j++) {

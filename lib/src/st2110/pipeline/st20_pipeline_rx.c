@@ -100,7 +100,7 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
     }
   }
   if (!framebuff) {
-    rte_atomic32_inc(&ctx->stat_busy);
+    mt_atomic32_inc(&ctx->stat_busy);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -173,7 +173,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   /* not any free frame */
   if (!framebuff) {
-    rte_atomic32_inc(&ctx->stat_busy);
+    mt_atomic32_inc(&ctx->stat_busy);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -291,7 +291,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
       rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
-    rte_atomic32_inc(&ctx->stat_busy);
+    mt_atomic32_inc(&ctx->stat_busy);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -433,7 +433,7 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     /* free the frame */
     st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
     framebuff->stat = ST20P_RX_FRAME_FREE;
-    rte_atomic32_inc(&ctx->stat_convert_fail);
+    mt_atomic32_inc(&ctx->stat_convert_fail);
   } else {
     framebuff->stat = ST20P_RX_FRAME_CONVERTED;
     rx_st20p_notify_frame_available(ctx);
@@ -452,14 +452,14 @@ static int rx_st20p_convert_dump(void* priv) {
   notice("RX_st20p(%s), cv(%d:%s)\n", ctx->ops_name, convert_idx,
          rx_st20p_stat_name(framebuff[convert_idx].stat));
 
-  int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
-  rte_atomic32_set(&ctx->stat_convert_fail, 0);
+  int convert_fail = mt_atomic32_read(&ctx->stat_convert_fail);
+  mt_atomic32_set(&ctx->stat_convert_fail, 0);
   if (convert_fail) {
     notice("RX_st20p(%s), convert fail %d\n", ctx->ops_name, convert_fail);
   }
 
-  int busy = rte_atomic32_read(&ctx->stat_busy);
-  rte_atomic32_set(&ctx->stat_busy, 0);
+  int busy = mt_atomic32_read(&ctx->stat_busy);
+  mt_atomic32_set(&ctx->stat_busy, 0);
   if (busy) {
     notice("RX_st20p(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
@@ -1006,8 +1006,8 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST20_HANDLE_PIPELINE_RX;
   ctx->dst_size = dst_size;
-  rte_atomic32_set(&ctx->stat_convert_fail, 0);
-  rte_atomic32_set(&ctx->stat_busy, 0);
+  mt_atomic32_set(&ctx->stat_convert_fail, 0);
+  mt_atomic32_set(&ctx->stat_busy, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);

@@ -142,7 +142,7 @@ static void* srss_traffic_thread(void* arg) {
   struct mt_srss_impl* srss = arg;
 
   info("%s, start\n", __func__);
-  while (rte_atomic32_read(&srss->stop_thread) == 0) {
+  while (mt_atomic32_read_acquire(&srss->stop_thread) == 0) {
     for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
       struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
 
@@ -163,7 +163,7 @@ static int srss_traffic_thread_start(struct mt_srss_impl* srss) {
     return 0;
   }
 
-  rte_atomic32_set(&srss->stop_thread, 0);
+  mt_atomic32_set(&srss->stop_thread, 0);
   ret = pthread_create(&srss->tid, NULL, srss_traffic_thread, srss);
   if (ret < 0) {
     err("%s, srss_traffic thread create fail %d\n", __func__, ret);
@@ -174,7 +174,7 @@ static int srss_traffic_thread_start(struct mt_srss_impl* srss) {
 }
 
 static int srss_traffic_thread_stop(struct mt_srss_impl* srss) {
-  rte_atomic32_set(&srss->stop_thread, 1);
+  mt_atomic32_set_release(&srss->stop_thread, 1);
   if (srss->tid) {
     pthread_join(srss->tid, NULL);
     srss->tid = 0;
@@ -504,7 +504,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
            srss_sch->q_start, srss_sch->q_end);
     }
 
-    rte_atomic32_set(&srss->stop_thread, 0);
+    mt_atomic32_set(&srss->stop_thread, 0);
     ret = srss_traffic_thread_start(srss);
     if (ret < 0) {
       err("%s(%d), traffic thread start fail\n", __func__, port);

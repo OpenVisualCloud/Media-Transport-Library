@@ -456,7 +456,7 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
-  while (rte_atomic32_read(&cni->stop_tap) == 0) {
+  while (mt_atomic32_read_acquire(&cni->stop_tap) == 0) {
     mt_sleep_ms(10);
   }
   if (tap_ctx->has_lcore) {
@@ -483,7 +483,7 @@ static int tap_bkg_thread(void* arg) {
   pkts_rx[0] = NULL;
   info("%s, start\n", __func__);
 
-  while (rte_atomic32_read(&cni->stop_tap) == 0) {
+  while (mt_atomic32_read_acquire(&cni->stop_tap) == 0) {
     for (i = 0; i < num_ports; i++) {
       count = rte_ring_count(tap_tx_ring);
       while (count) {
@@ -863,7 +863,7 @@ int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
 
-  if (rte_atomic32_read(&cni->stop_tap)) {
+  if (mt_atomic32_read_acquire(&cni->stop_tap)) {
     return -EBUSY;
   }
 
@@ -898,7 +898,7 @@ int mt_tap_init(struct mtl_main_impl* impl) {
   ret = tap_device_init(cni);
   if (ret < 0) return ret;
 
-  rte_atomic32_set(&cni->stop_tap, 0);
+  mt_atomic32_set(&cni->stop_tap, 0);
   tap_ctx->has_lcore = false;
   ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_TAP, mt_socket_id(impl, MTL_PORT_P));
   if (ret < 0) {
@@ -921,7 +921,7 @@ int mt_tap_init(struct mtl_main_impl* impl) {
 int mt_tap_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
-  rte_atomic32_set(&cni->stop_tap, 1);
+  mt_atomic32_set_release(&cni->stop_tap, 1);
   if (cni->tap_bkg_tid) {
     pthread_join(cni->tap_bkg_tid, NULL);
     cni->tap_bkg_tid = 0;

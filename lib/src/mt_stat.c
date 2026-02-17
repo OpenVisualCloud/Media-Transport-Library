@@ -64,13 +64,13 @@ static void* stat_thread(void* arg) {
   struct mt_stat_mgr* mgr = arg;
 
   info("%s, start\n", __func__);
-  while (rte_atomic32_read(&mgr->stat_stop) == 0) {
+  while (mt_atomic32_read_acquire(&mgr->stat_stop) == 0) {
     mt_pthread_mutex_lock(&mgr->stat_wake_mutex);
-    if (!rte_atomic32_read(&mgr->stat_stop))
+    if (!mt_atomic32_read_acquire(&mgr->stat_stop))
       mt_pthread_cond_wait(&mgr->stat_wake_cond, &mgr->stat_wake_mutex);
     mt_pthread_mutex_unlock(&mgr->stat_wake_mutex);
 
-    if (!rte_atomic32_read(&mgr->stat_stop)) {
+    if (!mt_atomic32_read_acquire(&mgr->stat_stop)) {
       dbg("%s, stat_dump\n", __func__);
       stat_dump(mgr);
     }
@@ -152,7 +152,7 @@ int mt_stat_init(struct mtl_main_impl* impl) {
   /* rte_eth_stats_get fail in alarm context for VF, move it to thread */
   mt_pthread_mutex_init(&mgr->stat_wake_mutex, NULL);
   mt_pthread_cond_init(&mgr->stat_wake_cond, NULL);
-  rte_atomic32_set(&mgr->stat_stop, 0);
+  mt_atomic32_set(&mgr->stat_stop, 0);
   ret = pthread_create(&mgr->stat_tid, NULL, stat_thread, mgr);
   if (ret < 0) {
     err("%s, pthread_create fail %d\n", __func__, ret);
@@ -183,7 +183,7 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
   ret = rte_eal_alarm_cancel(stat_alarm_handler, (void*)-1);
   if (ret < 0) err("%s, alarm cancel fail %d\n", __func__, ret);
   if (mgr->stat_tid) {
-    rte_atomic32_set(&mgr->stat_stop, 1);
+    mt_atomic32_set_release(&mgr->stat_stop, 1);
     stat_wakeup_thread(mgr);
     pthread_join(mgr->stat_tid, NULL);
     mgr->stat_tid = 0;

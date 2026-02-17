@@ -64,8 +64,8 @@ struct st22p_rx_ctx {
   size_t dst_size;
   size_t max_codestream_size;
 
-  rte_atomic32_t stat_decode_fail;
-  rte_atomic32_t stat_busy;
+  mt_atomic32_t stat_decode_fail;
+  mt_atomic32_t stat_busy;
   /* get frame stat */
   uint32_t stat_get_frame_try;
   uint32_t stat_get_frame_succ;

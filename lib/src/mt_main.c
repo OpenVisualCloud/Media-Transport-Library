@@ -370,7 +370,7 @@ static int _mt_start(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  rte_atomic32_set(&impl->instance_started, 1);
+  mt_atomic32_set_release(&impl->instance_started, 1);
 
   info("%s, succ, avail ports %d\n", __func__, rte_eth_dev_count_avail());
   return 0;
@@ -383,7 +383,7 @@ static int _mt_stop(struct mtl_main_impl* impl) {
   }
 
   mt_dev_stop(impl);
-  rte_atomic32_set(&impl->instance_started, 0);
+  mt_atomic32_set_release(&impl->instance_started, 0);
   info("%s, succ\n", __func__);
   return 0;
 }
@@ -530,9 +530,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     mt_if(impl, i)->socket_id = socket[i];
     info("%s(%d), socket_id %d port %s\n", __func__, i, socket[i], p->port[i]);
   }
-  rte_atomic32_set(&impl->instance_started, 0);
-  rte_atomic32_set(&impl->instance_aborted, 0);
-  rte_atomic32_set(&impl->instance_in_reset, 0);
+  mt_atomic32_set(&impl->instance_started, 0);
+  mt_atomic32_set(&impl->instance_aborted, 0);
+  mt_atomic32_set(&impl->instance_in_reset, 0);
 
   impl->tasklets_nb_per_sch = p->tasklets_nb_per_sch;
   if (!impl->tasklets_nb_per_sch) {
@@ -750,7 +750,7 @@ int mtl_abort(mtl_handle mt) {
     return -EIO;
   }
 
-  rte_atomic32_set(&impl->instance_aborted, 1);
+  mt_atomic32_set_release(&impl->instance_aborted, 1);
 
   return 0;
 }
@@ -1026,9 +1026,9 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
   }
 
   memset(info, 0, sizeof(*info));
-  info->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
-  info->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
-  info->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
+  info->sch_cnt = mt_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
+  info->lcore_cnt = mt_atomic32_read(&impl->lcore_cnt);
+  info->dma_dev_cnt = mt_atomic32_read(&mgr->num_dma_dev_active);
   info->dev_started = mt_started(impl);
 
   return 0;
@@ -1043,16 +1043,16 @@ int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
   }
 
   memset(info, 0, sizeof(*info));
-  info->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
-  info->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
-  info->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);
-  info->st40_tx_sessions_cnt = rte_atomic32_read(&impl->st40_tx_sessions_cnt);
-  info->st41_tx_sessions_cnt = rte_atomic32_read(&impl->st41_tx_sessions_cnt);
-  info->st20_rx_sessions_cnt = rte_atomic32_read(&impl->st20_rx_sessions_cnt);
-  info->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
-  info->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
-  info->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
-  info->st41_rx_sessions_cnt = rte_atomic32_read(&impl->st41_rx_sessions_cnt);
+  info->st20_tx_sessions_cnt = mt_atomic32_read(&impl->st20_tx_sessions_cnt);
+  info->st22_tx_sessions_cnt = mt_atomic32_read(&impl->st22_tx_sessions_cnt);
+  info->st30_tx_sessions_cnt = mt_atomic32_read(&impl->st30_tx_sessions_cnt);
+  info->st40_tx_sessions_cnt = mt_atomic32_read(&impl->st40_tx_sessions_cnt);
+  info->st41_tx_sessions_cnt = mt_atomic32_read(&impl->st41_tx_sessions_cnt);
+  info->st20_rx_sessions_cnt = mt_atomic32_read(&impl->st20_rx_sessions_cnt);
+  info->st22_rx_sessions_cnt = mt_atomic32_read(&impl->st22_rx_sessions_cnt);
+  info->st30_rx_sessions_cnt = mt_atomic32_read(&impl->st30_rx_sessions_cnt);
+  info->st40_rx_sessions_cnt = mt_atomic32_read(&impl->st40_rx_sessions_cnt);
+  info->st41_rx_sessions_cnt = mt_atomic32_read(&impl->st41_rx_sessions_cnt);
 
   return 0;
 }

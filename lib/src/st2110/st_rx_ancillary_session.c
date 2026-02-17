@@ -233,7 +233,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   if (tmstamp != s->tmstamp) {
-    rte_atomic32_inc(&s->stat_frames_received);
+    mt_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
@@ -274,7 +274,7 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   s->stat_interlace_first_field = 0;
   s->stat_interlace_second_field = 0;
   s->stat_pkts_wrong_interlace_dropped = 0;
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(s->stat_pkts_out_of_order_per_port, 0,
@@ -553,10 +553,10 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frames_received = rte_atomic32_read(&s->stat_frames_received);
+  int frames_received = mt_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
 
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_pkts_redundant) {
     notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
@@ -973,7 +973,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   s_impl->impl = s;
   s->st40_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st40_rx_sessions_cnt);
+  mt_atomic32_inc(&impl->st40_rx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -1042,7 +1042,7 @@ int st40_rx_free(st40_rx_handle handle) {
   rx_ancillary_sessions_mgr_update(&sch->rx_anc_mgr);
   mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st40_rx_sessions_cnt);
+  mt_atomic32_dec(&impl->st40_rx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }

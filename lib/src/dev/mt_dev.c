@@ -737,11 +737,11 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
-  rte_atomic32_set(&inf->resetting, true);
+  mt_atomic32_set_release(&inf->resetting, 1);
   mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  rte_atomic32_set(&inf->resetting, false);
+  mt_atomic32_set_release(&inf->resetting, 0);
   if (ret < 0) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
         mt_string_safe(error.message));

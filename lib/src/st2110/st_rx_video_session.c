@@ -205,9 +205,9 @@ static struct st_frame_trans* rv_get_frame(struct st_rx_video_session_impl* s) {
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     st20_frame = &s->st20_frames[i];
 
-    if (0 == rte_atomic32_read(&st20_frame->refcnt)) {
+    if (0 == mt_atomic32_read_acquire(&st20_frame->refcnt)) {
       dbg("%s(%d), find frame at %d\n", __func__, s->idx, i);
-      rte_atomic32_inc(&st20_frame->refcnt);
+      mt_atomic32_inc(&st20_frame->refcnt);
       return st20_frame;
     }
   }
@@ -220,7 +220,7 @@ static int rv_put_frame(struct st_rx_video_session_impl* s,
                         struct st_frame_trans* frame) {
   MTL_MAY_UNUSED(s);
   dbg("%s(%d), put frame at %d\n", __func__, s->idx, frame->idx);
-  rte_atomic32_dec(&frame->refcnt);
+  mt_atomic32_dec_release(&frame->refcnt);
   if (s->st22_info)
     MT_USDT_ST22_RX_FRAME_PUT(s->parent->idx, s->idx, frame->idx, frame->addr);
   else
@@ -413,7 +413,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     st20_frame = &s->st20_frames[i];
-    rte_atomic32_set(&st20_frame->refcnt, 0);
+    mt_atomic32_set(&st20_frame->refcnt, 0);
     st20_frame->idx = i;
   }
 
@@ -883,7 +883,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
           (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] < slot->pkts_received))
         meta->status = ST_FRAME_STATUS_RECONSTRUCTED;
     }
-    rte_atomic32_inc(&s->stat_frames_received);
+    mt_atomic32_inc(&s->stat_frames_received);
 
     if (slot->pkts_recv_per_port[MTL_SESSION_PORT_P] >= slot->pkts_received) {
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
@@ -933,7 +933,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     }
 #endif
 
-    rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
+    mt_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     s->port_user_stats.incomplete_frames_cnt++;
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
@@ -1015,7 +1015,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     }
 #endif
 
-    rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
+    mt_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
       st22_notify_frame_ready(s, frame->addr, meta);
@@ -1147,7 +1147,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */
-    rte_atomic32_inc(&s->dma_previous_busy_cnt);
+    mt_atomic32_inc(&s->dma_previous_busy_cnt);
     dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
         s->dma_dev->nb_borrowed[s->dma_dev].nb_borrowed);
     return NULL;
@@ -1211,14 +1211,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     if (s->ops.query_ext_frame(s->ops.priv, &ext_frame, meta) < 0) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_query_ext_fail);
       dbg("%s(%d): query ext frame fail\n", __func__, s->idx);
-      rte_atomic32_dec(&frame_info->refcnt);
+      mt_atomic32_dec_release(&frame_info->refcnt);
       return NULL;
     }
     if (ext_frame.buf_len < fb_size) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_query_ext_fail);
       err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
           __func__, s->idx, fb_size, ext_frame.buf_len);
-      rte_atomic32_dec(&frame_info->refcnt);
+      mt_atomic32_dec_release(&frame_info->refcnt);
       return NULL;
     }
     frame_info->addr = ext_frame.buf_addr;
@@ -1298,7 +1298,7 @@ static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
   slot->frame = NULL;
   s->stat_frames_dropped++;
   s->port_user_stats.stat_frames_dropped++;
-  rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
+  mt_atomic32_inc(&s->cbs_incomplete_frame_cnt);
    rv_slot_init_frame_size(slot);
   slot->pkts_received = 0;
   slot->pkts_redundant_received = 0;
@@ -1715,7 +1715,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       /* packet crosses line padding, copy two lines data */
       mtl_memcpy(slot->frame->addr + offset, payload, line1_length);
       mtl_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
-                      payload + line1_length, payload_length - line1_length);
+                 payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
                !mt_dma_full(dma_dev) &&
                !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
@@ -1851,7 +1851,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       slot->seq_id_base = seq_id;
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
-      rte_atomic32_inc(&s->stat_frames_received);
+      mt_atomic32_inc(&s->stat_frames_received);
       s->port_user_stats.common.port[s_port].frames++;
       mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
@@ -2302,10 +2302,10 @@ static int rv_uinit_pkt_lcore(struct mtl_main_impl* impl,
                               struct st_rx_video_session_impl* s) {
   int idx = s->idx;
 
-  if (rte_atomic32_read(&s->pkt_lcore_active)) {
-    rte_atomic32_set(&s->pkt_lcore_active, 0);
+  if (mt_atomic32_read_acquire(&s->pkt_lcore_active)) {
+    mt_atomic32_set_release(&s->pkt_lcore_active, 0);
     info("%s(%d), stop lcore\n", __func__, idx);
-    while (rte_atomic32_read(&s->pkt_lcore_stopped) == 0) {
+    while (mt_atomic32_read_acquire(&s->pkt_lcore_stopped) == 0) {
       mt_sleep_ms(10);
     }
   }
@@ -2331,7 +2331,7 @@ static int rv_pkt_lcore_func(void* args) {
   struct rte_mbuf* pkt = NULL;
 
   info("%s(%d), start\n", __func__, idx);
-  while (rte_atomic32_read(&s->pkt_lcore_active)) {
+  while (mt_atomic32_read_acquire(&s->pkt_lcore_active)) {
     ret = rte_ring_sc_dequeue(s->pkt_lcore_ring, (void**)&pkt);
     if (ret >= 0) {
       rv_handle_frame_pkt(s, pkt, MTL_SESSION_PORT_P, true);
@@ -2339,7 +2339,7 @@ static int rv_pkt_lcore_func(void* args) {
     }
   }
 
-  rte_atomic32_set(&s->pkt_lcore_stopped, 1);
+  mt_atomic32_set_release(&s->pkt_lcore_stopped, 1);
   info("%s(%d), end\n", __func__, idx);
   return 0;
 }
@@ -2371,11 +2371,11 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   s->pkt_lcore = lcore;
   s->has_pkt_lcore = true;
 
-  rte_atomic32_set(&s->pkt_lcore_active, 1);
+  mt_atomic32_set_release(&s->pkt_lcore_active, 1);
   ret = rte_eal_remote_launch(rv_pkt_lcore_func, s, lcore);
   if (ret < 0) {
     err("%s(%d,%d), launch lcore fail %d\n", __func__, mgr_idx, idx, ret);
-    rte_atomic32_set(&s->pkt_lcore_active, 0);
+    mt_atomic32_set_release(&s->pkt_lcore_active, 0);
     rv_uinit_pkt_lcore(impl, s);
     return ret;
   }
@@ -2485,8 +2485,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
 
   s->has_pkt_lcore = false;
-  rte_atomic32_set(&s->pkt_lcore_stopped, 0);
-  rte_atomic32_set(&s->pkt_lcore_active, 0);
+  mt_atomic32_set(&s->pkt_lcore_stopped, 0);
+  mt_atomic32_set(&s->pkt_lcore_active, 0);
 
   uint64_t bps;
   bool pkt_handle_lcore = false;
@@ -3094,7 +3094,7 @@ static void rv_reset_slot(struct st_rx_video_session_impl* s,
   if (!slot) return;
 
   if (slot->frame) {
-    rte_atomic32_set(&slot->frame->refcnt, 0);
+    mt_atomic32_set(&slot->frame->refcnt, 0);
     slot->frame = NULL;
   }
 
@@ -3157,16 +3157,16 @@ static void rv_session_reset(struct st_rx_video_session_impl* s,
     s->in_continuous_burst[i] = false;
   }
 
-  rte_atomic32_set(&s->stat_frames_received, 0);
-  rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
-  rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
+  mt_atomic32_set(&s->dma_previous_busy_cnt, 0);
   if (s->tp) memset(s->tp, 0, sizeof(*s->tp));
   mt_stat_u64_init(&s->stat_time);
 
   if (s->st20_frames) {
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       struct st_frame_trans* frame = &s->st20_frames[i];
-      rte_atomic32_set(&frame->refcnt, 0);
+      mt_atomic32_set(&frame->refcnt, 0);
       frame->user_meta_data_size = 0;
     }
   }
@@ -3430,8 +3430,8 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
 }
 
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s) {
-  rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
-  rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
+  mt_atomic32_set(&s->dma_previous_busy_cnt, 0);
+  mt_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
   s->cpu_busy_score = 0;
   s->dma_busy_score = 0;
   s->imiss_busy_score = 0;
@@ -3447,8 +3447,8 @@ void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   s->stat_cpu_busy_score = s->cpu_busy_score;
 
   /* update imiss busy */
-  int incomplete_frame_cnt = rte_atomic32_read(&s->cbs_incomplete_frame_cnt);
-  rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
+  int incomplete_frame_cnt = mt_atomic32_read(&s->cbs_incomplete_frame_cnt);
+  mt_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
   if ((incomplete_frame_cnt > 0) && (s->cpu_busy_score > 8.0)) {
     enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
     struct mtl_port_status stats;
@@ -3469,8 +3469,8 @@ void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   }
 
   /* update dma busy */
-  int dma_previous_busy_cnt = rte_atomic32_read(&s->dma_previous_busy_cnt);
-  rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
+  int dma_previous_busy_cnt = mt_atomic32_read(&s->dma_previous_busy_cnt);
+  mt_atomic32_set(&s->dma_previous_busy_cnt, 0);
   if (dma_previous_busy_cnt) {
     s->dma_busy_score += 40.0;
     if (s->dma_busy_score > 100.0) {
@@ -3495,11 +3495,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frames_received = rte_atomic32_read(&s->stat_frames_received);
+  int frames_received = mt_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
   double dump_period_s = mt_stat_dump_period_s(mgr->parent);
 
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
 
   char extra_info[128] = "";
   if (s->stat_slices_received || s->stat_pkts_redundant_dropped) {
@@ -4254,7 +4254,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   s_impl->quota_mbs = quota_mbs;
   s->st20_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st20_rx_sessions_cnt);
+  mt_atomic32_inc(&impl->st20_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
 }
@@ -4384,7 +4384,7 @@ int st20_rx_free(st20_rx_handle handle) {
   rvs_mgr_update(&sch->rx_video_mgr);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st20_rx_sessions_cnt);
+  mt_atomic32_dec(&impl->st20_rx_sessions_cnt);
   notice("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
 }
@@ -4669,7 +4669,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   s_impl->quota_mbs = quota_mbs;
   s->st22_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st22_rx_sessions_cnt);
+  mt_atomic32_inc(&impl->st22_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
 }
@@ -4758,7 +4758,7 @@ int st22_rx_free(st22_rx_handle handle) {
   rvs_mgr_update(&sch->rx_video_mgr);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st22_rx_sessions_cnt);
+  mt_atomic32_dec(&impl->st22_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
 }

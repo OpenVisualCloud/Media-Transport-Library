@@ -145,7 +145,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
   loop_cal_start_ns = mt_get_tsc(impl);
 
-  while (rte_atomic32_read(&sch->request_stop) == 0) {
+  while (mt_atomic32_read_acquire(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
     bool time_measure = sch_tasklet_time_measure(impl);
     uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
@@ -199,7 +199,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     if (ops->stop) ops->stop(ops->priv);
   }
 
-  rte_atomic32_set(&sch->stopped, 1);
+  mt_atomic32_set_release(&sch->stopped, 1);
   info("%s(%d), end with %d tasklets\n", __func__, idx, num_tasklet);
   return 0;
 }
@@ -232,8 +232,8 @@ static int sch_start(struct mtl_sch_impl* sch) {
   }
 
   mt_sch_set_cpu_busy(sch, false);
-  rte_atomic32_set(&sch->request_stop, 0);
-  rte_atomic32_set(&sch->stopped, 0);
+  mt_atomic32_set(&sch->request_stop, 0);
+  mt_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
     ret = mt_sch_get_lcore(
@@ -255,7 +255,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
     return ret;
   }
 
-  rte_atomic32_set(&sch->started, 1);
+  mt_atomic32_set_release(&sch->started, 1);
   if (!sch->run_in_thread)
     info("%s(%d), succ on lcore %u socket %d\n", __func__, idx, sch->lcore,
          mt_sch_socket_id(sch));
@@ -276,8 +276,8 @@ static int sch_stop(struct mtl_sch_impl* sch) {
     return 0;
   }
 
-  rte_atomic32_set(&sch->request_stop, 1);
-  while (rte_atomic32_read(&sch->stopped) == 0) {
+  mt_atomic32_set_release(&sch->request_stop, 1);
+  while (mt_atomic32_read_acquire(&sch->stopped) == 0) {
     mt_sleep_ms(10);
   }
   if (!sch->run_in_thread) {
@@ -286,7 +286,7 @@ static int sch_stop(struct mtl_sch_impl* sch) {
   } else {
     pthread_join(sch->tid, NULL);
   }
-  rte_atomic32_set(&sch->started, 0);
+  mt_atomic32_set_release(&sch->started, 0);
 
   mt_sch_set_cpu_busy(sch, false);
 
@@ -325,8 +325,8 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
         sch_unlock(sch);
         return NULL;
       }
-      rte_atomic32_inc(&sch->active);
-      rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
+      mt_atomic32_inc(&sch->active);
+      mt_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
 
       /* set the socket id */
@@ -365,8 +365,8 @@ static int sch_free(struct mtl_sch_impl* sch) {
     sch->tasklet = NULL;
   }
   sch->nb_tasklets = 0;
-  rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
-  rte_atomic32_dec(&sch->active);
+  mt_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
+  mt_atomic32_dec(&sch->active);
   sch_unlock(sch);
   return 0;
 }
@@ -677,7 +677,7 @@ again:
         ret = mt_instance_get_lcore(impl, cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
-          rte_atomic32_inc(&impl->lcore_cnt);
+          mt_atomic32_inc(&impl->lcore_cnt);
           /* set local lcores info */
           mgr->local_lcores_active[cur_lcore] = true;
           mgr->local_lcores_type[cur_lcore] = type;
@@ -717,7 +717,7 @@ again:
           shm_entry->type = type;
           shm_entry->pid = info->pid;
           lcore_shm->used++;
-          rte_atomic32_inc(&impl->lcore_cnt);
+          mt_atomic32_inc(&impl->lcore_cnt);
           /* set local lcores info */
           mgr->local_lcores_active[cur_lcore] = true;
           mgr->local_lcores_type[cur_lcore] = type;
@@ -756,7 +756,7 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
   if (mt_is_manager_connected(impl)) {
     ret = mt_instance_put_lcore(impl, lcore);
     if (ret == 0) {
-      rte_atomic32_dec(&impl->lcore_cnt);
+      mt_atomic32_dec(&impl->lcore_cnt);
       mgr->local_lcores_active[lcore] = false;
       info("%s, succ on manager lcore %d for %s\n", __func__, lcore,
            lcore_type_name(mgr->local_lcores_type[lcore]));
@@ -793,7 +793,7 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
 
     lcore_shm->lcores_info[lcore].active = false;
     lcore_shm->used--;
-    rte_atomic32_dec(&impl->lcore_cnt);
+    mt_atomic32_dec(&impl->lcore_cnt);
     mgr->local_lcores_active[lcore] = false;
     ret = sch_filelock_unlock(mgr);
     info("%s, succ on shm lcore %d for %s\n", __func__, lcore,
@@ -943,9 +943,9 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     mt_pthread_mutex_init(&sch->mutex, NULL);
     sch->parent = impl;
     sch->idx = sch_idx;
-    rte_atomic32_set(&sch->started, 0);
-    rte_atomic32_set(&sch->ref_cnt, 0);
-    rte_atomic32_set(&sch->active, 0);
+    mt_atomic32_set(&sch->started, 0);
+    mt_atomic32_set(&sch->ref_cnt, 0);
+    mt_atomic32_set(&sch->active, 0);
     sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
@@ -1046,7 +1046,7 @@ int mt_sch_put(struct mtl_sch_impl* sch, int quota_mbs) {
 
   sch_free_quota(sch, quota_mbs);
 
-  if (rte_atomic32_dec_and_test(&sch->ref_cnt)) {
+  if (mt_atomic32_dec_and_test(&sch->ref_cnt)) {
     info("%s(%d), ref_cnt now zero\n", __func__, sidx);
     if (sch->data_quota_mbs_total)
       err("%s(%d), still has %d data_quota_mbs_total\n", __func__, sidx,
@@ -1118,7 +1118,7 @@ struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_
     if (ret >= 0) {
       info("%s(%d), succ with quota_mbs %d socket %d\n", __func__, idx, quota_mbs,
            socket);
-      rte_atomic32_inc(&sch->ref_cnt);
+      mt_atomic32_inc(&sch->ref_cnt);
       sch_mgr_unlock(mgr);
       return sch;
     }
@@ -1152,7 +1152,7 @@ struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_
     }
   }
 
-  rte_atomic32_inc(&sch->ref_cnt);
+  mt_atomic32_inc(&sch->ref_cnt);
   sch_mgr_unlock(mgr);
   return sch;
 }

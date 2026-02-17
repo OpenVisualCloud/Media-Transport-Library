@@ -5,6 +5,7 @@
 #ifndef _MT_LIB_ST_HEAD_H_
 #define _MT_LIB_ST_HEAD_H_
 
+#include "../mt_atomic.h"
 #include "../mt_header.h"
 #include "st20_api.h"
 #include "st30_api.h"
@@ -152,7 +153,7 @@ struct st_frame_trans {
   rte_iova_t iova;                 /* iova for hw */
   struct st_page_info* page_table; /* page table for hw, used for IOVA:PA mode */
   uint16_t page_table_len;         /* page table len for hw, used for IOVA:PA mode */
-  rte_atomic32_t refcnt;           /* 0 means it's free */
+  mt_atomic32_t refcnt;            /* 0 means it's free */
   void* priv;                      /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
@@ -372,7 +373,7 @@ struct st_tx_video_session_impl {
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
-  rte_atomic32_t cbs_build_timeout;
+  mt_atomic32_t cbs_build_timeout;
 
   /* info for st22 */
   struct st22_tx_video_info* st22_info;
@@ -383,7 +384,7 @@ struct st_tx_video_session_impl {
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t stat_frame_cnt;
+  mt_atomic32_t stat_frame_cnt;
   int stat_pkts_build[MTL_SESSION_PORT_MAX];
   int stat_pkts_dummy;
   int stat_pkts_burst;
@@ -667,15 +668,15 @@ struct st_rx_video_session_impl {
   unsigned int pkt_lcore;
   bool has_pkt_lcore;
   struct rte_ring* pkt_lcore_ring;
-  rte_atomic32_t pkt_lcore_active;
-  rte_atomic32_t pkt_lcore_stopped;
+  mt_atomic32_t pkt_lcore_active;
+  mt_atomic32_t pkt_lcore_stopped;
 
   /* the cpu resource to handle rx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
   double dma_busy_score;
   double imiss_busy_score;
-  rte_atomic32_t dma_previous_busy_cnt;
-  rte_atomic32_t cbs_incomplete_frame_cnt;
+  mt_atomic32_t dma_previous_busy_cnt;
+  mt_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
   uint16_t burst_loss_max;
@@ -717,7 +718,7 @@ struct st_rx_video_session_impl {
   int stat_mismatch_hdr_split_frame;
   int stat_frames_dropped;
   int stat_frames_pks_missed;
-  rte_atomic32_t stat_frames_received;
+  mt_atomic32_t stat_frames_received;
   int stat_slices_received;
   int stat_pkts_slice_fail;
   int stat_pkts_slice_merged;
@@ -883,7 +884,7 @@ struct st_tx_audio_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t stat_frame_cnt;
+  mt_atomic32_t stat_frame_cnt;
   int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
@@ -920,8 +921,8 @@ struct st_tx_audio_sessions_mgr {
   /* protect session, spin(fast) lock as it call from tasklet aslo */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_AUDIO_SESSIONS]; /* protect session */
 
-  rte_atomic32_t transmitter_started;
-  rte_atomic32_t transmitter_clients;
+  mt_atomic32_t transmitter_started;
+  mt_atomic32_t transmitter_clients;
 
   /* status */
   int stat_pkts_burst;
@@ -1054,7 +1055,7 @@ struct st_rx_audio_session_impl {
   int stat_pkts_wrong_ssrc_dropped;
   int stat_pkts_len_mismatch_dropped;
   int stat_pkts_received;
-  rte_atomic32_t stat_frames_received;
+  mt_atomic32_t stat_frames_received;
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
   struct st30_rx_user_stats port_user_stats;
@@ -1146,7 +1147,7 @@ struct st_tx_ancillary_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t stat_frame_cnt;
+  mt_atomic32_t stat_frame_cnt;
   int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
@@ -1180,8 +1181,8 @@ struct st_tx_ancillary_sessions_mgr {
   /* protect session, spin(fast) lock as it call from tasklet aslo */
   rte_spinlock_t mutex[ST_MAX_TX_ANC_SESSIONS];
 
-  rte_atomic32_t transmitter_started;
-  rte_atomic32_t transmitter_clients;
+  mt_atomic32_t transmitter_started;
+  mt_atomic32_t transmitter_clients;
 
   /* status */
   int stat_pkts_burst;
@@ -1218,7 +1219,7 @@ struct st_rx_ancillary_session_impl {
 
   int64_t tmstamp;
   /* status */
-  rte_atomic32_t stat_frames_received;
+  mt_atomic32_t stat_frames_received;
   int stat_pkts_dropped;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
@@ -1326,7 +1327,7 @@ struct st_tx_fastmetadata_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t stat_frame_cnt;
+  mt_atomic32_t stat_frame_cnt;
   int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
@@ -1359,8 +1360,8 @@ struct st_tx_fastmetadata_sessions_mgr {
   /* protect session, spin(fast) lock as it call from tasklet aslo */
   rte_spinlock_t mutex[ST_MAX_TX_FMD_SESSIONS];
 
-  rte_atomic32_t transmitter_started;
-  rte_atomic32_t transmitter_clients;
+  mt_atomic32_t transmitter_started;
+  mt_atomic32_t transmitter_clients;
 
   /* status */
   int stat_pkts_burst;
@@ -1398,7 +1399,7 @@ struct st_rx_fastmetadata_session_impl {
   /* the timestamp */
   int64_t tmstamp;
   /* status */
-  rte_atomic32_t stat_frames_received;
+  mt_atomic32_t stat_frames_received;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
   int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
@@ -1489,7 +1490,7 @@ struct st22_encode_dev_impl {
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_encoder_dev dev;
-  rte_atomic32_t ref_cnt;
+  mt_atomic32_t ref_cnt;
   struct st22_encode_session_impl sessions[ST_MAX_SESSIONS_PER_ENCODER];
 };
 
@@ -1508,7 +1509,7 @@ struct st22_decode_dev_impl {
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_decoder_dev dev;
-  rte_atomic32_t ref_cnt;
+  mt_atomic32_t ref_cnt;
   struct st22_decode_session_impl sessions[ST_MAX_SESSIONS_PER_DECODER];
 };
 
@@ -1527,7 +1528,7 @@ struct st20_convert_dev_impl {
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st20_converter_dev dev;
-  rte_atomic32_t ref_cnt;
+  mt_atomic32_t ref_cnt;
   struct st20_convert_session_impl sessions[ST_MAX_SESSIONS_PER_CONVERTER];
 };
 

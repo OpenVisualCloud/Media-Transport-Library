@@ -254,7 +254,7 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
 
     /* notify app can get frame */
     tx_st20p_notify_frame_available(ctx);
-    rte_atomic32_inc(&ctx->stat_convert_fail);
+    mt_atomic32_inc(&ctx->stat_convert_fail);
   } else {
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -273,14 +273,14 @@ static int tx_st20p_convert_dump(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
-  rte_atomic32_set(&ctx->stat_convert_fail, 0);
+  int convert_fail = mt_atomic32_read(&ctx->stat_convert_fail);
+  mt_atomic32_set(&ctx->stat_convert_fail, 0);
   if (convert_fail) {
     notice("TX_st20p(%s), convert fail %d\n", ctx->ops_name, convert_fail);
   }
 
-  int busy = rte_atomic32_read(&ctx->stat_busy);
-  rte_atomic32_set(&ctx->stat_busy, 0);
+  int busy = mt_atomic32_read(&ctx->stat_busy);
+  mt_atomic32_set(&ctx->stat_busy, 0);
   if (busy) {
     notice("TX_st20p(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
@@ -889,8 +889,8 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST20_HANDLE_PIPELINE_TX;
   ctx->src_size = src_size;
-  rte_atomic32_set(&ctx->stat_convert_fail, 0);
-  rte_atomic32_set(&ctx->stat_busy, 0);
+  mt_atomic32_set(&ctx->stat_convert_fail, 0);
+  mt_atomic32_set(&ctx->stat_busy, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);

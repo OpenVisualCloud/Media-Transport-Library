@@ -62,7 +62,7 @@ static int tx_fastmetadata_session_free_frames(
 
     /* dec ref for current frame */
     frame = &s->st41_frames[s->st41_frame_idx];
-    if (rte_atomic32_read(&frame->refcnt)) rte_atomic32_dec(&frame->refcnt);
+    if (mt_atomic32_read(&frame->refcnt)) mt_atomic32_dec_release(&frame->refcnt);
 
     for (int i = 0; i < s->st41_frames_cnt; i++) {
       frame = &s->st41_frames[i];
@@ -97,7 +97,7 @@ static int tx_fastmetadata_session_alloc_frames(
 
   for (int i = 0; i < s->st41_frames_cnt; i++) {
     frame_info = &s->st41_frames[i];
-    rte_atomic32_set(&frame_info->refcnt, 0);
+    mt_atomic32_set(&frame_info->refcnt, 0);
     frame_info->idx = i;
   }
 
@@ -539,7 +539,7 @@ static int tx_fastmetadata_session_rtp_update_packet(
   if (rtp->tmstamp != s->st41_rtp_time) {
     /* start of a new frame */
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st41_rtp_time = rtp->tmstamp;
@@ -591,7 +591,7 @@ static int tx_fastmetadata_session_build_packet_chain(
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
-        rte_atomic32_inc(&s->stat_frame_cnt);
+        mt_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st41_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
@@ -725,13 +725,13 @@ static int tx_fastmetadata_session_tasklet_frame(
     }
     /* check frame refcnt */
     struct st_frame_trans* frame = &s->st41_frames[next_frame_idx];
-    int refcnt = rte_atomic32_read(&frame->refcnt);
+    int refcnt = mt_atomic32_read_acquire(&frame->refcnt);
     if (refcnt) {
       err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx, refcnt);
       s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
       return MTL_TASKLET_ALL_DONE;
     }
-    rte_atomic32_inc(&frame->refcnt);
+    mt_atomic32_inc(&frame->refcnt);
     frame->tf_meta = meta;
     s->st41_frame_idx = next_frame_idx;
     dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
@@ -886,10 +886,10 @@ static int tx_fastmetadata_session_tasklet_frame(
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
-    rte_atomic32_dec(&frame->refcnt);
+    mt_atomic32_dec_release(&frame->refcnt);
     s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
@@ -1161,7 +1161,7 @@ static int tx_fastmetadata_session_flush(struct st_tx_fastmetadata_sessions_mgr*
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
     if (pool && rte_mempool_in_use_count(pool) &&
-        rte_atomic32_read(&mgr->transmitter_started)) {
+        mt_atomic32_read_acquire(&mgr->transmitter_started)) {
       info("%s(%d,%d), start to flush port %d\n", __func__, mgr_idx, s_idx, i);
       tx_fastmetadata_session_sq_flush_port(mgr, mt_port_logic2phy(s->port_maps, i));
       info("%s(%d,%d), flush port %d end\n", __func__, mgr_idx, s_idx, i);
@@ -1457,7 +1457,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
   s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
   s->st41_frame_idx = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  mt_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1502,7 +1502,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
       return ret;
     }
   } else {
-    rte_atomic32_inc(&mgr->transmitter_clients);
+    mt_atomic32_inc(&mgr->transmitter_clients);
   }
 
   info("%s(%d), type %d flags 0x%x pt %u, %s\n", __func__, idx, ops->type, ops->flags,
@@ -1512,12 +1512,12 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
 static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  int frame_cnt = mt_atomic32_read(&s->stat_frame_cnt);
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   double framerate = frame_cnt / time_sec;
 
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  mt_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
   notice("TX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
@@ -1580,7 +1580,7 @@ static int tx_fastmetadata_session_detach(struct st_tx_fastmetadata_sessions_mgr
   tx_fastmetadata_session_stat(s);
   tx_fastmetadata_session_uinit(mgr, s);
   if (s->shared_queue) {
-    rte_atomic32_dec(&mgr->transmitter_clients);
+    mt_atomic32_dec(&mgr->transmitter_clients);
   }
   return 0;
 }
@@ -1647,7 +1647,7 @@ static int st_tx_fastmetadata_sessions_stat(void* priv) {
     notice("TX_FMD_MGR, pkts burst %d\n", mgr->stat_pkts_burst);
     mgr->stat_pkts_burst = 0;
   } else {
-    int32_t clients = rte_atomic32_read(&mgr->transmitter_clients);
+    int32_t clients = mt_atomic32_read(&mgr->transmitter_clients);
     if ((clients > 0) && (mgr->max_idx > 0)) {
       for (int i = 0; i < mt_num_ports(mgr->parent); i++) {
         warn("TX_FMD_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
@@ -1950,7 +1950,7 @@ st41_tx_handle st41_tx_create(mtl_handle mt, struct st41_tx_ops* ops) {
   s_impl->sch = sch;
   s_impl->quota_mbs = quota_mbs;
 
-  rte_atomic32_inc(&impl->st41_tx_sessions_cnt);
+  mt_atomic32_inc(&impl->st41_tx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -2097,7 +2097,7 @@ int st41_tx_free(st41_tx_handle handle) {
   tx_fastmetadata_sessions_mgr_update(&sch->tx_fmd_mgr);
   mt_pthread_mutex_unlock(&sch->tx_fmd_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st41_tx_sessions_cnt);
+  mt_atomic32_dec(&impl->st41_tx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }

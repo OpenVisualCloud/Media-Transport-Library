@@ -869,7 +869,7 @@ int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
   if (sh_info_refcnt)
     warn("%s(%d), sh_info still active, refcnt %d\n", __func__, idx, sh_info_refcnt);
 
-  int refcnt = rte_atomic32_read(&frame->refcnt);
+  int refcnt = mt_atomic32_read(&frame->refcnt);
   if (refcnt) warn("%s(%d), refcnt not zero %d\n", __func__, idx, refcnt);
   if (frame->addr) {
     if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
