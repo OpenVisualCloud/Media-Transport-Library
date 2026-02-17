@@ -14,7 +14,6 @@ runs:
         sudo killall -SIGKILL ffmpeg || true
         sudo killall -SIGKILL RxTxApp || true
         echo "Clenaup of the supporting processes..."
-        sudo killall -SIGINT pipenv || true
         sudo killall -SIGINT pytest || true
         sudo killall -SIGINT MtlManager || true
         sudo killall -SIGINT phc2sys || true
