@@ -2,6 +2,8 @@
 
 ## The Two-Tier Locking Architecture
 
+(Part of the broader "two-world" design pattern described in `architecture-and-design-philosophy.md`.)
+
 MTL has a strict two-tier locking design driven by a single constraint: **tasklets must never block**.
 
 | Tier | Lock Type | Where Used | Why |

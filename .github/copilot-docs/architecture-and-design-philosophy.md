@@ -79,7 +79,7 @@ MTL has **no automatic error recovery**. No reconnect, no session restart, no NI
 
 ## Why Video Is Complex But Audio Is Simple
 
-Every media type (video, audio, ancillary, fast metadata) follows the **same structural skeleton**: session struct, manager, tasklet, ops_check, attach/detach, get/put. But video dominates the codebase complexity because:
+Every media type (video, audio, ancillary, fast metadata/ST2110-41) follows the **same structural skeleton**: session struct, manager, tasklet, ops_check, attach/detach, get/put. ST2110-41 fast metadata has its own API (`st41_api.h`), session types, and RTP header format (`st41_rtp_hdr`, payload type 115). But video dominates the codebase complexity because:
 
 | Concern | Video | Audio/Ancillary |
 |---------|-------|-----------------|
@@ -118,7 +118,7 @@ Understanding when the pipeline is "worth it" vs using raw sessions:
 
 ## Configuration Interactions That Bite
 
-- `MTL_FLAG_TASKLET_SLEEP` **requires** `MTL_FLAG_TASKLET_THREAD` — sleep only works in pthread mode, not lcore mode
+- `MTL_FLAG_TASKLET_SLEEP` works in **both** lcore and pthread mode — lcores are pthreads under DPDK, so `pthread_cond_timedwait` works in both. No dependency on `MTL_FLAG_TASKLET_THREAD`
 - `MTL_FLAG_SHARED_TX_QUEUE` adds a spinlock per TX burst — fine for few sessions, kills throughput at scale
 - `MTL_FLAG_DEV_AUTO_START_STOP` changes the lifecycle model: `mtl_start()`/`mtl_stop()` become no-ops, device is started during `mtl_init()`
 - `num_port > 1` with different NIC models forces redundant port to TSC pacing even if primary has HW RL
@@ -135,3 +135,29 @@ The "golden path" for a typical 1080p60 TX session:
 6. Match NUMA: ensure the thread calling `put_frame` runs on the same NUMA node as the NIC
 
 Deviating from any of these requires understanding why the default exists.
+
+## Naming Conventions
+
+| Prefix | Scope | Example |
+|--------|-------|--------|
+| `mtl_*` | Public API | `mtl_init`, `mtl_start`, `mtl_uninit` |
+| `mt_*` | Core internal | `mt_rte_zmalloc_socket`, `mt_sch_get_quota` |
+| `st_*` / `st20_*` | ST2110 public + internal | `st20_tx_create`, `st_frame_trans` |
+| `tv_*` / `rv_*` | TX/RX video (static/internal) | `tv_ops_check`, `rv_handle_rtp_pkt` |
+| `ta_*` / `ra_*` | TX/RX audio | `ta_tasklet_handler` |
+| `atx_*` / `arx_*` | TX/RX ancillary | `atx_tasklet_handler` |
+| `tx_fastmetadata_*` / `rx_fastmetadata_*` | TX/RX fast metadata (ST41) | `tx_fastmetadata_session_build_packet` |
+| `st20p_*` / `st22p_*` / `st30p_*` | Pipeline API | `st20p_tx_get_frame` |
+| `mudp_*` / `mufd_*` | Custom UDP stack / FD layer | `mudp_sendto`, `mufd_socket` |
+| `*_impl` / `*_mgr` / `*_ctx` | Impl struct / Manager / Pipeline context | `st_tx_video_session_impl` |
+
+**Lifecycle gotcha**: `*_init()` / `*_uinit()` — note "uinit" NOT "uninit". Also `*_attach()` / `*_detach()`.
+
+## Coding Rules
+
+- Return negative errno: `-EINVAL`, `-ENOMEM`, `-EIO`, `-EBUSY`
+- Use goto-based cleanup for multi-step init
+- Always log with `__func__` and session `idx`: `err("%s(%d), msg\n", __func__, s->idx);`
+- Logging: `dbg()`, `info()`, `warn()`, `err()`, `critical()` — use `*_once()` variants in hot path
+- Memory: `mt_rte_zmalloc_socket(size, socket_id)` for DMA/NUMA-aware alloc — never raw `rte_malloc` or `malloc` for NIC-touching data
+- `MT_SAFE_FREE(obj, mt_rte_free)` — sets obj=NULL after free
