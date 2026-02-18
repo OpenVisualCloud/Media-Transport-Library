@@ -27,6 +27,8 @@ When no hardware RL is available (non-E810, or RL capacity exhausted at 128 shap
 
 ## The Builder→Transmitter Pipeline
 
+(See also `threading-and-scheduler.md` for the threading perspective of this split.)
+
 Why not build and pace in one tasklet? Because **pacing requires fast reaction to timing events**, while packet building involves frame reads and header construction. Separating them:
 
 1. **Builder** runs when it can — reads frames, constructs packets, enqueues to `rte_ring`
@@ -93,3 +95,17 @@ When diagnosing performance issues, think in layers:
 - One E810 100G port ≈ 8× 4K60 or 20× 1080p60 (theoretical)
 - RL supports up to 128 concurrent shapers per port
 - TSC resolution ≈ 1ns, but scheduler poll interval adds 10-100µs jitter
+
+## USDT Tracepoints (Observability)
+
+Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT` is set. Attach with bpftrace/SystemTap.
+
+| Provider | Key Probes | What It Traces |
+|----------|-----------|----------------|
+| `sys` | `log_msg`, `tasklet_time_measure` | Runtime logging, tasklet timing activation |
+| `ptp` | `ptp_msg`, `ptp_result` | PTP timestamps (t1–t4) and sync delta |
+| `st20`/`st22`/`st30` | `tx_frame_next/done`, `rx_frame_available/put` | Session-level frame lifecycle |
+| `st40`/`st41` | `tx_frame_next/done`, `rx_mbuf_available/put` | Ancillary / fast metadata |
+| `st20p`/`st22p`/`st30p`/`st40p` | `tx_frame_get/put/drop`, `rx_frame_get/put` | Pipeline frame transitions |
+
+Several probes are **attach-to-enable**: no runtime cost until a tracing tool attaches, then they activate pcap dump or timing measurement.

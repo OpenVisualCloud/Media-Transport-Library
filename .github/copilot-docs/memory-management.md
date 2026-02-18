@@ -43,6 +43,8 @@ put_frame()      → MTL owns → mark FREE
 
 ## The Zero-Copy Design
 
+(See also `dpdk-usage-patterns.md` for the DPDK-specific mbuf mechanics and header-split RX.)
+
 For TX, MTL avoids copying frame data into packet buffers. Instead:
 1. Build a **header-only mbuf** (Ethernet + IP + UDP + RTP + video header, ~62 bytes)
 2. Create a **payload mbuf** using `rte_pktmbuf_attach_extbuf()` pointing into the frame buffer
