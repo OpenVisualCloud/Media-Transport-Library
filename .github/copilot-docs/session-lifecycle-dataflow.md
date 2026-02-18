@@ -55,6 +55,20 @@ FREE → (app gets frame) → IN_USER → (app puts frame) → READY
 
 **Late frame handling**: If a frame is still IN_USER when its epoch arrives, it's skipped. If it's READY but a newer frame is also READY, the older one is dropped (newest-first policy). This means the app can be slow occasionally — MTL just shows the latest frame.
 
+### Session-Level TX Frame States (distinct from pipeline states)
+All four media types share the same 2-state cycle (enums in `st_header.h`):
+
+```text
+WAIT_FRAME ──(get_next_frame succeeds)──► SENDING_PKTS
+    ▲                                          │
+    └───────(pkt_idx >= total_pkts)────────────┘
+```
+
+- `WAIT_FRAME`: Builder polls for next frame from app/pipeline
+- `SENDING_PKTS`: Builder constructs and enqueues packets; pacing waits (video) happen via TSC comparisons *within* this state, not a separate state
+
+**Note**: `ST21_TX_STAT_WAIT_PKTS` exists in the video enum but is dead code — never assigned or checked.
+
 ### RX Pipeline Frame States
 ```text
 FREE → (transport delivers) → READY → (convert if needed) → IN_USER → (app returns) → FREE
@@ -81,6 +95,8 @@ MTL uses **slots** (typically 2-3 per session):
 - Detecting completion (all bits set)
 - Detecting gaps (for RTCP NACK requests)
 - Knowing exactly which data has been written (for integrity checking)
+
+**Header-split optimization**: On Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`, the NIC writes payload data directly into the frame buffer, bypassing the CPU memcpy step entirely. See `dpdk-usage-patterns.md` for details.
 
 ## RTCP Retransmission Design
 
@@ -127,13 +143,14 @@ Sessions automatically join/leave IGMP multicast groups during attach/detach. Th
 
 **Gotcha**: If the switch doesn't support IGMP snooping, multicast traffic floods all ports. This doesn't break MTL but wastes bandwidth. Ensure IGMP snooping is enabled on your switch.
 
-## Audio and Ancillary: Same Pattern, Simpler
+## Audio, Ancillary, and Fast Metadata: Same Pattern, Simpler
 
-Audio (ST2110-30) and ancillary (ST2110-40) sessions follow the exact same lifecycle and manager pattern as video, but:
+Audio (ST2110-30), ancillary (ST2110-40), and fast metadata (ST2110-41) sessions follow the exact same lifecycle and manager pattern as video, but:
 - **No pacing complexity** — audio packets are small and sent at frame boundaries (1ms or 125µs)
 - **No assembly complexity** — audio frames are typically 1 packet per frame, ancillary even simpler
-- **Low quota** — many audio/ancillary sessions fit on one scheduler
+- **Low quota** — many audio/ancillary/fast-metadata sessions fit on one scheduler
 - **Shared queue friendly** — their low bandwidth makes shared queues efficient
+- **ST2110-41 specifics** — fast metadata has payload type 115, its own RTP header (`st41_rtp_hdr`/`st41_fmd_hdr`, 58 bytes), and API in `st41_api.h`. Naming prefix: `tx_fastmetadata_*`/`rx_fastmetadata_*`
 
 **The design is deliberately uniform**: Adding a new media type means copying the video session pattern and simplifying. Don't invent a new architecture for new ST2110-xx types.
 
@@ -153,6 +170,8 @@ The `mtl_init()` → `mtl_start()` → `mtl_stop()` → `mtl_uninit()` lifecycle
 
 ## Plugin Contract
 
+(See also `architecture-and-design-philosophy.md` for the pipeline-session duality and when to use plugins.)
+
 Plugins (converters, encoders, decoders) follow a strict 3-phase contract:
 
 1. **Registration**: `dlopen` → resolve 3 symbols (`st_plugin_get_meta`, `st_plugin_create`, `st_plugin_free`) → version/magic check → create
@@ -164,3 +183,10 @@ Plugins (converters, encoders, decoders) follow a strict 3-phase contract:
 - First-fit matching means if two plugins support the same format, registration order determines which is used.
 - Plugins are loaded during `mtl_init()` from JSON config file paths — they must be available at library init time, not later.
 - Max 8 plugins per MTL instance.
+
+## Validation Checklist (`*_ops_check()`)
+- `num_port`: 1-2, `payload_type`: 0-127, `framebuff_cnt`: 2-8 for video
+- IP: not all zeros, multicast = 224.x-239.x, redundant ports must differ
+- Check required callbacks based on `type` field (frame, slice, RTP)
+- Pipeline: `input_fmt`/`output_fmt` must be supported by available converter
+

@@ -32,7 +32,8 @@ Pure busy-polling wastes CPU when there's no work. Pure sleeping adds latency. M
 - Each tasklet declares `advice_sleep_us` — "how long I can tolerate being asleep"
 - The scheduler takes the minimum across all tasklets as its sleep target
 - Below 200µs it just yields (context switch cost would exceed the sleep)
-- Above 200µs it uses `rte_eal_alarm_set()` + condvar, which allows sub-millisecond wake via `sch_sleep_wakeup()`
+- Above 200µs it uses `pthread_cond_timedwait()` which works in both lcore and pthread modes (DPDK lcores are pthreads), allowing sub-millisecond wake via `sch_sleep_wakeup()`
+- `MTL_FLAG_TASKLET_SLEEP` does NOT require `MTL_FLAG_TASKLET_THREAD` — sleep works in both scheduler modes
 
 **Gotcha**: If you register a tasklet with `advice_sleep_us = 0`, the scheduler will never sleep — 100% CPU usage.
 

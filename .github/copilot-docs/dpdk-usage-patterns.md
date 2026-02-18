@@ -60,9 +60,19 @@ For dedicated queues, MTL installs `rte_flow` rules matching on:
 
 **The IP+port combo is the session identifier on the wire**: Two sessions can share an IP if they have different UDP ports, or share a port if they have different IPs. But the same IP+port means the same session (or redundant path).
 
+## Header-Split RX (E810 Hardware Feature)
+
+For video RX, the NIC can split incoming packets so headers go to one mbuf/pool and **payload goes directly into pre-allocated frame memory**, avoiding the CPU memcpy on the RX path.
+
+- Enabled via `ST20_RX_FLAG_HDR_SPLIT` / `ST20P_RX_FLAG_HDR_SPLIT`
+- Requires dedicated RX queues (`nb_rx_hdr_split_queues` in port config)
+- Compile-time gated by `ST_HAS_DPDK_HDR_SPLIT` (DPDK must have `rte_eth_hdrs_mbuf_callback_fn`)
+- Key code: `rv_init_hdr_split_frame()` in `st_rx_video_session.c`, mbuf callback `hdr_split_mbuf_cb` in `mt_dev.c`
+- Only benefits video (ST2110-20) — audio/ancillary payloads are too small
+
 ## Mbuf Lifecycle: The Zero-Copy Path
 
-Understanding the mbuf lifecycle is essential for debugging memory issues:
+See `memory-management.md` for the full frame ownership model. This section focuses on the DPDK-specific mbuf mechanics.
 
 ### TX: Frame → Wire (zero-copy)
 1. **Header mbuf** allocated from session's mempool — contains Ethernet/IP/UDP/RTP headers (~62 bytes)
@@ -112,17 +122,18 @@ DPDK supports multi-process mode for shared NIC access:
 - Uses Linux kernel's XDP socket for zero-copy without DPDK's VFIO/UIO
 - UMEM (shared memory region) must be pre-allocated and registered with the kernel
 - Less performant than DPDK PMD but doesn't require root or special drivers
-- Two flavors: native (`af_xdp:`) and DPDK (`dpdk_af_xdp:`) — native is preferred
+- Two flavors: native (`native_af_xdp:`) and DPDK (`dpdk_af_xdp:`) — native is preferred for production
+
+### DPDK AF_PACKET
+- Uses DPDK's AF_PACKET PMD (`dpdk_af_packet:` prefix)
+- Standard Linux packet sockets wrapped by DPDK
+- Experimental; lower performance than AF_XDP
 
 ### Kernel Socket
 - Pure socket()/sendto()/recvfrom() — maximum compatibility, minimum performance  
 - Useful for development/testing without DPDK or XDP setup
 - Creates dedicated TX/RX threads (unlike DPDK which uses tasklets)
-
-### RDMA UD
-- Experimental: uses RDMA Unreliable Datagram for transport
-- Bypasses kernel network stack but doesn't require DPDK
-- Currently limited feature set
+- Port prefix: `kernel:`
 
 ## Debugging DPDK Issues
 
@@ -131,3 +142,16 @@ DPDK supports multi-process mode for shared NIC access:
 - **TX drops**: NIC TX descriptor ring full — either sending too fast or NIC is saturated. Check `stat_tx_burst` and ring occupancy.
 - **Mempool exhaustion**: All mbufs in flight — either TX completion is slow or mempool is undersized. Watch `rte_mempool_avail_count()`.
 - **Wrong NUMA node**: Use `rte_socket_id()` vs `rte_eth_dev_socket_id()` mismatch — silent performance halving.
+
+## Port Name Prefixes
+
+These are the only recognized port string formats (parsed in `mt_util.c`):
+
+| Prefix | Backend |
+|--------|--------|
+| `0000:af:00.0` (PCI) | DPDK PMD |
+| `native_af_xdp:` | Native AF_XDP (preferred) |
+| `dpdk_af_xdp:` | DPDK AF_XDP (experimental) |
+| `dpdk_af_packet:` | DPDK AF_PACKET (experimental) |
+| `kernel:` | Kernel socket (experimental) |
+

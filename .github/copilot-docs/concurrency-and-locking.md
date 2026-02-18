@@ -2,6 +2,8 @@
 
 ## The Two-Tier Locking Architecture
 
+(Part of the broader "two-world" design pattern described in `architecture-and-design-philosophy.md`.)
+
 MTL has a strict two-tier locking design driven by a single constraint: **tasklets must never block**.
 
 | Tier | Lock Type | Where Used | Why |
@@ -58,7 +60,7 @@ rte_eth_tx_burst(queue, mbufs, count);
 spinlock_unlock(tsq_lock);
 ```
 
-This is a **hot contention point** by design — the tradeoff is fewer NIC queues (some NICs have limited queues) at the cost of serialized TX. When you see TSQ performance issues, the answer is usually "use dedicated queues instead."
+This is a **hot contention point** by design — the trade-off is fewer NIC queues (some NICs have limited queues) at the cost of serialized TX. When you see TSQ performance issues, the answer is usually "use dedicated queues instead."
 
 Shared RX queue (`RSQ`) is less contentious: one thread polls the shared queue and dispatches to per-session `rte_ring` buffers. Each session then drains its ring without contention.
 
