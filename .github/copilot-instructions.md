@@ -23,7 +23,7 @@ All deep-dive files live in: `.github/copilot-docs/`
 |-----------|-------------|
 | Threads, schedulers, tasklets, lcore, sleep | `threading-and-scheduler.md` |
 | malloc, free, mempools, frames, DMA, NUMA, ASAN | `memory-management.md` |
-| Locks, mutexes, spinlocks, atomics, races | `concurrency-and-locking.md` |
+| Locks, mutexes, spinlocks, atomics, mt_atomic32_t, races | `concurrency-and-locking.md` |
 | Pacing, PTP, TSC, rate limiter, latency | `pacing-timing-performance.md` |
 | Session create/destroy, pipelines, TX/RX data flow, RTCP, ST2110-41 | `session-lifecycle-dataflow.md` |
 | DPDK APIs, mbufs, queues, flow rules, device init, header-split | `dpdk-usage-patterns.md` |

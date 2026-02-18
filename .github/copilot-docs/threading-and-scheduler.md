@@ -62,6 +62,16 @@ When `MTL_FLAG_TX_VIDEO_MIGRATE` is set, the admin thread monitors scheduler CPU
 
 **Why "last session"**: It's the easiest to move because no reordering is needed in the manager array.
 
+## Scheduler Start/Stop: Atomic Flag Protocol
+
+Scheduler lifecycle uses `mt_atomic32_t` flags with explicit memory ordering (see `concurrency-and-locking.md` for the full API):
+
+- **Start**: `request_stop=0`, `stopped=0` (RELAXED, no observer yet), then after thread launch: `started=1` (RELEASE — publishes to any thread checking `mt_sch_started()`)
+- **Stop**: `request_stop=1` (RELEASE) → tasklet loop polls `mt_atomic32_read_acquire(&sch->request_stop)` → exits → sets `stopped=1` (RELEASE) → stopper polls `mt_atomic32_read_acquire(&sch->stopped)` → joins thread → `started=0` (RELEASE)
+- **Refcount**: `sch->ref_cnt` uses `mt_atomic32_dec_and_test` (ACQ_REL) — when it hits zero, `sch_free()` stops the scheduler
+
+Same acquire/release pattern is used for all background thread stop flags: `admin_stop`, `stat_stop`, `stop_thread` (CNI, SRSS, socket threads), `stop_tap`.
+
 ## Thread Inventory (for reference)
 
 | Thread | Purpose | Key Detail |

@@ -155,3 +155,7 @@ These are the only recognized port string formats (parsed in `mt_util.c`):
 | `dpdk_af_packet:` | DPDK AF_PACKET (experimental) |
 | `kernel:` | Kernel socket (experimental) |
 
+## Deprecated DPDK APIs Replaced by MTL Wrappers
+
+- **`rte_atomic32_t`** → Replaced by `mt_atomic32_t` (C11 `__atomic` built-ins) in `lib/src/mt_atomic.h`. DPDK deprecated `rte_atomic32` since 21.11. MTL no longer uses it anywhere. See `concurrency-and-locking.md` for the memory ordering policy and full API reference.
+
