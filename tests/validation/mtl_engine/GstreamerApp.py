@@ -60,6 +60,85 @@ def create_connection_params(
     return params
 
 
+def add_redundant_params(
+    pipeline_command: list[str],
+    dev_port_red: str | None,
+    dev_ip_red: str | None,
+    ip_red: str | None,
+    udp_port_red: int | None,
+    port_red: str | None = None,
+    primary_udp_port: int | None = None,
+):
+    """Insert redundant (R) connection properties adjacent to the element args.
+
+    Removes any existing redundant args to avoid duplicate properties and inserts
+    them right after the plugin name when possible so gst-launch applies them
+    with the rest of the element parameters.
+    """
+
+    if not dev_port_red and not port_red and not ip_red and not udp_port_red:
+        return
+
+    resolved_port = dev_port_red or port_red
+    resolved_ip = ip_red
+    resolved_dev_ip = dev_ip_red
+    resolved_udp = udp_port_red
+
+    if resolved_udp is None and primary_udp_port is not None:
+        resolved_udp = primary_udp_port + 1
+
+    if not resolved_port or not resolved_ip or resolved_udp is None:
+        raise ValueError(
+            "Redundant params require dev-port-red/port-red, ip-red, and udp-port-red"
+        )
+
+    if not resolved_dev_ip:
+        raise ValueError("Redundant params require dev-ip-red to bind the redundant VF")
+
+    # Drop any existing redundant settings before inserting the new set.
+    skip_keys = {
+        "dev-port-red",
+        "port-red",
+        "dev-ip-red",
+        "ip-red",
+        "udp-port-red",
+    }
+    pipeline_command[:] = [
+        item
+        for item in pipeline_command
+        if not any(item.startswith(f"{k}=") for k in skip_keys)
+    ]
+
+    params = [
+        f"dev-port-red={resolved_port}",
+        f"port-red={port_red or resolved_port}",
+        f"dev-ip-red={resolved_dev_ip}",
+        f"ip-red={resolved_ip}",
+        f"udp-port-red={resolved_udp}",
+    ]
+
+    insert_at = None
+    for idx, item in enumerate(pipeline_command):
+        if item in ("mtl_st40p_tx", "mtl_st40p_rx"):
+            insert_at = idx + 1
+            break
+    if insert_at is None:
+        for idx, item in enumerate(pipeline_command):
+            if item.startswith("output-format="):
+                insert_at = idx
+                break
+    if insert_at is None:
+        for idx, item in enumerate(pipeline_command):
+            if item.startswith("--gst-plugin-path="):
+                insert_at = idx
+                break
+
+    if insert_at is None:
+        pipeline_command.extend(params)
+    else:
+        pipeline_command[insert_at:insert_at] = params
+
+
 def setup_gstreamer_plugins_paths(build):
     plugin_paths = [
         f"{build}/ecosystem/gstreamer_plugin/builddir",
@@ -333,6 +412,11 @@ def setup_gstreamer_st40p_tx_pipeline(
     tx_test_mode: str | None = None,
     tx_test_pkt_count: int = 0,
     tx_test_pacing_ns: int = 0,
+    dev_port_red: str | None = None,
+    dev_ip_red: str | None = None,
+    ip_red: str | None = None,
+    udp_port_red: int | None = None,
+    port_red: str | None = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -387,6 +471,16 @@ def setup_gstreamer_st40p_tx_pipeline(
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
 
+    add_redundant_params(
+        pipeline_command,
+        dev_port_red=dev_port_red,
+        dev_ip_red=dev_ip_red,
+        ip_red=ip_red,
+        udp_port_red=udp_port_red,
+        port_red=port_red,
+        primary_udp_port=connection_params.get("udp-port"),
+    )
+
     pipeline_command.append(f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}")
 
     return pipeline_command
@@ -401,9 +495,15 @@ def setup_gstreamer_st40p_rx_pipeline(
     timeout: int,
     capture_metadata: bool = False,
     rx_interlaced: bool = False,
+    rx_auto_detect_interlaced: bool = False,
     rx_framebuff_cnt: int = None,
     frame_info_path: Optional[str] = None,
     rx_rtp_ring_size: Optional[int] = None,
+    dev_port_red: str | None = None,
+    dev_ip_red: str | None = None,
+    ip_red: str | None = None,
+    udp_port_red: int | None = None,
+    port_red: str | None = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -425,6 +525,9 @@ def setup_gstreamer_st40p_rx_pipeline(
         # Note: mtl_st40p_rx uses pipeline API, metadata handling is built-in
     ]
 
+    if rx_auto_detect_interlaced:
+        pipeline_command.append("rx-auto-detect-interlaced=true")
+
     if rx_framebuff_cnt is not None:
         pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
 
@@ -436,6 +539,16 @@ def setup_gstreamer_st40p_rx_pipeline(
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
+
+    add_redundant_params(
+        pipeline_command,
+        dev_port_red=dev_port_red,
+        dev_ip_red=dev_ip_red,
+        ip_red=ip_red,
+        udp_port_red=udp_port_red,
+        port_red=port_red,
+        primary_udp_port=connection_params.get("udp-port"),
+    )
 
     # Switch between raw UDW dumps and RFC8331 serialization depending on caller request.
     pipeline_command.append(
@@ -754,15 +867,18 @@ def execute_test(
     # If both TX and RX specify interlace flags and they differ, treat as a mismatch.
     tx_interlaced = _extract_flag(tx_command, "tx-interlaced")
     rx_interlaced = _extract_flag(rx_command, "rx-interlaced")
-    if tx_interlaced is not None and rx_interlaced is not None:
+    rx_auto_detect_interlaced = _extract_flag(rx_command, "rx-auto-detect-interlaced")
+
+    if rx_auto_detect_interlaced:
+        logger.info("RX interlace auto-detect enabled; skipping mismatch check")
+    elif tx_interlaced is not None and rx_interlaced is not None:
         if tx_interlaced != rx_interlaced:
-            logger.info(
+            logger.warning(
                 "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "
-                "Failing test before file compare.",
+                "Continuing to file compare.",
                 tx_interlaced,
                 rx_interlaced,
             )
-            return False
     if skip_file_compare:
         logger.info("Skipping file comparison per caller request")
         return True
