@@ -4,3 +4,4 @@ self-hosted-runner:
     - e810
     - e810-dell
     - e830
+    - gnrd
