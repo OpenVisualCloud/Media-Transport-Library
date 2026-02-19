@@ -90,7 +90,7 @@ class InterfaceSetup:
         self.mtl_path = mtl_path
         self.host_mtl_paths = host_mtl_paths or {}
         self.nicctl_objs = {
-            host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host) 
+            host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host)
             for host in hosts.values()
         }
         self.customs = []

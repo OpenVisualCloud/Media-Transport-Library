@@ -88,6 +88,7 @@ UNIVERSAL_PARAMS = {
     "promiscuous": False,  # Enable RX promiscuous mode
     "cni_thread": False,  # Use dedicated thread for CNI messages
     "sch_session_quota": None,  # Max sessions count per lcore
+    "disable_migrate": False,  # Disable lcore migration for busy sessions
     "p_tx_dst_mac": None,  # Destination MAC for primary port
     "r_tx_dst_mac": None,  # Destination MAC for redundant port
     "nb_tx_desc": None,  # Number of TX descriptors per queue
@@ -107,6 +108,7 @@ UNIVERSAL_PARAMS = {
     "rxtx_simd_512": False,  # Enable DPDK SIMD 512 path
     "rss_mode": None,  # RSS mode (l3_l4, l3, none)
     "tx_no_chain": False,  # Use memcopy instead of mbuf chain
+    "tx_copy_once": False,  # Copy TX frames once, skip memcpy on subsequent passes
     "multi_src_port": False,  # Use multiple source ports for ST20 TX
     "audio_fifo_size": None,  # Audio FIFO size
     "dhcp": False,  # Enable DHCP for all ports

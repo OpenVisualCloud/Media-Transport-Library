@@ -645,7 +645,10 @@ class RxTxApp(Application):
                 config["interfaces"][0]["ip"] = dest_ip or ""
                 config["interfaces"][1]["ip"] = dest_ip_r or ""
                 if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
-                    config["rx_sessions"][0]["ip"] = [source_ip or "", source_ip_r or ""]
+                    config["rx_sessions"][0]["ip"] = [
+                        source_ip or "",
+                        source_ip_r or "",
+                    ]
                     config["rx_sessions"][0]["interface"] = [0, 1]
                 config["tx_sessions"] = []
             else:
@@ -656,7 +659,10 @@ class RxTxApp(Application):
                     config["tx_sessions"][0]["dip"] = [dest_ip or "", dest_ip_r or ""]
                     config["tx_sessions"][0]["interface"] = [0, 1]
                 if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
-                    config["rx_sessions"][0]["ip"] = [source_ip or "", source_ip_r or ""]
+                    config["rx_sessions"][0]["ip"] = [
+                        source_ip or "",
+                        source_ip_r or "",
+                    ]
                     config["rx_sessions"][0]["interface"] = [0, 1]
 
             logger.info(
