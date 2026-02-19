@@ -1,19 +1,19 @@
 """Collect platform SW/HW configuration from a remote host via SSH.
 
-This module gathers system information from the measured host during test
-execution and saves it as ``platform_config.json`` in the log directory.
-The performance report generator then picks it up automatically.
+This module gathers system information from test hosts and returns it as
+a dict with ``sw_configuration`` and ``hw_configuration`` keys.  The
+conftest ``collect_platform_config`` fixture saves these per-host JSON
+files into the log directory, and the report generator picks them up.
 
-Usage from conftest.py::
+Usage::
 
-    from common.collect_platform_info import collect_and_save_platform_info
-    collect_and_save_platform_info(host, log_path)
+    from common.collect_platform_info import collect_platform_info
+    config = collect_platform_info(host)
 """
 
-import json
 import logging
-import os
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -42,26 +42,20 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     # Kernel
     sw["kernel"] = _remote_cmd(host, "uname -r")
 
-    # MTL version
-    mtl_ver = _remote_cmd(host, "cat /proc/mtl/version 2>/dev/null || echo ''")
+    # MTL version — prefer git describe from build path
+    build_path = (
+        getattr(host, "build_path", "") or "/root/awilczyn/Media-Transport-Library"
+    )
+    mtl_ver = _remote_cmd(host, f"cd {build_path} && git describe --tags 2>/dev/null")
     if not mtl_ver:
-        mtl_ver = _remote_cmd(
-            host,
-            "grep '#define MTL_VERSION' /usr/local/include/mtl/mtl_api.h 2>/dev/null "
-            "| head -1 | awk '{print $3}' | tr -d '\"'"
-        )
+        mtl_ver = _remote_cmd(host, "cat /proc/mtl/version 2>/dev/null")
     if not mtl_ver:
-        # Try the build path
-        mtl_ver = _remote_cmd(
-            host,
-            "cat /root/awilczyn/Media-Transport-Library/version.txt 2>/dev/null || echo ''"
-        )
+        mtl_ver = _remote_cmd(host, f"cat {build_path}/version.txt 2>/dev/null")
     sw["mtl_version"] = mtl_ver or "N/A"
 
     # DPDK version
     dpdk_ver = _remote_cmd(
-        host,
-        "pkg-config --modversion libdpdk 2>/dev/null || echo ''"
+        host, "pkg-config --modversion libdpdk 2>/dev/null || echo ''"
     )
     if dpdk_ver:
         sw["dpdk_driver"] = f"{dpdk_ver} (patched with MTL patches)"
@@ -69,20 +63,15 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
         sw["dpdk_driver"] = "N/A"
 
     # ICE driver version
-    ice_ver = _remote_cmd(
-        host,
-        "cat /sys/module/ice/version 2>/dev/null || echo ''"
-    )
+    ice_ver = _remote_cmd(host, "cat /sys/module/ice/version 2>/dev/null || echo ''")
     if ice_ver:
         # Check if it's a Kahawai build
         kahawai_ver = _remote_cmd(
-            host,
-            "modinfo ice 2>/dev/null | grep -i kahawai | head -1"
+            host, "modinfo ice 2>/dev/null | grep -i kahawai | head -1"
         )
         if kahawai_ver:
             # Extract the Kahawai version tag
-            import re
-            m = re.search(r'(Kahawai[_\s][\d.]+)', kahawai_ver, re.IGNORECASE)
+            m = re.search(r"(Kahawai[_\s][\d.]+)", kahawai_ver, re.IGNORECASE)
             if m:
                 sw["ice_version"] = f"{m.group(1)} (patched with MTL patches)"
             else:
@@ -95,12 +84,12 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     # DDP version
     ddp_ver = _remote_cmd(
         host,
-        "cat /sys/kernel/debug/ice/*/ddp_pkg_version 2>/dev/null | head -1 || echo ''"
+        "cat /sys/kernel/debug/ice/*/ddp_pkg_version 2>/dev/null | head -1 || echo ''",
     )
     if not ddp_ver:
         ddp_ver = _remote_cmd(
             host,
-            "dmesg | grep -i 'DDP package' | tail -1 | grep -oP 'version [\\d.]+' | awk '{print $2}'"
+            "dmesg | grep -i 'DDP package' | tail -1 | grep -oP 'version [\\d.]+' | awk '{print $2}'",
         )
     sw["ddp_version"] = ddp_ver or "N/A"
 
@@ -122,8 +111,14 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     sw["video_files"] = "Stored in RAMdisk."
 
     # Hugepages
-    hp_1g = _remote_cmd(host, "cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0")
-    hp_2m = _remote_cmd(host, "cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0")
+    hp_1g = _remote_cmd(
+        host,
+        "cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0",
+    )
+    hp_2m = _remote_cmd(
+        host,
+        "cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0",
+    )
     hp_parts = []
     if hp_1g and hp_1g != "0":
         hp_parts.append(f"1G x {hp_1g}")
@@ -134,26 +129,40 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     # CPU governor
     governor = _remote_cmd(
         host,
-        "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'N/A'"
+        "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'N/A'",
     )
-    sw["cpu_cores"] = f'Set in "{governor}" mode.' if governor and governor != "N/A" else "N/A"
+    sw["cpu_cores"] = (
+        f'Set in "{governor}" mode.' if governor and governor != "N/A" else "N/A"
+    )
 
     return sw
 
 
-def _collect_hw_configuration(host) -> Dict[str, str]:
-    """Collect hardware configuration from a remote host."""
+def _collect_hw_configuration(host, topo_pci_addrs: list = None) -> Dict[str, str]:
+    """Collect hardware configuration from a remote host.
+
+    Args:
+        host: remote host with connection.execute_command().
+        topo_pci_addrs: PCI BDF addresses from the topology config
+            (e.g. ``["0000:15:00.1", "0000:15:00.0"]``).  When given,
+            the **first** address is used to identify the test NIC
+            instead of guessing via lspci grep.
+    """
     hw = {}
 
     # Server model
-    server = _remote_cmd(host, "sudo dmidecode -t system 2>/dev/null | grep 'Product Name' | head -1")
+    server = _remote_cmd(
+        host, "sudo dmidecode -t system 2>/dev/null | grep 'Product Name' | head -1"
+    )
     if ":" in server:
         hw["server"] = server.split(":", 1)[1].strip()
     else:
         hw["server"] = server or "N/A"
 
     # CPU info
-    cpu_model = _remote_cmd(host, "grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2")
+    cpu_model = _remote_cmd(
+        host, "grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2"
+    )
     cpu_model = cpu_model.strip()
     nproc = _remote_cmd(host, "nproc")
     sockets = _remote_cmd(host, "lscpu | grep 'Socket(s):' | awk '{print $2}'")
@@ -162,7 +171,9 @@ def _collect_hw_configuration(host) -> Dict[str, str]:
     if cpu_model and nproc:
         detail = f"{nproc} CPUs"
         if sockets and cores and threads:
-            detail = f"{nproc} CPUs ({sockets} sockets x {cores} cores x {threads} threads)"
+            detail = (
+                f"{nproc} CPUs ({sockets} sockets x {cores} cores x {threads} threads)"
+            )
         hw["cpu"] = f"{cpu_model}, {detail}"
     else:
         hw["cpu"] = "N/A"
@@ -170,20 +181,20 @@ def _collect_hw_configuration(host) -> Dict[str, str]:
     # Memory
     mem_type = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Type:' | grep -v 'Error\\|Detail\\|Unknown' | head -1 | awk '{print $2}'"
+        "sudo dmidecode -t memory 2>/dev/null | grep 'Type:' | grep -v 'Error\\|Detail\\|Unknown' | head -1 | awk '{print $2}'",
     )
     mem_speed = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Speed:' | grep -v 'Unknown\\|Configured' | head -1 | awk '{print $2, $3}'"
+        "sudo dmidecode -t memory 2>/dev/null | grep 'Speed:' | grep -v 'Unknown\\|Configured' | head -1 | awk '{print $2, $3}'",
     )
     mem_total = _remote_cmd(host, "free -h | awk '/^Mem:/ {print $2}'")
     mem_dimm_size = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module\\|Maximum' | head -1 | awk '{print $2, $3}'"
+        "sudo dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module\\|Maximum' | head -1 | awk '{print $2, $3}'",
     )
     mem_dimm_count = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module\\|Maximum' | wc -l"
+        "sudo dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module\\|Maximum' | wc -l",
     )
     parts = []
     if mem_type:
@@ -191,7 +202,6 @@ def _collect_hw_configuration(host) -> Dict[str, str]:
     if mem_speed:
         parts.append(mem_speed)
     if mem_total:
-        # Round to nearest GB
         total_str = mem_total.rstrip("GiMBT")
         try:
             total_gb = round(float(total_str))
@@ -202,52 +212,117 @@ def _collect_hw_configuration(host) -> Dict[str, str]:
         parts.append(f"({mem_dimm_count}x{mem_dimm_size})")
     hw["memory"] = ", ".join(parts) if parts else "N/A"
 
-    # NIC info (E810 physical function cards)
-    nic_info = _remote_cmd(
-        host,
-        "lspci -d 8086: 2>/dev/null | grep -i 'ethernet' | grep -v 'Virtual' | head -1"
-    )
-    if nic_info:
-        # Get subsystem name for more detail
-        pci_addr = nic_info.split()[0]
-        subsys = _remote_cmd(host, f"lspci -s {pci_addr} -v 2>/dev/null | grep 'Subsystem:' | cut -d: -f2")
+    # ── Identify the test NIC via topology PCI address ──
+    # Derive PF BDF from the first topology PCI address (strip domain,
+    # keep bus:slot, set function to .0 to get the PF)
+    pf_bdf = ""
+    if topo_pci_addrs:
+        raw = topo_pci_addrs[0]  # e.g. "0000:15:00.1"
+        short = raw.split(":", 1)[-1] if raw.count(":") > 1 else raw  # "15:00.1"
+        # PF is always function .0 on the same slot
+        pf_bdf = re.sub(r"\.[0-9]+$", ".0", short)  # "15:00.0"
+
+    # Find the netdev interface for the test NIC PF
+    nic_iface = ""
+    if pf_bdf:
+        nic_iface = _remote_cmd(
+            host, f"ls /sys/bus/pci/devices/0000:{pf_bdf}/net/ 2>/dev/null | head -1"
+        )
+    # Fallback: first ice-driver interface
+    if not nic_iface:
+        nic_iface = _remote_cmd(
+            host,
+            "for iface in $(ls /sys/class/net/); do "
+            "  drv=$(basename $(readlink /sys/class/net/$iface/device/driver "
+            "    2>/dev/null) 2>/dev/null); "
+            '  if [ "$drv" = "ice" ]; then echo $iface; break; fi; '
+            "done",
+        )
+
+    # NIC firmware version
+    fw_ver = ""
+    if nic_iface:
+        fw_ver = _remote_cmd(
+            host,
+            f"ethtool -i {nic_iface} 2>/dev/null | grep firmware-version "
+            f"| cut -d' ' -f2-",
+        )
+    hw["firmware_version"] = fw_ver or "N/A"
+
+    # NIC NUMA node
+    nic_numa = ""
+    if nic_iface:
+        nic_numa = _remote_cmd(
+            host, f"cat /sys/class/net/{nic_iface}/device/numa_node 2>/dev/null"
+        )
+    hw["nic_numa"] = nic_numa if nic_numa and nic_numa != "-1" else "N/A"
+
+    # NIC description — use the PF from topology, fall back to lspci grep
+    pci_addr = pf_bdf  # e.g. "15:00.0"
+    if not pci_addr:
+        nic_line = _remote_cmd(
+            host, "lspci 2>/dev/null | grep -i 'Ethernet.*E810' | head -1"
+        ) or _remote_cmd(
+            host,
+            "lspci -d 8086: 2>/dev/null | grep -i 'ethernet' "
+            "| grep -v 'Virtual' | head -1",
+        )
+        pci_addr = nic_line.split()[0] if nic_line else ""
+
+    if pci_addr:
+        nic_info = _remote_cmd(host, f"lspci -s {pci_addr} 2>/dev/null")
+        subsys = _remote_cmd(
+            host,
+            f"lspci -s {pci_addr} -v 2>/dev/null " f"| grep 'Subsystem:' | cut -d: -f2",
+        )
         subsys = subsys.strip() if subsys else ""
 
-        # Count physical ports
-        pf_count = _remote_cmd(
-            host,
-            "lspci -d 8086: 2>/dev/null | grep -i 'ethernet' | grep -v 'Virtual' | wc -l"
-        )
+        # Count PF ports that share the same device ID
+        dev_id = _remote_cmd(
+            host, f"lspci -s {pci_addr} -n 2>/dev/null | awk '{{print $3}}'"
+        )  # e.g. "8086:12d2"
+        pf_count = ""
+        if dev_id:
+            pf_count = _remote_cmd(host, f"lspci -d {dev_id} 2>/dev/null | wc -l")
 
-        # Get link speed
-        # Find a netdev for this PCI address
-        speed_info = _remote_cmd(
-            host,
-            f"ls /sys/bus/pci/devices/0000:{pci_addr}/net/ 2>/dev/null | head -1"
-        )
+        # Link speed
         link_speed = ""
-        if speed_info:
+        if nic_iface:
             link_speed = _remote_cmd(
-                host,
-                f"cat /sys/class/net/{speed_info}/speed 2>/dev/null || echo ''"
+                host, f"cat /sys/class/net/{nic_iface}/speed 2>/dev/null || echo ''"
             )
 
-        # Get PCIe info
+        # PCIe gen/width
         pcie = _remote_cmd(
-            host,
-            f"lspci -s {pci_addr} -vvv 2>/dev/null | grep 'LnkSta:' | head -1"
+            host, f"lspci -s {pci_addr} -vvv 2>/dev/null | grep 'LnkSta:' | head -1"
         )
         pcie_gen = ""
         if pcie:
-            import re
-            m = re.search(r'Speed (\S+),.*Width (x\d+)', pcie)
+            m = re.search(r"Speed (\S+),.*Width (x\d+)", pcie)
             if m:
-                speed_to_gen = {"2.5GT/s": "Gen1", "5GT/s": "Gen2", "8GT/s": "Gen3", "16GT/s": "Gen4", "32GT/s": "Gen5"}
+                speed_to_gen = {
+                    "2.5GT/s": "Gen1",
+                    "5GT/s": "Gen2",
+                    "8GT/s": "Gen3",
+                    "16GT/s": "Gen4",
+                    "32GT/s": "Gen5",
+                }
                 gen = speed_to_gen.get(m.group(1), m.group(1))
                 pcie_gen = f"PCIe {gen} {m.group(2)}"
 
-        nic_name = subsys if subsys else nic_info.split(":", 2)[-1].strip() if ":" in nic_info else nic_info
-        nic_parts = [f"Intel(R) {nic_name}" if not nic_name.startswith("Intel") else nic_name]
+        # Build NIC description
+        if subsys and "Device" not in subsys:
+            nic_name = subsys
+        elif nic_info:
+            # Use the full lspci description (e.g. "Intel Corporation Device 12d2")
+            nic_name = (
+                nic_info.split(":", 2)[-1].strip() if ":" in nic_info else nic_info
+            )
+        else:
+            nic_name = "Unknown"
+        nic_parts = [
+            f"Intel(R) {nic_name}" if not nic_name.startswith("Intel") else nic_name
+        ]
         if pf_count:
             nic_parts.append(f"{pf_count} ports")
         if link_speed and link_speed.isdigit():
@@ -274,35 +349,19 @@ def collect_platform_info(host) -> Dict[str, Any]:
     """
     logger.info(f"Collecting platform info from host: {host.name}")
 
+    # Extract topology PCI addresses so we identify the correct test NIC
+    topo_pci: list[str] = []
+    try:
+        for nic in host.network_interfaces:
+            addr = getattr(nic.pci_address, "lspci", None) or str(nic.pci_address)
+            topo_pci.append(addr)
+    except (AttributeError, TypeError):
+        pass  # no topology PCI info available
+
     config = {
         "sw_configuration": _collect_sw_configuration(host),
-        "hw_configuration": _collect_hw_configuration(host),
+        "hw_configuration": _collect_hw_configuration(host, topo_pci),
     }
 
     logger.info(f"Platform info collected from {host.name}")
     return config
-
-
-def collect_and_save_platform_info(host, save_dir: str) -> Optional[str]:
-    """Collect platform info from a host and save as platform_config.json.
-
-    Args:
-        host: Remote host object with connection.execute_command().
-        save_dir: Directory to save platform_config.json into.
-
-    Returns:
-        Path to the saved file, or None on failure.
-    """
-    try:
-        config = collect_platform_info(host)
-
-        os.makedirs(save_dir, exist_ok=True)
-        output_path = os.path.join(save_dir, "platform_config.json")
-        with open(output_path, "w") as f:
-            json.dump(config, f, indent=4)
-
-        logger.info(f"Platform config saved to: {output_path}")
-        return output_path
-    except Exception as e:
-        logger.warning(f"Failed to collect/save platform info from {host.name}: {e}")
-        return None

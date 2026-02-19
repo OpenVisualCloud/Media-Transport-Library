@@ -176,6 +176,14 @@ class Application(ABC):
                 f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
             )
 
+        # Call framework-specific preparation hook
+        if not is_dual:
+            self.prepare_execution(build=build, host=host)
+        else:
+            self.prepare_execution(build=build, host=tx_host)
+            if rx_app:
+                rx_app.prepare_execution(build=build, host=rx_host)
+
         # Single-host execution
         if not is_dual:
             cmd = self.add_timeout(self.command, effective_test_time)
