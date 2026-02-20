@@ -51,8 +51,7 @@ def gen_topology_config(
     username: str,
     password: str,
     key_path: str,
-    mtl_path: str = "/opt/intel/mcm/_build/mtl/",
-    media_path: str = "/mnt/ramdisk/media",
+    extra_info: dict = None,
 ) -> str:
     # Support comma-separated PCI devices for multiple interfaces
     pci_devices = [dev.strip() for dev in pci_device.split(",")]
@@ -84,10 +83,6 @@ def gen_topology_config(
                         },
                     }
                 ],
-                "extra_info": {
-                    "mtl_path": mtl_path,
-                    "media_path": media_path,
-                },
             }
         ],
     }
@@ -95,6 +90,8 @@ def gen_topology_config(
         topology_config["hosts"][0]["connections"][0]["connection_options"][
             "key_path"
         ] = key_path
+    if extra_info:
+        topology_config["hosts"][0]["extra_info"] = extra_info
     return yaml.safe_dump(topology_config, explicit_start=True, sort_keys=False)
 
 
@@ -112,9 +109,8 @@ def main() -> None:
     parser.add_argument(
         "--mtl_path",
         type=str,
-        required=False,
-        default="/opt/intel/mcm/_build/mtl/",
-        help="specify path to MTL directory (used in topology extra_info)",
+        required=True,
+        help="specify path to MTL directory",
     )
     parser.add_argument(
         "--pci_device",
@@ -165,6 +161,18 @@ def main() -> None:
         default="None",
         help="specify path to SSH private key for the test host",
     )
+    parser.add_argument(
+        "--media_path",
+        type=str,
+        default="/mnt/ramdisk/media",
+        help="media path for topology extra_info (default: /mnt/ramdisk/media)",
+    )
+    parser.add_argument(
+        "--dsa_device",
+        type=str,
+        default=None,
+        help="DSA device ID for topology extra_info (e.g. 8086:0b25)",
+    )
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
@@ -184,6 +192,13 @@ def main() -> None:
     with open("test_config.yaml", "w") as file:
         file.write(test_config_yaml)
     with open("topology_config.yaml", "w") as file:
+        extra_info = {
+            "mtl_path": args.mtl_path,
+            "media_path": args.media_path,
+        }
+        if args.dsa_device:
+            extra_info["dsa_device"] = args.dsa_device
+
         file.write(
             gen_topology_config(
                 pci_device=args.pci_device,
@@ -191,7 +206,7 @@ def main() -> None:
                 username=args.username,
                 password=args.password,
                 key_path=args.key_path,
-                mtl_path=args.mtl_path or args.build,
+                extra_info=extra_info,
             )
         )
 

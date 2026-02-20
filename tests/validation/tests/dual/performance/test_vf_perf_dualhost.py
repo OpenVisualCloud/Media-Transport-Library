@@ -10,16 +10,16 @@ import traceback
 from typing import List, Optional, Tuple
 
 import pytest
+from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
 from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine import ip_pools
+from mtl_engine.const import RXTXAPP_PATH
 from mtl_engine.dsa import get_host_dsa_config, setup_host_dsa
-from mtl_engine.execute import run
-from mtl_engine.host_utils import (
-    ensure_vfio_bound,
+from mtl_engine.execute import (
     kill_all_rxtxapp,
     read_remote_log,
-    reset_vfio_bindings,
+    run,
     stop_remote_process,
 )
 from mtl_engine.media_files import yuv_files_422rfc10
@@ -106,7 +106,6 @@ def _ensure_media_on_host(
                 shell=True,
                 timeout=120,
             )
-            # Verify copy succeeded
             result = host.connection.execute_command(
                 f"test -f {media_file_path} && echo exists || echo missing",
                 shell=True,
@@ -243,7 +242,7 @@ def _run_iteration(
         }
 
     # ── Companion app ──
-    companion_app = RxTxApp(app_path=f"{build_companion}/tests/tools/RxTxApp/build")
+    companion_app = RxTxApp(RXTXAPP_PATH)
     companion_dir = "rx" if is_tx else "tx"
     companion_kwargs = {
         **base_kwargs,
@@ -338,7 +337,7 @@ def _run_iteration(
 
     try:
         # ── Build measured app ──
-        measured_app = RxTxApp(app_path=f"{build_measured}/tests/tools/RxTxApp/build")
+        measured_app = RxTxApp(RXTXAPP_PATH)
         measured_kwargs = {
             **base_kwargs,
             "direction": direction,
