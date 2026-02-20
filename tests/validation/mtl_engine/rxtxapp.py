@@ -769,6 +769,9 @@ class RxTxApp(Application):
                         "transport_format", UNIVERSAL_PARAMS["transport_format"]
                     ),
                     "display": self.params.get("display", UNIVERSAL_PARAMS["display"]),
+                    "enable_rtcp": self.params.get(
+                        "enable_rtcp", UNIVERSAL_PARAMS["enable_rtcp"]
+                    ),
                 }
 
                 # TX-specific vs RX-specific fields

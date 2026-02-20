@@ -660,11 +660,17 @@ def _generate_html(tests, per_host, hosts) -> str:
 
     p.append("</div>")
 
-    # ── Summary tables: SC then MC ──
-    for label, mode in [("Single Core (SC)", "SC"), ("Multi Core (MC)", "MC")]:
+    # ── Summary tables: SC then MC, normal then redundant ──
+    _sections = [
+        ("Single Core (SC)", "SC", False),
+        ("Single Core (SC) — Redundant (ST2022-7)", "SC", True),
+        ("Multi Core (MC)", "MC", False),
+        ("Multi Core (MC) — Redundant (ST2022-7)", "MC", True),
+    ]
+    for label, mode, redundant in _sections:
         group = sorted(
-            [t for t in tests if t.mode == mode],
-            key=lambda x: (x.resolution, x.fps, x.dsa, x.redundant),
+            [t for t in tests if t.mode == mode and t.redundant == redundant],
+            key=lambda x: (x.resolution, x.fps, x.tested_side, x.dsa),
         )
         if not group:
             continue
@@ -679,7 +685,7 @@ def _generate_html(tests, per_host, hosts) -> str:
         for t in group:
             cl = "p" if t.max_sessions > 0 else "f"
             meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
-            side = f"REDUNDANT {t.tested_side}" if t.redundant else t.tested_side
+            side = t.tested_side
             if t.dsa:
                 side += " +DSA"
             p.append(
@@ -694,7 +700,17 @@ def _generate_html(tests, per_host, hosts) -> str:
 
     # ── Detail cards ──
     p.append('<div class="sec"><h2>Sweep Details</h2>')
-    for t in sorted(tests, key=lambda x: (x.mode, x.resolution, x.fps, x.dsa)):
+    for t in sorted(
+        tests,
+        key=lambda x: (
+            x.mode,
+            x.redundant,
+            x.resolution,
+            x.fps,
+            x.tested_side,
+            x.dsa,
+        ),
+    ):
         meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
         comp = t.companion_dev_tx if t.tested_side == "RX" else t.companion_dev_rx
         other = "TX" if t.tested_side == "RX" else "RX"
@@ -770,14 +786,17 @@ h2{margin:24px 0 12px;color:#16213e;border-bottom:2px solid #0f3460;padding-bott
 h3{color:#0f3460;margin:0 0 8px;font-size:.95em}
 .sec{margin-bottom:28px}
 .section-title{font-weight:700;font-size:15px;margin:20px 0 6px;color:#333}
-table.kv{width:100%;min-width:320px;border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);border-radius:6px;overflow:hidden}
+table.kv{width:100%;min-width:320px;border-collapse:collapse;background:#fff;
+box-shadow:0 1px 3px rgba(0,0,0,.1);border-radius:6px;overflow:hidden}
 table.kv th{text-align:center;background:#16213e;color:#fff;padding:8px 12px;font-size:.85em}
 table.kv td{padding:6px 12px;border-bottom:1px solid #eee;font-size:.85em}
-table.kv td:first-child{font-weight:600;background:#f5f7fa;white-space:nowrap;width:40%}
+table.kv td:first-child{font-weight:600;background:#f5f7fa;
+white-space:nowrap;width:40%}
 table.kv td:last-child{white-space:normal;word-break:break-word;min-width:200px}
 .side-by-side{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start}
 .side-by-side>div{flex:1 1 45%;min-width:380px}
-table.mx{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+table.mx{width:100%;border-collapse:collapse;background:#fff;
+border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 table.mx th{background:#16213e;color:#fff;padding:9px 12px;text-align:left;font-size:.83em}
 table.mx td{padding:7px 12px;border-bottom:1px solid #eee;font-size:.83em}
 table.mx tr:hover{background:#f0f4ff}
@@ -793,7 +812,8 @@ details[open] summary{border-radius:8px 8px 0 0;border-bottom:1px solid #eee}
 .cm{background:#f0f4ff;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:.82em;word-break:break-all}
 .cm code{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.95em}
 .cfg{background:#f8faf8;border:1px solid #e0e8e0;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:.82em}
-.cfg pre{margin:6px 0 0;padding:10px;background:#1a1a2e;color:#e0e0e0;border-radius:4px;overflow-x:auto;cursor:text;user-select:all}
+.cfg pre{margin:6px 0 0;padding:10px;background:#1a1a2e;color:#e0e0e0;
+border-radius:4px;overflow-x:auto;cursor:text;user-select:all}
 .cfg code{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:.95em}
 table.st{width:100%;border-collapse:collapse;font-size:.83em}
 table.st th{background:#f0f4ff;padding:7px 12px;text-align:left}

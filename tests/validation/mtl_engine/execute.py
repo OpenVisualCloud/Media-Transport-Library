@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import logging
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -278,3 +279,34 @@ def log_info(msg: str):
 def log_result_note(note: str):
     set_result_note(note)
     logger.info(f"Test result note: {note}")
+
+
+def kill_all_rxtxapp(*hosts) -> None:
+    """Kill all RxTxApp processes on the given hosts."""
+    for host in hosts:
+        try:
+            host.connection.execute_command(
+                "pkill -9 -f '[R]xTxApp' || true", shell=True, timeout=15
+            )
+        except Exception:
+            pass
+
+
+def stop_remote_process(process, host=None) -> None:
+    """Stop a remote process via SIGKILL and clean up leftover RxTxApp."""
+    try:
+        process.kill(wait=None, with_signal=signal.SIGKILL)
+    except Exception:
+        pass
+    time.sleep(2)
+    if host is not None:
+        kill_all_rxtxapp(host)
+
+
+def read_remote_log(host, log_path: str) -> list:
+    """Read a log file from a remote host and return its lines."""
+    try:
+        result = host.connection.execute_command(f"cat {log_path}", shell=True)
+        return result.stdout.splitlines() if result.stdout else []
+    except Exception:
+        return []

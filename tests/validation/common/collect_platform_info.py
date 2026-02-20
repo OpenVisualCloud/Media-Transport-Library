@@ -181,16 +181,22 @@ def _collect_hw_configuration(host, topo_pci_addrs: list = None) -> Dict[str, st
     # Memory
     mem_type = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Type:' | grep -v 'Error\\|Detail\\|Unknown' | head -1 | awk '{print $2}'",
+        "sudo dmidecode -t memory 2>/dev/null"
+        " | grep 'Type:' | grep -v 'Error\\|Detail\\|Unknown'"
+        " | head -1 | awk '{print $2}'",
     )
     mem_speed = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Speed:' | grep -v 'Unknown\\|Configured' | head -1 | awk '{print $2, $3}'",
+        "sudo dmidecode -t memory 2>/dev/null"
+        " | grep 'Speed:' | grep -v 'Unknown\\|Configured'"
+        " | head -1 | awk '{print $2, $3}'",
     )
     mem_total = _remote_cmd(host, "free -h | awk '/^Mem:/ {print $2}'")
     mem_dimm_size = _remote_cmd(
         host,
-        "sudo dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module\\|Maximum' | head -1 | awk '{print $2, $3}'",
+        "sudo dmidecode -t memory 2>/dev/null"
+        " | grep 'Size:' | grep -v 'No Module\\|Maximum'"
+        " | head -1 | awk '{print $2, $3}'",
     )
     mem_dimm_count = _remote_cmd(
         host,

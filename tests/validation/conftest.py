@@ -439,9 +439,12 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         # Store VFs on the host object for later use
         host.vfs = vfs
 
-        # Redundant port (interface_index 1) - optional, for redundant mode
+        # Redundant port (interface_index 1) - optional, for redundant mode.
+        # Skip when capture is enabled: the 2nd PF is reserved for
+        # netsniff-ng packet capture and creating VFs on it breaks sniffing.
         host.vfs_r = []  # Initialize empty redundant VF list
-        if len(host.network_interfaces) > 1:
+        capture_enabled = test_config.get("capture_cfg", {}).get("enable", False)
+        if len(host.network_interfaces) > 1 and not capture_enabled:
             try:
                 if (
                     int(host.network_interfaces[1].virtualization.get_current_vfs())
@@ -886,4 +889,12 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
 
 @pytest.fixture(scope="session")
 def rxtxapp() -> RxTxApp:
-    return RxTxApp(os.path.dirname(RXTXAPP_PATH))
+    return RxTxApp(RXTXAPP_PATH)
+
+
+def pytest_collection_modifyitems(items):
+    """Add ``base_performance`` marker to 1080p / 59fps combinations."""
+    mark = pytest.mark.base_performance
+    for item in items:
+        if "1080p" in item.nodeid and "59fps" in item.nodeid:
+            item.add_marker(mark)
