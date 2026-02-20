@@ -46,7 +46,13 @@ def gen_test_config(
 
 
 def gen_topology_config(
-    pci_device: str, ip_address: str, username: str, password: str, key_path: str
+    pci_device: str,
+    ip_address: str,
+    username: str,
+    password: str,
+    key_path: str,
+    mtl_path: str = "/opt/intel/mcm/_build/mtl/",
+    media_path: str = "/mnt/ramdisk/media",
 ) -> str:
     # Support comma-separated PCI devices for multiple interfaces
     pci_devices = [dev.strip() for dev in pci_device.split(",")]
@@ -78,6 +84,10 @@ def gen_topology_config(
                         },
                     }
                 ],
+                "extra_info": {
+                    "mtl_path": mtl_path,
+                    "media_path": media_path,
+                },
             }
         ],
     }
@@ -102,8 +112,9 @@ def main() -> None:
     parser.add_argument(
         "--mtl_path",
         type=str,
-        required=True,
-        help="specify path to MTL directory",
+        required=False,
+        default="/opt/intel/mcm/_build/mtl/",
+        help="specify path to MTL directory (used in topology extra_info)",
     )
     parser.add_argument(
         "--pci_device",
@@ -180,6 +191,7 @@ def main() -> None:
                 username=args.username,
                 password=args.password,
                 key_path=args.key_path,
+                mtl_path=args.mtl_path or args.build,
             )
         )
 

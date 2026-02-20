@@ -99,10 +99,12 @@ class Application(ABC):
 
         # For applications with specific paths, combine with directory
         if self.app_path and not executable_name.startswith("/"):
+            # If app_path already ends with the executable name, use as-is
+            if self.app_path.endswith(f"/{executable_name}"):
+                return self.app_path
             if self.app_path.endswith("/"):
                 return f"{self.app_path}{executable_name}"
-            else:
-                return f"{self.app_path}/{executable_name}"
+            return f"{self.app_path}/{executable_name}"
         else:
             # For system executables or full paths
             return executable_name

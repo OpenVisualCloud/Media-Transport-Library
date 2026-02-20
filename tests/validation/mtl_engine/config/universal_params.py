@@ -11,6 +11,13 @@ UNIVERSAL_PARAMS = {
     "nic_port_list": None,  # List of network interfaces/ports
     "tx_nic_port": None,  # Override NIC port for TX direction
     "rx_nic_port": None,  # Override NIC port for RX direction
+    "rx_queues_cnt": None,  # Number of RX queues per interface (overrides auto-calculation)
+    "tx_queues_cnt": None,  # Number of TX queues per interface (overrides auto-calculation)
+    # Redundant mode parameters (ST2022-7 dual-port)
+    "redundant": False,  # Enable redundant (dual-port) mode
+    "nic_port_r": None,  # Redundant NIC port name (2nd E810 port VF)
+    "source_ip_r": None,  # Source IP for redundant port
+    "destination_ip_r": None,  # Destination IP for redundant port
     # Video parameters
     "width": 1920,  # Video width in pixels
     "height": 1080,  # Video height in pixels
@@ -81,6 +88,7 @@ UNIVERSAL_PARAMS = {
     "promiscuous": False,  # Enable RX promiscuous mode
     "cni_thread": False,  # Use dedicated thread for CNI messages
     "sch_session_quota": None,  # Max sessions count per lcore
+    "disable_migrate": False,  # Disable lcore migration for busy sessions
     "p_tx_dst_mac": None,  # Destination MAC for primary port
     "r_tx_dst_mac": None,  # Destination MAC for redundant port
     "nb_tx_desc": None,  # Number of TX descriptors per queue
@@ -100,6 +108,7 @@ UNIVERSAL_PARAMS = {
     "rxtx_simd_512": False,  # Enable DPDK SIMD 512 path
     "rss_mode": None,  # RSS mode (l3_l4, l3, none)
     "tx_no_chain": False,  # Use memcopy instead of mbuf chain
+    "tx_copy_once": False,  # Copy TX frames once, skip memcpy on subsequent passes
     "multi_src_port": False,  # Use multiple source ports for ST20 TX
     "audio_fifo_size": None,  # Audio FIFO size
     "dhcp": False,  # Enable DHCP for all ports
