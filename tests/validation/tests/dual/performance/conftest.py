@@ -1,6 +1,13 @@
 """Conftest for performance tests — dynamic marker injection."""
 
 import pytest
+from mtl_engine.rxtxapp import RxTxApp
+
+
+@pytest.fixture(scope="session")
+def rxtxapp_class():
+    """Provide the RxTxApp class for tests that need custom instantiation."""
+    return RxTxApp
 
 
 def pytest_collection_modifyitems(items):

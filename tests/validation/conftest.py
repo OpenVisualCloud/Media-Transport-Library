@@ -886,4 +886,4 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
 
 @pytest.fixture(scope="session")
 def rxtxapp() -> RxTxApp:
-    return RxTxApp(os.path.dirname(RXTXAPP_PATH))
+    return RxTxApp(RXTXAPP_PATH)

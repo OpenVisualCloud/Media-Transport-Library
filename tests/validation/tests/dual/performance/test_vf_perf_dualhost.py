@@ -11,15 +11,15 @@ from typing import List, Optional, Tuple
 
 import pytest
 from conftest import get_host_mtl_path, is_host_sut
+from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine import ip_pools
+from mtl_engine.const import RXTXAPP_PATH
 from mtl_engine.dsa import get_host_dsa_config, setup_host_dsa
-from mtl_engine.execute import run
-from mtl_engine.host_utils import (
-    ensure_vfio_bound,
+from mtl_engine.execute import (
     kill_all_rxtxapp,
     read_remote_log,
-    reset_vfio_bindings,
+    run,
     stop_remote_process,
 )
 from mtl_engine.media_files import yuv_files_422rfc10
@@ -36,7 +36,6 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_frames,
     monitor_tx_throughput,
 )
-from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +74,7 @@ def _ensure_media_on_host(
     try:
         result = host.connection.execute_command(
             f"test -f {media_file_path} && echo exists || echo missing",
-            shell=True,
-            timeout=10,
+            shell=True, timeout=10,
         )
         if "exists" in (result.stdout or ""):
             return  # File is already on the ramdisk
@@ -103,14 +101,11 @@ def _ensure_media_on_host(
         try:
             host.connection.execute_command(
                 f"sudo mkdir -p {dest_dir} && sudo cp {src} {media_file_path}",
-                shell=True,
-                timeout=120,
+                shell=True, timeout=120,
             )
-            # Verify copy succeeded
             result = host.connection.execute_command(
                 f"test -f {media_file_path} && echo exists || echo missing",
-                shell=True,
-                timeout=10,
+                shell=True, timeout=10,
             )
             if "exists" in (result.stdout or ""):
                 logger.info(
@@ -199,6 +194,7 @@ def _run_iteration(
     dsa_device: str | None,
     dsa_label: str,
     test_time: int,
+    rxtxapp_class=None,
 ) -> Tuple[bool, int, str, Optional[dict]]:
     """Run one iteration: start companion, run measured app, validate FPS.
 
@@ -243,7 +239,9 @@ def _run_iteration(
         }
 
     # ── Companion app ──
-    companion_app = RxTxApp(app_path=f"{build_companion}/tests/tools/RxTxApp/build")
+    companion_app = rxtxapp_class(
+        app_path=f"{build_companion}/{RXTXAPP_PATH}"
+    )
     companion_dir = "rx" if is_tx else "tx"
     companion_kwargs = {
         **base_kwargs,
@@ -338,7 +336,9 @@ def _run_iteration(
 
     try:
         # ── Build measured app ──
-        measured_app = RxTxApp(app_path=f"{build_measured}/tests/tools/RxTxApp/build")
+        measured_app = rxtxapp_class(
+            app_path=f"{build_measured}/{RXTXAPP_PATH}"
+        )
         measured_kwargs = {
             **base_kwargs,
             "direction": direction,
@@ -484,6 +484,7 @@ def _run_session_sweep(
     mtl_path: str,
     test_time: int,
     test_config: dict = None,
+    rxtxapp_class=None,
 ) -> None:
     """Auto-sweep session count using binary search to find max passing."""
     media_config, media_file_path = media_file
@@ -550,6 +551,7 @@ def _run_session_sweep(
         dsa_device=dsa_device,
         dsa_label=dsa_label,
         test_time=test_time,
+        rxtxapp_class=rxtxapp_class,
     )
 
     # ── Sweep state ──
@@ -812,6 +814,7 @@ def test_tx(
     use_dsa,
     test_config,
     prepare_ramdisk,
+    rxtxapp_class,
 ) -> None:
     """TX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -825,6 +828,7 @@ def test_tx(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        rxtxapp_class=rxtxapp_class,
     )
 
 
@@ -840,6 +844,7 @@ def test_rx(
     use_dsa,
     test_config,
     prepare_ramdisk,
+    rxtxapp_class,
 ) -> None:
     """RX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -853,6 +858,7 @@ def test_rx(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        rxtxapp_class=rxtxapp_class,
     )
 
 
@@ -868,6 +874,7 @@ def test_tx_redundant(
     use_dsa,
     test_config,
     prepare_ramdisk,
+    rxtxapp_class,
 ) -> None:
     """TX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -881,6 +888,7 @@ def test_tx_redundant(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        rxtxapp_class=rxtxapp_class,
     )
 
 
@@ -896,6 +904,7 @@ def test_rx_redundant(
     use_dsa,
     test_config,
     prepare_ramdisk,
+    rxtxapp_class,
 ) -> None:
     """RX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -909,4 +918,5 @@ def test_rx_redundant(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        rxtxapp_class=rxtxapp_class,
     )
