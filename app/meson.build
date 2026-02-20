@@ -441,6 +441,35 @@ executable('RxSt20CombinedRedundantSample', redundant_rx_st20_combined_sample_so
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
 )
 
+# New unified API samples
+executable('NewApiTxVideoLibOwned', new_api_tx_video_lib_owned_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
+executable('NewApiRxVideoLibOwned', new_api_rx_video_lib_owned_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
+executable('NewApiTxVideoUserOwned', new_api_tx_video_user_owned_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
+executable('NewApiRxVideoUserOwned', new_api_rx_video_user_owned_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
 # Dma sample app
 executable('DmaSample', dma_sample_sources,
   c_args : app_c_args,
