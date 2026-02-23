@@ -3810,6 +3810,11 @@ int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
 static int tv_ops_prune_down_ports(struct mtl_main_impl* impl, struct st20_tx_ops* ops) {
   int num_ports = ops->num_port;
 
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
   for (int i = 0; i < num_ports; i++) {
     enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
     if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
@@ -3916,6 +3921,11 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
 static int tv_st22_ops_prune_down_ports(struct mtl_main_impl* impl,
                                         struct st22_tx_ops* ops) {
   int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
 
   for (int i = 0; i < num_ports; i++) {
     enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
