@@ -1081,8 +1081,12 @@ static int tx_fastmetadata_sessions_mgr_uinit_hw(
   }
   if (mgr->queue[port]) {
     struct rte_mbuf* pad = mt_get_pad(mgr->parent, port);
+    /* free completed mbufs from NIC tx ring before flushing */
+    mt_txq_done_cleanup(mgr->queue[port]);
     /* flush all the pkts in the tx ring desc */
     if (pad) mt_txq_flush(mgr->queue[port], pad);
+    /* clean any remaining mbufs after flush */
+    mt_txq_done_cleanup(mgr->queue[port]);
     mt_txq_put(mgr->queue[port]);
     mgr->queue[port] = NULL;
   }
@@ -1181,15 +1185,25 @@ static int tx_fastmetadata_session_flush(struct st_tx_fastmetadata_sessions_mgr*
 
 int tx_fastmetadata_session_mempool_free(struct st_tx_fastmetadata_session_impl* s) {
   int ret;
+  int retry;
+  int max_retry = 5;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    ret = mt_mempool_free(s->mbuf_mempool_chain);
+    for (retry = 0; retry < max_retry; retry++) {
+      ret = mt_mempool_free(s->mbuf_mempool_chain);
+      if (ret >= 0) break;
+      mt_sleep_ms(1);
+    }
     if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i] && !s->tx_mono_pool) {
-      ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
+      for (retry = 0; retry < max_retry; retry++) {
+        ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
+        if (ret >= 0) break;
+        mt_sleep_ms(1);
+      }
       if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
     }
   }
@@ -1363,7 +1377,9 @@ static int tx_fastmetadata_session_uinit_queue(
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->queue[i]) {
+      mt_txq_done_cleanup(s->queue[i]);
       mt_txq_flush(s->queue[i], mt_get_pad(impl, port));
+      mt_txq_done_cleanup(s->queue[i]);
       mt_txq_put(s->queue[i]);
       s->queue[i] = NULL;
     }
