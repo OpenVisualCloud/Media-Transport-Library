@@ -32,10 +32,7 @@ class Nicctl:
     def _parse_vf_list(self, output: str) -> list:
         if "No VFs found" in output:
             return []
-        # Match either:
-        # 1. Lines with "vfio" (e.g., from create_vf output)
-        # 2. Lines with just PCI addresses (e.g., from list command)
-        vf_info_regex = r"(\d{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d+)"
+        vf_info_regex = r"(\d{4}[0-9a-fA-F:.]+)\(?\S*\)?\s+\S*\s*vfio"
         return re.findall(vf_info_regex, output)
 
     def vfio_list(self, pci_addr: str = "all") -> list:

@@ -320,11 +320,15 @@ class Application(ABC):
             return default
 
     def start_process(self, command: str, build: str, test_time: int, host):
-        """Start a process on the specified host using mfd_connect."""
+        """Start a process on the specified host using mfd_connect.
+
+        Returns a background process handle. The caller is responsible for
+        calling proc.wait() after any concurrent work (e.g. netsniff capture).
+        """
         logger.info(f"Starting {self.get_app_name()} process...")
         buffer_val = self.params.get("process_timeout_buffer", 90)
         timeout = (test_time or 0) + buffer_val
-        return run(command, host=host, cwd=build, timeout=timeout)
+        return run(command, host=host, cwd=build, timeout=timeout, background=True)
 
     def capture_stdout(self, process, process_name: str) -> str:
         """Capture stdout from mfd_connect process.
