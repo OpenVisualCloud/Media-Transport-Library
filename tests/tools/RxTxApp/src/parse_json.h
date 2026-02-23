@@ -129,6 +129,7 @@ typedef struct st_json_interface {
   int rx_anc_sessions_cnt;   /* st40 on interface level */
   int tx_fmd_sessions_cnt;   /* st41 on interface level */
   int rx_fmd_sessions_cnt;   /* st41 on interface level */
+  bool allow_down_init;      /* allow port init even if link is down */
 } st_json_interface_t;
 
 enum st_json_ip_type {

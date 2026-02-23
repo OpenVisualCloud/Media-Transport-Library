@@ -129,7 +129,7 @@ static int cni_burst_to_kernel(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mtl_main_impl* impl = cni->impl;
   enum mtl_port port = cni->port;
   struct mt_interface* inf = mt_if(impl, port);
-  if (!inf->virtio_port_active) return 0;
+  if (!inf->virtio_port_active || mt_if_port_is_down(impl, port)) return 0;
 
   cni->virtio_rx_cnt++;
   int ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
@@ -146,7 +146,7 @@ static int cni_burst_from_kernel(struct mt_cni_entry* cni) {
   struct mtl_main_impl* impl = cni->impl;
   enum mtl_port port = cni->port;
   struct mt_interface* inf = mt_if(impl, port);
-  if (!inf->virtio_port_active) return 0;
+  if (!inf->virtio_port_active || mt_if_port_is_down(impl, port)) return 0;
 
   struct rte_mbuf* pkts[ST_CNI_RX_BURST_SIZE];
 

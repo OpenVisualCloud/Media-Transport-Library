@@ -259,6 +259,11 @@ static int dev_inf_stat(void* pri) {
   uint16_t port_id = inf->port_id;
   struct mtl_port_status* stats_sum;
 
+  if (mt_if_port_is_down(impl, port)) {
+    notice("DEV(%d): port is down\n", port);
+    return 0;
+  }
+
   dev_inf_get_stat(inf);
   stats_sum = &inf->stats_sum;
 
@@ -1824,17 +1829,63 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
   return 0;
 }
 
+static int dev_sch_init(struct mtl_main_impl* impl) {
+  int ret;
+  int data_quota_mbs_per_sch;
+
+  /* init sch with one lcore scheduler */
+  if (mt_user_quota_active(impl)) {
+    data_quota_mbs_per_sch = mt_get_user_params(impl)->data_quota_mbs_per_sch;
+  } else {
+    /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
+    data_quota_mbs_per_sch =
+        ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
+  }
+  ret = mt_sch_mrg_init(impl, data_quota_mbs_per_sch);
+  if (ret < 0) {
+    err("%s, sch mgr init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  /* create system sch */
+  enum mt_sch_type type =
+      mt_user_dedicated_sys_lcore(impl) ? MT_SCH_TYPE_SYSTEM : MT_SCH_TYPE_DEFAULT;
+  impl->main_sch = mt_sch_get(impl, 0, type, MT_SCH_MASK_ALL);
+  if (!impl->main_sch) {
+    err("%s, get sch fail\n", __func__);
+    mt_sch_mrg_uinit(impl);
+    return -EIO;
+  }
+
+  return 0;
+}
+
+static int dev_all_ports_down_check(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
+
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+    if (!(inf->status & MT_IF_STAT_PORT_DOWN)) {
+      return 0;
+    }
+  }
+
+  err("%s, all ports are down\n", __func__);
+  return -EIO;
+}
+
 int mt_dev_create(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
   struct mt_interface* inf;
   enum mt_port_type port_type;
+  bool allow_port_down;
 
   for (int i = 0; i < num_ports; i++) {
-    int detect_retry = 0;
-
     inf = mt_if(impl, i);
     port_type = inf->drv_info.port_type;
+    allow_port_down = mt_if_allow_port_down(impl, i);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
@@ -1845,33 +1896,35 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     }
 #endif
 
-  retry:
     ret = dev_start_port(inf);
     if (ret < 0) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
       goto err_exit;
     }
-    if (detect_retry > 0) {
-      err("%s(%d), sleep 5s before detect link\n", __func__, i);
-      /* leave time as reset */
-      mt_sleep_ms(5 * 1000);
-    }
-    ret = dev_detect_link(inf); /* some port can only detect link after start */
-    if (ret < 0) {
-      err("%s(%d), dev_detect_link fail %d retry %d\n", __func__, i, ret, detect_retry);
-      if (detect_retry < 3) {
-        detect_retry++;
-        rte_eth_dev_reset(inf->port_id);
-        ret = dev_config_port(inf);
-        if (ret < 0) {
-          err("%s(%d), dev_config_port fail %d\n", __func__, i, ret);
-          goto err_exit;
-        }
-        goto retry;
-      } else {
-        goto err_exit;
+
+    for (int j = 0; j < MT_DEV_DETECT_PORT_UP_RETRY; j++) {
+      ret = dev_detect_link(inf); /* some port can only detect link after start */
+      if (ret < 0 && allow_port_down) {
+        warn("%s(%d), dev_detect_link fail %d, but allow port down, retry %d\n", __func__,
+             i, ret, j);
+        break;
+      } else if (ret < 0) {
+        err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
       }
     }
+
+    /* there is no recovery method for this port as of yet TODO add recovery */
+    if (ret < 0 && allow_port_down) {
+      warn("%s(%d), dev_detect_link fail %d, but allow port down\n", __func__, i, ret);
+      inf->status |= MT_IF_STAT_PORT_DOWN;
+      /* register the stats anyway */
+      mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
+      continue;
+    } else if (ret < 0) {
+      err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
+      goto err_exit;
+    }
+
     /* try to start time sync after rte_eth_dev_start */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
         (port_type == MT_PORT_PF) && !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
@@ -1910,28 +1963,14 @@ int mt_dev_create(struct mtl_main_impl* impl) {
          st_tx_pacing_way_name(inf->tx_pacing_way));
   }
 
-  /* init sch with one lcore scheduler */
-  int data_quota_mbs_per_sch;
-  if (mt_user_quota_active(impl)) {
-    data_quota_mbs_per_sch = mt_get_user_params(impl)->data_quota_mbs_per_sch;
-  } else {
-    /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
-    data_quota_mbs_per_sch =
-        ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
-  }
-  ret = mt_sch_mrg_init(impl, data_quota_mbs_per_sch);
-  if (ret < 0) {
-    err("%s, sch mgr init fail %d\n", __func__, ret);
-    goto err_exit;
-  }
+  /* TODO remove when reinitilization is enabled
+   * check if any port is up fail if thats the case */
+  ret = dev_all_ports_down_check(impl);
+  if (ret < 0) goto err_exit;
 
-  /* create system sch */
-  enum mt_sch_type type =
-      mt_user_dedicated_sys_lcore(impl) ? MT_SCH_TYPE_SYSTEM : MT_SCH_TYPE_DEFAULT;
-  impl->main_sch = mt_sch_get(impl, 0, type, MT_SCH_MASK_ALL);
-  if (!impl->main_sch) {
-    err("%s, get sch fail\n", __func__);
-    ret = -EIO;
+  ret = dev_sch_init(impl);
+  if (ret < 0) {
+    err("%s, dev_sch_init fail %d\n", __func__, ret);
     goto err_exit;
   }
 
@@ -1941,7 +1980,6 @@ err_exit:
   if (impl->main_sch) mt_sch_put(impl->main_sch, 0);
   for (int i = num_ports - 1; i >= 0; i--) {
     inf = mt_if(impl, i);
-
     dev_stop_port(inf);
   }
   return ret;
