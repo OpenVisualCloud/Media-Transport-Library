@@ -1320,7 +1320,8 @@ class RxTxApp(Application):
             ):
                 dst_ip = self.config["tx_sessions"][0]["dip"][0]
                 netsniff.update_filter(dst_ip=dst_ip)
-                netsniff.capture()
+                capture_time = self.params.get("test_time", 30)
+                netsniff.capture(capture_time=capture_time)
                 logger.info(f"Started netsniff-ng capture for destination IP {dst_ip}")
             else:
                 logger.warning("Could not extract destination IP for netsniff capture")
