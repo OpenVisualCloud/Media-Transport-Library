@@ -530,9 +530,9 @@ struct mtl_port_init_params {
   int socket_id;
 
   /** Optional. Interval in seconds to check if port is up for initialization.
-  * Only used when MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION is set.
-  * Leave to zero to use default interval (10 second).
-  */
+   * Only used when MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION is set.
+   * Leave to zero to use default interval (10 second).
+   */
   uint16_t port_up_check_interval_s;
 
   /** Debug option for test purposes only. See struct mtl_debug_port_packet_loss */
