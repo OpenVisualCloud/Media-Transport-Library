@@ -542,7 +542,7 @@ int mt_mempool_free(struct rte_mempool* mp) {
   if (in_use_count) {
     /* failed to free the mempool, caused by the mbuf is still in nix tx queues? */
     warn("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
-    return 0;
+    return -EBUSY;
   }
 
   /* no any in-use mbuf */
