@@ -107,6 +107,8 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
 | dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. Required when `enable-dma-offload=true`. | N/A                      |
+| allow-port-down | boolean | Allow MTL to initialize even if the primary port (`dev-port`) link is down. Sessions requiring that port will have it pruned from their port list at creation time. | TRUE/FALSE |
+| allow-port-down-red | boolean | Allow MTL to initialize even if the redundant port (`dev-port-red`) link is down. Sessions requiring that port will have it pruned from their port list at creation time. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
@@ -115,6 +117,13 @@ When `enable-dma-offload` is set to `true`, every plugin that supports DMA will 
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
 the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
 flag.
+
+When `allow-port-down` or `allow-port-down-red` is set to `true`, MTL will proceed with
+initialization even if the corresponding NIC link is down. Any session whose `port` or
+`port-red` maps to a down interface will have that port silently removed from its port list
+at creation time, reducing `num_port` by one. A session whose only port is down will fail
+to create. These flags are useful for redundant-path setups where one leg may be absent
+at startup.
 
 
 > **Warning:**
