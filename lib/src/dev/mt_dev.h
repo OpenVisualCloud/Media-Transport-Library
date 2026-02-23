@@ -11,6 +11,10 @@
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
 
+/* how many times we try to detect if the port is up if the flag "allow_down_init"
+is NOT set */
+#define MT_DEV_DETECT_PORT_UP_RETRY 3
+
 #define MT_EAL_MAX_ARGS (32)
 
 #define MT_TX_MEMPOOL_PREFIX "T_"
@@ -63,6 +67,7 @@ static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
 }
 
 int mt_dev_if_init(struct mtl_main_impl* impl);
+int mt_dev_setup_port (struct mtl_main_impl* impl, struct mt_interface* inf, enum mt_port_type port_type);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);
 int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
 

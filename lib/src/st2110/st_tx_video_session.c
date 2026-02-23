@@ -3801,6 +3801,43 @@ int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
   return 0;
 }
 
+/* Remove any session ports that map to a down physical port.
+ * When a down port is found at index i, all further entries are shifted down
+ * one slot (port[i] = port[i+1], ...) and num_port is decremented.
+ * Only ops->port[] is shifted — all other per-port arrays (dip_addr, udp_port, etc.)
+ * are left untouched; with the reduced num_port they are simply never indexed.
+ * Returns -EIO if every port is down (caller must abort). */
+static int tv_ops_prune_down_ports(struct mtl_main_impl* impl, struct st20_tx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port names one slot down */
+    for (int j = i; j < num_ports - 1; j++)
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int tv_ops_check(struct st20_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -3871,6 +3908,37 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
     err("%s, invalid flags 0x%x, need set USER_PACING with EXACT_USER_PACING\n", __func__,
         ops->flags);
     return -EINVAL;
+  }
+
+  return 0;
+}
+
+static int tv_st22_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                        struct st22_tx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    for (int j = i; j < num_ports - 1; j++)
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
   }
 
   return 0;
@@ -4106,6 +4174,12 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  ret = tv_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, tv_ops_prune_down_ports fail %d\n", __func__, ret);
     return NULL;
   }
 
@@ -4537,6 +4611,12 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  ret = tv_st22_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, tv_st22_ops_prune_down_ports fail %d\n", __func__, ret);
     return NULL;
   }
 

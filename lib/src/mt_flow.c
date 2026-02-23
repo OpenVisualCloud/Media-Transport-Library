@@ -299,7 +299,7 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
   struct mt_rx_flow_rsp* rsp;
   struct mt_flow_impl* flow_impl = impl->flow[port];
 
-  if (!mt_drv_kernel_based(impl, port) && q >= inf->nb_rx_q) {
+  if ((!mt_drv_kernel_based(impl, port) && q >= inf->nb_rx_q)) {
     err("%s(%d), invalid q %u max allowed %u\n", __func__, port, q, inf->nb_rx_q);
     return NULL;
   }
