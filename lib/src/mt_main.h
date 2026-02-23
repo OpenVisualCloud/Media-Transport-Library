@@ -80,6 +80,7 @@
 
 #define MT_IF_STAT_PORT_CONFIGURED (MTL_BIT32(0))
 #define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
+#define MT_IF_STAT_PORT_DOWN (MTL_BIT32(2))
 
 #define MT_DPDK_AF_XDP_START_QUEUE (1)
 
@@ -1712,6 +1713,14 @@ static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
 
 static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->nb_tx_desc;
+}
+
+static inline bool mt_if_port_is_down(struct mtl_main_impl* impl, enum mtl_port port) {
+  return !!(mt_if(impl, port)->status & MT_IF_STAT_PORT_DOWN);
+}
+
+static inline bool mt_if_allow_port_down(struct mtl_main_impl* impl, enum mtl_port port) {
+  return !!(mt_get_user_params(impl)->port_params[port].flags & MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION);
 }
 
 static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_port port) {

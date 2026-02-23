@@ -104,6 +104,11 @@ extern "C" {
 /** Helper to get M unit */
 #define MTL_STAT_M_UNIT (1000 * 1000)
 
+/** Default interval in seconds to check if port is up for initialization
+ * not used for now there is no reinitialization protocol
+ */
+#define MTL_PORT_UP_CHECK_INTERVAL_S (10)
+
 /**
  * Handle to MTL transport device context
  */
@@ -495,6 +500,14 @@ enum mtl_init_flag {
 enum mtl_port_init_flag {
   /** user force the NUMA id instead reading from NIC PCIE topology */
   MTL_PORT_FLAG_FORCE_NUMA = (MTL_BIT64(0)),
+
+  /**
+   * Allow the MTL session to initialize even if the network port is down.
+   * When this flag is set, port initialization and pacing setup will be deferred
+   * until the port becomes available, rather than failing during session creation.
+   * This enables applications to handle dynamic port state changes gracefully.
+   */
+  MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION = (MTL_BIT64(1)),
 };
 
 struct mtl_ptp_sync_notify_meta {
@@ -515,6 +528,15 @@ struct mtl_port_init_params {
    * the detail.
    */
   int socket_id;
+
+  /** Optional. Interval in seconds to check if port is up for initialization.
+  * Only used when MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION is set.
+  * Leave to zero to use default interval (10 second).
+  */
+  uint16_t port_up_check_interval_s;
+
+  /** Debug option for test purposes only. See struct mtl_debug_port_packet_loss */
+  struct mtl_debug_port_packet_loss port_packet_loss[MTL_PORT_MAX];
 };
 
 /**
