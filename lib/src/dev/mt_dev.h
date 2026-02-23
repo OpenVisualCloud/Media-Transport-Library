@@ -67,7 +67,8 @@ static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
 }
 
 int mt_dev_if_init(struct mtl_main_impl* impl);
-int mt_dev_setup_port (struct mtl_main_impl* impl, struct mt_interface* inf, enum mt_port_type port_type);
+int mt_dev_setup_port(struct mtl_main_impl* impl, struct mt_interface* inf,
+                      enum mt_port_type port_type);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);
 int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
 

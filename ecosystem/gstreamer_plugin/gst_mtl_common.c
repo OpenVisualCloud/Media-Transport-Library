@@ -296,9 +296,10 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_ALLOW_DOWN_P,
-      g_param_spec_boolean("allow-port-down", "Allow primary port down",
-                           "Allow MTL to initialize even if the primary port link is down.",
-                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean(
+          "allow-port-down", "Allow primary port down",
+          "Allow MTL to initialize even if the primary port link is down.", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_ALLOW_DOWN_R,

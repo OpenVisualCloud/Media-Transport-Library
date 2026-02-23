@@ -1720,7 +1720,8 @@ static inline bool mt_if_port_is_down(struct mtl_main_impl* impl, enum mtl_port 
 }
 
 static inline bool mt_if_allow_port_down(struct mtl_main_impl* impl, enum mtl_port port) {
-  return !!(mt_get_user_params(impl)->port_params[port].flags & MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION);
+  return !!(mt_get_user_params(impl)->port_params[port].flags &
+            MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION);
 }
 
 static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
