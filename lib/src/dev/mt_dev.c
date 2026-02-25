@@ -798,12 +798,14 @@ static int dev_close_port(struct mt_interface* inf) {
   return 0;
 }
 
-static int dev_detect_link(struct mt_interface* inf) {
+static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
   /* get link speed for the port */
   struct rte_eth_link eth_link;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   int err;
+  int interval_ms =
+      relaxed ? MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED : MT_DEV_LINK_POLL_INTERVAL_MS;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
     dbg("%s(%d), not dpdk based\n", __func__, port);
@@ -812,7 +814,7 @@ static int dev_detect_link(struct mt_interface* inf) {
 
   memset(&eth_link, 0, sizeof(eth_link));
 
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < MT_DEV_LINK_POLL_COUNT; i++) {
     err = rte_eth_link_get_nowait(port_id, &eth_link);
     if (err < 0) {
       err("%s, failed to get link status for port %d, ret %d\n", __func__, port_id, err);
@@ -824,7 +826,7 @@ static int dev_detect_link(struct mt_interface* inf) {
       mt_eth_link_dump(port_id);
       return 0;
     }
-    mt_sleep_ms(100); /* only happen on CVL PF and CNV PF */
+    mt_sleep_ms(interval_ms); /* only happen on CVL PF and CNV PF */
   }
 
   mt_eth_link_dump(port_id);
@@ -1902,8 +1904,9 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       goto err_exit;
     }
 
-    for (int j = 0; j < MT_DEV_DETECT_PORT_UP_RETRY; j++) {
-      ret = dev_detect_link(inf); /* some port can only detect link after start */
+    for (int j = 0; j < MT_DEV_LINK_RETRY_COUNT; j++) {
+      ret = dev_detect_link(
+          inf, allow_port_down); /* some port can only detect link after start */
       if (ret < 0 && allow_port_down) {
         warn("%s(%d), dev_detect_link fail %d, but allow port down, retry %d\n", __func__,
              i, ret, j);
