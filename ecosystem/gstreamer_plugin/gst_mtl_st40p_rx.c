@@ -351,8 +351,8 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
       gobject_class, PROP_ST40P_RX_AUTO_DETECT_INTERLACED,
       g_param_spec_boolean(
           "rx-auto-detect-interlaced", "Auto detect interlaced cadence",
-          "Enable RTP F-bit based interlace auto-detection when cadence is unknown",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          "Enable RTP F-bit based interlace auto-detection (enabled by default)", TRUE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_RX_OUTPUT_FORMAT,
@@ -498,7 +498,6 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
       src->rx_framebuff_cnt ? src->rx_framebuff_cnt : GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   ops_rx.max_udw_buff_size = src->max_udw_size;
   ops_rx.flags = 0; /* Use non-blocking mode - blocking causes preroll timeout */
-  if (src->auto_detect_interlaced) ops_rx.flags |= ST40P_RX_FLAG_AUTO_DETECT_INTERLACED;
 
   GST_DEBUG_OBJECT(src, "RX START: framebuff_cnt=%d, max_udw_buff_size=%d",
                    ops_rx.framebuff_cnt, ops_rx.max_udw_buff_size);
@@ -514,11 +513,6 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "RX START: rtp_ring_size=%d", ops_rx.rtp_ring_size);
 
   ops_rx.interlaced = src->interlaced;
-  if (!src->interlaced && !src->auto_detect_interlaced) {
-    GST_WARNING_OBJECT(src,
-                       "RX interlaced flag not set; use rx-auto-detect-interlaced=true "
-                       "if cadence is unknown");
-  }
 
   /* Optional frame info logging */
   if (src->frame_info_path && !src->frame_info_fp) {
