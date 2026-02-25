@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import argparse
 
 import yaml
@@ -161,18 +165,7 @@ def main() -> None:
         default="None",
         help="specify path to SSH private key for the test host",
     )
-    parser.add_argument(
-        "--media_path",
-        type=str,
-        default="/mnt/ramdisk/media",
-        help="media path for topology extra_info (default: /mnt/ramdisk/media)",
-    )
-    parser.add_argument(
-        "--dsa_device",
-        type=str,
-        default=None,
-        help="DSA device ID for topology extra_info (e.g. 8086:0b25)",
-    )
+
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
@@ -192,13 +185,6 @@ def main() -> None:
     with open("test_config.yaml", "w") as file:
         file.write(test_config_yaml)
     with open("topology_config.yaml", "w") as file:
-        extra_info = {
-            "mtl_path": args.mtl_path,
-            "media_path": args.media_path,
-        }
-        if args.dsa_device:
-            extra_info["dsa_device"] = args.dsa_device
-
         file.write(
             gen_topology_config(
                 pci_device=args.pci_device,
@@ -206,7 +192,7 @@ def main() -> None:
                 username=args.username,
                 password=args.password,
                 key_path=args.key_path,
-                extra_info=extra_info,
+                extra_info={"mtl_path": args.mtl_path},
             )
         )
 

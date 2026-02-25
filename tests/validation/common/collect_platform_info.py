@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Collect platform SW/HW configuration from a remote host via SSH.
 
 This module gathers system information from test hosts and returns it as
@@ -37,30 +40,31 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     if "=" in out:
         sw["os"] = out.split("=", 1)[1].strip().strip('"')
     else:
-        sw["os"] = out
+        sw["os"] = out if out else "N/A"
 
     # Kernel
     sw["kernel"] = _remote_cmd(host, "uname -r")
 
-    # MTL version — prefer git describe from build path
-    build_path = (
-        getattr(host, "build_path", "") or "/root/awilczyn/Media-Transport-Library"
-    )
-    mtl_ver = _remote_cmd(host, f"cd {build_path} && git describe --tags 2>/dev/null")
+    # MTL version — try pkg-config, then dpkg/rpm package info, then VERSION file
+    mtl_ver = _remote_cmd(host, "pkg-config --modversion mtl 2>/dev/null || echo ''")
     if not mtl_ver:
-        mtl_ver = _remote_cmd(host, "cat /proc/mtl/version 2>/dev/null")
+        mtl_ver = _remote_cmd(
+            host,
+            "dpkg-query -W -f='${Version}' mtl 2>/dev/null"
+            " || rpm -q --qf '%{VERSION}' mtl 2>/dev/null"
+            " || echo ''",
+        )
     if not mtl_ver:
-        mtl_ver = _remote_cmd(host, f"cat {build_path}/version.txt 2>/dev/null")
+        build_path = getattr(host, "build_path", "")
+        if build_path:
+            mtl_ver = _remote_cmd(host, f"cat {build_path}/VERSION 2>/dev/null")
     sw["mtl_version"] = mtl_ver or "N/A"
 
     # DPDK version
     dpdk_ver = _remote_cmd(
         host, "pkg-config --modversion libdpdk 2>/dev/null || echo ''"
     )
-    if dpdk_ver:
-        sw["dpdk_driver"] = f"{dpdk_ver} (patched with MTL patches)"
-    else:
-        sw["dpdk_driver"] = "N/A"
+    sw["dpdk_driver"] = dpdk_ver if dpdk_ver else "N/A"
 
     # ICE driver version
     ice_ver = _remote_cmd(host, "cat /sys/module/ice/version 2>/dev/null || echo ''")
@@ -105,6 +109,14 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     else:
         sw["bios_vtx_vtd"] = "Not detected"
 
+    # Isolated CPUs
+    isolcpus = ""
+    for token in cmdline.split():
+        if token.startswith("isolcpus="):
+            isolcpus = token.split("=", 1)[1]
+            break
+    sw["isolcpus"] = isolcpus if isolcpus else "None"
+
     # NIC ports settings
     sw["nic_ports_settings"] = "NIC ports set as VF's (create_vf)."
     sw["nic_ports_order"] = "1.1, 1.2 ([card_no.port_no])."
@@ -129,11 +141,11 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
     # CPU governor
     governor = _remote_cmd(
         host,
-        "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'N/A'",
+        "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null"
+        ' | sort | uniq -c | awk \'{print $1" cores set in \\""$2"\\" mode"}\''
+        " || echo 'N/A'",
     )
-    sw["cpu_cores"] = (
-        f'Set in "{governor}" mode.' if governor and governor != "N/A" else "N/A"
-    )
+    sw["cpu_cores"] = governor if governor and governor != "N/A" else "N/A"
 
     return sw
 
@@ -371,3 +383,49 @@ def collect_platform_info(host) -> Dict[str, Any]:
 
     logger.info(f"Platform info collected from {host.name}")
     return config
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import subprocess
+
+    class _LocalHost:
+        name = "localhost"
+        build_path = ""
+        network_interfaces = []
+
+        class connection:
+            @staticmethod
+            def execute_command(cmd, **_kwargs):
+                class _Result:
+                    pass
+
+                r = _Result()
+                try:
+                    r.stdout = subprocess.check_output(
+                        cmd, shell=True, stderr=subprocess.DEVNULL, text=True
+                    )
+                except subprocess.CalledProcessError as exc:
+                    r.stdout = exc.output or ""
+                return r
+
+    _parser = argparse.ArgumentParser(description="Collect local platform info.")
+    _parser.add_argument(
+        "--json", action="store_true", help="Output raw JSON instead of pretty print"
+    )
+    _args = _parser.parse_args()
+
+    logging.basicConfig(level=logging.WARNING)
+    _config = collect_platform_info(_LocalHost())
+
+    if _args.json:
+        print(json.dumps(_config, indent=2))
+    else:
+        for _section, _data in _config.items():
+            print(f"\n{'─' * 50}")
+            print(f"  {_section.replace('_', ' ').upper()}")
+            print(f"{'─' * 50}")
+            for _k, _v in _data.items():
+                print(f"  {_k.replace('_', ' ').title():<28} {_v}")
+        print()

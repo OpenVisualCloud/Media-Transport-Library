@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2024-2025 Intel Corporation
-# Media Communications Mesh
+# Copyright(c) 2026 Intel Corporation
 
 import copy
 import datetime
@@ -54,19 +53,19 @@ logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
 # Store extra host config fields that aren't in the TopologyModel schema
-# Key: host name, Value: dict of extra fields (e.g., dsa_device, dsa_address)
+# Key: host name, Value: dict of extra fields (e.g., build_path)
 _host_extra_config: Dict[str, Dict[str, Any]] = {}
 
 
 # Known extra fields that we allow in host config but TopologyModel doesn't support
-HOST_EXTRA_FIELDS = ["dsa_device", "dsa_address", "build_path"]
+HOST_EXTRA_FIELDS = ["build_path"]
 
 
 def _extract_extra_fields(config: dict) -> dict:
     """
     Extract extra fields from topology config that aren't supported by TopologyModel.
 
-    This allows us to add custom fields like dsa_device to host configs without
+    This allows us to add custom fields like build_path to host configs without
     breaking the pydantic validation.
 
     Returns a cleaned config dict suitable for TopologyModel.
@@ -102,7 +101,7 @@ def _extract_extra_fields(config: dict) -> dict:
 
 
 def get_host_extra_config(host_name: str) -> Dict[str, Any]:
-    """Get extra configuration fields for a host (e.g., dsa_device)."""
+    """Get extra configuration fields for a host (e.g., build_path)."""
     return _host_extra_config.get(host_name, {})
 
 
@@ -172,7 +171,7 @@ def topology(topology_config: dict) -> TopologyModel:
     Create topology model from config file data.
 
     This overrides the default pytest_mfd_config topology fixture to allow
-    extra fields like dsa_device, dsa_address in host configurations.
+    extra fields like build_path in host configurations.
     """
     logger.debug("Creating Topology model with extra field support.")
     cleaned_config = _extract_extra_fields(topology_config)

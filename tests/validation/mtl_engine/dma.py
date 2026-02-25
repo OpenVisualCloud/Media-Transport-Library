@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 """
-DSA (Data Streaming Accelerator) device management — detection, NUMA validation, setup.
+DMA device management — detection, NUMA validation, setup.
+
+Supports Intel DSA (Data Streaming Accelerator), CBDMA, and other DMA engines
+compatible with DPDK.
 """
 
 import logging
@@ -31,8 +34,8 @@ DEVICE_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$")
 
 
 @dataclass
-class DSADevice:
-    """Represents a DSA device with its properties."""
+class DMADevice:
+    """Represents a DMA accelerator device with its properties."""
 
     pci_address: str  # Full PCI address (e.g., "0000:6a:01.0")
     numa_node: int  # NUMA node the device is attached to
@@ -40,7 +43,7 @@ class DSADevice:
     verified: bool = False  # Whether device was verified to exist
 
     def __str__(self):
-        return f"DSA({self.pci_address}, NUMA {self.numa_node})"
+        return f"DMA({self.pci_address}, NUMA {self.numa_node})"
 
 
 def is_pci_address(value: str) -> bool:
@@ -79,8 +82,8 @@ def get_numa_node_from_pci(host, pci_address: str) -> int:
         return 0
 
 
-def discover_dsa_devices(host, device_id: str = "8086:0b25") -> list[DSADevice]:
-    """Discover all DSA devices on a host by device ID via lspci."""
+def discover_dma_devices(host, device_id: str = "8086:0b25") -> list[DMADevice]:
+    """Discover all DMA devices on a host by device ID via lspci."""
     devices = []
 
     try:
@@ -95,7 +98,7 @@ def discover_dsa_devices(host, device_id: str = "8086:0b25") -> list[DSADevice]:
                     pci_addr = parts[0]
                     numa = get_numa_node_from_pci(host, pci_addr)
                     devices.append(
-                        DSADevice(
+                        DMADevice(
                             pci_address=pci_addr,
                             numa_node=numa,
                             device_id=device_id,
@@ -105,20 +108,20 @@ def discover_dsa_devices(host, device_id: str = "8086:0b25") -> list[DSADevice]:
 
         if devices:
             logger.info(
-                f"Discovered {len(devices)} DSA device(s) on {host.name}: "
+                f"Discovered {len(devices)} DMA device(s) on {host.name}: "
                 f"{[str(d) for d in devices]}"
             )
         else:
-            logger.debug(f"No DSA devices with ID {device_id} found on {host.name}")
+            logger.debug(f"No DMA devices with ID {device_id} found on {host.name}")
 
     except Exception as e:
-        logger.warning(f"Failed to discover DSA devices on {host.name}: {e}")
+        logger.warning(f"Failed to discover DMA devices on {host.name}: {e}")
 
     return devices
 
 
-def verify_dsa_device(host, pci_address: str) -> Optional[DSADevice]:
-    """Verify a specific DSA device exists at the given PCI address."""
+def verify_dma_device(host, pci_address: str) -> Optional[DMADevice]:
+    """Verify a specific DMA device exists at the given PCI address."""
     try:
         # Normalize PCI address
         if len(pci_address.split(":")) == 2:
@@ -127,67 +130,34 @@ def verify_dsa_device(host, pci_address: str) -> Optional[DSADevice]:
         # Extract bus:device.function for lspci -s
         bdf = ":".join(pci_address.split(":")[1:])
 
-        cmd = f"lspci -s {bdf} -n 2>/dev/null | grep -i '0b25\\|dsa\\|accelerator' || true"
+        cmd = f"lspci -s {bdf} -n 2>/dev/null | grep -i '0b25\\|0b00\\|dsa\\|cbdma\\|accelerator' || true"
         result = host.connection.execute_command(cmd, shell=True)
 
         if result and result.stdout and result.stdout.strip():
             numa = get_numa_node_from_pci(host, pci_address)
             logger.info(
-                f"Verified DSA device at {pci_address} on {host.name} (NUMA {numa})"
+                f"Verified DMA device at {pci_address} on {host.name} (NUMA {numa})"
             )
-            return DSADevice(
+            return DMADevice(
                 pci_address=pci_address,
                 numa_node=numa,
                 verified=True,
             )
         else:
-            logger.debug(f"DSA device not found at {pci_address} on {host.name}")
+            logger.debug(f"DMA device not found at {pci_address} on {host.name}")
             return None
 
     except Exception as e:
-        logger.warning(f"Failed to verify DSA device {pci_address} on {host.name}: {e}")
+        logger.warning(f"Failed to verify DMA device {pci_address} on {host.name}: {e}")
         return None
 
 
-def get_host_dsa_config(host, topology_config: dict = None) -> Optional[str]:
-    """Get DSA config for a host from topology extra_info or host attributes."""
-    # 1. Try extra_info from topology model (preferred path)
-    try:
-        from conftest import get_host_extra_config
-
-        extra = get_host_extra_config(host.name)
-        if "dsa_device" in extra:
-            return extra["dsa_device"]
-        if "dsa_address" in extra:
-            return extra["dsa_address"]
-    except ImportError:
-        pass
-
-    # 2. Try host object attributes (legacy)
-    if hasattr(host, "dsa_device"):
-        return host.dsa_device
-    if hasattr(host, "dsa_address"):
-        return host.dsa_address
-
-    # 3. Try raw topology config dict (legacy)
-    if topology_config:
-        for host_cfg in topology_config.get("hosts", []):
-            if host_cfg.get("name") == host.name:
-                ei = host_cfg.get("extra_info", {})
-                if ei.get("dsa_device"):
-                    return ei["dsa_device"]
-                if ei.get("dsa_address"):
-                    return ei["dsa_address"]
-
-    return None
-
-
-def bind_dsa_to_vfio(host, pci_address: str) -> bool:
-    """Bind a DSA/DMA device to vfio-pci and verify its IOMMU group is viable.
+def bind_dma_to_vfio(host, pci_address: str) -> bool:
+    """Bind a DMA device to vfio-pci and verify its IOMMU group is viable.
 
     DPDK requires ALL devices in an IOMMU group to use vfio-pci (or be
     unbound).  If the group contains devices with kernel drivers the
-    DSA device cannot be used and this function returns False.
+    DMA device cannot be used and this function returns False.
     """
     try:
         host.connection.execute_command("sudo modprobe vfio-pci", shell=True)
@@ -199,7 +169,7 @@ def bind_dsa_to_vfio(host, pci_address: str) -> bool:
         )
         current = result.stdout.strip() if result and result.stdout else ""
         if "drv=vfio-pci" not in current:
-            logger.info(f"Binding DSA {pci_address} to vfio-pci on {host.name}")
+            logger.info(f"Binding DMA {pci_address} to vfio-pci on {host.name}")
             host.connection.execute_command(
                 f"sudo dpdk-devbind.py -b vfio-pci {pci_address}",
                 shell=True,
@@ -211,7 +181,7 @@ def bind_dsa_to_vfio(host, pci_address: str) -> bool:
             shell=True,
         )
         if not (result and result.stdout and "drv=vfio-pci" in result.stdout):
-            logger.error(f"Failed to bind DSA {pci_address} to vfio-pci on {host.name}")
+            logger.error(f"Failed to bind DMA {pci_address} to vfio-pci on {host.name}")
             return False
 
         # ── IOMMU group viability check ──
@@ -231,7 +201,7 @@ def bind_dsa_to_vfio(host, pci_address: str) -> bool:
         blockers = result.stdout.strip() if result and result.stdout else ""
         if blockers:
             logger.warning(
-                f"IOMMU group for DSA {pci_address} on {host.name} has "
+                f"IOMMU group for DMA {pci_address} on {host.name} has "
                 f"kernel-bound peers: {blockers} — device unusable by DPDK"
             )
             # Unbind to avoid leaving an orphaned vfio-pci binding
@@ -242,41 +212,45 @@ def bind_dsa_to_vfio(host, pci_address: str) -> bool:
             return False
 
         logger.info(
-            f"DSA {pci_address} bound to vfio-pci on {host.name} "
+            f"DMA {pci_address} bound to vfio-pci on {host.name} "
             f"(IOMMU group viable)"
         )
         return True
     except Exception as e:
-        logger.error(f"Error binding DSA {pci_address} to vfio-pci on {host.name}: {e}")
+        logger.error(f"Error binding DMA {pci_address} to vfio-pci on {host.name}: {e}")
         return False
 
 
-def setup_host_dsa(
-    host, nic_pci_address: str, dsa_config: Optional[str] = None, role: str = ""
+def setup_host_dma(
+    host, nic_pci_address: str, dma_config: Optional[str] = None, role: str = ""
 ) -> Optional[str]:
-    """Validate DSA, bind to vfio-pci, and return PCI address for --dma_dev.
+    """Auto-discover DMA device, bind to vfio-pci, return PCI address for --dma_dev.
 
-    Tries all discovered DSA devices (sorted by NUMA affinity) and returns
-    the first one whose IOMMU group is viable for DPDK.
+    By default (dma_config=None), auto-discovers DMA devices on the host
+    (DSA first, then CBDMA), sorted by NUMA affinity to the NIC.
+    Optionally, *dma_config* can be a PCI address or device ID to target
+    a specific device.
+
+    Returns the PCI address of the first viable device, or None.
     """
     nic_numa = get_numa_node_from_pci(host, nic_pci_address)
     role_str = f" ({role})" if role else ""
 
     # ── Collect candidate devices ──
-    if dsa_config and is_pci_address(dsa_config):
-        dsa = verify_dsa_device(host, dsa_config)
-        candidates = [dsa] if dsa else []
-    elif dsa_config and is_device_id(dsa_config):
-        candidates = discover_dsa_devices(host, dsa_config)
+    if dma_config and is_pci_address(dma_config):
+        dev = verify_dma_device(host, dma_config)
+        candidates = [dev] if dev else []
+    elif dma_config and is_device_id(dma_config):
+        candidates = discover_dma_devices(host, dma_config)
     else:
         candidates = []
         for device_id in DEFAULT_DMA_DEVICE_IDS:
-            candidates = discover_dsa_devices(host, device_id)
+            candidates = discover_dma_devices(host, device_id)
             if candidates:
                 break
 
     if not candidates:
-        logger.info(f"DSA not available{role_str} on {host.name} (config={dsa_config})")
+        logger.info(f"DMA not available{role_str} on {host.name} (config={dma_config})")
         return None
 
     # Prefer same-NUMA devices, then fall back to cross-NUMA
@@ -285,23 +259,23 @@ def setup_host_dsa(
     ordered = same_numa + diff_numa
 
     # ── Try each candidate until one binds successfully ──
-    for dsa in ordered:
-        if not bind_dsa_to_vfio(host, dsa.pci_address):
+    for dev in ordered:
+        if not bind_dma_to_vfio(host, dev.pci_address):
             logger.info(
-                f"DSA {dsa.pci_address} not usable on {host.name}, "
+                f"DMA {dev.pci_address} not usable on {host.name}, "
                 f"trying next candidate"
             )
             continue
 
-        numa_match = "SAME" if dsa.numa_node == nic_numa else "DIFFERENT"
-        device_type = DMA_DEVICE_IDS.get(dsa.device_id, "DMA Accelerator")
+        numa_match = "SAME" if dev.numa_node == nic_numa else "DIFFERENT"
+        device_type = DMA_DEVICE_IDS.get(dev.device_id, "DMA Accelerator")
 
-        # Store DSA info on host for later display in results
-        if not hasattr(host, "_dsa_info"):
-            host._dsa_info = {}
-        host._dsa_info[role or "default"] = {
-            "dsa_device": dsa.pci_address,
-            "dsa_numa": dsa.numa_node,
+        # Store DMA info on host for later display in results
+        if not hasattr(host, "_dma_info"):
+            host._dma_info = {}
+        host._dma_info[role or "default"] = {
+            "dma_device": dev.pci_address,
+            "dma_numa": dev.numa_node,
             "nic_address": nic_pci_address,
             "nic_numa": nic_numa,
             "numa_match": numa_match,
@@ -309,22 +283,22 @@ def setup_host_dsa(
             "role": role,
         }
 
-        if dsa.numa_node != nic_numa:
+        if dev.numa_node != nic_numa:
             logger.warning(
                 f"NUMA mismatch: NIC {nic_pci_address} (NUMA {nic_numa}) vs "
-                f"DSA {dsa.pci_address} (NUMA {dsa.numa_node}) — "
+                f"DMA {dev.pci_address} (NUMA {dev.numa_node}) — "
                 f"cross-NUMA DMA will have higher latency"
             )
 
         logger.info(
-            f"DSA enabled{role_str}: {dsa.pci_address} ({device_type}, "
-            f"NUMA {dsa.numa_node}) for NIC {nic_pci_address} (NUMA {nic_numa}) "
+            f"DMA enabled{role_str}: {dev.pci_address} ({device_type}, "
+            f"NUMA {dev.numa_node}) for NIC {nic_pci_address} (NUMA {nic_numa}) "
             f"on {host.name} — NUMA {numa_match}"
         )
-        return dsa.pci_address
+        return dev.pci_address
 
     logger.info(
-        f"DSA not available{role_str} on {host.name} — "
-        f"no bindable device found (config={dsa_config})"
+        f"DMA not available{role_str} on {host.name} — "
+        f"no bindable device found (config={dma_config})"
     )
     return None

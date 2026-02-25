@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 # Framework mappings and configuration
 # All parameter mappings, format conversions, and app configuration for RxTxApp, FFmpeg, and GStreamer
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 # Universal parameter definitions for all media applications
 # This serves as the common interface for RxTxApp, FFmpeg, and GStreamer
 
