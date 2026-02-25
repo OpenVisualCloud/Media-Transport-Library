@@ -519,8 +519,8 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
-  s->interlace_auto = ops->flags & ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
-  s->interlace_detected = !s->interlace_auto;
+  s->interlace_auto = true;
+  s->interlace_detected = false;
   s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
