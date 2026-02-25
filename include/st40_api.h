@@ -109,7 +109,8 @@ struct st40_tx_test_config {
 /**
  * Flag bit in flags of struct st40_rx_ops.
  * If set, lib will auto-detect progressive vs interlaced based on RTP F bits.
- * The interlaced boolean in st40_rx_ops is ignored once detection completes.
+ * Note: auto-detect is now enabled by default; this flag is kept for backward
+ * compatibility.
  */
 #define ST40_RX_FLAG_AUTO_DETECT_INTERLACED (MTL_BIT32(2))
 
@@ -342,7 +343,7 @@ struct st40_tx_ops {
   enum st_fps fps;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
-  /** Mandatory unless ST40_RX_FLAG_AUTO_DETECT_INTERLACED is set. Interlaced or not. */
+  /** Mandatory. interlaced or not */
   bool interlaced;
 
   /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
@@ -423,7 +424,8 @@ struct st40_rx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
    * payload_type check on the RX pkt path */
   uint8_t payload_type;
-  /** Mandatory. interlaced or not */
+  /** Optional. interlaced or not. Used as the initial value; auto-detection from
+   * RTP F bits will override this at runtime. */
   bool interlaced;
 
   /** Optional. source filter IP address of multicast */
