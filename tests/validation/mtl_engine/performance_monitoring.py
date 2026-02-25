@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 """Performance monitoring utilities for MTL tests — FPS, frames, throughput, CPU."""
 
@@ -223,7 +223,7 @@ def monitor_dev_rate(log_lines, warmup_seconds=FPS_WARMUP_SECONDS):
 
 def display_session_results(
     direction,
-    dsa_label,
+    dma_label,
     num_sessions,
     fps,
     fps_details,
@@ -242,7 +242,7 @@ def display_session_results(
 
     logger.info("=" * 80)
     logger.info(
-        f"{direction} Results{dsa_label}: {len(ok_ids)}/{num_sessions} sessions "
+        f"{direction} Results{dma_label}: {len(ok_ids)}/{num_sessions} sessions "
         f"at {fps} fps (min: {min_req:.1f}, warmup: {fps_warmup_seconds}s)"
     )
     logger.info("=" * 80)

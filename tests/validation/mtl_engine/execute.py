@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import os
-import signal
 import subprocess
 import threading
 import time
@@ -281,26 +281,36 @@ def log_result_note(note: str):
     logger.info(f"Test result note: {note}")
 
 
-def kill_all_rxtxapp(*hosts) -> None:
-    """Kill all RxTxApp processes on the given hosts."""
+# Canonical list of MTL-related process names that may be left over
+# after a crash or timeout.  Mirrors .github/actions/cleanup/action.yml.
+MTL_APP_NAMES = [
+    "RxTxApp",
+    "KahawaiTest",
+    "KahawaiUfdTest",
+    "KahawaiUplTest",
+    "ffmpeg",
+    "gtest.sh",
+]
+
+
+def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
+    """Kill leftover MTL-related processes on the given hosts.
+
+    Args:
+        *hosts: One or more host objects with ``connection.execute_command``.
+        names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
+                Each name is turned into a ``pkill`` regex that avoids
+                matching the grep/pkill process itself (``[R]xTxApp``).
+    """
+    targets = names or MTL_APP_NAMES
+    pattern = "|".join(f"[{n[0]}]{n[1:]}" for n in targets if n)
     for host in hosts:
         try:
             host.connection.execute_command(
-                "pkill -9 -f '[R]xTxApp' || true", shell=True, timeout=15
+                f"pkill -9 -f '{pattern}' || true", shell=True, timeout=15
             )
         except Exception:
             pass
-
-
-def stop_remote_process(process, host=None) -> None:
-    """Stop a remote process via SIGKILL and clean up leftover RxTxApp."""
-    try:
-        process.kill(wait=None, with_signal=signal.SIGKILL)
-    except Exception:
-        pass
-    time.sleep(2)
-    if host is not None:
-        kill_all_rxtxapp(host)
 
 
 def read_remote_log(host, log_path: str) -> list:

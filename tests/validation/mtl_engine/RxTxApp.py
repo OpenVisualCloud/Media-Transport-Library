@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple
 
 from mfd_connect import SSHConnection
 from mtl_engine import ip_pools
-from mtl_engine.const import RXTXAPP_PATH
+from mtl_engine.const import RXTXAPP_EXE
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -540,7 +540,7 @@ def execute_test(
                 test_time = test_time * 2
             test_time = test_time * config["tx_sessions"][0]["st20p"][0]["replicas"]
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path}"
+    command = f"sudo {RXTXAPP_EXE} --config_file {config_path}"
 
     if virtio_user:
         command += " --virtio_user"
@@ -744,7 +744,7 @@ def execute_perf_test(
     f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
+    command = f"sudo {RXTXAPP_EXE} --config_file {config_path} --test_time {test_time}"
 
     logger.info(f"Performance RxTxApp Command: {command}")
 
@@ -1929,7 +1929,7 @@ def execute_dual_test(
             test_time = test_time * tx_config["tx_sessions"][0]["st20p"][0]["replicas"]
 
     # Prepare commands
-    base_command = f"sudo {RXTXAPP_PATH} --test_time {test_time}"
+    base_command = f"sudo {RXTXAPP_EXE} --test_time {test_time}"
     if virtio_user:
         base_command += " --virtio_user"
     if rx_timing_parser:

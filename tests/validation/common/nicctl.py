@@ -1,5 +1,6 @@
-# # SPDX-License-Identifier: BSD-3-Clause
-# # Copyright 2025 Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import re
 import time
@@ -32,7 +33,10 @@ class Nicctl:
     def _parse_vf_list(self, output: str) -> list:
         if "No VFs found" in output:
             return []
-        vf_info_regex = r"(\d{4}[0-9a-fA-F:.]+)\(?\S*\)?\s+\S*\s*vfio"
+        # Match PCI addresses from both:
+        # 1. list_vf output (bare PCI addresses, one per line)
+        # 2. create_vf output ("Bind 0000:xx:yy.z(...) to vfio-pci success")
+        vf_info_regex = r"(\d{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d+)"
         return re.findall(vf_info_regex, output)
 
     def vfio_list(self, pci_addr: str = "all") -> list:
@@ -48,10 +52,13 @@ class Nicctl:
         :param num_of_vfs: number of VFs to create
         :return: returns list of created vfs
         """
-        resp = self.connection.execute_command(
+        self.connection.execute_command(
             f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}", shell=True
         )
-        return self._parse_vf_list(resp.stdout)
+        # Use vfio_list (nicctl.sh list) to get clean VF addresses.
+        # The create_vf output mixes PF and VF PCI addresses in status
+        # messages, while list_vf outputs only VF addresses.
+        return self.vfio_list(pci_id)
 
     def disable_vf(self, pci_id: str) -> None:
         """Remove VFs on NIC.
@@ -307,9 +314,9 @@ class InterfaceSetup:
 
 def reset_vfio_bindings(host, host_name: str, vf_list: list) -> None:
     """Unbind/rebind VFs to force VFIO group release after a DPDK crash."""
-    from mtl_engine.execute import kill_all_rxtxapp
+    from mtl_engine.execute import kill_stale_processes
 
-    kill_all_rxtxapp(host)
+    kill_stale_processes(host)
     time.sleep(2)
 
     for vf in vf_list:

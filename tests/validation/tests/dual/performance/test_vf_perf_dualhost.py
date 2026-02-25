@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 """VF dual-host performance tests — session capacity sweep via binary search."""
 
@@ -15,13 +15,8 @@ from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine import ip_pools
 from mtl_engine.const import RXTXAPP_PATH
-from mtl_engine.dsa import get_host_dsa_config, setup_host_dsa
-from mtl_engine.execute import (
-    kill_all_rxtxapp,
-    read_remote_log,
-    run,
-    stop_remote_process,
-)
+from mtl_engine.dma import setup_host_dma
+from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
@@ -53,78 +48,6 @@ MAX_SESSIONS = {
 
 START_SESSIONS = 20
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
-
-# Media source directory for fallback copy when ramdisk is empty
-_MEDIA_SOURCE_DIRS = ["/mnt/media", "/opt/intel/media"]
-
-
-def _ensure_media_on_host(
-    host,
-    media_file_path: str,
-    test_config: dict = None,
-) -> None:
-    """Verify the media file exists on *host*; copy from source if missing.
-
-    The ``media_file`` conftest fixture is responsible for staging media into
-    the ramdisk, but intermittent SSH/copy failures can leave it empty.
-    This guard runs right before the companion starts and ensures the TX
-    source file is actually present.
-
-    Raises ``pytest.fail`` if the file cannot be made available.
-    """
-    try:
-        result = host.connection.execute_command(
-            f"test -f {media_file_path} && echo exists || echo missing",
-            shell=True,
-            timeout=10,
-        )
-        if "exists" in (result.stdout or ""):
-            return  # File is already on the ramdisk
-    except Exception:
-        pass  # Assume missing if we can't check
-
-    # Remote paths are always POSIX — simple string split is sufficient
-    dest_dir, _, filename = media_file_path.rpartition("/")
-
-    # Build the list of candidate source directories
-    source_dirs = list(_MEDIA_SOURCE_DIRS)
-    if test_config:
-        cfg_source = test_config.get("ramdisk", {}).get("media", {}).get("source")
-        if cfg_source and cfg_source not in source_dirs:
-            source_dirs.insert(0, cfg_source)
-
-    logger.warning(
-        f"Media file missing on {host.name}: {media_file_path} — "
-        f"attempting fallback copy"
-    )
-
-    for src_dir in source_dirs:
-        src = f"{src_dir}/{filename}"
-        try:
-            host.connection.execute_command(
-                f"sudo mkdir -p {dest_dir} && sudo cp {src} {media_file_path}",
-                shell=True,
-                timeout=120,
-            )
-            result = host.connection.execute_command(
-                f"test -f {media_file_path} && echo exists || echo missing",
-                shell=True,
-                timeout=10,
-            )
-            if "exists" in (result.stdout or ""):
-                logger.info(
-                    f"Copied media file from {src} → {media_file_path} "
-                    f"on {host.name}"
-                )
-                return
-        except Exception as e:
-            logger.debug(f"Copy from {src} failed on {host.name}: {e}")
-
-    pytest.fail(
-        f"Media file unavailable on {host.name}: {media_file_path}. "
-        f"Searched source dirs: {source_dirs}. "
-        f"Ensure the file exists on the host or fix the media_file fixture."
-    )
 
 
 def _get_tx_rx_hosts(hosts: dict, direction: str):
@@ -194,9 +117,9 @@ def _run_iteration(
     rx_vf_r: str | None,
     redundant: bool,
     single_core: bool,
-    use_dsa: bool,
-    dsa_device: str | None,
-    dsa_label: str,
+    use_dma: bool,
+    dma_device: str | None,
+    dma_label: str,
     test_time: int,
 ) -> Tuple[bool, int, str, Optional[dict]]:
     """Run one iteration: start companion, run measured app, validate FPS.
@@ -299,7 +222,7 @@ def _run_iteration(
 
     r_tag = "_redundant" if redundant else ""
     c_tag = "_sc" if single_core else "_mc"
-    d_tag = "_dsa" if use_dsa else ""
+    d_tag = "_dma" if use_dma else ""
     companion_log = (
         f"{build_companion}/tests/validation/logs/performance/"
         f"{direction}{r_tag}{c_tag}_fps{fps}_{num_sessions}s{d_tag}"
@@ -312,6 +235,9 @@ def _run_iteration(
         cwd=build_companion,
         shell=True,
     )
+    # Track on the app object so companion_app.stop_process() can manage it
+    companion_app._process = companion_process
+    companion_app._host = companion_host
     time.sleep(10)
 
     # Verify companion is still running before starting measured app.
@@ -332,7 +258,7 @@ def _run_iteration(
     if not companion_alive:
         log_snippet = read_remote_log(companion_host, companion_log)
         tail = "\n".join(log_snippet[-20:]) if log_snippet else "(empty)"
-        stop_remote_process(companion_process, host=companion_host)
+        companion_app.stop_process()
         return False, 0, f"companion {companion_dir} exited early:\n{tail}", None
 
     try:
@@ -369,8 +295,8 @@ def _run_iteration(
                 redundant_kwargs,
             )
 
-        if use_dsa and dsa_device:
-            measured_kwargs["dma_dev"] = dsa_device
+        if use_dma and dma_device:
+            measured_kwargs["dma_dev"] = dma_device
 
         measured_app.create_command(**measured_kwargs)
         measured_app.prepare_execution(build=build_measured, host=measured_host)
@@ -389,7 +315,7 @@ def _run_iteration(
             )
         except Exception as e:
             logger.error(f"Measured process failed: {e}")
-            kill_all_rxtxapp(tx_host, rx_host)
+            kill_stale_processes(tx_host, rx_host)
             cpu_monitor.stop()
             return False, 0, f"process timeout: {e}", None
 
@@ -451,7 +377,7 @@ def _run_iteration(
 
         display_session_results(
             direction.upper(),
-            dsa_label,
+            dma_label,
             num_sessions,
             fps,
             fps_details,
@@ -469,7 +395,7 @@ def _run_iteration(
         return success, count, detail, app_config
 
     finally:
-        stop_remote_process(companion_process, host=companion_host)
+        companion_app.stop_process()
 
 
 def _run_session_sweep(
@@ -478,7 +404,7 @@ def _run_session_sweep(
     single_core: bool,
     fps: int,
     media_file: tuple,
-    use_dsa: bool,
+    use_dma: bool,
     hosts: dict,
     mtl_path: str,
     test_time: int,
@@ -503,24 +429,18 @@ def _run_session_sweep(
     tx_vf_r = tx_host.vfs_r[0] if redundant else None
     rx_vf_r = rx_host.vfs_r[0] if redundant else None
 
-    # ── Verify media file is available on the TX host ──
-    # The TX side reads the input file; if missing the companion crashes.
-    _ensure_media_on_host(tx_host, media_file_path, test_config)
-
-    # ── DSA setup (measured host only) ──
-    dsa_device = None
-    if use_dsa:
+    # ── DMA setup (measured host only, auto-discovered on same NUMA as NIC) ──
+    dma_device = None
+    if use_dma:
         measured_host = tx_host if direction == "tx" else rx_host
-        dsa_config = get_host_dsa_config(measured_host)
-        dsa_device = setup_host_dsa(
+        dma_device = setup_host_dma(
             measured_host,
             tx_vf if direction == "tx" else rx_vf,
-            dsa_config,
             role=direction.upper(),
         )
-        if dsa_device is None:
-            pytest.skip(f"DSA not available on {measured_host.name}")
-    dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
+        if dma_device is None:
+            pytest.skip(f"DMA not available on {measured_host.name}")
+    dma_label = f" with DMA ({dma_device})" if use_dma else ""
 
     # ── Paths ──
     build_tx = get_host_mtl_path(tx_host, default=mtl_path)
@@ -545,9 +465,9 @@ def _run_session_sweep(
         rx_vf_r=rx_vf_r,
         redundant=redundant,
         single_core=single_core,
-        use_dsa=use_dsa,
-        dsa_device=dsa_device,
-        dsa_label=dsa_label,
+        use_dma=use_dma,
+        dma_device=dma_device,
+        dma_label=dma_label,
         test_time=test_time,
     )
 
@@ -558,11 +478,11 @@ def _run_session_sweep(
 
     mode_tag = "REDUNDANT " if redundant else ""
     core_tag = "SC" if single_core else "MC"
-    dsa_tag = " +DSA" if use_dsa else ""
+    dma_tag = " +DMA" if use_dma else ""
     logger.info(
         f"\n{'═' * 70}\n"
         f"  SESSION SWEEP (binary search): {mode_tag}{direction.upper()} "
-        f"{core_tag}{dsa_tag} | {fps}fps | {resolution} | "
+        f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
         f"start={start_sess} max={max_sess} "
         f"test_time={test_time}s "
         f"warmup={WARMUP_SECONDS}s cooldown={COOLDOWN_SECONDS}s\n"
@@ -570,7 +490,7 @@ def _run_session_sweep(
     )
 
     # ── Pre-sweep: kill leftover processes (VFs already bound by conftest) ──
-    kill_all_rxtxapp(tx_host, rx_host)
+    kill_stale_processes(tx_host, rx_host)
     time.sleep(3)
 
     def _is_crash(detail: str) -> bool:
@@ -607,15 +527,15 @@ def _run_session_sweep(
         prev = iteration_results[-1] if iteration_results else None
         if prev is not None:
             # Always kill leftover processes first
-            kill_all_rxtxapp(tx_host, rx_host)
+            kill_stale_processes(tx_host, rx_host)
             time.sleep(2)
 
             # Build VF lists (shared by both paths)
             tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
             rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
-            if dsa_device:
+            if dma_device:
                 measured_vfs = tx_vfs if direction == "tx" else rx_vfs
-                measured_vfs.append(dsa_device)
+                measured_vfs.append(dma_device)
 
             if _is_crash(prev["detail"]):
                 # Full unbind/rebind after a DPDK crash
@@ -659,7 +579,7 @@ def _run_session_sweep(
             logger.error(traceback.format_exc())
             detail = f"exception: {type(e).__name__}: {e}"
         finally:
-            kill_all_rxtxapp(tx_host, rx_host)
+            kill_stale_processes(tx_host, rx_host)
 
         # Keep the latest RxTxApp config for the sweep summary
         if iter_config is not None:
@@ -732,7 +652,7 @@ def _run_session_sweep(
     logger.info(
         f"\n{'═' * 70}\n"
         f"  SWEEP SUMMARY: {mode_tag}{direction.upper()} "
-        f"{'SC' if single_core else 'MC'}{dsa_label}\n"
+        f"{'SC' if single_core else 'MC'}{dma_label}\n"
         f"  FPS: {fps}  |  Resolution: {resolution}  |  "
         f"MAX PASSING: {max_passing}\n"
         f"{'═' * 70}"
@@ -751,7 +671,7 @@ def _run_session_sweep(
         pytest.fail(
             f"Sweep FAILED: no sessions passed for "
             f"{mode_tag}{direction.upper()} "
-            f"{'SC' if single_core else 'MC'}{dsa_label} "
+            f"{'SC' if single_core else 'MC'}{dma_label} "
             f"@ {fps}fps / {resolution}"
         )
 
@@ -759,7 +679,7 @@ def _run_session_sweep(
         TEST_PASS,
         f"Sweep: max {max_passing} sessions for "
         f"{mode_tag}{direction.upper()} "
-        f"{'SC' if single_core else 'MC'}{dsa_label} "
+        f"{'SC' if single_core else 'MC'}{dma_label} "
         f"@ {fps}fps / {resolution}",
     )
 
@@ -768,7 +688,7 @@ def _run_session_sweep(
 
 _PERF_MARKS = [
     pytest.mark.performance,
-    pytest.mark.parametrize("use_dsa", [False, True], ids=["no_dsa", "dsa"]),
+    pytest.mark.parametrize("use_dma", [False, True], ids=["no_dma", "dma"]),
     pytest.mark.parametrize(
         "media_file",
         [
@@ -808,7 +728,7 @@ def test_tx(
     single_core,
     fps,
     media_file,
-    use_dsa,
+    use_dma,
     test_config,
     prepare_ramdisk,
 ) -> None:
@@ -819,7 +739,7 @@ def test_tx(
         single_core=single_core,
         fps=fps,
         media_file=media_file,
-        use_dsa=use_dsa,
+        use_dma=use_dma,
         hosts=hosts,
         mtl_path=mtl_path,
         test_time=test_time,
@@ -836,7 +756,7 @@ def test_rx(
     single_core,
     fps,
     media_file,
-    use_dsa,
+    use_dma,
     test_config,
     prepare_ramdisk,
 ) -> None:
@@ -847,7 +767,7 @@ def test_rx(
         single_core=single_core,
         fps=fps,
         media_file=media_file,
-        use_dsa=use_dsa,
+        use_dma=use_dma,
         hosts=hosts,
         mtl_path=mtl_path,
         test_time=test_time,
@@ -864,7 +784,7 @@ def test_tx_redundant(
     single_core,
     fps,
     media_file,
-    use_dsa,
+    use_dma,
     test_config,
     prepare_ramdisk,
 ) -> None:
@@ -875,7 +795,7 @@ def test_tx_redundant(
         single_core=single_core,
         fps=fps,
         media_file=media_file,
-        use_dsa=use_dsa,
+        use_dma=use_dma,
         hosts=hosts,
         mtl_path=mtl_path,
         test_time=test_time,
@@ -892,7 +812,7 @@ def test_rx_redundant(
     single_core,
     fps,
     media_file,
-    use_dsa,
+    use_dma,
     test_config,
     prepare_ramdisk,
 ) -> None:
@@ -903,7 +823,7 @@ def test_rx_redundant(
         single_core=single_core,
         fps=fps,
         media_file=media_file,
-        use_dsa=use_dsa,
+        use_dma=use_dma,
         hosts=hosts,
         mtl_path=mtl_path,
         test_time=test_time,

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 # RxTxApp Implementation for Media Transport Library
 # Handles RxTxApp-specific command generation and configuration
 
