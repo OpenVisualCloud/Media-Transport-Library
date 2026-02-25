@@ -1293,8 +1293,12 @@ static int rx_audio_ops_prune_down_ports(struct mtl_main_impl* impl,
     warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
 
     /* shift all further port names one slot down */
-    for (int j = i; j < num_ports - 1; j++)
+    for (int j = i; j < num_ports - 1; j++) {
       rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
 
     num_ports--;
     i--;

@@ -843,6 +843,8 @@ static int rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* 
  * Only ops->port[] is shifted — all other per-port arrays (ip_addr, udp_port, etc.)
  * are left untouched; with the reduced num_port they are simply never indexed.
  * Returns -EIO if every port is down (caller must abort). */
+/* Prune down ports that are not available. Shifts port names, IP addresses,
+ * UDP ports, and multicast source IP addresses for remaining ports. */
 static int rx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
                                              struct st40_rx_ops* ops) {
   int num_ports = ops->num_port;
@@ -858,9 +860,13 @@ static int rx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
 
     warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
 
-    /* shift all further port names one slot down */
-    for (int j = i; j < num_ports - 1; j++)
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
       rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
 
     num_ports--;
     i--;

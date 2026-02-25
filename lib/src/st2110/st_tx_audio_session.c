@@ -2574,8 +2574,13 @@ static int tx_audio_ops_prune_down_ports(struct mtl_main_impl* impl,
     warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
 
     /* shift all further port names one slot down */
-    for (int j = i; j < num_ports - 1; j++)
+    for (int j = i; j < num_ports - 1; j++) {
       rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+      ops->udp_src_port[j] = ops->udp_src_port[j + 1];
+    }
 
     num_ports--;
     i--;
