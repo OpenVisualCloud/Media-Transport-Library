@@ -349,15 +349,6 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.interlaced = ops->interlaced;
-  if (ops->flags & ST40P_RX_FLAG_AUTO_DETECT_INTERLACED)
-    ops_rx.flags |= ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
-
-  if (!ops->interlaced && !(ops->flags & ST40P_RX_FLAG_AUTO_DETECT_INTERLACED)) {
-    warn(
-        "%s(%d), rx-interlaced not set; enable ST40P_RX_FLAG_AUTO_DETECT_INTERLACED if "
-        "cadence is unknown\n",
-        __func__, ctx->idx);
-  }
 
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);

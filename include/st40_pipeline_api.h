@@ -198,9 +198,9 @@ enum st40p_rx_flag {
    */
   ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
   /**
-   * If set, lib will auto-detect progressive vs interlaced using RTP F bits. The
-   * st40p_rx_ops.interlaced field becomes optional and will be updated after
-   * detection.
+   * If set, lib will auto-detect progressive vs interlaced using RTP F bits.
+   * Note: auto-detect is now enabled by default; this flag is kept for backward
+   * compatibility.
    */
   ST40P_RX_FLAG_AUTO_DETECT_INTERLACED = (MTL_BIT32(3)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
@@ -215,7 +215,8 @@ enum st40p_rx_flag {
 struct st40p_rx_ops {
   /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** Mandatory unless ST40P_RX_FLAG_AUTO_DETECT_INTERLACED is set. interlaced or not */
+  /** Optional. interlaced or not. Used as the initial value; auto-detection from
+   * RTP F bits will override this at runtime. */
   bool interlaced;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;

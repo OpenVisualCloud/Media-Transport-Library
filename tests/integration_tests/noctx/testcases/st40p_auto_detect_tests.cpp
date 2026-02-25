@@ -40,9 +40,8 @@ TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
       [](St40pHandler*) { return new St40pAutoDetectStrategy(); },
       [](St40pHandler* handler) {
         handler->sessionsOpsTx.interlaced = true;  // emit F bits
-        handler->sessionsOpsRx.flags |=
-            ST40P_RX_FLAG_AUTO_DETECT_INTERLACED;   // enable detect
-        handler->sessionsOpsRx.interlaced = false;  // unknown at start
+        handler->sessionsOpsRx.interlaced =
+            false;  // unknown at start, auto-detect default
       });
 
   auto* handler = bundle.handler;
