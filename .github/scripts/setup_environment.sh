@@ -100,7 +100,7 @@ function setup_ubuntu_install_dependencies() {
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
-		if sudo apt install -y "linux-headers-$(uname -r)"; then
+		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
 			if [ "${CICD_BUILD}" != "0" ]; then
 				ret=0
 			else
