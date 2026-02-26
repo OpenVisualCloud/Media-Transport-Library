@@ -311,10 +311,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		tar xvzf "ice-${ICE_VER}.tar.gz"
 		pushd "ice-${ICE_VER}" >/dev/null || exit 1
 
-		git init
-		git add .
-		git commit -m "init version ${ICE_VER}"
-		git am "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch
+		for patch_file in "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
+			patch -p1 -i "$patch_file"
+		done
 
 		pushd src >/dev/null || exit 1
 		make -j"${nproc}"
