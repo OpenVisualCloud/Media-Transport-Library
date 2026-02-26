@@ -82,11 +82,19 @@ if [ "$sourced" -eq 0 ]; then
 	fi
 
 	echo "Build and install DPDK now"
-	meson build
+	: "${MTL_PREFIX_ARGS:=}"
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
+	fi
+	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"}
 	ninja -C build
 	(
 		cd build || exit 1
-		sudo ninja install
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			ninja install
+		else
+			sudo ninja install
+		fi
 	)
 
 	cd "$script_folder" || exit 1
