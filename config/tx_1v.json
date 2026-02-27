@@ -1,7 +1,7 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.0",
+            "name": "0000:4b:01.0",
             "ip": "192.168.30.10"
         }
     ],
@@ -24,7 +24,7 @@
                     "device": "AUTO",
                     "input_format": "YUV422PLANAR10LE",
                     "transport_format": "YUV_422_10bit",
-                    "st20p_url": "./yuv422p10le_1080p.yuv"
+                    "st20p_url": "/mnt/ramdisk/input.v210"
                 }
             ]
         }

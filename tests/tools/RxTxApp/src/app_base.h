@@ -10,6 +10,7 @@
 #endif
 #include <errno.h>
 #include <mtl/experimental/st20_combined_api.h>
+#include <mtl/mtl_session_api.h>
 #include <mtl/st20_api.h>
 #include <mtl/st30_api.h>
 #include <mtl/st30_pipeline_api.h>
@@ -549,7 +550,7 @@ struct st_app_tx_st20p_session {
   struct st_app_context* ctx;
 
   int idx;
-  st20p_tx_handle handle;
+  mtl_session_t* session; /* unified session handle */
   mtl_handle st;
   int framebuff_cnt;
   int st20p_frame_size;
@@ -581,7 +582,7 @@ struct st_app_tx_st20p_session {
 struct st_app_rx_st20p_session {
   struct st_app_context* ctx;
   int idx;
-  st20p_rx_handle handle;
+  mtl_session_t* session; /* unified session handle */
   mtl_handle st;
   int framebuff_cnt;
   int st20p_frame_size;
