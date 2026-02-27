@@ -1,9 +1,14 @@
-# # SPDX-License-Identifier: BSD-3-Clause
-# # Copyright 2025 Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
+import logging
 import re
+import time
 
 import pytest
 from mfd_network_adapter import NetworkInterface
+
+logger = logging.getLogger(__name__)
 
 
 class Nicctl:
@@ -28,7 +33,10 @@ class Nicctl:
     def _parse_vf_list(self, output: str) -> list:
         if "No VFs found" in output:
             return []
-        vf_info_regex = r"(\d{4}[0-9a-fA-F:.]+)\(?\S*\)?\s+\S*\s*vfio"
+        # Match PCI addresses from both:
+        # 1. list_vf output (bare PCI addresses, one per line)
+        # 2. create_vf output ("Bind 0000:xx:yy.z(...) to vfio-pci success")
+        vf_info_regex = r"(\d{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d+)"
         return re.findall(vf_info_regex, output)
 
     def vfio_list(self, pci_addr: str = "all") -> list:
@@ -82,11 +90,13 @@ class Nicctl:
 
 
 class InterfaceSetup:
-    def __init__(self, hosts, mtl_path):
+    def __init__(self, hosts, mtl_path, host_mtl_paths=None):
         self.hosts = hosts
         self.mtl_path = mtl_path
+        self.host_mtl_paths = host_mtl_paths or {}
         self.nicctl_objs = {
-            host.name: Nicctl(mtl_path, host) for host in hosts.values()
+            host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host)
+            for host in hosts.values()
         }
         self.customs = []
         self.cleanups = []
@@ -297,3 +307,91 @@ class InterfaceSetup:
                 nicctl.disable_vf(interface)
             elif if_type.lower() == "pf":
                 nicctl.bind_kernel(interface)
+
+
+def reset_vfio_bindings(host, host_name: str, vf_list: list) -> None:
+    """Unbind/rebind VFs to force VFIO group release after a DPDK crash."""
+    from mtl_engine.execute import kill_stale_processes
+
+    kill_stale_processes(host)
+    time.sleep(2)
+
+    for vf in vf_list:
+        if not vf:
+            continue
+        try:
+            host.connection.execute_command(
+                f"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind "
+                f"2>/dev/null || true",
+                shell=True,
+                timeout=15,
+            )
+            time.sleep(1)
+            host.connection.execute_command(
+                f"dpdk-devbind.py -b vfio-pci {vf}",
+                shell=True,
+                timeout=30,
+            )
+            result = host.connection.execute_command(
+                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
+                shell=True,
+                timeout=15,
+            )
+            status = (result.stdout or "").strip()
+            if "vfio-pci" in status:
+                logger.debug(f"Reset VF {vf} on {host_name} — vfio-pci ✓")
+            else:
+                logger.warning(f"VF {vf} on {host_name} NOT bound: {status}")
+        except Exception as e:
+            logger.warning(f"Could not reset VF {vf} on {host_name}: {e}")
+
+
+def ensure_vfio_bound(host, host_name: str, vf_list: list) -> bool:
+    """Ensure all VFs are bound to vfio-pci; rebind any that aren't.
+
+    Returns True if any VF had to be rebound.
+    """
+    any_rebound = False
+    for vf in vf_list:
+        if not vf:
+            continue
+        try:
+            result = host.connection.execute_command(
+                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
+                shell=True,
+                timeout=15,
+            )
+            status = (result.stdout or "").strip()
+            if "drv=vfio-pci" in status:
+                continue  # Already properly bound
+
+            logger.warning(
+                f"VF {vf} on {host_name} not bound to vfio-pci "
+                f"({status or 'no status'}), rebinding…"
+            )
+            any_rebound = True
+            host.connection.execute_command(
+                f"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind "
+                f"2>/dev/null || true",
+                shell=True,
+                timeout=15,
+            )
+            time.sleep(1)
+            host.connection.execute_command(
+                f"dpdk-devbind.py -b vfio-pci {vf}",
+                shell=True,
+                timeout=30,
+            )
+            result = host.connection.execute_command(
+                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
+                shell=True,
+                timeout=15,
+            )
+            new_status = (result.stdout or "").strip()
+            if "vfio-pci" in new_status:
+                logger.info(f"Rebound VF {vf} on {host_name} — vfio-pci ✓")
+            else:
+                logger.error(f"Failed to rebind VF {vf} on {host_name}: {new_status}")
+        except Exception as e:
+            logger.warning(f"Could not check VF {vf} on {host_name}: {e}")
+    return any_rebound

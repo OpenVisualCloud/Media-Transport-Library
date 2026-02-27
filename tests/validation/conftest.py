@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2024-2025 Intel Corporation
-# Media Communications Mesh
+# Copyright(c) 2026 Intel Corporation
 
+import copy
 import datetime
+import json
 import logging
 import os
 import shutil
@@ -11,6 +12,7 @@ import time
 from typing import Any, Dict
 
 import pytest
+from common.collect_platform_info import collect_platform_info
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
 from compliance.compliance_client import PcapComplianceClient
@@ -19,7 +21,13 @@ from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
-from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, RXTXAPP_PATH, TESTCMD_LVL
+from mtl_engine.const import (
+    FRAMES_CAPTURE,
+    LOG_FOLDER,
+    PERF_LOG_FOLDER,
+    RXTXAPP_PATH,
+    TESTCMD_LVL,
+)
 from mtl_engine.csv_report import (
     csv_add_test,
     csv_write_report,
@@ -38,10 +46,136 @@ from mtl_engine.stash import (
     get_result_note,
     remove_result_media,
 )
+from pytest_mfd_config.models.topology import TopologyModel
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
+
+# Store extra host config fields that aren't in the TopologyModel schema
+# Key: host name, Value: dict of extra fields (e.g., build_path)
+_host_extra_config: Dict[str, Dict[str, Any]] = {}
+
+
+# Known extra fields that we allow in host config but TopologyModel doesn't support
+HOST_EXTRA_FIELDS = ["build_path"]
+
+
+def _extract_extra_fields(config: dict) -> dict:
+    """
+    Extract extra fields from topology config that aren't supported by TopologyModel.
+
+    This allows us to add custom fields like build_path to host configs without
+    breaking the pydantic validation.
+
+    Returns a cleaned config dict suitable for TopologyModel.
+    """
+    global _host_extra_config
+    _host_extra_config.clear()
+
+    cleaned = copy.deepcopy(config)
+
+    # List of top-level fields to strip (not validated by TopologyModel)
+    TOP_LEVEL_EXTRA_FIELDS = ["host_mtl_paths"]
+
+    # Remove top-level extra fields that TopologyModel doesn't understand
+    for field in TOP_LEVEL_EXTRA_FIELDS:
+        if field in cleaned:
+            # Store in special key for retrieval
+            _host_extra_config[f"__toplevel__{field}"] = cleaned.pop(field)
+            logger.debug(f"Extracted top-level config: {field}")
+
+    # Extract extra fields from hosts
+    for host_cfg in cleaned.get("hosts", []):
+        host_name = host_cfg.get("name")
+        if host_name:
+            extras = {}
+            for field in HOST_EXTRA_FIELDS:
+                if field in host_cfg:
+                    extras[field] = host_cfg.pop(field)
+            if extras:
+                _host_extra_config[host_name] = extras
+                logger.debug(f"Extracted extra config for {host_name}: {extras}")
+
+    return cleaned
+
+
+def get_host_extra_config(host_name: str) -> Dict[str, Any]:
+    """Get extra configuration fields for a host (e.g., build_path)."""
+    return _host_extra_config.get(host_name, {})
+
+
+def get_toplevel_extra_config(field_name: str) -> Any:
+    """Get top-level extra config field (e.g., host_mtl_paths)."""
+    return _host_extra_config.get(f"__toplevel__{field_name}")
+
+
+def get_host_mtl_paths() -> Dict[str, str]:
+    """Get the host_mtl_paths config dictionary."""
+    return get_toplevel_extra_config("host_mtl_paths") or {}
+
+
+def is_host_sut(host) -> bool:
+    """Return True if *host* has role ``sut`` (System Under Test / DUT).
+
+    Checks host.topology.role first (runtime Host object), then falls back
+    to the ``is_dut`` flag for backward compatibility.
+    """
+    topology_model = getattr(host, "topology", None)
+    if topology_model is not None:
+        role = getattr(topology_model, "role", None)
+        if role is not None:
+            return str(role) == "sut"
+        # Fallback: old-style is_dut bool
+        is_dut = getattr(topology_model, "is_dut", None)
+        if is_dut is not None:
+            return bool(is_dut)
+    return True  # default assumption
+
+
+def get_host_mtl_path(host, default: str = "") -> str:
+    """Return the MTL build path for a specific host.
+
+    Checks (in order): host.topology.extra_info.mtl_path,
+    host_mtl_paths dict, build_path extra config, *default*.
+    """
+    # 1) extra_info on the topology model
+    topology_model = getattr(host, "topology", host)
+    extra_info = getattr(topology_model, "extra_info", None)
+    if extra_info is not None:
+        path = None
+        if isinstance(extra_info, dict):
+            path = extra_info.get("mtl_path")
+        else:
+            path = getattr(extra_info, "mtl_path", None)
+        if path:
+            return path
+
+    # 2) host_mtl_paths top-level config
+    host_name = getattr(host, "name", "")
+    paths = get_host_mtl_paths()
+    if host_name and host_name in paths:
+        return paths[host_name]
+
+    # 3) build_path in extra config
+    extra = get_host_extra_config(host_name)
+    if "build_path" in extra:
+        return extra["build_path"]
+
+    return default
+
+
+@pytest.fixture(scope="session")
+def topology(topology_config: dict) -> TopologyModel:
+    """
+    Create topology model from config file data.
+
+    This overrides the default pytest_mfd_config topology fixture to allow
+    extra fields like build_path in host configurations.
+    """
+    logger.debug("Creating Topology model with extra field support.")
+    cleaned_config = _extract_extra_fields(topology_config)
+    return TopologyModel(**cleaned_config)
 
 
 def _select_sniff_interface(host, capture_cfg: dict):
@@ -232,7 +366,18 @@ def media(test_config: dict) -> str:
 def mtl_path(test_config: dict) -> str:
     mtl_path = test_config.get("mtl_path")
     if not mtl_path:
-        raise RuntimeError("mtl_path not specified in test config")
+        # Fall back to per-host topology paths or workspace default.
+        # Many tests now use get_host_mtl_path() per-host instead of this
+        # global fixture.  Provide a sensible default so fixtures that
+        # depend on mtl_path (e.g. nic_port_list) still work.
+        host_paths = get_host_mtl_paths()
+        if host_paths:
+            mtl_path = next(iter(host_paths.values()))
+        else:
+            # conftest.py is at <mtl_root>/tests/validation/conftest.py
+            mtl_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )  # …/Media-Transport-Library
     return mtl_path
 
 
@@ -280,19 +425,46 @@ def dma_port_list(request):
 
 
 @pytest.fixture(scope="session")
-def nic_port_list(hosts: dict, mtl_path) -> None:
+def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
     for host in hosts.values():
-        nicctl = Nicctl(mtl_path, host)
+        # Use per-host MTL path from topology extra_info, fall back to
+        # the global mtl_path fixture.
+        host_path = get_host_mtl_path(host, default=mtl_path)
+        nicctl = Nicctl(host_path, host)
+        # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
 
+        # Redundant port (interface_index 1) - optional, for redundant mode.
+        # Skip when capture is enabled: the 2nd PF is reserved for
+        # netsniff-ng packet capture and creating VFs on it breaks sniffing.
+        host.vfs_r = []  # Initialize empty redundant VF list
+        capture_enabled = test_config.get("capture_cfg", {}).get("enable", False)
+        if len(host.network_interfaces) > 1 and not capture_enabled:
+            try:
+                if (
+                    int(host.network_interfaces[1].virtualization.get_current_vfs())
+                    == 0
+                ):
+                    nicctl.create_vfs(host.network_interfaces[1].pci_address.lspci)
+                vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
+                host.vfs_r = vfs_r
+                logger.info(f"Host {host.name}: redundant port VFs: {vfs_r}")
+            except Exception as e:
+                logger.warning(
+                    f"Host {host.name}: could not setup redundant port VFs: {e}"
+                )
+
 
 @pytest.fixture(scope="function")
 def setup_interfaces(hosts, test_config, mtl_path):
-    interface_setup = InterfaceSetup(hosts, mtl_path)
+    host_mtl_paths = {
+        h.name: get_host_mtl_path(h, default=mtl_path) for h in hosts.values()
+    }
+    interface_setup = InterfaceSetup(hosts, mtl_path, host_mtl_paths)
     yield interface_setup
     interface_setup.cleanup()
 
@@ -474,25 +646,77 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def log_session():
+def log_session(request):
     add_logging_level("TESTCMD", TESTCMD_LVL)
+
+    # Use performance log folder when running performance tests
+    items = request.session.items
+    is_perf = all("performance" in item.nodeid for item in items) if items else False
+    log_folder = PERF_LOG_FOLDER if is_perf else LOG_FOLDER
 
     today = datetime.datetime.today()
     folder = today.strftime("%Y-%m-%dT%H:%M:%S")
-    path = os.path.join(LOG_FOLDER, folder)
-    path_symlink = os.path.join(LOG_FOLDER, "latest")
+    path = os.path.join(log_folder, folder)
+    path_symlink = os.path.join(log_folder, "latest")
     try:
         os.remove(path_symlink)
     except FileNotFoundError:
         pass
     os.makedirs(path, exist_ok=True)
     os.symlink(folder, path_symlink)
+
+    # Export the active log folder so log_case and readproc can use it
+    os.environ["MTL_LOG_FOLDER"] = log_folder
+
     yield
     if os.path.exists("pytest.log"):
-        shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+        shutil.copy("pytest.log", f"{log_folder}/latest/pytest.log")
     else:
         logging.warning("pytest.log not found, skipping copy")
-    csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
+    csv_write_report(f"{log_folder}/latest/report.csv")
+
+    # Cleanup env var
+    os.environ.pop("MTL_LOG_FOLDER", None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def collect_platform_config(hosts, log_session):
+    """Collect SW/HW platform info from every host at session start.
+
+    Runs SSH commands on each host to gather OS, kernel, CPU, memory, NIC,
+    driver versions, etc. and saves per-host files as
+    ``<hostname>_platform_config.json`` in the log folder.  Also writes a
+    legacy ``platform_config.json`` (from the SUT) for backward compat.
+    The performance report generator picks these files up automatically.
+    """
+    log_folder = os.environ.get("MTL_LOG_FOLDER")
+    if not log_folder:
+        return
+
+    latest_path = os.path.join(log_folder, "latest")
+    if not os.path.isdir(latest_path):
+        return
+
+    host_list = list(hosts.values())
+    if not host_list:
+        return
+
+    for host in host_list:
+        try:
+            config = collect_platform_info(host)
+            for save_dir in (latest_path, log_folder):
+                os.makedirs(save_dir, exist_ok=True)
+                per_host_path = os.path.join(
+                    save_dir, f"{host.name}_platform_config.json"
+                )
+                with open(per_host_path, "w") as f:
+                    json.dump(config, f, indent=4)
+                if is_host_sut(host):
+                    legacy_path = os.path.join(save_dir, "platform_config.json")
+                    with open(legacy_path, "w") as f:
+                        json.dump(config, f, indent=4)
+        except Exception as e:
+            logger.warning(f"Failed to collect platform info from {host.name}: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -598,10 +822,11 @@ def pcap_capture(
 
 @pytest.fixture(scope="function", autouse=True)
 def log_case(request, caplog: pytest.LogCaptureFixture):
+    log_folder = os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER)
     case_id = request.node.nodeid
     case_folder = os.path.dirname(case_id)
-    os.makedirs(os.path.join(LOG_FOLDER, "latest", case_folder), exist_ok=True)
-    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.log")
+    os.makedirs(os.path.join(log_folder, "latest", case_folder), exist_ok=True)
+    logfile = os.path.join(log_folder, "latest", f"{case_id}.log")
     fh = logging.FileHandler(logfile)
     formatter = request.session.config.pluginmanager.get_plugin(
         "logging-plugin"
@@ -663,4 +888,12 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
 
 @pytest.fixture(scope="session")
 def rxtxapp() -> RxTxApp:
-    return RxTxApp(os.path.dirname(RXTXAPP_PATH))
+    return RxTxApp(RXTXAPP_PATH)
+
+
+def pytest_collection_modifyitems(items):
+    """Add ``base_performance`` marker to 1080p / 59fps combinations."""
+    mark = pytest.mark.base_performance
+    for item in items:
+        if "1080p" in item.nodeid and "59fps" in item.nodeid:
+            item.add_marker(mark)

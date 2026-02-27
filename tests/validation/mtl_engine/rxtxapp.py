@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 # RxTxApp Implementation for Media Transport Library
 # Handles RxTxApp-specific command generation and configuration
 
@@ -546,6 +549,9 @@ class RxTxApp(Application):
         ]
 
         # Add command-line parameters from RXTXAPP_CMDLINE_PARAM_MAP
+        # Parameters with default 0 that should be skipped when not explicitly set
+        skip_if_zero = {"rx_max_file_size"}
+
         for universal_param, rxtx_param in RXTXAPP_CMDLINE_PARAM_MAP.items():
             # Skip test_time unless explicitly provided
             if universal_param == "test_time" and not self.was_user_provided(
@@ -553,6 +559,9 @@ class RxTxApp(Application):
             ):
                 continue
             value = self.params.get(universal_param)
+            # Skip parameters with value 0 that mean "no limit" or "disabled"
+            if universal_param in skip_if_zero and value == 0:
+                continue
             if value is not None and value is not False:
                 if isinstance(value, bool):
                     cmd_parts.append(rxtx_param)
@@ -583,9 +592,15 @@ class RxTxApp(Application):
 
         # Determine NIC ports list
         nic_port = self.params.get("nic_port")
+        nic_port_r = self.params.get("nic_port_r")  # Redundant port
         nic_port_list = self.params.get("nic_port_list") or (
             [nic_port] if nic_port else []
         )
+
+        # For redundant mode, add the redundant port to the list
+        redundant = self.params.get("redundant", False)
+        if redundant and nic_port_r and nic_port_r not in nic_port_list:
+            nic_port_list.append(nic_port_r)
 
         # For loopback mode, need two interfaces; for single direction, one is enough
         if len(nic_port_list) == 1 and direction not in ("tx", "rx"):
@@ -598,58 +613,127 @@ class RxTxApp(Application):
         # Fill interface names & addressing using legacy helper
         add_interfaces(config, nic_port_list, test_mode, direction=direction)
 
-        # Fix session interface indices when using single interface
-        # Template has TX on interface[0] and RX on interface[1], but with single interface both should use [0]
-        if len(config["interfaces"]) == 1:
-            if config["tx_sessions"] and len(config["tx_sessions"]) > 0:
-                config["tx_sessions"][0]["interface"] = [0]
-            if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
-                config["rx_sessions"][0]["interface"] = [0]
+        # Remove unused interfaces (empty name/ip causes MTL to fail with "invalid ip 0.0.0.0")
+        config["interfaces"] = [
+            iface for iface in config["interfaces"] if iface.get("name")
+        ]
 
-        # Override interface IPs and session IPs with user-provided source_ip/destination_ip if specified
-        # This allows tests to use custom IP addressing instead of ip_pools values
-        if test_mode == "unicast":
-            user_source_ip = self.params.get("source_ip")
-            user_dest_ip = self.params.get("destination_ip")
+        # Redundant mode: configure 2 interfaces and dual IP arrays in sessions
+        if redundant and len(nic_port_list) >= 2:
+            source_ip = self.params.get("source_ip")
+            dest_ip = self.params.get("destination_ip")
+            source_ip_r = self.params.get("source_ip_r")
+            dest_ip_r = self.params.get("destination_ip_r")
 
-            if direction == "tx" and len(config["interfaces"]) >= 1:
-                # TX: interface IP = source_ip (local), session dip = destination_ip (remote RX)
-                if user_source_ip:
-                    config["interfaces"][0]["ip"] = user_source_ip
-                if (
-                    user_dest_ip
-                    and config["tx_sessions"]
-                    and len(config["tx_sessions"]) > 0
-                ):
-                    config["tx_sessions"][0]["dip"][0] = user_dest_ip
-            elif direction == "rx" and len(config["interfaces"]) >= 1:
-                # RX: interface IP = destination_ip (local bind), session ip = source_ip (filter for TX)
-                if user_dest_ip:
-                    config["interfaces"][0]["ip"] = user_dest_ip
-                if (
-                    user_source_ip
-                    and config["rx_sessions"]
-                    and len(config["rx_sessions"]) > 0
-                ):
-                    config["rx_sessions"][0]["ip"][0] = user_source_ip
-            elif direction is None and len(config["interfaces"]) >= 2:
-                # Loopback: TX interface uses source_ip, RX interface uses destination_ip
-                if user_source_ip:
-                    config["interfaces"][0]["ip"] = user_source_ip
-                if user_dest_ip:
-                    config["interfaces"][1]["ip"] = user_dest_ip
-                if (
-                    user_dest_ip
-                    and config["tx_sessions"]
-                    and len(config["tx_sessions"]) > 0
-                ):
-                    config["tx_sessions"][0]["dip"][0] = user_dest_ip
-                if (
-                    user_source_ip
-                    and config["rx_sessions"]
-                    and len(config["rx_sessions"]) > 0
-                ):
-                    config["rx_sessions"][0]["ip"][0] = user_source_ip
+            if not all([source_ip, dest_ip, source_ip_r, dest_ip_r]):
+                logger.warning(
+                    "Redundant mode requires source_ip, destination_ip, "
+                    "source_ip_r, destination_ip_r parameters"
+                )
+
+            # Ensure we have exactly 2 interfaces
+            config["interfaces"] = [
+                {"name": nic_port_list[0], "ip": ""},
+                {"name": nic_port_list[1], "ip": ""},
+            ]
+
+            if direction == "tx":
+                config["interfaces"][0]["ip"] = source_ip or ""
+                config["interfaces"][1]["ip"] = source_ip_r or ""
+                if config["tx_sessions"] and len(config["tx_sessions"]) > 0:
+                    config["tx_sessions"][0]["dip"] = [dest_ip or "", dest_ip_r or ""]
+                    config["tx_sessions"][0]["interface"] = [0, 1]
+                config["rx_sessions"] = []
+            elif direction == "rx":
+                config["interfaces"][0]["ip"] = dest_ip or ""
+                config["interfaces"][1]["ip"] = dest_ip_r or ""
+                if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
+                    config["rx_sessions"][0]["ip"] = [
+                        source_ip or "",
+                        source_ip_r or "",
+                    ]
+                    config["rx_sessions"][0]["interface"] = [0, 1]
+                config["tx_sessions"] = []
+            else:
+                # Loopback redundant (less common)
+                config["interfaces"][0]["ip"] = source_ip or ""
+                config["interfaces"][1]["ip"] = source_ip_r or ""
+                if config["tx_sessions"] and len(config["tx_sessions"]) > 0:
+                    config["tx_sessions"][0]["dip"] = [dest_ip or "", dest_ip_r or ""]
+                    config["tx_sessions"][0]["interface"] = [0, 1]
+                if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
+                    config["rx_sessions"][0]["ip"] = [
+                        source_ip or "",
+                        source_ip_r or "",
+                    ]
+                    config["rx_sessions"][0]["interface"] = [0, 1]
+
+            logger.info(
+                f"Redundant mode: interfaces={[i['name'] for i in config['interfaces']]}, "
+                f"direction={direction}"
+            )
+        else:
+            # Non-redundant mode: fix single interface indices
+            if len(config["interfaces"]) == 1:
+                if config["tx_sessions"] and len(config["tx_sessions"]) > 0:
+                    config["tx_sessions"][0]["interface"] = [0]
+                if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
+                    config["rx_sessions"][0]["interface"] = [0]
+
+            # Override interface IPs and session IPs with user-provided source_ip/destination_ip if specified
+            # This allows tests to use custom IP addressing instead of ip_pools values
+            if test_mode == "unicast":
+                user_source_ip = self.params.get("source_ip")
+                user_dest_ip = self.params.get("destination_ip")
+
+                if direction == "tx" and len(config["interfaces"]) >= 1:
+                    # TX: interface IP = source_ip (local), session dip = destination_ip (remote RX)
+                    if user_source_ip:
+                        config["interfaces"][0]["ip"] = user_source_ip
+                    if (
+                        user_dest_ip
+                        and config["tx_sessions"]
+                        and len(config["tx_sessions"]) > 0
+                    ):
+                        config["tx_sessions"][0]["dip"][0] = user_dest_ip
+                elif direction == "rx" and len(config["interfaces"]) >= 1:
+                    # RX: interface IP = destination_ip (local bind), session ip = source_ip (filter for TX)
+                    if user_dest_ip:
+                        config["interfaces"][0]["ip"] = user_dest_ip
+                    if (
+                        user_source_ip
+                        and config["rx_sessions"]
+                        and len(config["rx_sessions"]) > 0
+                    ):
+                        config["rx_sessions"][0]["ip"][0] = user_source_ip
+                elif direction is None and len(config["interfaces"]) >= 2:
+                    # Loopback: TX interface uses source_ip, RX interface uses destination_ip
+                    if user_source_ip:
+                        config["interfaces"][0]["ip"] = user_source_ip
+                    if user_dest_ip:
+                        config["interfaces"][1]["ip"] = user_dest_ip
+                    if (
+                        user_dest_ip
+                        and config["tx_sessions"]
+                        and len(config["tx_sessions"]) > 0
+                    ):
+                        config["tx_sessions"][0]["dip"][0] = user_dest_ip
+                    if (
+                        user_source_ip
+                        and config["rx_sessions"]
+                        and len(config["rx_sessions"]) > 0
+                    ):
+                        config["rx_sessions"][0]["ip"][0] = user_source_ip
+
+        # Add rx_queues_cnt/tx_queues_cnt to interfaces if specified
+        rx_queues_cnt = self.params.get("rx_queues_cnt")
+        tx_queues_cnt = self.params.get("tx_queues_cnt")
+        if rx_queues_cnt is not None or tx_queues_cnt is not None:
+            for iface in config["interfaces"]:
+                if rx_queues_cnt is not None:
+                    iface["rx_queues_cnt"] = int(rx_queues_cnt)
+                if tx_queues_cnt is not None:
+                    iface["tx_queues_cnt"] = int(tx_queues_cnt)
 
         # Helper to populate a nested session list for a given type
         def _populate_session(is_tx: bool):
@@ -1239,7 +1323,8 @@ class RxTxApp(Application):
             ):
                 dst_ip = self.config["tx_sessions"][0]["dip"][0]
                 netsniff.update_filter(dst_ip=dst_ip)
-                netsniff.capture()
+                capture_time = self.params.get("test_time", 30)
+                netsniff.capture(capture_time=capture_time)
                 logger.info(f"Started netsniff-ng capture for destination IP {dst_ip}")
             else:
                 logger.warning("Could not extract destination IP for netsniff capture")

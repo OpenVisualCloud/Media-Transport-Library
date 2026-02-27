@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import argparse
 
 import yaml
@@ -46,7 +50,12 @@ def gen_test_config(
 
 
 def gen_topology_config(
-    pci_device: str, ip_address: str, username: str, password: str, key_path: str
+    pci_device: str,
+    ip_address: str,
+    username: str,
+    password: str,
+    key_path: str,
+    extra_info: dict = None,
 ) -> str:
     # Support comma-separated PCI devices for multiple interfaces
     pci_devices = [dev.strip() for dev in pci_device.split(",")]
@@ -85,6 +94,8 @@ def gen_topology_config(
         topology_config["hosts"][0]["connections"][0]["connection_options"][
             "key_path"
         ] = key_path
+    if extra_info:
+        topology_config["hosts"][0]["extra_info"] = extra_info
     return yaml.safe_dump(topology_config, explicit_start=True, sort_keys=False)
 
 
@@ -154,6 +165,7 @@ def main() -> None:
         default="None",
         help="specify path to SSH private key for the test host",
     )
+
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
@@ -180,6 +192,7 @@ def main() -> None:
                 username=args.username,
                 password=args.password,
                 key_path=args.key_path,
+                extra_info={"mtl_path": args.mtl_path},
             )
         )
 
