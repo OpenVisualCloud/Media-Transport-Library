@@ -14,6 +14,7 @@ from report_generators.parsers import (
     parse_pytest_html,
     parse_system_info,
 )
+from report_generators.regression_analyzer import analyze_regressions
 
 
 def collect_pytest_reports(pytest_dir):
@@ -59,22 +60,25 @@ def collect_gtest_reports(gtest_dir):
 
 
 def collect_system_info(system_info_dir):
-    """Collect and parse system information files."""
-    system_info_list = []
-
+    """Collect and parse system information files, deduplicated by hostname."""
     if not system_info_dir or not Path(system_info_dir).exists():
-        return system_info_list
+        return []
 
     info_files = list(Path(system_info_dir).rglob("system_info.txt"))
     print(f"Found {len(info_files)} system info files")
 
+    seen = {}  # hostname -> info dict
     for info_file in info_files:
         try:
             info = parse_system_info(info_file)
-            system_info_list.append(info)
+            hostname = info.get("hostname", "unknown")
+            if hostname not in seen:
+                seen[hostname] = info
         except Exception as e:
             print(f"Error parsing {info_file}: {e}")
 
+    system_info_list = list(seen.values())
+    print(f"Unique hosts: {len(system_info_list)}")
     return system_info_list
 
 
@@ -91,6 +95,16 @@ def build_test_metadata(args):
         "gtest_run_number": args.gtest_run_number,
         "gtest_branch": args.gtest_branch,
         "gtest_run_url": args.gtest_run_url,
+        "baseline_pytest_run_id": args.baseline_pytest_run_id,
+        "baseline_pytest_run_date": args.baseline_pytest_run_date,
+        "baseline_pytest_run_number": args.baseline_pytest_run_number,
+        "baseline_pytest_branch": args.baseline_pytest_branch,
+        "baseline_pytest_run_url": args.baseline_pytest_run_url,
+        "baseline_gtest_run_id": args.baseline_gtest_run_id,
+        "baseline_gtest_run_date": args.baseline_gtest_run_date,
+        "baseline_gtest_run_number": args.baseline_gtest_run_number,
+        "baseline_gtest_branch": args.baseline_gtest_branch,
+        "baseline_gtest_run_url": args.baseline_gtest_run_url,
     }
 
 
@@ -121,6 +135,30 @@ def main():
     parser.add_argument("--gtest-branch", help="GTest workflow branch")
     parser.add_argument("--gtest-run-url", help="GTest workflow run URL")
 
+    # Baseline (regression comparison) arguments
+    parser.add_argument(
+        "--baseline-pytest-dir",
+        help="Directory containing baseline pytest HTML reports for regression comparison",
+    )
+    parser.add_argument(
+        "--baseline-gtest-dir",
+        help="Directory containing baseline gtest log files for regression comparison",
+    )
+    parser.add_argument("--baseline-pytest-run-id", help="Baseline pytest run ID")
+    parser.add_argument("--baseline-pytest-run-date", help="Baseline pytest run date")
+    parser.add_argument(
+        "--baseline-pytest-run-number", help="Baseline pytest run number"
+    )
+    parser.add_argument("--baseline-pytest-branch", help="Baseline pytest branch")
+    parser.add_argument("--baseline-pytest-run-url", help="Baseline pytest run URL")
+    parser.add_argument("--baseline-gtest-run-id", help="Baseline gtest run ID")
+    parser.add_argument("--baseline-gtest-run-date", help="Baseline gtest run date")
+    parser.add_argument(
+        "--baseline-gtest-run-number", help="Baseline gtest run number"
+    )
+    parser.add_argument("--baseline-gtest-branch", help="Baseline gtest branch")
+    parser.add_argument("--baseline-gtest-run-url", help="Baseline gtest run URL")
+
     args = parser.parse_args()
 
     # Validate input directories
@@ -150,15 +188,51 @@ def main():
         print("Error: No test data found in either pytest or gtest directories")
         sys.exit(1)
 
+    # Collect baseline data for regression comparison
+    regression_data = None
+    baseline_pytest_dir = args.baseline_pytest_dir
+    baseline_gtest_dir = args.baseline_gtest_dir
+
+    if baseline_pytest_dir or baseline_gtest_dir:
+        baseline_pytest = []
+        baseline_gtest = []
+        if baseline_pytest_dir and Path(baseline_pytest_dir).exists():
+            print("Collecting baseline pytest reports...")
+            baseline_pytest = collect_pytest_reports(baseline_pytest_dir)
+        if baseline_gtest_dir and Path(baseline_gtest_dir).exists():
+            print("Collecting baseline gtest reports...")
+            baseline_gtest = collect_gtest_reports(baseline_gtest_dir)
+
+        if baseline_pytest or baseline_gtest:
+            print("Analyzing regressions...")
+            regression_data = analyze_regressions(
+                pytest_data, gtest_data, baseline_pytest, baseline_gtest
+            )
+            print(
+                f"  Regressions: {len(regression_data['regressions'])}, "
+                f"Fixes: {len(regression_data['fixes'])}, "
+                f"New failures: {len(regression_data['new_failures'])}"
+            )
+
     # Generate reports
     print("\nGenerating Excel report...")
     generate_excel_report(
-        pytest_data, gtest_data, args.output_excel, system_info_list, test_metadata
+        pytest_data,
+        gtest_data,
+        args.output_excel,
+        system_info_list,
+        test_metadata,
+        regression_data,
     )
 
     print("Generating HTML report...")
     generate_html_report(
-        pytest_data, gtest_data, args.output_html, system_info_list, test_metadata
+        pytest_data,
+        gtest_data,
+        args.output_html,
+        system_info_list,
+        test_metadata,
+        regression_data,
     )
 
     # Print summary

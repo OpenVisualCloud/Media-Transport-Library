@@ -14,10 +14,18 @@ COLOR_FAILED = "f8d7da"
 COLOR_SKIPPED = "fff3cd"
 COLOR_SEPARATOR = "e6f2ff"
 COLOR_WHITE = "FFFFFF"
+COLOR_REGRESSION = "e2b3b3"
+COLOR_FIXED = "b3d9b3"
+COLOR_NEW_FAILURE = "f5d6a8"
 
 
 def generate_excel_report(
-    pytest_data, gtest_data, output_file, system_info_list=None, test_metadata=None
+    pytest_data,
+    gtest_data,
+    output_file,
+    system_info_list=None,
+    test_metadata=None,
+    regression_data=None,
 ):
     """Create Excel report with separate sheets for pytest and gtest."""
     wb = Workbook()
@@ -28,6 +36,8 @@ def generate_excel_report(
         _create_pytest_sheet(wb, pytest_data)
     if gtest_data:
         _create_gtest_sheet(wb, gtest_data)
+    if regression_data:
+        _create_regression_sheet(wb, regression_data)
     _create_summary_sheet(wb, pytest_data, gtest_data, system_info_list, test_metadata)
 
     wb.save(output_file)
@@ -387,7 +397,6 @@ def _add_system_info_section(ws, system_info_list):
     # Headers
     sys_headers = [
         "Hostname",
-        "Platform",
         "CPU",
         "Cores",
         "RAM",
@@ -404,16 +413,60 @@ def _add_system_info_section(ws, system_info_list):
         ws.append(
             [
                 sys_info.get("hostname", "unknown"),
-                sys_info.get("platform", "unknown"),
                 sys_info.get("cpu", "unknown"),
                 sys_info.get("cpu_cores", "unknown"),
-                sys_info.get("ram", "unknown"),
+                sys_info.get("ram", "N/A"),
                 sys_info.get("hugepages", "unknown"),
                 sys_info.get("os", "unknown"),
                 sys_info.get("kernel", "unknown"),
                 sys_info.get("nics", "unknown"),
             ]
         )
+
+
+def _create_regression_sheet(wb, regression_data):
+    """Create regression analysis sheet."""
+    ws = wb.create_sheet("Regressions")
+
+    sections = [
+        ("REGRESSIONS (previously passed, now failing)", "regressions", COLOR_REGRESSION),
+        ("FIXES (previously failing, now passing)", "fixes", COLOR_FIXED),
+        ("NEW FAILURES (not present in baseline)", "new_failures", COLOR_NEW_FAILURE),
+    ]
+
+    for title, key, color in sections:
+        entries = regression_data.get(key, [])
+        row_start = ws.max_row + 1
+        _add_section_title(ws, f"{title} ({len(entries)})", f"A{row_start}:F{row_start}")
+        ws.append([])
+
+        headers = ["Platform", "NIC", "Category", "Test Name", "Baseline", "Current"]
+        ws.append(headers)
+        _style_header_row(ws, ws.max_row, len(headers))
+
+        if entries:
+            for e in entries:
+                ws.append([
+                    e["platform"],
+                    e["nic"],
+                    e["category"],
+                    e["test_name"],
+                    e.get("baseline_result") or "N/A",
+                    e["current_result"],
+                ])
+                row = ws.max_row
+                # Highlight the row with the section color
+                for col in range(1, 7):
+                    ws.cell(row=row, column=col).fill = PatternFill(
+                        start_color=color, end_color=color, fill_type="solid"
+                    )
+        else:
+            ws.append(["No entries"])
+
+        ws.append([])
+        ws.append([])
+
+    _auto_adjust_columns(ws)
 
 
 def _add_section_title(ws, title, merge_range):

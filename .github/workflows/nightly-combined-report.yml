@@ -34,6 +34,14 @@ on:
         description: 'GTest run number (e.g., 65, leave empty for latest)'
         required: false
         type: string
+      baseline_pytest_run_number:
+        description: 'Baseline pytest run number for regression comparison (leave empty to skip)'
+        required: false
+        type: string
+      baseline_gtest_run_number:
+        description: 'Baseline gtest run number for regression comparison (leave empty to skip)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -45,6 +53,8 @@ jobs:
     outputs:
       gtest_run_id: ${{ steps.get-runs.outputs.gtest_run_id }}
       pytest_run_id: ${{ steps.get-runs.outputs.pytest_run_id }}
+      baseline_pytest_run_id: ${{ steps.get-runs.outputs.baseline_pytest_run_id }}
+      baseline_gtest_run_id: ${{ steps.get-runs.outputs.baseline_gtest_run_id }}
       both_completed: ${{ steps.check-status.outputs.both_completed }}
     steps:
       - name: 'preparation: Harden Runner'
@@ -137,6 +147,39 @@ jobs:
 
             core.setOutput('gtest_run_id', runIds['gtest'] || '');
             core.setOutput('pytest_run_id', runIds['pytest'] || '');
+
+            // Find baseline runs for regression comparison
+            const baselinePytestRunNumber = '${{ github.event.inputs.baseline_pytest_run_number }}' || '';
+            const baselineGtestRunNumber = '${{ github.event.inputs.baseline_gtest_run_number }}' || '';
+
+            // If no explicit baseline is given and this is an automatic trigger,
+            // find the second-most-recent completed run as baseline
+            async function findBaselineRun(workflow, explicitRunNumber, currentRunId) {
+              if (explicitRunNumber) {
+                const run = await findRun(workflow, '', explicitRunNumber);
+                return run ? run.id : '';
+              }
+              // Auto-detect: find the latest completed run that is NOT the current one
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: `${workflow}.yml`,
+                per_page: 5,
+                status: 'completed'
+              });
+              const prev = runs.data.workflow_runs.find(r => r.id != currentRunId);
+              if (prev) {
+                console.log(`  Baseline for ${workflow}: run #${prev.run_number}`);
+                return prev.id;
+              }
+              return '';
+            }
+
+            const baselinePytestId = await findBaselineRun('nightly-pytest', baselinePytestRunNumber, runIds['pytest'] || '');
+            const baselineGtestId = await findBaselineRun('nightly-gtest', baselineGtestRunNumber, runIds['gtest'] || '');
+
+            core.setOutput('baseline_pytest_run_id', baselinePytestId ? String(baselinePytestId) : '');
+            core.setOutput('baseline_gtest_run_id', baselineGtestId ? String(baselineGtestId) : '');
 
             return runIds;
 
@@ -270,6 +313,94 @@ jobs:
             echo "No system info reports found (this is optional)"
           fi
 
+      - name: Download baseline pytest artifacts
+        if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        continue-on-error: true
+        with:
+          pattern: nightly-test-report-*
+          path: baseline-pytest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.baseline_pytest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download baseline gtest artifacts
+        if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        continue-on-error: true
+        with:
+          pattern: nightly-gtest-report-*
+          path: baseline-gtest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.baseline_gtest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flatten baseline pytest report structure
+        if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
+        run: |
+          if [ -d "baseline-pytest-reports" ]; then
+            cd baseline-pytest-reports
+            for dir in ./nightly-test-report-*; do
+              if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
+                mv "$dir/report.html" "${dir}.html"
+                rm -rf "$dir"
+              fi
+            done
+            ls -lh ./*.html || echo "No baseline pytest HTML reports found"
+          fi
+
+      - name: Flatten baseline gtest report structure
+        if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
+        run: |
+          if [ -d "baseline-gtest-reports" ]; then
+            cd baseline-gtest-reports
+            for dir in ./nightly-gtest-report-*; do
+              if [ -d "$dir" ] && [ -f "$dir/gtest.log" ]; then
+                mv "$dir/gtest.log" "${dir}.log"
+                rm -rf "$dir"
+              fi
+            done
+            ls -lh ./*.log || echo "No baseline gtest logs found"
+          fi
+
+      - name: Get baseline pytest run metadata
+        id: baseline-pytest-metadata
+        if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = ${{ needs.wait-for-both-workflows.outputs.baseline_pytest_run_id }};
+            const run = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            core.setOutput('run_date', run.data.created_at);
+            core.setOutput('run_id', runId);
+            core.setOutput('run_number', run.data.run_number);
+            core.setOutput('branch', run.data.head_branch);
+            core.setOutput('run_url', run.data.html_url);
+            console.log(`Baseline Pytest Run #${run.data.run_number}, Branch: ${run.data.head_branch}`);
+
+      - name: Get baseline gtest run metadata
+        id: baseline-gtest-metadata
+        if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = ${{ needs.wait-for-both-workflows.outputs.baseline_gtest_run_id }};
+            const run = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            core.setOutput('run_date', run.data.created_at);
+            core.setOutput('run_id', runId);
+            core.setOutput('run_number', run.data.run_number);
+            core.setOutput('branch', run.data.head_branch);
+            core.setOutput('run_url', run.data.html_url);
+            console.log(`Baseline GTest Run #${run.data.run_number}, Branch: ${run.data.head_branch}`);
+
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -278,6 +409,24 @@ jobs:
       - name: Generate combined reports
         id: combine
         run: |
+          BASELINE_ARGS=""
+          if [ -d "baseline-pytest-reports" ]; then
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-dir baseline-pytest-reports"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-run-id ${{ steps.baseline-pytest-metadata.outputs.run_id }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-run-date ${{ steps.baseline-pytest-metadata.outputs.run_date }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-run-number ${{ steps.baseline-pytest-metadata.outputs.run_number }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-branch ${{ steps.baseline-pytest-metadata.outputs.branch }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-pytest-run-url ${{ steps.baseline-pytest-metadata.outputs.run_url }}"
+          fi
+          if [ -d "baseline-gtest-reports" ]; then
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-dir baseline-gtest-reports"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-run-id ${{ steps.baseline-gtest-metadata.outputs.run_id }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-run-date ${{ steps.baseline-gtest-metadata.outputs.run_date }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-run-number ${{ steps.baseline-gtest-metadata.outputs.run_number }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-branch ${{ steps.baseline-gtest-metadata.outputs.branch }}"
+            BASELINE_ARGS="$BASELINE_ARGS --baseline-gtest-run-url ${{ steps.baseline-gtest-metadata.outputs.run_url }}"
+          fi
+
           python3 .github/scripts/combine_all_reports.py \
             --pytest-dir pytest-reports \
             --gtest-dir gtest-reports \
@@ -293,7 +442,8 @@ jobs:
             --gtest-run-date "${{ steps.gtest-metadata.outputs.run_date }}" \
             --gtest-run-number "${{ steps.gtest-metadata.outputs.run_number }}" \
             --gtest-branch "${{ steps.gtest-metadata.outputs.branch }}" \
-            --gtest-run-url "${{ steps.gtest-metadata.outputs.run_url }}"
+            --gtest-run-url "${{ steps.gtest-metadata.outputs.run_url }}" \
+            $BASELINE_ARGS
 
           if [ -f "combined_nightly_report.xlsx" ] && [ -f "combined_nightly_report.html" ]; then
             echo "reports_generated=true" >> "$GITHUB_OUTPUT"

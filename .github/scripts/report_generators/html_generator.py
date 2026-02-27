@@ -6,7 +6,12 @@ import pandas as pd
 
 
 def generate_html_report(
-    pytest_data, gtest_data, output_file, system_info_list=None, test_metadata=None
+    pytest_data,
+    gtest_data,
+    output_file,
+    system_info_list=None,
+    test_metadata=None,
+    regression_data=None,
 ):
     """Create HTML report combining pytest and gtest results."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -17,6 +22,11 @@ def generate_html_report(
     # Generate HTML sections
     test_run_info = _generate_test_run_info(test_metadata)
     overall_summary = _generate_overall_summary(stats)
+    regression_section = (
+        _generate_regression_section(regression_data, test_metadata)
+        if regression_data
+        else ""
+    )
     pytest_summary = _generate_pytest_summary(stats) if pytest_data else ""
     gtest_summary = _generate_gtest_summary(stats) if gtest_data else ""
     system_info_section = (
@@ -30,6 +40,7 @@ def generate_html_report(
         timestamp=timestamp,
         test_run_info=test_run_info,
         overall_summary=overall_summary,
+        regression_section=regression_section,
         pytest_summary=pytest_summary,
         gtest_summary=gtest_summary,
         system_info_section=system_info_section,
@@ -364,13 +375,139 @@ def _generate_gtest_table(gtest_data):
     return html
 
 
+def _generate_regression_section(regression_data, test_metadata):
+    """Generate regression analysis section."""
+    regressions = regression_data.get("regressions", [])
+    fixes = regression_data.get("fixes", [])
+    new_failures = regression_data.get("new_failures", [])
+
+    # Build baseline label from metadata
+    baseline_parts = []
+    for prefix in ("baseline_pytest", "baseline_gtest"):
+        run_num = (test_metadata or {}).get(f"{prefix}_run_number")
+        if run_num:
+            suite = "Pytest" if "pytest" in prefix else "GTest"
+            url = (test_metadata or {}).get(f"{prefix}_run_url")
+            link = (
+                f'<a href="{url}" target="_blank">#{run_num}</a>'
+                if url
+                else f"#{run_num}"
+            )
+            baseline_parts.append(f"{suite} {link}")
+    baseline_label = ", ".join(baseline_parts) if baseline_parts else "previous run"
+
+    # Summary cards
+    html = '<div class="summary"><h2>Regression Analysis</h2>'
+    html += f'<p class="regression-baseline">Compared against baseline: {baseline_label}</p>'
+    html += '<div class="summary-grid">'
+    html += (
+        f'<div class="summary-card regression"><h3>Regressions</h3>'
+        f'<div class="value">{len(regressions)}</div></div>'
+    )
+    html += (
+        f'<div class="summary-card fixed"><h3>Fixes</h3>'
+        f'<div class="value">{len(fixes)}</div></div>'
+    )
+    html += (
+        f'<div class="summary-card new-failure"><h3>New Failures</h3>'
+        f'<div class="value">{len(new_failures)}</div></div>'
+    )
+    html += "</div>"  # summary-grid
+
+    # Regressions table
+    if regressions:
+        html += (
+            '<div id="regression-details" class="details">'
+        )
+        html += _regression_table(
+            "Regressions (previously passed, now failing)",
+            "regression-table",
+            regressions,
+            show_baseline=True,
+        )
+        html += "</div>"
+        html += (
+            '<span class="clickable" onclick="toggleDetails(\'regression-details\')"'
+            ">Show regression details</span>"
+        )
+
+    # New failures table
+    if new_failures:
+        html += (
+            '<div id="new-failure-details" class="details">'
+        )
+        html += _regression_table(
+            "New Failures (not present in baseline)",
+            "new-failure-table",
+            new_failures,
+            show_baseline=False,
+        )
+        html += "</div>"
+        html += (
+            '<span class="clickable" onclick="toggleDetails(\'new-failure-details\')"'
+            ">Show new failure details</span>"
+        )
+
+    # Fixes table
+    if fixes:
+        html += (
+            '<div id="fixes-details" class="details">'
+        )
+        html += _regression_table(
+            "Fixes (previously failing, now passing)",
+            "fixes-table",
+            fixes,
+            show_baseline=True,
+        )
+        html += "</div>"
+        html += (
+            '<span class="clickable" onclick="toggleDetails(\'fixes-details\')"'
+            ">Show fix details</span>"
+        )
+
+    html += "</div>"  # summary
+    return html
+
+
+def _regression_table(title, css_class, entries, show_baseline):
+    """Render a single regression/fixes/new-failures table."""
+    html = f'<h4>{title}</h4><table class="{css_class}"><thead><tr>'
+    html += "<th>Platform</th><th>NIC</th><th>Category</th><th>Test Name</th>"
+    if show_baseline:
+        html += "<th>Baseline</th>"
+    html += "<th>Current</th></tr></thead><tbody>"
+
+    for e in entries:
+        cur_class = (
+            f"result-{e['current_result'].lower()}"
+            if e["current_result"].lower() in ("passed", "failed", "skipped")
+            else ""
+        )
+        html += (
+            f"<tr><td>{e['platform']}</td><td>{e['nic']}</td>"
+            f"<td>{e['category']}</td><td>{e['test_name']}</td>"
+        )
+        if show_baseline:
+            base_class = (
+                f"result-{e['baseline_result'].lower()}"
+                if e["baseline_result"]
+                and e["baseline_result"].lower() in ("passed", "failed", "skipped")
+                else ""
+            )
+            html += f'<td class="{base_class}">{e["baseline_result"]}</td>'
+        html += f'<td class="{cur_class}">{e["current_result"]}</td></tr>'
+
+    html += "</tbody></table>"
+    return html
+
+
 def _generate_system_info(system_info_list):
     """Generate system information section."""
     html = (
         '<div class="summary"><h2>Test Environment Information</h2><table><thead><tr>'
     )
     html += (
-        "<th>Hostname</th><th>Platform</th><th>CPU</th><th>Cores</th><th>RAM</th>"
+        "<th>Hostname</th><th>CPU</th><th>Cores</th><th>RAM</th>"
         "<th>HugePages</th><th>OS</th><th>Kernel</th><th>NICs</th>"
     )
     html += "</tr></thead><tbody>"
@@ -378,10 +515,9 @@ def _generate_system_info(system_info_list):
     for sys_info in system_info_list:
         html += f"""<tr>
             <td>{sys_info.get('hostname', 'unknown')}</td>
-            <td>{sys_info.get('platform', 'unknown')}</td>
             <td>{sys_info.get('cpu', 'unknown')}</td>
             <td>{sys_info.get('cpu_cores', 'unknown')}</td>
-            <td>{sys_info.get('ram', 'unknown')}</td>
+            <td>{sys_info.get('ram', 'N/A')}</td>
             <td>{sys_info.get('hugepages', 'unknown')}</td>
             <td>{sys_info.get('os', 'unknown')}</td>
             <td>{sys_info.get('kernel', 'unknown')}</td>
@@ -435,6 +571,11 @@ def _get_html_template():
         .result-passed {{ background-color: #d4edda; }}
         .result-failed {{ background-color: #f8d7da; }}
         .result-skipped {{ background-color: #fff3cd; }}
+        .regression {{ background-color: #f8d7da; color: #721c24; }}
+        .fixed {{ background-color: #d4edda; color: #155724; }}
+        .new-failure {{ background-color: #fff3cd; color: #856404; }}
+        .regression-baseline {{ color: #555; font-size: 0.95em; margin-bottom: 15px; }}
+        .regression-table td, .new-failure-table td {{ font-size: 0.9em; }}
     </style>
     <script>
         function toggleDetails(id) {{
@@ -452,6 +593,7 @@ def _get_html_template():
     {overall_summary}
     {pytest_summary}
     {gtest_summary}
+    {regression_section}
     {system_info_section}
     <h2>Pytest Results by NIC and Category</h2>
     {pytest_table}

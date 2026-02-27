@@ -84,20 +84,22 @@ def parse_system_info(info_file):
 
         info = {}
 
-        # Extract hostname
-        filename = Path(info_file).parent.name
-        match = re.match(r"system-info-(.+)", filename)
-        info["hostname"] = match.group(1) if match else "unknown"
+        # Extract tested NIC from directory name (e.g. system-info-e810-video)
+        dirname = Path(info_file).parent.name
+        dir_match = re.match(r"system-info-([^-]+)", dirname)
+        info["tested_nic"] = dir_match.group(1).upper() if dir_match else "Unknown"
 
-        # Extract OS/Kernel from uname
+        # Extract hostname and kernel from uname line
         uname_match = re.search(r"Linux (\S+) ([\d\.-]+\S*)", content)
         if uname_match:
             info["hostname"] = uname_match.group(1)
             info["kernel"] = uname_match.group(2)
+        else:
+            info["hostname"] = "unknown"
+            info["kernel"] = "unknown"
 
-        # Extract OS version
-        ubuntu_match = re.search(r"#\d+[~-]Ubuntu.*?(\d{4})", content)
-        info["os"] = f"Ubuntu {ubuntu_match.group(1)}" if ubuntu_match else "Unknown"
+        # Extract OS version from kernel version
+        info["os"] = _detect_ubuntu_version(info["kernel"])
 
         # Extract CPU info
         cpu_match = re.search(r"Model name:\s+(.+)", content)
@@ -105,8 +107,7 @@ def parse_system_info(info_file):
 
         # Extract CPU cores
         cores_match = re.search(r"CPU\(s\):\s+(\d+)", content)
-        if cores_match:
-            info["cpu_cores"] = cores_match.group(1)
+        info["cpu_cores"] = cores_match.group(1) if cores_match else "Unknown"
 
         # Extract HugePages
         hugepages_match = re.search(r"HugePages_Total:\s+(\d+)", content)
@@ -114,37 +115,41 @@ def parse_system_info(info_file):
         if hugepages_match and hugepagesize_match:
             total_pages = int(hugepages_match.group(1))
             page_size_kb = int(hugepagesize_match.group(1))
+            page_size_mb = page_size_kb // 1024
             total_gb = (total_pages * page_size_kb) / (1024 * 1024)
-            info["hugepages"] = (
-                f"{total_pages} x {page_size_kb//1024//1024}GB = {total_gb:.0f}GB"
-            )
+            if page_size_mb >= 1024:
+                info["hugepages"] = (
+                    f"{total_pages} x {page_size_mb // 1024}GB = {total_gb:.0f}GB"
+                )
+            else:
+                info["hugepages"] = (
+                    f"{total_pages} x {page_size_mb}MB = {total_gb:.1f}GB"
+                )
+        else:
+            info["hugepages"] = "Unknown"
 
-        # Extract RAM
+        # Extract RAM from MemTotal if present
         mem_match = re.search(r"MemTotal:\s+(\d+)\s+kB", content)
         if mem_match:
             mem_gb = int(mem_match.group(1)) / (1024 * 1024)
             info["ram"] = f"{mem_gb:.0f}GB"
+        else:
+            info["ram"] = "N/A"
 
-        # Extract NIC info
-        nic_list = []
-        e810_matches = re.findall(r"'Ethernet Controller (E\d+[^']*)'", content)
-        nic_list.extend([nic for nic in e810_matches if nic not in nic_list])
-
-        broadcom_matches = re.findall(r"'(BCM\d+[^']*)'", content)
-        nic_list.extend(
-            [
-                nic
-                for nic in broadcom_matches
-                if "NetXtreme" in nic and nic not in nic_list
-            ]
-        )
-
-        info["nics"] = ", ".join(nic_list) if nic_list else "Unknown"
-
-        # Extract platform
-        platform_match = re.search(r"Product Name:\s+(.+)", content)
-        info["platform"] = (
-            platform_match.group(1).strip() if platform_match else "Unknown"
+        # Extract unique NIC models from dpdk-devbind output
+        nic_models = set()
+        for m in re.finditer(
+            r"'Ethernet Controller (E\d+-\S+)[^']*'", content
+        ):
+            nic_models.add(m.group(1))
+        for m in re.finditer(
+            r"'Ethernet.*?(E8[0-9]{2}[^']*?)(?:\\\\x00|')", content
+        ):
+            short = m.group(1).strip().split()[0]
+            if short:
+                nic_models.add(short)
+        info["nics"] = (
+            ", ".join(sorted(nic_models)) if nic_models else info["tested_nic"]
         )
 
         return info
@@ -156,11 +161,33 @@ def parse_system_info(info_file):
             "os": "unknown",
             "cpu": "unknown",
             "cpu_cores": "unknown",
-            "ram": "unknown",
+            "ram": "N/A",
             "hugepages": "unknown",
-            "nics": "unknown",
-            "platform": "unknown",
+            "nics": "Unknown",
+            "tested_nic": "Unknown",
         }
+
+
+# Ubuntu kernel-to-release mapping (major.minor prefix)
+_UBUNTU_KERNEL_MAP = {
+    "5.4": "20.04",
+    "5.15": "22.04",
+    "5.19": "22.10",
+    "6.2": "23.04",
+    "6.5": "23.10",
+    "6.8": "24.04",
+    "6.11": "24.10",
+}
+
+
+def _detect_ubuntu_version(kernel_version):
+    """Map kernel version to Ubuntu release."""
+    m = re.match(r"(\d+\.\d+)", kernel_version)
+    if m:
+        ver = _UBUNTU_KERNEL_MAP.get(m.group(1))
+        if ver:
+            return f"Ubuntu {ver}"
+    return f"Linux {kernel_version}"
 
 
 # Private helper functions
