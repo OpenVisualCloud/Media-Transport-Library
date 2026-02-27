@@ -82,15 +82,26 @@ LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
 
+prefix_arg=""
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	prefix_arg="--prefix=$MTL_INSTALL_PREFIX"
+fi
+
+do_install() {
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		ninja install
+	elif [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
+		ninja install
+	else
+		sudo ninja install
+	fi
+}
+
 # build lib
-meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt" -Denable_fuzzing="$enable_fuzzing"
+meson setup "${LIB_BUILD_DIR}" $prefix_arg -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt" -Denable_fuzzing="$enable_fuzzing"
 pushd "${LIB_BUILD_DIR}"
 ninja
-if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
-	ninja install
-else
-	sudo ninja install
-fi
+do_install
 popd
 
 # build app
@@ -111,44 +122,32 @@ popd
 
 # build plugins
 pushd plugins/
-meson setup "${PLUGINS_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${PLUGINS_BUILD_DIR}" $prefix_arg -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${PLUGINS_BUILD_DIR}"
 ninja
-if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
-	ninja install
-else
-	sudo ninja install
-fi
+do_install
 popd
 
 # build ld_preload
 if [ "$OS" != "Windows_NT" ]; then
 	pushd ld_preload/
-	meson setup "${LD_PRELOAD_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	meson setup "${LD_PRELOAD_BUILD_DIR}" $prefix_arg -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 	popd
 	pushd "${LD_PRELOAD_BUILD_DIR}"
 	ninja
-	if [ "$user" == "root" ]; then
-		ninja install
-	else
-		sudo ninja install
-	fi
+	do_install
 	popd
 fi
 
 # build mtl_manager
 if [ "$OS" != "Windows_NT" ]; then
 	pushd manager/
-	meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	meson setup "${MANAGER_BUILD_DIR}" $prefix_arg -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 	popd
 	pushd "${MANAGER_BUILD_DIR}"
 	ninja
-	if [ "$user" == "root" ]; then
-		ninja install
-	else
-		sudo ninja install
-	fi
+	do_install
 	popd
 fi
 
