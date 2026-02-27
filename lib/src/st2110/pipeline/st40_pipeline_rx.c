@@ -160,6 +160,9 @@ static int rx_st40p_rtp_ready(void* priv) {
     frame_info->rtp_timestamp = rtp_timestamp;
     frame_info->timestamp = rtp_timestamp;
     frame_info->epoch = 0;
+    uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+    frame_info->interlaced = (f_bits & 0x2) ? true : false;
+    frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
     ctx->inflight_frame = framebuff;
     ctx->inflight_rtp_timestamp = rtp_timestamp;
   } else {
@@ -168,18 +171,43 @@ static int rx_st40p_rtp_ready(void* priv) {
     if (!frame_info->receive_timestamp ||
         (frame_info->receive_timestamp > receive_timestamp))
       frame_info->receive_timestamp = receive_timestamp;
+
+    /* Update field metadata if a later packet carries interlace info */
+    uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
+    bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
+    bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
+    if ((frame_info->interlaced != pkt_interlaced) ||
+        (frame_info->second_field != pkt_second_field)) {
+      frame_info->interlaced = pkt_interlaced;
+      frame_info->second_field = pkt_second_field;
+    }
   }
 
+  /* per-port sequence tracking */
   if (ctx->last_seq_valid[s_port]) {
     uint16_t expected = (uint16_t)(ctx->last_seq[s_port] + 1);
     if (expected != seq_number) {
-      frame_info->seq_discont = true;
+      frame_info->port_seq_discont[s_port] = true;
       if (mt_seq16_greater(seq_number, expected))
-        frame_info->seq_lost += (uint16_t)(seq_number - expected);
+        frame_info->port_seq_lost[s_port] += (uint16_t)(seq_number - expected);
     }
   }
   ctx->last_seq[s_port] = seq_number;
   ctx->last_seq_valid[s_port] = true;
+
+  /* session-level sequence tracking (merged across all ports) */
+  if (ctx->session_last_seq_valid) {
+    uint16_t expected = (uint16_t)(ctx->session_last_seq + 1);
+    if (expected != seq_number && mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+      frame_info->seq_discont = true;
+      frame_info->seq_lost += (uint16_t)(seq_number - expected);
+    }
+  }
+  if (!ctx->session_last_seq_valid ||
+      mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+    ctx->session_last_seq = seq_number;
+    ctx->session_last_seq_valid = true;
+  }
 
   frame_info->pkts_total++;
   frame_info->pkts_recv[s_port]++;
@@ -402,10 +430,16 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->pkts_total = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->second_field = false;
+    frame_info->interlaced = false;
     frame_info->priv = framebuff;
 
     dbg("%s(%d), init fb %u\n", __func__, idx, i);
@@ -576,10 +610,16 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->pkts_total = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
   frame_info->seq_discont = false;
   frame_info->seq_lost = 0;
   frame_info->rtp_marker = false;
   frame_info->receive_timestamp = 0;
+  frame_info->second_field = false;
+  frame_info->interlaced = false;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
 
@@ -666,6 +706,9 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
+  ctx->session_last_seq_valid = false;
+  ctx->session_last_seq = 0;
+  ctx->session_last_ts = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     ctx->port_map[i] = MTL_PORT_MAX;

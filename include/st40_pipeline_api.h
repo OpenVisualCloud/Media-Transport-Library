@@ -45,6 +45,11 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** Packet loss per session port based on per-port sequence tracking. */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX];
+  /** True when a per-port sequence discontinuity was detected in this frame. */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];
+
   /** Whether a marker bit was seen on any RTP packet in this frame. */
   bool rtp_marker;
   /** True if a sequence number discontinuity was observed within this frame. */
@@ -54,6 +59,11 @@ struct st40_frame_info {
 
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
+
+  /** True if this frame represents the second interlaced field (F=0b11). */
+  bool second_field;
+  /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
+  bool interlaced;
 
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -187,6 +197,12 @@ enum st40p_rx_flag {
    * Force the numa of the created session, both CPU and memory
    */
   ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
+  /**
+   * If set, lib will auto-detect progressive vs interlaced using RTP F bits.
+   * Note: auto-detect is now enabled by default; this flag is kept for backward
+   * compatibility.
+   */
+  ST40P_RX_FLAG_AUTO_DETECT_INTERLACED = (MTL_BIT32(3)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
   ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -199,7 +215,8 @@ enum st40p_rx_flag {
 struct st40p_rx_ops {
   /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** Mandatory. interlaced or not */
+  /** Optional. interlaced or not. Used as the initial value; auto-detection from
+   * RTP F bits will override this at runtime. */
   bool interlaced;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;
