@@ -5,6 +5,7 @@
 import datetime
 import logging
 import os
+import re
 import shutil
 import signal
 import time
@@ -41,6 +42,32 @@ from mtl_engine.stash import (
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
+
+
+class _SshPollingFilter(logging.Filter):
+    """Suppress repetitive SSH process-polling logs.
+
+    Filters out:
+    - CMD lines executing pgrep / ps-aux polling commands
+    - OUT lines whose only payload is a PID number (polling responses)
+    - "Not found PID in system" status messages
+    """
+
+    _NOISE_PATTERNS = ("pgrep -P", "ps aux | grep 'true", "Not found PID in system")
+    _PID_ONLY_RE = re.compile(r"^output:\s*stdout>>\s*\d+\s*$", re.DOTALL)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if any(p in msg for p in self._NOISE_PATTERNS):
+            return False
+        if self._PID_ONLY_RE.match(msg):
+            return False
+        return True
+
+
+logging.getLogger("mfd_connect.ssh").addFilter(_SshPollingFilter())
+logging.getLogger("mfd_connect.process.ss").addFilter(_SshPollingFilter())
+
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
 
