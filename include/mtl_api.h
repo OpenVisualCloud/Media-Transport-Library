@@ -495,6 +495,27 @@ enum mtl_init_flag {
 enum mtl_port_init_flag {
   /** user force the NUMA id instead reading from NIC PCIE topology */
   MTL_PORT_FLAG_FORCE_NUMA = (MTL_BIT64(0)),
+
+  /**
+   * Allow session initialization to proceed even when this port is down.
+   * Down ports are skipped; the session will initialize using only the ports
+   * that are up. As long as at least one port is up, initialization succeeds.
+   *
+   * This also changes the link-up detection from STRICT to RELAXED mode:
+   *
+   * STRICT (flag not set):
+   *   Retries MT_DEV_LINK_RETRY_COUNT outer loops, each polling
+   *   MT_DEV_LINK_POLL_COUNT times at MT_DEV_LINK_POLL_INTERVAL_MS intervals.
+   *   Total max wait = 3 × 300 × 100 ms = 90 seconds.
+   *   All configured ports must be up or initialization fails.
+   *
+   * RELAXED (flag set):
+   *   A single pass of MT_DEV_LINK_POLL_COUNT polls at the shorter
+   *   MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED interval.
+   *   Total max wait = 300 × 10 ms = 3 seconds.
+   *   Any port still down after this window is silently skipped.
+   */
+  MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION = (MTL_BIT64(1)),
 };
 
 struct mtl_ptp_sync_notify_meta {

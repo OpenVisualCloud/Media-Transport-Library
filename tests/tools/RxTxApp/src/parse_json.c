@@ -523,6 +523,10 @@ static int st_json_parse_interfaces(json_object* interface_obj,
     }
     interface->rx_queues_cnt = cnt;
   }
+  obj = st_json_object_object_get(interface_obj, "allow_down_init");
+  if (obj) {
+    interface->allow_down_init = json_object_get_boolean(obj);
+  }
 
   return ST_JSON_SUCCESS;
 }

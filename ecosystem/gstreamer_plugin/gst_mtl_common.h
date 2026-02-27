@@ -50,6 +50,8 @@ enum {
   PROP_GENERAL_PORT_TX_QUEUES,
   PROP_GENERAL_ENABLE_ONBOARD_PTP,
   PROP_GENERAL_ENABLE_DMA_OFFLOAD,
+  PROP_GENERAL_DEV_ARGS_ALLOW_DOWN_P,
+  PROP_GENERAL_DEV_ARGS_ALLOW_DOWN_R,
   PROP_GENERAL_MAX
 };
 
@@ -68,6 +70,7 @@ typedef struct GeneralArgs {
   gint log_level;
   gboolean enable_onboard_ptp;
   gboolean enable_dma_offload;
+  gboolean allow_port_down[MTL_PORT_MAX];
 } GeneralArgs;
 
 typedef struct SessionPortArgs {

@@ -393,6 +393,8 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
     p->tx_queues_cnt[i] = ctx->json_ctx->interfaces[i].tx_queues_cnt;
     p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
+    if (ctx->json_ctx->interfaces[i].allow_down_init)
+      p->port_params[i].flags |= MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {

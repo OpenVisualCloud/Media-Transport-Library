@@ -403,7 +403,7 @@ struct st40_rx_ops {
   union {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-    /** deprecated, use ip_addr instead, sip_addr is confused */
+    /** deprecated, use ip_addr instead, sip_addr is confusing */
     uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
         "Use ip_addr instead");
   };
