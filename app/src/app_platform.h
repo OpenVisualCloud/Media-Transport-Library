@@ -163,11 +163,19 @@ static inline void st_usleep(
 }
 
 static inline int st_get_tai_time(struct timespec* ts) {
+#ifndef WINDOWSENV
   return clock_gettime(CLOCK_TAI, ts);
+#else
+  return clock_gettime(CLOCK_REALTIME, ts);
+#endif
 }
 
 static inline int st_set_tai_time(struct timespec* ts) {
+#ifndef WINDOWSENV
   return clock_settime(CLOCK_TAI, ts);
+#else
+  return clock_settime(CLOCK_REALTIME, ts);
+#endif
 }
 
 #ifdef APP_HAS_SSL

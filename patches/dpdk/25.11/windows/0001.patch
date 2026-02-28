@@ -1,0 +1,361 @@
+diff --git a/app/test/meson.build b/app/test/meson.build
+index efec42a6bf..57085f2a40 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -135,7 +135,7 @@ source_file_deps = {
+     'test_mp_secondary.c': ['hash'],
+     'test_net_ether.c': ['net'],
+     'test_net_ip6.c': ['net'],
+-    'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
++#    'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
+     'test_pdcp.c': ['eventdev', 'pdcp', 'net', 'timer', 'security'],
+     'test_pdump.c': ['pdump'] + sample_packet_forward_deps,
+     'test_per_lcore.c': [],
+@@ -215,7 +215,7 @@ source_file_deps = {
+ 
+ source_file_ext_deps = {
+     'test_compressdev.c': ['zlib'],
+-    'test_pcapng.c': ['pcap'],
++#    'test_pcapng.c': ['pcap'],
+ }
+ 
+ def_lib = get_option('default_library')
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index c721d135f5..bf749f4904 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -2623,12 +2623,10 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+ 	struct ice_vsi *vsi;
+ 	int ret;
+-#ifndef RTE_EXEC_ENV_WINDOWS
+ 	off_t pos;
+ 	uint32_t dsn_low, dsn_high;
+ 	uint64_t dsn;
+ 	bool use_dsn;
+-#endif
+ 
+ 	dev->dev_ops = &ice_eth_dev_ops;
+ 	dev->rx_queue_count = ice_rx_queue_count;
+@@ -2676,7 +2674,6 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		return -EINVAL;
+ 	}
+ 
+-#ifndef RTE_EXEC_ENV_WINDOWS
+ 	use_dsn = false;
+ 	dsn = 0;
+ 	pos = rte_pci_find_ext_capability(pci_dev, RTE_PCI_EXT_CAP_ID_DSN);
+@@ -2712,7 +2709,6 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 					"Entering Safe Mode");
+ 		ad->is_safe_mode = 1;
+ 	}
+-#endif
+ 
+ 	PMD_INIT_LOG(INFO, "FW %d.%d.%05d API %d.%d",
+ 		     hw->fw_maj_ver, hw->fw_min_ver, hw->fw_build,
+@@ -2820,9 +2816,7 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 	dev->data->mac_addrs = NULL;
+ err_init_mac:
+ 	rte_free(pf->proto_xtr);
+-#ifndef RTE_EXEC_ENV_WINDOWS
+ err_init_fw:
+-#endif
+ 	ice_deinit_hw(hw);
+ 
+ 	return ret;
+diff --git a/drivers/net/intel/ice/ice_ethdev.h b/drivers/net/intel/ice/ice_ethdev.h
+index 72ed65f13b..460bc48559 100644
+--- a/drivers/net/intel/ice/ice_ethdev.h
++++ b/drivers/net/intel/ice/ice_ethdev.h
+@@ -48,8 +48,13 @@
+ #define ICE_MAX_PKT_TYPE  1024
+ 
+ /* DDP package search path */
++#ifndef RTE_EXEC_ENV_WINDOWS
+ #define ICE_PKG_FILE_DEFAULT "/lib/firmware/intel/ice/ddp/ice.pkg"
+ #define ICE_PKG_FILE_UPDATES "/lib/firmware/updates/intel/ice/ddp/ice.pkg"
++#else
++#define ICE_PKG_FILE_DEFAULT "./ice.pkg"
++#define ICE_PKG_FILE_UPDATES "c:\\dpdk\\lib\\ice.pkg"
++#endif
+ #define ICE_PKG_FILE_SEARCH_PATH_DEFAULT "/lib/firmware/intel/ice/ddp/"
+ #define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
+ #define ICE_PKG_FILE_CUSTOMIZED_PATH "/sys/module/firmware_class/parameters/path"
+diff --git a/drivers/net/pcap/pcap_osdep_windows.c b/drivers/net/pcap/pcap_osdep_windows.c
+index 1d398dc7ed..0965c2f5c9 100644
+--- a/drivers/net/pcap/pcap_osdep_windows.c
++++ b/drivers/net/pcap/pcap_osdep_windows.c
+@@ -53,7 +53,7 @@ osdep_iface_index_get(const char *device_name)
+ 
+ 	ret = GetAdapterIndex(adapter_name, &index);
+ 	if (ret != NO_ERROR) {
+-		PMD_LOG(ERR, "GetAdapterIndex(%S) = %lu\n", adapter_name, ret);
++		PMD_LOG(ERR, "GetAdapterIndex(%S) = %lu", adapter_name, ret);
+ 		return -1;
+ 	}
+ 
+@@ -75,20 +75,20 @@ osdep_iface_mac_get(const char *device_name, struct rte_ether_addr *mac)
+ 
+ 	sys_ret = GetAdaptersAddresses(AF_UNSPEC, 0, NULL, NULL, &size);
+ 	if (sys_ret != ERROR_BUFFER_OVERFLOW) {
+-		PMD_LOG(ERR, "GetAdapterAddresses() = %lu, expected %lu\n",
++		PMD_LOG(ERR, "GetAdapterAddresses() = %lu, expected %lu",
+ 			sys_ret, ERROR_BUFFER_OVERFLOW);
+ 		return -1;
+ 	}
+ 
+ 	info = (IP_ADAPTER_ADDRESSES *)malloc(size);
+ 	if (info == NULL) {
+-		PMD_LOG(ERR, "Cannot allocate adapter address info\n");
++		PMD_LOG(ERR, "Cannot allocate adapter address info");
+ 		return -1;
+ 	}
+ 
+ 	sys_ret = GetAdaptersAddresses(AF_UNSPEC, 0, NULL, info, &size);
+ 	if (sys_ret != ERROR_SUCCESS) {
+-		PMD_LOG(ERR, "GetAdapterAddresses() = %lu\n", sys_ret);
++		PMD_LOG(ERR, "GetAdapterAddresses() = %lu", sys_ret);
+ 		free(info);
+ 		return -1;
+ 	}
+diff --git a/lib/eal/common/eal_common_thread.c b/lib/eal/common/eal_common_thread.c
+index dcd81f9e32..60642f01c4 100644
+--- a/lib/eal/common/eal_common_thread.c
++++ b/lib/eal/common/eal_common_thread.c
+@@ -244,13 +244,14 @@ static int control_thread_init(void *arg)
+ 	 * as control threads may be scheduled on any NUMA node.
+ 	 */
+ 	RTE_PER_LCORE(_numa_id) = SOCKET_ID_ANY;
++#ifndef RTE_EXEC_ENV_WINDOWS
+ 	params->ret = rte_thread_set_affinity_by_id(rte_thread_self(), cpuset);
+ 	if (params->ret != 0) {
+ 		rte_atomic_store_explicit(&params->status,
+ 			CTRL_THREAD_ERROR, rte_memory_order_release);
+ 		return 1;
+ 	}
+-
++#endif
+ 	rte_atomic_store_explicit(&params->status,
+ 		CTRL_THREAD_RUNNING, rte_memory_order_release);
+ 
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index 21fe7cb1d9..d2895f3506 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -343,12 +343,6 @@ rte_eal_init(int argc, char **argv)
+ 
+ 	eal_rand_init();
+ 
+-	if (rte_thread_set_affinity_by_id(rte_thread_self(),
+-			&lcore_config[config->main_lcore].cpuset) != 0) {
+-		rte_eal_init_alert("Cannot set affinity");
+-		rte_errno = EINVAL;
+-		goto err_out;
+-	}
+ 	__rte_thread_init(config->main_lcore,
+ 		&lcore_config[config->main_lcore].cpuset);
+ 
+@@ -381,11 +375,6 @@ rte_eal_init(int argc, char **argv)
+ 		snprintf(thread_name, sizeof(thread_name),
+ 			"dpdk-worker%d", i);
+ 		rte_thread_set_name(lcore_config[i].thread_id, thread_name);
+-
+-		ret = rte_thread_set_affinity_by_id(lcore_config[i].thread_id,
+-			&lcore_config[i].cpuset);
+-		if (ret != 0)
+-			EAL_LOG(DEBUG, "Cannot set affinity");
+ 	}
+ 
+ 	/* Initialize services so drivers can register services during probe. */
+@@ -473,5 +462,37 @@ rte_firmware_read(__rte_unused const char *name,
+ 			__rte_unused void **buf,
+ 			__rte_unused size_t *bufsz)
+ {
+-	return -1;
++	FILE* fp;
++	size_t size;
++	void *tmp;
++
++	*buf = NULL;
++	*bufsz = 0;
++	fp=fopen(name,"rb");
++	if(fp)
++	{
++		fseek(fp, 0, SEEK_END);
++		size = ftell(fp);
++		if(size >0)
++		    tmp = realloc(*buf, size);
++		else return -1;
++		if (tmp == NULL)
++		{
++			fclose(fp);
++			return -1;
++		}
++		*buf = tmp;
++		fseek(fp, 0, SEEK_SET);
++		*bufsz = fread(*buf,1,size,fp);
++		fclose(fp);
++
++		if(*bufsz>0)
++		   return 0;
++		else
++			return -1;
++	}
++	else
++	{
++		return -1;
++	}
+ }
+diff --git a/lib/eal/windows/eal_timer.c b/lib/eal/windows/eal_timer.c
+index 33cbac6a03..89e08b467f 100644
+--- a/lib/eal/windows/eal_timer.c
++++ b/lib/eal/windows/eal_timer.c
+@@ -15,6 +15,61 @@
+ #define US_PER_SEC 1E6
+ #define CYC_PER_100KHZ 1E5
+ 
++typedef PVOID (*NtQueryTimerResolution_type)(
++    PULONG MinimumResolution,
++    PULONG MaximumResolution,
++    PULONG CurrentResolution
++);
++
++typedef PVOID (*NtSetTimerResolution_type)(
++    ULONG RequestedResolution,
++    BOOLEAN Set,
++    PULONG ActualResolution
++);
++
++static NtQueryTimerResolution_type NtQueryTimerResolution_ptr;
++static NtSetTimerResolution_type NtSetTimerResolution_ptr;
++
++static int set_timer_resolution(void)
++{
++	ULONG minRes;
++	ULONG maxRes;
++	ULONG currentRes;
++	static const char library_name[] = "ntdll.dll";
++	static const char function1[] = "NtQueryTimerResolution";
++	static const char function2[] = "NtSetTimerResolution";
++
++	HMODULE library = NULL;
++
++	library = LoadLibraryA(library_name);
++	if (library == NULL) {
++		// RTE_LOG_WIN32_ERR("LoadLibraryA(\"%s\")", library_name);
++		return -1;
++	}
++
++	NtQueryTimerResolution_ptr = (NtQueryTimerResolution_type)(
++		(void *)GetProcAddress(library, function1));
++	if (NtQueryTimerResolution_ptr == NULL) {
++		// RTE_LOG_WIN32_ERR("GetProcAddress(\"%s\", \"%s\")\n",
++		// 	library_name, function1);
++		return -1;
++	}
++
++	NtSetTimerResolution_ptr = (NtSetTimerResolution_type)(
++		(void *)GetProcAddress(library, function2));
++	if (NtSetTimerResolution_ptr == NULL) {
++		// RTE_LOG_WIN32_ERR("GetProcAddress(\"%s\", \"%s\")\n",
++		// 	library_name, function2);
++			return -1;
++	}
++
++
++	NtQueryTimerResolution_ptr(&minRes,&maxRes,&currentRes);
++  NtSetTimerResolution_ptr(maxRes, TRUE, &currentRes);
++  FreeLibrary(library);
++  return 0;
++}
++
+ RTE_EXPORT_SYMBOL(rte_delay_us_sleep)
+ void
+ rte_delay_us_sleep(unsigned int us)
+@@ -94,6 +149,7 @@ get_tsc_freq(uint64_t arch_hz)
+ int
+ rte_eal_timer_init(void)
+ {
++	set_timer_resolution();
+ 	set_tsc_freq();
+ 	return 0;
+ }
+diff --git a/lib/eal/windows/getopt.c b/lib/eal/windows/getopt.c
+index 50ff71b930..28ed44318f 100644
+--- a/lib/eal/windows/getopt.c
++++ b/lib/eal/windows/getopt.c
+@@ -458,7 +458,8 @@ getopt_long(int nargc, char *const nargv[], const char *options,
+  * getopt_long_only --
+  *	Parse argc/argv argument vector.
+  */
+-int
++#ifndef __MINGW32__
++ int
+ getopt_long_only(int nargc, char *const nargv[], const char *options,
+ 	const struct option *long_options, int *idx)
+ {
+@@ -466,5 +467,5 @@ getopt_long_only(int nargc, char *const nargv[], const char *options,
+ 	return (getopt_internal(nargc, nargv, options, long_options, idx,
+ 	    FLAG_PERMUTE|FLAG_LONGONLY));
+ }
+-
++#endif
+ #endif /* NEED_USUAL_GETOPT */
+diff --git a/lib/eal/windows/include/pthread.h b/lib/eal/windows/include/pthread.h
+index e1c31017d1..db1253d239 100644
+--- a/lib/eal/windows/include/pthread.h
++++ b/lib/eal/windows/include/pthread.h
+@@ -42,6 +42,7 @@ typedef SYNCHRONIZATION_BARRIER pthread_barrier_t;
+ 	!DeleteSynchronizationBarrier(barrier)
+ #define pthread_cancel(thread) !TerminateThread((HANDLE) thread, 0)
+ 
++#ifndef __MINGW32__
+ static inline int
+ pthread_create(void *threadid, const void *threadattr, void *threadfunc,
+ 		void *args)
+@@ -86,6 +87,45 @@ pthread_mutex_destroy(pthread_mutex_t *mutex)
+ 	DeleteCriticalSection(mutex);
+ 	return 0;
+ }
++#else
++int pthread_create(void *threadid, const void *threadattr,
++		void *threadfunc, void *args);
++int pthread_mutex_init(pthread_mutex_t *mutex, pthread_mutexattr_t *attr);
++int pthread_mutex_lock(pthread_mutex_t *mutex);
++int pthread_mutex_unlock(pthread_mutex_t *mutex);
++int pthread_mutex_destroy(pthread_mutex_t *mutex);
++int pthread_join(pthread_t thread, void** res);
++#endif /* not __MINGW32__ */
++
++static inline int
++pthread_setaffinity_np(pthread_t threadid, size_t cpuset_size,
++			rte_cpuset_t *cpuset)
++{
++	DWORD_PTR ret = 0;
++	HANDLE thread_handle;
++
++	if (cpuset == NULL || cpuset_size == 0)
++		return -1;
++
++	thread_handle = OpenThread(THREAD_ALL_ACCESS, FALSE, threadid);
++	if (thread_handle == NULL) {
++		RTE_LOG_WIN32_ERR("OpenThread()");
++		return -1;
++	}
++
++	ret = SetThreadAffinityMask(thread_handle, *cpuset->_bits);
++	if (ret == 0) {
++		RTE_LOG_WIN32_ERR("SetThreadAffinityMask()");
++		goto close_handle;
++	}
++
++close_handle:
++	if (CloseHandle(thread_handle) == 0) {
++		RTE_LOG_WIN32_ERR("CloseHandle()");
++		return -1;
++	}
++	return (ret == 0) ? -1 : 0;
++}
+ 
+ #ifdef __cplusplus
+ }
