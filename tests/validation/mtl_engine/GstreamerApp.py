@@ -495,7 +495,7 @@ def setup_gstreamer_st40p_rx_pipeline(
     timeout: int,
     capture_metadata: bool = False,
     rx_interlaced: bool = False,
-    rx_auto_detect_interlaced: bool = False,
+    rx_disable_auto_detect: bool = False,
     rx_framebuff_cnt: int = None,
     frame_info_path: Optional[str] = None,
     rx_rtp_ring_size: Optional[int] = None,
@@ -525,8 +525,8 @@ def setup_gstreamer_st40p_rx_pipeline(
         # Note: mtl_st40p_rx uses pipeline API, metadata handling is built-in
     ]
 
-    if rx_auto_detect_interlaced:
-        pipeline_command.append("rx-auto-detect-interlaced=true")
+    if rx_disable_auto_detect:
+        pipeline_command.append("rx-disable-auto-detect=true")
 
     if rx_framebuff_cnt is not None:
         pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
@@ -867,18 +867,29 @@ def execute_test(
     # If both TX and RX specify interlace flags and they differ, treat as a mismatch.
     tx_interlaced = _extract_flag(tx_command, "tx-interlaced")
     rx_interlaced = _extract_flag(rx_command, "rx-interlaced")
-    rx_auto_detect_interlaced = _extract_flag(rx_command, "rx-auto-detect-interlaced")
+    rx_disable_auto_detect = _extract_flag(rx_command, "rx-disable-auto-detect")
 
-    if rx_auto_detect_interlaced:
-        logger.info("RX interlace auto-detect enabled; skipping mismatch check")
-    elif tx_interlaced is not None and rx_interlaced is not None:
-        if tx_interlaced != rx_interlaced:
-            logger.warning(
-                "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "
-                "Continuing to file compare.",
-                tx_interlaced,
-                rx_interlaced,
-            )
+    if rx_disable_auto_detect:
+        # Auto-detect is off; warn if TX/RX interlace flags disagree.
+        if tx_interlaced is not None and rx_interlaced is not None:
+            if tx_interlaced != rx_interlaced:
+                logger.warning(
+                    "Interlace flag mismatch detected with auto-detect disabled "
+                    "(tx_interlaced=%s, rx_interlaced=%s). Continuing to file compare.",
+                    tx_interlaced,
+                    rx_interlaced,
+                )
+    else:
+        # Auto-detect is on (default); RX will learn cadence from F bits so
+        # a TX/RX interlace flag difference is expected and harmless.
+        if tx_interlaced is not None and rx_interlaced is not None:
+            if tx_interlaced != rx_interlaced:
+                logger.info(
+                    "TX/RX interlace flags differ (tx=%s, rx=%s) but auto-detect "
+                    "is active; RX will learn cadence from RTP F bits.",
+                    tx_interlaced,
+                    rx_interlaced,
+                )
     if skip_file_compare:
         logger.info("Skipping file comparison per caller request")
         return True

@@ -367,6 +367,8 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   if (ops->flags & ST40P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST40_RX_FLAG_DATA_PATH_ONLY;
   if (ops->flags & ST40P_RX_FLAG_ENABLE_RTCP) ops_rx.flags |= ST40_RX_FLAG_ENABLE_RTCP;
+  if (ops->flags & ST40P_RX_FLAG_DISABLE_AUTO_DETECT)
+    ops_rx.flags |= ST40_RX_FLAG_DISABLE_AUTO_DETECT;
 
   ctx->transport = st40_rx_create(impl, &ops_rx);
   if (!ctx->transport) {
