@@ -1908,11 +1908,10 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       ret = dev_detect_link(
           inf, allow_port_down); /* some port can only detect link after start */
       if (ret < 0 && allow_port_down) {
-        warn("%s(%d), dev_detect_link fail %d, but allow port down, retry %d\n", __func__,
-             i, ret, j);
         break;
       } else if (ret < 0) {
         err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
+        goto err_exit;
       }
     }
 
@@ -1923,9 +1922,6 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       /* register the stats anyway */
       mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
       continue;
-    } else if (ret < 0) {
-      err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
-      goto err_exit;
     }
 
     /* try to start time sync after rte_eth_dev_start */

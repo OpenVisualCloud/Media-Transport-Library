@@ -68,9 +68,7 @@ Shared RX queue (`RSQ`) is less contentious: one thread polls the shared queue a
 
 1. **Create/destroy during active traffic**: The manager mutex protects the session array, but packets in flight during destroy are handled by checking `session == NULL` after get. The session is set to NULL in the array **before** the actual free, so tasklets see NULL and skip.
 
-2. **Port reset guard**: A port reset (link down/up) requires quiescing all queues. The admin thread signals `MTL_FLAG_PORT_RESET` and waits for all sessions to notice it. Sessions check this flag in their tasklet handler and skip TX/RX if set. This is a cooperative protocol — there's no hard fence.
-
-3. **Stats thread reading mid-update**: Stats counters are not locked. The stats thread may read a partially-updated counter. This is acceptable — stats are advisory, not authoritative.
+2. **Stats thread reading mid-update**: Stats counters are not locked. The stats thread may read a partially-updated counter. This is acceptable — stats are advisory, not authoritative.
 
 ## Debugging Concurrency Issues
 
