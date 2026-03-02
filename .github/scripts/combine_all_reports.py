@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Combine pytest HTML reports and gtest logs into unified Excel and HTML reports."""
 
 import argparse

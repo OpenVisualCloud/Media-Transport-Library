@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Parsers for pytest, gtest, and system information files."""
 
 import re
