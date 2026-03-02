@@ -281,6 +281,7 @@ typedef struct st_json_st20p_session {
   bool user_pacing;
   bool exact_user_pacing;
   bool user_timestamp;
+  bool drop_when_late;
   uint64_t user_time_offset;
 } st_json_st20p_session_t;
 
