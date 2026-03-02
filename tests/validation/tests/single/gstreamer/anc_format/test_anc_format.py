@@ -1652,7 +1652,6 @@ def test_st40p_interlace_auto_detect_reset(
         timeout=15,
         rx_framebuff_cnt=3,
         rx_interlaced=False,
-        rx_auto_detect_interlaced=True,
         frame_info_path=frame_info_path,
     )
 
@@ -1700,7 +1699,6 @@ def test_st40p_interlace_auto_detect_reset(
             timeout=15,
             rx_framebuff_cnt=3,
             rx_interlaced=False,
-            rx_auto_detect_interlaced=True,
             frame_info_path=gap_frame_info_path,
         )
 

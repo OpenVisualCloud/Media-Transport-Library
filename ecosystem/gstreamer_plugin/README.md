@@ -492,7 +492,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
 | frame-info-path     | string  | Optional path to append frame info and sequence stats per frame | N/A                      | NULL          |
 | rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
-| rx-auto-detect-interlaced | boolean | RTP F-bit based interlace detection (enabled by default; kept for backward compatibility). | TRUE/FALSE | TRUE |
+| rx-disable-auto-detect | boolean | Skip auto-detection and use the mode set by `rx-interlaced` (`true` = interlaced, `false` = progressive) | TRUE/FALSE | FALSE |
 | output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
 
 When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte

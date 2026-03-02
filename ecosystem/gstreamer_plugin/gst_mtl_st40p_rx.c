@@ -128,7 +128,7 @@ enum {
   PROP_ST40P_RX_RTP_RING_SIZE,
   PROP_ST40P_RX_TIMEOUT,
   PROP_ST40P_RX_INTERLACED,
-  PROP_ST40P_RX_AUTO_DETECT_INTERLACED,
+  PROP_ST40P_RX_DISABLE_AUTO_DETECT,
   PROP_ST40P_RX_OUTPUT_FORMAT,
   PROP_ST40P_RX_FRAME_INFO_PATH,
   PROP_MAX
@@ -348,10 +348,10 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_ST40P_RX_AUTO_DETECT_INTERLACED,
+      gobject_class, PROP_ST40P_RX_DISABLE_AUTO_DETECT,
       g_param_spec_boolean(
-          "rx-auto-detect-interlaced", "Auto detect interlaced cadence",
-          "Enable RTP F-bit based interlace auto-detection (enabled by default)", TRUE,
+          "rx-disable-auto-detect", "Disable interlace auto-detect",
+          "Skip auto-detection and use the interlaced mode set by rx-interlaced", FALSE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -383,7 +383,7 @@ static void gst_mtl_st40p_rx_init(Gst_Mtl_St40p_Rx* src) {
   src->rtp_ring_size = DEFAULT_RTP_RING_SIZE;
   src->timeout_s = 60;
   src->interlaced = FALSE;
-  src->auto_detect_interlaced = FALSE;
+  src->disable_auto_detect = FALSE;
   src->output_format = GST_MTL_ST40P_RX_OUTPUT_FORMAT_RAW_UDW;
   src->frame_info_path = NULL;
   src->frame_info_fp = NULL;
@@ -422,8 +422,8 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_RX_INTERLACED:
       src->interlaced = g_value_get_boolean(value);
       break;
-    case PROP_ST40P_RX_AUTO_DETECT_INTERLACED:
-      src->auto_detect_interlaced = g_value_get_boolean(value);
+    case PROP_ST40P_RX_DISABLE_AUTO_DETECT:
+      src->disable_auto_detect = g_value_get_boolean(value);
       break;
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       src->output_format = g_value_get_enum(value);
@@ -465,8 +465,8 @@ static void gst_mtl_st40p_rx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST40P_RX_INTERLACED:
       g_value_set_boolean(value, src->interlaced);
       break;
-    case PROP_ST40P_RX_AUTO_DETECT_INTERLACED:
-      g_value_set_boolean(value, src->auto_detect_interlaced);
+    case PROP_ST40P_RX_DISABLE_AUTO_DETECT:
+      g_value_set_boolean(value, src->disable_auto_detect);
       break;
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       g_value_set_enum(value, src->output_format);
@@ -513,6 +513,7 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "RX START: rtp_ring_size=%d", ops_rx.rtp_ring_size);
 
   ops_rx.interlaced = src->interlaced;
+  if (src->disable_auto_detect) ops_rx.flags |= ST40P_RX_FLAG_DISABLE_AUTO_DETECT;
 
   /* Optional frame info logging */
   if (src->frame_info_path && !src->frame_info_fp) {
