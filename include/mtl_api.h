@@ -485,6 +485,17 @@ enum mtl_init_flag {
   /** not bind current process to NIC numa socket */
   MTL_FLAG_NOT_BIND_PROCESS_NUMA = (MTL_BIT64(47)),
 
+  /**
+   * Convenience shorthand to allow all ports to be down at initialization time.
+   * When set, MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION is automatically applied
+   * to every configured port, equivalent to setting that flag individually on
+   * each port_params[i].flags entry.
+   *
+   * Note: sessions require at least one functioning (up) port to operate
+   * correctly; a session whose every port is down will still fail to create.
+   */
+  MTL_FLAG_ALLOW_DOWN_PORTS = (MTL_BIT64(48)),
+
   /** Debug option to enable dropping some percentage of packets for
    *  testing redundant video streams only works for video, needs the
    * per port mtl_debug_port_packet_loss to be populated */
