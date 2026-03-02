@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Excel report generation for MTL nightly test reports."""
 
 from datetime import datetime
