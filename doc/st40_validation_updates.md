@@ -9,7 +9,8 @@ This note captures all recent ST40/ST40p feature changes and the accompanying va
 - **Frame-info log surfacing:** When tests pass `log_frame_info=True`, the harness dumps the frame-info file and a summary directly into the test log (no artifact download needed).
 - **ST40P test mutation knobs:** The GStreamer TX plugin accepts `tx-test-mode` with helpers for `no-marker`, `seq-gap`, `bad-parity`, and `paced` (optionally with `tx-test-pkt-count` and `tx-test-pacing-ns`). These drive targeted negative/edge-path tests.
 - **Interlaced & split-mode coverage:** RX/TX can be flagged interlaced independently; mismatch fails fast. Split-mode plus marker handling is now covered in tests.
-- **Interlace auto-detect (default):** RX automatically infers progressive vs interlaced cadence from RTP F bits. The `interlaced` field in RX ops serves as the initial value before the first F bits arrive. The `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` flag and `rx-auto-detect-interlaced` GStreamer property are retained for backward compatibility but have no effect since auto-detect is always active.
+- **Interlace auto-detect (default):** RX automatically infers progressive vs interlaced cadence from RTP F bits.
+The `interlaced` field in RX ops serves as the initial value before the first F bits arrive. Set `ST40P_RX_FLAG_DISABLE_AUTO_DETECT` (or `rx-disable-auto-detect=true` in GStreamer) to skip auto-detection and use the `interlaced` field as-is (`interlaced=true` forces interlaced mode, `interlaced=false` forces progressive mode).
 - **Auto-detect reset on discontinuity:** A sequence gap (`seq_discont>0`) clears the interlace detection state; RX re-learns cadence from subsequent F bits and continues logging `second_field`/`interlaced` per field.
 - **Warnings when cadence is unknown:** Pipeline RX and the GStreamer RX plugin log auto-detect status on attach.
 - **Integration safety nets:** New noctx integration tests for ST40 interlaced flows, and expanded GStreamer validation tests across single-host and dual-host (VF/VF) paths.
@@ -49,13 +50,13 @@ flowchart LR
 
 ## Interlace auto-detect: usage and expected signals
 
-- Enable on RX when cadence is unknown: `rx-auto-detect-interlaced=true` in the GStreamer RX pipeline or set `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` in `st40p_rx_ops.flags` (C API). Keep `rx-interlaced=false` when auto-detecting.
+- Auto-detect is active by default. To disable it, set `rx-disable-auto-detect=true` in the GStreamer RX pipeline or set `ST40P_RX_FLAG_DISABLE_AUTO_DETECT` in `st40p_rx_ops.flags` (C API), together with `rx-interlaced=true/false` as desired.
 - TX still needs to emit F bits (set `tx_interlaced=true` in GStreamer or `interlaced=true` in TX ops) so RX can learn cadence.
 - Warnings: RX logs a warning if both `rx-interlaced=false` and auto-detect are disabled. Expect a GST_WARNING from `mtl_st40p_rx` and a pipeline warning from `st40p` if cadence is unknown.
 - Frame-info fields: `second_field` (bool) and `interlaced` are populated once F bits are observed (bit1 set for interlaced; `second_field=true` when F==0x3). These are visible in both C API frame_info and GStreamer frame-info dumps.
 - Expect detection log line when auto-detect flips interlaced on RX (`detected interlaced stream (F=0x2/0x3)`); downstream tests assert on these fields rather than relying on caps only.
 - Discontinuity handling: a session-level sequence hole (e.g., `tx-test-mode=seq-gap` or real loss) clears detection state; expect `seq_discont>0` in frame-info and a subsequent “detected interlaced stream” log once new F bits arrive. This proves re-learn after reset.
-- Build verification: RX attach logs should show `rx_ancillary_session_attach(... flags 0x4 ... auto)` when `rx-auto-detect-interlaced=true` propagates; if flags stay `0x0`, rebuild the GStreamer plugin and ensure the test uses the fresh `--gst-plugin-path`.
+- Build verification: RX attach logs should show `rx_ancillary_session_attach(... flags 0x4 ... interlace)` when `rx-disable-auto-detect=true` propagates; if flags stay `0x0`, the session uses auto-detect and logs `auto`.
 
 ## API and plugin changes (developer-facing)
 
@@ -122,7 +123,7 @@ These integration tests exercise the C pipeline APIs directly (outside the GStre
    - Missing marker: `tx-test-mode=no-marker`
    - Bad parity: `tx-test-mode=bad-parity`
    - Paced burst: `tx-test-mode=paced tx-test-pkt-count=3 tx-test-pacing-ns=200000`
-4. Auto-detect is active by default. The `interlaced` field in RX ops is used as the initial value; leave it `false` if cadence is unknown and auto-detect will override it from F bits.
+4. Auto-detect is active by default. The `interlaced` field in RX ops is used as the initial value; leave it `false` if cadence is unknown and auto-detect will override it from F bits. Set `rx-disable-auto-detect=true` (or `ST40P_RX_FLAG_DISABLE_AUTO_DETECT`) to skip auto-detect.
 5. Inspect log: look for `FrameInfo` lines followed by `FrameInfoSummary` to confirm packet counts and seq accounting.
 
 ## Signals to watch
