@@ -2,4 +2,4 @@
 # Copyright(c) 2026 Intel Corporation
 """Report generator package for MTL nightly test reports."""
 
-__all__ = ["parsers", "excel_generator", "html_generator"]
+__all__ = ["parsers", "excel_generator", "html_generator", "regression_analyzer"]
