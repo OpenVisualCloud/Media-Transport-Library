@@ -2126,6 +2126,9 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   st20p->user_timestamp =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "user_timestamp"));
 
+  st20p->drop_when_late =
+      json_object_get_boolean(st_json_object_object_get(st20p_obj, "drop_when_late"));
+
   return ST_JSON_SUCCESS;
 }
 
