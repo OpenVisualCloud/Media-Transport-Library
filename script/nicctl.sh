@@ -78,12 +78,42 @@ create_vf() {
 	if [[ $kernel_drv == *"mlx"* ]]; then
 		bifurcated_driver=1
 	fi
-	sleep 2
+
+	# Wait for all VF symlinks to appear (up to 30s).
+	# On some platforms the kernel needs more than 2s to create VFs after
+	# writing to sriov_numvfs, especially when previous VFs were bound to
+	# vfio-pci and had to be torn down first.
+	local wait_max=30
+	local waited=0
+	while [ $waited -lt $wait_max ]; do
+		local ready=1
+		for ((j = 0; j < numvfs; j++)); do
+			if [ ! -L "/sys/bus/pci/devices/$bdf/virtfn$j" ]; then
+				ready=0
+				break
+			fi
+		done
+		if [ $ready -eq 1 ]; then
+			break
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	if [ $waited -ge $wait_max ]; then
+		echo "Error: VF symlinks did not appear within ${wait_max}s for $bdf"
+		exit 1
+	fi
+	# Extra settle time for kernel driver binding
+	sleep 1
 
 	# Start to bind to VFIO
 	for ((i = 0; i < numvfs; i++)); do
 		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
 		vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+		if [ -z "$vfport" ]; then
+			echo "Warn: could not resolve VF$i PCI address from $vfpath, skipping"
+			continue
+		fi
 		vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
 		if [ -n "$vfif" ]; then
 			ip link set "$vfif" down
@@ -106,9 +136,33 @@ create_kvf() {
 	local numvfs=$1
 	# Enable VFs
 	echo "$numvfs" >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
+
+	# Wait for VF symlinks (same as create_vf)
+	local wait_max=30
+	local waited=0
+	while [ $waited -lt $wait_max ]; do
+		local ready=1
+		for ((j = 0; j < numvfs; j++)); do
+			if [ ! -L "/sys/bus/pci/devices/$bdf/virtfn$j" ]; then
+				ready=0
+				break
+			fi
+		done
+		if [ $ready -eq 1 ]; then
+			break
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	sleep 1
+
 	for ((i = 0; i < numvfs; i++)); do
 		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
 		vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+		if [ -z "$vfport" ]; then
+			echo "Warn: could not resolve VF$i PCI address from $vfpath, skipping"
+			continue
+		fi
 		vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
 		echo "Bind $vfport($vfif) to kernel success"
 	done
