@@ -55,6 +55,12 @@ class Nicctl:
         self.connection.execute_command(
             f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}", shell=True
         )
+        # Allow VFIO bindings to stabilize after VF creation.
+        # Without this delay, the first DPDK process to open a VF may
+        # hit "Unable to reset device! Error: 11 (Resource temporarily
+        # unavailable)" because the VFIO group/container is not fully
+        # initialized yet.
+        time.sleep(2)
         # Use vfio_list (nicctl.sh list) to get clean VF addresses.
         # The create_vf output mixes PF and VF PCI addresses in status
         # messages, while list_vf outputs only VF addresses.
