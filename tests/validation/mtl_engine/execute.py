@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import os
 import subprocess
@@ -91,7 +92,8 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
 def readproc(process: subprocess.Popen):
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
-    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.pid{process.pid}.log")
+    log_folder = os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER)
+    logfile = os.path.join(log_folder, "latest", f"{case_id}.pid{process.pid}.log")
 
     output = []
     with open(logfile, "w") as file:
@@ -277,3 +279,44 @@ def log_info(msg: str):
 def log_result_note(note: str):
     set_result_note(note)
     logger.info(f"Test result note: {note}")
+
+
+# Canonical list of MTL-related process names that may be left over
+# after a crash or timeout.  Mirrors .github/actions/cleanup/action.yml.
+MTL_APP_NAMES = [
+    "RxTxApp",
+    "KahawaiTest",
+    "KahawaiUfdTest",
+    "KahawaiUplTest",
+    "ffmpeg",
+    "gtest.sh",
+]
+
+
+def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
+    """Kill leftover MTL-related processes on the given hosts.
+
+    Args:
+        *hosts: One or more host objects with ``connection.execute_command``.
+        names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
+                Each name is turned into a ``pkill`` regex that avoids
+                matching the grep/pkill process itself (``[R]xTxApp``).
+    """
+    targets = names or MTL_APP_NAMES
+    pattern = "|".join(f"[{n[0]}]{n[1:]}" for n in targets if n)
+    for host in hosts:
+        try:
+            host.connection.execute_command(
+                f"pkill -9 -f '{pattern}' || true", shell=True, timeout=15
+            )
+        except Exception:
+            pass
+
+
+def read_remote_log(host, log_path: str) -> list:
+    """Read a log file from a remote host and return its lines."""
+    try:
+        result = host.connection.execute_command(f"cat {log_path}", shell=True)
+        return result.stdout.splitlines() if result.stdout else []
+    except Exception:
+        return []

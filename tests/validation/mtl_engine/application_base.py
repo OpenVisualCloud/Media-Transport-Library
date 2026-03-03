@@ -1,12 +1,15 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Base application class providing unified interface for media framework adapters."""
 
 import logging
 import re
+import signal
 import time
 from abc import ABC, abstractmethod
 
 from .config.universal_params import UNIVERSAL_PARAMS
-from .execute import run
+from .execute import kill_stale_processes, run
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class Application(ABC):
         self.config: dict | None = None
         self.last_output: str | None = None
         self.last_return_code: int | None = None
+        # Process lifecycle tracking (set by start_process / stop_process)
+        self._process = None
+        self._host = None
 
     @abstractmethod
     def get_app_name(self) -> str:
@@ -94,15 +100,26 @@ class Application(ABC):
                 raise ValueError(f"Unknown parameter: {param}")
 
     def get_executable_path(self) -> str:
-        """Get the full path to the executable based on framework type."""
+        """Get the full path to the executable based on framework type.
+
+        ``app_path`` must be a directory-only path.  ``get_executable_name()``
+        must return the bare executable name.  A ``ValueError`` is raised when
+        ``app_path`` already contains the executable name — callers should fix
+        the constant / variable they pass as ``app_path``.
+        """
         executable_name = self.get_executable_name()
 
         # For applications with specific paths, combine with directory
         if self.app_path and not executable_name.startswith("/"):
+            if self.app_path.endswith(f"/{executable_name}"):
+                raise ValueError(
+                    f"app_path must be a directory, not a full executable path. "
+                    f"Got '{self.app_path}' which already ends with "
+                    f"'/{executable_name}'. Pass the directory only."
+                )
             if self.app_path.endswith("/"):
                 return f"{self.app_path}{executable_name}"
-            else:
-                return f"{self.app_path}/{executable_name}"
+            return f"{self.app_path}/{executable_name}"
         else:
             # For system executables or full paths
             return executable_name
@@ -318,11 +335,39 @@ class Application(ABC):
             return default
 
     def start_process(self, command: str, build: str, test_time: int, host):
-        """Start a process on the specified host using mfd_connect."""
+        """Start a process on the specified host using mfd_connect.
+
+        Returns a background process handle. The caller is responsible for
+        calling proc.wait() after any concurrent work (e.g. netsniff capture).
+        The handle is also stored as ``self._process`` for :meth:`stop_process`.
+        """
         logger.info(f"Starting {self.get_app_name()} process...")
         buffer_val = self.params.get("process_timeout_buffer", 90)
         timeout = (test_time or 0) + buffer_val
-        return run(command, host=host, cwd=build, timeout=timeout)
+        proc = run(command, host=host, cwd=build, timeout=timeout, background=True)
+        self._process = proc
+        self._host = host
+        return proc
+
+    def stop_process(self, host=None) -> None:
+        """Stop this application's tracked process and clean up stale processes.
+
+        1. SIGKILL the tracked ``_process`` (if any).
+        2. Run :func:`kill_stale_processes` on *host* (falls back to ``_host``).
+
+        Safe to call multiple times or when no process was started.
+        """
+        proc = self._process
+        if proc is not None:
+            try:
+                proc.kill(wait=None, with_signal=signal.SIGKILL)
+            except Exception:
+                pass
+            self._process = None
+        target_host = host or self._host
+        if target_host is not None:
+            time.sleep(2)
+            kill_stale_processes(target_host)
 
     def capture_stdout(self, process, process_name: str) -> str:
         """Capture stdout from mfd_connect process.
