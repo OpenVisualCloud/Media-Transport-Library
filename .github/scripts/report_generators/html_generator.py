@@ -247,6 +247,10 @@ def _generate_regression_section(regression_data):
         "</div>"
     )
 
+    coverage = regression_data.get("coverage")
+    if coverage:
+        html += _generate_coverage_note(coverage)
+
     for key, label, subtitle, show_baseline, modifier in _REGRESSION_SECTIONS:
         entries = regression_data.get(key, [])
         if not entries:
@@ -264,6 +268,27 @@ def _generate_regression_section(regression_data):
 
     html += "</div>"
     return html
+
+
+def _generate_coverage_note(coverage):
+    """Generate a coverage comparison note for the regression section."""
+    cur = coverage["current_total"]
+    base = coverage["baseline_total"]
+    common = coverage["common"]
+    only_cur = coverage["only_in_current"]
+    only_base = coverage["only_in_baseline"]
+    delta = cur - base
+    sign = "+" if delta > 0 else ""
+    return (
+        '<div style="margin:10px 0;padding:8px 14px;'
+        "background:#f0f4f8;border-left:4px solid #4a90d9;"
+        'border-radius:4px;font-size:0.92em;color:#333">'
+        f"<strong>Coverage:</strong> current run has <strong>{cur}</strong> tests, "
+        f"baseline had <strong>{base}</strong> ({sign}{delta}). "
+        f"{common} in common, {only_cur} new in current, "
+        f"{only_base} absent from current."
+        "</div>"
+    )
 
 
 def _build_regression_table(entries, show_baseline):
