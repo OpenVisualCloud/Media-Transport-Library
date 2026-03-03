@@ -45,46 +45,83 @@ def gen_test_config(
     return yaml.safe_dump(test_config, sort_keys=False)
 
 
-def gen_topology_config(
-    pci_device: str, ip_address: str, username: str, password: str, key_path: str
-) -> str:
-    # Support comma-separated PCI devices for multiple interfaces
+def _make_host(
+    name, role, pci_device, ip_address, username, password, key_path, mtl_path=None
+):
+    """Build a single host entry for the topology config."""
     pci_devices = [dev.strip() for dev in pci_device.split(",")]
-
     network_interfaces = [
-        {
-            "pci_device": pci_dev,
-            "interface_index": idx,
-        }
+        {"pci_device": pci_dev, "interface_index": idx}
         for idx, pci_dev in enumerate(pci_devices)
     ]
-
-    topology_config = {
-        "metadata": {"version": "2.4"},
-        "hosts": [
+    connection_options = {
+        "port": 22,
+        "username": username,
+        "password": password,
+    }
+    if key_path != "None":
+        connection_options["key_path"] = key_path
+    host = {
+        "name": name,
+        "instantiate": True,
+        "role": role,
+        "network_interfaces": network_interfaces,
+        "connections": [
             {
-                "name": "host",
-                "instantiate": True,
-                "role": "sut",
-                "network_interfaces": network_interfaces,
-                "connections": [
-                    {
-                        "ip_address": ip_address,
-                        "connection_type": "SSHConnection",
-                        "connection_options": {
-                            "port": 22,
-                            "username": username,
-                            "password": password,
-                        },
-                    }
-                ],
+                "ip_address": ip_address,
+                "connection_type": "SSHConnection",
+                "connection_options": connection_options,
             }
         ],
     }
-    if key_path != "None":
-        topology_config["hosts"][0]["connections"][0]["connection_options"][
-            "key_path"
-        ] = key_path
+    if mtl_path:
+        host["extra_info"] = {"mtl_path": mtl_path}
+    return host
+
+
+def gen_topology_config(
+    pci_device: str,
+    ip_address: str,
+    username: str,
+    password: str,
+    key_path: str,
+    second_host_pci_device: str = None,
+    second_host_ip: str = None,
+    second_host_username: str = None,
+    second_host_password: str = None,
+    second_host_key_path: str = None,
+    mtl_path: str = None,
+) -> str:
+    hosts = []
+    if second_host_ip and second_host_pci_device:
+        hosts.append(
+            _make_host(
+                name="second_host",
+                role="client",
+                pci_device=second_host_pci_device,
+                ip_address=second_host_ip,
+                username=second_host_username or username,
+                password=second_host_password or password,
+                key_path=second_host_key_path or key_path,
+                mtl_path=mtl_path,
+            )
+        )
+    hosts.append(
+        _make_host(
+            name="host",
+            role="sut",
+            pci_device=pci_device,
+            ip_address=ip_address,
+            username=username,
+            password=password,
+            key_path=key_path,
+            mtl_path=mtl_path,
+        )
+    )
+    topology_config = {
+        "metadata": {"version": "2.4"},
+        "hosts": hosts,
+    }
     return yaml.safe_dump(topology_config, explicit_start=True, sort_keys=False)
 
 
@@ -154,6 +191,36 @@ def main() -> None:
         default="None",
         help="specify path to SSH private key for the test host",
     )
+    parser.add_argument(
+        "--second_host_ip",
+        type=str,
+        default=None,
+        help="SSH IP of the second host (enables dual-host topology)",
+    )
+    parser.add_argument(
+        "--second_host_pci_device",
+        type=str,
+        default=None,
+        help="PCI BDF(s) of the second host NIC (comma-separated)",
+    )
+    parser.add_argument(
+        "--second_host_username",
+        type=str,
+        default=None,
+        help="SSH username for the second host (defaults to --username)",
+    )
+    parser.add_argument(
+        "--second_host_password",
+        type=str,
+        default=None,
+        help="SSH password for the second host (defaults to --password)",
+    )
+    parser.add_argument(
+        "--second_host_key_path",
+        type=str,
+        default=None,
+        help="SSH key path for the second host (defaults to --key_path)",
+    )
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
@@ -180,6 +247,12 @@ def main() -> None:
                 username=args.username,
                 password=args.password,
                 key_path=args.key_path,
+                second_host_pci_device=args.second_host_pci_device,
+                second_host_ip=args.second_host_ip,
+                second_host_username=args.second_host_username,
+                second_host_password=args.second_host_password,
+                second_host_key_path=args.second_host_key_path,
+                mtl_path=args.mtl_path,
             )
         )
 
