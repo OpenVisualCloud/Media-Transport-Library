@@ -6,11 +6,7 @@
 def _build_test_index(pytest_data, gtest_data):
     """Build a dict mapping (platform, nic, category, test_name) -> (result, log)."""
     index = {}
-    for suite_data in pytest_data:
-        for tc in suite_data.get("test_cases", []):
-            key = (tc["platform"], tc["nic"], tc["category"], tc["test_name"])
-            index[key] = (tc["result"], tc.get("log", ""))
-    for suite_data in gtest_data:
+    for suite_data in [*pytest_data, *gtest_data]:
         for tc in suite_data.get("test_cases", []):
             key = (tc["platform"], tc["nic"], tc["category"], tc["test_name"])
             index[key] = (tc["result"], tc.get("log", ""))
@@ -82,10 +78,22 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     fixes.sort(key=_sort_key)
     new_failures.sort(key=_sort_key)
 
+    # Coverage comparison: how many tests exist in each index
+    current_keys = set(current)
+    baseline_keys = set(baseline)
+    common = len(current_keys & baseline_keys)
+
     return {
         "regressions": regressions,
         "fixes": fixes,
         "new_failures": new_failures,
+        "coverage": {
+            "current_total": len(current_keys),
+            "baseline_total": len(baseline_keys),
+            "common": common,
+            "only_in_current": len(current_keys) - common,
+            "only_in_baseline": len(baseline_keys) - common,
+        },
     }
 
 

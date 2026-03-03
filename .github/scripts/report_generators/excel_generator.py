@@ -379,6 +379,24 @@ def _create_regression_sheet(wb, regression_data):
         ("NEW FAILURES (not present in baseline)", "new_failures", COLOR_NEW_FAILURE),
     ]
 
+    coverage = regression_data.get("coverage")
+    if coverage:
+        cur = coverage["current_total"]
+        base = coverage["baseline_total"]
+        delta = cur - base
+        sign = "+" if delta > 0 else ""
+        ws.append(
+            [
+                f"Coverage: current run has {cur} tests, "
+                f"baseline had {base} ({sign}{delta}). "
+                f"{coverage['common']} in common, "
+                f"{coverage['only_in_current']} new in current, "
+                f"{coverage['only_in_baseline']} absent from current."
+            ]
+        )
+        ws.cell(row=ws.max_row, column=1).font = Font(italic=True, color="4a90d9")
+        ws.append([])
+
     for title, key, color in sections:
         entries = regression_data.get(key, [])
         row_start = ws.max_row + 1

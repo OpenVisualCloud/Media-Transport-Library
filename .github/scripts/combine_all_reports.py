@@ -9,8 +9,6 @@ from pathlib import Path
 
 from report_generators.excel_generator import generate_excel_report
 from report_generators.html_generator import generate_html_report
-
-# Import report generators and parsers
 from report_generators.parsers import (
     parse_gtest_log,
     parse_pytest_html,
@@ -213,6 +211,15 @@ def main():
                 f"Fixes: {len(regression_data['fixes'])}, "
                 f"New failures: {len(regression_data['new_failures'])}"
             )
+            cov = regression_data.get("coverage", {})
+            if cov:
+                print(
+                    f"  Coverage: current={cov['current_total']}, "
+                    f"baseline={cov['baseline_total']}, "
+                    f"common={cov['common']}, "
+                    f"only_in_current={cov['only_in_current']}, "
+                    f"only_in_baseline={cov['only_in_baseline']}"
+                )
 
     # Generate reports
     print("\nGenerating Excel report...")
