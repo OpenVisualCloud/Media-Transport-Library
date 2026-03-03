@@ -58,12 +58,17 @@ class Application(ABC):
         This method handles common setup, then delegates to the framework-specific
         _create_command_and_config() abstract method.
 
+        Resets all parameters to defaults before applying kwargs to prevent
+        stale values from previous invocations leaking into the new command.
+
         Args:
             **kwargs: Universal parameters to set before building command
 
         Returns:
             Tuple of (command_string, config_dict_or_None) for backward compatibility
         """
+        # Reset to defaults to prevent parameter leakage between tests
+        self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
@@ -193,6 +198,11 @@ class Application(ABC):
                 f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
             )
 
+        # Scale test_time for high-resolution content (matches original RxTxApp.execute_test)
+        effective_test_time = self._scale_test_time_for_resolution(
+            effective_test_time
+        )
+
         # Single-host execution
         if not is_dual:
             cmd = self.add_timeout(self.command, effective_test_time)
@@ -274,6 +284,62 @@ class Application(ABC):
         tx_ok = self.validate_results()
         rx_ok = rx_app.validate_results()
         return tx_ok and rx_ok
+
+    def _scale_test_time_for_resolution(self, test_time: int) -> int:
+        """Scale test_time for high-resolution/high-fps content.
+
+        Matches the original RxTxApp.execute_test() logic that multiplies
+        test_time for 4K/8K streams and high frame rates.
+        """
+        if not self.config:
+            return test_time
+
+        scaled = test_time
+
+        # Check st20p sessions (height-based)
+        for session_key in ("tx_sessions",):
+            sessions = self.config.get(session_key, [])
+            if not sessions:
+                continue
+            for session_group in sessions:
+                for stype in ("st20p", "video"):
+                    entries = session_group.get(stype, [])
+                    if not entries:
+                        continue
+                    entry = entries[0]
+
+                    if stype == "st20p":
+                        height = entry.get("height", 0)
+                        fps_str = str(entry.get("fps", ""))
+                        replicas = entry.get("replicas", 1)
+                        if height >= 2160:
+                            scaled = scaled * 2
+                            if any(
+                                f in fps_str
+                                for f in ("p50", "p59", "p60", "p119")
+                            ):
+                                scaled = scaled * 2
+                            scaled = scaled * replicas
+                    elif stype == "video":
+                        vfmt = entry.get("video_format", "")
+                        replicas = entry.get("replicas", 1)
+                        if any(res in vfmt for res in ("4320", "2160")):
+                            scaled = scaled * 2
+                            if any(
+                                f in vfmt
+                                for f in ("p50", "p59", "p60", "p119")
+                            ):
+                                scaled = scaled * 2
+                            scaled = scaled * replicas
+                    break  # Only check first entry
+                if scaled != test_time:
+                    break
+
+        if scaled != test_time:
+            logger.info(
+                f"Scaled test_time {test_time}s -> {scaled}s for high-resolution content"
+            )
+        return scaled
 
     def add_timeout(self, command: str, test_time: int, grace: int = None) -> str:
         """Wrap command with timeout if test_time provided.

@@ -998,7 +998,7 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
     ip_pools.init(session_id=session_id)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def rxtxapp() -> RxTxApp:
     return RxTxApp(RXTXAPP_PATH)
 

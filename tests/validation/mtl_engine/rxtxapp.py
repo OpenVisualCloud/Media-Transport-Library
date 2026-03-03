@@ -538,11 +538,10 @@ class RxTxApp(Application):
         # Use config file path from constructor or default
         config_file_path = self.config_file_path or "tests/config.json"
 
-        # Build command line
-        # Note: sudo is NOT needed because the test framework already runs as root
-        # (see README.md: "MTL validation must run as root user").
-        # Subprocesses inherit root privileges from the parent pytest process.
+        # Build command line with sudo prefix (required for DPDK hugepage/VFIO access,
+        # matching the original RxTxApp.execute_test() behavior)
         cmd_parts = [
+            "sudo",
             self.get_executable_path(),
             "--config_file",
             config_file_path,

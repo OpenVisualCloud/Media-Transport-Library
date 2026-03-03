@@ -126,7 +126,7 @@ UNIVERSAL_PARAMS = {
     # Execution control defaults
     "sleep_interval": 4,  # Delay between starting TX and RX
     "tx_first": True,  # Whether to start TX side before RX
-    "timeout_grace": 10,  # Extra seconds for process timeout
+    "timeout_grace": 90,  # Extra seconds for process timeout (matches original RxTxApp)
     "process_timeout_buffer": 90,  # Buffer added to test_time for run() timeout
     "pattern_duration": 30,  # Duration for generated test patterns
     "default_framerate_numeric": 60,  # Fallback numeric framerate
