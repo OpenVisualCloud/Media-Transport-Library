@@ -330,14 +330,11 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     nd.pf_addr = pf
                     break
         # Resolve redundant VFs → PF/VF pairs
-        direction = host_for_direction.get("tx") == hostname and "tx" or "rx"
-        redundant_vfs = vfs_by_direction.get(direction, [])
-        if hostname in [host_for_direction.get(d) for d in vfs_by_direction]:
-            # Find which direction this host maps to
-            for d, h in host_for_direction.items():
-                if h == hostname:
-                    redundant_vfs = vfs_by_direction.get(d, [])
-                    break
+        redundant_vfs = []
+        for d, h in host_for_direction.items():
+            if h == hostname:
+                redundant_vfs = vfs_by_direction.get(d, [])
+                break
         if redundant_vfs and host_pfs:
             pairs = []
             for vf in redundant_vfs:
@@ -604,6 +601,24 @@ def _generate_html(tests, per_host, hosts) -> str:
     dut_label = f"Host 1 ({_esc(dut.name)}) [DUT]" if dut else "Host 1 [DUT]"
     comp_label = f"Host 2 ({_esc(comp.name)})" if comp else "Host 2"
 
+    # ── Test Information section ──
+    num_hosts = len(hosts) if hosts else 1
+    node_label = f"{num_hosts}-node" if num_hosts else "N/A"
+    test_date = now.split()[0] if " " in now else now
+    tested_by = "Intel"
+    p.append('<div class="sec"><h2>Test Information</h2>')
+    p.append(
+        _kv_table(
+            "Test Details",
+            [
+                ("Number of Nodes/Systems", node_label),
+                ("Tested By", f"Tested by {tested_by} as of {test_date}"),
+                ("Report Generated", now),
+            ],
+        )
+    )
+    p.append("</div>")
+
     # ── Platform & Topology section ──
     p.append('<div class="sec"><h2>Platform &amp; Topology</h2>')
 
@@ -621,18 +636,31 @@ def _generate_html(tests, per_host, hosts) -> str:
         "sw_configuration",
         ("OS", "os"),
         ("Kernel", "kernel"),
+        ("BIOS Version", "bios_version"),
+        ("Microcode", "microcode"),
         ("MTL Version", "mtl_version"),
         ("DPDK Version", "dpdk_driver"),
         ("ICE Version", "ice_version"),
+        ("DDP Version", "ddp_version"),
         ("BIOS VT-X &amp; VT-D", "bios_vtx_vtd"),
+        ("Isolated CPUs", "isolcpus"),
         ("Hugepages", "hugepages"),
-        ("CPU Cores", "cpu_cores"),
+        ("CPU Governor", "cpu_cores"),
+        ("NUMA Balancing", "numa_balancing"),
+        ("IRQ Balance", "irq_balance"),
+        ("Max C-State", "max_cstate"),
     ]
     _HW_KEYS = [
         "hw_configuration",
-        ("Server", "server"),
+        ("Server (Platform)", "server"),
+        ("Processor Sockets", "processor_sockets"),
         ("CPU", "cpu"),
+        ("Hyper-Threading (SMT)", "hyper_threading"),
+        ("Turbo Boost", "turbo_boost"),
+        ("TDP", "tdp"),
+        ("NUMA Nodes", "numa_nodes"),
         ("Memory (RAM)", "memory"),
+        ("Storage", "storage"),
         ("NIC", "nic"),
     ]
 

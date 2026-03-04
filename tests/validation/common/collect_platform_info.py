@@ -117,11 +117,6 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
             break
     sw["isolcpus"] = isolcpus if isolcpus else "None"
 
-    # NIC ports settings
-    sw["nic_ports_settings"] = "NIC ports set as VF's (create_vf)."
-    sw["nic_ports_order"] = "1.1, 1.2 ([card_no.port_no])."
-    sw["video_files"] = "Stored in RAMdisk."
-
     # Hugepages
     hp_1g = _remote_cmd(
         host,
@@ -146,6 +141,60 @@ def _collect_sw_configuration(host) -> Dict[str, str]:
         " || echo 'N/A'",
     )
     sw["cpu_cores"] = governor if governor and governor != "N/A" else "N/A"
+
+    # BIOS version
+    bios_ver = _remote_cmd(
+        host,
+        "sudo dmidecode -t bios 2>/dev/null"
+        " | grep 'Version:' | head -1 | cut -d: -f2",
+    )
+    sw["bios_version"] = bios_ver.strip() if bios_ver else "N/A"
+
+    # CPU Microcode revision
+    microcode = _remote_cmd(
+        host,
+        "grep microcode /proc/cpuinfo 2>/dev/null" " | head -1 | awk '{print $NF}'",
+    )
+    sw["microcode"] = microcode if microcode else "N/A"
+
+    # Automatic NUMA Balancing
+    numa_bal = _remote_cmd(
+        host, "cat /proc/sys/kernel/numa_balancing 2>/dev/null || echo ''"
+    )
+    if numa_bal == "0":
+        sw["numa_balancing"] = "Disabled"
+    elif numa_bal == "1":
+        sw["numa_balancing"] = "Enabled"
+    else:
+        sw["numa_balancing"] = "N/A"
+
+    # IRQ Balance service status
+    irqbal = _remote_cmd(
+        host,
+        "systemctl is-active irqbalance 2>/dev/null || echo 'unknown'",
+    )
+    sw["irq_balance"] = irqbal.capitalize() if irqbal else "N/A"
+
+    # Max C-State (intel_idle.max_cstate from kernel cmdline, or cpuidle)
+    max_cstate = ""
+    for token in cmdline.split():
+        if token.startswith("intel_idle.max_cstate="):
+            max_cstate = token.split("=", 1)[1]
+            break
+        if token.startswith("processor.max_cstate="):
+            max_cstate = token.split("=", 1)[1]
+            break
+    if not max_cstate:
+        # Fallback: read current deepest available idle state
+        max_cstate = _remote_cmd(
+            host,
+            "ls -d /sys/devices/system/cpu/cpu0/cpuidle/state* 2>/dev/null" " | wc -l",
+        )
+        if max_cstate and max_cstate != "0":
+            max_cstate = f"{int(max_cstate) - 1} (detected)"
+        else:
+            max_cstate = ""
+    sw["max_cstate"] = max_cstate if max_cstate else "N/A"
 
     return sw
 
@@ -189,6 +238,83 @@ def _collect_hw_configuration(host, topo_pci_addrs: list = None) -> Dict[str, st
         hw["cpu"] = f"{cpu_model}, {detail}"
     else:
         hw["cpu"] = "N/A"
+
+    # Processor sockets — formatted as "2-socket" or "2-socket (1 used)"
+    if sockets:
+        hw["processor_sockets"] = f"{sockets}-socket"
+    else:
+        hw["processor_sockets"] = "N/A"
+
+    # Hyper-Threading / SMT
+    if threads:
+        ht_enabled = int(threads) > 1 if threads.isdigit() else False
+        hw["hyper_threading"] = "Enabled" if ht_enabled else "Disabled"
+    else:
+        hw["hyper_threading"] = "N/A"
+
+    # TDP (Thermal Design Power)
+    tdp = _remote_cmd(
+        host,
+        "sudo turbostat --quiet --show PkgWatt --num_iterations 1 2>/dev/null"
+        " | tail -1 | awk '{print $1}'",
+    )
+    if not tdp or not tdp.replace(".", "").isdigit():
+        # Fallback: lscpu TDP field (available on some platforms)
+        tdp = _remote_cmd(
+            host,
+            "lscpu 2>/dev/null | grep -i 'TDP' | head -1 | awk -F: '{print $2}'",
+        )
+        tdp = tdp.strip() if tdp else ""
+    if tdp and tdp.replace(".", "").isdigit():
+        hw["tdp"] = f"{tdp} W"
+    elif tdp:
+        hw["tdp"] = tdp
+    else:
+        hw["tdp"] = "N/A"
+
+    # Turbo Boost
+    no_turbo = _remote_cmd(
+        host,
+        "cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null || echo ''",
+    )
+    if no_turbo == "0":
+        hw["turbo_boost"] = "Enabled"
+    elif no_turbo == "1":
+        hw["turbo_boost"] = "Disabled"
+    else:
+        # Try cpufreq boost as fallback
+        boost = _remote_cmd(
+            host,
+            "cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || echo ''",
+        )
+        if boost == "1":
+            hw["turbo_boost"] = "Enabled"
+        elif boost == "0":
+            hw["turbo_boost"] = "Disabled"
+        else:
+            hw["turbo_boost"] = "N/A"
+
+    # NUMA nodes
+    numa_nodes = _remote_cmd(host, "lscpu | grep 'NUMA node(s):' | awk '{print $3}'")
+    hw["numa_nodes"] = f"{numa_nodes} NUMA nodes" if numa_nodes else "N/A"
+
+    # Storage / hard drives
+    storage = _remote_cmd(
+        host,
+        "lsblk -d -n -o NAME,SIZE,MODEL,ROTA 2>/dev/null"
+        " | grep -v '^loop\\|^ram\\|^zram'"
+        ' | awk \'{type=($4=="0"?"SSD":"HDD");'
+        ' printf "%s %s %s %s\\n", $1, $2, $3, type}\''
+        " | head -5",
+    )
+    if not storage:
+        storage = _remote_cmd(
+            host,
+            "lsblk -d -n -o NAME,SIZE 2>/dev/null"
+            " | grep -v '^loop\\|^ram\\|^zram'"
+            " | head -5",
+        )
+    hw["storage"] = storage.replace("\n", "; ") if storage else "N/A"
 
     # Memory
     mem_type = _remote_cmd(
