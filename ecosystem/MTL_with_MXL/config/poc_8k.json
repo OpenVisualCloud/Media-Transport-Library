@@ -1,0 +1,67 @@
+{
+  "_comment": "8K25 compositor pipeline config. Receives 16 ST2110-20 tiles, encodes with SVT-AV1, outputs ST2110-22 via RDMA.",
+  "compositor": {
+    "rx_port": "<COMPOSITOR_RX_VF_P>",
+    "rx_sip": "<COMPOSITOR_RX_IP_P>",
+    "tx_port": "<COMPOSITOR_RX_VF_R>",
+    "tx_sip": "<COMPOSITOR_RX_IP_R>",
+    "lcores": "<COMPOSITOR_LCORES>",
+    "codec_threads": 20,
+    "compression_ratio": 5
+  },
+  "compositor_tx": {
+    "tx_port": "<COMPOSITOR_TX_VF>",
+    "tx_sip": "<COMPOSITOR_TX_IP>",
+    "tx_multicast": "<COMPOSITOR_TX_MULTICAST>",
+    "tx_udp_port": 30000,
+    "payload_type": 113,
+    "lcores": "<COMPOSITOR_TX_LCORES>",
+    "shm_name": "/poc_8k_ring"
+  },
+  "sender": {
+    "port": "<SENDER_VF_BDF>",
+    "sip": "<SENDER_DPDK_IP>",
+    "rx_multicast": "<COMPOSITOR_TX_MULTICAST>",
+    "rx_udp_port": 30000,
+    "payload_type": 113,
+    "lcores": "<SENDER_LCORES>",
+    "local_ip": "<SENDER_RDMA_IP>",
+    "mxl_domain": "/dev/shm/mxl_8k_tx"
+  },
+  "receiver": {
+    "bind_ip": "<RECEIVER_RDMA_IP>",
+    "bind_port": 5200,
+    "mxl_domain": "/dev/shm/mxl_8k_rx",
+    "decoder_threads": 8,
+    "http_port": 8088,
+    "thumb_dir": "/dev/shm/poc_8k_thumbs"
+  },
+  "video": {
+    "tile_width": 1920,
+    "tile_height": 1080,
+    "grid_cols": 4,
+    "grid_rows": 4,
+    "output_width": 7680,
+    "output_height": 4320,
+    "fps_num": 30000,
+    "fps_den": 1001
+  },
+  "streams": [
+    { "id": 0,  "multicast_ip": "<POC_MULTICAST_P>",    "udp_port": 20000, "label": "poc P-path" },
+    { "id": 1,  "multicast_ip": "<POC_MULTICAST_R>",    "udp_port": 20000, "label": "poc R-path" },
+    { "id": 2,  "multicast_ip": "<POC16_MCAST_BASE>.1", "udp_port": 20000, "label": "poc14 s0" },
+    { "id": 3,  "multicast_ip": "<POC16_MCAST_BASE>.2", "udp_port": 20000, "label": "poc14 s1" },
+    { "id": 4,  "multicast_ip": "<POC16_MCAST_BASE>.3", "udp_port": 20000, "label": "poc14 s2" },
+    { "id": 5,  "multicast_ip": "<POC16_MCAST_BASE>.4", "udp_port": 20000, "label": "poc14 s3" },
+    { "id": 6,  "multicast_ip": "<POC16_MCAST_BASE>.5", "udp_port": 20000, "label": "poc14 s4" },
+    { "id": 7,  "multicast_ip": "<POC16_MCAST_BASE>.6", "udp_port": 20000, "label": "poc14 s5" },
+    { "id": 8,  "multicast_ip": "<POC16_MCAST_BASE>.7", "udp_port": 20000, "label": "poc14 s6" },
+    { "id": 9,  "multicast_ip": "<POC16_MCAST_BASE>.8", "udp_port": 20000, "label": "poc14 s7" },
+    { "id": 10, "multicast_ip": "<POC16_MCAST_BASE>.9", "udp_port": 20000, "label": "poc14 s8" },
+    { "id": 11, "multicast_ip": "<POC16_MCAST_BASE>.10", "udp_port": 20000, "label": "poc14 s9" },
+    { "id": 12, "multicast_ip": "<POC16_MCAST_BASE>.11", "udp_port": 20000, "label": "poc14 s10" },
+    { "id": 13, "multicast_ip": "<POC16_MCAST_BASE>.12", "udp_port": 20000, "label": "poc14 s11" },
+    { "id": 14, "multicast_ip": "<POC16_MCAST_BASE>.13", "udp_port": 20000, "label": "poc14 s12" },
+    { "id": 15, "multicast_ip": "<POC16_MCAST_BASE>.14", "udp_port": 20000, "label": "poc14 s13" }
+  ]
+}
