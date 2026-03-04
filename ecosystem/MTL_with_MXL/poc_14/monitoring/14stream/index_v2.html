@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTL-MXL POC — 14-Stream Pipeline</title>
+<style>
+  /* ══════════════════════════════════════════════
+   * CSS Variables & Theme
+   * ══════════════════════════════════════════════ */
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --dim: #8b949e;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #79c0ff;
+    --th: 90px;       /* thumbnail height — computed by JS */
+    --row-gap: 5px;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(ellipse at 50% 0%, rgba(88,166,255,0.05) 0%, transparent 60%);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    padding: 8px 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Header
+   * ══════════════════════════════════════════════ */
+  .header {
+    text-align: center;
+    flex-shrink: 0;
+    padding-bottom: 6px;
+  }
+  .header h1 {
+    font-size: 1.25em;
+    font-weight: 700;
+    color: #f0f6fc;
+    line-height: 1.3;
+  }
+  .header h1 .accent { color: var(--blue); }
+  .header .sub {
+    color: var(--dim);
+    font-size: 0.72em;
+    margin-top: 1px;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Summary Bar
+   * ══════════════════════════════════════════════ */
+  .summary-bar {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 6px 0;
+    flex-wrap: wrap;
+  }
+  .sum-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 14px;
+    text-align: center;
+    min-width: 90px;
+    transition: border-color 0.3s;
+  }
+  .sum-card:hover { border-color: var(--cyan); }
+  .sum-card .lbl {
+    font-size: 0.58em;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--dim);
+    margin-bottom: 1px;
+  }
+  .sum-card .val {
+    font-size: 1.1em;
+    font-weight: 700;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .c-ok   { color: var(--green); }
+  .c-warn { color: var(--orange); }
+  .c-err  { color: var(--red); }
+  .c-blue { color: var(--blue); }
+  .c-purp { color: var(--purple); }
+  .c-dim  { color: var(--dim); }
+
+  .influx-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--dim);
+    margin-right: 3px;
+    vertical-align: middle;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .influx-dot.ok {
+    background: var(--green);
+    box-shadow: 0 0 4px var(--green);
+  }
+
+  /* ══════════════════════════════════════════════
+   * Config Bar
+   * ══════════════════════════════════════════════ */
+  .config-bar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding-bottom: 6px;
+    flex-wrap: wrap;
+    font-size: 0.68em;
+  }
+  .config-bar label { color: var(--dim); }
+  .config-bar input {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 1em;
+    font-family: inherit;
+  }
+  .config-bar button {
+    background: var(--blue);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1em;
+  }
+  .config-bar button:hover { opacity: 0.85; }
+
+  /* ══════════════════════════════════════════════
+   * Pipeline Grid — 3 columns: TX | flow | RX
+   * ══════════════════════════════════════════════ */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    row-gap: var(--row-gap);
+    column-gap: 12px;
+    flex: 1;
+    min-height: 0;
+    align-items: center;
+    max-width: 3800px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* Column headers */
+  .col-hdr {
+    font-size: 0.62em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    padding: 3px 0;
+    color: var(--dim);
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1px;
+  }
+  .col-hdr.h-tx { color: var(--blue); border-color: rgba(88,166,255,0.3); }
+  .col-hdr.h-rx { color: var(--purple); border-color: rgba(188,140,255,0.3); }
+  .col-hdr.h-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .col-hdr .stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .col-hdr .stage .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .col-hdr .arrow { color: var(--dim); opacity: 0.35; font-size: 1em; }
+
+  /* ══════════════════════════════════════════════
+   * Thumbnails — no captions, just stream badge
+   * ══════════════════════════════════════════════ */
+  .thumb-wrap {
+    position: relative;
+    width: calc(var(--th) * 16 / 9);
+    height: var(--th);
+    background: #0a0c10;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1.5px solid var(--border);
+    transition: border-color 0.4s, box-shadow 0.4s;
+    flex-shrink: 0;
+  }
+  .thumb-wrap.active {
+    border-color: var(--green);
+    box-shadow: 0 0 8px rgba(63,185,80,0.18);
+  }
+  .thumb-wrap img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb-ph {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+    font-size: 0.45em;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .thumb-badge {
+    position: absolute;
+    top: 2px;
+    font-size: 0.5em;
+    font-weight: 700;
+    font-family: var(--mono);
+    background: rgba(0,0,0,0.7);
+    padding: 0px 4px;
+    border-radius: 3px;
+    z-index: 2;
+    line-height: 1.5;
+    backdrop-filter: blur(4px);
+  }
+  .thumb-badge.b-tx { left: 2px; color: var(--blue); }
+  .thumb-badge.b-rx { right: 2px; color: var(--purple); }
+
+  /* ══════════════════════════════════════════════
+   * Flow Cell — per-stream pipeline visualization
+   * ══════════════════════════════════════════════ */
+  .flow-cell {
+    padding: 1px 8px;
+    border-radius: 5px;
+    transition: opacity 0.4s;
+    min-width: 0;
+  }
+  .flow-cell.off { opacity: 0.25; }
+
+  /* Metrics row: TX fps | stream badge | RX fps */
+  .flow-metrics {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.6em;
+    font-family: var(--mono);
+    margin-bottom: 1px;
+    gap: 4px;
+  }
+  .flow-metrics .fm-tx {
+    color: var(--cyan);
+    min-width: 55px;
+    text-align: left;
+  }
+  .flow-metrics .fm-rx {
+    color: var(--cyan);
+    min-width: 55px;
+    text-align: right;
+  }
+  .flow-metrics .fm-id {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 1.05em;
+    padding: 0 5px;
+    border-radius: 3px;
+    min-width: 20px;
+    text-align: center;
+    line-height: 1.4;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .flow-cell:not(.off) .fm-id {
+    background: rgba(88,166,255,0.08);
+    border-color: rgba(88,166,255,0.25);
+  }
+  .flow-cell.drops .fm-id {
+    background: rgba(248,81,73,0.1);
+    border-color: var(--orange);
+  }
+
+  /* ══════════════════════════════════════════════
+   * Segmented Flow Track — 3 colored segments
+   * ══════════════════════════════════════════════ */
+  .flow-track {
+    position: relative;
+    display: flex;
+    gap: 2px;
+    height: 4px;
+    margin: 2px 0;
+  }
+  .seg {
+    flex: 1;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+
+  /* Active segment coloring + glow */
+  .flow-cell:not(.off) .seg-rx {
+    background: var(--blue);
+    box-shadow: 0 0 6px rgba(88,166,255,0.2);
+  }
+  .flow-cell:not(.off) .seg-bridge {
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(63,185,80,0.2);
+  }
+  .flow-cell:not(.off) .seg-sink {
+    background: var(--purple);
+    box-shadow: 0 0 6px rgba(188,140,255,0.2);
+  }
+
+  /* Drop state — orange/red on bridge+sink */
+  .flow-cell.drops .seg-bridge {
+    background: var(--orange);
+    box-shadow: 0 0 6px rgba(210,153,34,0.3);
+  }
+  .flow-cell.drops .seg-sink {
+    background: var(--red);
+    box-shadow: 0 0 6px rgba(248,81,73,0.3);
+  }
+
+  /* Pipeline node markers at segment boundaries */
+  .flow-node {
+    position: absolute;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .fn-0 { left: 0%;     background: var(--blue);   box-shadow: 0 0 5px rgba(88,166,255,0.5); }
+  .fn-1 { left: 33.6%;  background: var(--green);  box-shadow: 0 0 5px rgba(63,185,80,0.5); }
+  .fn-2 { left: 66.8%;  background: var(--purple); box-shadow: 0 0 5px rgba(188,140,255,0.4); }
+  .fn-3 { left: 100%;   background: var(--purple); box-shadow: 0 0 5px rgba(188,140,255,0.5); }
+  .flow-cell.off .flow-node { background: var(--dim); box-shadow: none; }
+  .flow-cell.drops .fn-1 {
+    background: var(--orange);
+    box-shadow: 0 0 6px rgba(210,153,34,0.5);
+  }
+
+  /* ── Animated particles ── */
+  @keyframes flowRight {
+    0%   { left: -4px; opacity: 0; }
+    5%   { opacity: 0.9; }
+    90%  { opacity: 0.9; }
+    100% { left: calc(100% + 4px); opacity: 0; }
+  }
+  .flow-particle {
+    position: absolute;
+    border-radius: 50%;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    pointer-events: none;
+    animation: flowRight var(--fd, 2.5s) linear infinite;
+  }
+  .fp-1 {
+    width: 5px; height: 5px;
+    background: var(--cyan);
+    filter: drop-shadow(0 0 3px var(--cyan));
+  }
+  .fp-2 {
+    width: 4px; height: 4px;
+    background: var(--green);
+    filter: drop-shadow(0 0 2px var(--green));
+    animation-delay: calc(var(--fd, 2.5s) / -3);
+  }
+  .fp-3 {
+    width: 3px; height: 3px;
+    background: var(--blue);
+    filter: drop-shadow(0 0 2px var(--blue));
+    animation-delay: calc(var(--fd, 2.5s) / -3 * 2);
+  }
+  .flow-cell.off .flow-particle { display: none; }
+
+  /* ══════════════════════════════════════════════
+   * Latency row — per-stage µs values
+   * ══════════════════════════════════════════════ */
+  .flow-lat {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.46em;
+    font-family: var(--mono);
+    gap: 2px;
+    line-height: 1.2;
+    margin-top: 1px;
+    min-height: 1em;
+  }
+  .flow-lat span {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .fl-rx      { color: var(--blue); }
+  .fl-bridge  { color: var(--green); }
+  .fl-sink    { color: var(--purple); }
+  .fl-e2e     { color: var(--cyan); font-weight: 600; }
+  .flow-cell.off .flow-lat { visibility: hidden; }
+
+  /* Detail line (drops) */
+  .flow-detail {
+    font-size: 0.48em;
+    color: var(--dim);
+    font-family: var(--mono);
+    text-align: center;
+    min-height: 0;
+    line-height: 1.2;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Responsive sizing
+   * ══════════════════════════════════════════════ */
+  @media (max-height: 900px) {
+    :root { --row-gap: 3px; }
+    body { padding: 4px 10px; }
+    .header { padding-bottom: 3px; }
+    .header h1 { font-size: 1.05em; }
+    .header .sub { font-size: 0.62em; }
+    .summary-bar { padding: 3px 0; gap: 5px; }
+    .sum-card { padding: 3px 10px; min-width: 75px; }
+    .sum-card .lbl { font-size: 0.5em; }
+    .sum-card .val { font-size: 0.9em; }
+    .config-bar { padding-bottom: 3px; font-size: 0.6em; }
+    .col-hdr { font-size: 0.55em; padding: 2px 0; }
+    .flow-metrics { font-size: 0.52em; }
+    .thumb-badge { font-size: 0.42em; }
+    .flow-lat { font-size: 0.4em; }
+    .flow-detail { font-size: 0.4em; }
+  }
+  @media (min-height: 1800px) {
+    .header h1 { font-size: 1.8em; }
+    .header .sub { font-size: 0.9em; }
+    .sum-card { padding: 8px 20px; }
+    .sum-card .val { font-size: 1.3em; }
+    .flow-metrics { font-size: 0.72em; }
+    .flow-node { width: 9px; height: 9px; }
+    .flow-track { height: 5px; gap: 3px; }
+    .flow-lat { font-size: 0.55em; }
+    .fp-1 { width: 7px; height: 7px; }
+    .fp-2 { width: 6px; height: 6px; }
+    .fp-3 { width: 5px; height: 5px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <h1><span class="accent">MTL-MXL</span> POC — 14-Stream Pipeline</h1>
+  <div class="sub">ST 2110-20 → MXL Fabrics RDMA &bull; 14&times; 1080p30 non-redundant streams</div>
+</div>
+
+<!-- ── Summary Bar ── -->
+<div class="summary-bar">
+  <div class="sum-card">
+    <div class="lbl"><span class="influx-dot" id="influxDot"></span> Active Streams</div>
+    <div class="val c-ok" id="sumActive">0 / 14</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Avg TX FPS</div>
+    <div class="val c-blue" id="sumTxFps">&mdash;</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Avg RX FPS</div>
+    <div class="val c-purp" id="sumRxFps">&mdash;</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Total Drops</div>
+    <div class="val c-ok" id="sumDrops">0</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Updated</div>
+    <div class="val c-dim" style="font-size:0.75em" id="sumTime">&mdash;</div>
+  </div>
+</div>
+
+<!-- ── Config Bar ── -->
+<div class="config-bar">
+  <label>TX:</label>
+  <input id="cfgTxHost" value="localhost" style="width:95px">:<input id="cfgTxPort" value="8085" type="number" style="width:42px">
+  <label>RX:</label>
+  <input id="cfgRxHost" value="localhost" style="width:95px">:<input id="cfgRxPort" value="8085" type="number" style="width:42px">
+  <label>Influx:</label>
+  <input id="cfgInfluxHost" value="localhost" style="width:95px">:<input id="cfgInfluxPort" value="8086" type="number" style="width:42px">
+  <label>N:</label>
+  <input id="cfgN" value="14" type="number" style="width:32px" min="1" max="16">
+  <button onclick="applyConfig()">Apply</button>
+</div>
+
+<!-- ── Pipeline Grid (populated by JS) ── -->
+<div class="pipeline-grid" id="pipelineGrid"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+ * MTL-MXL POC — 14-Stream Pipeline Dashboard v2
+ * Three-column layout: TX thumbs | segmented flow | RX thumbs
+ * Segmented pipeline bar with per-stream latency metrics
+ * ══════════════════════════════════════════════════════════════ */
+
+/* ── Configuration ── */
+const CFG = {
+  txHost: 'localhost',   txPort: 8085,
+  rxHost: 'localhost',   rxPort: 8085,
+  influxHost: 'localhost', influxPort: 8086,
+  numStreams: 14,
+  pollInterval: 3000,
+};
+
+let _pollGen = 0;          /* bumped on Apply → kills old snapshot loops */
+let _metricsTimer = null;  /* setInterval id for InfluxDB polling        */
+let _prev = {};            /* per-stream previous counters for FPS calc  */
+
+/* ══════════════════════════════════════════════════════════════
+ * Apply Config
+ * ══════════════════════════════════════════════════════════════ */
+function applyConfig() {
+  CFG.txHost     = document.getElementById('cfgTxHost').value;
+  CFG.txPort     = +document.getElementById('cfgTxPort').value;
+  CFG.rxHost     = document.getElementById('cfgRxHost').value;
+  CFG.rxPort     = +document.getElementById('cfgRxPort').value;
+  CFG.influxHost = document.getElementById('cfgInfluxHost').value;
+  CFG.influxPort = +document.getElementById('cfgInfluxPort').value;
+  CFG.numStreams = +document.getElementById('cfgN').value;
+
+  _pollGen++;
+  _prev = {};
+  sizeThumb();
+  buildPipeline();
+  startSnapshotPolling();
+
+  if (_metricsTimer) clearInterval(_metricsTimer);
+  poll();
+  _metricsTimer = setInterval(poll, CFG.pollInterval);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Responsive thumbnail sizing
+ * ══════════════════════════════════════════════════════════════ */
+function sizeThumb() {
+  const overhead = 148;
+  const n = CFG.numStreams;
+  const gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-gap')) || 5;
+  const avail = window.innerHeight - overhead;
+  const th = Math.max(40, Math.min(140, Math.floor((avail - (n + 1) * gap) / n)));
+  document.documentElement.style.setProperty('--th', th + 'px');
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Build Pipeline Grid — TX thumb | segmented flow | RX thumb
+ * ══════════════════════════════════════════════════════════════ */
+function buildPipeline() {
+  const grid = document.getElementById('pipelineGrid');
+  let h = '';
+
+  /* ── Column headers ── */
+  h += '<div class="col-hdr h-tx">\u25B6 Sender</div>';
+  h += `<div class="col-hdr h-flow">
+    <span class="stage"><span class="dot" style="background:var(--blue)"></span> MTL&nbsp;RX</span>
+    <span class="arrow">\u2192</span>
+    <span class="stage"><span class="dot" style="background:var(--green)"></span> Bridge&nbsp;+&nbsp;RDMA</span>
+    <span class="arrow">\u2192</span>
+    <span class="stage"><span class="dot" style="background:var(--purple)"></span> Sink</span>
+  </div>`;
+  h += '<div class="col-hdr h-rx">Receiver \u25C0</div>';
+
+  for (let i = 0; i < CFG.numStreams; i++) {
+    const txUrl = `http://${CFG.txHost}:${CFG.txPort}/snapshot/tx/${i}`;
+    const rxUrl = `http://${CFG.rxHost}:${CFG.rxPort}/snapshot/rx/${i}`;
+
+    /* TX thumbnail — no caption, just stream badge */
+    h += `<div class="thumb-wrap" id="tw-tx-${i}">
+      <img id="img-tx-${i}" data-snap-url="${txUrl}" style="display:none" alt="">
+      <div class="thumb-ph" id="ph-tx-${i}">\u2014</div>
+      <span class="thumb-badge b-tx">${i}</span>
+    </div>`;
+
+    /* Flow cell — segmented pipeline with latency */
+    h += `<div class="flow-cell off" id="flow-${i}">
+      <div class="flow-metrics">
+        <span class="fm-tx" id="ftx-${i}" title="TX bridge frame rate">\u2014</span>
+        <span class="fm-id">${i}</span>
+        <span class="fm-rx" id="frx-${i}" title="RX consumer frame rate">\u2014</span>
+      </div>
+      <div class="flow-track" id="track-${i}">
+        <div class="seg seg-rx"></div>
+        <div class="seg seg-bridge"></div>
+        <div class="seg seg-sink"></div>
+        <span class="flow-node fn-0"></span>
+        <span class="flow-node fn-1"></span>
+        <span class="flow-node fn-2"></span>
+        <span class="flow-node fn-3"></span>
+        <span class="flow-particle fp-1"></span>
+        <span class="flow-particle fp-2"></span>
+        <span class="flow-particle fp-3"></span>
+      </div>
+      <div class="flow-lat">
+        <span class="fl-rx" id="rxus-${i}" title="MTL RX queue latency">\u2014</span>
+        <span class="fl-bridge" id="bridgeus-${i}" title="Bridge + RDMA latency">\u2014</span>
+        <span class="fl-sink" id="sinkus-${i}" title="Consumer latency">\u2014</span>
+        <span class="fl-e2e" id="e2eus-${i}" title="End-to-end latency">\u2014</span>
+      </div>
+      <div class="flow-detail" id="fd-${i}"></div>
+    </div>`;
+
+    /* RX thumbnail — no caption, just stream badge */
+    h += `<div class="thumb-wrap" id="tw-rx-${i}">
+      <img id="img-rx-${i}" data-snap-url="${rxUrl}" style="display:none" alt="">
+      <div class="thumb-ph" id="ph-rx-${i}">\u2014</div>
+      <span class="thumb-badge b-rx">${i}</span>
+    </div>`;
+  }
+
+  grid.innerHTML = h;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Snapshot Polling — blob-URL per image, ~15 fps cap
+ * Self-rescheduling loops with generation counter.
+ * ══════════════════════════════════════════════════════════════ */
+const SNAP_CAP = 67; /* ms → ~15 fps */
+
+function startSnapshotPolling() {
+  const gen = _pollGen;
+  document.querySelectorAll('img[data-snap-url]').forEach((img, idx) => {
+    setTimeout(() => imgLoop(img, gen), idx * 4);
+  });
+}
+
+function imgLoop(img, gen) {
+  if (gen !== _pollGen) return;
+  const t0 = performance.now();
+  fetchImg(img, () => {
+    if (gen !== _pollGen) return;
+    const delay = Math.max(0, SNAP_CAP - (performance.now() - t0));
+    setTimeout(() => imgLoop(img, gen), delay);
+  });
+}
+
+function fetchImg(img, done) {
+  const url = img.dataset.snapUrl;
+  if (!url) { done(); return; }
+  fetch(url + '?t=' + Date.now())
+    .then(r => { if (!r.ok) throw 0; return r.blob(); })
+    .then(blob => {
+      const u = URL.createObjectURL(blob);
+      if (img._prev) URL.revokeObjectURL(img._prev);
+      img._prev = u;
+      img.src = u;
+      img.style.display = 'block';
+      const ph = img.nextElementSibling;
+      if (ph) ph.style.display = 'none';
+      const wrap = img.parentElement;
+      if (wrap) wrap.classList.add('active');
+    })
+    .catch(() => {
+      if (!img.src) {
+        img.style.display = 'none';
+        const ph = img.nextElementSibling;
+        if (ph) ph.style.display = 'flex';
+      }
+    })
+    .finally(done);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * InfluxDB — Flux queries
+ * ══════════════════════════════════════════════════════════════ */
+const INFLUX = { org: 'mtl-mxl', bucket: 'poc14', token: 'mtl-mxl-poc-token' };
+
+function influxUrl() {
+  return `http://${CFG.influxHost}:${CFG.influxPort}/api/v2/query?org=${INFLUX.org}`;
+}
+function influxHeaders() {
+  return {
+    'Content-Type': 'application/vnd.flux',
+    'Accept': 'application/csv',
+    'Authorization': `Token ${INFLUX.token}`,
+  };
+}
+
+/* Counters query — per-stream sender/receiver counters */
+async function fetchCounters() {
+  const flux = `
+from(bucket: "${INFLUX.bucket}")
+  |> range(start: -30s)
+  |> filter(fn: (r) => r._measurement == "poc_counters" and exists r.stream_id)
+  |> last()
+  |> pivot(rowKey:["_time","stream_id","role"], columnKey: ["_field"], valueColumn: "_value")
+`;
+  try {
+    const r = await fetch(influxUrl(), { method: 'POST', headers: influxHeaders(), body: flux });
+    if (!r.ok) return null;
+    return parseCSV(await r.text());
+  } catch { return null; }
+}
+
+/* Latency query — pivot stages as columns per stream_id/role */
+async function fetchLatency() {
+  const flux = `
+from(bucket: "${INFLUX.bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_latency" and r._field == "avg" and exists r.stream_id)
+  |> last()
+  |> pivot(rowKey:["_time","stream_id","role"], columnKey: ["stage"], valueColumn: "_value")
+`;
+  try {
+    const r = await fetch(influxUrl(), { method: 'POST', headers: influxHeaders(), body: flux });
+    if (!r.ok) return null;
+    return parseCSV(await r.text());
+  } catch { return null; }
+}
+
+/* Shared CSV parser — handles Flux annotated CSV with \r\n */
+function parseCSV(csv) {
+  const lines = csv.trim().split('\n');
+  const out = [];
+  let hdr = null;
+  for (const line of lines) {
+    const clean = line.replace(/\r$/, '');
+    if (clean.startsWith('#') || !clean.trim()) continue;
+    const cols = clean.split(',');
+    /* Detect header row: starts with empty cell, has identifying columns */
+    if (cols[0] === '' && (cols.includes('stream_id') || cols.includes('role') || cols.includes('_time'))) {
+      hdr = cols.map(c => c.trim());
+      continue;
+    }
+    if (!hdr) continue;
+    if (cols[0] !== '' || cols.length < hdr.length) continue;
+    const obj = {};
+    for (let j = 0; j < hdr.length && j < cols.length; j++) {
+      obj[hdr[j]] = cols[j].trim();
+    }
+    if (obj.stream_id) out.push(obj);
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Update Dashboard — FPS + latency UI update
+ * ══════════════════════════════════════════════════════════════ */
+function updateDashboard(counters, latency) {
+  const dot = document.getElementById('influxDot');
+  if (!counters) {
+    dot.classList.remove('ok');
+    document.getElementById('sumTime').textContent = new Date().toLocaleTimeString();
+    return;
+  }
+  dot.classList.add('ok');
+
+  /* ── Group counters by stream_id ── */
+  const streams = {};
+  for (const row of counters) {
+    const sid = parseInt(row.stream_id);
+    if (isNaN(sid) || sid >= CFG.numStreams) continue;
+    if (!streams[sid]) streams[sid] = {};
+    const role = (row.role || '').toLowerCase();
+    if (role.includes('sender'))   streams[sid].tx = row;
+    if (role.includes('receiver')) streams[sid].rx = row;
+  }
+
+  /* ── Group latency by stream_id ── */
+  const latStreams = {};
+  if (latency) {
+    for (const row of latency) {
+      const sid = parseInt(row.stream_id);
+      if (isNaN(sid) || sid >= CFG.numStreams) continue;
+      if (!latStreams[sid]) latStreams[sid] = {};
+      const role = (row.role || '').toLowerCase();
+      if (role.includes('sender'))   latStreams[sid].tx = row;
+      if (role.includes('receiver')) latStreams[sid].rx = row;
+    }
+  }
+
+  let active = 0, totalDrops = 0;
+  let txFpsSum = 0, txFpsN = 0;
+  let rxFpsSum = 0, rxFpsN = 0;
+
+  for (let i = 0; i < CFG.numStreams; i++) {
+    const s = streams[i] || {};
+    const lat = latStreams[i] || {};
+    const flowEl  = document.getElementById('flow-' + i);
+    const ftxEl   = document.getElementById('ftx-' + i);
+    const frxEl   = document.getElementById('frx-' + i);
+    const fdEl    = document.getElementById('fd-' + i);
+    const trackEl = document.getElementById('track-' + i);
+    const rxusEl     = document.getElementById('rxus-' + i);
+    const bridgeusEl = document.getElementById('bridgeus-' + i);
+    const sinkusEl   = document.getElementById('sinkus-' + i);
+    const e2eusEl    = document.getElementById('e2eus-' + i);
+    if (!flowEl) continue;
+
+    let txFps = null, rxFps = null, drops = 0;
+    let hasData = false;
+
+    /* ── Sender counters ── */
+    if (s.tx) {
+      hasData = true;
+      const bf = parseInt(s.tx.bridge_frames || '0');
+      const dr = parseInt(s.tx.rx_drops || '0');
+      const t  = new Date(s.tx._time).getTime();
+      drops += dr;
+
+      const k = 'tx_' + i;
+      const p = _prev[k];
+      if (p && p.t && t > p.t) {
+        const dt = (t - p.t) / 1000;
+        if (dt > 0 && dt < 120) {
+          txFps = Math.max(0, (bf - p.bf) / dt);
+        }
+      }
+      _prev[k] = { t, bf };
+    }
+
+    /* ── Receiver counters ── */
+    if (s.rx) {
+      hasData = true;
+      const cf = parseInt(s.rx.consumer_frames || '0');
+      const t  = new Date(s.rx._time).getTime();
+
+      const k = 'rx_' + i;
+      const p = _prev[k];
+      if (p && p.t && t > p.t) {
+        const dt = (t - p.t) / 1000;
+        if (dt > 0 && dt < 120) {
+          rxFps = Math.max(0, (cf - p.cf) / dt);
+        }
+      }
+      _prev[k] = { t, cf };
+    }
+
+    /* ── Update flow cell active/off/drops ── */
+    if (hasData) {
+      active++;
+      flowEl.classList.remove('off');
+      flowEl.classList.toggle('drops', drops > 0);
+
+      /* Particle speed tied to framerate */
+      const fps = txFps ?? rxFps ?? 30;
+      const dur = fps > 0 ? Math.max(0.4, 2.5 / (fps / 15)) : 3;
+      trackEl.style.setProperty('--fd', dur.toFixed(1) + 's');
+    } else {
+      flowEl.classList.add('off');
+      flowEl.classList.remove('drops');
+    }
+
+    /* ── FPS text ── */
+    ftxEl.textContent = txFps !== null ? txFps.toFixed(1) + ' fps' : '\u2014';
+    frxEl.textContent = rxFps !== null ? rxFps.toFixed(1) + ' fps' : '\u2014';
+
+    /* ── Per-stage latency ── */
+    const txLat = lat.tx || {};
+    const rxLat = lat.rx || {};
+
+    /* rx_us from sender: "queue" stage (MTL RX queue latency) */
+    const rxUs = pickUs(txLat, 'queue', 'mtl_rx_us', 'rx_latency_us');
+    /* bridge_us from sender: "bridge" + "rdma" combined, fallback to individual */
+    let bridgeUs = null;
+    const bUs = parseFloat(txLat['bridge']);
+    const rUs = parseFloat(txLat['rdma']);
+    if (!isNaN(bUs) && !isNaN(rUs)) {
+      bridgeUs = Math.round(bUs + rUs);
+    } else {
+      bridgeUs = pickUs(txLat, 'total', 'bridge', 'rdma', 'bridge_us', 'bridge_latency_us');
+    }
+    /* sink_us from receiver: "consume" stage */
+    const sinkUs = pickUs(rxLat, 'consume', 'sink_us', 'consumer_us', 'consume_us');
+    /* e2e_us from receiver: "e2e" stage */
+    const e2eUs = pickUs(rxLat, 'e2e', 'e2e_us', 'e2e_latency_us');
+
+    rxusEl.textContent     = rxUs     !== null ? 'RX: ' + fmtUs(rxUs) : '\u2014';
+    bridgeusEl.textContent = bridgeUs !== null ? 'Br: ' + fmtUs(bridgeUs) : '\u2014';
+    sinkusEl.textContent   = sinkUs   !== null ? 'Sk: ' + fmtUs(sinkUs) : '\u2014';
+    e2eusEl.textContent    = e2eUs    !== null ? 'E2E: ' + fmtUs(e2eUs) : '\u2014';
+
+    /* ── Drops detail ── */
+    if (drops > 0) {
+      fdEl.innerHTML = '<span style="color:var(--red)">\u26A0 ' + drops + ' drops</span>';
+    } else {
+      fdEl.textContent = '';
+    }
+
+    /* Aggregate for summary */
+    totalDrops += drops;
+    if (txFps !== null) { txFpsSum += txFps; txFpsN++; }
+    if (rxFps !== null) { rxFpsSum += rxFps; rxFpsN++; }
+  }
+
+  /* ── Summary bar ── */
+  const ael = document.getElementById('sumActive');
+  ael.textContent = active + ' / ' + CFG.numStreams;
+  ael.className = 'val ' + (active >= CFG.numStreams ? 'c-ok' : active > 0 ? 'c-warn' : 'c-err');
+
+  document.getElementById('sumTxFps').textContent =
+    txFpsN > 0 ? (txFpsSum / txFpsN).toFixed(1) : '\u2014';
+  document.getElementById('sumRxFps').textContent =
+    rxFpsN > 0 ? (rxFpsSum / rxFpsN).toFixed(1) : '\u2014';
+
+  const del = document.getElementById('sumDrops');
+  del.textContent = totalDrops;
+  del.className = 'val ' + (totalDrops === 0 ? 'c-ok' : 'c-err');
+
+  document.getElementById('sumTime').textContent = new Date().toLocaleTimeString();
+}
+
+/* ── Helper: pick first valid number from candidate column keys ── */
+function pickUs(row, ...keys) {
+  for (const k of keys) {
+    const v = parseFloat(row[k]);
+    if (!isNaN(v)) return Math.round(v);
+  }
+  return null;
+}
+
+/* ── Helper: format microseconds in compact human form ── */
+function fmtUs(us) {
+  if (us >= 1000000) return (us / 1000000).toFixed(1) + ' s';
+  if (us >= 10000)   return (us / 1000).toFixed(1) + ' ms';
+  if (us >= 1000)    return (us / 1000).toFixed(2) + ' ms';
+  return us + ' \u00B5s';
+}
+
+/* ── Poll orchestrator — parallel counters + latency ── */
+async function poll() {
+  const [counters, latency] = await Promise.all([fetchCounters(), fetchLatency()]);
+  updateDashboard(counters, latency);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Initialization
+ * ══════════════════════════════════════════════════════════════ */
+sizeThumb();
+buildPipeline();
+startSnapshotPolling();
+poll();
+_metricsTimer = setInterval(poll, CFG.pollInterval);
+window.addEventListener('resize', () => { sizeThumb(); });
+</script>
+</body>
+</html>
