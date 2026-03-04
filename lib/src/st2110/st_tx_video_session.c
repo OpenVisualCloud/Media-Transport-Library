@@ -2632,8 +2632,12 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
 
     if (s->queue[i]) {
       struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
+      /* free completed mbufs from NIC tx ring before flushing */
+      mt_txq_done_cleanup(s->queue[i]);
       /* flush all the pkts in the tx ring desc */
       if (pad) mt_txq_flush(s->queue[i], pad);
+      /* clean any remaining mbufs after flush */
+      mt_txq_done_cleanup(s->queue[i]);
       mt_txq_put(s->queue[i]);
       s->queue[i] = NULL;
     }
@@ -2732,22 +2736,37 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
 
 static int tv_mempool_free(struct st_tx_video_session_impl* s) {
   int ret;
+  int retry;
+  int max_retry = 10;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    ret = mt_mempool_free(s->mbuf_mempool_chain);
+    for (retry = 0; retry < max_retry; retry++) {
+      ret = mt_mempool_free(s->mbuf_mempool_chain);
+      if (ret >= 0) break;
+      mt_sleep_ms(1); /* wait for NIC to complete DMA and free mbufs */
+    }
     if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
   if (s->mbuf_mempool_copy_chain && !s->tx_mono_pool) {
-    ret = mt_mempool_free(s->mbuf_mempool_copy_chain);
+    for (retry = 0; retry < max_retry; retry++) {
+      ret = mt_mempool_free(s->mbuf_mempool_copy_chain);
+      if (ret >= 0) break;
+      mt_sleep_ms(1);
+    }
     if (ret >= 0) s->mbuf_mempool_copy_chain = NULL;
   }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i]) {
-      if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool)
-        ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
-      else
+      if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool) {
+        for (retry = 0; retry < max_retry; retry++) {
+          ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
+          if (ret >= 0) break;
+          mt_sleep_ms(1);
+        }
+      } else {
         ret = 0;
+      }
       if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
     }
   }
