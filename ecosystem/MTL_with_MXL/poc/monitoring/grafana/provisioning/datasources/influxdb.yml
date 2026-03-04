@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: mtl-mxl
+      defaultBucket: poc
+      tlsSkipVerify: true
+    secureJsonData:
+      token: mtl-mxl-poc-token
+    isDefault: true

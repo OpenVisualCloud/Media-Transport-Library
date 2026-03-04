@@ -1,0 +1,53 @@
+# MTL-MXL POC — Monitoring Stack
+# InfluxDB 2.x + Grafana, pre-provisioned
+#
+# Usage:
+#   cd poc/monitoring && docker compose up -d
+#
+# Defaults:
+#   InfluxDB UI:  http://localhost:8086  (admin / mtlmxlpoc)
+#   Grafana:      http://localhost:3000  (admin / admin)
+#   Bucket:       poc
+#   Org:          mtl-mxl
+#   Token:        mtl-mxl-poc-token
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: mtl-mxl-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: mtlmxlpoc
+      DOCKER_INFLUXDB_INIT_ORG: mtl-mxl
+      DOCKER_INFLUXDB_INIT_BUCKET: poc
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: mtl-mxl-poc-token
+      DOCKER_INFLUXDB_INIT_RETENTION: 7d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: mtl-mxl-grafana
+    profiles:
+      - grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/mtl-mxl-poc.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
