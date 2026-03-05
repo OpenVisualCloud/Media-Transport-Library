@@ -117,6 +117,12 @@ When `enable-dma-offload` is set to `true`, every plugin that supports DMA will 
 the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
 flag.
 
+When `allow-down-ports` is set to `true`, MTL will proceed with initialization even if
+one or both NIC links are down. Any session whose `port` or `port-red` maps to a down
+interface will have that port silently removed from its port list at creation time,
+reducing `num_port` by one. A session whose only port is down will fail to create.
+This flag is useful for redundant-path setups where one leg may be absent at startup.
+
 > **Warning:**
 > Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTLlibrary. As the MTL library handle is shared between MTL
 > GStreamer plugins of the same pipeline, you only need to pass them once when specifying the arguments for the firstly initialized pipeline. Nothing happens when you specify them elsewhere;
@@ -418,9 +424,9 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
-| tx-test-mode          | enum     | Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
-| tx-test-pkt-count     | uint     | Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
-| tx-test-pacing-ns     | uint     | Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
+| tx-test-mode          | enum     | **DEBUG build only.** Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
+| tx-test-pkt-count     | uint     | **DEBUG build only.** Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
+| tx-test-pacing-ns     | uint     | **DEBUG build only.** Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
 
 > **Note:**
 > - `raw-udw` streams carry a single ANC packet per frame without per-packet metadata; the element uses `tx-did`/`tx-sdid` for the outgoing headers, so keeping `max-combined-udw-size` small avoids oversized frames.
@@ -459,9 +465,10 @@ gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
-#### 5.1.3. ST40P test-mode knobs
+#### 5.1.3. ST40P test-mode knobs (DEBUG builds only)
 
-Test-only RTP/ANC mutation options for validation (not for production):
+Test-only RTP/ANC mutation options for validation (not for production).  
+These properties and the underlying hot-path logic are compiled only when `MTL_SIMULATE_PACKET_DROPS` is defined (enabled automatically in debug builds via `meson -Dbuildtype=debug`). In release builds the properties are absent and the hot-path stays clean.
 
 | Property              | Description                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------|

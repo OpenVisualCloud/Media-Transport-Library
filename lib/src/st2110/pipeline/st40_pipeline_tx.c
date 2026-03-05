@@ -323,12 +323,11 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     }
     frame_info->udw_buffer_size = ops->max_udw_buff_size;
     frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
-    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
-    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
-    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
-    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
+    for (int p = 0; p < MTL_SESSION_PORT_MAX; p++) {
+      frame_info->pkts_recv[p] = 0;
+      frame_info->port_seq_lost[p] = 0;
+      frame_info->port_seq_discont[p] = false;
+    }
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;

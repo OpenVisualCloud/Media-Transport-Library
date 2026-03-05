@@ -43,7 +43,6 @@ struct st40p_rx_ctx {
   /* session-level continuity (post-dedup) */
   bool session_last_seq_valid;
   uint16_t session_last_seq;
-  uint32_t session_last_ts;
   bool last_seq_valid[MTL_SESSION_PORT_MAX];
   uint16_t last_seq[MTL_SESSION_PORT_MAX];
   pthread_mutex_t lock;

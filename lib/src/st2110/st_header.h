@@ -1135,16 +1135,17 @@ struct st_tx_ancillary_session_impl {
 
   bool split_payload; /* force one ANC per RTP packet */
 
-  /* test-only mutation state */
+#ifdef MTL_SIMULATE_PACKET_DROPS
+  /* test-only mutation state — compiled out in release builds */
   struct st40_tx_test_config test;
   uint16_t test_frames_left;
   bool test_frame_active;
   bool test_seq_gap_fired;
   enum mtl_session_port test_seq_gap_target_port;
-  enum mtl_session_port test_seq_gap_next_port;
   uint16_t test_seq_gap_remaining;
   uint16_t test_seq_gap_size;
   uint16_t test_seq_gap_plan_idx;
+#endif
 
   int stat_build_ret_code;
 
