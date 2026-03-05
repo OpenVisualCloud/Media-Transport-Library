@@ -157,6 +157,8 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   frame_info->timestamp = meta->timestamp;
   frame_info->epoch = meta->epoch;
   frame_info->rtp_timestamp = meta->rtp_timestamp;
+  frame_info->interlaced = ctx->ops.interlaced;
+  frame_info->second_field = ctx->ops.interlaced ? meta->second_field : false;
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -321,12 +323,17 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     }
     frame_info->udw_buffer_size = ops->max_udw_buff_size;
     frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    for (int p = 0; p < MTL_SESSION_PORT_MAX; p++) {
+      frame_info->pkts_recv[p] = 0;
+      frame_info->port_seq_lost[p] = 0;
+      frame_info->port_seq_discont[p] = false;
+    }
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->second_field = false;
+    frame_info->interlaced = false;
 
     /* addr will be resolved later in tx_st40p_create_transport */
     frame_info->priv = framebuff;
@@ -361,8 +368,8 @@ static int tx_st40p_stat(void* priv) {
   notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st40p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
-         ctx->stat_drop_frame);
+      ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
+      ctx->stat_drop_frame);
 
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
@@ -700,41 +707,19 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
 }
 
 int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats* stats) {
-  struct st40p_tx_ctx* ctx;
+  struct st40p_tx_ctx* ctx = handle;
   int cidx;
-  struct st40p_tx_frame* framebuff;
-  uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  ctx = handle;
   cidx = ctx->idx;
-  framebuff = ctx->framebuffs;
-
   if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return -EINVAL;
   }
-
-  for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st40p_tx_frame_status stat = framebuff[j].stat;
-    if (stat < ST40P_TX_FRAME_STATUS_MAX) {
-      status_counts[stat]++;
-    }
-  }
-
-  char status_str[256];
-  int offset = 0;
-  for (uint16_t i = 0; i < ST40P_TX_FRAME_STATUS_MAX; i++) {
-    if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st40p_tx_frame_stat_name_short[i], status_counts[i]);
-    }
-  }
-  notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   return st40_tx_get_session_stats(ctx->transport, stats);
 }

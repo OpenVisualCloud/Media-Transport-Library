@@ -45,6 +45,11 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** Packet loss per session port based on per-port sequence tracking. */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX];
+  /** True when a per-port sequence discontinuity was detected in this frame. */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];
+
   /** Whether a marker bit was seen on any RTP packet in this frame. */
   bool rtp_marker;
   /** True if a sequence number discontinuity was observed within this frame. */
@@ -54,6 +59,11 @@ struct st40_frame_info {
 
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
+
+  /** True if this frame represents the second interlaced field (F=0b11). */
+  bool second_field;
+  /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
+  bool interlaced;
 
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -137,7 +147,8 @@ struct st40p_tx_ops {
   void* priv;
   /** Optional. see ST40P_TX_FLAG_* for possible flags */
   uint32_t flags;
-  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  /** Optional. DEBUG / test-only mutation config (see struct st40_tx_test_config).
+   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored otherwise. */
   struct st40_tx_test_config test;
   /**
    * Optional. Callback when frame available.
@@ -187,6 +198,12 @@ enum st40p_rx_flag {
    * Force the numa of the created session, both CPU and memory
    */
   ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
+  /**
+   * If set, skip auto-detection and use the `interlaced` field in st40p_rx_ops as-is.
+   * Without this flag the library auto-detects progressive vs interlaced from
+   * RTP F bits and ignores the initial `interlaced` value once detection completes.
+   */
+  ST40P_RX_FLAG_DISABLE_AUTO_DETECT = (MTL_BIT32(3)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
   ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -199,7 +216,9 @@ enum st40p_rx_flag {
 struct st40p_rx_ops {
   /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** Mandatory. interlaced or not */
+  /** Optional. interlaced or not. When ST40P_RX_FLAG_DISABLE_AUTO_DETECT is set,
+   * this value is used as-is. Otherwise it serves as the initial value
+   * before auto-detection from RTP F bits overrides it. */
   bool interlaced;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;
