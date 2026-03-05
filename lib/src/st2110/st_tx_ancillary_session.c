@@ -11,8 +11,7 @@
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 #include "st_err.h"
-
-#define ST40_SEQ_GAP_SCHEDULE_LEN 8
+#include "st_tx_ancillary_test.h"
 
 /* call tx_ancillary_session_put always if get successfully */
 static inline struct st_tx_ancillary_session_impl* tx_ancillary_session_get(
@@ -59,11 +58,6 @@ static inline void tx_ancillary_session_put(struct st_tx_ancillary_sessions_mgr*
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
-static inline bool tx_ancillary_test_frame_active(
-    struct st_tx_ancillary_session_impl* s) {
-  return s->test.pattern != ST40_TX_TEST_NONE && s->test_frame_active;
-}
-
 static inline void tx_ancillary_seq_advance(struct st_tx_ancillary_session_impl* s,
                                             uint16_t step) {
   uint32_t seq = s->st40_seq_id;
@@ -82,12 +76,7 @@ static inline void tx_ancillary_seq_advance(struct st_tx_ancillary_session_impl*
 static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl* s,
                                             struct st40_rfc8331_rtp_hdr* rtp) {
   uint16_t step = 1;
-
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
-      s->ops.num_port <= 1 && !s->test_seq_gap_fired) {
-    step = 2;
-    s->test_seq_gap_fired = true;
-  }
+  TX_ANC_TEST_SEQ_STEP(s, step);
 
   rtp->base.seq_number = htons(s->st40_seq_id);
   rtp->seq_number_ext = htons(s->st40_ext_seq_id);
@@ -95,47 +84,10 @@ static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl*
   tx_ancillary_seq_advance(s, step);
 }
 
-static inline uint16_t tx_ancillary_apply_parity(struct st_tx_ancillary_session_impl* s,
-                                                 uint16_t value) {
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_BAD_PARITY) {
-    return value & 0x3FF; /* strip parity to intentionally corrupt */
-  }
+static inline uint16_t tx_ancillary_apply_parity(
+    struct st_tx_ancillary_session_impl* s __rte_unused, uint16_t value) {
+  TX_ANC_TEST_APPLY_PARITY(s, value);
   return st40_add_parity_bits(value);
-}
-
-static inline void tx_ancillary_seq_gap_plan(struct st_tx_ancillary_session_impl* s) {
-  static const struct {
-    enum mtl_session_port port;
-    uint16_t size;
-  } seq_gap_schedule[] = {{MTL_SESSION_PORT_P, 5}, {MTL_SESSION_PORT_R, 4},
-                          {MTL_SESSION_PORT_P, 4}, {MTL_SESSION_PORT_R, 5},
-                          {MTL_SESSION_PORT_P, 4}, {MTL_SESSION_PORT_R, 4},
-                          {MTL_SESSION_PORT_P, 5}, {MTL_SESSION_PORT_R, 5}};
-  const uint16_t schedule_len = RTE_DIM(seq_gap_schedule);
-
-  if (!(tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP)) {
-    s->test_seq_gap_remaining = 0;
-    s->test_seq_gap_size = 0;
-    return;
-  }
-
-  if (s->test_seq_gap_remaining) return;
-
-  if (s->ops.num_port <= 1) {
-    uint16_t total_pkts = s->st40_total_pkts > 0 ? s->st40_total_pkts : 1;
-    uint16_t gap = (total_pkts >= 5) ? 5 : (total_pkts >= 4 ? 4 : 2);
-    s->test_seq_gap_target_port = MTL_SESSION_PORT_P;
-    s->test_seq_gap_size = gap;
-    s->test_seq_gap_remaining = gap;
-    return;
-  }
-
-  uint16_t plan_idx = s->test_seq_gap_plan_idx % schedule_len;
-  s->test_seq_gap_plan_idx = (plan_idx + 1) % schedule_len;
-
-  s->test_seq_gap_target_port = seq_gap_schedule[plan_idx].port;
-  s->test_seq_gap_size = seq_gap_schedule[plan_idx].size;
-  s->test_seq_gap_remaining = s->test_seq_gap_size;
 }
 
 /* Abort the current frame and allow the app to recycle its buffer */
@@ -161,11 +113,7 @@ static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
   s->st40_pkt_idx = 0;
   s->st40_anc_idx = 0;
   s->calculate_time_cursor = false;
-  s->test_frame_active = false;
-  s->test_seq_gap_fired = false;
-  s->test_seq_gap_remaining = 0;
-  s->test_seq_gap_size = 0;
-  s->test_seq_gap_plan_idx = 0;
+  TX_ANC_TEST_RESET_STATE(s);
   s->check_frame_done_time = false;
   s->pacing.tsc_time_cursor = 0;
 }
@@ -564,8 +512,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
-  bool test_no_marker =
-      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
+  bool test_no_marker = TX_ANC_TEST_NO_MARKER(s);
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
@@ -573,9 +520,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   struct st40_frame* src = frame_info->addr;
   int anc_idx = s->st40_anc_idx;
   int anc_count = src->meta_num;
-  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
-      anc_idx >= anc_count)
-    anc_idx = anc_count - 1; /* repeat last ANC when test demands extra packets */
+  TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
   int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
@@ -667,17 +612,14 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
-  bool test_no_marker =
-      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
+  bool test_no_marker = TX_ANC_TEST_NO_MARKER(s);
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
   struct st40_frame* src = frame_info->addr;
   int anc_count = src->meta_num;
-  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
-      anc_idx >= anc_count)
-    anc_idx = anc_count - 1;
+  TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
   int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
@@ -790,16 +732,8 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
         ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
       }
     }
-    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
-      s->test_frame_active = true;
-      s->test_frames_left--;
-      s->test_seq_gap_fired = false;
-    } else {
-      s->test_frame_active = false;
-    }
-    if (s->test_frame_active && s->test.paced_pkt_count)
-      s->st40_total_pkts = RTE_MAX(1, (int)s->test.paced_pkt_count);
-    tx_ancillary_seq_gap_plan(s);
+    TX_ANC_TEST_ACTIVATE_FRAME(s);
+    TX_ANC_TEST_SEQ_GAP_PLAN(s);
     tx_ancillary_session_sync_pacing(impl, s, 0);
     tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
                                        ntohl(rtp->tmstamp));
@@ -904,18 +838,7 @@ static inline int tx_ancillary_session_send_pkt(struct st_tx_ancillary_sessions_
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_ring* ring = mgr->ring[port];
 
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
-      s->ops.num_port > 1 && s_port == s->test_seq_gap_target_port &&
-      s->test_seq_gap_remaining) {
-    uint32_t pkt_idx = st_tx_mbuf_get_idx(pkt);
-    (void)pkt_idx; /* silence unused when dbg is compiled out */
-    dbg("%s(%d), drop pkt %u on %s gap=%u/%u frame=%u\n", __func__, s->idx, pkt_idx,
-        s_port == MTL_SESSION_PORT_P ? "P" : "R", s->test_seq_gap_size,
-        s->test_seq_gap_remaining, s->st40_frame_idx);
-    s->test_seq_gap_remaining--;
-    rte_pktmbuf_free(pkt);
-    return 0;
-  }
+  if (TX_ANC_TEST_DROP_PKT(s, s_port, pkt)) return 0;
 
   if (s->queue[s_port]) {
     uint16_t tx = mt_txq_burst(s->queue[s_port], &pkt, 1);
@@ -1041,14 +964,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       }
     }
 
-    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
-      s->test_frame_active = true;
-      s->test_frames_left--;
-      s->test_seq_gap_fired = false;
-    } else {
-      s->test_frame_active = false;
-    }
-    tx_ancillary_seq_gap_plan(s);
+    TX_ANC_TEST_ACTIVATE_FRAME(s);
+    TX_ANC_TEST_SEQ_GAP_PLAN(s);
 
     MT_USDT_ST40_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                src->meta_num, total_udw);
@@ -1169,9 +1086,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   s->st40_pkt_idx++;
   double pkt_time = pacing->frame_time / RTE_MAX(1, s->st40_total_pkts);
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_PACED &&
-      s->test.paced_gap_ns)
-    pkt_time = s->test.paced_gap_ns;
+  TX_ANC_TEST_PACING_OVERRIDE(s, pkt_time);
   pacing->tsc_time_cursor += pkt_time;
   /* keep one RTP timestamp across a multi-packet frame; re-sync after the last pkt */
   s->calculate_time_cursor = s->st40_pkt_idx >= s->st40_total_pkts;
@@ -1212,8 +1127,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
     s->st40_anc_idx = 0;
-    s->test_frame_active = false;
-    s->test_seq_gap_fired = false;
+    TX_ANC_TEST_FRAME_DONE(s);
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
@@ -1749,23 +1663,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   }
   s->ops = *ops;
   s->split_payload = (ops->flags & ST40_TX_FLAG_SPLIT_ANC_BY_PKT) ? true : false;
-
-  /* test-only mutation config */
-  s->test = ops->test;
-  if (s->test.pattern != ST40_TX_TEST_NONE && !s->test.frame_count)
-    s->test.frame_count = 1;
-  if (s->test.pattern == ST40_TX_TEST_SEQ_GAP && ops->num_port > 1 &&
-      s->test.frame_count < ST40_SEQ_GAP_SCHEDULE_LEN)
-    s->test.frame_count = ST40_SEQ_GAP_SCHEDULE_LEN;
-  s->test_frames_left = s->test.frame_count;
-  s->test_frame_active = false;
-  s->test_seq_gap_fired = false;
-  s->test_seq_gap_target_port = MTL_SESSION_PORT_P;
-  s->test_seq_gap_next_port = MTL_SESSION_PORT_P;
-  s->test_seq_gap_remaining = 0;
-  s->test_seq_gap_size = 0;
-  s->test_seq_gap_plan_idx = 0;
-  if (s->test.pattern != ST40_TX_TEST_NONE) s->split_payload = true;
+  TX_ANC_TEST_INIT(s, ops);
 
   /* if disable shared queue */
   s->shared_queue = true;

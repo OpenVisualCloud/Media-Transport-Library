@@ -17,6 +17,11 @@ plugin_c_args = [
   '-Wno-stringop-truncation'
 ]
 
+# Test-only TX mutation helpers are available only in debug builds.
+if get_option('buildtype') == 'debug'
+  plugin_c_args += ['-DMTL_SIMULATE_PACKET_DROPS']
+endif
+
 gst_dep = dependency('gstreamer-1.0', version : '>=1.19', required : true)
 gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : true)
 gstreamer_video_dep = dependency('gstreamer-video-1.0', required : true)
