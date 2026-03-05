@@ -710,7 +710,6 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
   ctx->session_last_seq_valid = false;
   ctx->session_last_seq = 0;
-  ctx->session_last_ts = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     ctx->port_map[i] = MTL_PORT_MAX;

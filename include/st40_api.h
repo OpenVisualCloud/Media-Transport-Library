@@ -73,8 +73,12 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 #define ST40_TX_FLAG_SPLIT_ANC_BY_PKT (MTL_BIT32(8))
 
 /**
- * Test-only mutation pattern for st40 TX. These modes intentionally craft malformed or
- * edge-case RTP/ANC packets for validation. Defaults to NONE for production use.
+ * DEBUG / test-only mutation pattern for st40 TX.
+ * These modes intentionally craft malformed or edge-case RTP/ANC packets for
+ * validation.  The library acts on them **only** when compiled with
+ * MTL_SIMULATE_PACKET_DROPS (enabled automatically in debug builds); in release builds
+ * the hot-path checks are compiled out and any value set here is silently
+ * ignored.
  */
 enum st40_tx_test_pattern {
   ST40_TX_TEST_NONE = 0,
@@ -85,8 +89,9 @@ enum st40_tx_test_pattern {
 };
 
 /**
- * Optional test-only mutation controls for st40 TX. All fields default to zero/none and
- * are ignored in normal operation.
+ * DEBUG / test-only mutation controls for st40 TX.
+ * All fields default to zero/none.  Effective only when the library is built
+ * with MTL_SIMULATE_PACKET_DROPS (debug builds); otherwise silently ignored.
  */
 struct st40_tx_test_config {
   enum st40_tx_test_pattern pattern; /**< Mutation pattern to apply. */
@@ -109,7 +114,8 @@ struct st40_tx_test_config {
 /**
  * Flag bit in flags of struct st40_rx_ops.
  * If set, skip auto-detection and use the `interlaced` field in st40_rx_ops as-is.
- * By default, the library auto-detects progressive vs interlaced from RTP F bits.
+ * Without this flag the library auto-detects progressive vs interlaced from
+ * RTP F bits and ignores the initial `interlaced` value once detection completes.
  */
 #define ST40_RX_FLAG_DISABLE_AUTO_DETECT (MTL_BIT32(2))
 
@@ -355,7 +361,8 @@ struct st40_tx_ops {
   /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
 
-  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  /** Optional. DEBUG / test-only mutation config (see struct st40_tx_test_config).
+   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored otherwise. */
   struct st40_tx_test_config test;
 
   /**

@@ -72,7 +72,7 @@ flowchart LR
   - Supports `rx_rtp_ring_size` for split-mode buffering.
 - **C API:**
   - `st40_api.h` / `st40_pipeline_api.h` expose split-mode flags (`ST40_TX_FLAG_SPLIT_ANC_BY_PKT` / `ST40P_TX_FLAG_SPLIT_ANC_BY_PKT`) and the extended frame-info fields (`rtp_marker`, `seq_discont`, `seq_lost`).
-  - `st40_tx_ops` / `st40p_tx_ops` accept `st40_tx_test_config` so C API users can inject the same mutation patterns (no-marker, seq-gap, bad-parity, paced) used by the GStreamer tests.
+  - `st40_tx_ops` / `st40p_tx_ops` accept `st40_tx_test_config` so C API users can inject the same mutation patterns (no-marker, seq-gap, bad-parity, paced) used by the GStreamer tests.  **Debug-only**: the library acts on these patterns only when compiled with `MTL_SIMULATE_PACKET_DROPS` (enabled automatically in debug builds); in release builds the hot-path checks are compiled out.
   - Pipeline RX accumulates packets per field and reports discontinuities.
 
 ## Test coverage (what now runs)
