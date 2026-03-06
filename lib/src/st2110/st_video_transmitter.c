@@ -86,7 +86,6 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   }
 
   for (uint16_t i = 0; i < tx; i++) {
-    s->stat_bytes_tx[s_port] += tx_pkts[i]->pkt_len;
     s->port_user_stats.common.port[s_port].bytes += tx_pkts[i]->pkt_len;
     s->port_user_stats.common.port[s_port].packets++;
   }
@@ -118,7 +117,7 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
 
   if (warm_pkts < 0 || warm_pkts > pacing->warm_pkts) {
     dbg("%s(%d), mismatch timing with %ld\n", __func__, s->idx, warm_pkts);
-    s->stat_trans_troffset_mismatch++;
+    s->port_user_stats.stat_trans_troffset_mismatch++;
     return;
   }
 
@@ -133,7 +132,7 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
     delta_pkts = (target_tsc - cur_tsc + pacing->trs - 1) / pacing->trs;
     if (delta_pkts < warm_pkts - (i + 1)) {
       warm_pkts = delta_pkts;
-      s->stat_trans_recalculate_warmup++;
+      s->port_user_stats.stat_trans_recalculate_warmup++;
       dbg("%s(%d), mismatch delta_pkts %ld at %d\n", __func__, s->idx, delta_pkts, i);
     }
   }
