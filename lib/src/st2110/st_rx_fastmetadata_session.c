@@ -101,7 +101,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -109,7 +109,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -139,7 +139,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
           s_port, tmstamp, s->tmstamp);
     }
 
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->port_user_stats.stat_pkts_redundant++;
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
         return -EIO;
@@ -157,8 +157,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_out_of_order++;
   }
 
   /* update seq id */
@@ -169,7 +168,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
+    s->port_user_stats.stat_pkts_enqueue_fail++;
     MT_USDT_ST41_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
@@ -181,7 +180,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     s->tmstamp = tmstamp;
   }
 
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
+  s->port_user_stats.common.stat_pkts_received++;
   s->port_user_stats.common.port[s_port].packets++;
 
   /* get a valid packet */
@@ -423,10 +422,14 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
-  s->stat_pkts_received = 0;
   s->stat_last_time = mt_get_monotonic_time();
+  s->stat_max_notify_rtp_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  memset(s->stat_pkts_out_of_order_per_port, 0,
+         sizeof(s->stat_pkts_out_of_order_per_port));
 
   ret = rx_fastmetadata_session_init_hw(impl, s);
   if (ret < 0) {
@@ -464,54 +467,70 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
+  struct st41_rx_user_stats* us = &s->port_user_stats;
+  struct st41_rx_user_stats* snap = &s->stat_snapshot;
+
+  /* write internal-only fields to port_user_stats before snapshot */
+  us->stat_last_time = s->stat_last_time;
+  us->stat_max_notify_rtp_us = s->stat_max_notify_rtp_us;
+
+  uint64_t pkts_received =
+      us->common.stat_pkts_received - snap->common.stat_pkts_received;
+  uint64_t pkts_redundant = us->stat_pkts_redundant - snap->stat_pkts_redundant;
+  uint64_t pkts_out_of_order =
+      us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  uint64_t pkts_wrong_pt_dropped =
+      us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
+  uint64_t pkts_wrong_ssrc_dropped =
+      us->common.stat_pkts_wrong_ssrc_dropped - snap->common.stat_pkts_wrong_ssrc_dropped;
+  uint64_t pkts_enqueue_fail = us->stat_pkts_enqueue_fail - snap->stat_pkts_enqueue_fail;
+  int pkts_wrong_interlace_dropped =
+      us->stat_pkts_wrong_interlace_dropped - snap->stat_pkts_wrong_interlace_dropped;
+  uint32_t interlace_first_field =
+      us->stat_interlace_first_field - snap->stat_interlace_first_field;
+  uint32_t interlace_second_field =
+      us->stat_interlace_second_field - snap->stat_interlace_second_field;
+
+  if (pkts_redundant) {
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 " (redundant %" PRIu64
+           ")\n",
+           idx, s->ops_name, framerate, frames_received, pkts_received, pkts_redundant);
   } else {
-    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name,
-           framerate, frames_received, s->stat_pkts_received);
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 "\n", idx, s->ops_name,
+           framerate, frames_received, pkts_received);
   }
-  s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
 
-  if (s->stat_pkts_out_of_order) {
-    warn("RX_FMD_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
-         s->stat_pkts_out_of_order,
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
+  if (pkts_out_of_order) {
+    warn("RX_FMD_SESSION(%d): out of order pkts %" PRIu64 " (%d:%d)\n", idx,
+         pkts_out_of_order, s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
          s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order = 0;
     s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
     s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
   }
 
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_FMD_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (pkts_wrong_pt_dropped) {
+    notice("RX_FMD_SESSION(%d): wrong hdr payload_type dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_pt_dropped);
   }
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_FMD_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (pkts_wrong_ssrc_dropped) {
+    notice("RX_FMD_SESSION(%d): wrong hdr ssrc dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_ssrc_dropped);
   }
-  if (s->stat_pkts_wrong_interlace_dropped) {
+  if (pkts_wrong_interlace_dropped) {
     notice("RX_FMD_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_interlace_dropped);
-    s->stat_pkts_wrong_interlace_dropped = 0;
+           pkts_wrong_interlace_dropped);
   }
-  if (s->stat_pkts_enqueue_fail) {
-    notice("RX_FMD_SESSION(%d): enqueue failed pkts %d\n", idx,
-           s->stat_pkts_enqueue_fail);
-    s->stat_pkts_enqueue_fail = 0;
+  if (pkts_enqueue_fail) {
+    notice("RX_FMD_SESSION(%d): enqueue failed pkts %" PRIu64 "\n", idx,
+           pkts_enqueue_fail);
   }
   if (s->ops.interlaced) {
     notice("RX_FMD_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+           interlace_first_field, interlace_second_field);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -1103,5 +1122,7 @@ int st41_rx_reset_session_stats(st41_rx_handle handle) {
   struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_atomic32_set(&s->stat_frames_received, 0);
   return 0;
 }
