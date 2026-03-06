@@ -6,7 +6,6 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 
-@pytest.mark.smoke
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
