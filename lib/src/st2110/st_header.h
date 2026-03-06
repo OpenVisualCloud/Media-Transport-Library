@@ -80,18 +80,6 @@
 
 #define ST_SESSION_REDUNDANT_ERROR_THRESHOLD (20)
 
-#define ST_SESSION_STAT_INC(s, struct, stat) \
-  do {                                       \
-    (s)->stat++;                             \
-    (s)->struct.stat++;                      \
-  } while (0)
-
-#define ST_SESSION_STAT_ADD(s, struct, stat, val) \
-  do {                                            \
-    (s)->stat += (val);                           \
-    (s)->struct.stat += (val);                    \
-  } while (0)
-
 enum st21_tx_frame_status {
   ST21_TX_STAT_UNKNOWN = 0,
   ST21_TX_STAT_WAIT_FRAME,
@@ -382,42 +370,20 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
-  /* stat */
-  rte_atomic32_t stat_frame_cnt;
-  int stat_pkts_build[MTL_SESSION_PORT_MAX];
-  int stat_pkts_dummy;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st20_tx_user_stats port_user_stats;
+  struct st20_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
-  int stat_pkts_chain_realloc_fail;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;
-  uint32_t stat_epoch_drop;
-  uint32_t stat_epoch_onward;
-  uint32_t stat_error_user_timestamp;
-  uint32_t stat_epoch_troffset_mismatch; /* pacing mismatch the epoch troffset */
-  uint32_t stat_trans_troffset_mismatch; /* transmitter mismatch the epoch troffset */
-  uint32_t stat_trans_recalculate_warmup;
-  uint32_t stat_exceed_frame_time;
   bool stat_user_busy_first;
-  uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
-  uint32_t stat_lines_not_ready; /* query app lines not ready */
-  uint32_t stat_vsync_mismatch;
-  uint64_t stat_bytes_tx[MTL_SESSION_PORT_MAX];
-  uint32_t stat_user_meta_cnt;
-  uint32_t stat_user_meta_pkt_cnt;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
-  uint32_t stat_unrecoverable_error;
-  uint32_t stat_recoverable_error;
-  /* interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  /* for display */
   double stat_cpu_busy_score;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  struct st20_tx_user_stats port_user_stats;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -691,58 +657,16 @@ struct st_rx_video_session_impl {
   bool enable_timing_parser_meta;
   struct st_rx_video_tp* tp;
 
-  /* status */
-  int stat_pkts_idx_dropped;
-  int stat_pkts_idx_oo_bitmap;
-  int stat_pkts_enqueue_fallback; /* for pkt lcore */
-  int stat_pkts_offset_dropped;
-  int stat_pkts_out_of_order;
-  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
-  int stat_pkts_redundant_dropped;
-  int stat_pkts_wrong_pt_dropped;
-  int stat_pkts_wrong_ssrc_dropped;
-  int stat_pkts_wrong_kmod_dropped; /* for st22 */
-  int stat_pkts_wrong_interlace_dropped;
-  int stat_pkts_wrong_len_dropped;
-  int stat_pkts_received;
-  int stat_pkts_retransmit;
-  int stat_pkts_multi_segments_received;
-  int stat_pkts_dma;
-  int stat_pkts_rtp_ring_full;
-  int stat_pkts_no_slot;
-  int stat_pkts_not_bpm;
-  int stat_pkts_copy_hdr_split;
-  int stat_pkts_wrong_payload_hdr_split;
-  int stat_pkts_simulate_loss;
-  int stat_mismatch_hdr_split_frame;
-  int stat_frames_dropped;
-  int stat_frames_pks_missed;
-  rte_atomic32_t stat_frames_received;
-  int stat_slices_received;
-  int stat_pkts_slice_fail;
-  int stat_pkts_slice_merged;
-  int stat_pkts_user_meta;
-  int stat_pkts_user_meta_err;
-  uint64_t stat_last_time;
-  uint32_t stat_vsync_mismatch;
-  uint32_t stat_slot_get_frame_fail;
-  uint32_t stat_slot_query_ext_fail;
-  uint64_t stat_bytes_received;
-  uint32_t stat_max_notify_frame_us;
-  /* for interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  /* for st22 */
-  uint32_t stat_st22_boxes;
-  /* for stat display */
-  double stat_cpu_busy_score;
-  /* for tasklet session time measure */
-  struct mt_stat_u64 stat_time;
-  /* for rx burst */
-  int stat_burst_succ_cnt;
-  uint16_t stat_burst_pkts_max;
-  uint64_t stat_burst_pkts_sum;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st20_rx_user_stats port_user_stats;
+  struct st20_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
+  rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
+  uint64_t stat_last_time;
+  uint32_t stat_max_notify_frame_us;
+  double stat_cpu_busy_score;
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -841,8 +765,6 @@ struct st_tx_audio_session_impl {
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
 
-  struct st30_tx_user_stats port_user_stats;
-
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */
   struct st_tx_audio_session_rl_info rl;
@@ -882,22 +804,13 @@ struct st_tx_audio_session_impl {
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
-  /* stat */
-  rte_atomic32_t stat_frame_cnt;
-  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
-  /* count of frame not match the epoch */
-  uint32_t stat_epoch_mismatch;
-  uint32_t stat_epoch_drop;
-  uint32_t stat_epoch_onward;
-  uint32_t stat_epoch_late;
-  uint32_t stat_error_user_timestamp;
-  uint32_t stat_exceed_frame_time;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st30_tx_user_stats port_user_stats;
+  struct st30_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
   uint64_t stat_last_time;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
-  uint32_t stat_unrecoverable_error;
-  uint32_t stat_recoverable_error;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
   struct mt_stat_u64 stat_tx_delta;
 };
@@ -1044,21 +957,14 @@ struct st_rx_audio_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
-  /* status */
-  int stat_pkts_dropped;
-  int stat_pkts_redundant;
-  int stat_pkts_out_of_order;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st30_rx_user_stats port_user_stats;
+  struct st30_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
+  rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
   int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
-  int stat_slot_get_frame_fail;
-  int stat_pkts_wrong_pt_dropped;
-  int stat_pkts_wrong_ssrc_dropped;
-  int stat_pkts_len_mismatch_dropped;
-  int stat_pkts_received;
-  rte_atomic32_t stat_frames_received;
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
-  struct st30_rx_user_stats port_user_stats;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
 };
 
@@ -1145,24 +1051,14 @@ struct st_tx_ancillary_session_impl {
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
-  /* stat */
-  rte_atomic32_t stat_frame_cnt;
-  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
-  /* count of frame not match the epoch */
-  uint32_t stat_epoch_mismatch;
-  uint32_t stat_epoch_drop;
-  uint32_t stat_epoch_onward;
-  uint32_t stat_error_user_timestamp;
-  uint32_t stat_exceed_frame_time;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st40_tx_user_stats port_user_stats;
+  struct st40_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
   uint64_t stat_last_time;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  /* interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  struct st40_tx_user_stats port_user_stats;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1217,25 +1113,15 @@ struct st_rx_ancillary_session_impl {
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   int64_t tmstamp;
-  /* status */
-  rte_atomic32_t stat_frames_received;
-  int stat_pkts_dropped;
-  int stat_pkts_redundant;
-  int stat_pkts_out_of_order;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st40_rx_user_stats port_user_stats;
+  struct st40_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
+  rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
   int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
-  int stat_pkts_enqueue_fail;
-  int stat_pkts_wrong_pt_dropped;
-  int stat_pkts_wrong_ssrc_dropped;
-  int stat_pkts_received;
   uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  /* for interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
-  struct st40_rx_user_stats port_user_stats;
 };
 
 struct st_rx_ancillary_sessions_mgr {
@@ -1294,8 +1180,6 @@ struct st_tx_fastmetadata_session_impl {
   struct rte_ring* packet_ring;
   bool second_field;
 
-  struct st41_tx_user_stats port_user_stats;
-
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
@@ -1325,23 +1209,14 @@ struct st_tx_fastmetadata_session_impl {
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
-  /* stat */
-  rte_atomic32_t stat_frame_cnt;
-  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
-  /* count of frame not match the epoch */
-  uint32_t stat_epoch_mismatch;
-  uint32_t stat_epoch_drop;
-  uint32_t stat_epoch_onward;
-  uint32_t stat_error_user_timestamp;
-  uint32_t stat_exceed_frame_time;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st41_tx_user_stats port_user_stats;
+  struct st41_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
   uint64_t stat_last_time;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  /* interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
 };
 
 struct st_tx_fastmetadata_sessions_mgr {
@@ -1397,24 +1272,15 @@ struct st_rx_fastmetadata_session_impl {
 
   /* the timestamp */
   int64_t tmstamp;
-  /* status */
-  rte_atomic32_t stat_frames_received;
-  int stat_pkts_redundant;
-  int stat_pkts_out_of_order;
+  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  struct st41_rx_user_stats port_user_stats;
+  struct st41_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  /* internal-only stats */
+  rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
   int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
-  int stat_pkts_enqueue_fail;
-  int stat_pkts_wrong_pt_dropped;
-  int stat_pkts_wrong_ssrc_dropped;
-  int stat_pkts_received;
   uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
-  /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  /* for interlace */
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
-  struct st41_rx_user_stats port_user_stats;
 };
 
 struct st_rx_fastmetadata_sessions_mgr {
