@@ -275,7 +275,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+      s->port_user_stats.common.stat_error_user_timestamp++;
     }
   } else {
     epochs = ptp_time / frame_time;
@@ -293,23 +293,23 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (interlaced) {
     if (second_field) {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      s->port_user_stats.stat_interlace_second_field++;
     } else {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      s->port_user_stats.stat_interlace_first_field++;
     }
   }
 
   to_epoch = tx_fastmetadata_pacing_time(pacing, epochs) - ptp_time;
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
+    s->port_user_stats.stat_epoch_mismatch++;
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs > next_epochs)
+    s->port_user_stats.common.stat_epoch_drop += (epochs - next_epochs);
   if (epochs < next_epochs) {
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                        (next_epochs - epochs));
+    s->port_user_stats.common.stat_epoch_onward += (next_epochs - epochs);
   }
 
   pacing->cur_epochs = epochs;
@@ -539,7 +539,6 @@ static int tx_fastmetadata_session_rtp_update_packet(
   if (rtp->tmstamp != s->st41_rtp_time) {
     /* start of a new frame */
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st41_rtp_time = rtp->tmstamp;
@@ -591,7 +590,6 @@ static int tx_fastmetadata_session_build_packet_chain(
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
-        rte_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st41_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
@@ -701,7 +699,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
+        s->port_user_stats.common.stat_exceed_frame_time++;
         dbg("%s(%d), frame %" PRIu16 " build time out %f us\n", __func__, idx,
             s->st41_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
       }
@@ -843,11 +841,11 @@ static int tx_fastmetadata_session_tasklet_frame(
 
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
   }
 
   s->st41_pkt_idx++;
@@ -889,7 +887,6 @@ static int tx_fastmetadata_session_tasklet_frame(
     rte_atomic32_dec(&frame->refcnt);
     s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
@@ -1002,7 +999,7 @@ static int tx_fastmetadata_session_tasklet_rtp(
   }
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1020,7 +1017,7 @@ static int tx_fastmetadata_session_tasklet_rtp(
     }
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
   }
 
   bool done = true;
@@ -1457,7 +1454,8 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
   s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
   s->st41_frame_idx = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1512,52 +1510,59 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
 static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  struct st41_tx_user_stats* us = &s->port_user_stats;
+  struct st41_tx_user_stats* snap = &s->stat_snapshot;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  double framerate = frame_cnt / time_sec;
-
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->stat_pkt_cnt[MTL_SESSION_PORT_R]);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
+  uint64_t frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
+                      snap->common.port[MTL_SESSION_PORT_P].frames;
+  double framerate = frames_p / time_sec;
+  uint64_t pkts_p = us->common.port[MTL_SESSION_PORT_P].build -
+                    snap->common.port[MTL_SESSION_PORT_P].build;
+  uint64_t pkts_r = us->common.port[MTL_SESSION_PORT_R].build -
+                    snap->common.port[MTL_SESSION_PORT_R].build;
 
-  if (s->stat_epoch_mismatch) {
-    notice("TX_FMD_SESSION(%d): st41 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);
-    s->stat_epoch_mismatch = 0;
+  notice("TX_FMD_SESSION(%d:%s): fps %f frames %" PRIu64 " pkts %" PRIu64 ":%" PRIu64
+         "\n",
+         idx, s->ops_name, framerate, frames_p, pkts_p, pkts_r);
+
+  uint64_t d;
+  d = us->stat_epoch_mismatch - snap->stat_epoch_mismatch;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): st41 epoch mismatch %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_drop) {
-    notice("TX_FMD_SESSION(%d): epoch drop %u\n", idx, s->stat_epoch_drop);
-    s->stat_epoch_drop = 0;
+  d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): epoch drop %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_onward) {
-    notice("TX_FMD_SESSION(%d): epoch onward %d\n", idx, s->stat_epoch_onward);
-    s->stat_epoch_onward = 0;
+  d = us->common.stat_epoch_onward - snap->common.stat_epoch_onward;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): epoch onward %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_exceed_frame_time) {
-    notice("TX_AUDIO_SESSION(%d): build timeout frames %u\n", idx,
-           s->stat_exceed_frame_time);
-    s->stat_exceed_frame_time = 0;
+  d = us->common.stat_exceed_frame_time - snap->common.stat_exceed_frame_time;
+  if (d) {
+    notice("TX_AUDIO_SESSION(%d): build timeout frames %" PRIu64 "\n", idx, d);
   }
-  if (frame_cnt <= 0) {
+  if (frames_p == 0) {
     warn("TX_FMD_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
   if (s->ops.interlaced) {
-    notice("TX_FMD_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    uint64_t first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
+    uint64_t second = us->stat_interlace_second_field - snap->stat_interlace_second_field;
+    notice("TX_FMD_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, first, second);
   }
 
-  if (s->stat_error_user_timestamp) {
-    notice("TX_FMD_SESSION(%d): error user timestamp %u\n", idx,
-           s->stat_error_user_timestamp);
-    s->stat_error_user_timestamp = 0;
+  d = us->common.stat_error_user_timestamp - snap->common.stat_error_user_timestamp;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): error user timestamp %" PRIu64 "\n", idx, d);
   }
+
+  us->stat_last_time = s->stat_last_time;
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -2210,5 +2215,6 @@ int st41_tx_reset_session_stats(st41_tx_handle handle) {
   struct st_tx_fastmetadata_session_impl* s = s_impl->impl;
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   return 0;
 }
