@@ -8,11 +8,11 @@
 #include "../../mt_stat.h"
 
 static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
-    "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
+    "free", "ready", "in_converting", "converted", "dropped", "in_user", "in_transmitting",
 };
 
 static const char* st20p_tx_frame_stat_name_short[ST20P_TX_FRAME_STATUS_MAX] = {
-    "F", "R", "IC", "C", "U", "T",
+    "F", "R", "IC", "C", "D", "U", "T",
 };
 
 static const char* tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
@@ -74,16 +74,73 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if a CONVERTED frame is late. If late: mark DROPPED, notify callbacks,
+ * recycle to FREE, return true. Lock is released for callbacks, then re-acquired.
+ * Must be called with ctx->lock held. */
+static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
+                                   struct st20p_tx_frame* framebuff) {
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  uint32_t rtp_ts; /* captured under lock for use in USDT after unlock */
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST20P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be directly compared against PTP wall time;
+   * skip the check for other formats (e.g. ST10_TIMESTAMP_FMT_MEDIA_CLK) */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  /* one frame period as grace window: the pipeline has inherent processing latency
+   * (conversion + scheduling) between put_frame and get_next_frame. A frame is only
+   * truly "late" if it missed its TX window by more than one full frame period. */
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  /* frame is late — mutate state under lock, then unlock for all callbacks */
+  ctx->stat_drop_frame++;
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST20P_TX_FRAME_FREE; /* recycle for app reuse */
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  uint64_t late_ns = cur_tai - frame_tai;
+  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
+         "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
+         __func__, ctx->idx, framebuff->seq_number, late_ns, frame_period_ns, cur_tai,
+         frame_tai);
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST20P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+  tx_st20p_notify_frame_available(ctx);
+
+  mt_pthread_mutex_lock(&ctx->lock); /* re-acquire for caller's loop */
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
   struct st20p_tx_ctx* ctx = priv;
   struct st20p_tx_frame* framebuff;
+  struct st_frame* frame;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
+  do {
+    framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
+    if (!framebuff) break; /* no converted frame available */
+  } while (tx_st20p_if_frame_late(ctx, framebuff));
+
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
@@ -92,7 +149,7 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  frame = tx_st20p_user_frame(ctx, framebuff);
   meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = frame->tfmt;
@@ -103,49 +160,10 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->user_meta_size = framebuff->user_meta_data_size;
   }
 
-  /* point to next */
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
-
-int st20p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST20P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done &&
-             !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st20p_user_frame(ctx, framebuff));
-    framebuff->frame_done_cb_called = true;
-  }
-
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
-  MT_USDT_ST20P_TX_FRAME_DROP(cidx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -337,11 +355,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-  if (ops->flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st20p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
@@ -606,6 +620,7 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
 
     while (1) {
       if (framebuff->stat == ST20P_TX_FRAME_FREE) break;
+      if (framebuff->stat == ST20P_TX_FRAME_DROPPED) break; /* dropped, effectively free */
       if (framebuff->stat == ST20P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */
