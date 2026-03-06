@@ -309,6 +309,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
   s->latest_seq_id[s_port] = seq_id;
 
+  /* count per-port stats before redundancy filtering for consistent reporting */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
+
   /* all packets need to have increasing timestamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
@@ -357,7 +361,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   rte_memcpy(s->st30_cur_frame->addr + offset, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
   s->port_user_stats.common.stat_pkts_received++;
-  s->port_user_stats.common.port[s_port].packets++;
   s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
@@ -473,6 +476,10 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
   s->latest_seq_id[s_port] = seq_id;
 
+  /* count per-port stats before redundancy filtering for consistent reporting */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
+
   /* all packets need to have increasing timestamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
@@ -513,7 +520,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   ops->notify_rtp_ready(ops->priv);
   s->port_user_stats.common.stat_pkts_received++;
-  s->port_user_stats.common.port[s_port].packets++;
 
   return 0;
 }

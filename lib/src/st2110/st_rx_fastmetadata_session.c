@@ -127,6 +127,10 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
   s->latest_seq_id[s_port] = seq_id;
 
+  /* count per-port stats before redundancy filtering for consistent reporting */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
+
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp)) */
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
@@ -181,7 +185,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
 
   s->port_user_stats.common.stat_pkts_received++;
-  s->port_user_stats.common.port[s_port].packets++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
