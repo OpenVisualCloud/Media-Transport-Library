@@ -358,6 +358,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->frame_recv_size += s->pkt_len;
   s->port_user_stats.common.stat_pkts_received++;
   s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
   s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
@@ -514,6 +515,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   ops->notify_rtp_ready(ops->priv);
   s->port_user_stats.common.stat_pkts_received++;
   s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   return 0;
 }

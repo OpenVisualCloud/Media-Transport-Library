@@ -238,6 +238,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
   s->port_user_stats.common.stat_pkts_received++;
   s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;

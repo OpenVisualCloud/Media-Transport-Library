@@ -850,10 +850,12 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   st_tx_mbuf_set_idx(pkt, s->st30_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st30_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   s->st30_pkt_idx++;
@@ -1010,6 +1012,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1026,6 +1029,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
     }
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
   pacing->tsc_time_cursor = 0;
 
@@ -1387,6 +1391,7 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   }
   rl_port->stat_pkts_burst += burst_size;
   s->port_user_stats.common.port[s_port].packets += burst_size;
+  s->port_user_stats.common.port[s_port].bytes += pkt->pkt_len;
   s->port_user_stats.stat_pkts_burst += burst_size;
 
   /* insert the pads */
@@ -1397,6 +1402,7 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
   rl_port->stat_pad_pkts_burst += tx;
   s->port_user_stats.common.port[s_port].packets += tx;
+  s->port_user_stats.common.port[s_port].bytes += (uint64_t)rl_port->pad->pkt_len * tx;
   s->port_user_stats.stat_pad_pkts_burst += tx;
   if (tx != pads_per_st30_pkt) {
     dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx, s_port,
@@ -1426,6 +1432,7 @@ static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl* 
   }
   rl_port->stat_warmup_pkts_burst += pre;
   s->port_user_stats.common.port[s_port].packets += pre;
+  s->port_user_stats.common.port[s_port].bytes += (uint64_t)pad->pkt_len * pre;
   s->port_user_stats.stat_warmup_pkts_burst += pre;
 
   /* sending the pattern pkts */
@@ -1444,6 +1451,8 @@ static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl* 
   rl_port->stat_warmup_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.stat_warmup_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.common.port[s_port].packets += warmup_pkts_burst;
+  s->port_user_stats.common.port[s_port].bytes +=
+      (uint64_t)rl_port->pad->pkt_len * warmup_pkts_burst;
 
   return 0;
 }
