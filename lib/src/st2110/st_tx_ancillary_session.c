@@ -1074,10 +1074,14 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   s->st40_pkt_idx++;
@@ -1237,6 +1241,8 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1255,6 +1261,8 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   bool done = true;

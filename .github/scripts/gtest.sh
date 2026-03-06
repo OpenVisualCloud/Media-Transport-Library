@@ -113,6 +113,7 @@ generate_test_cases() {
 	test_cases["st20p_auto_pacing_va"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_va.xml --gtest_filter=Main*:St20p*:-*ext*"
 	test_cases["st20p_tsc_pacing"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_tsc_pacing.xml --gtest_filter=Main*:St20p*:-*ext*"
 	test_cases["st20p_kernel_loopback"]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
+	test_cases["redundant_stats"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
 	test_cases["noctx"]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
 }
 
