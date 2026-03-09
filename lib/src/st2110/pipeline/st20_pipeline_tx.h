@@ -11,10 +11,10 @@
 enum st20p_tx_frame_status {
   ST20P_TX_FRAME_FREE = 0,
   ST20P_TX_FRAME_READY,
-  ST20P_TX_FRAME_IN_CONVERTING,   /* for converting */
+  ST20P_TX_FRAME_IN_CONVERTING, /* for converting */
   ST20P_TX_FRAME_CONVERTED,
-  ST20P_TX_FRAME_DROPPED,         /* converted but arrived too late; recycled in next_frame */
-  ST20P_TX_FRAME_IN_USER,         /* in user */
+  ST20P_TX_FRAME_DROPPED, /* converted but arrived too late; recycled in next_frame */
+  ST20P_TX_FRAME_IN_USER, /* in user */
   ST20P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST20P_TX_FRAME_STATUS_MAX,
 };

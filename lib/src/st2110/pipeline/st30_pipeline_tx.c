@@ -8,11 +8,7 @@
 #include "../../mt_stat.h"
 
 static const char* st30p_tx_frame_stat_name[ST30P_TX_FRAME_STATUS_MAX] = {
-    "free",
-    "in_user",
-    "ready",
-    "dropped",
-    "in_transmitting",
+    "free", "in_user", "ready", "dropped", "in_transmitting",
 };
 
 static const char* st30p_tx_frame_stat_name_short[ST30P_TX_FRAME_STATUS_MAX] = {
