@@ -49,12 +49,13 @@ static inline bool tx_ancillary_test_frame_active(
  * Return parity-corrupted value when the BAD_PARITY pattern is active,
  * otherwise fall through to st40_add_parity_bits().
  */
-#define TX_ANC_TEST_APPLY_PARITY(_s, _val)                             \
-  do {                                                                 \
-    if (tx_ancillary_test_frame_active(_s) &&                          \
-        (_s)->test.pattern == ST40_TX_TEST_BAD_PARITY) {               \
-      return (_val)&0x3FF; /* strip parity to intentionally corrupt */ \
-    }                                                                  \
+#define TX_ANC_TEST_APPLY_PARITY(_s, _val)                         \
+  do {                                                             \
+    if (tx_ancillary_test_frame_active(_s) &&                      \
+        (_s)->test.pattern == ST40_TX_TEST_BAD_PARITY) {           \
+      uint16_t _stripped = (_val);                                 \
+      return _stripped & 0x3FF; /* strip parity bits to corrupt */ \
+    }                                                              \
   } while (0)
 
 /**

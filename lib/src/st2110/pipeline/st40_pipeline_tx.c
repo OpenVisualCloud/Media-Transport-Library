@@ -368,8 +368,8 @@ static int tx_st40p_stat(void* priv) {
   notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st40p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
-      ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
-      ctx->stat_drop_frame);
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
+         ctx->stat_drop_frame);
 
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
