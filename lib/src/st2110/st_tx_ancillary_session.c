@@ -340,7 +340,7 @@ static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_
                                                  uint64_t requested_epoch,
                                                  uint64_t current_epoch) {
   if (requested_epoch < current_epoch) {
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    s->port_user_stats.common.stat_error_user_timestamp++;
     dbg("%s(%d), user requested transmission time in the past, required_epoch %" PRIu64
         ", cur_epoch %" PRIu64 "\n",
         __func__, s->idx, requested_epoch, current_epoch);
@@ -348,7 +348,7 @@ static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_
     dbg("%s(%d), requested epoch %" PRIu64
         " too far in the future, current epoch %" PRIu64 "\n",
         __func__, s->idx, requested_epoch, current_epoch);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    s->port_user_stats.common.stat_error_user_timestamp++;
   }
 }
 
@@ -369,16 +369,14 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
       dbg("%s(%d), onward range exceeded, next_free_epoch %" PRIu64
           ", current_epoch %" PRIu64 "\n",
           __func__, s->idx, next_free_epoch, current_epoch);
-      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                          (next_free_epoch - current_epoch));
+      s->port_user_stats.common.stat_epoch_onward += (next_free_epoch - current_epoch);
     }
 
     if (!required_tai) epoch = next_free_epoch;
   } else {
     dbg("%s(%d), frame is late, current_epoch %" PRIu64 " next_free_epoch %" PRIu64 "\n",
         __func__, s->idx, current_epoch, next_free_epoch);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (current_epoch - next_free_epoch));
+    s->port_user_stats.common.stat_epoch_drop += (current_epoch - next_free_epoch);
 
     if (s->ops.notify_frame_late) {
       s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
@@ -409,7 +407,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   time_to_tx_ns = (int64_t)start_time_tai - (int64_t)cur_tai;
   if (time_to_tx_ns < 0) {
     /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
+    s->port_user_stats.stat_epoch_mismatch++;
     time_to_tx_ns = 0; /* send asap */
   }
 
@@ -733,7 +731,6 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     s->st40_anc_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st40_rtp_time = rtp->tmstamp;
@@ -745,9 +742,9 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     }
     if (s->ops.interlaced) {
       if (second_field) {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        s->port_user_stats.stat_interlace_second_field++;
       } else {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        s->port_user_stats.stat_interlace_first_field++;
       }
     }
     if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
@@ -808,7 +805,6 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         s->st40_anc_idx = 0;
-        rte_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
@@ -819,9 +815,9 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         }
         if (s->ops.interlaced) {
           if (second_field) {
-            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+            s->port_user_stats.stat_interlace_second_field++;
           } else {
-            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+            s->port_user_stats.stat_interlace_first_field++;
           }
         }
         tx_ancillary_session_sync_pacing(impl, s, 0);
@@ -930,7 +926,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
+        s->port_user_stats.common.stat_exceed_frame_time++;
         dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
             s->st40_frame_idx,
             (uint64_t)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
@@ -1008,9 +1004,9 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     bool second_field = frame->tc_meta.second_field;
     if (s->ops.interlaced) {
       if (second_field) {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        s->port_user_stats.stat_interlace_second_field++;
       } else {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        s->port_user_stats.stat_interlace_first_field++;
       }
     }
     tx_ancillary_session_sync_pacing(impl, s, required_tai);
@@ -1105,11 +1101,15 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   s->st40_pkt_idx++;
@@ -1159,7 +1159,6 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_anc_idx = 0;
     s->test_frame_active = false;
     s->test_seq_gap_fired = false;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
@@ -1272,7 +1271,9 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1290,7 +1291,9 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     }
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   bool done = true;
@@ -1736,7 +1739,8 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
 
   s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
   s->st40_frame_idx = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1791,52 +1795,58 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
 
 static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  struct st40_tx_user_stats* us = &s->port_user_stats;
+  struct st40_tx_user_stats* snap = &s->stat_snapshot;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  double framerate = frame_cnt / time_sec;
-
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->stat_pkt_cnt[MTL_SESSION_PORT_R]);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
+  uint64_t frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
+                      snap->common.port[MTL_SESSION_PORT_P].frames;
+  double framerate = frames_p / time_sec;
+  uint64_t pkts_p = us->common.port[MTL_SESSION_PORT_P].build -
+                    snap->common.port[MTL_SESSION_PORT_P].build;
+  uint64_t pkts_r = us->common.port[MTL_SESSION_PORT_R].build -
+                    snap->common.port[MTL_SESSION_PORT_R].build;
 
-  if (s->stat_epoch_mismatch) {
-    notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);
-    s->stat_epoch_mismatch = 0;
+  notice("TX_ANC_SESSION(%d:%s): fps %f frames %" PRIu64 " pkts %" PRIu64 ":%" PRIu64
+         "\n",
+         idx, s->ops_name, framerate, frames_p, pkts_p, pkts_r);
+
+  uint64_t d;
+  d = us->stat_epoch_mismatch - snap->stat_epoch_mismatch;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): st40 epoch mismatch %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_drop) {
-    notice("TX_ANC_SESSION(%d): epoch drop %u\n", idx, s->stat_epoch_drop);
-    s->stat_epoch_drop = 0;
+  d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): epoch drop %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_onward) {
-    notice("TX_ANC_SESSION(%d): epoch onward %d\n", idx, s->stat_epoch_onward);
-    s->stat_epoch_onward = 0;
+  d = us->common.stat_epoch_onward - snap->common.stat_epoch_onward;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): epoch onward %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_exceed_frame_time) {
-    notice("TX_AUDIO_SESSION(%d): build timeout frames %u\n", idx,
-           s->stat_exceed_frame_time);
-    s->stat_exceed_frame_time = 0;
+  d = us->common.stat_exceed_frame_time - snap->common.stat_exceed_frame_time;
+  if (d) {
+    notice("TX_AUDIO_SESSION(%d): build timeout frames %" PRIu64 "\n", idx, d);
   }
-  if (frame_cnt <= 0) {
+  if (frames_p == 0) {
     warn("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
   if (s->ops.interlaced) {
-    notice("TX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    uint64_t first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
+    uint64_t second = us->stat_interlace_second_field - snap->stat_interlace_second_field;
+    notice("TX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, first, second);
   }
 
-  if (s->stat_error_user_timestamp) {
-    notice("TX_ANC_SESSION(%d): error user timestamp %u\n", idx,
-           s->stat_error_user_timestamp);
-    s->stat_error_user_timestamp = 0;
+  d = us->common.stat_error_user_timestamp - snap->common.stat_error_user_timestamp;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): error user timestamp %" PRIu64 "\n", idx, d);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -2499,5 +2509,6 @@ int st40_tx_reset_session_stats(st40_tx_handle handle) {
   struct st_tx_ancillary_session_impl* s = s_impl->impl;
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   return 0;
 }
