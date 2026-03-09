@@ -74,9 +74,22 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
   return framebuff_newest;
 }
 
-/* Check if a CONVERTED frame is late. If late: mark DROPPED, notify callbacks,
- * recycle to FREE, return true. Lock is released for callbacks, then re-acquired.
- * Must be called with ctx->lock held. */
+/* Check if a CONVERTED frame is late.
+ *
+ * If late, the sequence is:
+ *   1. Park as DROPPED under lock — invisible to both next_frame (CONVERTED) and
+ *      get_frame (FREE), so no other thread can grab the slot while we clean up.
+ *   2. Unlock before all callbacks so app callbacks cannot deadlock on ctx->lock.
+ *   3. Fire notify_frame_done — app sees the frame and can safely release any
+ *      external buffer it owns (EXT_FRAME mode).
+ *   4. Fire notify_frame_late + USDT probe.
+ *   5. Re-acquire lock, clear ext-buffer pointers on the framebuff so the next
+ *      get_frame call receives a clean slot with no stale external pointers.
+ *   6. Advance to FREE, unlock, then notify_frame_available — only at this point
+ *      is the slot visible to get_frame callers.
+ *   7. Re-acquire for the caller's do-while loop and return true.
+ *
+ * Must be called with ctx->lock held. Returns with ctx->lock held. */
 static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
                                    struct st20p_tx_frame* framebuff) {
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
@@ -104,10 +117,10 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
   dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
       ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
 
-  /* frame is late — mutate state under lock, then unlock for all callbacks */
   ctx->stat_drop_frame++;
   rtp_ts = frame->rtp_timestamp;
-  framebuff->stat = ST20P_TX_FRAME_FREE; /* recycle for app reuse */
+  framebuff->stat = ST20P_TX_FRAME_DROPPED;
+
   mt_pthread_mutex_unlock(&ctx->lock);
 
   uint64_t late_ns = cur_tai - frame_tai;
@@ -115,15 +128,24 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
          "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
          __func__, ctx->idx, framebuff->seq_number, late_ns, frame_period_ns, cur_tai,
          frame_tai);
+
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame->status = ST_FRAME_STATUS_DROPPED;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
+
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST20P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   tx_st20p_notify_frame_available(ctx);
 
-  mt_pthread_mutex_lock(&ctx->lock); /* re-acquire for caller's loop */
+  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -192,6 +214,7 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
@@ -1110,6 +1133,14 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
   }
 
   return st20_tx_reset_session_stats(ctx->transport);
+}
+
+uint32_t st20p_tx_get_drop_count(st20p_tx_handle handle) {
+  struct st20p_tx_ctx* ctx = handle;
+
+  if (!handle) return 0;
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) return 0;
+  return ctx->stat_drop_frame;
 }
 
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst) {

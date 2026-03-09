@@ -11,11 +11,12 @@ static const char* st30p_tx_frame_stat_name[ST30P_TX_FRAME_STATUS_MAX] = {
     "free",
     "in_user",
     "ready",
+    "dropped",
     "in_transmitting",
 };
 
-static const char* st30p_tx_frame_stat_name_short[ST30P_TX_FRAME_STATUS_MAX] = {"F", "U",
-                                                                                "R", "T"};
+static const char* st30p_tx_frame_stat_name_short[ST30P_TX_FRAME_STATUS_MAX] = {
+    "F", "U", "R", "D", "T"};
 
 static const char* tx_st30p_stat_name(enum st30p_tx_frame_status stat) {
   return st30p_tx_frame_stat_name[stat];
@@ -70,6 +71,68 @@ static struct st30p_tx_frame* tx_st30p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if the oldest READY frame has missed its transmission window.
+ * Drops the frame (READY -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
+ *
+ * Locking contract (mirrors st20p):
+ *   1. Caller holds ctx->lock.
+ *   2. This function drops the lock to fire app callbacks outside it.
+ *   3. Returns with ctx->lock held.
+ *   4. Returns true if the frame was dropped (caller should retry).
+ */
+static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
+                                   struct st30p_tx_frame* framebuff) {
+  struct st30_frame* frame = &framebuff->frame;
+  uint32_t rtp_ts;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST30P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST30P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be compared against PTP wall time */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  uint64_t frame_period_ns = NS_PER_S / ctx->frames_per_sec;
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST30P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  uint64_t late_ns = cur_tai - frame_tai;
+  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
+         "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
+         __func__, ctx->idx, framebuff->seq_number, late_ns, frame_period_ns, cur_tai,
+         frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  framebuff->stat = ST30P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st30p_notify_frame_available(ctx);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st30_tx_frame_meta* meta) {
   struct st30p_tx_ctx* ctx = priv;
@@ -80,8 +143,12 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
-  /* not any converted frame */
+  do {
+    framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
+    if (!framebuff) break; /* no ready frame available */
+  } while (tx_st30p_if_frame_late(ctx, framebuff));
+
+  /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
@@ -161,8 +228,10 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
   }
 
   /* notify app can get frame */
@@ -453,6 +522,7 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   }
 
   framebuff->stat = ST30P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   framebuff->seq_number = ctx->framebuff_seq_number++;
   mt_pthread_mutex_unlock(&ctx->lock);
 
