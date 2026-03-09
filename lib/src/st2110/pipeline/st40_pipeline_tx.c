@@ -123,6 +123,7 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
          frame_tai);
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame_info->status = ST_FRAME_STATUS_DROPPED;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
     framebuff->frame_done_cb_called = true;
   }
@@ -242,6 +243,7 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame_info->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
     framebuff->frame_done_cb_called = true;
   }
