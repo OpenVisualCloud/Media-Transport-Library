@@ -362,7 +362,8 @@ struct st40_tx_ops {
   uint32_t flags;
 
   /** Optional. DEBUG / test-only mutation config (see struct st40_tx_test_config).
-   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored otherwise. */
+   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored
+   * otherwise. */
   struct st40_tx_test_config test;
 
   /**
