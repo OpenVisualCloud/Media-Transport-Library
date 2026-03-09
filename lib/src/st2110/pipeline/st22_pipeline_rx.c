@@ -154,6 +154,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     framebuff->src.pkts_recv[s_port] = framebuff->dst.pkts_recv[s_port] =
         meta->pkts_recv[s_port];
   }
+  framebuff->src.status = framebuff->dst.status = meta->status;
 
   /* ask app to consume src frame directly for derive mode */
   if (ctx->derive) {

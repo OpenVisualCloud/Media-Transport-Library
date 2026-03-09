@@ -1135,14 +1135,6 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
   return st20_tx_reset_session_stats(ctx->transport);
 }
 
-uint32_t st20p_tx_get_drop_count(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
-
-  if (!handle) return 0;
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) return 0;
-  return ctx->stat_drop_frame;
-}
-
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;

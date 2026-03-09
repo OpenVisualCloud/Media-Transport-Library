@@ -327,6 +327,8 @@ out:
       if (!report_frame || !report_info) continue;
       dbg("%s(%d), frame %u succ, meta_num %u\n", __func__, ctx->idx, report_frame->idx,
           report_info->meta_num);
+      report_info->status = report_info->seq_discont ? ST_FRAME_STATUS_CORRUPTED
+                                                     : ST_FRAME_STATUS_COMPLETE;
       /* notify app to a ready frame */
       rx_st40p_notify_frame_available(ctx);
       MT_USDT_ST40P_RX_FRAME_AVAILABLE(ctx->idx, report_frame->idx,
