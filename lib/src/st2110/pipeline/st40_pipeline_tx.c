@@ -8,19 +8,11 @@
 #include "../../mt_stat.h"
 
 static const char* st40p_tx_frame_stat_name[ST40P_TX_FRAME_STATUS_MAX] = {
-    "free",
-    "in_user",
-    "ready",
-    "dropped",
-    "in_transmitting",
+    "free", "in_user", "ready", "dropped", "in_transmitting",
 };
 
 static const char* st40p_tx_frame_stat_name_short[ST40P_TX_FRAME_STATUS_MAX] = {
-    "F",
-    "U",
-    "R",
-    "D",
-    "T",
+    "F", "U", "R", "D", "T",
 };
 
 static const char* tx_st40p_stat_name(enum st40p_tx_frame_status stat) {
