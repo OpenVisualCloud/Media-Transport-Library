@@ -85,6 +85,8 @@ enum st_frame_status {
   ST_FRAME_STATUS_RECONSTRUCTED,
   /** Packets were lost */
   ST_FRAME_STATUS_CORRUPTED,
+  /** Frame was dropped  */
+  ST_FRAME_STATUS_DROPPED,
   /** Max value of this enum */
   ST_FRAME_STATUS_MAX,
 };

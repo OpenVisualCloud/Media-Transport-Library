@@ -16,6 +16,7 @@ enum st40p_tx_frame_status {
   ST40P_TX_FRAME_FREE = 0,
   ST40P_TX_FRAME_IN_USER,         /* in user */
   ST40P_TX_FRAME_READY,           /* ready to transport */
+  ST40P_TX_FRAME_DROPPED,         /* ready but arrived too late; recycled in next_frame */
   ST40P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST40P_TX_FRAME_STATUS_MAX,
 };
@@ -58,6 +59,7 @@ struct st40p_tx_frame {
   /** Pointer to the main ancillary frame buffer */
   struct st40_frame* anc_frame;
   uint32_t seq_number;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
 #if defined(__cplusplus)
