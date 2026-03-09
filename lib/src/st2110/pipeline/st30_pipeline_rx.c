@@ -91,6 +91,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->timestamp = meta->timestamp;
   frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
+  frame->status = ST_FRAME_STATUS_COMPLETE;
   framebuff->stat = ST30P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st30p_next_idx(ctx, framebuff->idx);

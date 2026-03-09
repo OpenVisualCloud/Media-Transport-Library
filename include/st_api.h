@@ -73,7 +73,7 @@ enum st_fps {
 };
 
 /**
- * Frame status type of rx streaming
+ * frame status type for TX done/drop and RX receive result.
  */
 enum st_frame_status {
   /** All pixels of the frame were received */
