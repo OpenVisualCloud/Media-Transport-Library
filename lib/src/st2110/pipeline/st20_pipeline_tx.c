@@ -8,7 +8,8 @@
 #include "../../mt_stat.h"
 
 static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
-    "free", "ready", "in_converting", "converted", "dropped", "in_user", "in_transmitting",
+    "free",    "ready",   "in_converting",   "converted",
+    "dropped", "in_user", "in_transmitting",
 };
 
 static const char* st20p_tx_frame_stat_name_short[ST20P_TX_FRAME_STATUS_MAX] = {
@@ -643,7 +644,8 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
 
     while (1) {
       if (framebuff->stat == ST20P_TX_FRAME_FREE) break;
-      if (framebuff->stat == ST20P_TX_FRAME_DROPPED) break; /* dropped, effectively free */
+      if (framebuff->stat == ST20P_TX_FRAME_DROPPED)
+        break; /* dropped, effectively free */
       if (framebuff->stat == ST20P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */

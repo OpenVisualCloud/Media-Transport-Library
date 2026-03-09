@@ -12,9 +12,9 @@ enum st22p_tx_frame_status {
   ST22P_TX_FRAME_FREE = 0,
   ST22P_TX_FRAME_IN_USER,
   ST22P_TX_FRAME_READY,
-  ST22P_TX_FRAME_IN_ENCODING,     /* for encoding */
+  ST22P_TX_FRAME_IN_ENCODING, /* for encoding */
   ST22P_TX_FRAME_ENCODED,
-  ST22P_TX_FRAME_DROPPED,         /* encoded but arrived too late; recycled in next_frame */
+  ST22P_TX_FRAME_DROPPED, /* encoded but arrived too late; recycled in next_frame */
   ST22P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST22P_TX_FRAME_STATUS_MAX,
 };
