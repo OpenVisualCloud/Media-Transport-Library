@@ -135,7 +135,7 @@ static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
 
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
+  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
       " frame %" PRIu64 "\n",
       __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
       cur_tai, frame_tai);
@@ -194,42 +194,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
-
-int st22p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st22p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST22P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st22p_user_frame(ctx, framebuff));
-  }
-
-  /* notify app can get frame */
-  tx_st22p_notify_frame_available(ctx);
-  MT_USDT_ST22P_TX_FRAME_DONE(ctx->idx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
