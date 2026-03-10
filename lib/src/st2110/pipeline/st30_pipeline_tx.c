@@ -91,7 +91,7 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
 
   uint64_t frame_tai = frame->timestamp;
   uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
-  uint64_t frame_period_ns = NS_PER_S / ctx->frames_per_sec;
+  uint64_t frame_period_ns = (uint64_t)NS_PER_S / ctx->frames_per_sec;
 
   if (cur_tai < frame_tai + frame_period_ns)
     return false; /* within acceptable TX window */
@@ -139,6 +139,8 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
+  uint32_t drops_before = ctx->stat_drop_frame;
+
   mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
@@ -148,6 +150,10 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* Notify the app once after the entire drop batch so it can provide
+     * fresh frames.  Doing this here (instead of per-drop) avoids the
+     * drop→refill→drop feedback loop with high-rate audio streams. */
+    if (ctx->stat_drop_frame > drops_before) tx_st30p_notify_frame_available(ctx);
     return -EBUSY;
   }
 

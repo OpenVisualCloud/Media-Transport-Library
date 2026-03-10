@@ -244,6 +244,7 @@ typedef struct st_json_st30p_session {
   st_json_audio_info_t info;
   bool enable_rtcp;
   bool user_pacing;
+  bool drop_when_late;
 } st_json_st30p_session_t;
 
 typedef struct st_json_ancillary_session {
@@ -300,6 +301,7 @@ typedef struct st_json_st40p_session {
   bool exact_user_pacing;
   bool user_timestamp;
   bool enable_rtcp;
+  bool drop_when_late;
 } st_json_st40p_session_t;
 
 typedef struct st_json_context {
