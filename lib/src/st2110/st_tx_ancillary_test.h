@@ -18,6 +18,9 @@
 
 #include "st_header.h"
 
+/* Number of entries in the redundant-path seq-gap schedule table. */
+#define ST40_SEQ_GAP_SCHEDULE_LEN 8
+
 /* ------------------------------------------------------------------ */
 #ifdef MTL_SIMULATE_PACKET_DROPS
 /* ========================  DEBUG BUILD  =========================== */
@@ -141,16 +144,24 @@ static inline bool tx_ancillary_test_frame_active(
 
 /**
  * Try to drop @p _pkt for redundant-path seq-gap injection.
- * Evaluates to true (and frees the mbuf) if the packet was dropped.
+ * Returns true (and frees the mbuf) if the packet was dropped.
  */
-#define TX_ANC_TEST_DROP_PKT(_s, _s_port, _pkt)                                        \
-  (tx_ancillary_test_frame_active(_s) && (_s)->test.pattern == ST40_TX_TEST_SEQ_GAP && \
-   (_s)->ops.num_port > 1 && (_s_port) == (_s)->test_seq_gap_target_port &&            \
-   (_s)->test_seq_gap_remaining &&                                                     \
-   (dbg("%s(%d), drop pkt %u on %s gap=%u/%u frame=%u\n", __func__, (_s)->idx,         \
-        st_tx_mbuf_get_idx(_pkt), (_s_port) == MTL_SESSION_PORT_P ? "P" : "R",         \
-        (_s)->test_seq_gap_size, (_s)->test_seq_gap_remaining, (_s)->st40_frame_idx),  \
-    (_s)->test_seq_gap_remaining--, rte_pktmbuf_free(_pkt), true))
+static inline bool tx_ancillary_test_drop_pkt(struct st_tx_ancillary_session_impl* s,
+                                              enum mtl_session_port s_port,
+                                              struct rte_mbuf* pkt) {
+  if (!(tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
+        s->ops.num_port > 1 && s_port == s->test_seq_gap_target_port &&
+        s->test_seq_gap_remaining))
+    return false;
+  dbg("%s(%d), drop pkt %u on %s gap=%u/%u frame=%u\n", __func__, s->idx,
+      st_tx_mbuf_get_idx(pkt), s_port == MTL_SESSION_PORT_P ? "P" : "R",
+      s->test_seq_gap_size, s->test_seq_gap_remaining, s->st40_frame_idx);
+  s->test_seq_gap_remaining--;
+  rte_pktmbuf_free(pkt);
+  return true;
+}
+#define TX_ANC_TEST_DROP_PKT(_s, _s_port, _pkt) \
+  tx_ancillary_test_drop_pkt((_s), (_s_port), (_pkt))
 
 /**
  * Override pacing interval for the PACED test pattern.
