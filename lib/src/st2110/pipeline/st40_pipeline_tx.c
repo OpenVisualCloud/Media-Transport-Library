@@ -108,11 +108,10 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
 
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  uint64_t late_ns = cur_tai - frame_tai;
-  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
-         "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
-         __func__, ctx->idx, framebuff->seq_number, late_ns, frame_period_ns, cur_tai,
-         frame_tai);
+  dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
+      " frame %" PRIu64 "\n",
+      __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+      cur_tai, frame_tai);
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
     frame_info->status = ST_FRAME_STATUS_DROPPED;
