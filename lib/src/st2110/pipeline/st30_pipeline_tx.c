@@ -171,41 +171,6 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-static int st30p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st30p_tx_ctx* ctx = handle;
-  struct st30p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY;
-
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST30P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, ctx->idx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->frame);
-  }
-
-  tx_st30p_notify_frame_available(ctx);
-  MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, framebuff->idx, framebuff->frame.rtp_timestamp);
-
-  return 0;
-}
-
 static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
                                struct st30_tx_frame_meta* meta) {
   struct st30p_tx_ctx* ctx = priv;
@@ -279,11 +244,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
   }
   if (ops->flags & ST30P_TX_FLAG_USER_PACING) ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
-  if (ops->flags & ST30P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st30p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
   ops_tx.pacing_way = ops->pacing_way;
   ops_tx.rtp_timestamp_delta_us = ops->rtp_timestamp_delta_us;
 
