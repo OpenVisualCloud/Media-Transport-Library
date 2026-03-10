@@ -1049,6 +1049,8 @@ static int st_json_parse_st30p(int idx, json_object* st30p_obj,
 
   st30p->user_pacing =
       json_object_get_boolean(st_json_object_object_get(st30p_obj, "user_pacing"));
+  st30p->drop_when_late =
+      json_object_get_boolean(st_json_object_object_get(st30p_obj, "drop_when_late"));
   return ST_JSON_SUCCESS;
 }
 
@@ -1118,6 +1120,8 @@ static int st_json_parse_tx_st40p(int idx, json_object* st40p_obj,
       json_object_get_boolean(st_json_object_object_get(st40p_obj, "user_timestamp"));
   st40p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st40p_obj, "enable_rtcp"));
+  st40p->drop_when_late =
+      json_object_get_boolean(st_json_object_object_get(st40p_obj, "drop_when_late"));
 
   return ST_JSON_SUCCESS;
 }

@@ -282,6 +282,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   if ((st40p && st40p->exact_user_pacing) || ctx->tx_exact_user_pacing)
     ops.flags |= ST40P_TX_FLAG_EXACT_USER_PACING;
   if (st40p && st40p->enable_rtcp) ops.flags |= ST40P_TX_FLAG_ENABLE_RTCP;
+  if (st40p && st40p->drop_when_late) ops.flags |= ST40P_TX_FLAG_DROP_WHEN_LATE;
   if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40P_TX_FLAG_DEDICATE_QUEUE;
 
   handle = st40p_tx_create(ctx->st, &ops);
