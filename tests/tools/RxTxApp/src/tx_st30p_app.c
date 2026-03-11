@@ -210,12 +210,7 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
   ops.channel = st30p ? st30p->info.audio_channel : 2;
   ops.sampling = st30p ? st30p->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = st30p ? st30p->info.audio_ptime : ST30_PTIME_1MS;
-
-  if (st30p && st30p->user_pacing) {
-    s->packet_time = st30_get_packet_time(ops.ptime);
-  } else {
-    s->packet_time = ST_APP_TX_ST30P_DEFAULT_PACKET_TIME;
-  }
+  s->packet_time = ST_APP_TX_ST30P_DEFAULT_PACKET_TIME;
 
   /* set frame size to 10ms time */
   int framebuff_size = st30_calculate_framebuff_size(
