@@ -1,110 +1,121 @@
-# Media Transport Library compilation and build Guide on Windows OS (MSYS2)
+# Build guide for Windows
 
-**Note:** Support for Windows has been discontinued. If you want to run MTL on Windows, it may be possible, but no guaranties.
+## Requirements
 
-## 1. Introduction
+- Windows Server 2025
 
-This document contains instructions for installing and configuring the Media Transport Library for Windows Operation System in MSYS2 environment.
+## Prepare build environment
 
-## 2. Prerequisites
+1. Install MSYS2
 
-* Windows 10 / Windows Server 2019 64-bit or higher
+    Download the latest installer from https://www.msys2.org/
 
-## 3. Install MSYS2 environment
+1. Install npcap
 
-* Download and install MSYS2 from <https://www.msys2.org/>.
-* Open an MSYS2 MINGW64/UCRT64 shell, all commands in this doc will be run in this shell.
-* Update packages:
+    Download the latest installer from https://npcap.com/#download
 
-```bash
-pacman -Syuu
-```
+1. Run MSYS2 UCRT64
 
-## 4. Install dependencies
+    > **Note:** All the following commands should be executed in UCRT64 environment.
 
-* Install build tools and dependencies:
+1. Install tools
 
-```bash
-pacman -S git base-devel unzip pactoys
-pacboy -S gcc:p meson:p pkgconf:p openssl:p json-c:p libpcap:p dlfcn:p SDL2:p SDL2_ttf:p gtest:p
-```
+    ```
+    pacman -S git pactoys unzip
+    ```
 
-## 4. Install tools
+    ```
+    pacboy -S dlfcn:p gcc:p gtest:p json-c:p libpcap:p meson:p mman-win32:p
+    ```
 
-* Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
+1. Install npcap SDK
 
-* Install npcap SDK:
+    ```
+    wget https://npcap.com/dist/npcap-sdk-1.16.zip
+    ```
 
-```bash
-wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-unzip -d npcap-sdk npcap-sdk-1.12.zip
-cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
-```
+    ```
+    unzip -d npcap-sdk-1.16 ./npcap-sdk-1.16.zip
+    ```
 
-* Install mman (mmap for Windows):
+    ```
+    cp -r ./npcap-sdk-1.16/lib/x64/. "${MSYSTEM_PREFIX}/lib"
+    ```
 
-```bash
-git clone https://github.com/alitrack/mman-win32
-cd mman-win32
-./configure --prefix=$MSYSTEM_PREFIX
-make && make install
-```
+## Build DPDK
 
-## 5. Build DPDK
+1. Clone the MTL repository
 
-**Note:** DPDK 23.11 was the last version to which DPDK patches were ported.
+    ```
+    git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+    ```
 
-* Clone the MTL repository if not:
+    ```
+    cd ./Media-Transport-Library
+    ```
 
-```bash
-git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
-export mtl_source_code=${PWD}/Media-Transport-Library
-```
+    ```
+    MTL_PATH="$PWD"
+    ```
 
-* Convert symlink patch files to real file:
+1. Clone the DPDK repository
 
-```bash
-cd $mtl_source_code/patches/dpdk/23.11
-ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-cd windows
-ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-```
+    > **Note:** The DPDK repository should be located directly in the MTL repository.
 
-* Clone the DPDK repository and apply patches:
+    ```
+    git clone -b v25.11 https://github.com/DPDK/dpdk.git
+    ```
 
-```bash
-cd $mtl_source_code
-git clone https://github.com/DPDK/dpdk.git
-cd dpdk
-git checkout v23.11
-git switch -c v23.11
+1. Apply the MTL patches for DPDK
 
-git config user.name "Your Name"        # config if not
-git config user.email "you@example.com" # config if not
-git am $mtl_source_code/patches/dpdk/23.11/*.patch
-git am $mtl_source_code/patches/dpdk/23.11/windows/*.patch
-```
+    ```
+    cd "${MTL_PATH}/dpdk"
+    ```
 
-* Build and install DPDK:
+    ```
+    git am "$MTL_PATH"/patches/dpdk/25.11/*.patch
+    ```
 
-```bash
-meson setup build
-meson install -C build
-```
+    ```
+    git apply "$MTL_PATH"/patches/dpdk/25.11/windows/*.patch
+    ```
 
-## 6. Build Media Transport Library and app
+1. Build DPDK
 
-```bash
-cd $mtl_source_code
-./build.sh
-```
+    ```
+    meson setup -Dmax_lcores=256 build
+    ```
 
-## 7. Add MSYS2 binary PATH to system environment variables (Optional)
+    ```
+    meson compile -C build
+    ```
 
-The MSYS2 path is not in Windows system environment variables by default, if you want to run MTL apps in PowerShell/CMD, you need to add the paths first. For example, MSYS2 is installed in `C:\msys64`.
+    Create a copy of the `sched.h` file
 
-* (optional)Add MSYS2 common toolchain path: `C:\msys64\usr\bin`
+    > **Note:** DPDK installation overwrites the `sched.h` file and cause MTL build problems
 
-* If the environment is MinGW64, add: `C:\msys64\mingw64\bin`
+    ```
+    cp "${MSYSTEM_PREFIX}/include/sched.h" "${MTL_PATH}/sched.h.bak"
+    ```
 
-* If the environment is UCRT64, add: `C:\msys64\ucrt64\bin`
+    ```
+    meson install -C build
+    ```
+
+    Restore the copy
+
+    ```
+    cp "${MTL_PATH}/sched.h.bak" "${MSYSTEM_PREFIX}/include/sched.h"
+    ```
+
+## Build MTL
+
+1. Run the build script
+
+    ```
+    cd "$MTL_PATH"
+    ```
+
+    ```
+    ./build.sh debugonly
+    ```
