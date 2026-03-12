@@ -25,9 +25,20 @@ jobs:
         id: filter
         with:
           filters: .github/path_filters.yml
-
-  run-smoke-tests:
+  build-artifacts:
     needs: smoke-check-for-changes
+    runs-on: dpdk
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+      - name: Build artifacts
+        uses: ./.github/actions/build
+  run-smoke-tests:
+    needs:
+      - smoke-check-for-changes
+      - build-artifacts
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
@@ -52,7 +63,16 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: '${{ github.ref }}'
-      - uses: ./.github/actions/build
+      - name: Download build artifacts
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: build-${{ github.sha }}
+      - name: Make artifacts executable
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        run: |
+          chmod +x ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
+          chmod +x ./tests/tools/RxTxApp/build/RxTxApp
       - name: 'installation: Install pipenv environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         working-directory: tests/validation
@@ -104,6 +124,8 @@ jobs:
         timeout-minutes: 60
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+        env:
+          LD_LIBRARY_PATH: ./../../build/lib/libmtl.so
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report
