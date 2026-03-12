@@ -108,8 +108,15 @@ By default, the lcore resources for each MTL instance are automatically assigned
 
 Additionally, timing-sensitive applications may require the execution of workloads on isolated cores for improved accuracy. To facilitate this, the `struct mtl_init_params` includes a parameter named `lcores`. This parameter allows applications to specify a custom list of logical cores that the MTL can utilize.
 
+For instructions on how to isolate CPU cores using the `isolcpus` kernel boot parameter, refer to the DPDK guide: [Using Linux Core Isolation to Reduce Context Switches](https://doc.dpdk.org/guides/linux_gsg/enable_func.html#using-linux-core-isolation-to-reduce-context-switches).
+
 For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
 
+> **Warning:** On newer Intel platforms with Xeon 6 CPU, the `isolcpus` kernel parameter may not be fully respected due to a kernel bug in CPU topology handling. Isolated cores can still receive work from the scheduler, undermining latency-sensitive workloads.
+>
+> This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix,
+> upgrading your kernel, or working with taskset.
+>
 ## 3. Memory management
 
 ### 3.1. Huge Page
