@@ -95,6 +95,9 @@ struct st30_frame {
   /** TAI timestamp measured right after the first packet of the frame was received */
   uint64_t receive_timestamp;
 
+  /** frame status, set by lib before notify_frame_done: complete or dropped */
+  enum st_frame_status status;
+
   /** priv pointer for lib, do not touch this */
   void* priv;
 };

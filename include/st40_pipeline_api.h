@@ -65,6 +65,9 @@ struct st40_frame_info {
   /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
   bool interlaced;
 
+  /** frame status, set by lib before notify_frame_done: complete or dropped */
+  enum st_frame_status status;
+
   /** priv pointer for lib, do not touch this */
   void* priv;
 };
