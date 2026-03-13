@@ -61,6 +61,7 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install -r requirements.txt
+          pip install --upgrade --force-reinstall --no-deps --no-cache-dir git+https://github.com/intel/mfd-connect.git@owner_in_path
       - name: Create session ID
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |

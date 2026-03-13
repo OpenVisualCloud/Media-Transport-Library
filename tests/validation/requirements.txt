@@ -22,7 +22,6 @@ mdurl==0.1.2
 mfd-base-tool==2.7.0
 mfd-cli-client==1.11.0
 mfd-common-libs==1.11.0
-mfd-connect==7.12.0
 mfd-const==0.23.0
 mfd-dcb==1.18.0
 mfd-devcon==2.0.0
