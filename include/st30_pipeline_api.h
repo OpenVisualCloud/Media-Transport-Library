@@ -214,6 +214,9 @@ int st30p_tx_reset_session_stats(st30p_tx_handle handle);
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle);
 /** Put back the frame which get by st30p_tx_get_frame. */
 int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame);
+/** Abort and release a frame obtained by st30p_tx_get_frame. Returns frame to free pool
+ * immediately. */
+int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame);
 /** Free the tx st2110-30 pipeline session. */
 int st30p_tx_free(st30p_tx_handle handle);
 /** Create one tx st2110-30 pipeline session */
@@ -319,6 +322,9 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle);
 struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle);
 /** Put back the frame which get by st30p_rx_get_frame. */
 int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
+/** Abort and release a frame obtained by st30p_rx_get_frame. Returns frame to free pool
+ * immediately. */
+int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame);
 /** Free the rx st2110-30 pipeline session. */
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */

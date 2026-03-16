@@ -284,6 +284,10 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle);
 /** Return the frame that was requested by st40p_tx_get_frame. */
 int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_info);
 
+/** Abort and release a frame obtained by st40p_tx_get_frame. Returns frame to free pool
+ * immediately. */
+int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* frame_info);
+
 /** Free the tx st2110-40 pipeline session. */
 int st40p_tx_free(st40p_tx_handle handle);
 
@@ -316,6 +320,10 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle);
 
 /** Return the frame that was requested by st40p_rx_get_frame. */
 int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_info);
+
+/** Abort and release a frame obtained by st40p_rx_get_frame. Returns frame to free pool
+ * immediately. */
+int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* frame_info);
 
 /** Free the rx st2110-40 pipeline session. */
 int st40p_rx_free(st40p_rx_handle handle);
