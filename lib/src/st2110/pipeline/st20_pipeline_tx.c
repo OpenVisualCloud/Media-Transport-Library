@@ -804,6 +804,29 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
+int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
+  return 0;
+}
+
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame) {
   struct st20p_tx_ctx* ctx = handle;

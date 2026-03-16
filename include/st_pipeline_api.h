@@ -1473,6 +1473,20 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
 int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame);
 
 /**
+ * Abort and release a frame obtained by st22p_tx_get_frame.
+ * The frame is returned to the free pool immediately without encoding or transmitting.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22 pipeline session.
+ * @param frame
+ *   the frame pointer by st22p_tx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st22p_tx_put_frame_abort(st22p_tx_handle handle, struct st_frame* frame);
+
+/**
  * Put back the frame which get by st22p_tx_get_frame to the tx
  * st2110-22 pipeline session with external framebuffer.
  *
@@ -1599,6 +1613,20 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
  *   - <0: Error code if put fail.
  */
 int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame);
+
+/**
+ * Abort and release a frame obtained by st22p_rx_get_frame.
+ * The frame is returned to the free pool immediately without any processing.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22 pipeline session.
+ * @param frame
+ *   the frame pointer by st22p_rx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st22p_rx_put_frame_abort(st22p_rx_handle handle, struct st_frame* frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-22 pipeline session.
@@ -1743,6 +1771,20 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
  *   - <0: Error code if put fail.
  */
 int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
+
+/**
+ * Abort and release a frame obtained by st20p_tx_get_frame.
+ * The frame is returned to the free pool immediately without converting or transmitting.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer by st20p_tx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
  * Put back the frame which get by st20p_tx_get_frame to the tx
@@ -1927,6 +1969,20 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
  *   - <0: Error code if put fail.
  */
 int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame);
+
+/**
+ * Abort and release a frame obtained by st20p_rx_get_frame.
+ * The frame is returned to the free pool immediately without any processing.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20 pipeline session.
+ * @param frame
+ *   the frame pointer by st20p_rx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st20p_rx_put_frame_abort(st20p_rx_handle handle, struct st_frame* frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-20 pipeline session.

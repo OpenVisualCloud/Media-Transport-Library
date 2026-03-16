@@ -535,6 +535,29 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
   return 0;
 }
 
+int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* frame_info) {
+  struct st40p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st40p_tx_frame* framebuff = frame_info->priv;
+  uint16_t producer_idx = framebuff->idx;
+
+  if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST40P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  framebuff->stat = ST40P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
+  return 0;
+}
+
 int st40p_tx_free(st40p_tx_handle handle) {
   struct st40p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
