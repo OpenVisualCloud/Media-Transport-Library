@@ -2385,6 +2385,24 @@ int st_field_split(const struct st_frame* frame, struct st_frame* first,
 /** helper for name to codec */
 enum st22_codec st_name_to_codec(const char* name);
 
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame
+ *   The frame pointer (st20p/st22p).
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st_frame_is_late(mtl_handle mt, struct st_frame* frame) {
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  return (int64_t)(frame->timestamp - ptp_now) < 0;
+}
+
 #if defined(__cplusplus)
 }
 #endif
