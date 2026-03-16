@@ -337,6 +337,24 @@ int st30p_rx_set_block_timeout(st30p_rx_handle handle, uint64_t timedwait_ns);
 /* get framebuff size */
 size_t st30p_rx_frame_size(st30p_rx_handle handle);
 
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame
+ *   The frame pointer.
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st30_frame_is_late(mtl_handle mt, struct st30_frame* frame) {
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  return (int64_t)(frame->timestamp - ptp_now) < 0;
+}
+
 #if defined(__cplusplus)
 }
 #endif

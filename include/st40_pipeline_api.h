@@ -380,6 +380,25 @@ size_t st40p_rx_max_udw_buff_size(st40p_rx_handle handle);
 /** Get the user data words buffer address for the rx st2110-40 pipeline session. */
 void* st40p_rx_get_udw_buff_addr(st40p_rx_handle handle, uint16_t idx);
 
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame_info
+ *   The frame info pointer.
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st40_frame_is_late(mtl_handle mt,
+                                      struct st40_frame_info* frame_info) {
+  if (frame_info->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  return (int64_t)(frame_info->timestamp - ptp_now) < 0;
+}
+
 #if defined(__cplusplus)
 }
 #endif
