@@ -1384,3 +1384,172 @@ TEST(St22p, digest_derive_s2) {
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
+
+TEST(St22p, tx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st22p_tx_ops ops_tx;
+
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st22p_abort_test";
+  ops_tx.priv = test_ctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 114;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.pack_type = ST22_PACK_CODESTREAM;
+  ops_tx.codec = ST22_CODEC_JPEGXS;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
+  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
+  ops_tx.codestream_size =
+      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false) / 8;
+  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st22p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  ret = st22p_tx_set_block_timeout(tx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  struct st_frame* frame = st22p_tx_get_frame(tx_handle);
+  if (frame) {
+    ret = st22p_tx_put_frame_abort(tx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st22p_tx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no frame available for st22p TX abort test\n", __func__);
+  }
+
+  ret = st22p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx;
+}
+
+TEST(St22p, rx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st22p_tx_ops ops_tx;
+  struct st22p_rx_ops ops_rx;
+
+  if (ctx->para.num_ports < 2) {
+    info("%s, dual port should be enabled\n", __func__);
+    return;
+  }
+
+  /* create TX to feed data */
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != NULL);
+  test_ctx_tx->idx = 0;
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st22p_abort_tx";
+  ops_tx.priv = test_ctx_tx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 114;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.pack_type = ST22_PACK_CODESTREAM;
+  ops_tx.codec = ST22_CODEC_JPEGXS;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
+  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
+  ops_tx.codestream_size =
+      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false) / 8;
+  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st22p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+
+  test_ctx_tx->handle = tx_handle;
+  test_ctx_tx->stop = false;
+  auto tx_thread = std::thread([](tests_context* s) {
+    auto handle = (st22p_tx_handle)s->handle;
+    while (!s->stop) {
+      auto frame = st22p_tx_get_frame(handle);
+      if (!frame) continue;
+      st22p_tx_put_frame(handle, frame);
+      s->fb_send++;
+    }
+  }, test_ctx_tx);
+
+  /* create RX */
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != NULL);
+  test_ctx_rx->idx = 0;
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st22p_abort_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = 1;
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_R]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
+  ops_rx.port.payload_type = 114;
+  ops_rx.width = 1920;
+  ops_rx.height = 1080;
+  ops_rx.fps = ST_FPS_P59_94;
+  ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_rx.pack_type = ST22_PACK_CODESTREAM;
+  ops_rx.codec = ST22_CODEC_JPEGXS;
+  ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
+
+  auto rx_handle = st22p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != NULL);
+  ret = st22p_rx_set_block_timeout(rx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(2);
+
+  struct st_frame* frame = st22p_rx_get_frame(rx_handle);
+  if (frame) {
+    ret = st22p_rx_put_frame_abort(rx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st22p_rx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no rx frame available for st22p abort test\n", __func__);
+  }
+
+  test_ctx_tx->stop = true;
+  st22p_tx_wake_block(tx_handle);
+  tx_thread.join();
+
+  ret = st22p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st22p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+
+  delete test_ctx_tx;
+  delete test_ctx_rx;
+}
