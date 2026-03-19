@@ -1649,3 +1649,194 @@ TEST(St20p, transport_yuv422p10le) {
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
+
+TEST(St20p, tx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st20p_tx_ops ops_tx;
+
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 3;
+  test_ctx->fb_idx = 0;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_abort_test";
+  ops_tx.priv = test_ctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 112;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  ret = st20p_tx_set_block_timeout(tx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  /* get a frame then abort it instead of normal put */
+  struct st_frame* frame = st20p_tx_get_frame(tx_handle);
+  if (frame) {
+    ret = st20p_tx_put_frame_abort(tx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st20p_tx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no frame available for TX abort test (expected in some configs)\n",
+         __func__);
+  }
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx;
+}
+
+TEST(St20p, rx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st20p_tx_ops ops_tx;
+  struct st20p_rx_ops ops_rx;
+
+  if (ctx->para.num_ports < 2) {
+    info("%s, dual port should be enabled\n", __func__);
+    return;
+  }
+
+  /* create TX to feed data */
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != NULL);
+  test_ctx_tx->idx = 0;
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_abort_tx";
+  ops_tx.priv = test_ctx_tx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 112;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+
+  /* TX frame thread: get & put frames to feed the RX */
+  test_ctx_tx->handle = tx_handle;
+  test_ctx_tx->stop = false;
+  auto tx_thread = std::thread([](tests_context* s) {
+    auto handle = (st20p_tx_handle)s->handle;
+    while (!s->stop) {
+      auto frame = st20p_tx_get_frame(handle);
+      if (!frame) continue;
+      st20p_tx_put_frame(handle, frame);
+      s->fb_send++;
+    }
+  }, test_ctx_tx);
+
+  /* create RX */
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != NULL);
+  test_ctx_rx->idx = 0;
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st20p_abort_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = 1;
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_R]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_rx.port.payload_type = 112;
+  ops_rx.width = 1920;
+  ops_rx.height = 1080;
+  ops_rx.fps = ST_FPS_P59_94;
+  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
+
+  auto rx_handle = st20p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != NULL);
+  ret = st20p_rx_set_block_timeout(rx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(2);
+
+  /* get a frame from RX and abort it */
+  struct st_frame* frame = st20p_rx_get_frame(rx_handle);
+  if (frame) {
+    ret = st20p_rx_put_frame_abort(rx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st20p_rx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no rx frame available for abort test\n", __func__);
+  }
+
+  /* cleanup */
+  test_ctx_tx->stop = true;
+  st20p_tx_wake_block(tx_handle);
+  tx_thread.join();
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st20p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+
+  delete test_ctx_tx;
+  delete test_ctx_rx;
+}
+
+TEST(St20p, frame_is_late) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+
+  /* create a st_frame with TAI timestamp set to a time in the past */
+  struct st_frame frame;
+  memset(&frame, 0, sizeof(frame));
+  frame.tfmt = ST10_TIMESTAMP_FMT_TAI;
+  /* set timestamp to 1 second ago — definitely late */
+  uint64_t now = mtl_ptp_read_time(st);
+  frame.timestamp = now - NS_PER_S;
+  EXPECT_TRUE(st_frame_is_late(st, &frame));
+
+  /* set timestamp to 10 seconds in the future — not late */
+  frame.timestamp = now + (uint64_t)10 * NS_PER_S;
+  EXPECT_FALSE(st_frame_is_late(st, &frame));
+
+  /* non-TAI format should always return false */
+  frame.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  frame.timestamp = 0;
+  EXPECT_FALSE(st_frame_is_late(st, &frame));
+
+  info("%s, st_frame_is_late tests passed\n", __func__);
+}
