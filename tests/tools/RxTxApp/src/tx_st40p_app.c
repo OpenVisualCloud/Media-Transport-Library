@@ -122,19 +122,71 @@ static void app_tx_st40p_close_source(struct st_app_tx_st40p_session* s) {
   }
 }
 
+uint64_t get_curr_ns() {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+static inline void timing_stats_init(struct timing_stats* ts) {
+  ts->min_ns = UINT64_MAX;
+  ts->max_ns = 0;
+  ts->last_ns = 0;
+  ts->sum_ns = 0;
+  ts->count = 0;
+}
+
+static inline void timing_stats_update(struct timing_stats* ts, uint64_t val_ns) {
+  ts->last_ns = val_ns;
+  if (val_ns < ts->min_ns) ts->min_ns = val_ns;
+  if (val_ns > ts->max_ns) ts->max_ns = val_ns;
+  ts->sum_ns += val_ns;
+  ts->count++;
+}
+
+static inline uint64_t timing_stats_avg(struct timing_stats* ts) {
+  return ts->count ? ts->sum_ns / ts->count : 0;
+}
+
+static void timing_stats_log(const char* func, int idx, const char* label,
+                             struct timing_stats* ts) {
+  uint64_t avg = timing_stats_avg(ts);
+  info("%s(%d), %s: last %lu.%06lums  min %lu.%06lums  max %lu.%06lums  "
+       "avg %lu.%06lums  (last %luns  min %luns  max %luns  avg %luns)\n",
+       func, idx, label,
+       ts->last_ns / 1000000, ts->last_ns % 1000000,
+       ts->min_ns / 1000000, ts->min_ns % 1000000,
+       ts->max_ns / 1000000, ts->max_ns % 1000000,
+       avg / 1000000, avg % 1000000,
+       ts->last_ns, ts->min_ns, ts->max_ns, avg);
+}
+
 static void* app_tx_st40p_frame_thread(void* arg) {
   struct st_app_tx_st40p_session* s = arg;
   st40p_tx_handle handle = s->handle;
   struct st40_frame_info* frame_info;
+  struct timing_stats get_stats, fill_stats, put_stats, loop_stats;
 
+
+
+  timing_stats_init(&get_stats);
+  timing_stats_init(&fill_stats);
+  timing_stats_init(&put_stats);
+  timing_stats_init(&loop_stats);
+
+  uint64_t ns = get_curr_ns();
+  uint64_t loop_start = ns;
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st40p_app_thread_stop) {
+    loop_start = get_curr_ns();
     frame_info = st40p_tx_get_frame(handle);
     if (!frame_info) {
       warn("%s(%d), get frame timeout\n", __func__, s->idx);
+      ns = get_curr_ns();
       continue;
     }
 
+    uint64_t ns1 = get_curr_ns();
     app_tx_st40p_fill_payload(s, frame_info);
 
     if (s->user_time && s->frame_time > 0) {
@@ -146,13 +198,35 @@ static void* app_tx_st40p_frame_thread(void* arg) {
       s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
+    uint64_t ns2 = get_curr_ns();
     if (st40p_tx_put_frame(handle, frame_info) < 0) {
       err("%s(%d), put frame fail\n", __func__, s->idx);
       break;
     }
 
-    s->fb_send++;
-    dbg("%s(%d), fb_send %d\n", __func__, s->idx, s->fb_send);
+    uint64_t ns3 = get_curr_ns();
+
+    timing_stats_update(&get_stats, ns1 - ns);
+    timing_stats_update(&fill_stats, ns2 - ns1);
+    timing_stats_update(&put_stats, ns3 - ns2);
+    timing_stats_update(&loop_stats, ns3 - loop_start);
+
+    if ((s->fb_send++ % 200) == 0) {
+      info("%s(%d), fb_send %d\n", __func__, s->idx, s->fb_send);
+      timing_stats_log(__func__, s->idx, "get_frame", &get_stats);
+      timing_stats_log(__func__, s->idx, "fill+meta", &fill_stats);
+      timing_stats_log(__func__, s->idx, "put_frame", &put_stats);
+      timing_stats_log(__func__, s->idx, "loop_total", &loop_stats);
+      timing_stats_init(&get_stats);
+      timing_stats_init(&fill_stats);
+      timing_stats_init(&put_stats);
+      timing_stats_init(&loop_stats);
+    }
+
+    // if ((s->fb_send % 600) == 0) {
+    //   sleep(1 + (rand() % 10));
+    // }
+    ns = ns3;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 

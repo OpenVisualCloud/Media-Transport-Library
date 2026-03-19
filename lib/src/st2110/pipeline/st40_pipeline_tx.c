@@ -70,6 +70,23 @@ static struct st40p_tx_frame* tx_st40p_next_available(
   return NULL;
 }
 
+static void tx_st40p_dump_fb_states(struct st40p_tx_ctx* ctx, const char* caller,
+                                    const char* point) {
+  MTL_MAY_UNUSED(caller);
+  MTL_MAY_UNUSED(point);
+  char buf[256];
+  int off = 0;
+
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st40p_tx_frame* fb = &ctx->framebuffs[i];
+    off += snprintf(buf + off, sizeof(buf) - off, " [%u]=%s(seq%u,done_cb=%d)", i,
+                    st40p_tx_frame_stat_name[fb->stat], fb->seq_number,
+                    fb->frame_done_cb_called);
+    if (off >= (int)sizeof(buf) - 1) break;
+  }
+  dbg("%s(%d) @ %s:%s\n", caller, ctx->idx, point, buf);
+}
+
 /* Check if the newest READY frame has missed its transmission window.
  * Drops the frame (READY -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
  *
@@ -99,13 +116,17 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
   if (cur_tai < frame_tai + frame_period_ns)
     return false; /* within acceptable TX window */
 
-  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
-      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64
+       "ns), cur_tai %" PRIu64 " frame_tai %" PRIu64 "\n",
+       __func__, ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai),
+       frame_period_ns, cur_tai, frame_tai);
+  tx_st40p_dump_fb_states(ctx, __func__, "enter_late");
 
   ctx->stat_drop_frame++;
   rtp_ts = frame_info->rtp_timestamp;
   framebuff->stat = ST40P_TX_FRAME_DROPPED;
 
+  dbg("%s(%d), unlock ctx->lock before callbacks\n", __func__, ctx->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
@@ -114,21 +135,31 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
       cur_tai, frame_tai);
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    dbg("%s(%d), calling notify_frame_done for frame %u\n", __func__, ctx->idx,
+        framebuff->idx);
     frame_info->status = ST_FRAME_STATUS_DROPPED;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
     framebuff->frame_done_cb_called = true;
   }
 
-  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  if (ctx->ops.notify_frame_late) {
+    dbg("%s(%d), calling notify_frame_late\n", __func__, ctx->idx);
+    ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  }
   MT_USDT_ST40P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
+  dbg("%s(%d), reacquiring ctx->lock to set FREE\n", __func__, ctx->idx);
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff->stat = ST40P_TX_FRAME_FREE;
   mt_pthread_mutex_unlock(&ctx->lock);
+  dbg("%s(%d), released ctx->lock after FREE, calling notify_frame_available\n", __func__,
+      ctx->idx);
 
   tx_st40p_notify_frame_available(ctx);
 
+  dbg("%s(%d), reacquiring ctx->lock for return\n", __func__, ctx->idx);
   mt_pthread_mutex_lock(&ctx->lock);
+  tx_st40p_dump_fb_states(ctx, __func__, "return_late");
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -136,14 +167,24 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st40_tx_frame_meta* meta) {
   struct st40p_tx_ctx* ctx = priv;
   struct st40p_tx_frame* framebuff;
+  int drop_loop = 0;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
+  tx_st40p_dump_fb_states(ctx, __func__, "enter");
   do {
     framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
     if (!framebuff) break; /* no ready frame available */
+    drop_loop++;
+    // if (drop_loop > ctx->framebuff_cnt) {
+    //   err("%s(%d), drop loop exceeded framebuff_cnt %u, breaking to avoid deadlock\n",
+    //       __func__, ctx->idx, ctx->framebuff_cnt);
+    //   tx_st40p_dump_fb_states(ctx, __func__, "drop_loop_break");
+    //   framebuff = NULL;
+    //   break;
+    // }
   } while (tx_st40p_if_frame_late(ctx, framebuff));
 
   /* not any ready frame */

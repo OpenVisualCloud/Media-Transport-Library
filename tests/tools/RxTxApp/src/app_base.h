@@ -488,6 +488,14 @@ struct st_app_tx_st22p_session {
   bool st22p_app_thread_stop;
 };
 
+struct timing_stats {
+  uint64_t min_ns;
+  uint64_t max_ns;
+  uint64_t last_ns;
+  uint64_t sum_ns;
+  uint64_t count;
+};
+
 struct st_app_tx_st40p_session {
   struct st_app_context* ctx;
 
