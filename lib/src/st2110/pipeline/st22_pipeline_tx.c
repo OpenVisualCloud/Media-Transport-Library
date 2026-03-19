@@ -163,6 +163,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st22_tx_frame_meta* meta) {
   struct st22p_tx_ctx* ctx = priv;
   struct st22p_tx_frame* framebuff;
+  int drop_cnt = 0;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
@@ -170,11 +171,23 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   do {
     framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
     if (!framebuff) break; /* no encoded frame available */
+    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
   } while (tx_st22p_if_frame_late(ctx, framebuff));
 
   /* not any encoded frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE))
+        tx_st22p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -194,6 +207,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
+
   return 0;
 }
 

@@ -134,25 +134,32 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   struct st30p_tx_ctx* ctx = priv;
   struct st30p_tx_frame* framebuff;
   struct st30_frame* frame;
+  int drop_cnt = 0;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
-
-  uint32_t drops_before = ctx->stat_drop_frame;
 
   mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
     if (!framebuff) break; /* no ready frame available */
+    if (drop_cnt >= ST_TX_ST30P_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
   } while (tx_st30p_if_frame_late(ctx, framebuff));
 
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    /* Notify the app once after the entire drop batch so it can provide
-     * fresh frames.  Doing this here (instead of per-drop) avoids the
-     * drop→refill→drop feedback loop with high-rate audio streams. */
-    if (ctx->stat_drop_frame > drops_before) tx_st30p_notify_frame_available(ctx);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST30P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE))
+        tx_st30p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -168,6 +175,7 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST30P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
+
   return 0;
 }
 

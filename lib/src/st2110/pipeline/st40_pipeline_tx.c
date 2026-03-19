@@ -136,6 +136,7 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st40_tx_frame_meta* meta) {
   struct st40p_tx_ctx* ctx = priv;
   struct st40p_tx_frame* framebuff;
+  uint32_t drop_cnt = 0;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
@@ -144,11 +145,23 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
   do {
     framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
     if (!framebuff) break; /* no ready frame available */
+    if (drop_cnt >= ST_TX_ST40P_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
   } while (tx_st40p_if_frame_late(ctx, framebuff));
 
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st40p_next_available(ctx, ST40P_TX_FRAME_FREE))
+        tx_st40p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -163,6 +176,7 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST40P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
+
   return 0;
 }
 
