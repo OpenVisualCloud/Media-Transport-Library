@@ -8,6 +8,11 @@
 #include "../st_main.h"
 #include "st40_pipeline_api.h"
 
+/* Maximum number of late frames that can be dropped in a single next_frame call. */
+#ifndef ST_TX_ST40P_DROP_MAX_BATCH
+#define ST_TX_ST40P_DROP_MAX_BATCH (80)
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif

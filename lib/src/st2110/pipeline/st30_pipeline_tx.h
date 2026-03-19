@@ -8,6 +8,11 @@
 #include "../st_main.h"
 #include "st30_pipeline_api.h"
 
+/* Maximum number of late frames that can be dropped in a single next_frame call. */
+#ifndef ST_TX_ST30P_DROP_MAX_BATCH
+#define ST_TX_ST30P_DROP_MAX_BATCH (80)
+#endif
+
 enum st30p_tx_frame_status {
   ST30P_TX_FRAME_FREE = 0,
   ST30P_TX_FRAME_IN_USER,         /* in user */
