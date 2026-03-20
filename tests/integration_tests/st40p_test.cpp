@@ -99,18 +99,20 @@ TEST(St40p, rx_put_frame_abort) {
 
   test_ctx_tx->handle = tx_handle;
   test_ctx_tx->stop = false;
-  auto tx_thread = std::thread([](tests_context* s) {
-    auto handle = (st40p_tx_handle)s->handle;
-    while (!s->stop) {
-      auto frame_info = st40p_tx_get_frame(handle);
-      if (!frame_info) continue;
-      /* fill minimal ANC metadata */
-      frame_info->meta_num = 0;
-      frame_info->udw_buffer_fill = 0;
-      st40p_tx_put_frame(handle, frame_info);
-      s->fb_send++;
-    }
-  }, test_ctx_tx);
+  auto tx_thread = std::thread(
+      [](tests_context* s) {
+        auto handle = (st40p_tx_handle)s->handle;
+        while (!s->stop) {
+          auto frame_info = st40p_tx_get_frame(handle);
+          if (!frame_info) continue;
+          /* fill minimal ANC metadata */
+          frame_info->meta_num = 0;
+          frame_info->udw_buffer_fill = 0;
+          st40p_tx_put_frame(handle, frame_info);
+          s->fb_send++;
+        }
+      },
+      test_ctx_tx);
 
   /* create RX */
   auto test_ctx_rx = new tests_context();
