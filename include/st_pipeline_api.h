@@ -2399,7 +2399,7 @@ enum st22_codec st_name_to_codec(const char* name);
  */
 static inline bool st_frame_is_late(mtl_handle mt, struct st_frame* frame) {
   if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
-  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  uint64_t ptp_now = mtl_ptp_read_time_raw(mt);
   return (int64_t)(frame->timestamp - ptp_now) < 0;
 }
 
