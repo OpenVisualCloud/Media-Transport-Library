@@ -557,9 +557,8 @@ TEST(St30p, tx_put_frame_abort) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size =
-      st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
-                                    ops_tx.channel, 10 * NS_PER_MS, NULL);
+  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+      ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
 
@@ -615,9 +614,8 @@ TEST(St30p, rx_put_frame_abort) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size =
-      st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
-                                    ops_tx.channel, 10 * NS_PER_MS, NULL);
+  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+      ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
 
@@ -626,15 +624,17 @@ TEST(St30p, rx_put_frame_abort) {
 
   test_ctx_tx->handle = tx_handle;
   test_ctx_tx->stop = false;
-  auto tx_thread = std::thread([](tests_context* s) {
-    auto handle = (st30p_tx_handle)s->handle;
-    while (!s->stop) {
-      auto frame = st30p_tx_get_frame(handle);
-      if (!frame) continue;
-      st30p_tx_put_frame(handle, frame);
-      s->fb_send++;
-    }
-  }, test_ctx_tx);
+  auto tx_thread = std::thread(
+      [](tests_context* s) {
+        auto handle = (st30p_tx_handle)s->handle;
+        while (!s->stop) {
+          auto frame = st30p_tx_get_frame(handle);
+          if (!frame) continue;
+          st30p_tx_put_frame(handle, frame);
+          s->fb_send++;
+        }
+      },
+      test_ctx_tx);
 
   /* create RX */
   auto test_ctx_rx = new tests_context();
@@ -657,9 +657,8 @@ TEST(St30p, rx_put_frame_abort) {
   ops_rx.channel = 2;
   ops_rx.sampling = ST30_SAMPLING_48K;
   ops_rx.ptime = ST30_PTIME_1MS;
-  ops_rx.framebuff_size =
-      st30_calculate_framebuff_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling,
-                                    ops_rx.channel, 10 * NS_PER_MS, NULL);
+  ops_rx.framebuff_size = st30_calculate_framebuff_size(
+      ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
   ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
   ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET;
 

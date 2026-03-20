@@ -1486,15 +1486,17 @@ TEST(St22p, rx_put_frame_abort) {
 
   test_ctx_tx->handle = tx_handle;
   test_ctx_tx->stop = false;
-  auto tx_thread = std::thread([](tests_context* s) {
-    auto handle = (st22p_tx_handle)s->handle;
-    while (!s->stop) {
-      auto frame = st22p_tx_get_frame(handle);
-      if (!frame) continue;
-      st22p_tx_put_frame(handle, frame);
-      s->fb_send++;
-    }
-  }, test_ctx_tx);
+  auto tx_thread = std::thread(
+      [](tests_context* s) {
+        auto handle = (st22p_tx_handle)s->handle;
+        while (!s->stop) {
+          auto frame = st22p_tx_get_frame(handle);
+          if (!frame) continue;
+          st22p_tx_put_frame(handle, frame);
+          s->fb_send++;
+        }
+      },
+      test_ctx_tx);
 
   /* create RX */
   auto test_ctx_rx = new tests_context();
