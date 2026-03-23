@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/timex.h>
 #include <sys/types.h>
 
 #include "app_base.h"
@@ -144,6 +145,82 @@ void app_set_log_level(enum mtl_log_level level) {
 
 enum mtl_log_level app_get_log_level(void) {
   return app_log_level;
+}
+
+static int app_ptp_parse_tai_offset(void) {
+  const char* path = "/usr/share/zoneinfo/leap-seconds.list";
+  FILE* f = fopen(path, "r");
+  if (!f) {
+    warn("%s, failed to open %s: %s\n", __func__, path, strerror(errno));
+    return -1;
+  }
+
+  int tai_offset = -1;
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    if (line[0] == '#' || line[0] == '\n') continue;
+    int offset = 0;
+    if (sscanf(line, "%*s %d", &offset) == 1) {
+      tai_offset = offset;
+    }
+  }
+  fclose(f);
+  return tai_offset;
+}
+
+static int app_ptp_get_kernel_tai_offset(void) {
+  struct timex tx;
+  memset(&tx, 0, sizeof(tx));
+  adjtimex(&tx);
+  return tx.tai;
+}
+
+static int app_ptp_set_kernel_tai_offset(int offset) {
+  struct timex tx;
+  memset(&tx, 0, sizeof(tx));
+  tx.modes = ADJ_TAI;
+  tx.constant = offset;
+  return adjtimex(&tx);
+}
+
+static uint64_t app_ptp_init_tai_time(void* priv) {
+  struct st_app_context* ctx = priv;
+
+  int tai_offset = app_ptp_parse_tai_offset();
+  if (tai_offset < 0) {
+    err("%s, failed to parse TAI offset from leap-seconds.list\n", __func__);
+    return 0;
+  }
+
+  int current = app_ptp_get_kernel_tai_offset();
+  info("%s, kernel TAI offset: %d, leap-seconds TAI offset: %d\n", __func__, current,
+       tai_offset);
+
+  if (current != tai_offset) {
+    int ret = app_ptp_set_kernel_tai_offset(tai_offset);
+    if (ret < 0) {
+      err("%s, failed to set kernel TAI offset to %d: %s\n", __func__, tai_offset,
+          strerror(errno));
+      err("%s, try: sudo setcap 'cap_sys_time+ep' <app>\n", __func__);
+      return 0;
+    }
+
+    /* verify */
+    int verify = app_ptp_get_kernel_tai_offset();
+    if (verify != tai_offset) {
+      err("%s, TAI offset verify failed: expected %d got %d\n", __func__, tai_offset,
+          verify);
+      return 0;
+    }
+    info("%s, kernel TAI offset updated from %d to %d\n", __func__, current,
+         tai_offset);
+  }
+
+  ctx->utc_offset = 0;
+
+  struct timespec spec;
+  st_get_tai_time(&spec);
+  return ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 }
 
 static uint64_t app_ptp_from_tai_time(void* priv) {
@@ -377,6 +454,12 @@ int main(int argc, char** argv) {
     st_app_ctx_free(ctx);
     return ret;
   }
+
+  /* Auto-detect and set kernel TAI offset if user didn't provide --utc_offset */
+  if (ctx->utc_offset == 0) {
+    app_ptp_init_tai_time(ctx);
+  }
+
   if (ctx->tx_video_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
       ctx->tx_st22_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
       ctx->tx_st22p_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
