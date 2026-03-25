@@ -9,7 +9,9 @@
  *
  * Requires CAP_SYS_TIME or root.
  *
- * Usage: sudo ./set_tai_offset [-v]
+ * Usage: sudo ./set_tai_offset [-v] [-0]
+ *   -v  verbose output
+ *   -0  reset TAI offset to 0
  */
 
 #include <errno.h>
@@ -53,10 +55,34 @@ static int parse_tai_offset(const char* path) {
 }
 
 int main(int argc, char** argv) {
-  int verbose = (argc > 1 && strcmp(argv[1], "-v") == 0);
+  int verbose = 0;
+  int reset = 0;
+
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-v") == 0)
+      verbose = 1;
+    else if (strcmp(argv[i], "-0") == 0)
+      reset = 1;
+  }
+
   int current = get_kernel_tai_offset();
 
   if (verbose) printf("Current kernel TAI offset: %d\n", current);
+
+  if (reset) {
+    if (current == 0) {
+      printf("TAI offset already 0, nothing to do.\n");
+      return EXIT_SUCCESS;
+    }
+    int ret = set_kernel_tai_offset(0);
+    if (ret < 0) {
+      fprintf(stderr, "Failed to reset TAI offset to 0: %s\n", strerror(-ret));
+      fprintf(stderr, "Run as root or: sudo setcap 'cap_sys_time+ep' %s\n", argv[0]);
+      return EXIT_FAILURE;
+    }
+    printf("Kernel TAI offset reset: %d -> 0\n", current);
+    return EXIT_SUCCESS;
+  }
 
   if (current > 0) {
     printf("TAI offset already set to %d, nothing to do.\n", current);
