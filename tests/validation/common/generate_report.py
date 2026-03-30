@@ -78,8 +78,18 @@ RE_HOST_ASSIGN = re.compile(
     r"\s*TX=(\S+),\s*RX=(\S+)"
 )
 RE_SWEEP_RESULT = re.compile(
-    r"Sweep: max (\d+) sessions for "
+    r"Sweep: max (\d+) sessions"
+    r"(?: on (\d+) cores?)?"
+    r" for "
     r"(REDUNDANT )?(TX|RX) (SC|MC)"
+    r"(?: with (?:DSA|DMA) \([^)]+\))?"
+    r" @ (\d+)fps / (\d+p)"
+)
+# "Fixed run: 36 sessions for REDUNDANT TX MC @ 59fps / 1080p"
+RE_FIXED_RESULT = re.compile(
+    r"Fixed run: (\d+) sessions for "
+    r"(REDUNDANT )?(TX|RX) (SC|MC)"
+    r"(?: \+DMA)?"
     r"(?: with (?:DSA|DMA) \([^)]+\))?"
     r" @ (\d+)fps / (\d+p)"
 )
@@ -99,6 +109,15 @@ RE_DMA_ENABLED = re.compile(
     r"(.+?),\s*NUMA\s*(\d+)\)\s*"
     r"for NIC\s*(\S+)\s*\(NUMA\s*(\d+)\)\s*"
     r"on\s*(\S+)\s*.\s*NUMA\s*(\w+)"
+)
+# Multi-device variant produced by setup_host_dma_all():
+#   DMA enabled (RX): 2 device(s) [addr,...] (type, NUMA [N]) for NIC vf (NUMA N) on host — NUMA SAME
+RE_DMA_ENABLED_ALL = re.compile(
+    r"DMA enabled\s*(?:\((\w+)\))?\s*:\s*\d+\s+device\(s\)\s*\[([^\]]+)\]\s*\("
+    r"(.+?),\s*NUMA\s*\[([^\]]+)\]\)\s*"
+    r"for NIC\s*(\S+)\s*\(NUMA\s*(\d+)\)\s*"
+    r"on\s*(\S+)"
+    r"(?:\s*.\s*NUMA\s*(\w+))?"
 )
 RE_REDUNDANT_MODE = re.compile(
     r"Redundant mode:\s*interfaces=\[(.+?)\],\s*direction=(\w+)"
@@ -160,7 +179,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                 vf_map[m.group(1)] = vfs
                 continue
 
-            # ── DMA/DSA enabled ──
+            # ── DMA/DSA enabled (single device) ──
             m = RE_DMA_ENABLED.search(line)
             if m:
                 _role, dma_dev, _dtype, dma_numa = m.group(1, 2, 3, 4)
@@ -170,6 +189,26 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                 nd.nic_numa = nic_numa
                 nd.dma_device = dma_dev
                 nd.dma_numa = dma_numa
+                nd.numa_match = numa_match
+                continue
+
+            # ── DMA enabled (multi-device from setup_host_dma_all) ──
+            m = RE_DMA_ENABLED_ALL.search(line)
+            if m:
+                dma_dev = m.group(2)  # comma-separated list
+                # groups 1 (role) and 3 (dtype) intentionally skipped
+                dma_numa_str = m.group(4).strip()  # e.g. "0" or "0, 1"
+                nic_vf, nic_numa, hostname = m.group(5, 6, 7)
+                numa_match = m.group(8)  # may be None for old logs
+                if not numa_match:
+                    # Compute from parsed NUMA nodes
+                    dma_numas = {n.strip() for n in dma_numa_str.split(",")}
+                    numa_match = "SAME" if dma_numas == {nic_numa} else "MIXED"
+                nd = info.setdefault(hostname, NicDmaInfo())
+                nd.vf_addr = nic_vf
+                nd.nic_numa = nic_numa
+                nd.dma_device = dma_dev
+                nd.dma_numa = dma_numa_str
                 nd.numa_match = numa_match
                 continue
 
@@ -279,21 +318,43 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
 
             # ── Sweep result line → finalize test ──
             ms = RE_SWEEP_RESULT.search(line)
-            if ms:
+            mf = RE_FIXED_RESULT.search(line) if not ms else None
+            if ms or mf:
+                m = ms or mf
                 ts_m = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
+                # Sweep groups: (1)=sessions, (2)=cores|None,
+                #   (3)=REDUNDANT|None, (4)=TX|RX, (5)=SC|MC, (6)=fps, (7)=res
+                # Fixed groups: (1)=sessions,
+                #   (2)=REDUNDANT|None, (3)=TX|RX, (4)=SC|MC, (5)=fps, (6)=res
+                if ms:
+                    sweep_cores = ms.group(2)
+                    n_sessions = int(ms.group(1))
+                    redundant = bool(ms.group(3))
+                    side = ms.group(4)
+                    mode = ms.group(5)
+                    fps_val = int(ms.group(6))
+                    res_val = ms.group(7)
+                else:
+                    sweep_cores = None
+                    n_sessions = int(mf.group(1))
+                    redundant = bool(mf.group(2))
+                    side = mf.group(3)
+                    mode = mf.group(4)
+                    fps_val = int(mf.group(5))
+                    res_val = mf.group(6)
                 st = SweepTest(
-                    max_sessions=int(ms.group(1)),
-                    tested_side=ms.group(3),
-                    mode=ms.group(4),
-                    redundant=bool(ms.group(2)),
+                    max_sessions=n_sessions,
+                    tested_side=side,
+                    mode=mode,
+                    redundant=redundant,
                     dma="DMA" in line or "DSA" in line,
-                    fps=int(ms.group(5)),
-                    resolution=ms.group(6),
+                    fps=fps_val,
+                    resolution=res_val,
                     log_dir=dir_name,
                     timestamp=ts_m.group(1) if ts_m else dir_name,
                     host_assignment=host_assign,
                     command=cmd,
-                    cores_used=int(cores) if cores else 0,
+                    cores_used=int(sweep_cores or cores or 0),
                     core_ids=core_ids,
                     measured_dev_tx=m_tx,
                     measured_dev_rx=m_rx,
@@ -417,17 +478,20 @@ def scan_logs(log_root: str):
         if pc:
             legacy_platform = pc
 
-        # Collect log files: pytest.log + per-test .log files
+        # Collect log files: per-test .log files preferred, pytest.log as fallback.
+        # pytest.log is a superset of per-test logs but can be 100+ MB,
+        # making regex parsing extremely slow.  Skip it when per-test logs exist.
         log_files: list[str] = []
-        lp = os.path.join(dp, "pytest.log")
-        if os.path.exists(lp):
-            log_files.append(lp)
         tests_dir = os.path.join(dp, "tests")
         if os.path.isdir(tests_dir):
             for root, _, files in os.walk(tests_dir):
                 log_files.extend(
                     os.path.join(root, fn) for fn in files if fn.endswith(".log")
                 )
+        if not log_files:
+            lp = os.path.join(dp, "pytest.log")
+            if os.path.exists(lp):
+                log_files.append(lp)
         if not log_files:
             continue
 
@@ -457,8 +521,10 @@ def scan_logs(log_root: str):
     if not per_host and legacy_platform:
         per_host["_legacy"] = legacy_platform
 
-    # Derive hosts from sweep results
-    all_tests = list(best.values())
+    # Derive hosts from sweep results.
+    # Filter out TX+DMA entries — DMA only benefits RX (memory-copy offload),
+    # so TX+DMA results are identical to TX no-DMA and just add clutter.
+    all_tests = [t for t in best.values() if not (t.tested_side == "TX" and t.dma)]
     hosts = _extract_hosts(all_tests, vf_map)
 
     # Enrich hosts with NIC/DMA info
@@ -617,6 +683,43 @@ def _generate_html(tests, per_host, hosts) -> str:
             ],
         )
     )
+
+    # ── Workload Description sub-section ──
+    p.append(
+        _kv_table(
+            "Workload Description",
+            [
+                ("Standard", "SMPTE ST 2110-20 (Uncompressed Video)"),
+                ("Transport", "RTP over UDP/IPv4 (unicast)"),
+                ("Video Format", "YUV 4:2:2 10-bit (ST20_FMT_YUV_422_10BIT)"),
+                ("Resolution", "1920 × 1080 progressive"),
+                ("Frame Rate", "59.94 fps"),
+                ("Packing Mode", "GPM (General Packing Mode)"),
+                (
+                    "RTP Payload / Packet",
+                    "~1,200–1,314 bytes (varies by scan-line packing)",
+                ),
+                ("Packets / Frame", "~3,945 (trained by HW pacer)"),
+                (
+                    "Ethernet Frame Size",
+                    "≤ 1,500 bytes (MTU); Eth 14 + IP 20 + UDP 8 + RTP 12 + RFC 4175 SRD 8 + payload",
+                ),
+                (
+                    "Bandwidth / Session",
+                    "~2,589 Mb/s (video payload + protocol overhead)",
+                ),
+                ("Frame Size (uncompressed)", "5,184,000 bytes (4.94 MB) per frame"),
+                (
+                    "Acceptable Packet Loss",
+                    "0 % — ST 2110 requires lossless delivery; any packet loss causes visible artifacts. "
+                    "Pass criteria: every session must sustain average FPS ≥ 99 % of target "
+                    "(≥ 58.41 fps for 59.94 fps target) over the measurement window.",
+                ),
+                ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
+            ],
+        )
+    )
+
     p.append("</div>")
 
     # ── Platform & Topology section ──
@@ -752,26 +855,73 @@ def _generate_html(tests, per_host, hosts) -> str:
         if not group:
             continue
         p.append(f'<div class="sec"><h2>{label} — Max Sessions</h2>')
+        if redundant:
+            p.append(
+                '<p style="font-size:.82em;color:var(--text-muted);margin:-8px 0 12px;'
+                'padding:0 2px">'
+                "\u2139\ufe0f <b>Sessions</b> = logical ST2022-7 sessions "
+                "(each an independent video stream). "
+                "<b>Network Streams</b> = UDP streams on the wire "
+                "(2\u00d7 sessions, as each session sends/receives "
+                "over both primary and redundant NIC ports).<br>"
+                "<b>Throughput (per port)</b> = average rate on a single NIC interface. "
+                "<b>NIC Total</b> = aggregate throughput across both ports "
+                "(2\u00d7 per-port, since each port carries all sessions).</p>"
+            )
+        else:
+            p.append(
+                '<p style="font-size:.82em;color:var(--text-muted);margin:-8px 0 12px;'
+                'padding:0 2px">'
+                "\u2139\ufe0f <b>Network Streams</b> = UDP streams on the wire "
+                "(1\u00d7 per session for non-redundant mode).<br>"
+                "<b>Throughput (per port)</b> = measured rate on the single NIC port used. "
+                "<b>NIC Total</b> = same value (only 1 port active in non-redundant mode).</p>"
+            )
         for fps in sorted({t.fps for t in group}):
             fps_group = [t for t in group if t.fps == fps]
             p.append(f"<h3>{fps} fps</h3>")
-            p.append(
-                '<table class="mx"><thead><tr>'
-                "<th>Tested Side</th><th>Resolution</th>"
-                "<th>Max Sessions</th><th>Cores</th>"
-                "<th>Measured Throughput</th><th>Run</th>"
-                "</tr></thead><tbody>"
-            )
+            if redundant:
+                p.append(
+                    '<table class="mx"><thead><tr>'
+                    "<th>Tested Side</th><th>Resolution</th>"
+                    "<th>Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
+                    "</tr></thead><tbody>"
+                )
+            else:
+                p.append(
+                    '<table class="mx"><thead><tr>'
+                    "<th>Tested Side</th><th>Resolution</th>"
+                    "<th>Max Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
+                    "</tr></thead><tbody>"
+                )
             for t in fps_group:
                 cl = "p" if t.max_sessions > 0 else "f"
                 meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
                 side = f"{t.tested_side} +DMA" if t.dma else t.tested_side
-                p.append(
-                    f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
-                    f'<td class="ms">{t.max_sessions}</td>'
-                    f'<td class="n">{t.cores_used}</td>'
-                    f"<td>{_tput(meas)}</td><td>{t.log_dir}</td></tr>"
-                )
+                if redundant:
+                    nflows = t.max_sessions * 2
+                    nic_total = meas * 2
+                    p.append(
+                        f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
+                        f'<td class="ms">{t.max_sessions}</td>'
+                        f'<td class="n">{nflows}</td>'
+                        f'<td class="n">{t.cores_used}</td>'
+                        f"<td>{_tput(meas)}</td>"
+                        f"<td><b>{_tput(nic_total)}</b></td>"
+                        f"<td>{t.log_dir}</td></tr>"
+                    )
+                else:
+                    p.append(
+                        f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
+                        f'<td class="ms">{t.max_sessions}</td>'
+                        f'<td class="n">{t.max_sessions}</td>'
+                        f'<td class="n">{t.cores_used}</td>'
+                        f"<td>{_tput(meas)}</td>"
+                        f"<td><b>{_tput(meas)}</b></td>"
+                        f"<td>{t.log_dir}</td></tr>"
+                    )
             p.append("</tbody></table>")
         p.append("</div>")
 
@@ -785,17 +935,61 @@ def _generate_html(tests, per_host, hosts) -> str:
         comp_tput = t.companion_dev_tx if t.tested_side == "RX" else t.companion_dev_rx
         other = "TX" if t.tested_side == "RX" else "RX"
 
-        p.append(
-            f"<details><summary>{_esc(t.key)} — "
-            f'<b>{t.max_sessions} sessions</b></summary><div class="db">'
-        )
+        if t.redundant:
+            nflows = t.max_sessions * 2
+            p.append(
+                f"<details><summary>{_esc(t.key)} — "
+                f"<b>{t.max_sessions} sessions ({nflows} network streams)"
+                f"</b></summary>" + '<div class="db">'
+            )
+        else:
+            p.append(
+                f"<details><summary>{_esc(t.key)} — "
+                f"<b>{t.max_sessions} sessions ({t.max_sessions} network streams)"
+                f'</b></summary><div class="db">'
+            )
         p.append('<div class="ig">')
         p.append(f"<div><b>Host Assignment</b><br>{_esc(t.host_assignment)}</div>")
         p.append(
             f"<div><b>Cores Used</b><br>{t.cores_used} (ids: {_esc(t.core_ids)})</div>"
         )
-        p.append(f"<div><b>Measured ({t.tested_side})</b><br>{_tput(meas)}</div>")
-        p.append(f"<div><b>Companion ({other})</b><br>{_tput(comp_tput)}</div>")
+        if t.redundant:
+            nflows = t.max_sessions * 2
+            p.append(
+                f"<div><b>Sessions / Streams</b><br>"
+                f"{t.max_sessions} logical sessions \u00d7 2 ports = "
+                f"{nflows} network streams</div>"
+            )
+        else:
+            p.append(
+                f"<div><b>Sessions / Streams</b><br>"
+                f"{t.max_sessions} sessions = "
+                f"{t.max_sessions} network streams</div>"
+            )
+        if t.redundant:
+            nic_total = meas * 2
+            comp_nic_total = comp_tput * 2
+            p.append(
+                f"<div><b>Measured ({t.tested_side})</b><br>"
+                f"{_tput(meas)} per port<br>"
+                f"<b>{_tput(nic_total)} NIC total</b></div>"
+            )
+            p.append(
+                f"<div><b>Companion ({other})</b><br>"
+                f"{_tput(comp_tput)} per port<br>"
+                f"<b>{_tput(comp_nic_total)} NIC total</b></div>"
+            )
+        else:
+            p.append(
+                f"<div><b>Measured ({t.tested_side})</b><br>"
+                f"{_tput(meas)} per port<br>"
+                f"<b>{_tput(meas)} NIC total</b></div>"
+            )
+            p.append(
+                f"<div><b>Companion ({other})</b><br>"
+                f"{_tput(comp_tput)} per port<br>"
+                f"<b>{_tput(comp_tput)} NIC total</b></div>"
+            )
         p.append("</div>")
 
         if t.command:
@@ -813,18 +1007,35 @@ def _generate_html(tests, per_host, hosts) -> str:
             )
 
         if t.steps:
-            p.append(
-                '<table class="st"><thead><tr>'
-                "<th>Sessions</th><th>Result</th><th>Detail</th>"
-                "</tr></thead><tbody>"
-            )
-            for sessions, passed, detail in t.steps:
-                ic = "✓" if passed else "✗"
-                cl = "p" if passed else "f"
+            if t.redundant:
                 p.append(
-                    f'<tr class="{cl}"><td class="n">{sessions}</td>'
-                    f"<td>{ic}</td><td>{_esc(detail)}</td></tr>"
+                    '<table class="st"><thead><tr>'
+                    "<th>Sessions</th><th>Streams</th>"
+                    "<th>Result</th><th>Detail</th>"
+                    "</tr></thead><tbody>"
                 )
+                for sessions, passed, detail in t.steps:
+                    ic = "\u2713" if passed else "\u2717"
+                    cl = "p" if passed else "f"
+                    p.append(
+                        f'<tr class="{cl}"><td class="n">{sessions}</td>'
+                        f'<td class="n">{sessions * 2}</td>'
+                        f"<td>{ic}</td><td>{_esc(detail)}</td></tr>"
+                    )
+            else:
+                p.append(
+                    '<table class="st"><thead><tr>'
+                    "<th>Sessions</th><th>Streams</th><th>Result</th><th>Detail</th>"
+                    "</tr></thead><tbody>"
+                )
+                for sessions, passed, detail in t.steps:
+                    ic = "\u2713" if passed else "\u2717"
+                    cl = "p" if passed else "f"
+                    p.append(
+                        f'<tr class="{cl}"><td class="n">{sessions}</td>'
+                        f'<td class="n">{sessions}</td>'
+                        f"<td>{ic}</td><td>{_esc(detail)}</td></tr>"
+                    )
             p.append("</tbody></table>")
 
         p.append("</div></details>")

@@ -374,10 +374,42 @@ class CpuCoreMonitor:
             pass
 
         try:
-            r = self.host.connection.execute_command(
-                f"cat {self._log_path} 2>/dev/null || echo ''", shell=True
+            # Parse mpstat on the remote host to avoid transferring megabytes
+            # of raw output over a slow SSH/proxy connection.  Only send back
+            # the compact summary (one line: "cores_used max_sim samples c1,c2,...").
+            awk_script = (
+                r"""awk '"""
+                r"""$0 ~ /^[[:space:]]*$/ { if (n>0) { samples++; if (n>mx) mx=n; n=0 } next }"""
+                r"""{ off=0; if ($2=="AM"||$2=="PM") off=1 }"""
+                r"""$(2+off)=="CPU" { next }"""
+                r"""$(2+off)+0==$(2+off) && $(2+off)!="all" { """
+                r"""  if ($(3+off)+0 >= 100.0) { all[$(2+off)]=1; n++ } """
+                r"""}"""
+                r"""END { """
+                r"""  if (n>0) { samples++; if (n>mx) mx=n }"""
+                r"""  c=0; ids=""; for (k in all) { c++; ids=ids (ids?",":" ") k }"""
+                r"""  printf "%d %d %d%s\n", c, mx, samples, ids """
+                r"""}' """
             )
-            result = self._parse_mpstat(r.stdout or "")
+            r = self.host.connection.execute_command(
+                f"{awk_script} {self._log_path} 2>/dev/null || echo '0 0 0 '",
+                shell=True,
+            )
+            parts = (r.stdout or "0 0 0 ").strip().split(None, 3)
+            cores_used = int(parts[0]) if len(parts) > 0 else 0
+            max_sim = int(parts[1]) if len(parts) > 1 else 0
+            samples = int(parts[2]) if len(parts) > 2 else 0
+            core_ids = (
+                sorted(int(c) for c in parts[3].split(",") if c.strip())
+                if len(parts) > 3 and parts[3].strip()
+                else []
+            )
+            result = {
+                "cores_used": cores_used,
+                "max_cores_simultaneous": max_sim,
+                "samples": samples,
+                "core_ids": core_ids,
+            }
         except Exception:
             result = empty
 
@@ -386,59 +418,6 @@ class CpuCoreMonitor:
         except Exception:
             pass
         return result
-
-    @staticmethod
-    def _parse_mpstat(output):
-        """Parse mpstat -P ALL output → cores that hit 100% %usr."""
-        all_busy = set()
-        max_sim = 0
-        samples = 0
-        cur_busy = set()
-        in_sample = False
-
-        for line in output.splitlines():
-            s = line.strip()
-            if not s:
-                if in_sample and cur_busy:
-                    samples += 1
-                    all_busy.update(cur_busy)
-                    max_sim = max(max_sim, len(cur_busy))
-                    cur_busy = set()
-                in_sample = False
-                continue
-
-            parts = s.split()
-            if len(parts) < 5:
-                continue
-
-            # Detect AM/PM format shift
-            off = 1 if len(parts) > 2 and parts[1] in ("AM", "PM") else 0
-            cpu_col = parts[1 + off] if len(parts) > 1 + off else ""
-
-            if cpu_col == "CPU":
-                in_sample = True
-                continue
-            if not cpu_col.isdigit() or cpu_col == "all":
-                continue
-
-            try:
-                if float(parts[2 + off]) >= 100.0:
-                    cur_busy.add(int(cpu_col))
-                    in_sample = True
-            except (ValueError, IndexError):
-                continue
-
-        if cur_busy:
-            samples += 1
-            all_busy.update(cur_busy)
-            max_sim = max(max_sim, len(cur_busy))
-
-        return {
-            "cores_used": len(all_busy),
-            "max_cores_simultaneous": max_sim,
-            "samples": samples,
-            "core_ids": sorted(all_busy),
-        }
 
 
 def log_cpu_core_results(info):
