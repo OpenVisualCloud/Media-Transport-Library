@@ -3305,7 +3305,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
 
   rv_session_reset(s, true);
 
-  s->dma_nb_desc = 128;
+  s->dma_nb_desc = 4096;
   s->dma_slot = NULL;
   s->dma_dev = NULL;
   if (ops->flags & ST20_RX_FLAG_TIMING_PARSER_STAT) {
