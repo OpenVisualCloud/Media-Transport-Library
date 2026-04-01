@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 import pytest
 from common.collect_platform_info import collect_platform_info
+from common.host_setup import ensure_hugepage_access, ensure_pf_up
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
 from compliance.compliance_client import PcapComplianceClient
@@ -189,6 +190,24 @@ def get_host_mtl_path(host, default: str = "") -> str:
     if "build_path" in extra:
         return extra["build_path"]
 
+    return default
+
+
+def get_host_media_path(host, default: str = "/mnt/media") -> str:
+    """Return the media source path for a specific host.
+
+    Checks host.topology.extra_info.media_path, falls back to *default*.
+    """
+    topology_model = getattr(host, "topology", host)
+    extra_info = getattr(topology_model, "extra_info", None)
+    if extra_info is not None:
+        path = None
+        if isinstance(extra_info, dict):
+            path = extra_info.get("media_path")
+        else:
+            path = getattr(extra_info, "media_path", None)
+        if path:
+            return path
     return default
 
 
@@ -522,16 +541,20 @@ def dma_port_list(request):
 @pytest.fixture(scope="session")
 def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
     for host in hosts.values():
+        ensure_hugepage_access(host)
+
         # Use per-host MTL path from topology extra_info, fall back to
         # the global mtl_path fixture.
         host_path = get_host_mtl_path(host, default=mtl_path)
         nicctl = Nicctl(host_path, host)
+
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+        ensure_pf_up(host, host.network_interfaces[0].pci_address.lspci)
 
         # Redundant port (interface_index 1) - optional, for redundant mode.
         # In multi-host setups with capture enabled, the 2nd PF may be
@@ -551,6 +574,7 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
                     nicctl.create_vfs(host.network_interfaces[1].pci_address.lspci)
                 vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
                 host.vfs_r = vfs_r
+                ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
                 logger.info(f"Host {host.name}: redundant port VFs: {vfs_r}")
             except Exception as e:
                 logger.warning(
@@ -572,6 +596,18 @@ def setup_interfaces(hosts, test_config, mtl_path):
 def test_time(test_config: dict) -> int:
     test_time = test_config.get("test_time", 30)
     return test_time
+
+
+@pytest.fixture(scope="session")
+def num_sessions(request) -> int | None:
+    """Return the --num_sessions value (fixed session count) or None for binary search."""
+    return request.config.getoption("--num_sessions", default=None)
+
+
+@pytest.fixture(scope="session")
+def sch_quota(request) -> int | None:
+    """Return the --sch_quota value (scheduler session quota override) or None."""
+    return request.config.getoption("--sch_quota", default=None)
 
 
 @pytest.fixture(autouse=True)
@@ -687,25 +723,31 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
 
     ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
     ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
-    media_path = test_config.get("media_path", "/mnt/media")
+    # Global fallback — only used when topology extra_info has no media_path
+    default_media_path = test_config.get("media_path", "/mnt/media")
 
     # simple path where no media file is needed (e.g., generated files)
     if media_file_info is None:
         yield media_file_info, ramdisk_mountpoint
         return
 
-    src_media_file_path = os.path.join(media_path, media_file_info["filename"])
     ramdisk_media_file_path = output_files.register(
         os.path.join(ramdisk_mountpoint, media_file_info["filename"])
     )
 
     for host in hosts.values():
+        # Per-host media_path from topology extra_info, fall back to test_config
+        media_path = get_host_media_path(host, default=default_media_path)
+        src_media_file_path = os.path.join(media_path, media_file_info["filename"])
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
         except ConnectionCalledProcessError as e:
-            logging.log(
-                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            pytest.fail(
+                f"Media file copy failed on {host}: {cmd}\n"
+                f"Verify that '{src_media_file_path}' exists on the host.\n"
+                f"Set 'media_path' in topology extra_info for this host.\n"
+                f"Error: {e}"
             )
 
     yield media_file_info, ramdisk_media_file_path
@@ -742,6 +784,21 @@ def pytest_addoption(parser):
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")
+    parser.addoption(
+        "--num_sessions",
+        type=int,
+        default=None,
+        help="Run a single iteration with exactly this many sessions "
+        "(skip binary search). Example: --num_sessions 24",
+    )
+    parser.addoption(
+        "--sch_quota",
+        type=int,
+        default=None,
+        help="Override the scheduler session quota (sessions per scheduler). "
+        "Lower quota = more cores; higher quota = fewer cores. "
+        "Use 60 for minimal cores. Example: --sch_quota 60",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -938,7 +995,7 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     case_id = request.node.nodeid
     case_folder = os.path.dirname(case_id)
     os.makedirs(os.path.join(log_folder, "latest", case_folder), exist_ok=True)
-    logfile = os.path.join(log_folder, "latest", f"{case_id}.log")
+    logfile = os.path.abspath(os.path.join(log_folder, "latest", f"{case_id}.log"))
     fh = logging.FileHandler(logfile)
     formatter = request.session.config.pluginmanager.get_plugin(
         "logging-plugin"

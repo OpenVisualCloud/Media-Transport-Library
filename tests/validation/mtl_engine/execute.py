@@ -312,7 +312,7 @@ def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     for host in hosts:
         try:
             host.connection.execute_command(
-                f"pkill -9 -f '{pattern}' || true", shell=True, timeout=15
+                f"sudo pkill -9 -f '{pattern}' || true", shell=True, timeout=15
             )
         except Exception:
             pass

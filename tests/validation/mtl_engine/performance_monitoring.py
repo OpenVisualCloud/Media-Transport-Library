@@ -32,8 +32,16 @@ def _monitor_fps_generic(
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     warmup_seconds=FPS_WARMUP_SECONDS,
     cooldown_seconds=FPS_COOLDOWN_SECONDS,
+    max_drop_pct=0.0,
 ):
-    """Parse log lines, filter by warmup/cooldown, return (all_ok, count, details)."""
+    """Parse log lines, filter by warmup/cooldown, return (all_ok, count, details).
+
+    When *max_drop_pct* > 0, a **trimmed mean** is used: the worst
+    ``max_drop_pct`` fraction of per-session FPS samples are discarded
+    before computing the average.  This makes the metric resilient to
+    short transient NIC/system events that briefly drop all sessions
+    to zero without indicating a real capacity problem.
+    """
     fps_re = re.compile(session_pattern)
     start_ts = last_ts = None
     min_required = expected_fps * fps_tolerance_pct
@@ -64,10 +72,20 @@ def _monitor_fps_generic(
             continue
         session_fps.setdefault(sid, []).append(fps_val)
 
+    def _trimmed_mean(hist):
+        """Compute mean of *hist*, dropping the worst max_drop_pct fraction."""
+        if not hist:
+            return 0.0
+        if max_drop_pct <= 0 or len(hist) <= 2:
+            return sum(hist) / len(hist)
+        n_drop = max(1, int(len(hist) * max_drop_pct))
+        trimmed = sorted(hist)[n_drop:]  # drop lowest n_drop values
+        return sum(trimmed) / len(trimmed) if trimmed else 0.0
+
     ok_sessions = {
         sid
         for sid, hist in session_fps.items()
-        if hist and sum(hist) / len(hist) >= min_required
+        if hist and _trimmed_mean(hist) >= min_required
     }
     details = {
         "successful_count": len(ok_sessions),
@@ -89,6 +107,7 @@ def monitor_tx_fps(
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     warmup_seconds=FPS_WARMUP_SECONDS,
     cooldown_seconds=FPS_COOLDOWN_SECONDS,
+    max_drop_pct=0.0,
 ):
     """Monitor TX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -99,6 +118,7 @@ def monitor_tx_fps(
         fps_tolerance_pct,
         warmup_seconds,
         cooldown_seconds,
+        max_drop_pct,
     )
 
 
@@ -109,6 +129,7 @@ def monitor_rx_fps(
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     warmup_seconds=FPS_WARMUP_SECONDS,
     cooldown_seconds=FPS_COOLDOWN_SECONDS,
+    max_drop_pct=0.0,
 ):
     """Monitor RX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -119,6 +140,7 @@ def monitor_rx_fps(
         fps_tolerance_pct,
         warmup_seconds,
         cooldown_seconds,
+        max_drop_pct,
     )
 
 
