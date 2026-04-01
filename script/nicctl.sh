@@ -96,6 +96,11 @@ create_vf() {
 			if dpdk-devbind.py -b vfio-pci "$vfport"; then
 				echo "Bind $vfport($vfif) to vfio-pci success"
 			fi
+			# Ensure VFIO group device is accessible by non-root users
+			iommu_grp=$(readlink /sys/bus/pci/devices/"$vfport"/iommu_group 2>/dev/null | awk -F/ '{print $NF}')
+			if [ -n "$iommu_grp" ] && [ -c "/dev/vfio/$iommu_grp" ]; then
+				chmod 666 "/dev/vfio/$iommu_grp"
+			fi
 		else
 			echo "PMD uses bifurcated driver, No need to bind the $vfport($vfif) to vfio-pci"
 		fi

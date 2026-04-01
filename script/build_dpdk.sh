@@ -86,7 +86,7 @@ if [ "$sourced" -eq 0 ]; then
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
 	fi
-	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"}
+	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dmax_lcores=${DPDK_MAX_LCORES:-128}
 	ninja -C build
 	(
 		cd build || exit 1
