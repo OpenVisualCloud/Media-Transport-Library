@@ -76,7 +76,11 @@ void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);
 
 static inline bool rx_video_session_is_cpu_busy(struct st_rx_video_session_impl* s) {
-  if (s->dma_dev && (s->dma_busy_score > 90)) return true;
+  /* DMA busy migration disabled: with 8 sessions sharing 1 DMA device, occasional DSA
+   * completion latency at frame boundaries is normal (~1% of frames). The +40/6s admin
+   * tick score growth causes false-positive migrations that cascade and destabilize
+   * sessions (double migration → isolated sessions with persistent 56-58 fps).
+   * Keep imiss_busy and cpu_busy triggers which detect genuine overload. */
   if (s->imiss_busy_score > 95.0) return true;
   if (s->cpu_busy_score > 95.0) return true;
 
