@@ -1,0 +1,20 @@
+name: perf-pytest
+on:
+  workflow_dispatch:
+    inputs:
+      nic:
+        description: NIC type
+        required: true
+        type: choice
+        options:
+          - e810
+          - e830
+permissions:
+  contents: read
+jobs:
+  placeholder:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Placeholder
+        run: echo "perf-pytest workflow — not yet implemented (NIC=${{ inputs.nic }})"
