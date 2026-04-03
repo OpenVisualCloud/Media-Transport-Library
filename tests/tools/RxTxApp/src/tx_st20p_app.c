@@ -93,8 +93,9 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       frame->user_meta_size = sizeof(shas);
     }
 
-    if (s->user_time) {
-      bool restart_base_time = !s->local_tai_base_time;
+    if (s->user_time && s->user_time->base_tai_time) {
+      bool restart_base_time = (s->local_tai_base_time != s->user_time->base_tai_time);
+      if (restart_base_time) s->frame_num = 0;
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
                                           restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;

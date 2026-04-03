@@ -137,8 +137,9 @@ static void* app_tx_st40p_frame_thread(void* arg) {
 
     app_tx_st40p_fill_payload(s, frame_info);
 
-    if (s->user_time && s->frame_time > 0) {
-      bool restart_base_time = !s->local_tai_base_time;
+    if (s->user_time && s->frame_time > 0 && s->user_time->base_tai_time) {
+      bool restart_base_time = (s->local_tai_base_time != s->user_time->base_tai_time);
+      if (restart_base_time) s->frame_num = 0;
       frame_info->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num,
                                                s->frame_time, restart_base_time);
       frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;

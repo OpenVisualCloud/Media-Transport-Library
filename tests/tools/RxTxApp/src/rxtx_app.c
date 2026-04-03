@@ -478,6 +478,10 @@ int main(int argc, char** argv) {
       st_app_ctx_free(ctx);
       return -EIO;
     }
+    /* Initialize base_tai_time so frame threads start providing user timestamps.
+     * Before this, base_tai_time is 0 and frame threads skip user timestamps
+     * to avoid queuing stale-timestamped frames before the scheduler runs. */
+    ctx->user_time.base_tai_time = app_ptp_from_tai_time(ctx);
   }
 
   if (ctx->json_ctx->user_time_offset) {
@@ -617,6 +621,7 @@ int main(int argc, char** argv) {
       st_app_ctx_free(ctx);
       return -EIO;
     }
+    ctx->user_time.base_tai_time = app_ptp_from_tai_time(ctx);
   }
 
   test_time_s = ctx->test_time_s;

@@ -215,14 +215,6 @@ static int tx_fastmetadata_session_init_pacing(
   return 0;
 }
 
-static int tx_fastmetadata_session_init_pacing_epoch(
-    struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s) {
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
-  return 0;
-}
-
 static inline double tx_fastmetadata_pacing_time(
     struct st_tx_fastmetadata_session_pacing* pacing, uint64_t epochs) {
   return epochs * pacing->frame_time;
@@ -264,7 +256,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  uint64_t next_epochs = pacing->cur_epochs + 1;
+  uint64_t next_epochs;
   uint64_t epochs;
   double to_epoch;
   bool interlaced = s->ops.interlaced;
@@ -280,6 +272,13 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   } else {
     epochs = ptp_time / frame_time;
   }
+
+  /*
+   * cur_epochs is 0 before the first frame (zero-initialized struct).
+   * Real PTP-derived epochs are ~10^11, so 0 is a safe "uninitialized" sentinel.
+   * On first call, start from ptp-derived epoch to avoid a false epoch_drop.
+   */
+  next_epochs = likely(pacing->cur_epochs) ? pacing->cur_epochs + 1 : epochs;
 
   dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
       pacing->cur_epochs);
@@ -306,7 +305,8 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  /* skip drop accounting when user controls pacing — epoch jumps are intentional */
+  if (epochs > next_epochs && !required_tai) s->stat_epoch_drop += (epochs - next_epochs);
   if (epochs < next_epochs) {
     ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
                         (next_epochs - epochs));
@@ -352,22 +352,6 @@ static int tx_fastmetadata_session_init(struct st_tx_fastmetadata_sessions_mgr* 
                                         int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
-  return 0;
-}
-
-static int tx_fastmetadata_sessions_tasklet_start(void* priv) {
-  struct st_tx_fastmetadata_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
-  struct st_tx_fastmetadata_session_impl* s;
-
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_fastmetadata_session_get(mgr, sidx);
-    if (!s) continue;
-
-    tx_fastmetadata_session_init_pacing_epoch(impl, s);
-    tx_fastmetadata_session_put(mgr, sidx);
-  }
-
   return 0;
 }
 
@@ -1678,7 +1662,6 @@ static int tx_fastmetadata_sessions_mgr_init(
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
   ops.name = "tx_fastmetadata_sessions_mgr";
-  ops.start = tx_fastmetadata_sessions_tasklet_start;
   ops.handler = tx_fastmetadata_sessions_tasklet_handler;
 
   mgr->tasklet = mtl_sch_register_tasklet(sch, &ops);

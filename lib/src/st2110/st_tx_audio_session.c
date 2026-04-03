@@ -219,14 +219,6 @@ static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl* s) {
   return 0;
 }
 
-static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
-                                              struct st_tx_audio_session_impl* s) {
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  struct st_tx_audio_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->trs;
-  return 0;
-}
-
 static inline double tx_audio_pacing_time(struct st_tx_audio_session_pacing* pacing,
                                           uint64_t epochs) {
   return epochs * pacing->trs;
@@ -268,7 +260,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   long double pkt_time = pacing->trs;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  uint64_t next_epochs = pacing->cur_epochs + 1;
+  uint64_t next_epochs;
   uint64_t epochs;
   double to_epoch;
   uint64_t ptp_epochs;
@@ -285,6 +277,13 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   } else {
     epochs = ptp_time / pkt_time;
   }
+
+  /*
+   * cur_epochs is 0 before the first frame (zero-initialized struct).
+   * Real PTP-derived epochs are ~10^11, so 0 is a safe "uninitialized" sentinel.
+   * On first call, start from ptp-derived epoch to avoid a false epoch_drop.
+   */
+  next_epochs = likely(pacing->cur_epochs) ? pacing->cur_epochs + 1 : epochs;
 
   dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
       pacing->cur_epochs);
@@ -325,8 +324,11 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   if (epochs > next_epochs) {
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (epochs - next_epochs));
+    /* skip drop accounting when user controls pacing — epoch jumps are intentional */
+    if (!required_tai) {
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                          (epochs - next_epochs));
+    }
   }
 
   if (epochs < next_epochs) {
@@ -392,22 +394,6 @@ static int tx_audio_session_init(struct st_tx_audio_sessions_mgr* mgr,
                                  struct st_tx_audio_session_impl* s, int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
-  return 0;
-}
-
-static int tx_audio_sessions_tasklet_start(void* priv) {
-  struct st_tx_audio_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
-  struct st_tx_audio_session_impl* s;
-
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_audio_session_get(mgr, sidx);
-    if (!s) continue;
-
-    tx_audio_session_init_pacing_epoch(impl, s);
-    tx_audio_session_put(mgr, sidx);
-  }
-
   return 0;
 }
 
@@ -2433,7 +2419,6 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl,
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
   ops.name = "tx_audio_sessions";
-  ops.start = tx_audio_sessions_tasklet_start;
   ops.handler = tx_audio_sessions_tasklet;
 
   mgr->tasklet = mtl_sch_register_tasklet(sch, &ops);
