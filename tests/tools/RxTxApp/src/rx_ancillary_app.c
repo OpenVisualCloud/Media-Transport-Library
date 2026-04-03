@@ -197,9 +197,9 @@ static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           app_rx_anc_fps_check(framerate) ? "OK" : "FAILED", framerate,
-           s->stat_frame_total_received);
+  notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+        app_rx_anc_fps_check(framerate) ? "OK" : "FAILED", framerate,
+        s->stat_frame_total_received);
   return 0;
 }
 

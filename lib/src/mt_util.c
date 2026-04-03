@@ -394,9 +394,9 @@ void mt_eth_link_dump(uint16_t port_id) {
     return;
   }
 
-  critical("%s(%d), link_speed %dg link_status %d link_duplex %d link_autoneg %d\n",
-           __func__, port_id, eth_link.link_speed / 1000, eth_link.link_status,
-           eth_link.link_duplex, eth_link.link_autoneg);
+  notice("%s(%d), link_speed %dg link_status %d link_duplex %d link_autoneg %d\n",
+         __func__, port_id, eth_link.link_speed / 1000, eth_link.link_status,
+         eth_link.link_duplex, eth_link.link_autoneg);
 }
 
 void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr) {
