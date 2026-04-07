@@ -19,6 +19,10 @@ on:
         required: true
         type: string
         default: tests
+
+permissions:
+  contents: read
+
 jobs:
   run-pytest:
     runs-on: "${{ inputs.nic }}"
