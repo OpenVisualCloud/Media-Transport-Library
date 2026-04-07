@@ -3,4 +3,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: "weekly"
+    commit-message:
+      # Prefix all commit messages with "Ci: "
+      prefix: "Ci: "
