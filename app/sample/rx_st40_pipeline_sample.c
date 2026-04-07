@@ -16,19 +16,19 @@ struct rx_st40p_sample_ctx {
 
   int fb_recv;
 
-  int dump_fd;
+  FILE* dump_fp;
 };
 
 static void rx_st40p_close_dump(struct rx_st40p_sample_ctx* s) {
-  if (s->dump_fd >= 0) {
-    close(s->dump_fd);
-    s->dump_fd = -1;
+  if (s->dump_fp) {
+    fclose(s->dump_fp);
+    s->dump_fp = NULL;
   }
 }
 
 static int rx_st40p_open_dump(struct rx_st40p_sample_ctx* s, const char* file) {
-  s->dump_fd = st_open_mode(file, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
-  if (s->dump_fd < 0) {
+  s->dump_fp = fopen(file, "w");
+  if (!s->dump_fp) {
     err("%s(%d), open %s fail\n", __func__, s->idx, file);
     return -EIO;
   }
@@ -37,27 +37,27 @@ static int rx_st40p_open_dump(struct rx_st40p_sample_ctx* s, const char* file) {
 
 static void rx_st40p_dump_frame(struct rx_st40p_sample_ctx* s,
                                 const struct st40_frame_info* frame_info) {
-  if (s->dump_fd < 0) return;
+  if (!s->dump_fp) return;
 
-  dprintf(s->dump_fd, "frame %d meta_num %u udw_bytes %u\n", s->idx, frame_info->meta_num,
+  fprintf(s->dump_fp, "frame %d meta_num %u udw_bytes %u\n", s->idx, frame_info->meta_num,
           frame_info->udw_buffer_fill);
   for (uint32_t i = 0; i < frame_info->meta_num; i++) {
     const struct st40_meta* meta = &frame_info->meta[i];
-    dprintf(
-        s->dump_fd,
+    fprintf(
+        s->dump_fp,
         "  meta[%u]: line=%u offset=%u stream=%u did=0x%02x sdid=0x%02x udw_size=%u\n", i,
         meta->line_number, meta->hori_offset, meta->stream_num, meta->did, meta->sdid,
         meta->udw_size);
   }
   if (frame_info->udw_buffer_fill) {
-    dprintf(s->dump_fd, "  udw:");
+    fprintf(s->dump_fp, "  udw:");
     for (uint32_t i = 0; i < frame_info->udw_buffer_fill; i++) {
-      if ((i % 32) == 0) dprintf(s->dump_fd, "\n    ");
-      dprintf(s->dump_fd, "%02x ", frame_info->udw_buff_addr[i]);
+      if ((i % 32) == 0) fprintf(s->dump_fp, "\n    ");
+      fprintf(s->dump_fp, "%02x ", frame_info->udw_buff_addr[i]);
     }
-    dprintf(s->dump_fd, "\n");
+    fprintf(s->dump_fp, "\n");
   }
-  dprintf(s->dump_fd, "\n");
+  fprintf(s->dump_fp, "\n");
 }
 
 static void rx_st40p_consume_frame(struct rx_st40p_sample_ctx* s,
@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     }
     memset(app[i], 0, sizeof(*app[i]));
     app[i]->idx = i;
-    app[i]->dump_fd = -1;
+    app[i]->dump_fp = NULL;
 
     struct st40p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
