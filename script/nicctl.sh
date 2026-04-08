@@ -11,9 +11,9 @@ if [ $# -lt 2 ]; then
 	echo "Commands:"
 	echo "   bind_pmd                 Bind driver to DPDK PMD driver"
 	echo "   bind_kernel              Bind driver to kernel driver"
-	echo "   create_vf                Create VFs and bind to VFIO"
+	echo "   create_vf                Create VFs, bind to VFIO, and bring PF UP"
 	echo "   create_kvf               Create VFs and bind to kernel driver"
-	echo "   create_tvf               Create trusted VFs and bind to VFIO"
+	echo "   create_tvf               Create trusted VFs, bind to VFIO, and bring PF UP"
 	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
 	echo "   disable_vf               Disable VF"
 	echo "   list all                 List all NIC devices and the brief"
@@ -256,6 +256,10 @@ if [ "$cmd" == "create_vf" ]; then
 	modprobe vfio-pci
 	disable_vf
 	create_vf $numvfs
+	# Ensure PF is UP so the VF admin queue works for DPDK init
+	if [ -n "$inf" ]; then
+		ip link set "$inf" up
+	fi
 	echo "Create $numvfs VFs on PF bdf: $bdf $inf succ"
 fi
 
@@ -269,6 +273,10 @@ if [ "$cmd" == "create_tvf" ]; then
 	modprobe vfio-pci
 	disable_vf
 	create_vf $numvfs trusted
+	# Ensure PF is UP so the VF admin queue works for DPDK init
+	if [ -n "$inf" ]; then
+		ip link set "$inf" up
+	fi
 	echo "Create trusted $numvfs VFs on PF bdf: $bdf $inf succ"
 fi
 

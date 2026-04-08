@@ -541,6 +541,10 @@ int mt_dma_init(struct mtl_main_impl* impl) {
   RTE_DMA_FOREACH_DEV(dev_id) {
     rte_dma_info_get(dev_id, &dev_info);
     if (!mt_is_valid_socket(impl, dev_info.numa_node)) continue;
+    if (idx >= MTL_DMA_DEV_MAX) {
+      warn("%s, max DMA dev %d reached, skip remaining\n", __func__, MTL_DMA_DEV_MAX);
+      break;
+    }
     dev = &mgr->devs[idx];
     dev->dev_id = dev_id;
     dev->soc_id = dev_info.numa_node;
