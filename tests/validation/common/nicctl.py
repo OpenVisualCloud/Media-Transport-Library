@@ -318,39 +318,106 @@ class InterfaceSetup:
                 nicctl.bind_kernel(interface)
 
 
+def _cleanup_hugepages(host, host_name: str) -> None:
+    """Remove stale DPDK hugepage mappings left after SIGKILL."""
+    try:
+        result = host.connection.execute_command(
+            "ls /dev/hugepages/rtemap_* 2>/dev/null | wc -l",
+            shell=True,
+            timeout=10,
+        )
+        count = int((result.stdout or "0").strip())
+        if count > 0:
+            host.connection.execute_command(
+                "sudo rm -f /dev/hugepages/rtemap_*",
+                shell=True,
+                timeout=15,
+            )
+            logger.info(f"Cleaned {count} stale hugepage files on {host_name}")
+    except Exception as e:
+        logger.warning(f"Hugepage cleanup on {host_name}: {e}")
+
+    # Clean stale System V shared memory segments left by crashed MTL processes
+    try:
+        result = host.connection.execute_command(
+            "ipcs -m 2>/dev/null | awk 'NR>3 && $6==0 {print $2}'",
+            shell=True,
+            timeout=10,
+        )
+        stale_ids = (result.stdout or "").strip().split()
+        if stale_ids:
+            for shm_id in stale_ids:
+                host.connection.execute_command(
+                    f"sudo ipcrm -m {shm_id}",
+                    shell=True,
+                    timeout=5,
+                )
+            logger.info(
+                f"Cleaned {len(stale_ids)} stale SysV SHM segments on {host_name}"
+            )
+    except Exception as e:
+        logger.warning(f"SysV SHM cleanup on {host_name}: {e}")
+
+
+def _flr_rebind_vf(host, vf: str, host_name: str) -> bool:
+    """Unbind, perform FLR, and rebind a single VF to vfio-pci.
+
+    Returns True if the VF ended up bound to vfio-pci.
+    """
+    # Unbind
+    host.connection.execute_command(
+        f"sudo sh -c \"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind\" "
+        f"2>/dev/null || true",
+        shell=True,
+        timeout=15,
+    )
+    time.sleep(0.5)
+
+    # Function Level Reset — clears PF queue state
+    host.connection.execute_command(
+        f'sudo sh -c "echo 1 > /sys/bus/pci/devices/{vf}/reset" '
+        f"2>/dev/null || true",
+        shell=True,
+        timeout=15,
+    )
+    time.sleep(1)
+
+    # Rebind to vfio-pci
+    host.connection.execute_command(
+        f"sudo dpdk-devbind.py -b vfio-pci {vf}",
+        shell=True,
+        timeout=30,
+    )
+    result = host.connection.execute_command(
+        f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
+        shell=True,
+        timeout=15,
+    )
+    status = (result.stdout or "").strip()
+    bound = "vfio-pci" in status
+    if bound:
+        logger.debug(f"FLR + rebind VF {vf} on {host_name} — vfio-pci OK")
+    else:
+        logger.warning(f"VF {vf} on {host_name} NOT bound after FLR: {status}")
+    return bound
+
+
 def reset_vfio_bindings(host, host_name: str, vf_list: list) -> None:
-    """Unbind/rebind VFs to force VFIO group release after a DPDK crash."""
+    """Unbind/rebind VFs with FLR to fully reset after a DPDK crash.
+
+    Also kills stale processes and cleans up hugepage files.
+    """
     from mtl_engine.execute import kill_stale_processes
 
     kill_stale_processes(host)
     time.sleep(2)
+    _cleanup_hugepages(host, host_name)
 
     for vf in vf_list:
         if not vf:
             continue
         try:
-            host.connection.execute_command(
-                f"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind "
-                f"2>/dev/null || true",
-                shell=True,
-                timeout=15,
-            )
-            time.sleep(1)
-            host.connection.execute_command(
-                f"dpdk-devbind.py -b vfio-pci {vf}",
-                shell=True,
-                timeout=30,
-            )
-            result = host.connection.execute_command(
-                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
-                shell=True,
-                timeout=15,
-            )
-            status = (result.stdout or "").strip()
-            if "vfio-pci" in status:
-                logger.debug(f"Reset VF {vf} on {host_name} — vfio-pci ✓")
-            else:
-                logger.warning(f"VF {vf} on {host_name} NOT bound: {status}")
+            _flr_rebind_vf(host, vf, host_name)
         except Exception as e:
             logger.warning(f"Could not reset VF {vf} on {host_name}: {e}")
 
@@ -366,41 +433,23 @@ def ensure_vfio_bound(host, host_name: str, vf_list: list) -> bool:
             continue
         try:
             result = host.connection.execute_command(
-                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
+                f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
                 shell=True,
                 timeout=15,
             )
             status = (result.stdout or "").strip()
             if "drv=vfio-pci" in status:
-                continue  # Already properly bound
+                continue
 
             logger.warning(
                 f"VF {vf} on {host_name} not bound to vfio-pci "
-                f"({status or 'no status'}), rebinding…"
+                f"({status or 'no status'}), rebinding with FLR"
             )
             any_rebound = True
-            host.connection.execute_command(
-                f"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind "
-                f"2>/dev/null || true",
-                shell=True,
-                timeout=15,
-            )
-            time.sleep(1)
-            host.connection.execute_command(
-                f"dpdk-devbind.py -b vfio-pci {vf}",
-                shell=True,
-                timeout=30,
-            )
-            result = host.connection.execute_command(
-                f"dpdk-devbind.py -s | grep '{vf}' | head -1",
-                shell=True,
-                timeout=15,
-            )
-            new_status = (result.stdout or "").strip()
-            if "vfio-pci" in new_status:
-                logger.info(f"Rebound VF {vf} on {host_name} — vfio-pci ✓")
+            if _flr_rebind_vf(host, vf, host_name):
+                logger.info(f"Rebound VF {vf} on {host_name} — vfio-pci OK")
             else:
-                logger.error(f"Failed to rebind VF {vf} on {host_name}: {new_status}")
+                logger.error(f"Failed to rebind VF {vf} on {host_name}")
         except Exception as e:
             logger.warning(f"Could not check VF {vf} on {host_name}: {e}")
     return any_rebound

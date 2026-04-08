@@ -3,11 +3,12 @@
 
 """VF dual-host performance tests — session capacity sweep via binary search."""
 
+from __future__ import annotations
+
 import json
 import logging
 import time
 import traceback
-from typing import List, Optional, Tuple
 
 import pytest
 from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
@@ -15,7 +16,7 @@ from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine import ip_pools
 from mtl_engine.const import RXTXAPP_PATH
-from mtl_engine.dma import setup_host_dma
+from mtl_engine.dma import setup_host_dma_all
 from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
@@ -36,17 +37,43 @@ from mtl_engine.rxtxapp import RxTxApp
 logger = logging.getLogger(__name__)
 
 WARMUP_SECONDS = 60  # Warmup passed to FPS monitor
-COOLDOWN_SECONDS = 15  # Cooldown passed to FPS monitor
+COOLDOWN_SECONDS = 10  # Cooldown passed to FPS monitor
+MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
+MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
+
+# ── Scheduler session quotas ──
+# Controls how many sessions the library places on each scheduler (lcore).
+# Higher quota = fewer cores (denser packing), but risks overloading a core.
+# Values are derived from single-core capacity tests with a safety margin.
 SCH_SESSION_QUOTA_SINGLE_CORE = 60
 
+# Phase 1 binary search (multi-core): None = fall through to per-mode quota.
+# CLI --sch_quota overrides both phases.
+SCH_SESSION_QUOTA_PHASE1_MC = None
+
+# Multi-core no-DMA: RX ~21/core max, TX ~28/core max (TX has no memcpy).
+SCH_SESSION_QUOTA_MULTI_CORE = 16  # RX no-DMA (~76% of SC max)
+SCH_SESSION_QUOTA_MULTI_CORE_TX = 24  # TX no-DMA
+
+# Redundant mode creates 2 internal sessions per logical session.
+SCH_SESSION_QUOTA_MULTI_CORE_TX_REDUNDANT = 36  # TX redundant
+SCH_SESSION_QUOTA_MULTI_CORE_RX_REDUNDANT = 21  # RX redundant
+
+# DMA offloads memcpy but scheduler overhead remains significant.
+# With quota=32 and 36 sessions, one scheduler hit 121% CPU busy and
+# dropped frames mid-run.  quota=18 gives 2 balanced schedulers at ~68%
+# CPU each (36 sessions), leaving enough headroom for transients.
+SCH_SESSION_QUOTA_DMA = 18  # RX DMA
+SCH_SESSION_QUOTA_DMA_RX_REDUNDANT = 18  # RX DMA redundant
+
+
 MAX_SESSIONS = {
-    ("tx", False): 48,
-    ("tx", True): 36,
-    ("rx", False): 48,
-    ("rx", True): 36,
+    ("tx", False): 64,
+    ("tx", True): 64,
+    ("rx", False): 64,
+    ("rx", True): 64,
 }
 
-START_SESSIONS = 20
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
 
@@ -83,22 +110,87 @@ def _apply_side_kwargs(
     rx_vf_r,
     redundant,
     redundant_kwargs,
-    add_pacing=False,
 ):
     """Set TX or RX-specific kwargs (NIC port, file, redundancy)."""
     if side == "tx":
         kwargs["input_file"] = media_path
-        if add_pacing:
-            kwargs["pacing_way"] = "auto"
         vf, vf_r = tx_vf, tx_vf_r
     else:
-        kwargs["output_file"] = "/dev/null"
-        kwargs["measure_latency"] = True
         vf, vf_r = rx_vf, rx_vf_r
     if redundant and vf_r:
         kwargs.update(nic_port=vf, nic_port_r=vf_r, **redundant_kwargs)
     else:
         kwargs["nic_port"] = vf
+
+
+def _get_isolcpus(host) -> str | None:
+    """Return the isolcpus= range from the remote host's kernel cmdline.
+
+    Parses /proc/cmdline on *host* and returns the value of the isolcpus=
+    boot parameter (e.g. "4-20,34-50,132-148,162-178"), or None if the
+    host was not booted with isolcpus.
+    """
+    try:
+        result = host.connection.execute_command("cat /proc/cmdline", shell=True)
+        cmdline = (result.stdout or "").strip()
+        for token in cmdline.split():
+            if token.startswith("isolcpus="):
+                value = token.split("=", 1)[1]
+                logger.info(f"Host {host.name}: isolcpus={value}")
+                return value
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not read isolcpus: {e}")
+    return None
+
+
+def _select_mc_quota(
+    is_tx: bool,
+    use_dma: bool,
+    redundant: bool,
+) -> int:
+    """Return the multi-core scheduler quota for the given mode.
+
+    Centralises the per-mode quota selection used both in ``_run_iteration``
+    (for the SUT scheduler) and in the verification phase of
+    ``_run_session_sweep``.
+    """
+    if use_dma and redundant:
+        return SCH_SESSION_QUOTA_DMA_RX_REDUNDANT
+    if use_dma:
+        return SCH_SESSION_QUOTA_DMA
+    if redundant and is_tx:
+        return SCH_SESSION_QUOTA_MULTI_CORE_TX_REDUNDANT
+    if redundant and not is_tx:
+        return SCH_SESSION_QUOTA_MULTI_CORE_RX_REDUNDANT
+    if is_tx:
+        return SCH_SESSION_QUOTA_MULTI_CORE_TX
+    return SCH_SESSION_QUOTA_MULTI_CORE
+
+
+def _log_iteration_table(
+    iteration_results: list[dict],
+    last_config: dict | None,
+    *,
+    show_quota: bool = False,
+) -> None:
+    """Log the per-iteration result table and (optionally) the RxTxApp config.
+
+    Args:
+        iteration_results: List of dicts with keys num_sessions, passed,
+            cores_used, detail, and optionally quota.
+        last_config: Latest RxTxApp JSON config dict, or None.
+        show_quota: If True, append the quota value to each result line.
+    """
+    for it in iteration_results:
+        ok = "✓" if it["passed"] else "✗"
+        c = f"  cores={it['cores_used']}" if it.get("cores_used") else ""
+        q = f"  q={it['quota']}" if show_quota and it.get("quota") is not None else ""
+        logger.info(f"  {it['num_sessions']:>3} sessions  {ok}{c}{q}  {it['detail']}")
+    if last_config:
+        logger.info("RXTXAPP_CONFIG_BEGIN")
+        for cfg_line in json.dumps(last_config, indent=2).splitlines():
+            logger.info(cfg_line)
+        logger.info("RXTXAPP_CONFIG_END")
 
 
 def _run_iteration(
@@ -121,10 +213,17 @@ def _run_iteration(
     dma_device: str | None,
     dma_label: str,
     test_time: int,
-) -> Tuple[bool, int, str, Optional[dict]]:
+    sch_session_quota: int | None = None,
+) -> tuple[bool, int, str, dict | None, int]:
     """Run one iteration: start companion, run measured app, validate FPS.
 
-    Returns (passed, successful_count, detail_string, config_dict).
+    Args:
+        sch_session_quota: If set, overrides the default SUT scheduler
+            session quota for this iteration (used by core-minimization
+            phase to test different quotas).
+
+    Returns:
+        (passed, successful_count, detail_string, config_dict, cores_used).
     """
     is_tx = direction == "tx"
     measured_host = tx_host if is_tx else rx_host
@@ -150,9 +249,46 @@ def _run_iteration(
         "source_ip": ip_pools.tx[0],
         "destination_ip": ip_pools.rx[0],
     }
+
+    # ── SUT scheduler settings (applied only to measured app) ──
+    sut_extra_kwargs: dict = {}
+    # Disable runtime session migration for all modes.  The admin thread
+    # monitors scheduler CPU-busy% and migrates sessions to new schedulers,
+    # which spins up extra cores beyond what initial placement requires.
+    # With explicit quotas the initial round-robin distribution is already
+    # optimal, so migration only wastes cores.
+    sut_extra_kwargs["disable_migrate"] = True
+
     if single_core:
-        base_kwargs["sch_session_quota"] = SCH_SESSION_QUOTA_SINGLE_CORE
-        base_kwargs["disable_migrate"] = True
+        sut_extra_kwargs["sch_session_quota"] = SCH_SESSION_QUOTA_SINGLE_CORE
+    else:
+        # Multi-core: dedicate a lcore to CNI/PTP system tasks so sch0
+        # data sessions are not starved by admin-thread tasklets.
+        sut_extra_kwargs["dedicated_sys_lcore"] = True
+        # Override the library's conservative defaults with per-mode quotas
+        # derived from single-core capacity tests.
+        if sch_session_quota is not None:
+            sut_extra_kwargs["sch_session_quota"] = sch_session_quota
+        else:
+            sut_extra_kwargs["sch_session_quota"] = _select_mc_quota(
+                is_tx, use_dma, redundant
+            )
+
+    # Pin DPDK lcores to isolated CPUs (shields from OS timer ticks/RCU).
+    isolcpus = _get_isolcpus(measured_host)
+    if isolcpus:
+        sut_extra_kwargs["lcores"] = isolcpus
+
+    # ── Companion scheduler settings ──
+    # The companion just needs to keep up — it is not the measured side.
+    companion_dir = "rx" if is_tx else "tx"
+    companion_extra_kwargs: dict = {}
+    companion_extra_kwargs["sch_session_quota"] = SCH_SESSION_QUOTA_MULTI_CORE
+    companion_extra_kwargs["dedicated_sys_lcore"] = True
+
+    companion_isolcpus = _get_isolcpus(companion_host)
+    if companion_isolcpus:
+        companion_extra_kwargs["lcores"] = companion_isolcpus
 
     redundant_kwargs = {}
     if redundant:
@@ -166,12 +302,15 @@ def _run_iteration(
 
     # ── Companion app ──
     companion_app = RxTxApp(RXTXAPP_PATH)
-    companion_dir = "rx" if is_tx else "tx"
     companion_kwargs = {
         **base_kwargs,
+        **companion_extra_kwargs,
         "direction": companion_dir,
         "test_time": test_time + 10,  # companion outlives the measured app
     }
+    # TX companion doesn't need many RX queues — free VF queue capacity.
+    if companion_dir == "tx" and "rx_queues_cnt" in companion_kwargs:
+        del companion_kwargs["rx_queues_cnt"]
 
     if is_tx:
         # Companion is RX
@@ -198,7 +337,6 @@ def _run_iteration(
             rx_vf_r,
             redundant,
             redundant_kwargs,
-            add_pacing=True,
         )
 
     companion_app.create_command(**companion_kwargs)
@@ -248,9 +386,12 @@ def _run_iteration(
         companion_alive = False
 
     if companion_alive:
-        # Double-check: look for fatal errors in the first lines of the log
+        # Double-check: look for fatal errors anywhere in the companion log.
+        # MTL init can produce hundreds of lines before the actual error
+        # (e.g. missing media file), so scanning only the first N lines
+        # is not sufficient.
         log_snippet = read_remote_log(companion_host, companion_log)
-        for line in log_snippet[:30]:
+        for line in log_snippet:
             if "open fail" in line or "open_source fail" in line:
                 companion_alive = False
                 break
@@ -259,13 +400,14 @@ def _run_iteration(
         log_snippet = read_remote_log(companion_host, companion_log)
         tail = "\n".join(log_snippet[-20:]) if log_snippet else "(empty)"
         companion_app.stop_process()
-        return False, 0, f"companion {companion_dir} exited early:\n{tail}", None
+        return False, 0, f"companion {companion_dir} exited early:\n{tail}", None, 0
 
     try:
         # ── Build measured app ──
         measured_app = RxTxApp(RXTXAPP_PATH)
         measured_kwargs = {
             **base_kwargs,
+            **sut_extra_kwargs,  # SC or MC scheduler settings for SUT only
             "direction": direction,
             "test_time": test_time,
         }
@@ -295,7 +437,8 @@ def _run_iteration(
                 redundant_kwargs,
             )
 
-        if use_dma and dma_device:
+        # DMA offloads memory copies on the RX side only.
+        if use_dma and dma_device and not is_tx:
             measured_kwargs["dma_dev"] = dma_device
 
         measured_app.create_command(**measured_kwargs)
@@ -317,7 +460,7 @@ def _run_iteration(
             logger.error(f"Measured process failed: {e}")
             kill_stale_processes(tx_host, rx_host)
             cpu_monitor.stop()
-            return False, 0, f"process timeout: {e}", None
+            return False, 0, f"process timeout: {e}", None, 0
 
         cores_info = cpu_monitor.stop()
 
@@ -330,7 +473,7 @@ def _run_iteration(
         get_companion_log_summary(companion_host, companion_log, max_lines=50)
 
         if result.return_code != 0:
-            return False, 0, f"exit code {result.return_code}", None
+            return False, 0, f"exit code {result.return_code}", None, 0
 
         # ── Analyze FPS ──
         stdout_lines = result.stdout_text.splitlines() if result.stdout_text else []
@@ -345,6 +488,7 @@ def _run_iteration(
             num_sessions,
             warmup_seconds=WARMUP_SECONDS,
             cooldown_seconds=COOLDOWN_SECONDS,
+            max_drop_pct=MAX_DROP_PCT,
         )
 
         # Frame counts & throughput (TX/RX line assignment)
@@ -392,7 +536,8 @@ def _run_iteration(
 
         detail = f"{count}/{num_sessions} sessions at {fps} fps"
         app_config = measured_app.config if hasattr(measured_app, "config") else None
-        return success, count, detail, app_config
+        cores_used = cores_info.get("cores_used", 0) if cores_info else 0
+        return success, count, detail, app_config, cores_used
 
     finally:
         companion_app.stop_process()
@@ -409,8 +554,20 @@ def _run_session_sweep(
     mtl_path: str,
     test_time: int,
     test_config: dict = None,
+    num_sessions: int | None = None,
+    sch_quota: int | None = None,
 ) -> None:
-    """Auto-sweep session count using binary search to find max passing."""
+    """Auto-sweep session count using binary search to find max passing.
+
+    If *num_sessions* is set (via ``--num_sessions`` CLI option), run a
+    single iteration with exactly that many sessions and report pass/fail
+    instead of performing a binary search.
+
+    If *sch_quota* is set (via ``--sch_quota`` CLI option), override the
+    scheduler session quota for all iterations.  Higher quota = fewer
+    cores (sessions packed into fewer schedulers).  Use 60 for minimal
+    cores.
+    """
     media_config, media_file_path = media_file
     resolution = f"{media_config['height']}p"
 
@@ -425,21 +582,26 @@ def _run_session_sweep(
             if not hasattr(host, "vfs_r") or len(host.vfs_r) < 1:
                 pytest.skip(f"Redundant requires VFs on {label} port 1 ({host.name})")
 
+    is_tx = direction == "tx"
+
+    # DMA only offloads RX memcpy; TX+DMA is identical to TX no-DMA.
+    if use_dma and is_tx:
+        pytest.skip("DMA only benefits RX; TX+DMA is identical to TX no-DMA")
+
     tx_vf, rx_vf = tx_host.vfs[0], rx_host.vfs[0]
     tx_vf_r = tx_host.vfs_r[0] if redundant else None
     rx_vf_r = rx_host.vfs_r[0] if redundant else None
 
-    # ── DMA setup (measured host only, auto-discovered on same NUMA as NIC) ──
+    # ── DMA setup (RX SUT only — TX tests are skipped above) ──
     dma_device = None
     if use_dma:
-        measured_host = tx_host if direction == "tx" else rx_host
-        dma_device = setup_host_dma(
-            measured_host,
-            tx_vf if direction == "tx" else rx_vf,
-            role=direction.upper(),
+        dma_device = setup_host_dma_all(
+            rx_host,
+            rx_vf,
+            role="RX",
         )
         if dma_device is None:
-            pytest.skip(f"DMA not available on {measured_host.name}")
+            pytest.skip(f"DMA not available on {rx_host.name}")
     dma_label = f" with DMA ({dma_device})" if use_dma else ""
 
     # ── Paths ──
@@ -447,7 +609,6 @@ def _run_session_sweep(
     build_rx = get_host_mtl_path(rx_host, default=mtl_path)
 
     max_sess = MAX_SESSIONS.get((direction, redundant), 48)
-    start_sess = min(START_SESSIONS, max_sess)
 
     # ── Shared kwargs for every _run_iteration call ──
     iter_kwargs = dict(
@@ -472,55 +633,79 @@ def _run_session_sweep(
     )
 
     # ── Sweep state ──
-    iteration_results: List[dict] = []
+    iteration_results: list[dict] = []
     max_passing = 0
     last_config = None  # latest RxTxApp JSON config from iterations
 
     mode_tag = "REDUNDANT " if redundant else ""
     core_tag = "SC" if single_core else "MC"
     dma_tag = " +DMA" if use_dma else ""
+    fixed_mode = num_sessions is not None
+    if fixed_mode:
+        sweep_desc = f"FIXED RUN ({num_sessions} sessions)"
+    else:
+        sweep_desc = "SESSION SWEEP (binary search)"
     logger.info(
         f"\n{'═' * 70}\n"
-        f"  SESSION SWEEP (binary search): {mode_tag}{direction.upper()} "
+        f"  {sweep_desc}: {mode_tag}{direction.upper()} "
         f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
-        f"start={start_sess} max={max_sess} "
+        f"{'sessions=' + str(num_sessions) if fixed_mode else 'range=[1, ' + str(max_sess) + ']'} "
         f"test_time={test_time}s "
         f"warmup={WARMUP_SECONDS}s cooldown={COOLDOWN_SECONDS}s\n"
         f"{'═' * 70}"
     )
 
-    # ── Pre-sweep: kill leftover processes (VFs already bound by conftest) ──
+    # ── Pre-sweep: kill leftover processes, FLR all VFs, clean hugepages ──
     kill_stale_processes(tx_host, rx_host)
-    time.sleep(3)
+    time.sleep(2)
+
+    # Build VF list for pre-sweep FLR reset (DMA VFs always on RX side).
+    presweep_tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
+    presweep_rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
+    if dma_device:
+        presweep_rx_vfs.extend(dma_device.split(","))
+
+    logger.info("Pre-sweep cleanup: FLR + rebind all VFs, clean hugepages")
+    reset_vfio_bindings(tx_host, tx_host.name, presweep_tx_vfs)
+    reset_vfio_bindings(rx_host, rx_host.name, presweep_rx_vfs)
+    time.sleep(5)
 
     def _is_crash(detail: str) -> bool:
-        """Return True if the detail string indicates a DPDK/VFIO crash."""
-        return any(
-            code in detail
-            for code in ("exit code -1", "exit code 244", "exit code 251")
+        """Return True if the detail indicates a crash requiring VF FLR."""
+        crash_codes = (
+            "exit code -",
+            "exit code 134",  # SIGABRT
+            "exit code 137",  # SIGKILL
+            "exit code 139",  # SIGSEGV
+            "exit code 244",  # DPDK
+            "exit code 251",  # DPDK
+            "companion",
+            "exited early",
         )
+        return any(code in detail for code in crash_codes)
 
     def _is_infra_failure(detail: str) -> bool:
         """Return True if the failure is infrastructure-related (not capacity).
 
-        Infrastructure failures (companion crash, media file missing, SSH
-        errors) will affect ALL session counts, so continuing the sweep
-        would be pointless.
+        Infrastructure failures affect ALL session counts, so continuing
+        the binary search would be pointless.
         """
-        infra_markers = (
-            "companion",
-            "exited early",
-            "open fail",
-            "process timeout",
-        )
+        infra_markers = ("open fail", "process timeout")
         return any(m in detail for m in infra_markers)
 
-    def _run_one(n: int, phase: str) -> bool:
-        """Run one sweep iteration.  Returns True if the iteration passed."""
+    def _run_one(
+        n: int,
+        phase: str,
+        quota_override: int | None = None,
+    ) -> bool:
+        """Run one sweep iteration.  Returns True if passed."""
         nonlocal max_passing
 
+        quota_info = f"  quota={quota_override}" if quota_override is not None else ""
         logger.info(f"\n{'━' * 70}")
-        logger.info(f"  [{phase}] {n} session(s)  " f"(max_passing={max_passing})")
+        logger.info(
+            f"  [{phase}] {n} session(s){quota_info}  " f"(max_passing={max_passing})"
+        )
         logger.info(f"{'━' * 70}")
 
         # ── Inter-iteration cleanup ──
@@ -534,11 +719,11 @@ def _run_session_sweep(
             tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
             rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
             if dma_device:
-                measured_vfs = tx_vfs if direction == "tx" else rx_vfs
-                measured_vfs.append(dma_device)
+                # DMA only on RX SUT (TX+DMA tests are skipped)
+                rx_vfs.extend(dma_device.split(","))
 
             if _is_crash(prev["detail"]):
-                # Full unbind/rebind after a DPDK crash
+                # Full unbind/FLR/rebind after a DPDK crash + hugepage cleanup
                 logger.info("  VFIO cleanup (previous iteration crashed)…")
                 reset_vfio_bindings(tx_host, tx_host.name, tx_vfs)
                 reset_vfio_bindings(rx_host, rx_host.name, rx_vfs)
@@ -569,10 +754,13 @@ def _run_session_sweep(
             time.sleep(2)
 
         # ── Execute ──
-        passed, count, detail, iter_config = False, 0, "unknown error", None
+        passed, count, detail = False, 0, "unknown error"
+        iter_config, cores_used = None, 0
         try:
-            passed, count, detail, iter_config = _run_iteration(
-                num_sessions=n, **iter_kwargs
+            passed, count, detail, iter_config, cores_used = _run_iteration(
+                num_sessions=n,
+                sch_session_quota=quota_override,
+                **iter_kwargs,
             )
         except Exception as e:
             logger.error(f"  Iteration {n} raised: {type(e).__name__}: {e}")
@@ -592,14 +780,17 @@ def _run_session_sweep(
                 "passed": passed,
                 "successful_count": count,
                 "detail": detail,
+                "cores_used": cores_used,
+                "quota": quota_override,
             }
         )
 
+        cores_str = f"  cores={cores_used}" if cores_used else ""
         if passed:
             max_passing = max(max_passing, n)
-            logger.info(f"  ✓ {n} sessions PASSED  ({detail})")
+            logger.info(f"  ✓ {n} sessions PASSED{cores_str}  ({detail})")
         else:
-            logger.info(f"  ✗ {n} sessions FAILED  ({detail})")
+            logger.info(f"  ✗ {n} sessions FAILED{cores_str}  ({detail})")
 
         return passed
 
@@ -607,81 +798,147 @@ def _run_session_sweep(
         """Return the detail string from the most recent iteration."""
         return iteration_results[-1]["detail"] if iteration_results else ""
 
-    # ── Binary search to find max passing session count ──
-    # 1. Probe start_sess first. If it passes, binary-search UP in
-    #    [start_sess+1, max_sess]. If it fails, binary-search DOWN in
-    #    [1, start_sess-1].
-    #
-    # Invariant: lo-1 is known-pass (or 0), hi+1 is known-fail (or max+1).
-    #
-    # Early abort: if the last failure looks like an infrastructure problem
-    # (companion crash, media file missing) rather than a capacity limit,
-    # stop immediately — no session count will succeed.
+    if fixed_mode:
+        # ── Fixed session run with retry ──
+        # Transient NIC/system events (link flaps, PF admin resets) can
+        # cause ~20 s outages that tank per-session averages.  Retrying
+        # once is the most reliable way to distinguish real capacity
+        # failures from one-off hardware glitches.
+        passed = False
+        for attempt in range(1 + MAX_FIXED_RETRIES):
+            passed = _run_one(num_sessions, phase="FIXED", quota_override=sch_quota)
+            if passed:
+                break
+            if attempt < MAX_FIXED_RETRIES:
+                logger.warning(
+                    f"  Attempt {attempt + 1} failed — possible transient event. "
+                    f"Retrying after VF reset ({MAX_FIXED_RETRIES - attempt} "
+                    f"retries left)…"
+                )
+                kill_stale_processes(tx_host, rx_host)
+                time.sleep(2)
+                reset_vfio_bindings(tx_host, tx_host.name, presweep_tx_vfs)
+                reset_vfio_bindings(rx_host, rx_host.name, presweep_rx_vfs)
+                time.sleep(10)
 
-    if _run_one(start_sess, phase="PROBE"):
-        # start_sess passed — search upward for the ceiling
-        lo, hi = start_sess + 1, max_sess
+        logger.info(
+            f"\n{'═' * 70}\n"
+            f"  FIXED RUN RESULT: {mode_tag}{direction.upper()} "
+            f"{'SC' if single_core else 'MC'}{dma_label}\n"
+            f"  FPS: {fps}  |  Resolution: {resolution}  |  "
+            f"Sessions: {num_sessions}  |  "
+            f"{'PASSED' if passed else 'FAILED'}\n"
+            f"{'═' * 70}"
+        )
+        _log_iteration_table(iteration_results, last_config)
+        logger.info(f"{'═' * 70}\n")
+
+        if not passed:
+            pytest.fail(
+                f"Fixed run FAILED: {num_sessions} sessions for "
+                f"{mode_tag}{direction.upper()} "
+                f"{'SC' if single_core else 'MC'}{dma_label} "
+                f"@ {fps}fps / {resolution}"
+            )
+
+        logger.log(
+            TEST_PASS,
+            f"Fixed run: {num_sessions} sessions for "
+            f"{mode_tag}{direction.upper()} "
+            f"{'SC' if single_core else 'MC'}{dma_label} "
+            f"@ {fps}fps / {resolution}",
+        )
+    else:
+        # ── Phase 1: binary search max sessions ──
+        # CLI --sch_quota overrides the per-mode default.
+        phase1_quota: int | None = sch_quota
+        if phase1_quota is None and not single_core:
+            phase1_quota = SCH_SESSION_QUOTA_PHASE1_MC
+
+        lo, hi = 1, max_sess
         while lo <= hi:
             mid = (lo + hi) // 2
-            if _run_one(mid, phase="BSEARCH-UP"):
+            if _run_one(mid, phase="BSEARCH", quota_override=phase1_quota):
                 lo = mid + 1
             else:
                 if _is_infra_failure(_last_detail()):
                     logger.error("  ⚠ Infrastructure failure detected — aborting sweep")
                     break
                 hi = mid - 1
-    else:
-        if _is_infra_failure(_last_detail()):
-            logger.error("  ⚠ Infrastructure failure on first probe — aborting sweep")
-        else:
-            # start_sess failed — search downward for any passing count
-            lo, hi = 1, start_sess - 1
-            while lo <= hi:
-                mid = (lo + hi) // 2
-                if _run_one(mid, phase="BSEARCH-DOWN"):
-                    lo = mid + 1
-                else:
-                    if _is_infra_failure(_last_detail()):
-                        logger.error(
-                            "  ⚠ Infrastructure failure detected " "— aborting sweep"
-                        )
-                        break
-                    hi = mid - 1
 
-    # ── Summary ──
-    logger.info(
-        f"\n{'═' * 70}\n"
-        f"  SWEEP SUMMARY: {mode_tag}{direction.upper()} "
-        f"{'SC' if single_core else 'MC'}{dma_label}\n"
-        f"  FPS: {fps}  |  Resolution: {resolution}  |  "
-        f"MAX PASSING: {max_passing}\n"
-        f"{'═' * 70}"
-    )
-    for it in iteration_results:
-        ok = "✓" if it["passed"] else "✗"
-        logger.info(f"  {it['num_sessions']:>3} sessions  {ok}  {it['detail']}")
-    if last_config:
-        logger.info("RXTXAPP_CONFIG_BEGIN")
-        for cfg_line in json.dumps(last_config, indent=2).splitlines():
-            logger.info(cfg_line)
-        logger.info("RXTXAPP_CONFIG_END")
-    logger.info(f"{'═' * 70}\n")
+        # ── Phase 2 (MC only): verification re-run at default quota ──
+        phase2_cores: int | None = None
+        default_quota: int | None = None
+        if max_passing > 0 and not single_core:
+            default_quota = _select_mc_quota(is_tx, use_dma, redundant)
+            logger.info(
+                f"\n  ── Phase 2: re-verify {max_passing} sessions "
+                f"at quota={default_quota} ──"
+            )
+            if _run_one(
+                max_passing,
+                phase="VERIFY",
+                quota_override=default_quota,
+            ):
+                verify_it = iteration_results[-1]
+                phase2_cores = verify_it.get("cores_used", 0)
+                logger.info(
+                    f"  ✓ Verification passed at quota={default_quota} "
+                    f"({phase2_cores} cores)"
+                )
+            else:
+                logger.info(
+                    f"  ✗ Verification FAILED at quota={default_quota} — "
+                    f"{max_passing} sessions not stable"
+                )
 
-    if max_passing == 0:
-        pytest.fail(
-            f"Sweep FAILED: no sessions passed for "
+        # ── Compute best (minimum) cores from sweep ──
+        best_cores = 0
+        best_quota_val = phase1_quota
+        for it in reversed(iteration_results):
+            if it["num_sessions"] == max_passing and it["passed"]:
+                best_cores = it.get("cores_used", 0)
+                best_quota_val = it.get("quota")
+                break
+
+        # ── Summary ──
+        cores_line = ""
+        if best_cores:
+            cores_line = f"  CORES: {best_cores} (quota={best_quota_val})"
+            if phase2_cores is not None and phase2_cores != best_cores:
+                cores_line += (
+                    f"  |  default quota={default_quota}: " f"{phase2_cores} cores"
+                )
+            cores_line += "\n"
+
+        logger.info(
+            f"\n{'═' * 70}\n"
+            f"  SWEEP SUMMARY: {mode_tag}{direction.upper()} "
+            f"{'SC' if single_core else 'MC'}{dma_label}\n"
+            f"  FPS: {fps}  |  Resolution: {resolution}  |  "
+            f"MAX PASSING: {max_passing}\n"
+            f"{cores_line}"
+            f"{'═' * 70}"
+        )
+        _log_iteration_table(iteration_results, last_config, show_quota=True)
+        logger.info(f"{'═' * 70}\n")
+
+        if max_passing == 0:
+            pytest.fail(
+                f"Sweep FAILED: no sessions passed for "
+                f"{mode_tag}{direction.upper()} "
+                f"{'SC' if single_core else 'MC'}{dma_label} "
+                f"@ {fps}fps / {resolution}"
+            )
+
+        logger.log(
+            TEST_PASS,
+            f"Sweep: max {max_passing} sessions"
+            f"{f' on {best_cores} cores' if best_cores else ''} for "
             f"{mode_tag}{direction.upper()} "
             f"{'SC' if single_core else 'MC'}{dma_label} "
-            f"@ {fps}fps / {resolution}"
+            f"@ {fps}fps / {resolution}",
         )
-
-    logger.log(
-        TEST_PASS,
-        f"Sweep: max {max_passing} sessions for "
-        f"{mode_tag}{direction.upper()} "
-        f"{'SC' if single_core else 'MC'}{dma_label} "
-        f"@ {fps}fps / {resolution}",
-    )
 
 
 # ── Common parametrize decorators (shared across all 4 test functions) ──
@@ -731,6 +988,8 @@ def test_tx(
     use_dma,
     test_config,
     prepare_ramdisk,
+    num_sessions,
+    sch_quota,
 ) -> None:
     """TX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -744,6 +1003,8 @@ def test_tx(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        num_sessions=num_sessions,
+        sch_quota=sch_quota,
     )
 
 
@@ -759,6 +1020,8 @@ def test_rx(
     use_dma,
     test_config,
     prepare_ramdisk,
+    num_sessions,
+    sch_quota,
 ) -> None:
     """RX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -772,6 +1035,8 @@ def test_rx(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        num_sessions=num_sessions,
+        sch_quota=sch_quota,
     )
 
 
@@ -787,6 +1052,8 @@ def test_tx_redundant(
     use_dma,
     test_config,
     prepare_ramdisk,
+    num_sessions,
+    sch_quota,
 ) -> None:
     """TX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -800,6 +1067,8 @@ def test_tx_redundant(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        num_sessions=num_sessions,
+        sch_quota=sch_quota,
     )
 
 
@@ -815,6 +1084,8 @@ def test_rx_redundant(
     use_dma,
     test_config,
     prepare_ramdisk,
+    num_sessions,
+    sch_quota,
 ) -> None:
     """RX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -828,4 +1099,6 @@ def test_rx_redundant(
         mtl_path=mtl_path,
         test_time=test_time,
         test_config=test_config,
+        num_sessions=num_sessions,
+        sch_quota=sch_quota,
     )

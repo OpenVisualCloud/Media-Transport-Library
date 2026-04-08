@@ -295,7 +295,6 @@ def check_rx_output(
     ok_cnt = 0
     logger.info(f"Checking RX {session_type} output for OK results")
 
-    pattern = re.compile(r"app_rx_.*_result")
     if session_type == "anc":
         pattern = re.compile(r"app_rx_anc_result")
         session_type = "ancillary"
@@ -1053,23 +1052,20 @@ class RxTxApp(Application):
                 )
                 return {"replicas": 1}
 
+        def _ensure_placeholder_video(session_group: dict) -> None:
+            """Ensure a non-empty video list to force functional validation."""
+            if not session_group.get("video"):
+                session_group["video"] = [
+                    {"type": "placeholder", "video_format": "", "pg_format": ""}
+                ]
+
         # Populate TX sessions
         if direction in (None, "tx"):
             st_entry = _populate_session(True)
             if st_entry:
                 config["tx_sessions"][0].setdefault(session_type, [])
                 config["tx_sessions"][0][session_type].append(st_entry)
-                # Ensure non-empty video list to force functional validation instead of FPS performance path
-                placeholder_video = {
-                    "type": "placeholder",
-                    "video_format": "",
-                    "pg_format": "",
-                }
-                current_video_list = config["tx_sessions"][0].get("video")
-                if not current_video_list:
-                    config["tx_sessions"][0]["video"] = [placeholder_video]
-                elif len(current_video_list) == 0:
-                    current_video_list.append(placeholder_video)
+                _ensure_placeholder_video(config["tx_sessions"][0])
 
         # Populate RX sessions
         if direction in (None, "rx"):
@@ -1077,16 +1073,7 @@ class RxTxApp(Application):
             if st_entry:
                 config["rx_sessions"][0].setdefault(session_type, [])
                 config["rx_sessions"][0][session_type].append(st_entry)
-                placeholder_video = {
-                    "type": "placeholder",
-                    "video_format": "",
-                    "pg_format": "",
-                }
-                current_video_list = config["rx_sessions"][0].get("video")
-                if not current_video_list:
-                    config["rx_sessions"][0]["video"] = [placeholder_video]
-                elif len(current_video_list) == 0:
-                    current_video_list.append(placeholder_video)
+                _ensure_placeholder_video(config["rx_sessions"][0])
 
         # If only TX or only RX requested, clear the other list
         if direction == "tx":
