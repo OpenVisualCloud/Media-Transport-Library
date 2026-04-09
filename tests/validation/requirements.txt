@@ -57,7 +57,7 @@ netaddr==0.8.0
 netmiko==4.6.0
 ntc_templates==7.9.0
 packaging==25.0
-paramiko==3.4.0
+paramiko==4.0.0
 pexpect==4.8.0
 pluggy==1.6.0
 plumbum==1.9.0
