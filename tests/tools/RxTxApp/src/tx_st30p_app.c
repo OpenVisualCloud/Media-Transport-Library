@@ -36,8 +36,9 @@ static void* app_tx_st30p_frame_thread(void* arg) {
     }
     app_tx_st30p_build_frame(s, frame, s->st30p_frame_size);
 
-    if (s->user_time) {
-      bool restart_base_time = !s->local_tai_base_time;
+    if (s->user_time && s->user_time->base_tai_time) {
+      bool restart_base_time = (s->local_tai_base_time != s->user_time->base_tai_time);
+      if (restart_base_time) s->frame_num = 0;
 
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
                                           restart_base_time);

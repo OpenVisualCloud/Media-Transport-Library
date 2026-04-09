@@ -1842,3 +1842,96 @@ TEST(St20p, frame_is_late) {
 
   info("%s, st_frame_is_late tests passed\n", __func__);
 }
+
+#define EPOCH_DROP_TEST_UDP_PORT_ST20P (20100)
+
+static void st20p_tx_epoch_drop_test(bool user_pacing) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st20p_tx_ops ops_tx;
+
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_epoch_drop_test";
+  ops_tx.priv = test_ctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = EPOCH_DROP_TEST_UDP_PORT_ST20P;
+  ops_tx.port.payload_type = 112;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+  if (user_pacing) {
+    ops_tx.flags |= ST20P_TX_FLAG_USER_PACING;
+    ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+  }
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  ret = st20p_tx_set_block_timeout(tx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  test_ctx->handle = tx_handle;
+  test_ctx->stop = false;
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+
+  auto tx_thread = std::thread(
+      [user_pacing](tests_context* s) {
+        auto handle = (st20p_tx_handle)s->handle;
+        auto st = s->ctx->handle;
+        while (!s->stop) {
+          auto frame = st20p_tx_get_frame(handle);
+          if (!frame) continue;
+          if (user_pacing) {
+            frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+            frame->timestamp = mtl_ptp_read_time(st) + 20 * 1000 * 1000; /* +20ms */
+          }
+          st20p_tx_put_frame(handle, frame);
+          s->fb_send++;
+        }
+      },
+      test_ctx);
+  sleep(5);
+
+  test_ctx->stop = true;
+  st20p_tx_wake_block(tx_handle);
+  tx_thread.join();
+
+  struct st20_tx_user_stats stats;
+  ret = st20p_tx_get_session_stats(tx_handle, &stats);
+  EXPECT_GE(ret, 0);
+  EXPECT_GT(test_ctx->fb_send, 0);
+  info("%s, user_pacing %d, fb_send %d, epoch_drop %" PRIu64 "\n", __func__, user_pacing,
+       test_ctx->fb_send, stats.common.stat_epoch_drop);
+  EXPECT_EQ(stats.common.stat_epoch_drop, 0);
+
+  ret = mtl_stop(st);
+  EXPECT_GE(ret, 0);
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx;
+}
+
+TEST(St20p, tx_no_epoch_drop) {
+  st20p_tx_epoch_drop_test(false);
+}
+
+TEST(St20p, tx_user_pacing_no_epoch_drop) {
+  st20p_tx_epoch_drop_test(true);
+}

@@ -604,14 +604,6 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s) {
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  struct st_tx_video_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
-  return 0;
-}
-
 static void validate_user_timestamp(struct st_tx_video_session_impl* s,
                                     uint64_t requested_frame_count,
                                     uint64_t current_frame_count) {
@@ -633,7 +625,13 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
                                                     uint64_t cur_tai,
                                                     uint64_t required_tai) {
   uint64_t frame_count_tai = cur_tai / s->pacing.frame_time;
-  uint64_t next_free_frame_slot = s->pacing.cur_epochs + 1;
+  /*
+   * cur_epochs is 0 before the first frame (zero-initialized struct).
+   * Real PTP-derived epochs are ~10^11, so 0 is a safe "uninitialized" sentinel.
+   * On first call, start from frame_count_tai to avoid a false epoch_drop.
+   */
+  uint64_t next_free_frame_slot =
+      likely(s->pacing.cur_epochs) ? s->pacing.cur_epochs + 1 : frame_count_tai;
   uint64_t frame_count;
 
   if (required_tai) {
@@ -661,14 +659,16 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
     dbg("%s(%d), frame is late, frame_count_tai %" PRIu64 " next_free_frame_slot %" PRIu64
         "\n",
         __func__, s->idx, frame_count_tai, next_free_frame_slot);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (frame_count_tai - next_free_frame_slot));
-
-    if (s->ops.notify_frame_late) {
-      s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
+    if (!required_tai) {
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                          (frame_count_tai - next_free_frame_slot));
+      if (s->ops.notify_frame_late) {
+        s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
+      }
+      frame_count = frame_count_tai;
     }
-
-    frame_count = frame_count_tai;
+    /* when required_tai is set, keep user-derived frame_count — scheduler jitter
+     * does not mean the user dropped epochs */
   }
 
   return frame_count;
@@ -1746,8 +1746,6 @@ static int tv_tasklet_start(void* priv) {
     for (int i = 0; i < s->ops.num_port; i++) {
       s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
     }
-    /* calculate the pacing epoch */
-    tv_init_pacing_epoch(impl, s);
     tx_video_session_put(mgr, sidx);
   }
 
@@ -3359,7 +3357,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
-  tv_init_pacing_epoch(impl, s);
   s->active = true;
 
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,

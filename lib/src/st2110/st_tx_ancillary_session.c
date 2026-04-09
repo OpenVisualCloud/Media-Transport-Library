@@ -278,14 +278,6 @@ static int tx_ancillary_session_init_pacing(struct st_tx_ancillary_session_impl*
   return 0;
 }
 
-static int tx_ancillary_session_init_pacing_epoch(
-    struct mtl_main_impl* impl, struct st_tx_ancillary_session_impl* s) {
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
-  return 0;
-}
-
 static inline uint64_t tx_ancillary_pacing_time(
     struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
   return nextafter(epochs * pacing->frame_time, INFINITY);
@@ -344,7 +336,13 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
                                                uint64_t cur_tai, uint64_t required_tai) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   uint64_t current_epoch = cur_tai / pacing->frame_time;
-  uint64_t next_free_epoch = pacing->cur_epochs + 1;
+  /*
+   * cur_epochs is 0 before the first frame (zero-initialized struct).
+   * Real PTP-derived epochs are ~10^11, so 0 is a safe "uninitialized" sentinel.
+   * On first call, start from current_epoch to avoid a false epoch_drop.
+   */
+  uint64_t next_free_epoch =
+      likely(pacing->cur_epochs) ? pacing->cur_epochs + 1 : current_epoch;
   uint64_t epoch = next_free_epoch;
 
   if (required_tai) {
@@ -365,14 +363,16 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
   } else {
     dbg("%s(%d), frame is late, current_epoch %" PRIu64 " next_free_epoch %" PRIu64 "\n",
         __func__, s->idx, current_epoch, next_free_epoch);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (current_epoch - next_free_epoch));
-
-    if (s->ops.notify_frame_late) {
-      s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
+    if (!required_tai) {
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                          (current_epoch - next_free_epoch));
+      if (s->ops.notify_frame_late) {
+        s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
+      }
+      epoch = current_epoch;
     }
-
-    epoch = current_epoch;
+    /* when required_tai is set, keep user-derived epoch — scheduler jitter
+     * does not mean the user dropped epochs */
   }
 
   return epoch;
@@ -445,22 +445,6 @@ static int tx_ancillary_session_init(struct st_tx_ancillary_sessions_mgr* mgr,
                                      struct st_tx_ancillary_session_impl* s, int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
-  return 0;
-}
-
-static int tx_ancillary_sessions_tasklet_start(void* priv) {
-  struct st_tx_ancillary_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
-  struct st_tx_ancillary_session_impl* s;
-
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_ancillary_session_get(mgr, sidx);
-    if (!s) continue;
-
-    tx_ancillary_session_init_pacing_epoch(impl, s);
-    tx_ancillary_session_put(mgr, sidx);
-  }
-
   return 0;
 }
 
@@ -1918,7 +1902,6 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
   ops.name = "tx_ancillary_sessions_mgr";
-  ops.start = tx_ancillary_sessions_tasklet_start;
   ops.handler = tx_ancillary_sessions_tasklet_handler;
 
   mgr->tasklet = mtl_sch_register_tasklet(sch, &ops);
