@@ -454,14 +454,14 @@ jobs:
 
       - name: Upload combined Excel report
         if: steps.combine.outputs.reports_generated == 'true'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-combined-report-excel
           path: combined_nightly_report.xlsx
 
       - name: Upload combined HTML report
         if: steps.combine.outputs.reports_generated == 'true'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-combined-report-html
           path: combined_nightly_report.html
