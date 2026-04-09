@@ -6,7 +6,7 @@
 # Please review and modify as necessary before using in a production environment.
 
 # Build stage, ubuntu 22.04
-FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
+FROM ubuntu@sha256:84e77dee7d1bc93fb029a45e3c6cb9d8aa4831ccfcc7103d36e876938d28895b AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -41,7 +41,7 @@ RUN meson setup build && \
     DESTDIR=/install meson install -C build
 
 # Runtime stage, ubuntu 22.04
-FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37
+FROM ubuntu@sha256:84e77dee7d1bc93fb029a45e3c6cb9d8aa4831ccfcc7103d36e876938d28895b
 
 # Install runtime dependencies
 RUN apt-get update -y && \
