@@ -15,7 +15,7 @@ exceptiongroup==1.3.0
 Flask==3.1.3
 funcy==1.18
 htmlmin2==0.1.13
-idna==3.10
+idna==3.11
 iniconfig==2.1.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
