@@ -5,5 +5,39 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      # Prefix all commit messages with "Ci: "
+      prefix: "Ci: "
+
+  - package-ecosystem: pip
+    directory: /tests
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "Ci: "
+
+  - package-ecosystem: pip
+    directory: /python
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "Ci: "
+
+  - package-ecosystem: cargo
+    directory: /rust
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "Ci: "
+
+  - package-ecosystem: docker
+    directory: /manager
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "Ci: "
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: "weekly"
+    commit-message:
       prefix: "Ci: "
