@@ -730,11 +730,8 @@ static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
         st10_get_media_clk(tfmt_for_clk, timestamp, s->fps_tm.sampling_clock_rate);
   } else {
     uint64_t tai_for_rtp_ts;
-    if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-      tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
-    } else {
-      tai_for_rtp_ts = pacing->ptp_time_cursor;
-    }
+    /* Always use the epoch (sampling instant) for the RTP timestamp per ST 2110-20. */
+    tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
     tai_for_rtp_ts += delta_ns;
     pacing->rtp_time_stamp =
         st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);

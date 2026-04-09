@@ -13,12 +13,6 @@
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
-/* To compensate for inaccurate throughput during warmup, several packets are added.
- * This adds a superficial difference between the RTP timestamp and the transmission
- * time, which makes it look as if the packets have a slight latency immediately after
- * entering the wire. This prevents negative latency values. */
-#define LATENCY_COMPENSATION 3
-
 static int video_trs_tasklet_start(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
   int idx = trs->idx;
@@ -122,7 +116,7 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   }
 
   pads[0] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
-  for (int i = 0; i < warm_pkts + LATENCY_COMPENSATION; i++) {
+  for (int i = 0; i < warm_pkts; i++) {
     rte_mbuf_refcnt_update(pads[0], 1);
     tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     if (tx < 1) s->trs_pad_inflight_num[s_port]++;
