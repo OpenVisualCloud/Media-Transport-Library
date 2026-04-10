@@ -372,6 +372,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   if (sink->zero_copy) {
     ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
     ops_tx.notify_frame_done = gst_mtl_st20p_tx_frame_done;
+    ops_tx.priv = sink;
   } else {
     GST_WARNING("Using memcpy path");
   }
@@ -544,16 +545,19 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
                   GST_PACKAGE_ORIGIN)
 
 static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
+  Gst_Mtl_St20p_Tx* sink = (Gst_Mtl_St20p_Tx*)priv;
   GstSt20pTxExternalDataChild* child = frame->opaque;
 
   if (!child) {
     GST_WARNING("frame_done called with NULL opaque (frame %p)", frame);
+    st20p_tx_notify_ext_frame_done(sink->tx_handle, frame);
     return -1;
   }
 
   /* Atomically guard against double invocation from DPDK lcore */
   if (!g_atomic_int_compare_and_exchange(&child->cleaned_up, FALSE, TRUE)) {
     GST_ERROR("frame_done: double cleanup detected (frame %p, child %p)", frame, child);
+    st20p_tx_notify_ext_frame_done(sink->tx_handle, frame);
     return -1;
   }
 
@@ -576,6 +580,8 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   parent->child_count--;
   if (parent->child_count > 0) {
     pthread_mutex_unlock(&parent->parent_mutex);
+    /* Not the last child - release this frame slot but keep the GstBuffer alive */
+    st20p_tx_notify_ext_frame_done(sink->tx_handle, frame);
     return 0;
   }
 
@@ -583,6 +589,9 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   gst_buffer_unref(parent->buf);
   pthread_mutex_destroy(&parent->parent_mutex);
   free(parent);
+
+  /* Last child done - release the frame slot */
+  st20p_tx_notify_ext_frame_done(sink->tx_handle, frame);
 
   return 0;
 }

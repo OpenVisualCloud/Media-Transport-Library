@@ -1804,6 +1804,24 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame);
 
 /**
+ * Notify the tx st2110-20 pipeline session that the application has finished
+ * processing an external frame previously signalled via notify_frame_done.
+ *
+ * In EXT_FRAME mode, after notify_frame_done fires, the frame slot is held in
+ * IN_USER state so the application can safely unmap / release external buffers.
+ * Call this function once cleanup is complete to release the slot back to FREE.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer received in the notify_frame_done callback.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if the frame is not in IN_USER state.
+ */
+int st20p_tx_notify_ext_frame_done(st20p_tx_handle handle, struct st_frame* frame);
+
+/**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.
  *
  * @param handle

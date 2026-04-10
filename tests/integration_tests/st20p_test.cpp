@@ -226,11 +226,13 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
     if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
+      st20p_tx_notify_ext_frame_done((st20p_tx_handle)s->handle, frame);
       return 0;
     }
   }
 
   err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
+  st20p_tx_notify_ext_frame_done((st20p_tx_handle)s->handle, frame);
   return 0;
 }
 
