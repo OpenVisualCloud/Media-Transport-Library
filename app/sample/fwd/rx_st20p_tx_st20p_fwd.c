@@ -103,9 +103,11 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   struct st_frame* rx_frame = rx_st20p_dequeue_frame(s);
   if (frame->addr[0] != rx_frame->addr[0]) {
     err("%s, frame ooo, should not happen!\n", __func__);
+    st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
     return -EIO;
   }
   st20p_rx_put_frame(rx_handle, rx_frame);
+  st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
   return 0;
 }
 
