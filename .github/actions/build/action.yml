@@ -17,3 +17,12 @@ runs:
         TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: '1'
         TOOLS_RUN_SET_TAI_OFFSET: '1'
       run: bash .github/scripts/setup_environment.sh
+    - name: Upload build artifacts
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: build-${{ github.sha }}
+        path: |
+          ./build/lib/libmtl.so
+          ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
+          ./tests/tools/RxTxApp/build/RxTxApp
