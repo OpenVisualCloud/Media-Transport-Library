@@ -553,8 +553,7 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   /* Atomically guard against double invocation from DPDK lcore */
   if (!g_atomic_int_compare_and_exchange(&child->cleaned_up, FALSE, TRUE)) {
-    GST_ERROR("frame_done: double cleanup detected (frame %p, child %p)",
-              frame, child);
+    GST_ERROR("frame_done: double cleanup detected (frame %p, child %p)", frame, child);
     return -1;
   }
 
@@ -562,8 +561,7 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   GstSt20pTxExternalDataParent* parent = child->parent;
 
-  GST_LOG("frame_done: unmapping child %p, mem %p",
-          child, child->gst_buffer_memory);
+  GST_LOG("frame_done: unmapping child %p, mem %p", child, child->gst_buffer_memory);
 
   if (child->gst_buffer_memory) {
     gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
