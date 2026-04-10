@@ -214,6 +214,14 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
+
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame->status = ST_FRAME_STATUS_COMPLETE;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
@@ -225,13 +233,6 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
   mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_done &&
-      !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    frame->status = ST_FRAME_STATUS_COMPLETE;
-    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
-  }
 
   /* notify app can get frame */
   tx_st20p_notify_frame_available(ctx);
