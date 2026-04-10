@@ -218,6 +218,7 @@ def main() -> None:
     parser.add_argument("--second_host_username", type=str, default=None, help="second host SSH username")
     parser.add_argument("--second_host_password", type=str, default=None, help="second host SSH password")
     parser.add_argument("--second_host_key_path", type=str, default=None, help="second host SSH key path")
+    parser.add_argument("--second_host_mtl_path", type=str, default=None, help="MTL path on the second host (defaults to --mtl_path)")
     # Perf-specific options
     parser.add_argument("--test_time", type=int, default=120, help="test duration in seconds")
     parser.add_argument("--media_path", type=str, default="/mnt/media", help="path to media files")
@@ -256,6 +257,10 @@ def main() -> None:
     if args.mode == "perf":
         extra_info["media_path"] = args.media_path
 
+    second_host_extra = dict(extra_info)
+    if args.second_host_mtl_path:
+        second_host_extra["mtl_path"] = args.second_host_mtl_path
+
     with open("test_config.yaml", "w") as file:
         file.write(test_config_yaml)
     with open("topology_config.yaml", "w") as file:
@@ -272,7 +277,7 @@ def main() -> None:
                 second_host_username=args.second_host_username,
                 second_host_password=args.second_host_password,
                 second_host_key_path=args.second_host_key_path,
-                second_host_extra_info=extra_info,
+                second_host_extra_info=second_host_extra,
             )
         )
 
