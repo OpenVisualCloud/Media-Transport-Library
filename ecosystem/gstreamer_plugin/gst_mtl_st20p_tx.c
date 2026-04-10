@@ -115,6 +115,7 @@ typedef struct {
   GstSt20pTxExternalDataParent* parent;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
+  gint cleaned_up;
 } GstSt20pTxExternalDataChild;
 
 /* pad template */
@@ -544,9 +545,33 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
 
 static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   GstSt20pTxExternalDataChild* child = frame->opaque;
+
+  if (!child) {
+    GST_WARNING("frame_done called with NULL opaque (frame %p)", frame);
+    return -1;
+  }
+
+  /* Atomically guard against double invocation from DPDK lcore */
+  if (!g_atomic_int_compare_and_exchange(&child->cleaned_up, FALSE, TRUE)) {
+    GST_ERROR("frame_done: double cleanup detected (frame %p, child %p)",
+              frame, child);
+    return -1;
+  }
+
+  frame->opaque = NULL;
+
   GstSt20pTxExternalDataParent* parent = child->parent;
 
-  gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
+  GST_LOG("frame_done: unmapping child %p, mem %p",
+          child, child->gst_buffer_memory);
+
+  if (child->gst_buffer_memory) {
+    gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
+    child->gst_buffer_memory = NULL;
+  } else {
+    GST_ERROR("frame_done: gst_buffer_memory already NULL (child %p)", child);
+  }
+
   free(child);
 
   pthread_mutex_lock(&parent->parent_mutex);
@@ -587,6 +612,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
       GST_ERROR("Failed to allocate memory for child structure");
       free(parent);
     }
+    memset(child, 0, sizeof(GstSt20pTxExternalDataChild));
     child->parent = parent;
     child->gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
