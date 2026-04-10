@@ -36,40 +36,7 @@ env:
   PCI_DEVICE: '8086:12d2,8086:12d2'
   MARKER: ${{ inputs.marker || 'performance' }}
 jobs:
-  build-sut:
-    runs-on: [self-hosted, perf, sut]
-    timeout-minutes: 60
-    steps:
-      - name: Harden-Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-      - name: Fix ownership of root-owned files
-        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
-      - name: Checkout MTL
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: '${{ inputs.branch || github.ref }}'
-      - uses: ./.github/actions/build
-
-  build-second-host:
-    runs-on: [self-hosted, perf]
-    timeout-minutes: 60
-    steps:
-      - name: Harden-Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-      - name: Fix ownership of root-owned files
-        run: sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
-      - name: Checkout MTL
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: '${{ inputs.branch || github.ref }}'
-      - uses: ./.github/actions/build
-
   run-perf-tests:
-    needs: [build-sut, build-second-host]
     runs-on: [self-hosted, perf, sut]
     timeout-minutes: 720
     steps:
@@ -93,6 +60,31 @@ jobs:
           echo "Test framework: ${{ github.sha }} (${{ github.ref_name }})"
           git checkout ${{ github.sha }} -- tests/validation/ .github/
       - uses: ./.github/actions/build
+      - name: Build MTL on second host via SSH
+        run: |
+          CLIENT_IP="${{ secrets.PERF_CLIENT_IP }}"
+          CLIENT_USER="${{ secrets.RUNNER_USERNAME }}"
+          CLIENT_MTL="${{ secrets.PERF_CLIENT_MTL_PATH }}"
+          BRANCH="${{ inputs.branch || github.ref }}"
+          ssh -o StrictHostKeyChecking=no "${CLIENT_USER}@${CLIENT_IP}" bash -s -- \
+            "${CLIENT_MTL}" "${BRANCH}" <<'REMOTE_SCRIPT'
+          set -ex
+          MTL_DIR="$1"
+          BRANCH="$2"
+          if [ ! -d "${MTL_DIR}/.git" ]; then
+            git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git "${MTL_DIR}"
+          fi
+          cd "${MTL_DIR}"
+          git fetch --all --prune
+          git checkout "${BRANCH}" 2>/dev/null || git checkout "origin/${BRANCH}" 2>/dev/null || true
+          git reset --hard "origin/${BRANCH}" 2>/dev/null || git reset --hard "${BRANCH}"
+          export MTL_BUILD_AND_INSTALL=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1
+          export TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET=1
+          export TOOLS_RUN_SET_TAI_OFFSET=1
+          bash .github/scripts/setup_environment.sh
+          REMOTE_SCRIPT
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |
@@ -144,6 +136,7 @@ jobs:
             --key_path "${{ env.SSH_KEY_PATH }}" \
             --second_host_ip "${{ secrets.PERF_CLIENT_IP }}" \
             --second_host_pci_device "${{ env.PCI_DEVICE }}" \
+            --second_host_mtl_path "${{ secrets.PERF_CLIENT_MTL_PATH }}" \
             --test_time "${{ inputs.test_time || '120' }}"
       - name: Pre-populate SSH known_hosts
         run: |
