@@ -36,18 +36,18 @@ jobs:
     steps:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.branch }}
 
@@ -75,18 +75,18 @@ jobs:
     steps:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.branch }}
 
@@ -111,18 +111,18 @@ jobs:
     steps:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.branch }}
 
