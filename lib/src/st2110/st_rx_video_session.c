@@ -2731,7 +2731,7 @@ static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl* s) {
   }
   /* continue drop pkt in current burst */
   s->burst_loss_cnt--;
-  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx,
+  dbg("%s(%d,%" PRIu64 "), drop as simulate pkt loss\n", __func__, s->idx,
       s->port_user_stats.stat_pkts_simulate_loss);
   s->port_user_stats.stat_pkts_simulate_loss++;
   return true;
