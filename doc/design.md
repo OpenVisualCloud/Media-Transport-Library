@@ -302,7 +302,7 @@ There are 3 different types of API between MTL and application:
 MTL orchestrates the packet processing from the frame level to L2 network packets and vice versa, with the frame buffer serving as the interface for video context exchange between MTL and the application.
 
 For transmission, the MTL TX session will get the index of the next available frame buffer via the `get_next_frame` callback function. Once transmission of the entire frame to the network is complete, the application will be notified through the `notify_frame_done` callback.
-It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted.
+It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted. For pipeline TX sessions using external frames, see section 6.9 for additional lifecycle requirements.
 
 For reception, the MTL RX session will process packets received from the network. Once a complete frame is assembled, the application will be alerted via the `notify_frame_ready` callback. However, it is important to note that the application must return the frame to MTL using the `st**_rx_put_framebuff` function after video frame processing is complete.
 
@@ -471,6 +471,8 @@ For more details, please refer to [RTCP doc](rtcp.md).
 
 By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves — especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
+For st20p TX external frames, after transmission completes the library parks the frame in an intermediate state and notifies the application via the `notify_frame_done` callback. The application must free its resources and then call `st20p_tx_notify_ext_frame_done` to release the frame buffer back to the library.
+This two-phase release prevents the library from reusing the frame slot while the application still holds references to the external memory.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
 For more comprehensive information and instructions on using these converters, please refer to the [External Frame API Guide](external_frame.md).
