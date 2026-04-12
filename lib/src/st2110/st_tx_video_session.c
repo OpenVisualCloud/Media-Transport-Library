@@ -14,6 +14,8 @@
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
+#define MTL_LATENCY_COMPENSATION_PACKET_SHIFT 2
+
 #ifdef MTL_SIMULATE_PACKET_DROPS
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
                                            struct rte_ipv4_hdr* ipv4,
@@ -521,6 +523,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
   /* default VRX compensate as rl accuracy, update later in tv_train_pacing */
   pacing->pad_interval = s->st20_total_pkts;
+  pacing->rl_rtp_offset_ns = 0; /* set later for RL pacing */
 
   int num_port = s->ops.num_port;
   int ret;
@@ -554,6 +557,11 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     warm_pkts = RTE_MIN(warm_pkts, 128); /* limit to 128 pkts */
   }
   pacing->warm_pkts = warm_pkts;
+
+  /* RL pacing: shift RTP timestamp forward by 3 packets to compensate warm-up pad */
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
+    pacing->rl_rtp_offset_ns = MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs;
+  }
 
   /* calculate vrx pkts */
   pacing->vrx = s->st21_vrx_narrow;
@@ -591,10 +599,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
-  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f\n",
+  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f rl_rtp_adj %.3fns\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
-       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps));
-
+       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps), pacing->rl_rtp_offset_ns);
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
     ret = st_video_resolve_pacing_tasklet(s, i);
@@ -730,9 +737,12 @@ static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
         st10_get_media_clk(tfmt_for_clk, timestamp, s->fps_tm.sampling_clock_rate);
   } else {
     uint64_t tai_for_rtp_ts;
-    /* Always use the epoch (sampling instant) for the RTP timestamp per ST 2110-20. */
-    tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
-    tai_for_rtp_ts += delta_ns;
+    if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+      tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
+    } else {
+      tai_for_rtp_ts = pacing->ptp_time_cursor;
+    }
+    tai_for_rtp_ts += delta_ns + (uint64_t)pacing->rl_rtp_offset_ns;
     pacing->rtp_time_stamp =
         st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
   }
@@ -1352,7 +1362,8 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
-      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US +
+                        (uint64_t)s->pacing.rl_rtp_offset_ns;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
@@ -1424,7 +1435,8 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
-      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US +
+                        (uint64_t)s->pacing.rl_rtp_offset_ns;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
