@@ -477,7 +477,7 @@ struct st40_rx_user_stats {
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
+  uint64_t stat_pkts_wrong_interlace_dropped;
 };
 
 /**

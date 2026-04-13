@@ -166,7 +166,6 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
   }
   s->latest_seq_id[s_port] = seq_id;
 
@@ -269,8 +268,6 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-  memset(s->stat_pkts_out_of_order_per_port, 0,
-         sizeof(s->stat_pkts_out_of_order_per_port));
 
   /* Reset interlace detection state */
   s->interlace_detected = !s->interlace_auto;
@@ -592,11 +589,12 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     notice("RX_ANC_SESSION(%d): dropped pkts %" PRIu64 "\n", idx, pkts_dropped);
   }
   if (pkts_out_of_order) {
-    warn("RX_ANC_SESSION(%d): out of order pkts %" PRIu64 " (%d:%d)\n", idx,
-         pkts_out_of_order, s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
+    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
+    warn("RX_ANC_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64 ")\n",
+         idx, pkts_out_of_order, d_p, d_r);
   }
 
   if (pkts_wrong_pt_dropped) {

@@ -3429,7 +3429,10 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
          idx, (double)bytes_p * 8 / time_sec / MTL_STAT_M_UNIT,
          (double)bytes_r * 8 / time_sec / MTL_STAT_M_UNIT, s->stat_cpu_busy_score);
   s->stat_last_time = cur_time_ns;
-  s->stat_pkts_burst = 0;
+  if (s->stat_pkts_burst > 0) {
+    notice("TX_VIDEO_SESSION(%d,%d): pkts burst %d\n", m_idx, idx, s->stat_pkts_burst);
+    s->stat_pkts_burst = 0;
+  }
   s->trs_inflight_cnt[0] = 0;
   s->inflight_cnt[0] = 0;
 
