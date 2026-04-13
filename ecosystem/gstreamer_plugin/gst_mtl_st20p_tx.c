@@ -371,6 +371,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   sink->zero_copy = (ops_tx.transport_fmt != st_frame_fmt_to_transport(ops_tx.input_fmt));
   if (sink->zero_copy) {
     ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
     ops_tx.notify_frame_done = gst_mtl_st20p_tx_frame_done;
     ops_tx.priv = sink;
   } else {

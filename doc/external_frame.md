@@ -37,6 +37,14 @@ in ops, set the flag
 ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
 ```
 
+Optionally, to enable the two-phase external frame release (where the application explicitly releases the frame slot after cleanup), also set:
+
+```c
+ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
+```
+
+Without `ST20P_TX_FLAG_EXT_FRAME_USER_DONE`, the frame slot is released immediately after `notify_frame_done` (legacy behavior).
+
 when sending a frame, get the frame and put with ext_frame info
 
 ```c
@@ -53,9 +61,10 @@ ext_frame.opaque = your_frame_handle;
 st20p_tx_put_ext_frame(tx_handle, frame, &ext_frame);
 ```
 
-when the library finished transmitting the frame, it will notify by callback. In the callback, free your resources and then call `st20p_tx_notify_ext_frame_done` to release the frame buffer back to the library. This two-phase release ensures the application can safely clean up external memory before the library reuses the frame slot.
+when the library finished transmitting the frame, it will notify by callback. When `ST20P_TX_FLAG_EXT_FRAME_USER_DONE` is set, free your resources in the callback and then call `st20p_tx_notify_ext_frame_done` to release the frame buffer back to the library. This two-phase release ensures the application can safely clean up external memory before the library reuses the frame slot.
 
-**Important:** The `notify_frame_done` callback is invoked from the library's internal tasklet — the same critical path that drives packet transmission and frame scheduling. The frame buffer remains occupied (not returned to the free pool) until `st20p_tx_notify_ext_frame_done` is called. With short frame queues this can stall the pipeline if cleanup takes too long.
+**Important:** The `notify_frame_done` callback is invoked from the library's internal tasklet — the same critical path that drives packet transmission and frame scheduling. When `ST20P_TX_FLAG_EXT_FRAME_USER_DONE` is enabled, the frame buffer remains occupied (not returned to the free pool) until `st20p_tx_notify_ext_frame_done` is called.
+With short frame queues this can stall the pipeline if cleanup takes too long.
 
 For production use, the recommended pattern is to **signal** a separate application thread from the callback and perform the actual resource cleanup and `st20p_tx_notify_ext_frame_done` call from that thread:
 
