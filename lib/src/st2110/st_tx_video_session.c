@@ -558,7 +558,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   }
   pacing->warm_pkts = warm_pkts;
 
-  /* RL pacing: shift RTP timestamp forward by 3 packets to compensate warm-up pad */
+  /* RL pacing: shift RTP timestamp back by few packets to compensate warm-up pad */
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
     pacing->rl_rtp_offset_ns = MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs;
   }
@@ -599,9 +599,12 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
-  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f rl_rtp_adj %.3fns\n",
-       __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
-       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps), pacing->rl_rtp_offset_ns);
+  info(
+      "%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f "
+      "rl_rtp_adj %.3fns\n",
+      __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
+      pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps),
+      pacing->rl_rtp_offset_ns);
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
     ret = st_video_resolve_pacing_tasklet(s, i);
