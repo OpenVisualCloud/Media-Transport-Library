@@ -828,6 +828,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_done = test_st20p_tx_frame_done;
     if (para->tx_ext) {
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+      ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;

@@ -237,6 +237,7 @@ int main(int argc, char** argv) {
     ops_tx.notify_frame_available = tx_st20p_frame_available;
     ops_tx.notify_frame_done = tx_st20p_frame_done;
     ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
 
     st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
