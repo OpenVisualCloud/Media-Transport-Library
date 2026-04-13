@@ -14,7 +14,7 @@
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
-#define MTL_LATENCY_COMPENSATION_PACKET_SHIFT 2
+#define MTL_LATENCY_COMPENSATION_PACKET_SHIFT 5
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
