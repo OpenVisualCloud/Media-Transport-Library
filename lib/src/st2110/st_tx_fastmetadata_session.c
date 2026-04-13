@@ -1569,7 +1569,6 @@ static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl*
     notice("TX_FMD_SESSION(%d): error user timestamp %" PRIu64 "\n", idx, d);
   }
 
-  us->stat_last_time = s->stat_last_time;
   memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;

@@ -305,7 +305,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
   }
   s->latest_seq_id[s_port] = seq_id;
 
@@ -472,7 +471,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
   }
   s->latest_seq_id[s_port] = seq_id;
 
@@ -536,8 +534,6 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->st30_pkt_idx = 0;
   s->st30_cur_frame = NULL;
   s->first_pkt_rtp_ts = 0;
-  s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_frame_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
@@ -1005,11 +1001,13 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
 
   s->stat_last_time = cur_time_ns;
   if (pkts_out_of_order) {
-    warn("RX_AUDIO_SESSION(%d): out of order pkts %" PRIu64 " (%d:%d)\n", idx,
-         pkts_out_of_order, s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
+    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
+    warn("RX_AUDIO_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64
+         ")\n",
+         idx, pkts_out_of_order, d_p, d_r);
   }
 
   if (pkts_dropped) {

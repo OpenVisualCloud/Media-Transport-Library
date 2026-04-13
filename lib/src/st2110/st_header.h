@@ -663,7 +663,6 @@ struct st_rx_video_session_impl {
   struct st20_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
   /* internal-only stats */
   rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
-  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
@@ -963,7 +962,6 @@ struct st_rx_audio_session_impl {
   struct st30_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
   /* internal-only stats */
   rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
-  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
   struct mt_stat_u64 stat_time;
@@ -1128,7 +1126,6 @@ struct st_rx_ancillary_session_impl {
   struct st40_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
   /* internal-only stats */
   rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
-  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
   struct mt_stat_u64 stat_time;
@@ -1287,7 +1284,6 @@ struct st_rx_fastmetadata_session_impl {
   struct st41_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
   /* internal-only stats */
   rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
-  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
   struct mt_stat_u64 stat_time;

@@ -282,18 +282,9 @@ struct st41_rx_ops {
  */
 struct st41_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_pkts_redundant;
-  uint64_t stat_pkts_out_of_order;
-  uint64_t stat_pkts_enqueue_fail;
-  uint64_t stat_pkts_wrong_pt_dropped;
-  uint64_t stat_pkts_wrong_ssrc_dropped;
-  uint64_t stat_pkts_received;
-  uint64_t stat_last_time;
-  uint64_t stat_max_notify_rtp_us;
+  uint64_t stat_epoch_mismatch;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
-  uint64_t stat_pkts_wrong_interlace_dropped;
-  uint64_t stat_epoch_mismatch;
 };
 
 /**
@@ -304,10 +295,10 @@ struct st41_rx_user_stats {
   uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_last_time;
-  uint32_t stat_max_notify_rtp_us;
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
+  uint64_t stat_max_notify_rtp_us;
+  uint64_t stat_interlace_first_field;
+  uint64_t stat_interlace_second_field;
+  uint64_t stat_pkts_wrong_interlace_dropped;
 };
 
 /**
