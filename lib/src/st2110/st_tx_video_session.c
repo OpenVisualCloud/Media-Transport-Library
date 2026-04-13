@@ -560,7 +560,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
 
   /* RL pacing: shift RTP timestamp back by few packets to compensate warm-up pad */
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
-    pacing->rl_rtp_offset_ns = (uint64_t)(MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs);
+    pacing->rl_rtp_offset_ns =
+        (uint64_t)(MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs);
   }
 
   /* calculate vrx pkts */
