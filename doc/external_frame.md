@@ -40,10 +40,10 @@ ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
 Optionally, to enable the two-phase external frame release (where the application explicitly releases the frame slot after cleanup), also set:
 
 ```c
-ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
+ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
 ```
 
-Without `ST20P_TX_FLAG_EXT_FRAME_USER_DONE`, the frame slot is released immediately after `notify_frame_done` (legacy behavior).
+Without `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE`, the frame slot is released immediately after `notify_frame_done` (legacy behavior).
 
 when sending a frame, get the frame and put with ext_frame info
 
@@ -61,12 +61,12 @@ ext_frame.opaque = your_frame_handle;
 st20p_tx_put_ext_frame(tx_handle, frame, &ext_frame);
 ```
 
-when the library finished transmitting the frame, it will notify by callback. When `ST20P_TX_FLAG_EXT_FRAME_USER_DONE` is set, free your resources in the callback and then call `st20p_tx_notify_ext_frame_done` to release the frame buffer back to the library. This two-phase release ensures the application can safely clean up external memory before the library reuses the frame slot.
+when the library finished transmitting the frame, it will notify by callback. When `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE` is set, free your resources in the callback and then call `st20p_tx_notify_ext_frame_free` to release the frame buffer back to the library. This two-phase release ensures the application can safely clean up external memory before the library reuses the frame slot.
 
-**Important:** The `notify_frame_done` callback is invoked from the library's internal tasklet — the same critical path that drives packet transmission and frame scheduling. When `ST20P_TX_FLAG_EXT_FRAME_USER_DONE` is enabled, the frame buffer remains occupied (not returned to the free pool) until `st20p_tx_notify_ext_frame_done` is called.
+**Important:** The `notify_frame_done` callback is invoked from the library's internal tasklet — the same critical path that drives packet transmission and frame scheduling. When `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE` is enabled, the frame buffer remains occupied (not returned to the free pool) until `st20p_tx_notify_ext_frame_free` is called.
 With short frame queues this can stall the pipeline if cleanup takes too long.
 
-For production use, the recommended pattern is to **signal** a separate application thread from the callback and perform the actual resource cleanup and `st20p_tx_notify_ext_frame_done` call from that thread:
+For production use, the recommended pattern is to **signal** a separate application thread from the callback and perform the actual resource cleanup and `st20p_tx_notify_ext_frame_free` call from that thread:
 
 ```c
 // set the callback and priv in ops
@@ -91,7 +91,7 @@ static void* cleanup_thread(void* arg) {
         while ((frame = dequeue(&s->done_queue))) {
             your_frame_handle = frame->opaque;
             your_frame_free(your_frame_handle);
-            st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
+            st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
         }
     }
     return NULL;
@@ -105,12 +105,12 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
     ctx* s = priv;
     your_frame_handle = frame->opaque;
     your_frame_free(your_frame_handle);
-    st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
+    st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
     return 0;
 }
 ```
 
-Note: `st20p_tx_notify_ext_frame_done` is safe to call unconditionally — when the library uses an internal converter (input format differs from transport format), the frame buffer is already released before the callback, and the call is a silent no-op.
+Note: `st20p_tx_notify_ext_frame_free` is safe to call unconditionally — when the library uses an internal converter (input format differs from transport format), the frame buffer is already released before the callback, and the call is a silent no-op.
 
 Others follow the general API flow.
 

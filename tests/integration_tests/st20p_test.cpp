@@ -226,13 +226,13 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
     if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
-      st20p_tx_notify_ext_frame_done((st20p_tx_handle)s->handle, frame);
+      st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
       return 0;
     }
   }
 
   err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
-  st20p_tx_notify_ext_frame_done((st20p_tx_handle)s->handle, frame);
+  st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
   return 0;
 }
 
@@ -828,7 +828,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_done = test_st20p_tx_frame_done;
     if (para->tx_ext) {
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
-      ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
+      ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
