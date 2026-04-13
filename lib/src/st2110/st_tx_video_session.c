@@ -560,7 +560,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
 
   /* RL pacing: shift RTP timestamp back by few packets to compensate warm-up pad */
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
-    pacing->rl_rtp_offset_ns = MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs;
+    pacing->rl_rtp_offset_ns = (uint64_t)(MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs);
   }
 
   /* calculate vrx pkts */
@@ -601,7 +601,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   }
   info(
       "%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f "
-      "rl_rtp_adj %.3fns\n",
+      "rl_rtp_adj %" PRIu64 "ns\n",
       __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps),
       pacing->rl_rtp_offset_ns);
@@ -745,7 +745,7 @@ static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
     } else {
       tai_for_rtp_ts = pacing->ptp_time_cursor;
     }
-    tai_for_rtp_ts += delta_ns - (uint64_t)pacing->rl_rtp_offset_ns;
+    tai_for_rtp_ts += delta_ns - pacing->rl_rtp_offset_ns;
     pacing->rtp_time_stamp =
         st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
   }
@@ -1366,7 +1366,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US -
-                        (uint64_t)s->pacing.rl_rtp_offset_ns;
+                        s->pacing.rl_rtp_offset_ns;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
@@ -1439,7 +1439,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US -
-                        (uint64_t)s->pacing.rl_rtp_offset_ns;
+                        s->pacing.rl_rtp_offset_ns;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }

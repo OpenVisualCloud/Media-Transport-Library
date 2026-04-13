@@ -173,8 +173,8 @@ struct st_tx_video_pacing {
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
   double frame_idle_time;
   double reactive;
-  float pad_interval;      /* padding pkt interval(pkts level) for RL pacing */
-  double rl_rtp_offset_ns; /* RL-only RTP timestamp shift (ns), compensates warm-up */
+  float pad_interval;        /* padding pkt interval(pkts level) for RL pacing */
+  uint64_t rl_rtp_offset_ns; /* RL-only RTP timestamp shift (ns), compensates warm-up */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
