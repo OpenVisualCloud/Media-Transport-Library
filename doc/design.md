@@ -12,7 +12,7 @@ Similar to other network processing libraries, it consists of a control plane an
 
 MTL default uses busy polling, also known as busy-waiting or spinning, to achieve high data packet throughput and low latency. This technique constantly checks for new data packets to process rather than waiting for an interrupt. The polling thread is pinned to a single CPU core to prevent the thread from migrating between CPU cores.
 
-Busy polling allows t he application to detect and process packets as soon as they arrive, minimizing latency. It provides consistent and predictable packet processing times because there's no waiting time introduced by other scheduling mechanisms. It also avoids context switches between the kernel and user space, which can be costly in terms of CPU cycles.
+Busy polling allows the application to detect and process packets as soon as they arrive, minimizing latency. It provides consistent and predictable packet processing times because there's no waiting time introduced by other scheduling mechanisms. It also avoids context switches between the kernel and user space, which can be costly in terms of CPU cycles.
 
 The drawbacks is it can lead to 100% CPU usage because the cores are always active, checking for new work.
 
@@ -471,8 +471,8 @@ For more details, please refer to [RTCP doc](rtcp.md).
 
 By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves — especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
-For st20p TX external frames, an optional two-phase release mode is available via `ST20P_TX_FLAG_EXT_FRAME_USER_DONE`.
-When enabled, after transmission completes the library parks the frame in an intermediate state and notifies the application via the `notify_frame_done` callback. The application must free its resources and then call `st20p_tx_notify_ext_frame_done` to release the frame buffer back to the library.
+For st20p TX external frames, an optional two-phase release mode is available via `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE`.
+When enabled, after transmission completes the library parks the frame in an intermediate state and notifies the application via the `notify_frame_done` callback. The application must free its resources and then call `st20p_tx_notify_ext_frame_free` to release the frame buffer back to the library.
 This two-phase release prevents the library from reusing the frame slot while the application still holds references to the external memory. Without this flag, the legacy behavior is preserved and the frame slot is released immediately.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 

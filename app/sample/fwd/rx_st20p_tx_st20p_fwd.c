@@ -103,11 +103,11 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   struct st_frame* rx_frame = rx_st20p_dequeue_frame(s);
   if (frame->addr[0] != rx_frame->addr[0]) {
     err("%s, frame ooo, should not happen!\n", __func__);
-    st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
+    st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
     return -EIO;
   }
   st20p_rx_put_frame(rx_handle, rx_frame);
-  st20p_tx_notify_ext_frame_done(s->tx_handle, frame);
+  st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
   return 0;
 }
 
@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
   if (app.zero_copy) {
     ops_tx.notify_frame_done = tx_st20p_frame_done;
     ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
-    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
+    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
   }
 
   st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);

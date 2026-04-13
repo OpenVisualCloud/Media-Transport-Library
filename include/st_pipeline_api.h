@@ -493,11 +493,11 @@ enum st20p_tx_flag {
    * Enable two-phase external frame release for EXT_FRAME mode.
    * When set together with ST20P_TX_FLAG_EXT_FRAME, the library parks the frame
    * in an intermediate state after notify_frame_done; the application must call
-   * st20p_tx_notify_ext_frame_done() to release the slot back to the free pool.
+   * st20p_tx_notify_ext_frame_free() to release the slot back to the free pool.
    * Without this flag the legacy behavior is preserved (frame goes to FREE
    * immediately after notify_frame_done).
    */
-  ST20P_TX_FLAG_EXT_FRAME_USER_DONE = (MTL_BIT32(13)),
+  ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -1816,11 +1816,11 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
  * Notify the tx st2110-20 pipeline session that the application has finished
  * processing an external frame previously signalled via notify_frame_done.
  *
- * Only effective when ST20P_TX_FLAG_EXT_FRAME_USER_DONE is set.
+ * Only effective when ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is set.
  * In that mode, after notify_frame_done fires, the frame slot is held in
  * IN_USER state so the application can safely unmap / release external buffers.
  * Call this function once cleanup is complete to release the slot back to FREE.
- * When ST20P_TX_FLAG_EXT_FRAME_USER_DONE is not set this is a silent no-op.
+ * When ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is not set this is a silent no-op.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
@@ -1830,7 +1830,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
  *   - 0 if successful.
  *   - <0: Error code if the frame is not in IN_USER state.
  */
-int st20p_tx_notify_ext_frame_done(st20p_tx_handle handle, struct st_frame* frame);
+int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.

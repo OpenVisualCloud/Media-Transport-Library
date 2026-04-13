@@ -123,8 +123,9 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   /* free or return the ext memory here if necessary */
   /* then clear the frame buffer */
 
-  /* release the frame slot back to the pipeline */
-  st20p_tx_notify_ext_frame_done(s->handle, frame);
+  /* Required only when ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is set:
+   * release the frame slot back to the pipeline so it can be reused. */
+  st20p_tx_notify_ext_frame_free(s->handle, frame);
 
   return 0;
 }
@@ -237,7 +238,7 @@ int main(int argc, char** argv) {
     ops_tx.notify_frame_available = tx_st20p_frame_available;
     ops_tx.notify_frame_done = tx_st20p_frame_done;
     ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
-    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_USER_DONE;
+    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
 
     st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
