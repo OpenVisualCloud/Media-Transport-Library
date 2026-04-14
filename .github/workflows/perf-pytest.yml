@@ -84,7 +84,8 @@ jobs:
             --ip_address "${{ secrets.PERF_CLIENT_IP }}" "${{ secrets.PERF_SUT_IP }}" \
             --username "${{ secrets.RUNNER_USERNAME }}" \
             --key_path "/home/$USER/.ssh/id_ed25519" \
-            --test_time "${{ inputs.test_time || '120' }}"
+            --test_time "${{ inputs.test_time || '120' }}" \
+            --no_capture
       - name: Export workflow tag for PCAP naming
         run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
       - name: Start MtlManager
