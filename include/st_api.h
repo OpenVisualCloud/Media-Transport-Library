@@ -261,19 +261,20 @@ struct st_tx_port_stats {
 
 /**
  * A structure used to retrieve general statistics(I/O) for a session rx port.
+ * All counters are pre-redundancy (counted before redundancy filtering).
  */
 struct st_rx_port_stats {
-  /** Total number of received packets. */
+  /** Total number of received packets (pre-redundancy). */
   uint64_t packets;
-  /** Total number of received bytes. */
+  /** Total number of received bytes (pre-redundancy). */
   uint64_t bytes;
   /** Total number of received frames / memory buffers. */
   uint64_t frames;
   /** Total number of incomplete frames */
   uint64_t incomplete_frames;
-  /** Total number of received packets which are not valid. */
+  /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
-  /** Total number of out-of-order packets received */
+  /** Total number of out-of-order packets received on this port (pre-redundancy). */
   uint64_t out_of_order_packets;
 };
 
@@ -299,10 +300,21 @@ struct st_tx_user_stats {
  */
 struct st_rx_user_stats {
   struct st_rx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Per-port RX statistics */
-  /** Total number of received packets */
+  /** Total number of accepted packets (post-redundancy). */
   uint64_t stat_pkts_received;
-  /** Total number of out-of-order packets received */
+  /**
+   * Aggregate of per-port out-of-order packets: sum(port[].out_of_order_packets).
+   * For video: frame-internal pkt_idx gaps.
+   * For audio/anc/fmd: per-port RTP seq gaps (pre-redundancy).
+   */
   uint64_t stat_pkts_out_of_order;
+  /**
+   * Total packets lost post-redundancy (unrecoverable by redundancy).
+   * For audio/anc/fmd: number of missing packets inferred from RTP sequence gaps.
+   * For video: number of missing packets in corrupted/incomplete frames.
+   * Invariant: stat_pkts_unrecovered <= stat_pkts_out_of_order.
+   */
+  uint64_t stat_pkts_unrecovered;
   /** Total number of packets dropped due to wrong SSRC */
   uint64_t stat_pkts_wrong_ssrc_dropped;
   /** Total number of packets dropped due to wrong payload type */

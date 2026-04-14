@@ -166,6 +166,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
+    s->port_user_stats.common.stat_pkts_out_of_order++;
   }
   s->latest_seq_id[s_port] = seq_id;
 
@@ -214,7 +215,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->port_user_stats.common.stat_pkts_out_of_order++;
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* update seq id */
@@ -304,8 +306,10 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
     return -EIO;
   }
 
-  for (uint16_t i = 0; i < nb; i++)
-    rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
+  for (uint16_t i = 0; i < nb; i++) {
+    if (rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port) < 0)
+      s->port_user_stats.common.port[s_port].err_packets++;
+  }
 
   return 0;
 }
@@ -562,6 +566,8 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   uint64_t pkts_redundant = us->stat_pkts_redundant - snap->stat_pkts_redundant;
   uint64_t pkts_out_of_order =
       us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  uint64_t pkts_unrecovered =
+      us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
   uint64_t pkts_dropped = us->stat_pkts_dropped - snap->stat_pkts_dropped;
   uint64_t pkts_wrong_pt_dropped =
       us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
@@ -595,6 +601,9 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
                    snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
     warn("RX_ANC_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64 ")\n",
          idx, pkts_out_of_order, d_p, d_r);
+  }
+  if (pkts_unrecovered) {
+    warn("RX_ANC_SESSION(%d): unrecovered pkts %" PRIu64 "\n", idx, pkts_unrecovered);
   }
 
   if (pkts_wrong_pt_dropped) {

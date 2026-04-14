@@ -1731,7 +1731,6 @@ struct st20_rx_user_stats {
   uint64_t stat_pkts_offset_dropped;
   uint64_t stat_frames_dropped;
   uint64_t stat_pkts_idx_oo_bitmap;
-  uint64_t stat_frames_pks_missed;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
   uint64_t stat_pkts_redundant_dropped;
