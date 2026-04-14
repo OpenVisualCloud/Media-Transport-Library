@@ -296,8 +296,11 @@ struct st41_rx_user_stats {
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_last_time;
   uint64_t stat_max_notify_rtp_us;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
   uint64_t stat_interlace_first_field;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
   uint64_t stat_interlace_second_field;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
   uint64_t stat_pkts_wrong_interlace_dropped;
 };
 

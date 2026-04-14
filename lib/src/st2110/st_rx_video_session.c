@@ -921,8 +921,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
     int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
-    s->port_user_stats.stat_frames_pks_missed += miss_pkts;
 
 #if 0 /* for miss pkt detail */
     int total_pkts = s->st20_frame_size / pd_sz_per_pkt;
@@ -1005,7 +1005,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
         (s->st22_expect_size_per_frame - meta->frame_total_size) / pd_sz_per_pkt;
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
-    s->port_user_stats.stat_frames_pks_missed += miss_pkts;
+    if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
 #if 0 /* for miss pkt detail */
     int total_pkts = s->st22_expect_size_per_frame / pd_sz_per_pkt;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
@@ -3527,14 +3527,15 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   if (d || pkts_idx_dropped || pkts_offset_dropped) {
     uint64_t pkts_idx_oo_bitmap =
         us->stat_pkts_idx_oo_bitmap - snap->stat_pkts_idx_oo_bitmap;
-    uint64_t frames_pks_missed =
-        us->stat_frames_pks_missed - snap->stat_frames_pks_missed;
+    uint64_t pkts_unrecovered =
+        us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
     notice("RX_VIDEO_SESSION(%d,%d): incomplete frames %" PRIu64
            ", pkts (idx error: %" PRIu64
            ", offset "
-           "error: %" PRIu64 ", idx out of bitmap: %" PRIu64 ", missed: %" PRIu64 ")\n",
+           "error: %" PRIu64 ", idx out of bitmap: %" PRIu64 ", unrecovered: %" PRIu64
+           ")\n",
            m_idx, idx, d, pkts_idx_dropped, pkts_offset_dropped, pkts_idx_oo_bitmap,
-           frames_pks_missed);
+           pkts_unrecovered);
   }
   d = us->stat_pkts_rtp_ring_full - snap->stat_pkts_rtp_ring_full;
   if (d) {
