@@ -94,8 +94,6 @@ do_install() {
 		ninja install
 	else
 		sudo ninja install
-		# sudo ninja install may rebuild targets as root, fix ownership
-		sudo chown -R "$user":"$user" .
 	fi
 }
 

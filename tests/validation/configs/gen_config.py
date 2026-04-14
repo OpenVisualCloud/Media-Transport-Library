@@ -211,17 +211,50 @@ def main() -> None:
     # EBU args — required only in validation mode
     parser.add_argument("--ebu_ip", type=str, default=None, help="EBU LIST server IP")
     parser.add_argument("--ebu_user", type=str, default=None, help="EBU LIST username")
-    parser.add_argument("--ebu_password", type=str, default=None, help="EBU LIST password")
+    parser.add_argument(
+        "--ebu_password", type=str, default=None, help="EBU LIST password"
+    )
     # Second host — required for dual-host perf tests
-    parser.add_argument("--second_host_ip", type=str, default=None, help="second host IP")
-    parser.add_argument("--second_host_pci_device", type=str, default=None, help="second host PCI BDF(s)")
-    parser.add_argument("--second_host_username", type=str, default=None, help="second host SSH username")
-    parser.add_argument("--second_host_password", type=str, default=None, help="second host SSH password")
-    parser.add_argument("--second_host_key_path", type=str, default=None, help="second host SSH key path")
-    parser.add_argument("--second_host_mtl_path", type=str, default=None, help="MTL path on the second host (defaults to --mtl_path)")
+    parser.add_argument(
+        "--second_host_ip", type=str, default=None, help="second host IP"
+    )
+    parser.add_argument(
+        "--second_host_pci_device",
+        type=str,
+        default=None,
+        help="second host PCI BDF(s)",
+    )
+    parser.add_argument(
+        "--second_host_username",
+        type=str,
+        default=None,
+        help="second host SSH username",
+    )
+    parser.add_argument(
+        "--second_host_password",
+        type=str,
+        default=None,
+        help="second host SSH password",
+    )
+    parser.add_argument(
+        "--second_host_key_path",
+        type=str,
+        default=None,
+        help="second host SSH key path",
+    )
+    parser.add_argument(
+        "--second_host_mtl_path",
+        type=str,
+        default=None,
+        help="MTL path on the second host (defaults to --mtl_path)",
+    )
     # Perf-specific options
-    parser.add_argument("--test_time", type=int, default=120, help="test duration in seconds")
-    parser.add_argument("--media_path", type=str, default="/mnt/media", help="path to media files")
+    parser.add_argument(
+        "--test_time", type=int, default=120, help="test duration in seconds"
+    )
+    parser.add_argument(
+        "--media_path", type=str, default="/mnt/media", help="path to media files"
+    )
 
     args = parser.parse_args()
     if not args.password and not args.key_path:
