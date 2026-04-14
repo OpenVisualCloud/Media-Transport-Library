@@ -191,7 +191,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
 
     s->redundant_error_cnt[s_port]++;
-    s->port_user_stats.stat_pkts_redundant++;
+    s->port_user_stats.common.stat_pkts_redundant++;
 
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
@@ -563,7 +563,8 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   uint64_t pkts_received =
       us->common.stat_pkts_received - snap->common.stat_pkts_received;
-  uint64_t pkts_redundant = us->stat_pkts_redundant - snap->stat_pkts_redundant;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
   uint64_t pkts_out_of_order =
       us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
   uint64_t pkts_unrecovered =

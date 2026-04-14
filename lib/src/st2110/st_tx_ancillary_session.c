@@ -395,7 +395,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   time_to_tx_ns = (int64_t)start_time_tai - (int64_t)cur_tai;
   if (time_to_tx_ns < 0) {
     /* time bigger than the assigned epoch time */
-    s->port_user_stats.stat_epoch_mismatch++;
+    s->port_user_stats.common.stat_epoch_mismatch++;
     time_to_tx_ns = 0; /* send asap */
   }
 
@@ -1775,7 +1775,7 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
          idx, s->ops_name, framerate, frames_p, pkts_p, pkts_r);
 
   uint64_t d;
-  d = us->stat_epoch_mismatch - snap->stat_epoch_mismatch;
+  d = us->common.stat_epoch_mismatch - snap->common.stat_epoch_mismatch;
   if (d) {
     notice("TX_ANC_SESSION(%d): st40 epoch mismatch %" PRIu64 "\n", idx, d);
   }

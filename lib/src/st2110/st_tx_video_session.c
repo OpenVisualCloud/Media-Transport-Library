@@ -3505,11 +3505,11 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     notice("TX_VIDEO_SESSION(%d,%d): user meta %" PRIu64 " pkt %" PRIu64 "\n", m_idx, idx,
            d_meta, d_meta_pkt);
   }
-  d = us->stat_recoverable_error - snap->stat_recoverable_error;
+  d = us->common.stat_recoverable_error - snap->common.stat_recoverable_error;
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): recoverable_error %" PRIu64 " \n", m_idx, idx, d);
   }
-  d = us->stat_unrecoverable_error - snap->stat_unrecoverable_error;
+  d = us->common.stat_unrecoverable_error - snap->common.stat_unrecoverable_error;
   if (d) {
     err("TX_VIDEO_SESSION(%d,%d): unrecoverable_error %" PRIu64 " \n", m_idx, idx, d);
     /* not reset unrecoverable_error */
@@ -4083,7 +4083,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   s->queue[s_port] = mt_txq_get(impl, port, &flow);
   if (!s->queue[s_port]) {
     err("%s(%d,%d), get new txq fail\n", __func__, s_port, idx);
-    s->port_user_stats.stat_unrecoverable_error++;
+    s->port_user_stats.common.stat_unrecoverable_error++;
     s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
     return -EIO;
@@ -4112,7 +4112,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   ret = tv_mempool_init(impl, s->mgr, s);
   if (ret < 0) {
     err("%s(%d,%d), reset mempool fail\n", __func__, s_port, idx);
-    s->port_user_stats.stat_unrecoverable_error++;
+    s->port_user_stats.common.stat_unrecoverable_error++;
     s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
     return ret;
@@ -4121,7 +4121,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   /* point to next frame */
   s->st20_pkt_idx = 0;
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
-  s->port_user_stats.stat_recoverable_error++;
+  s->port_user_stats.common.stat_recoverable_error++;
   if (s->ops.notify_event)
     s->ops.notify_event(s->ops.priv, ST_EVENT_RECOVERY_ERROR, NULL);
 

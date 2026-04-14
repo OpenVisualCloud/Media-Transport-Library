@@ -543,10 +543,7 @@ struct st30_rx_ops {
  */
 struct st30_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_epoch_mismatch;
   uint64_t stat_epoch_late;
-  uint64_t stat_recoverable_error;
-  uint64_t stat_unrecoverable_error;
   uint64_t stat_pkts_burst;
   uint64_t stat_pad_pkts_burst;
   uint64_t stat_warmup_pkts_burst;
@@ -560,7 +557,6 @@ struct st30_tx_user_stats {
  */
 struct st30_rx_user_stats {
   struct st_rx_user_stats common;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_dropped;
   uint64_t stat_pkts_len_mismatch_dropped;
   uint64_t stat_slot_get_frame_fail;

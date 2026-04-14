@@ -1714,8 +1714,6 @@ struct st20_tx_user_stats {
   uint64_t stat_pkts_chain_realloc_fail;
   uint64_t stat_user_meta_cnt;
   uint64_t stat_user_meta_pkt_cnt;
-  uint64_t stat_recoverable_error;
-  uint64_t stat_unrecoverable_error;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -1733,7 +1731,6 @@ struct st20_rx_user_stats {
   uint64_t stat_pkts_idx_oo_bitmap;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
-  uint64_t stat_pkts_redundant_dropped;
   uint64_t stat_pkts_wrong_interlace_dropped;
   uint64_t stat_pkts_wrong_len_dropped;
   uint64_t stat_pkts_enqueue_fallback;
