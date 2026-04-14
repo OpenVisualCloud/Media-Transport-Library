@@ -136,8 +136,8 @@ Video (ST20) works differently from audio/anc/fmd:
   `port[].out_of_order_packets` and `stat_pkts_out_of_order` are incremented together
 - Video has **no `session_seq_id`** — frames are identified by RTP timestamp, and each
   frame resets the packet index tracking
-- `stat_pkts_unrecovered` for video counts exact missing packets in corrupted frames
-  (`st20_total_pkts - pkts_received`)
+- `stat_pkts_unrecovered` for video counts missing packets in corrupted frames
+  (estimated from `(frame_size - recv_size) / avg_pkt_size`)
 
 **Practical implication**: For video, `stat_pkts_unrecovered` and `stat_frames_dropped`
 are the primary loss indicators. `common.port[].incomplete_frames` shows per-port
@@ -146,17 +146,6 @@ contribution.
 ---
 
 ## Cross-Session Differences
-
-### Redundancy Counter Names
-
-Different session types use different counter names for the redundancy concept:
-
-| Session | Counter name | Detection mechanism |
-|---|---|---|
-| Video (ST20) | `stat_pkts_redundant_dropped` | Same-frame packet already seen at slot level |
-| Audio (ST30) | `stat_pkts_redundant` | Stale RTP timestamp |
-| Ancillary (ST40) | `stat_pkts_redundant` | Stale timestamp or stale seq_id |
-| Metadata (ST41) | `stat_pkts_redundant` | Stale timestamp or stale seq_id |
 
 ### OOO Counters at a Glance
 

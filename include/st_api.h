@@ -292,6 +292,12 @@ struct st_tx_user_stats {
   uint64_t stat_exceed_frame_time;
   /** Total number of errors due to user timestamp issues */
   uint64_t stat_error_user_timestamp;
+  /** Total number of epoch mismatch events */
+  uint64_t stat_epoch_mismatch;
+  /** Total number of recoverable transmission errors (session auto-recovered) */
+  uint64_t stat_recoverable_error;
+  /** Total number of unrecoverable transmission errors (session needed restart) */
+  uint64_t stat_unrecoverable_error;
 };
 
 /**
@@ -319,6 +325,8 @@ struct st_rx_user_stats {
   uint64_t stat_pkts_wrong_ssrc_dropped;
   /** Total number of packets dropped due to wrong payload type */
   uint64_t stat_pkts_wrong_pt_dropped;
+  /** Total number of redundant packets filtered (post-redundancy duplicates). */
+  uint64_t stat_pkts_redundant;
 };
 
 /**

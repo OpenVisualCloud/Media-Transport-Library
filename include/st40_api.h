@@ -462,7 +462,6 @@ struct st40_rx_ops {
  */
 struct st40_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_epoch_mismatch;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -473,7 +472,6 @@ struct st40_tx_user_stats {
 struct st40_rx_user_stats {
   struct st_rx_user_stats common;
   uint64_t stat_pkts_dropped;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;

@@ -282,7 +282,6 @@ struct st41_rx_ops {
  */
 struct st41_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_epoch_mismatch;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -292,7 +291,6 @@ struct st41_tx_user_stats {
  */
 struct st41_rx_user_stats {
   struct st_rx_user_stats common;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_last_time;
   uint64_t stat_max_notify_rtp_us;

@@ -317,7 +317,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
-    s->port_user_stats.stat_epoch_mismatch++;
+    s->port_user_stats.common.stat_epoch_mismatch++;
     if (s->ops.notify_frame_late) {
       s->ops.notify_frame_late(s->ops.priv, -to_epoch / pkt_time);
     }
@@ -2282,7 +2282,7 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
          s->inflight_cnt[MTL_SESSION_PORT_P], s->inflight_cnt[MTL_SESSION_PORT_R]);
 
   uint64_t d;
-  d = us->stat_epoch_mismatch - snap->stat_epoch_mismatch;
+  d = us->common.stat_epoch_mismatch - snap->common.stat_epoch_mismatch;
   if (d) {
     notice("TX_AUDIO_SESSION(%d,%d): epoch mismatch %" PRIu64 "\n", m_idx, idx, d);
   }
@@ -2311,11 +2311,11 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
   if (d) {
     notice("TX_AUDIO_SESSION(%d,%d): error user timestamp %" PRIu64 "\n", m_idx, idx, d);
   }
-  d = us->stat_recoverable_error - snap->stat_recoverable_error;
+  d = us->common.stat_recoverable_error - snap->common.stat_recoverable_error;
   if (d) {
     notice("TX_AUDIO_SESSION(%d,%d): recoverable_error %" PRIu64 " \n", m_idx, idx, d);
   }
-  d = us->stat_unrecoverable_error - snap->stat_unrecoverable_error;
+  d = us->common.stat_unrecoverable_error - snap->common.stat_unrecoverable_error;
   if (d) {
     err("TX_AUDIO_SESSION(%d,%d): unrecoverable_error %" PRIu64 " \n", m_idx, idx, d);
     /* not reset unrecoverable_error */
@@ -2717,10 +2717,10 @@ int st_audio_queue_fatal_error(struct mtl_main_impl* impl,
     if (ret < 0) {
       err("%s(%d,%d), init mempool fail %d for session %d\n", __func__, idx, port, ret,
           sidx);
-      s->port_user_stats.stat_unrecoverable_error++;
+      s->port_user_stats.common.stat_unrecoverable_error++;
       s->active = false; /* mark current session to dead */
     } else {
-      s->port_user_stats.stat_recoverable_error++;
+      s->port_user_stats.common.stat_recoverable_error++;
     }
     tx_audio_session_put(mgr, sidx);
   }

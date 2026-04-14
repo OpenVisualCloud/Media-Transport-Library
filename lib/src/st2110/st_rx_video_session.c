@@ -1575,7 +1575,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
-    s->port_user_stats.stat_pkts_redundant_dropped++;
+    s->port_user_stats.common.stat_pkts_redundant++;
     slot->pkts_recv_per_port[s_port]++;
     s->redundant_error_cnt[s_port]++;
     return 0;
@@ -1651,7 +1651,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
-      s->port_user_stats.stat_pkts_redundant_dropped++;
+      s->port_user_stats.common.stat_pkts_redundant++;
       slot->pkts_recv_per_port[s_port]++;
       /* tp for the redundant packet */
       if (s->enable_timing_parser)
@@ -1845,7 +1845,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
-      s->port_user_stats.stat_pkts_redundant_dropped++;
+      s->port_user_stats.common.stat_pkts_redundant++;
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
@@ -1997,7 +1997,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
-    s->port_user_stats.stat_pkts_redundant_dropped++;
+    s->port_user_stats.common.stat_pkts_redundant++;
     slot->pkts_recv_per_port[s_port]++;
     s->redundant_error_cnt[s_port]++;
     return 0;
@@ -2038,7 +2038,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
-      s->port_user_stats.stat_pkts_redundant_dropped++;
+      s->port_user_stats.common.stat_pkts_redundant++;
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
@@ -2172,7 +2172,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
-    s->port_user_stats.stat_pkts_redundant_dropped++;
+    s->port_user_stats.common.stat_pkts_redundant++;
     s->redundant_error_cnt[s_port]++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
@@ -2203,7 +2203,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
-      s->port_user_stats.stat_pkts_redundant_dropped++;
+      s->port_user_stats.common.stat_pkts_redundant++;
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
@@ -3497,20 +3497,20 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
       us->common.stat_pkts_received - snap->common.stat_pkts_received;
   uint64_t bytes_received = us->stat_bytes_received - snap->stat_bytes_received;
   uint64_t slices_received = us->stat_slices_received - snap->stat_slices_received;
-  uint64_t pkts_redundant_dropped =
-      us->stat_pkts_redundant_dropped - snap->stat_pkts_redundant_dropped;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
 
   char extra_info[128] = "";
-  if (slices_received || pkts_redundant_dropped) {
+  if (slices_received || pkts_redundant) {
     int offset = 0;
     if (slices_received) {
       offset += snprintf(extra_info + offset, sizeof(extra_info) - offset,
                          " slices %" PRIu64, slices_received);
     }
-    if (pkts_redundant_dropped) {
-      offset += snprintf(extra_info + offset, sizeof(extra_info) - offset,
-                         "%sredundant %" PRIu64, slices_received ? " + " : " ",
-                         pkts_redundant_dropped);
+    if (pkts_redundant) {
+      offset +=
+          snprintf(extra_info + offset, sizeof(extra_info) - offset,
+                   "%sredundant %" PRIu64, slices_received ? " + " : " ", pkts_redundant);
     }
   }
   notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %" PRIu64 "%s\n", m_idx, idx,
