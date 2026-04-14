@@ -57,37 +57,10 @@ jobs:
           echo "Test framework: ${{ github.sha }} (${{ github.ref_name }})"
           git checkout ${{ github.sha }} -- tests/validation/ .github/
       - uses: ./.github/actions/build
-      - name: Build MTL on second host via SSH
-        run: |
-          ssh -o StrictHostKeyChecking=no \
-            "${{ secrets.RUNNER_USERNAME }}@${{ secrets.PERF_CLIENT_IP }}" bash -s -- \
-            "${{ secrets.PERF_CLIENT_MTL_PATH }}" "${{ inputs.branch || github.ref }}" <<'REMOTE_SCRIPT'
-          set -ex
-          MTL_DIR="$1"
-          BRANCH="${2#refs/heads/}"
-          if [ ! -d "${MTL_DIR}/.git" ]; then
-            git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git "${MTL_DIR}"
-          fi
-          cd "${MTL_DIR}"
-          git config --global --add safe.directory "${MTL_DIR}"
-          git fetch --all --prune
-          git checkout "${BRANCH}" 2>/dev/null || git checkout "origin/${BRANCH}" 2>/dev/null || true
-          git reset --hard "origin/${BRANCH}" 2>/dev/null || git reset --hard "${BRANCH}"
-          sudo killall -SIGKILL gtest.sh KahawaiTest KahawaiUfdTest KahawaiUplTest ffmpeg RxTxApp 2>/dev/null || true
-          sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng 2>/dev/null || true
-          sleep 2
-          export CICD_BUILD=1
-          export SETUP_BUILD_AND_INSTALL_DPDK=0
-          export SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0
-          export SETUP_BUILD_AND_INSTALL_EBPF_XDP=0
-          export SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0
-          export MTL_BUILD_AND_INSTALL=1
-          export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1
-          export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1
-          export TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET=1
-          export TOOLS_RUN_SET_TAI_OFFSET=1
-          bash .github/scripts/setup_environment.sh
-          REMOTE_SCRIPT
+        with:
+          remote_host: '${{ secrets.RUNNER_USERNAME }}@${{ secrets.PERF_CLIENT_IP }}'
+          remote_mtl_path: '${{ secrets.PERF_CLIENT_MTL_PATH }}'
+          remote_branch: '${{ inputs.branch || github.ref_name }}'
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |
@@ -105,23 +78,13 @@ jobs:
         run: |
           source ../.venv/bin/activate
           python3 gen_config.py \
-            --mode perf \
             --session_id "${{ env.SESSION_ID }}" \
-            --mtl_path "${{ secrets.RUNNER_MTL_PATH }}" \
-            --pci_device "${{ env.PCI_DEVICE }}" \
-            --ip_address "${{ secrets.PERF_SUT_IP }}" \
+            --mtl_path "${{ secrets.PERF_CLIENT_MTL_PATH }}" "${{ secrets.RUNNER_MTL_PATH }}" \
+            --pci_device "${{ env.PCI_DEVICE }}" "${{ env.PCI_DEVICE }}" \
+            --ip_address "${{ secrets.PERF_CLIENT_IP }}" "${{ secrets.PERF_SUT_IP }}" \
             --username "${{ secrets.RUNNER_USERNAME }}" \
             --key_path "/home/$USER/.ssh/id_ed25519" \
-            --second_host_ip "${{ secrets.PERF_CLIENT_IP }}" \
-            --second_host_pci_device "${{ env.PCI_DEVICE }}" \
-            --second_host_mtl_path "${{ secrets.PERF_CLIENT_MTL_PATH }}" \
             --test_time "${{ inputs.test_time || '120' }}"
-      - name: Pre-populate SSH known_hosts
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          ssh-keyscan -H "${{ secrets.PERF_SUT_IP }}" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh-keyscan -H "${{ secrets.PERF_CLIENT_IP }}" >> ~/.ssh/known_hosts 2>/dev/null
-          chmod 644 ~/.ssh/known_hosts
       - name: Export workflow tag for PCAP naming
         run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
       - name: Start MtlManager
