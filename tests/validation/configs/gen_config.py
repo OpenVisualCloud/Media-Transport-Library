@@ -16,6 +16,7 @@ def gen_test_config(
     ebu_password: str = None,
     media_path: str = "/mnt/media",
     test_time: int = 120,
+    no_capture: bool = False,
 ) -> str:
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
 
@@ -31,7 +32,7 @@ def gen_test_config(
     }
 
     has_ebu = all([ebu_ip, ebu_user, ebu_password])
-    has_sniff = len(pci_devices) >= 2
+    has_sniff = len(pci_devices) >= 2 and not no_capture
     test_config["compliance"] = has_ebu and has_sniff
 
     if has_sniff:
@@ -176,6 +177,11 @@ def main() -> None:
     # Optional test settings
     parser.add_argument("--test_time", type=int, default=120)
     parser.add_argument("--media_path", type=str, default="/mnt/media")
+    parser.add_argument(
+        "--no_capture",
+        action="store_true",
+        help="Disable packet capture so the 2nd NIC port is available for redundant (ST2022-7) tests",
+    )
 
     args = parser.parse_args()
 
@@ -198,6 +204,7 @@ def main() -> None:
         ebu_password=args.ebu_password,
         media_path=args.media_path,
         test_time=args.test_time,
+        no_capture=args.no_capture,
     )
 
     with open("test_config.yaml", "w") as file:
