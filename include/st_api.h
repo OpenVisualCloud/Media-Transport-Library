@@ -368,6 +368,18 @@ enum st_fps st_name_to_fps(const char* name);
 /**
  * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
  *
+ * The conversion quantises the continuous TAI time to a discrete media-clock tick
+ * by computing: tick = round(tai_ns * sampling_rate / 1e9).  Because the media
+ * clock is discrete, a difference of just 1 ns in the input can change the output
+ * by one tick when the value lies exactly on a tick boundary.
+ *
+ * Callers that derive tai_ns from a frame number and frame period (which is a
+ * rational number, e.g. 1001/60000 s for 59.94 fps) must use truncation toward
+ * zero — **not** rounding — when converting the rational time to nanoseconds,
+ * i.e.  tai_ns = (uint64_t)(frame_number * period_num / period_den).
+ * Using roundl() or similar can push the value past a tick boundary, producing
+ * repeated or skipped RTP timestamps.
+ *
  * @param tai_ns
  *   time in nanoseconds since the TAI epoch.
  * @param sampling_rate
