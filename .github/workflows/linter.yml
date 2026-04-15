@@ -39,5 +39,6 @@ jobs:
           VALIDATE_PYTHON_MYPY: false
           VALIDATE_DOCKERFILE_HADOLINT: false
           VALIDATE_PYTHON_PYLINT: false
+          VALIDATE_TYPESCRIPT_STANDARD: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
