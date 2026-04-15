@@ -47,7 +47,9 @@ real-time introspection when active:
 | `mtl_usdt_session_timing` | Per-session processing latency |
 | `mtl_usdt_frame_trace` | Frame lifecycle with per-stream FPS |
 | `mtl_usdt_ptp_trace` | PTP synchronization delta statistics |
+<!-- textlint-disable terminology -->
 | `mtl_usdt_cni_pcap` | CNI packet capture to pcapng files |
+<!-- textlint-enable terminology -->
 | `mtl_usdt_log_monitor` | Real-time log capture (read-only) |
 | `mtl_usdt_list_probes` | Enumerate all available USDT probes |
 
@@ -251,7 +253,9 @@ USDT then logs then InfluxDB.
 | `mtl_usdt_session_timing` | Per-session processing latency |
 | `mtl_usdt_frame_trace` | Frame lifecycle with per-stream FPS |
 | `mtl_usdt_ptp_trace` | PTP sync delta statistics (avg/min/max/stddev) |
+<!-- textlint-disable terminology -->
 | `mtl_usdt_cni_pcap` | Trigger CNI packet capture to pcapng files |
+<!-- textlint-enable terminology -->
 | `mtl_usdt_log_monitor` | Real-time log capture (read-only, no side effects) |
 
 ### BCC / eBPF Tracing (19 tools)
