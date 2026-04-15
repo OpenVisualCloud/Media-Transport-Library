@@ -15,15 +15,16 @@
 #ifndef POC_INFLUXDB_H
 #define POC_INFLUXDB_H
 
-#include "poc_types.h"
 #include <stdbool.h>
+
+#include "poc_types.h"
 
 /* One-time init.  Returns true if InfluxDB push is enabled. */
 bool poc_influxdb_init(void);
 
 /* Push current stats snapshot as InfluxDB line-protocol points.
  * Silently returns if InfluxDB is not configured. */
-void poc_influxdb_push(const poc_stats_t *stats, const char *role);
+void poc_influxdb_push(const poc_stats_t* stats, const char* role);
 
 /* Cleanup (curl teardown). */
 void poc_influxdb_cleanup(void);
