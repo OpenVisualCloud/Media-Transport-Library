@@ -31,6 +31,7 @@ Contents
    doc/build.md
    Build Guide on Windows <doc/build_WIN.md>
    doc/run.md
+   doc/run_i226.md
    doc/e810.md
    doc/run_WIN.md
    doc/vm.md
