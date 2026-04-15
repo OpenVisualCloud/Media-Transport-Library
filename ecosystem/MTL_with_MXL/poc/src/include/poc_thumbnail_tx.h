@@ -14,11 +14,11 @@
 #ifndef POC_THUMBNAIL_TX_H
 #define POC_THUMBNAIL_TX_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-#define POC_TX_THUMB_WIDTH   480
-#define POC_TX_THUMB_HEIGHT  270
+#define POC_TX_THUMB_WIDTH 480
+#define POC_TX_THUMB_HEIGHT 270
 #define POC_TX_THUMB_QUALITY 75
 #define POC_TX_THUMB_RGB_SIZE ((size_t)POC_TX_THUMB_WIDTH * POC_TX_THUMB_HEIGHT * 3)
 
@@ -31,8 +31,7 @@
  * @param src_h      Source frame height in pixels.
  * @return 0 on success.
  */
-int poc_thumb_tx_init(const char *thumb_dir,
-                      uint32_t src_w, uint32_t src_h);
+int poc_thumb_tx_init(const char* thumb_dir, uint32_t src_w, uint32_t src_h);
 
 /**
  * Generate P and R preview thumbnails from YUV422P10LE planar data.
@@ -58,8 +57,7 @@ int poc_thumb_tx_init(const char *thumb_dir,
  * @param mute_r  Whether the redundant path is muted.
  * @return 0 on success.
  */
-int poc_thumb_tx_write(void *const planes[3], bool corrupt,
-                       bool mute_p, bool mute_r);
+int poc_thumb_tx_write(void* const planes[3], bool corrupt, bool mute_p, bool mute_r);
 
 /** Stop background thread and free resources. */
 void poc_thumb_tx_cleanup(void);

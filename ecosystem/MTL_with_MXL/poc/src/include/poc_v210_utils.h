@@ -5,8 +5,8 @@
 #ifndef POC_V210_UTILS_H
 #define POC_V210_UTILS_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * Compute the v210 line stride in bytes for a given width.

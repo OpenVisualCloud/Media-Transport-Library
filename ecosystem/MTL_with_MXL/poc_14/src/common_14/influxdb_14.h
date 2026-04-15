@@ -5,8 +5,9 @@
 #ifndef POC14_INFLUXDB_H
 #define POC14_INFLUXDB_H
 
-#include "poc_types.h"
 #include <stdbool.h>
+
+#include "poc_types.h"
 
 /**
  * Initialize the poc_14 InfluxDB client.
@@ -21,7 +22,7 @@ bool poc14_influxdb_init(void);
  * role: "sender" or "receiver"
  * stream_id: 0..15
  */
-void poc14_influxdb_push(poc_stats_t *stats, const char *role, int stream_id);
+void poc14_influxdb_push(poc_stats_t* stats, const char* role, int stream_id);
 
 /**
  * Cleanup InfluxDB resources.

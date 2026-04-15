@@ -9,9 +9,9 @@
 
 /* Print current stats to stdout as a JSON line.  Thread-safe for counters.
  * Resets latency windows after reporting (single-writer per window). */
-void poc_stats_report(poc_stats_t *stats, const char *role);
+void poc_stats_report(poc_stats_t* stats, const char* role);
 
 /* Reset all counters to zero. */
-void poc_stats_reset(poc_stats_t *stats);
+void poc_stats_reset(poc_stats_t* stats);
 
 #endif /* POC_STATS_H */

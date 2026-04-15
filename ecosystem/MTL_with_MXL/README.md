@@ -17,14 +17,12 @@ On **Intel® Xeon® 6 processors (Granite Rapids)** with **Intel® Ethernet
 Network Adapter E835/E810** 200GbE NICs, running all three pipelines
 concurrently following results* were observed:
 
-- **16× 1080p60 uncompressed ST 2110-20 streams** bridged to RDMA with
-  **sub-half-frame latency*** (<8.5 ms end-to-end P99 latency at 60 fps)
-- **8K25 JPEG XS pipeline** — RAW tiles → **[Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS)** encode →
-  ST 2110-22 → [MXL](https://github.com/dmf-mxl/mxl) RDMA delivery in **~150 ms P99 Latency*** end-to-end
-- Zero-copy RDMA transport with **zero hardware drops** sustained across all
-  pipelines
+- **16× 1080p60 uncompressed ST 2110-20 streams** bridged to [MXL](https://github.com/dmf-mxl/mxl) RDMA delivery
+- **8K60 JPEG XS pipeline** — RAW tiles → **[Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS)** encode →
+  ST 2110-22 → [MXL](https://github.com/dmf-mxl/mxl) RDMA delivery
+- Zero-copy RDMA transport sustained across all pipelines
 
-The combination of Intel Xeon 6 processors, Intel E835/E810 NICs, and
+The combination of Intel Xeon 6 processors, Intel E835 NICs, and
 [Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS) delivers
 broadcast-grade latency and throughput for next-generation IP media workflows.
 All three pipelines sustain full frame rate with zero drops, demonstrating that
@@ -110,9 +108,9 @@ Each stream gets a dedicated bridge worker thread with its own
 [MXL FlowWriter](https://github.com/dmf-mxl/mxl). Bridge workers pass MTL RX
 framebuffers directly to RDMA with zero-copy.
 
-### poc_8k — 8K25 Compositor with ST 2110-22 Compressed Transport
+### poc_8k — 8K60 Compositor with ST 2110-22 Compressed Transport
 
-Composes a 7680×4320 output at ~25 fps from 16 tiled 1080p60 input streams
+Composes a 7680×4320 output at 60 fps from 16 tiled 1080p60 input streams
 (sourced from poc and poc_14 multicast), encodes each tile with
 **[Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS)**
 (ISO/IEC 21122), and delivers the compressed 8K frame over RDMA.
@@ -171,7 +169,7 @@ flowchart LR
             P2["poc_14<br>14× 1080p60"]
         end
         subgraph COMP["ST 2110-22 (JPEG XS)"]
-            P3["poc_8k<br>16 tiles → JPEG-XS → 8K25"]
+            P3["poc_8k<br>16 tiles → JPEG-XS → 8K60"]
         end
         RDMA["MTL to MXL RoCEv2<br>RDMA Write"]
     end
@@ -439,7 +437,7 @@ MTL_with_MXL/
 │   ├── src/
 │   ├── scripts/
 │   └── monitoring/
-└── poc_8k/                     # 8K25 compositor
+└── poc_8k/                     # 8K60 compositor
     ├── CMakeLists.txt
     ├── src/
     └── monitoring/
