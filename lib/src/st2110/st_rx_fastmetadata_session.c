@@ -120,10 +120,11 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* not a big deal as long as stream is continous */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->port_user_stats.common.stat_pkts_out_of_order++;
+    s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+    s->port_user_stats.common.stat_pkts_out_of_order += gap;
   }
   s->latest_seq_id[s_port] = seq_id;
 
@@ -1115,7 +1116,9 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
   }
   struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }
 
@@ -1133,8 +1136,10 @@ int st41_rx_reset_session_stats(st41_rx_handle handle) {
   }
   struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }

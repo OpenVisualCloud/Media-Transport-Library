@@ -182,6 +182,7 @@ struct st30p_tx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -197,6 +198,7 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -290,6 +292,7 @@ struct st30p_rx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -305,6 +308,7 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port

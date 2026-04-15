@@ -274,7 +274,12 @@ struct st_rx_port_stats {
   uint64_t incomplete_frames;
   /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
-  /** Total number of out-of-order packets received on this port (pre-redundancy). */
+  /**
+   * Total number of missing packets detected on this port (pre-redundancy).
+   * Counts actual missing packets, not gap events.
+   * For video: sum of pkt_idx gaps within frames.
+   * For audio/anc/fmd: sum of RTP sequence number gaps.
+   */
   uint64_t out_of_order_packets;
 };
 
@@ -309,9 +314,9 @@ struct st_rx_user_stats {
   /** Total number of accepted packets (post-redundancy). */
   uint64_t stat_pkts_received;
   /**
-   * Aggregate of per-port out-of-order packets: sum(port[].out_of_order_packets).
-   * For video: frame-internal pkt_idx gaps.
-   * For audio/anc/fmd: per-port RTP seq gaps (pre-redundancy).
+   * Total missing packets detected pre-redundancy: sum(port[].out_of_order_packets).
+   * For video: sum of pkt_idx gaps within frames.
+   * For audio/anc/fmd: sum of RTP sequence number gaps.
    */
   uint64_t stat_pkts_out_of_order;
   /**

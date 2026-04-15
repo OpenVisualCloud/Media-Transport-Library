@@ -22,6 +22,18 @@ Each RX/TX session exposes statistics via a pair of functions:
 All counters are `uint64_t` and monotonically increase until reset. The library never
 decreases a counter.
 
+### Thread Safety
+
+Both `get` and `reset` acquire the per-session spinlock internally, making them safe to
+call from any thread while the session is active.
+
+**Data-path impact**: the data-path tasklet holds the same spinlock during packet
+processing. A concurrent `get` or `reset` may cause the tasklet to skip one poll cycle
+(trylock failure). The lock is held only for a struct memcpy/memset (~200-400 bytes, tens
+of nanoseconds), which is negligible compared to the microsecond-scale poll interval.
+
+**Recommended pattern**: call `get` followed by `reset` for interval-based monitoring.
+
 | Session type | Get stats | Reset stats |
 |---|---|---|
 | Video TX (ST20) | `st20_tx_get_session_stats()` | `st20_tx_reset_session_stats()` |
@@ -39,38 +51,38 @@ Every incoming packet goes through the following stages. Understanding this orde
 interpreting which counters are "pre-redundancy" (counted early) vs "post-redundancy"
 (counted after merging redundant streams).
 
-```
+```text
 NIC queue
   │
-  ├─① Early validation (payload type, SSRC, packet length, interlace F-bits)
+  ├─1. Early validation (payload type, SSRC, packet length, interlace F-bits)
   │     └── FAIL → err_packets++
   │                 stat_pkts_wrong_pt_dropped++ or stat_pkts_wrong_ssrc_dropped++
   │                 (packet discarded)
   │
-  ├─② Per-port sequence check
-  │     └── GAP  → port[].out_of_order_packets++
-  │                 stat_pkts_out_of_order++
+  ├─2. Per-port sequence check
+  │     └── GAP  → port[].out_of_order_packets += gap_size
+  │                 stat_pkts_out_of_order += gap_size
   │
-  ├─③ port[].packets++, port[].bytes++          ← "pre-redundancy" counters
+  ├─3. port[].packets++, port[].bytes++          ← "pre-redundancy" counters
   │
-  ├─④ Redundancy filter (is this packet's timestamp already seen?)
+  ├─4. Redundancy filter (is this packet's timestamp already seen?)
   │     └── STALE → stat_pkts_redundant++
   │                  (packet discarded)
   │
-  ├─⑤ Post-redundancy loss detection
+  ├─5. Post-redundancy loss detection
   │     Audio/anc/fmd: session_seq_id gap → stat_pkts_unrecovered += gap_size
   │     Video: frame completion check     → stat_pkts_unrecovered += (total - received)
   │
-  ├─⑥ stat_pkts_received++                      ← "post-redundancy" counter
+  ├─6. stat_pkts_received++                      ← "post-redundancy" counter
   │
-  └─⑦ Deliver to frame buffer / RTP ring
+  └─7. Deliver to frame buffer / RTP ring
 ```
 
-**Key insight**: `port[].packets` counts everything that passes validation (step ③),
-including packets that the redundancy filter will later discard (step ④).
-`stat_pkts_received` counts only the packets that make it through all filters (step ⑥).
+**Key insight**: `port[].packets` counts everything that passes validation (step 3),
+including packets that the redundancy filter will later discard (step 4).
+`stat_pkts_received` counts only the packets that make it through all filters (step 6).
 
-**Video note**: Video (ST20) performs step ⑤ at frame completion time rather than per-packet.
+**Video note**: Video (ST20) performs step 5 at frame completion time rather than per-packet.
 It compares expected total packets to received packets and adds the difference to
 `stat_pkts_unrecovered`. See [Video-Specific OOO Behavior](#video-specific-ooo-behavior).
 
@@ -97,13 +109,13 @@ The library provides three levels of out-of-order / loss tracking:
 
 | Counter | Scope | Stage | What it detects |
 |---|---|---|---|
-| `port[i].out_of_order_packets` | Per-port | Pre-redundancy | Gaps in RTP sequence on a single port |
-| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of all per-port gaps |
+| `port[i].out_of_order_packets` | Per-port | Pre-redundancy | Missing packets on a single port (gap size, not gap count) |
+| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of per-port missing packets |
 | `stat_pkts_unrecovered` | Session | Post-redundancy | Actual missing packets that redundancy could not cover |
 
 **Invariants** (always true):
 
-```
+```text
 stat_pkts_out_of_order == port[0].out_of_order_packets + port[1].out_of_order_packets
 stat_pkts_unrecovered <= stat_pkts_out_of_order
 ```
@@ -114,7 +126,7 @@ stat_pkts_unrecovered <= stat_pkts_out_of_order
 |---|---:|---:|---:|---:|---|
 | Perfect stream | 0 | 0 | 0 | 0 | All good |
 | Port P lossy, R covers | 50 | 0 | 50 | 0 | Redundancy working |
-| Both ports lossy, some gaps | 50 | 30 | 80 | 5 | 5 uncoverable gaps — real data loss |
+| Both ports lossy, some overlap | 50 | 30 | 80 | 5 | 5 packets unrecoverable — real data loss |
 | Single port, some loss | 10 | n/a | 10 | 10 | No redundancy to help |
 | Network reordering | 3 | 2 | 5 | 0 | Packets reordered but none lost |
 
@@ -123,8 +135,9 @@ Key takeaways:
   covering the gaps, the stream is healthy at session level.
 - `stat_pkts_unrecovered > 0` → real data loss that redundancy could not cover. Check
   network path diversity.
-- With a single port, `stat_pkts_unrecovered` always equals `stat_pkts_out_of_order`
+- With a single port, `stat_pkts_unrecovered` equals `stat_pkts_out_of_order`
   because there is no redundant port to fill gaps.
+- Redundancy recovery rate: `(ooo - unrecovered) / ooo`.
 
 ### Video-Specific OOO Behavior
 
@@ -132,8 +145,9 @@ Video (ST20) works differently from audio/anc/fmd:
 
 - Video detects OOO using **frame-internal `pkt_idx`** (packet index within the current
   frame), not RTP sequence numbers
-- When a packet arrives with `pkt_idx != last_pkt_idx + 1`, both
-  `port[].out_of_order_packets` and `stat_pkts_out_of_order` are incremented together
+- When a packet arrives with `pkt_idx != last_pkt_idx + 1`, the gap size
+  (`pkt_idx - last_pkt_idx - 1`) is added to both `port[].out_of_order_packets`
+  and `stat_pkts_out_of_order`
 - Video has **no `session_seq_id`** — frames are identified by RTP timestamp, and each
   frame resets the packet index tracking
 - `stat_pkts_unrecovered` for video counts missing packets in corrupted frames
@@ -151,8 +165,8 @@ contribution.
 
 | Counter | Scope | Stage | Video (ST20) | Audio/Anc/FMD |
 |---|---|---|---|---|
-| `port[].out_of_order_packets` | Per-port | Pre-redundancy | `pkt_idx` gap in frame | RTP `seq_number` gap |
-| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of port OOO | Sum of port OOO |
+| `port[].out_of_order_packets` | Per-port | Pre-redundancy | Missing pkts from `pkt_idx` gaps | Missing pkts from RTP `seq_number` gaps |
+| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of port missing pkts | Sum of port missing pkts |
 | `stat_pkts_unrecovered` | Session | Post-redundancy | Missing pkts in corrupted frames | Missing pkts from `session_seq_id` gaps |
 
 ### How `stat_pkts_unrecovered` Is Computed
