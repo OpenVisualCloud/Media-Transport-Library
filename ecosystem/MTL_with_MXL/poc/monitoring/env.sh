@@ -1,3 +1,4 @@
+#!/bin/bash
 # Source this file to set InfluxDB env-vars for POC binaries.
 # Usage:  source poc/monitoring/env.sh
 

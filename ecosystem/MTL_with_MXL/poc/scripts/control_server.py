@@ -28,9 +28,8 @@ Usage:
 import argparse
 import json
 import os
-import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
 
 CTRL_FILE = "/dev/shm/poc_ctrl.json"
 
@@ -114,7 +113,10 @@ class ControlHandler(BaseHTTPRequestHandler):
         elif path == "/api/toggle/corrupt":
             state["corrupt"] = not state["corrupt"]
             write_ctrl_file()
-            print(f"[CTRL] Corruption {'ENABLED' if state['corrupt'] else 'DISABLED'}", flush=True)
+            print(
+                f"[CTRL] Corruption {'ENABLED' if state['corrupt'] else 'DISABLED'}",
+                flush=True,
+            )
             self._send_json(state)
 
         elif path == "/api/set/p":
@@ -141,7 +143,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             state["corrupt"] = enabled
             write_ctrl_file()
-            print(f"[CTRL] Corruption {'ENABLED' if state['corrupt'] else 'DISABLED'}", flush=True)
+            print(
+                f"[CTRL] Corruption {'ENABLED' if state['corrupt'] else 'DISABLED'}",
+                flush=True,
+            )
             self._send_json(state)
 
         else:
@@ -191,7 +196,10 @@ def main():
     server = HTTPServer(("0.0.0.0", args.port), ControlHandler)
     print(f"[CTRL] ST 2022-7 control server on http://0.0.0.0:{args.port}", flush=True)
     print(f"[CTRL] Toggle mechanism: control file ({CTRL_FILE})", flush=True)
-    print(f"[CTRL] Endpoints: /api/status, /api/toggle/{{p,r,corrupt}}, /api/set/{{p,r,corrupt}}", flush=True)
+    print(
+        "[CTRL] Endpoints: /api/status, /api/toggle/{p,r,corrupt}, /api/set/{p,r,corrupt}",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

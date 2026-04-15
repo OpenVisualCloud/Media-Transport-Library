@@ -18,30 +18,27 @@ import argparse
 import datetime
 import json
 import os
-import re
-import shutil
 import signal
 import subprocess
-import sys
 import time
 from collections import deque
 from pathlib import Path
 
 # ── Defaults ──
-SENDER_LOG    = "/dev/shm/poc_logs/sender.log"
-RECEIVER_LOG  = "/dev/shm/poc_logs/receiver.log"
-MONITOR_LOG   = "/dev/shm/poc_logs/latency_monitor.log"
-DIAG_BASE     = "/dev/shm/poc_logs"
-POLL_INTERVAL = 2.0          # seconds between polls
-BASELINE_WINDOW = 60         # samples for rolling baseline (~2 minutes)
-JUMP_THRESHOLD_US = 5000     # µs jump from baseline to trigger alert
-SUSTAIN_SECONDS = 10         # how long the jump must persist before diag
-DIAG_COOLDOWN = 300          # seconds between diagnostic captures
-MAX_DIAGS = 10               # max diagnostic snapshots to keep
+SENDER_LOG = "/dev/shm/poc_logs/sender.log"
+RECEIVER_LOG = "/dev/shm/poc_logs/receiver.log"
+MONITOR_LOG = "/dev/shm/poc_logs/latency_monitor.log"
+DIAG_BASE = "/dev/shm/poc_logs"
+POLL_INTERVAL = 2.0  # seconds between polls
+BASELINE_WINDOW = 60  # samples for rolling baseline (~2 minutes)
+JUMP_THRESHOLD_US = 5000  # µs jump from baseline to trigger alert
+SUSTAIN_SECONDS = 10  # how long the jump must persist before diag
+DIAG_COOLDOWN = 300  # seconds between diagnostic captures
+MAX_DIAGS = 10  # max diagnostic snapshots to keep
 
 # ── PIDs for the pipeline ──
 SYNTH_TX_PATTERN = "synthetic_st20_tx"
-SENDER_PATTERN   = "mtl_to_mxl_sender"
+SENDER_PATTERN = "mtl_to_mxl_sender"
 RECEIVER_PATTERN = "mxl_sink_receiver"
 
 
@@ -111,8 +108,7 @@ def run_cmd(cmd, timeout=10):
     """Run a shell command, return stdout (capped to 8KB)."""
     try:
         out = subprocess.check_output(
-            cmd, shell=True, text=True, timeout=timeout,
-            stderr=subprocess.STDOUT
+            cmd, shell=True, text=True, timeout=timeout, stderr=subprocess.STDOUT
         )
         return out[:8192]
     except subprocess.TimeoutExpired:
@@ -133,7 +129,9 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
         f.write(f"Current  RDMA avg: {current.get('rdma_avg', '?')} µs\n")
         f.write(f"Baseline E2E  avg: {baseline['e2e_avg']:.0f} µs\n")
         f.write(f"Current  E2E  avg: {current.get('e2e_avg', '?')} µs\n")
-        f.write(f"Jump magnitude: {current.get('rdma_avg', 0) - baseline['rdma_avg']:.0f} µs (RDMA)\n")
+        f.write(
+            f"Jump magnitude: {current.get('rdma_avg', 0) - baseline['rdma_avg']:.0f} µs (RDMA)\n"
+        )
         f.write(f"Pipeline PIDs: {pids}\n\n")
 
     # 2. CPU frequencies
@@ -147,42 +145,65 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
                 with open(freq_path) as ff:
                     freq = int(ff.read().strip()) // 1000
                     f.write(f"  CPU{c:3d}: {freq} MHz\n")
-            except:
+            except OSError:
                 pass
         f.write("\n=== CPU governor ===\n")
         f.write(run_cmd("cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"))
         f.write("\n=== intel_pstate ===\n")
-        f.write(run_cmd("cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null"))
-        f.write(run_cmd("cat /sys/devices/system/cpu/intel_pstate/max_perf_pct 2>/dev/null"))
-        f.write(run_cmd("cat /sys/devices/system/cpu/intel_pstate/min_perf_pct 2>/dev/null"))
+        f.write(
+            run_cmd("cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null")
+        )
+        f.write(
+            run_cmd("cat /sys/devices/system/cpu/intel_pstate/max_perf_pct 2>/dev/null")
+        )
+        f.write(
+            run_cmd("cat /sys/devices/system/cpu/intel_pstate/min_perf_pct 2>/dev/null")
+        )
 
     # 3. C-state residency
     with open(f"{diag_dir}/cstates.txt", "w") as f:
         f.write("=== C-state residency (pipeline cores) ===\n")
         for c in [1, 2, 3, 4, 56, 57]:
             f.write(f"\n--- CPU {c} ---\n")
-            for state_dir in sorted(Path(f"/sys/devices/system/cpu/cpu{c}/cpuidle").glob("state*")):
+            for state_dir in sorted(
+                Path(f"/sys/devices/system/cpu/cpu{c}/cpuidle").glob("state*")
+            ):
                 try:
                     name = (state_dir / "name").read_text().strip()
                     usage = (state_dir / "usage").read_text().strip()
                     time_us = (state_dir / "time").read_text().strip()
                     disable = (state_dir / "disable").read_text().strip()
-                    f.write(f"  {name}: usage={usage} time={time_us}µs disable={disable}\n")
-                except:
+                    f.write(
+                        f"  {name}: usage={usage} time={time_us}µs disable={disable}\n"
+                    )
+                except OSError:
                     pass
 
     # 4. turbostat snapshot (2 second sample)
     with open(f"{diag_dir}/turbostat.txt", "w") as f:
-        f.write(run_cmd("turbostat --quiet --interval 2 --num_iterations 1 2>&1 | head -30", timeout=10))
+        f.write(
+            run_cmd(
+                "turbostat --quiet --interval 2 --num_iterations 1 2>&1 | head -30",
+                timeout=10,
+            )
+        )
 
     # 5. /proc/interrupts for NIC IRQs
     with open(f"{diag_dir}/interrupts.txt", "w") as f:
         f.write("=== NIC-related interrupts ===\n")
-        f.write(run_cmd("grep -E 'ens1np0|enp171s0np0|irdma|ice' /proc/interrupts | head -30"))
+        f.write(
+            run_cmd(
+                "grep -E 'ens1np0|enp171s0np0|irdma|ice' /proc/interrupts | head -30"
+            )
+        )
         f.write("\n=== IRQ affinity for ice/irdma ===\n")
-        f.write(run_cmd("grep -rl 'ice\\|irdma' /proc/irq/*/actions 2>/dev/null | head -5; "
-                        "for irq in $(grep -E 'ice-' /proc/interrupts | awk '{print $1}' | tr -d ':' | head -10); do "
-                        "echo \"IRQ $irq: affinity=$(cat /proc/irq/$irq/smp_affinity_list 2>/dev/null)\"; done"))
+        f.write(
+            run_cmd(
+                "grep -rl 'ice\\|irdma' /proc/irq/*/actions 2>/dev/null | head -5; "
+                "for irq in $(grep -E 'ice-' /proc/interrupts | awk '{print $1}' | tr -d ':' | head -10); do "
+                'echo "IRQ $irq: affinity=$(cat /proc/irq/$irq/smp_affinity_list 2>/dev/null)"; done'
+            )
+        )
 
     # 6. softirqs
     with open(f"{diag_dir}/softirqs.txt", "w") as f:
@@ -192,8 +213,12 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
     with open(f"{diag_dir}/nic_stats.txt", "w") as f:
         for iface in ["ens1np0", "enp171s0np0"]:
             f.write(f"\n=== {iface} ethtool -S (selected) ===\n")
-            f.write(run_cmd(f"ethtool -S {iface} 2>/dev/null | grep -E 'tx_bytes|rx_bytes|tx_errors|rx_errors|"
-                            f"tx_dropped|rx_dropped|rx_crc|link_down|tx_timeout|rx_over'"))
+            f.write(
+                run_cmd(
+                    f"ethtool -S {iface} 2>/dev/null | grep -E 'tx_bytes|rx_bytes|tx_errors|rx_errors|"
+                    f"tx_dropped|rx_dropped|rx_crc|link_down|tx_timeout|rx_over'"
+                )
+            )
             f.write(f"\n=== {iface} ethtool -c (coalescing) ===\n")
             f.write(run_cmd(f"ethtool -c {iface} 2>/dev/null"))
             f.write(f"\n=== {iface} ethtool -g (ring) ===\n")
@@ -211,14 +236,18 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
     with open(f"{diag_dir}/process_stats.txt", "w") as f:
         for name, pid in pids.items():
             f.write(f"\n=== {name} (PID {pid}) ===\n")
-            f.write(run_cmd(f"cat /proc/{pid}/status 2>/dev/null | grep -E "
-                            f"'Name|Pid|Threads|VmRSS|VmSize|Cpus_allowed_list|"
-                            f"voluntary_ctxt|nonvoluntary_ctxt'"))
+            f.write(
+                run_cmd(
+                    f"cat /proc/{pid}/status 2>/dev/null | grep -E "
+                    f"'Name|Pid|Threads|VmRSS|VmSize|Cpus_allowed_list|"
+                    f"voluntary_ctxt|nonvoluntary_ctxt'"
+                )
+            )
             f.write(f"\n--- /proc/{pid}/sched ---\n")
             f.write(run_cmd(f"cat /proc/{pid}/sched 2>/dev/null | head -30"))
             f.write(f"\n--- /proc/{pid}/stat (raw) ---\n")
             f.write(run_cmd(f"cat /proc/{pid}/stat 2>/dev/null"))
-            f.write(f"\n--- top -Hp (threads) ---\n")
+            f.write("\n--- top -Hp (threads) ---\n")
             f.write(run_cmd(f"top -b -n1 -Hp {pid} 2>/dev/null | head -20"))
 
     # 10. NUMA memory
@@ -240,7 +269,11 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
     with open(f"{diag_dir}/dmesg.txt", "w") as f:
         f.write(run_cmd("dmesg --time-format iso | tail -50"))
         f.write("\n=== ice/irdma errors ===\n")
-        f.write(run_cmd("dmesg --time-format iso | grep -iE 'ice|irdma|error|warn|timeout|reset|fault' | tail -30"))
+        f.write(
+            run_cmd(
+                "dmesg --time-format iso | grep -iE 'ice|irdma|error|warn|timeout|reset|fault' | tail -30"
+            )
+        )
 
     # 13. Memory pressure / OOM / swap
     with open(f"{diag_dir}/memory.txt", "w") as f:
@@ -256,7 +289,11 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
     with open(f"{diag_dir}/pfc_ecn.txt", "w") as f:
         for iface in ["ens1np0", "enp171s0np0"]:
             f.write(f"\n=== {iface} PFC stats ===\n")
-            f.write(run_cmd(f"ethtool -S {iface} 2>/dev/null | grep -iE 'pfc|pause|ecn|cnp'"))
+            f.write(
+                run_cmd(
+                    f"ethtool -S {iface} 2>/dev/null | grep -iE 'pfc|pause|ecn|cnp'"
+                )
+            )
             f.write(f"\n=== {iface} DCB ===\n")
             f.write(run_cmd(f"dcb pfc show dev {iface} 2>/dev/null"))
             f.write(run_cmd(f"dcb ets show dev {iface} 2>/dev/null"))
@@ -285,21 +322,33 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
             receiver = parse_last_json(RECEIVER_LOG, "receiver")
             f.write(f"\n--- Sample {i} (t+{i*2}s) ---\n")
             if sender:
-                f.write(f"  RDMA: avg={sender['lat_rdma_us']['avg']} "
-                        f"min={sender['lat_rdma_us']['min']} "
-                        f"max={sender['lat_rdma_us']['max']}\n")
-                f.write(f"  Total: avg={sender['lat_total_us']['avg']} "
-                        f"max={sender['lat_total_us']['max']}\n")
-                f.write(f"  Queue: avg={sender['lat_queue_us']['avg']} "
-                        f"max={sender['lat_queue_us']['max']}\n")
-                f.write(f"  Bridge: avg={sender['lat_bridge_us']['avg']} "
-                        f"max={sender['lat_bridge_us']['max']}\n")
+                f.write(
+                    f"  RDMA: avg={sender['lat_rdma_us']['avg']} "
+                    f"min={sender['lat_rdma_us']['min']} "
+                    f"max={sender['lat_rdma_us']['max']}\n"
+                )
+                f.write(
+                    f"  Total: avg={sender['lat_total_us']['avg']} "
+                    f"max={sender['lat_total_us']['max']}\n"
+                )
+                f.write(
+                    f"  Queue: avg={sender['lat_queue_us']['avg']} "
+                    f"max={sender['lat_queue_us']['max']}\n"
+                )
+                f.write(
+                    f"  Bridge: avg={sender['lat_bridge_us']['avg']} "
+                    f"max={sender['lat_bridge_us']['max']}\n"
+                )
                 f.write(f"  Drops: {sender['rx_drops']}\n")
             if receiver:
-                f.write(f"  E2E: avg={receiver['lat_e2e_us']['avg']} "
-                        f"max={receiver['lat_e2e_us']['max']}\n")
-                f.write(f"  Consume: avg={receiver['lat_consume_us']['avg']} "
-                        f"max={receiver['lat_consume_us']['max']}\n")
+                f.write(
+                    f"  E2E: avg={receiver['lat_e2e_us']['avg']} "
+                    f"max={receiver['lat_e2e_us']['max']}\n"
+                )
+                f.write(
+                    f"  Consume: avg={receiver['lat_consume_us']['avg']} "
+                    f"max={receiver['lat_consume_us']['max']}\n"
+                )
             if i < 2:
                 time.sleep(2)
 
@@ -309,14 +358,30 @@ def capture_diagnostics(diag_dir, baseline, current, pids, fh):
 
 def main():
     parser = argparse.ArgumentParser(description="Latency watchdog for poc pipeline")
-    parser.add_argument("--duration-hours", type=float, default=2.0,
-                        help="How long to monitor (hours, default: 2)")
-    parser.add_argument("--threshold-us", type=int, default=JUMP_THRESHOLD_US,
-                        help=f"Jump threshold in µs (default: {JUMP_THRESHOLD_US})")
-    parser.add_argument("--sustain-sec", type=int, default=SUSTAIN_SECONDS,
-                        help=f"Sustain duration before diag (default: {SUSTAIN_SECONDS})")
-    parser.add_argument("--poll", type=float, default=POLL_INTERVAL,
-                        help=f"Poll interval in seconds (default: {POLL_INTERVAL})")
+    parser.add_argument(
+        "--duration-hours",
+        type=float,
+        default=2.0,
+        help="How long to monitor (hours, default: 2)",
+    )
+    parser.add_argument(
+        "--threshold-us",
+        type=int,
+        default=JUMP_THRESHOLD_US,
+        help=f"Jump threshold in µs (default: {JUMP_THRESHOLD_US})",
+    )
+    parser.add_argument(
+        "--sustain-sec",
+        type=int,
+        default=SUSTAIN_SECONDS,
+        help=f"Sustain duration before diag (default: {SUSTAIN_SECONDS})",
+    )
+    parser.add_argument(
+        "--poll",
+        type=float,
+        default=POLL_INTERVAL,
+        help=f"Poll interval in seconds (default: {POLL_INTERVAL})",
+    )
     args = parser.parse_args()
 
     threshold = args.threshold_us
@@ -325,17 +390,20 @@ def main():
     poll = args.poll
 
     fh = open(MONITOR_LOG, "a")
-    log(f"=== Latency monitor started (threshold={threshold}µs, sustain={sustain}s, "
-        f"duration={args.duration_hours}h) ===", fh)
+    log(
+        f"=== Latency monitor started (threshold={threshold}µs, sustain={sustain}s, "
+        f"duration={args.duration_hours}h) ===",
+        fh,
+    )
 
     # Rolling baselines
     rdma_history = deque(maxlen=BASELINE_WINDOW)
-    e2e_history  = deque(maxlen=BASELINE_WINDOW)
+    e2e_history = deque(maxlen=BASELINE_WINDOW)
     total_history = deque(maxlen=BASELINE_WINDOW)
     queue_history = deque(maxlen=BASELINE_WINDOW)
 
     # State
-    jump_detected_at = None   # timestamp when jump first seen
+    jump_detected_at = None  # timestamp when jump first seen
     last_diag_time = 0
     diag_count = 0
     start_time = time.time()
@@ -348,9 +416,11 @@ def main():
     locked_baseline = {}
 
     running = True
+
     def sighandler(sig, frame):
         nonlocal running
         running = False
+
     signal.signal(signal.SIGINT, sighandler)
     signal.signal(signal.SIGTERM, sighandler)
 
@@ -373,17 +443,17 @@ def main():
         last_sender_time_s = s_time
         last_receiver_time_s = r_time
 
-        rdma_avg  = sender["lat_rdma_us"]["avg"]
-        rdma_max  = sender["lat_rdma_us"]["max"]
+        rdma_avg = sender["lat_rdma_us"]["avg"]
+        rdma_max = sender["lat_rdma_us"]["max"]
         total_avg = sender["lat_total_us"]["avg"]
-        total_max = sender["lat_total_us"]["max"]
+        _total_max = sender["lat_total_us"]["max"]  # noqa: F841
         queue_avg = sender["lat_queue_us"]["avg"]
-        queue_max = sender["lat_queue_us"]["max"]
+        _queue_max = sender["lat_queue_us"]["max"]  # noqa: F841
         bridge_avg = sender["lat_bridge_us"]["avg"]
-        e2e_avg   = receiver["lat_e2e_us"]["avg"]
-        e2e_max   = receiver["lat_e2e_us"]["max"]
+        e2e_avg = receiver["lat_e2e_us"]["avg"]
+        e2e_max = receiver["lat_e2e_us"]["max"]
         consume_avg = receiver["lat_consume_us"]["avg"]
-        drops     = sender["rx_drops"]
+        drops = sender["rx_drops"]
 
         rdma_history.append(rdma_avg)
         e2e_history.append(e2e_avg)
@@ -396,7 +466,7 @@ def main():
             continue
 
         bl_rdma = sum(rdma_history) / len(rdma_history)
-        bl_e2e  = sum(e2e_history) / len(e2e_history)
+        bl_e2e = sum(e2e_history) / len(e2e_history)
         bl_total = sum(total_history) / len(total_history)
         bl_queue = sum(queue_history) / len(queue_history)
 
@@ -409,20 +479,30 @@ def main():
                 "total_avg": bl_total,
                 "queue_avg": bl_queue,
             }
-            log(f"BASELINE LOCKED: rdma={bl_rdma:.0f}µs  e2e={bl_e2e:.0f}µs  "
-                f"total={bl_total:.0f}µs  queue={bl_queue:.0f}µs", fh)
+            log(
+                f"BASELINE LOCKED: rdma={bl_rdma:.0f}µs  e2e={bl_e2e:.0f}µs  "
+                f"total={bl_total:.0f}µs  queue={bl_queue:.0f}µs",
+                fh,
+            )
 
         # Periodic status (every 30 samples ≈ 1 minute)
         if sample_count % 30 == 0:
             elapsed = (time.time() - start_time) / 60
-            bl_ref = locked_baseline if baseline_locked else {"rdma_avg": bl_rdma, "e2e_avg": bl_e2e}
+            bl_ref = (
+                locked_baseline
+                if baseline_locked
+                else {"rdma_avg": bl_rdma, "e2e_avg": bl_e2e}
+            )
             delta_rdma = rdma_avg - bl_ref["rdma_avg"]
             delta_e2e = e2e_avg - bl_ref["e2e_avg"]
-            log(f"STATUS [{elapsed:.0f}m]: rdma={rdma_avg}µs(Δ{delta_rdma:+.0f}) "
+            log(
+                f"STATUS [{elapsed:.0f}m]: rdma={rdma_avg}µs(Δ{delta_rdma:+.0f}) "
                 f"e2e={e2e_avg}µs(Δ{delta_e2e:+.0f}) "
                 f"total={total_avg} queue={queue_avg} bridge={bridge_avg} "
                 f"consume={consume_avg} drops={drops} "
-                f"rdma_max={rdma_max} e2e_max={e2e_max}", fh)
+                f"rdma_max={rdma_max} e2e_max={e2e_max}",
+                fh,
+            )
 
         if not baseline_locked:
             continue
@@ -430,7 +510,7 @@ def main():
         # ── Jump detection ──
         ref = locked_baseline
         delta_rdma = rdma_avg - ref["rdma_avg"]
-        delta_e2e  = e2e_avg - ref["e2e_avg"]
+        delta_e2e = e2e_avg - ref["e2e_avg"]
         delta_total = total_avg - ref["total_avg"]
         delta_queue = queue_avg - ref["queue_avg"]
 
@@ -459,24 +539,37 @@ def main():
         if jumped:
             if jump_detected_at is None:
                 jump_detected_at = time.time()
-                log(f"⚠ JUMP DETECTED: {', '.join(jump_component)} "
+                log(
+                    f"⚠ JUMP DETECTED: {', '.join(jump_component)} "
                     f"(rdma={rdma_avg} e2e={e2e_avg} vs baseline rdma={ref['rdma_avg']:.0f} "
-                    f"e2e={ref['e2e_avg']:.0f})", fh)
+                    f"e2e={ref['e2e_avg']:.0f})",
+                    fh,
+                )
 
             sustained_sec = time.time() - jump_detected_at
             if sustained_sec >= sustain:
-                if (time.time() - last_diag_time) >= DIAG_COOLDOWN and diag_count < MAX_DIAGS:
-                    log(f"🔴 SUSTAINED JUMP ({sustained_sec:.0f}s): "
-                        f"rdma={rdma_avg}µs e2e={e2e_avg}µs — capturing diagnostics...", fh)
+                if (
+                    time.time() - last_diag_time
+                ) >= DIAG_COOLDOWN and diag_count < MAX_DIAGS:
+                    log(
+                        f"🔴 SUSTAINED JUMP ({sustained_sec:.0f}s): "
+                        f"rdma={rdma_avg}µs e2e={e2e_avg}µs — capturing diagnostics...",
+                        fh,
+                    )
                     pids = get_pids()
                     diag_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                     diag_dir = f"{DIAG_BASE}/latency_diag_{diag_ts}"
                     current = {
-                        "rdma_avg": rdma_avg, "rdma_max": rdma_max,
-                        "e2e_avg": e2e_avg, "e2e_max": e2e_max,
-                        "total_avg": total_avg, "queue_avg": queue_avg,
-                        "bridge_avg": bridge_avg, "consume_avg": consume_avg,
-                        "drops": drops, "jump_components": jump_component,
+                        "rdma_avg": rdma_avg,
+                        "rdma_max": rdma_max,
+                        "e2e_avg": e2e_avg,
+                        "e2e_max": e2e_max,
+                        "total_avg": total_avg,
+                        "queue_avg": queue_avg,
+                        "bridge_avg": bridge_avg,
+                        "consume_avg": consume_avg,
+                        "drops": drops,
+                        "jump_components": jump_component,
                     }
                     capture_diagnostics(diag_dir, ref, current, pids, fh)
                     last_diag_time = time.time()
@@ -484,7 +577,10 @@ def main():
 
                     # After diag, keep monitoring but update baseline to new level
                     # so we detect the NEXT jump from here
-                    log(f"Baseline updated to new level: rdma={rdma_avg}µs e2e={e2e_avg}µs", fh)
+                    log(
+                        f"Baseline updated to new level: rdma={rdma_avg}µs e2e={e2e_avg}µs",
+                        fh,
+                    )
                     locked_baseline = {
                         "rdma_avg": float(rdma_avg),
                         "e2e_avg": float(e2e_avg),
@@ -497,16 +593,25 @@ def main():
                     queue_history.clear()
                     jump_detected_at = None
                 elif diag_count >= MAX_DIAGS:
-                    log(f"Max diagnostics ({MAX_DIAGS}) reached, continuing to monitor only.", fh)
+                    log(
+                        f"Max diagnostics ({MAX_DIAGS}) reached, continuing to monitor only.",
+                        fh,
+                    )
         else:
             if jump_detected_at is not None:
                 dur = time.time() - jump_detected_at
-                log(f"✓ Jump cleared after {dur:.0f}s (rdma={rdma_avg} e2e={e2e_avg})", fh)
+                log(
+                    f"✓ Jump cleared after {dur:.0f}s (rdma={rdma_avg} e2e={e2e_avg})",
+                    fh,
+                )
                 jump_detected_at = None
 
     elapsed = (time.time() - start_time) / 3600
-    log(f"=== Monitor ended after {elapsed:.1f}h, {sample_count} samples, "
-        f"{diag_count} diagnostics captured ===", fh)
+    log(
+        f"=== Monitor ended after {elapsed:.1f}h, {sample_count} samples, "
+        f"{diag_count} diagnostics captured ===",
+        fh,
+    )
     fh.close()
 
 

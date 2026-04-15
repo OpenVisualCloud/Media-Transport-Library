@@ -22,10 +22,9 @@ Usage:
 import argparse
 import os
 import struct
-import sys
-import time
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 BOUNDARY = b"--pocframe"
 
@@ -52,8 +51,8 @@ class FrameCoordinator:
         self._stop = True
 
     def _run(self):
-        path_p = os.path.join(self.thumb_dir, 'thumb_p.jpg')
-        path_r = os.path.join(self.thumb_dir, 'thumb_r.jpg')
+        path_p = os.path.join(self.thumb_dir, "thumb_p.jpg")
+        path_r = os.path.join(self.thumb_dir, "thumb_r.jpg")
         prev_mtime_p = 0.0
         prev_mtime_r = 0.0
 
@@ -66,9 +65,9 @@ class FrameCoordinator:
                 mt_r = st_r.st_mtime
 
                 if mt_p != prev_mtime_p or mt_r != prev_mtime_r:
-                    with open(path_p, 'rb') as f:
+                    with open(path_p, "rb") as f:
                         dp = f.read()
-                    with open(path_r, 'rb') as f:
+                    with open(path_r, "rb") as f:
                         dr = f.read()
                     prev_mtime_p = mt_p
                     prev_mtime_r = mt_r
@@ -115,9 +114,9 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/snapshot/pair':
+        if self.path == "/snapshot/pair":
             self._handle_pair()
-        elif self.path in ('/stream/p', '/stream/r'):
+        elif self.path in ("/stream/p", "/stream/r"):
             self._handle_synced_stream()
         elif self.path.startswith("/stream"):
             self._handle_stream()
@@ -136,7 +135,7 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 
     def _resolve_thumb_file(self):
         if self.path.startswith("/stream"):
-            parts = self.path.strip('/').split('/')
+            parts = self.path.strip("/").split("/")
             if len(parts) >= 2 and parts[1]:
                 return f"thumb_{parts[1]}.jpg"
             return "thumb.jpg"
@@ -163,7 +162,7 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         if dp is None or dr is None:
             self.send_error(404, "Thumbnails not ready")
             return
-        body = struct.pack('>I', len(dp)) + dp + dr
+        body = struct.pack(">I", len(dp)) + dp + dr
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
@@ -174,12 +173,13 @@ class MJPEGHandler(BaseHTTPRequestHandler):
     def _handle_synced_stream(self):
         """MJPEG stream for /stream/p or /stream/r, synchronized via coordinator.
         Both P and R handlers wake on the SAME frame event → always in sync."""
-        which = 'p' if self.path.endswith('/p') else 'r'
+        which = "p" if self.path.endswith("/p") else "r"
         coord = self.server.coordinator
 
         self.send_response(200)
-        self.send_header("Content-Type",
-                         f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}")
+        self.send_header(
+            "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}"
+        )
         self.send_header("Cache-Control", "no-cache, no-store")
         self.send_header("Connection", "close")
         self.end_headers()
@@ -192,7 +192,7 @@ class MJPEGHandler(BaseHTTPRequestHandler):
                     continue
                 last_id = fid
 
-                data = dp if which == 'p' else dr
+                data = dp if which == "p" else dr
                 if data is None:
                     continue
 
@@ -211,8 +211,9 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         filename = self._resolve_thumb_file()
 
         self.send_response(200)
-        self.send_header("Content-Type",
-                         f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}")
+        self.send_header(
+            "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}"
+        )
         self.send_header("Cache-Control", "no-cache, no-store")
         self.send_header("Connection", "close")
         self.end_headers()
@@ -265,8 +266,9 @@ class ThreadedHTTPServer(HTTPServer):
         self.coordinator.start()
 
     def process_request(self, request, client_address):
-        t = threading.Thread(target=self.process_request_thread,
-                             args=(request, client_address))
+        t = threading.Thread(
+            target=self.process_request_thread, args=(request, client_address)
+        )
         t.daemon = True
         t.start()
 
@@ -288,11 +290,14 @@ def main():
     args = parser.parse_args()
 
     server = ThreadedHTTPServer(
-        (args.bind, args.port), MJPEGHandler,
-        thumb_dir=args.dir, target_fps=args.fps)
+        (args.bind, args.port), MJPEGHandler, thumb_dir=args.dir, target_fps=args.fps
+    )
 
-    print(f"[MJPEG] Streaming on http://{args.bind}:{args.port}/stream "
-          f"(dir={args.dir}, fps={args.fps})", flush=True)
+    print(
+        f"[MJPEG] Streaming on http://{args.bind}:{args.port}/stream "
+        f"(dir={args.dir}, fps={args.fps})",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
