@@ -305,6 +305,7 @@ struct st41_rx_user_stats {
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
  * @param port
@@ -320,6 +321,7 @@ int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
  * @param port
@@ -333,6 +335,7 @@ int st41_tx_reset_session_stats(st41_tx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(fastmetadata) session.
  * @param port
@@ -348,6 +351,7 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-41(fastmetadata) session.
  * @param port

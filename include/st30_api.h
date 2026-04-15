@@ -565,6 +565,7 @@ struct st30_rx_user_stats {
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
  * @param port
@@ -580,6 +581,7 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
  * @param port
@@ -593,6 +595,7 @@ int st30_tx_reset_session_stats(st30_tx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
  * @param port
@@ -608,6 +611,7 @@ int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
  * @param port

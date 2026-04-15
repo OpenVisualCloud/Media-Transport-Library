@@ -1659,8 +1659,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
-      s->port_user_stats.common.stat_pkts_out_of_order++;
-      s->port_user_stats.common.port[s_port].out_of_order_packets++;
+      int gap = pkt_idx - slot->last_pkt_idx - 1;
+      s->port_user_stats.common.stat_pkts_out_of_order += gap;
+      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     }
   } else {
     /* the first pkt should always dispatch to control thread */
@@ -1849,8 +1850,9 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
-      s->port_user_stats.common.stat_pkts_out_of_order++;
-      s->port_user_stats.common.port[s_port].out_of_order_packets++;
+      int gap = pkt_idx - slot->last_pkt_idx - 1;
+      s->port_user_stats.common.stat_pkts_out_of_order += gap;
+      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     }
   } else {
     if (!slot->seq_id_got) { /* first packet */
@@ -2043,8 +2045,9 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
-      s->port_user_stats.common.stat_pkts_out_of_order++;
-      s->port_user_stats.common.port[s_port].out_of_order_packets++;
+      int gap = pkt_idx - slot->last_pkt_idx - 1;
+      s->port_user_stats.common.stat_pkts_out_of_order += gap;
+      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     }
   } else {
     /* first packet */
@@ -2208,8 +2211,9 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
-      s->port_user_stats.common.stat_pkts_out_of_order++;
-      s->port_user_stats.common.port[s_port].out_of_order_packets++;
+      int gap = pkt_idx - slot->last_pkt_idx - 1;
+      s->port_user_stats.common.stat_pkts_out_of_order += gap;
+      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     }
   } else {
     if (!line1_number && !line1_offset) { /* first packet */
@@ -4418,7 +4422,9 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
   }
   struct st_rx_video_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->parent->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
   return 0;
 }
 
@@ -4436,9 +4442,11 @@ int st20_rx_reset_session_stats(st20_rx_handle handle) {
   }
   struct st_rx_video_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->parent->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
   return 0;
 }
 

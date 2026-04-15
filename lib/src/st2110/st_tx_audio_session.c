@@ -3021,7 +3021,9 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
   }
   struct st_tx_audio_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }
 
@@ -3039,7 +3041,9 @@ int st30_tx_reset_session_stats(st30_tx_handle handle) {
   }
   struct st_tx_audio_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }
