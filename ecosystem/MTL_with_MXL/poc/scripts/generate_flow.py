@@ -15,12 +15,10 @@ Output: <output-dir>/flow_poc.json
 import argparse
 import json
 import os
-import sys
 import uuid
 
 
-def generate_flow_json(width: int, height: int,
-                       fps_num: int, fps_den: int) -> dict:
+def generate_flow_json(width: int, height: int, fps_num: int, fps_den: int) -> dict:
     """Build an MXL flow descriptor for the single-stream POC."""
     flow_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, "mtl-mxl-poc-single-stream"))
 
@@ -33,42 +31,40 @@ def generate_flow_json(width: int, height: int,
         "$license": "SPDX-License-Identifier: BSD-3-Clause",
         "description": f"MTL-MXL POC Flow, {res_label} v210",
         "id": flow_id,
-        "tags": {
-            "urn:x-nmos:tag:grouphint/v1.0": ["MTL-MXL POC:Video"]
-        },
+        "tags": {"urn:x-nmos:tag:grouphint/v1.0": ["MTL-MXL POC:Video"]},
         "format": "urn:x-nmos:format:video",
         "label": f"MTL-MXL POC Flow, {res_label}",
         "parents": [],
         "media_type": "video/v210",
-        "grain_rate": {
-            "numerator": fps_num,
-            "denominator": fps_den
-        },
+        "grain_rate": {"numerator": fps_num, "denominator": fps_den},
         "frame_width": width,
         "frame_height": height,
         "interlace_mode": "progressive",
         "colorspace": colorspace,
         "components": [
-            {"name": "Y",  "width": width,     "height": height, "bit_depth": 10},
+            {"name": "Y", "width": width, "height": height, "bit_depth": 10},
             {"name": "Cb", "width": width // 2, "height": height, "bit_depth": 10},
             {"name": "Cr", "width": width // 2, "height": height, "bit_depth": 10},
-        ]
+        ],
     }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate POC flow JSON")
     parser.add_argument("config", help="Path to poc.json")
-    parser.add_argument("--output-dir", default=None,
-                        help="Directory for flow_poc.json (default: same dir as config)")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory for flow_poc.json (default: same dir as config)",
+    )
     args = parser.parse_args()
 
     with open(args.config) as f:
         cfg = json.load(f)
 
     video = cfg.get("video", {})
-    width   = video.get("width", 1920)
-    height  = video.get("height", 1080)
+    width = video.get("width", 1920)
+    height = video.get("height", 1080)
     fps_num = video.get("fps_num", 30000)
     fps_den = video.get("fps_den", 1001)
 

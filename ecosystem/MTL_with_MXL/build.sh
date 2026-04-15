@@ -17,7 +17,7 @@ BUILD_TYPE="RelWithDebInfo"
 JOBS="$(nproc)"
 
 usage() {
-    cat <<EOF
+	cat <<EOF
 Usage: $0 -m <MXL_BUILD_PREFIX> [-t <BUILD_TYPE>] [-j <JOBS>]
 
 Options:
@@ -26,42 +26,42 @@ Options:
   -j <N>      Parallel jobs (default: nproc)
   -h          Show this help
 EOF
-    exit 1
+	exit 1
 }
 
 while getopts "m:t:j:h" opt; do
-    case "$opt" in
-        m) MXL_ROOT="$OPTARG" ;;
-        t) BUILD_TYPE="$OPTARG" ;;
-        j) JOBS="$OPTARG" ;;
-        h|*) usage ;;
-    esac
+	case "$opt" in
+	m) MXL_ROOT="$OPTARG" ;;
+	t) BUILD_TYPE="$OPTARG" ;;
+	j) JOBS="$OPTARG" ;;
+	h | *) usage ;;
+	esac
 done
 
 if [[ -z "$MXL_ROOT" ]]; then
-    echo "Error: MXL_ROOT is required. Use -m <path>." >&2
-    usage
+	echo "Error: MXL_ROOT is required. Use -m <path>." >&2
+	usage
 fi
 
 MXL_ROOT="$(cd "$MXL_ROOT" && pwd)"
 
 build_pipeline() {
-    local name="$1"
-    local src_dir="$SCRIPT_DIR/$name"
-    local build_dir="$src_dir/build"
+	local name="$1"
+	local src_dir="$SCRIPT_DIR/$name"
+	local build_dir="$src_dir/build"
 
-    echo "══════════════════════════════════════════════"
-    echo " Building $name"
-    echo "══════════════════════════════════════════════"
+	echo "══════════════════════════════════════════════"
+	echo " Building $name"
+	echo "══════════════════════════════════════════════"
 
-    mkdir -p "$build_dir"
-    cmake -S "$src_dir" -B "$build_dir" \
-        -DMXL_ROOT="$MXL_ROOT" \
-        -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
-    cmake --build "$build_dir" -j "$JOBS"
+	mkdir -p "$build_dir"
+	cmake -S "$src_dir" -B "$build_dir" \
+		-DMXL_ROOT="$MXL_ROOT" \
+		-DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+	cmake --build "$build_dir" -j "$JOBS"
 
-    echo " $name: OK"
-    echo ""
+	echo " $name: OK"
+	echo ""
 }
 
 build_pipeline poc

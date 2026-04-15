@@ -11,7 +11,7 @@ Network Adapter E835/E810** 200GbE NICs (ice driver with SR-IOV) on both source 
 destination servers, connected through a standard Ethernet switch with
 PFC-enabled RDMA links.
 
-### Performance Highlights
+## Performance Highlights
 
 On **Intel® Xeon® 6 processors (Granite Rapids)** with **Intel® Ethernet
 Network Adapter E835/E810** 200GbE NICs, running all three pipelines
@@ -209,7 +209,7 @@ set of parameters to fill in.
 | irdma | Intel® OOT driver with `roce_ena=1` for E810/E835 |
 | [Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS) | Required for poc_8k compositor (ISO/IEC 21122) |
 | libcjson | JSON config parser (`libcjson-dev`) |
-| libjpeg-turbo | Thumbnail generation |
+| `libjpeg-turbo` | Thumbnail generation |
 | libcurl | InfluxDB metrics push |
 
 ### [MXL](https://github.com/dmf-mxl/mxl) SDK Patch
@@ -416,7 +416,7 @@ docker compose up -d
 
 ## Directory Structure
 
-```
+```text
 MTL_with_MXL/
 ├── build.sh                    # Build all pipelines
 ├── README.md
@@ -449,4 +449,10 @@ SPDX-License-Identifier: BSD-3-Clause
 
 ---
 
-<sub>© Intel Corporation. Intel technologies may require enabled hardware, software or service activation. // No product or component can be absolutely secure. // Your costs and results may vary. // Performance varies by use, configuration, and other factors. Learn more at intel.com/performanceindex. // See our complete legal Notices and Disclaimers. // Intel is committed to respecting human rights and avoiding causing or contributing to adverse impacts on human rights. See Intel's Global Human Rights Principles. Intel's products and software are intended only to be used in applications that do not cause or contribute to adverse impacts on human rights.</sub>
+<sub>© Intel Corporation. Intel technologies may require enabled hardware, software or service
+activation. No product or component can be absolutely secure. Your costs and results may vary.
+Performance varies by use, configuration, and other factors.
+Learn more at intel.com/performanceindex.
+See our complete legal Notices and Disclaimers.
+Intel is committed to respecting human rights and avoiding causing or contributing to
+adverse impacts on human rights. See Intel's Global Human Rights Principles.</sub>

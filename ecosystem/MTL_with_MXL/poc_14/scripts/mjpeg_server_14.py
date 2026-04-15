@@ -19,9 +19,9 @@ Usage:
 import argparse
 import json
 import os
-import time
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 BOUNDARY = b"--poc14frame"
 
@@ -49,7 +49,7 @@ class MJPEGHandler16(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Strip query string for routing
-        path = self.path.split('?', 1)[0]
+        path = self.path.split("?", 1)[0]
         if path == "/streams":
             self._handle_stream_list()
         elif path.startswith("/stream/"):
@@ -64,7 +64,7 @@ class MJPEGHandler16(BaseHTTPRequestHandler):
     def _parse_role_id(self):
         """Extract (role, stream_id) from /stream/{role}/{id} or /snapshot/{role}/{id}."""
         # Strip query string if present (e.g. ?t=123456 cache-buster)
-        path = self.path.split('?', 1)[0]
+        path = self.path.split("?", 1)[0]
         parts = path.strip("/").split("/")
         if len(parts) >= 3:
             role = parts[1]
@@ -76,8 +76,7 @@ class MJPEGHandler16(BaseHTTPRequestHandler):
         return None, None
 
     def _thumb_path(self, role, stream_id):
-        return os.path.join(
-            self.server.thumb_dir, f"thumb_{role}_{stream_id}.jpg")
+        return os.path.join(self.server.thumb_dir, f"thumb_{role}_{stream_id}.jpg")
 
     def _handle_stream_list(self):
         """Return JSON list of available streams based on thumb files on disk."""
@@ -92,9 +91,14 @@ class MJPEGHandler16(BaseHTTPRequestHandler):
                         role, sid_str = parts
                         try:
                             sid = int(sid_str)
-                            streams.append({"role": role, "id": sid,
-                                            "stream_url": f"/stream/{role}/{sid}",
-                                            "snapshot_url": f"/snapshot/{role}/{sid}"})
+                            streams.append(
+                                {
+                                    "role": role,
+                                    "id": sid,
+                                    "stream_url": f"/stream/{role}/{sid}",
+                                    "snapshot_url": f"/snapshot/{role}/{sid}",
+                                }
+                            )
                         except ValueError:
                             pass
         except FileNotFoundError:
@@ -133,8 +137,9 @@ class MJPEGHandler16(BaseHTTPRequestHandler):
             return
 
         self.send_response(200)
-        self.send_header("Content-Type",
-                         f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}")
+        self.send_header(
+            "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}"
+        )
         self.send_header("Cache-Control", "no-cache, no-store")
         self.send_header("Connection", "close")
         self.end_headers()
@@ -214,8 +219,9 @@ class ThreadedHTTPServer16(HTTPServer):
         self.target_fps = target_fps
 
     def process_request(self, request, client_address):
-        t = threading.Thread(target=self.process_request_thread,
-                             args=(request, client_address))
+        t = threading.Thread(
+            target=self.process_request_thread, args=(request, client_address)
+        )
         t.daemon = True
         t.start()
 
@@ -231,18 +237,25 @@ class ThreadedHTTPServer16(HTTPServer):
 def main():
     parser = argparse.ArgumentParser(description="14-stream MJPEG server")
     parser.add_argument("--port", type=int, default=8082)
-    parser.add_argument("--dir", type=str, default="/dev/shm/poc14_thumbs",
-                        help="Directory with thumb_{role}_{id}.jpg files")
+    parser.add_argument(
+        "--dir",
+        type=str,
+        default="/dev/shm/poc14_thumbs",
+        help="Directory with thumb_{role}_{id}.jpg files",
+    )
     parser.add_argument("--fps", type=int, default=15)
     parser.add_argument("--bind", type=str, default="0.0.0.0")
     args = parser.parse_args()
 
     server = ThreadedHTTPServer16(
-        (args.bind, args.port), MJPEGHandler16,
-        thumb_dir=args.dir, target_fps=args.fps)
+        (args.bind, args.port), MJPEGHandler16, thumb_dir=args.dir, target_fps=args.fps
+    )
 
-    print(f"[MJPEG-16] Streaming on http://{args.bind}:{args.port}/ "
-          f"(dir={args.dir}, fps={args.fps})", flush=True)
+    print(
+        f"[MJPEG-16] Streaming on http://{args.bind}:{args.port}/ "
+        f"(dir={args.dir}, fps={args.fps})",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
