@@ -302,11 +302,14 @@ def _run_iteration(
 
     # ── Companion app ──
     companion_app = RxTxApp(RXTXAPP_PATH)
+    # E830 HW rate-limiter takes ~2 s per TX queue; with many sessions
+    # the measured TX app runs much longer than test_time alone.
+    rl_overhead = num_sessions * 3 if is_tx else 0
     companion_kwargs = {
         **base_kwargs,
         **companion_extra_kwargs,
         "direction": companion_dir,
-        "test_time": test_time + 10,  # companion outlives the measured app
+        "test_time": test_time + 10 + rl_overhead,
     }
     # TX companion doesn't need many RX queues — free VF queue capacity.
     if companion_dir == "tx" and "rx_queues_cnt" in companion_kwargs:
@@ -446,13 +449,13 @@ def _run_iteration(
 
         # ── Run measured app with CPU monitoring ──
         cpu_monitor = CpuCoreMonitor(measured_host, interval=2)
-        cpu_monitor.start(duration=test_time)
+        cpu_monitor.start(duration=test_time + rl_overhead)
 
         try:
             result = run(
                 measured_app.command,
                 cwd=build_measured,
-                timeout=test_time + 60,
+                timeout=test_time + 60 + rl_overhead,
                 testcmd=True,
                 host=measured_host,
             )
