@@ -181,6 +181,24 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   get multiple packets with the same timestamp)) */
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
       !mt_seq16_greater(seq_id, s->session_seq_id)) {
+    /* Check per-frame bitmap: if this is a same-frame late arrival carrying unique data,
+     * accept it instead of filtering.  This handles cross-port reordering where port R
+     * delivers seq N+2..N+5 before port P delivers seq N..N+1. */
+    if (s->anc_bitmap_valid && tmstamp == s->anc_bitmap_tmstamp &&
+        !mt_seq32_greater(s->tmstamp, tmstamp)) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
+      if (offset < 64 && !(s->anc_bitmap & ((uint64_t)1 << offset))) {
+        /* bit is clear — this seq was never delivered, accept as late arrival.
+         * This packet was previously counted as unrecovered when the gap was seen,
+         * so undo that count now that it has arrived. */
+        if (s->port_user_stats.common.stat_pkts_unrecovered > 0)
+          s->port_user_stats.common.stat_pkts_unrecovered--;
+        dbg("%s(%d,%d), late arrival seq %u accepted via bitmap (offset %u)\n", __func__,
+            s->idx, s_port, seq_id, offset);
+        goto accept_pkt;
+      }
+    }
+
     if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
       ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
                     seq_id, s->session_seq_id);
@@ -209,7 +227,12 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
         "%d), timestamp %u (old timestamp %ld)\n",
         __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
   }
+
+accept_pkt:
   s->redundant_error_cnt[s_port] = 0;
+
+  /* Save session_seq before update — needed for bitmap base calculation */
+  int old_session_seq = s->session_seq_id;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
@@ -226,8 +249,22 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
         (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
-  /* update seq id */
-  s->session_seq_id = seq_id;
+  /* update seq id — only advance, never lower for late arrivals */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
+
+  /* Update per-frame bitmap: track which seq offsets have been delivered.
+   * base_seq = old_session_seq + 1 = first expected seq of this frame.
+   * This ensures late arrivals (seq < first accepted seq) still fit in the bitmap. */
+  if (!s->anc_bitmap_valid || tmstamp != s->anc_bitmap_tmstamp) {
+    s->anc_bitmap = 0;
+    s->anc_bitmap_tmstamp = tmstamp;
+    s->anc_bitmap_base_seq = (uint16_t)(old_session_seq + 1);
+    s->anc_bitmap_valid = true;
+  }
+  {
+    uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
+    if (offset < 64) s->anc_bitmap |= ((uint64_t)1 << offset);
+  }
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
