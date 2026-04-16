@@ -23,8 +23,9 @@ endif
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
 enable_fuzzing_opt = get_option('enable_fuzzing')
+enable_unit_tests_opt = get_option('enable_unit_tests')
 
-if enable_fuzzing_opt
+if enable_fuzzing_opt or enable_unit_tests_opt
   add_global_arguments('-DMTL_ENABLE_FUZZING_ST40', language : 'c')
   add_global_arguments('-DMTL_ENABLE_FUZZING_ST30', language : 'c')
   add_global_arguments('-DMTL_ENABLE_FUZZING_ST20', language : 'c')
@@ -75,6 +76,10 @@ mtl_internal_dep = declare_dependency(
 
 if enable_fuzzing_opt
   subdir('tests/fuzz')
+endif
+
+if enable_unit_tests_opt
+  subdir('tests/unit')
 endif
 
 pkg = import('pkgconfig')
