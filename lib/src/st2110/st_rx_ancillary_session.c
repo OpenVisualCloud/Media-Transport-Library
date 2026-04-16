@@ -210,7 +210,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     if (s->interlace_auto && s->interlace_detected) {
       s->interlace_detected = false;
       dbg("%s(%d,%d), reset interlace detect after seq discont %u->%u\n", __func__,

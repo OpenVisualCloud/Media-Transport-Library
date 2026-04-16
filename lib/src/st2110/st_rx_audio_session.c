@@ -335,7 +335,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
@@ -509,7 +510,8 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
