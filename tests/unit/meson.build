@@ -4,6 +4,7 @@ add_languages('cpp', required : true)
 
 unit_cpp_args = ['-Wall', '-Werror']
 unit_c_args = ['-Wall', '-Werror']
+unit_link_args = ['-Wl,--allow-multiple-definition']
 
 unit_include_dirs = [
   include_directories('../../include'),
@@ -25,6 +26,8 @@ unit_sources = [
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
+  link_args : unit_link_args,
   include_directories : unit_include_dirs,
-  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep],
+  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
+                  usdt_provider_header_dep],
   install : false)

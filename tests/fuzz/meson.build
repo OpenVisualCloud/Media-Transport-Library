@@ -2,7 +2,7 @@
 
 fuzz_cc = meson.get_compiler('c')
 fuzz_c_args = []
-fuzz_link_args = []
+fuzz_link_args = ['-Wl,--allow-multiple-definition']
 fuzzer_deps = []
 asan_enabled = get_option('enable_asan')
 
@@ -12,7 +12,11 @@ else
   error('compiler must support -fsanitize=fuzzer-no-link to build fuzzers')
 endif
 
-if fuzz_cc.has_link_argument('-fsanitize=fuzzer')
+# has_link_argument('-fsanitize=fuzzer') can fail because meson's test program
+# contains int main() which conflicts with libFuzzer's own main.  Since we already
+# confirmed -fsanitize=fuzzer-no-link above, the linker flag will work with real
+# fuzzer entry points (LLVMFuzzerTestOneInput), so accept it unconditionally.
+if fuzz_cc.has_link_argument('-fsanitize=fuzzer') or fuzz_cc.has_argument('-fsanitize=fuzzer-no-link')
   fuzz_link_args += ['-fsanitize=fuzzer']
 else
   fuzzer_lib = fuzz_cc.find_library('Fuzzer', required : false)

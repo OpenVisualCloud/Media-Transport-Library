@@ -282,19 +282,6 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   }
 }
 
-#ifdef MTL_ENABLE_FUZZING_ST40
-int st_rx_ancillary_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                            struct st_rx_ancillary_session_impl* s,
-                                            struct rte_mbuf* mbuf,
-                                            enum mtl_session_port s_port) {
-  return rx_ancillary_session_handle_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) {
-  rx_ancillary_session_reset(s, false);
-}
-#endif
-
 static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
                                             uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;

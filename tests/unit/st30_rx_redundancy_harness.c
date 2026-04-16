@@ -13,10 +13,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "st2110/st_rx_audio_session.h"
-#include "st2110/st_pkt.h"
-#include "st30_api.h"
-#include "st_api.h"
+/*
+ * Include the production .c directly so that all static functions
+ * (rx_audio_session_handle_frame_pkt, rx_audio_session_reset, etc.)
+ * become visible in this translation unit.
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_audio_session.c"
 
 /* ── tuning constants ─────────────────────────────────────────────────── */
 
@@ -171,7 +175,7 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
 
-  st_rx_audio_session_fuzz_reset(s);
+  rx_audio_session_reset(s, false);
   return ctx;
 }
 
@@ -222,15 +226,15 @@ int ut30_feed_pkt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                   enum mtl_session_port port) {
   struct rte_mbuf* m = make_audio_mbuf(seq, ts);
   if (!m) return -1;
-  int rc = st_rx_audio_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
 
 /* ── feed a burst — each pkt gets ts, ts+1, ts+2, … (real ST30 behavior) ─── */
 
-void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count,
-                     uint32_t ts, enum mtl_session_port port) {
+void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
+                     enum mtl_session_port port) {
   for (int i = 0; i < count; i++) {
     ut30_feed_pkt(ctx, seq_start + i, ts + i, port);
   }
@@ -272,7 +276,7 @@ int ut30_feed_pkt_pt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                      enum mtl_session_port port, uint8_t payload_type) {
   struct rte_mbuf* m = make_audio_mbuf_full(seq, ts, payload_type, 0, UT30_PKT_PAYLOAD);
   if (!m) return -1;
-  int rc = st_rx_audio_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
@@ -283,7 +287,7 @@ int ut30_feed_pkt_ssrc(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                        enum mtl_session_port port, uint32_t ssrc) {
   struct rte_mbuf* m = make_audio_mbuf_full(seq, ts, 0, ssrc, UT30_PKT_PAYLOAD);
   if (!m) return -1;
-  int rc = st_rx_audio_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
@@ -294,7 +298,7 @@ int ut30_feed_pkt_len(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                       enum mtl_session_port port, uint32_t payload_len) {
   struct rte_mbuf* m = make_audio_mbuf_full(seq, ts, 0, 0, payload_len);
   if (!m) return -1;
-  int rc = st_rx_audio_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }

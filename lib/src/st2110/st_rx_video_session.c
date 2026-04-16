@@ -3341,29 +3341,6 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   return 0;
 }
 
-#if defined(MTL_ENABLE_FUZZING_ST20) || defined(MTL_ENABLE_FUZZING_ST22)
-void st_rx_video_session_fuzz_reset(struct st_rx_video_session_impl* s) {
-  rv_session_reset(s, true);
-}
-
-int st_rx_video_session_fuzz_handle_pkt(struct st_rx_video_session_impl* s,
-                                        struct rte_mbuf* mbuf,
-                                        enum mtl_session_port s_port) {
-  if (!s || !mbuf) return -EINVAL;
-
-  bool ctrl_thread = true;
-
-  if (s->pkt_handler) return s->pkt_handler(s, mbuf, s_port, ctrl_thread);
-
-  if (s->st22_info) return rv_handle_st22_pkt(s, mbuf, s_port, ctrl_thread);
-
-  if (st20_is_frame_type(s->ops.type))
-    return rv_handle_frame_pkt(s, mbuf, s_port, ctrl_thread);
-
-  return rv_handle_rtp_pkt(s, mbuf, s_port, ctrl_thread);
-}
-#endif
-
 static int rv_poll_vsync(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   struct st_vsync_info* vsync = &s->vsync;
   uint64_t cur_tsc = mt_get_tsc(impl);

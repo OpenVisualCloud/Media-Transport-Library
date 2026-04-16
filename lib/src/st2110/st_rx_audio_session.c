@@ -553,22 +553,6 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   if (init_stat_time_now) s->usdt_dump_fd = -1;
 }
 
-#ifdef MTL_ENABLE_FUZZING_ST30
-int st_rx_audio_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                        struct st_rx_audio_session_impl* s,
-                                        struct rte_mbuf* mbuf,
-                                        enum mtl_session_port s_port) {
-  if (!s || !mbuf) return -EINVAL;
-  if (s->ops.type == ST30_TYPE_RTP_LEVEL)
-    return rx_audio_session_handle_rtp_pkt(impl, s, mbuf, s_port);
-  return rx_audio_session_handle_frame_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_audio_session_fuzz_reset(struct st_rx_audio_session_impl* s) {
-  rx_audio_session_reset(s, false);
-}
-#endif
-
 static int ra_stop_pcap(struct st_rx_audio_session_impl* s,
                         enum mtl_session_port s_port) {
   struct mt_rx_pcap* pcap = &s->pcap[s_port];

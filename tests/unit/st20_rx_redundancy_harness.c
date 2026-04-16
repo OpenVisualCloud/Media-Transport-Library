@@ -21,10 +21,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "st2110/st_rx_video_session.h"
-#include "st2110/st_pkt.h"
-#include "st20_api.h"
-#include "st_api.h"
+/*
+ * Include the production .c directly so that all static functions
+ * (rv_handle_frame_pkt, rv_session_reset, etc.) become visible in
+ * this translation unit.
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_video_session.c"
 
 /* ── geometry constants ───────────────────────────────────────────────── */
 
@@ -207,7 +211,7 @@ ut20_test_ctx* ut20_ctx_create(int num_port) {
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
 
-  st_rx_video_session_fuzz_reset(s);
+  rv_session_reset(s, true);
   return ctx;
 }
 
@@ -217,10 +221,9 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx) {
 
 /* ── mbuf builder ─────────────────────────────────────────────────────── */
 
-static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts,
-                                             uint16_t line_num, uint16_t line_offset,
-                                             uint16_t line_length, uint8_t pt,
-                                             uint32_t ssrc) {
+static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t line_num,
+                                             uint16_t line_offset, uint16_t line_length,
+                                             uint8_t pt, uint32_t ssrc) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(g20_pool);
   if (!m) return NULL;
 
@@ -238,8 +241,7 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts,
   /* RTP header sits at hdr_offset into the mbuf */
   size_t hdr_offset =
       sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
-  struct st20_rfc4175_rtp_hdr* rtp =
-      (struct st20_rfc4175_rtp_hdr*)(buf + hdr_offset);
+  struct st20_rfc4175_rtp_hdr* rtp = (struct st20_rfc4175_rtp_hdr*)(buf + hdr_offset);
 
   rtp->base.version = 2;
   rtp->base.payload_type = pt;
@@ -258,9 +260,8 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts,
   return m;
 }
 
-static struct rte_mbuf* make_video_mbuf(uint32_t seq, uint32_t ts,
-                                        uint16_t line_num, uint16_t line_offset,
-                                        uint16_t line_length) {
+static struct rte_mbuf* make_video_mbuf(uint32_t seq, uint32_t ts, uint16_t line_num,
+                                        uint16_t line_offset, uint16_t line_length) {
   return make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, 0);
 }
 
@@ -277,12 +278,12 @@ static void pkt_idx_to_line(int pkt_idx, uint16_t* line_num, uint16_t* line_offs
 
 /* ── feed one packet (raw) ────────────────────────────────────────────── */
 
-int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
-                  uint16_t line_num, uint16_t line_offset, uint16_t line_length,
+int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
+                  uint16_t line_offset, uint16_t line_length,
                   enum mtl_session_port port) {
   struct rte_mbuf* m = make_video_mbuf(seq, ts, line_num, line_offset, line_length);
   if (!m) return -1;
-  int rc = st_rx_video_session_fuzz_handle_pkt(&ctx->session, m, port);
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
 }
@@ -299,8 +300,8 @@ int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
 
 /* ── feed one packet by pkt index (explicit seq) ──────────────────────── */
 
-int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq,
-                            uint32_t ts, enum mtl_session_port port) {
+int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
+                            enum mtl_session_port port) {
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
   return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
@@ -308,8 +309,7 @@ int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq,
 
 /* ── feed full frame ──────────────────────────────────────────────────── */
 
-void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts,
-                          enum mtl_session_port port) {
+void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port port) {
   for (int i = 0; i < UT20_PKTS_PER_FRAME; i++) {
     ut20_feed_frame_pkt(ctx, i, ts, port);
   }
@@ -351,26 +351,26 @@ int ut20_total_frame_pkts(void) {
 
 /* ── feed with custom PT ──────────────────────────────────────────────── */
 
-int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
-                     uint16_t line_num, uint16_t line_offset, uint16_t line_length,
+int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
+                     uint16_t line_offset, uint16_t line_length,
                      enum mtl_session_port port, uint8_t pt) {
   struct rte_mbuf* m =
       make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, pt, 0);
   if (!m) return -1;
-  int rc = st_rx_video_session_fuzz_handle_pkt(&ctx->session, m, port);
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
 }
 
 /* ── feed with custom SSRC ────────────────────────────────────────────── */
 
-int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
-                       uint16_t line_num, uint16_t line_offset, uint16_t line_length,
+int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
+                       uint16_t line_offset, uint16_t line_length,
                        enum mtl_session_port port, uint32_t ssrc) {
   struct rte_mbuf* m =
       make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, ssrc);
   if (!m) return -1;
-  int rc = st_rx_video_session_fuzz_handle_pkt(&ctx->session, m, port);
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
 }

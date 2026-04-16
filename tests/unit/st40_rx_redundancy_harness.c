@@ -13,10 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "st2110/st_rx_ancillary_session.h"
-#include "st2110/st_pkt.h"
-#include "st40_api.h"
-#include "st_api.h"
+/*
+ * Include the production .c directly so that all static functions
+ * (rx_ancillary_session_handle_pkt, rx_ancillary_session_reset, etc.)
+ * become visible in this translation unit.  Non-static symbols will
+ * duplicate those in libmtl; the linker flag --allow-multiple-definition
+ * is used to resolve this safely (identical code).
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_ancillary_session.c"
 
 /* ── define the opaque context ────────────────────────────────────────── */
 
@@ -115,7 +121,7 @@ ut_test_ctx* ut_ctx_create(int num_port) {
   ctx->session.ops.name = "unit_test";
   ctx->session.interlace_auto = false;
 
-  st_rx_ancillary_session_fuzz_reset(&ctx->session);
+  rx_ancillary_session_reset(&ctx->session, false);
   return ctx;
 }
 
@@ -126,13 +132,11 @@ void ut_ctx_destroy(ut_test_ctx* ctx) {
 /* ── mbuf builder (internal) ──────────────────────────────────────────── */
 
 static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker,
-                                           uint8_t pt, uint32_t ssrc,
-                                           uint8_t f_bits) {
+                                           uint8_t pt, uint32_t ssrc, uint8_t f_bits) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(g_pool);
   if (!m) return NULL;
 
-  size_t hdr_offset =
-      sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
+  size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   size_t total = hdr_offset + sizeof(struct st40_rfc8331_rtp_hdr);
 
   if (rte_pktmbuf_tailroom(m) < total) {
@@ -143,8 +147,7 @@ static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker
   uint8_t* buf = rte_pktmbuf_mtod(m, uint8_t*);
   memset(buf, 0, total);
 
-  struct st40_rfc8331_rtp_hdr* rtp =
-      (struct st40_rfc8331_rtp_hdr*)(buf + hdr_offset);
+  struct st40_rfc8331_rtp_hdr* rtp = (struct st40_rfc8331_rtp_hdr*)(buf + hdr_offset);
   rtp->base.version = 2;
   rtp->base.seq_number = htons(seq);
   rtp->base.tmstamp = htonl(ts);
@@ -172,16 +175,15 @@ int ut_feed_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                 enum mtl_session_port port) {
   struct rte_mbuf* m = make_anc_mbuf(seq, ts, marker);
   if (!m) return -1;
-  int rc =
-      st_rx_ancillary_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
 
 /* ── feed a burst ─────────────────────────────────────────────────────── */
 
-void ut_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count,
-                   uint32_t ts, int last_marker, enum mtl_session_port port) {
+void ut_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
+                   int last_marker, enum mtl_session_port port) {
   for (int i = 0; i < count; i++) {
     int marker = last_marker && (i == count - 1);
     ut_feed_pkt(ctx, seq_start + i, ts, marker, port);
@@ -216,8 +218,7 @@ int ut_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                    enum mtl_session_port port, uint8_t payload_type) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, payload_type, 0, 0);
   if (!m) return -1;
-  int rc =
-      st_rx_ancillary_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
@@ -228,8 +229,7 @@ int ut_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                      enum mtl_session_port port, uint32_t ssrc) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, ssrc, 0);
   if (!m) return -1;
-  int rc =
-      st_rx_ancillary_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
@@ -240,8 +240,7 @@ int ut_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                       enum mtl_session_port port, uint8_t f_bits) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, 0, f_bits);
   if (!m) return -1;
-  int rc =
-      st_rx_ancillary_session_fuzz_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
 }
