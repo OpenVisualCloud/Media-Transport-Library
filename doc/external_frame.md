@@ -37,6 +37,14 @@ in ops, set the flag
 ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
 ```
 
+Optionally, to enable the two-phase external frame release (where the application explicitly releases the frame slot after cleanup), also set:
+
+```c
+ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
+```
+
+Without `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE`, the frame slot is released immediately after `notify_frame_done` (legacy behavior).
+
 when sending a frame, get the frame and put with ext_frame info
 
 ```c
@@ -53,20 +61,56 @@ ext_frame.opaque = your_frame_handle;
 st20p_tx_put_ext_frame(tx_handle, frame, &ext_frame);
 ```
 
-when the library finished handling the frame, it will notify by callback, you can return the frame buffer here
+when the library finished transmitting the frame, it will notify by callback. When `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE` is set, free your resources in the callback and then call `st20p_tx_notify_ext_frame_free` to release the frame buffer back to the library. This two-phase release ensures the application can safely clean up external memory before the library reuses the frame slot.
+
+**Important:** The `notify_frame_done` callback is invoked from the library's internal tasklet — the same critical path that drives packet transmission and frame scheduling. When `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE` is enabled, the frame buffer remains occupied (not returned to the free pool) until `st20p_tx_notify_ext_frame_free` is called.
+With short frame queues this can stall the pipeline if cleanup takes too long.
+
+For production use, the recommended pattern is to **signal** a separate application thread from the callback and perform the actual resource cleanup and `st20p_tx_notify_ext_frame_free` call from that thread:
 
 ```c
-// set the callback in ops
+// set the callback and priv in ops
 ops_tx.notify_frame_done = tx_st20p_frame_done;
+ops_tx.priv = your_ctx;
 // ...
-// implement the callback
-static int tx_st20p_frame_done(void* priv, struct st_frame*frame) {
+// callback — runs on the library critical path, keep it minimal
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+    ctx* s = priv;
+    /* enqueue the done frame and wake the cleanup thread */
+    enqueue(&s->done_queue, frame);
+    signal(&s->done_signal);
+    return 0;
+}
+
+// cleanup thread — runs outside the library critical path
+static void* cleanup_thread(void* arg) {
+    ctx* s = arg;
+    while (s->running) {
+        wait(&s->done_signal);
+        struct st_frame* frame;
+        while ((frame = dequeue(&s->done_queue))) {
+            your_frame_handle = frame->opaque;
+            your_frame_free(your_frame_handle);
+            st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
+        }
+    }
+    return NULL;
+}
+```
+
+For simple cases where cleanup is trivial (e.g. decrementing a refcount), calling directly from the callback is acceptable:
+
+```c
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
     ctx* s = priv;
     your_frame_handle = frame->opaque;
     your_frame_free(your_frame_handle);
+    st20p_tx_notify_ext_frame_free(s->tx_handle, frame);
     return 0;
 }
 ```
+
+Note: `st20p_tx_notify_ext_frame_free` is safe to call unconditionally — when the library uses an internal converter (input format differs from transport format), the frame buffer is already released before the callback, and the call is a silent no-op.
 
 Others follow the general API flow.
 

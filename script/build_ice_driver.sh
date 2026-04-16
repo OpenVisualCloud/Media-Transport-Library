@@ -57,10 +57,9 @@ if [ "$sourced" -eq 0 ]; then
 
 	cd "ice-${ICE_VER}"
 
-	git init
-	git add .
-	git commit -m "init version ${ICE_VER}"
-	git am ../../patches/ice_drv/"${ICE_VER}"/*.patch
+	for patch_file in ../../patches/ice_drv/"${ICE_VER}"/*.patch; do
+		patch -p1 -i "$patch_file"
+	done
 
 	cd src
 	make -j

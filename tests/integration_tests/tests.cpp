@@ -8,12 +8,15 @@
 #ifndef WINDOWSENV
 #include <numa.h>
 #endif
+#include <arpa/inet.h>
+
 #include "log.h"
 
 enum test_args_cmd {
   TEST_ARG_UNKNOWN = 0,
   TEST_ARG_P_PORT = 0x100, /* start from end of ascii */
   TEST_ARG_R_PORT,
+  TEST_ARG_P_SIP,
   TEST_ARG_PORT_LIST,
   TEST_ARG_LCORES,
   TEST_ARG_LOG_LEVEL,
@@ -55,6 +58,7 @@ enum test_args_cmd {
 static struct option test_args_options[] = {
     {"p_port", required_argument, 0, TEST_ARG_P_PORT},
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
+    {"p_sip", required_argument, 0, TEST_ARG_P_SIP},
     {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
@@ -147,6 +151,10 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_R_PORT:
         snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
+        break;
+      case TEST_ARG_P_SIP:
+        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
+        ctx->user_p_sip = true;
         break;
       case TEST_ARG_PORT_LIST:
         test_parse_port_list(p, optarg);
@@ -320,13 +328,19 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
 static void test_random_ip(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
   uint8_t* p_ip = mtl_p_sip_addr(p);
-  p_ip[0] = 197;
-  p_ip[1] = rand() % 0xFF;
-  p_ip[2] = rand() % 0xFF;
-  p_ip[3] = 1;
+
+  /* Only generate random IP if user didn't specify one */
+  if (!ctx->user_p_sip) {
+    p_ip[0] = 197;
+    p_ip[1] = rand() % 0xFF;
+    p_ip[2] = rand() % 0xFF;
+    p_ip[3] = 1;
+  }
 
   /* add interfaces ip addresses */
   for (int i = MTL_PORT_R; p->port[i][0] != '\0'; i++) {
+    /* Skip if user already set this port's IP */
+    if (i == MTL_PORT_P && ctx->user_p_sip) continue;
     p->sip_addr[i][0] = p_ip[0];
     p->sip_addr[i][1] = p_ip[1];
     p->sip_addr[i][2] = p_ip[2];
@@ -339,9 +353,9 @@ static void test_random_ip(struct st_tests_context* ctx) {
   uint8_t* r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_R];
 
   p_ip_multicast[0] = 239;
-  p_ip_multicast[1] = rand() % 0xFF;
-  p_ip_multicast[2] = rand() % 0xFF;
-  p_ip_multicast[3] = rand() % 0xFF;
+  p_ip_multicast[1] = p->sip_addr[MTL_PORT_P][1];
+  p_ip_multicast[2] = p->sip_addr[MTL_PORT_P][2];
+  p_ip_multicast[3] = p->sip_addr[MTL_PORT_P][3];
   r_ip_multicast[0] = p_ip_multicast[0];
   r_ip_multicast[1] = p_ip_multicast[1];
   r_ip_multicast[2] = p_ip_multicast[2];

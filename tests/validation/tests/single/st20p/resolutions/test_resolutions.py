@@ -28,7 +28,7 @@ pytestmark = pytest.mark.verified
 )
 def test_resolutions(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -77,7 +77,7 @@ def test_resolutions(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
         netsniff=pcap_capture,

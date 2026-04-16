@@ -129,6 +129,7 @@ typedef struct st_json_interface {
   int rx_anc_sessions_cnt;   /* st40 on interface level */
   int tx_fmd_sessions_cnt;   /* st41 on interface level */
   int rx_fmd_sessions_cnt;   /* st41 on interface level */
+  bool allow_down_init;      /* allow port init even if link is down */
 } st_json_interface_t;
 
 enum st_json_ip_type {
@@ -243,6 +244,7 @@ typedef struct st_json_st30p_session {
   st_json_audio_info_t info;
   bool enable_rtcp;
   bool user_pacing;
+  bool drop_when_late;
 } st_json_st30p_session_t;
 
 typedef struct st_json_ancillary_session {
@@ -280,8 +282,27 @@ typedef struct st_json_st20p_session {
   bool user_pacing;
   bool exact_user_pacing;
   bool user_timestamp;
+  bool drop_when_late;
   uint64_t user_time_offset;
 } st_json_st20p_session_t;
+
+typedef struct st_json_st40p_info {
+  enum st_fps fps;
+  bool interlaced;
+
+  char st40p_url[ST_APP_URL_MAX_LEN];
+} st_json_st40p_info_t;
+
+typedef struct st_json_st40p_session {
+  st_json_session_base_t base;
+  st_json_st40p_info_t info;
+
+  bool user_pacing;
+  bool exact_user_pacing;
+  bool user_timestamp;
+  bool enable_rtcp;
+  bool drop_when_late;
+} st_json_st40p_session_t;
 
 typedef struct st_json_context {
   st_json_interface_t* interfaces;
@@ -309,6 +330,8 @@ typedef struct st_json_context {
   int tx_st22p_session_cnt;
   st_json_st20p_session_t* tx_st20p_sessions;
   int tx_st20p_session_cnt;
+  st_json_st40p_session_t* tx_st40p_sessions;
+  int tx_st40p_session_cnt;
   st_json_st30p_session_t* tx_st30p_sessions;
   int tx_st30p_session_cnt;
 
@@ -324,6 +347,8 @@ typedef struct st_json_context {
   int rx_st22p_session_cnt;
   st_json_st20p_session_t* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+  st_json_st40p_session_t* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
   st_json_video_session_t* rx_st20r_sessions;
   int rx_st20r_session_cnt;
   st_json_st30p_session_t* rx_st30p_sessions;

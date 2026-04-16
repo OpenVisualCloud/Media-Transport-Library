@@ -95,6 +95,9 @@ struct st30_frame {
   /** TAI timestamp measured right after the first packet of the frame was received */
   uint64_t receive_timestamp;
 
+  /** frame status, set by lib before notify_frame_done: complete or dropped */
+  enum st_frame_status status;
+
   /** priv pointer for lib, do not touch this */
   void* priv;
 };
@@ -179,6 +182,7 @@ struct st30p_tx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -194,6 +198,7 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -211,6 +216,9 @@ int st30p_tx_reset_session_stats(st30p_tx_handle handle);
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle);
 /** Put back the frame which get by st30p_tx_get_frame. */
 int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame);
+/** Abort and release a frame obtained by st30p_tx_get_frame. Returns frame to free pool
+ * immediately. */
+int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame);
 /** Free the tx st2110-30 pipeline session. */
 int st30p_tx_free(st30p_tx_handle handle);
 /** Create one tx st2110-30 pipeline session */
@@ -284,6 +292,7 @@ struct st30p_rx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -299,6 +308,7 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
  * @param port
@@ -316,6 +326,9 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle);
 struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle);
 /** Put back the frame which get by st30p_rx_get_frame. */
 int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
+/** Abort and release a frame obtained by st30p_rx_get_frame. Returns frame to free pool
+ * immediately. */
+int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame);
 /** Free the rx st2110-30 pipeline session. */
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */
@@ -327,6 +340,24 @@ int st30p_rx_wake_block(st30p_rx_handle handle);
 int st30p_rx_set_block_timeout(st30p_rx_handle handle, uint64_t timedwait_ns);
 /* get framebuff size */
 size_t st30p_rx_frame_size(st30p_rx_handle handle);
+
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame
+ *   The frame pointer.
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st30_frame_is_late(mtl_handle mt, struct st30_frame* frame) {
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  return (int64_t)(frame->timestamp - ptp_now) < 0;
+}
 
 #if defined(__cplusplus)
 }

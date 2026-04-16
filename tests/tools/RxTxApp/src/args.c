@@ -40,6 +40,8 @@ enum st_args_cmd {
   ST_ARG_TX_FMD_URL,
   ST_ARG_TX_FMD_SESSIONS_CNT,
   ST_ARG_TX_FMD_RTP_RING_SIZE,
+  ST_ARG_TX_ST40P_URL,
+  ST_ARG_TX_ST40P_SESSIONS_CNT,
   ST22_ARG_TX_SESSIONS_CNT,
   ST22_ARG_TX_URL,
   ST_ARG_RX_VIDEO_SESSIONS_CNT,
@@ -194,6 +196,8 @@ static struct option st_app_args_options[] = {
     {"tx_fmd_url", required_argument, 0, ST_ARG_TX_FMD_URL},
     {"tx_fmd_sessions_count", required_argument, 0, ST_ARG_TX_FMD_SESSIONS_CNT},
     {"tx_fmd_rtp_ring_size", required_argument, 0, ST_ARG_TX_FMD_RTP_RING_SIZE},
+    {"tx_st40p_url", required_argument, 0, ST_ARG_TX_ST40P_URL},
+    {"tx_st40p_sessions_count", required_argument, 0, ST_ARG_TX_ST40P_SESSIONS_CNT},
     {"tx_st22_sessions_count", required_argument, 0, ST22_ARG_TX_SESSIONS_CNT},
     {"tx_st22_url", required_argument, 0, ST22_ARG_TX_URL},
 
@@ -370,6 +374,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
   ctx->tx_fmd_session_cnt = ctx->json_ctx->tx_fmd_session_cnt;
   ctx->tx_st22p_session_cnt = ctx->json_ctx->tx_st22p_session_cnt;
+  ctx->tx_st40p_session_cnt = ctx->json_ctx->tx_st40p_session_cnt;
   ctx->tx_st20p_session_cnt = ctx->json_ctx->tx_st20p_session_cnt;
   ctx->tx_st30p_session_cnt = ctx->json_ctx->tx_st30p_session_cnt;
   ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
@@ -388,6 +393,8 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
     p->tx_queues_cnt[i] = ctx->json_ctx->interfaces[i].tx_queues_cnt;
     p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
+    if (ctx->json_ctx->interfaces[i].allow_down_init)
+      p->port_params[i].flags |= MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
@@ -522,6 +529,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TX_AUDIO_RTP_RING_SIZE:
         ctx->tx_audio_rtp_ring_size = atoi(optarg);
+        break;
+      case ST_ARG_TX_ST40P_URL:
+        snprintf(ctx->tx_st40p_url, sizeof(ctx->tx_st40p_url), "%s", optarg);
+        break;
+      case ST_ARG_TX_ST40P_SESSIONS_CNT:
+        ctx->tx_st40p_session_cnt = atoi(optarg);
         break;
       case ST_ARG_TX_ANC_URL:
         snprintf(ctx->tx_anc_url, sizeof(ctx->tx_anc_url), "%s", optarg);

@@ -226,11 +226,13 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
     if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
+      st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
       return 0;
     }
   }
 
   err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
+  st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
   return 0;
 }
 
@@ -826,6 +828,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_done = test_st20p_tx_frame_done;
     if (para->tx_ext) {
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+      ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
@@ -1648,4 +1651,378 @@ TEST(St20p, transport_yuv422p10le) {
   para.packing = ST20_PACKING_BPM;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, tx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st20p_tx_ops ops_tx;
+
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 3;
+  test_ctx->fb_idx = 0;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_abort_test";
+  ops_tx.priv = test_ctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 112;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  ret = st20p_tx_set_block_timeout(tx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  /* get a frame then abort it instead of normal put */
+  struct st_frame* frame = st20p_tx_get_frame(tx_handle);
+  if (frame) {
+    ret = st20p_tx_put_frame_abort(tx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st20p_tx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no frame available for TX abort test (expected in some configs)\n",
+         __func__);
+  }
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx;
+}
+
+TEST(St20p, rx_put_frame_abort) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st20p_tx_ops ops_tx;
+  struct st20p_rx_ops ops_rx;
+
+  if (ctx->para.num_ports < 2) {
+    info("%s, dual port should be enabled\n", __func__);
+    return;
+  }
+
+  /* create TX to feed data */
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != NULL);
+  test_ctx_tx->idx = 0;
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_abort_tx";
+  ops_tx.priv = test_ctx_tx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = 112;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+
+  /* TX frame thread: get & put frames to feed the RX */
+  test_ctx_tx->handle = tx_handle;
+  test_ctx_tx->stop = false;
+  auto tx_thread = std::thread(
+      [](tests_context* s) {
+        auto handle = (st20p_tx_handle)s->handle;
+        while (!s->stop) {
+          auto frame = st20p_tx_get_frame(handle);
+          if (!frame) continue;
+          st20p_tx_put_frame(handle, frame);
+          s->fb_send++;
+        }
+      },
+      test_ctx_tx);
+
+  /* create RX */
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != NULL);
+  test_ctx_rx->idx = 0;
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st20p_abort_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = 1;
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_R]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_rx.port.payload_type = 112;
+  ops_rx.width = 1920;
+  ops_rx.height = 1080;
+  ops_rx.fps = ST_FPS_P59_94;
+  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
+
+  auto rx_handle = st20p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != NULL);
+  ret = st20p_rx_set_block_timeout(rx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(2);
+
+  /* get a frame from RX and abort it */
+  struct st_frame* frame = st20p_rx_get_frame(rx_handle);
+  if (frame) {
+    ret = st20p_rx_put_frame_abort(rx_handle, frame);
+    EXPECT_GE(ret, 0);
+    info("%s, st20p_rx_put_frame_abort succeeded\n", __func__);
+  } else {
+    info("%s, no rx frame available for abort test\n", __func__);
+  }
+
+  /* cleanup */
+  test_ctx_tx->stop = true;
+  st20p_tx_wake_block(tx_handle);
+  tx_thread.join();
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st20p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+
+  delete test_ctx_tx;
+  delete test_ctx_rx;
+}
+
+TEST(St20p, frame_is_late) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+
+  /* create a st_frame with TAI timestamp set to a time in the past */
+  struct st_frame frame;
+  memset(&frame, 0, sizeof(frame));
+  frame.tfmt = ST10_TIMESTAMP_FMT_TAI;
+  /* set timestamp to 1 second ago — definitely late */
+  uint64_t now = mtl_ptp_read_time(st);
+  frame.timestamp = now - NS_PER_S;
+  EXPECT_TRUE(st_frame_is_late(st, &frame));
+
+  /* set timestamp to 10 seconds in the future — not late */
+  frame.timestamp = now + (uint64_t)10 * NS_PER_S;
+  EXPECT_FALSE(st_frame_is_late(st, &frame));
+
+  /* non-TAI format should always return false */
+  frame.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  frame.timestamp = 0;
+  EXPECT_FALSE(st_frame_is_late(st, &frame));
+
+  info("%s, st_frame_is_late tests passed\n", __func__);
+}
+
+/*
+ * Verify redundant TX and RX port stats for st20p video sessions.
+ * TX frames must be counted on both ports.
+ * RX bytes must be approximately equal on both ports.
+ * Requires 4 ports: TX on ports 0+1, RX on ports 2+3.
+ */
+TEST(St20p, redundant_stats) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+
+  if (ctx->para.num_ports < 4) {
+    info("%s, need 4 ports for redundant test, skipping\n", __func__);
+    return;
+  }
+
+  struct st20p_tx_ops ops_tx;
+  struct st20p_rx_ops ops_rx;
+  int udp_port = ST20P_TEST_UDP_PORT + 100;
+
+  /* TX context */
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != NULL);
+  test_ctx_tx->idx = 0;
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+  test_ctx_tx->block_get = true;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_redundant_tx";
+  ops_tx.priv = test_ctx_tx;
+  ops_tx.port.num_port = 2;
+  /* primary TX port */
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
+  /* redundant TX port */
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_R]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_R] = udp_port;
+  ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+  ops_tx.width = 1920;
+  ops_tx.height = 1080;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
+  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+  test_ctx_tx->frame_size =
+      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
+  test_ctx_tx->width = ops_tx.width;
+  test_ctx_tx->height = ops_tx.height;
+  test_ctx_tx->fmt = ops_tx.input_fmt;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  ret = st20p_tx_set_block_timeout(tx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+  test_ctx_tx->handle = tx_handle;
+  test_ctx_tx->stop = false;
+
+  auto tx_thread = std::thread(test_st20p_tx_frame_thread, test_ctx_tx);
+
+  /* RX context */
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != NULL);
+  test_ctx_rx->idx = 0;
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+  test_ctx_rx->block_get = true;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st20p_redundant_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = 2;
+  /* primary RX port */
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_2]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
+  /* redundant RX port */
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_3]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_R] = udp_port;
+  ops_rx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+  ops_rx.width = 1920;
+  ops_rx.height = 1080;
+  ops_rx.fps = ST_FPS_P59_94;
+  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
+
+  test_ctx_rx->frame_size =
+      st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
+  test_ctx_rx->width = ops_rx.width;
+  test_ctx_rx->height = ops_rx.height;
+  test_ctx_rx->fmt = ops_rx.output_fmt;
+
+  auto rx_handle = st20p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != NULL);
+  ret = st20p_rx_set_block_timeout(rx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+
+  test_ctx_rx->handle = rx_handle;
+  test_ctx_rx->stop = false;
+
+  auto rx_thread = std::thread(test_st20p_rx_frame_thread, test_ctx_rx);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(10);
+
+  /* stop threads */
+  test_ctx_tx->stop = true;
+  st20p_tx_wake_block(tx_handle);
+  test_ctx_tx->cv.notify_all();
+  tx_thread.join();
+
+  test_ctx_rx->stop = true;
+  st20p_rx_wake_block(rx_handle);
+  test_ctx_rx->cv.notify_all();
+  rx_thread.join();
+
+  /* query stats */
+  struct st20_tx_user_stats tx_stats;
+  ret = st20p_tx_get_session_stats(tx_handle, &tx_stats);
+  EXPECT_GE(ret, 0);
+
+  struct st20_rx_user_stats rx_stats;
+  ret = st20p_rx_get_session_stats(rx_handle, &rx_stats);
+  EXPECT_GE(ret, 0);
+
+  /* verify TX frames on both ports */
+  uint64_t tx_frames_p = tx_stats.common.port[MTL_SESSION_PORT_P].frames;
+  uint64_t tx_frames_r = tx_stats.common.port[MTL_SESSION_PORT_R].frames;
+  EXPECT_GT(tx_frames_p, (uint64_t)0) << "TX port 0 frames must be > 0";
+  EXPECT_GT(tx_frames_r, (uint64_t)0) << "TX port 1 frames must be > 0";
+  EXPECT_EQ(tx_frames_p, tx_frames_r)
+      << "TX port frames should be equal (port0=" << tx_frames_p
+      << " port1=" << tx_frames_r << ")";
+  info("%s, TX frames port0=%" PRIu64 " port1=%" PRIu64 "\n", __func__, tx_frames_p,
+       tx_frames_r);
+
+  /* verify RX bytes approximately equal on both ports */
+  uint64_t rx_bytes_p = rx_stats.common.port[MTL_SESSION_PORT_P].bytes;
+  uint64_t rx_bytes_r = rx_stats.common.port[MTL_SESSION_PORT_R].bytes;
+  EXPECT_GT(rx_bytes_p, (uint64_t)0) << "RX port 0 bytes must be > 0";
+  EXPECT_GT(rx_bytes_r, (uint64_t)0) << "RX port 1 bytes must be > 0";
+  uint64_t rx_max_bytes = std::max(rx_bytes_p, rx_bytes_r);
+  uint64_t rx_min_bytes = std::min(rx_bytes_p, rx_bytes_r);
+  EXPECT_GT(rx_min_bytes, rx_max_bytes * 80 / 100)
+      << "RX port bytes should be approximately equal (port0=" << rx_bytes_p
+      << " port1=" << rx_bytes_r << ")";
+  info("%s, RX bytes port0=%" PRIu64 " port1=%" PRIu64 "\n", __func__, rx_bytes_p,
+       rx_bytes_r);
+
+  /* verify RX received frames */
+  EXPECT_GT(test_ctx_rx->fb_rec, 0) << "Must have received frames";
+  info("%s, TX sent %d, RX received %d frames\n", __func__, test_ctx_tx->fb_send,
+       test_ctx_rx->fb_rec);
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st20p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+
+  delete test_ctx_tx;
+  delete test_ctx_rx;
 }

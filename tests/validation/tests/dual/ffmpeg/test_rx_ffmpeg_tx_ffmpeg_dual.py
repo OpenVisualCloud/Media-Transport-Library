@@ -22,7 +22,7 @@ from mtl_engine.media_files import yuv_files
 def test_rx_ffmpeg_tx_ffmpeg_dual(
     hosts,
     test_time,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     video_format,
@@ -43,7 +43,7 @@ def test_rx_ffmpeg_tx_ffmpeg_dual(
 
     ffmpeg_app.execute_dual_test(
         test_time=test_time * test_time_multipler,
-        build=build,
+        build=mtl_path,
         tx_host=tx_host,
         rx_host=rx_host,
         type_="frame",

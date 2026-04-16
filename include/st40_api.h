@@ -73,8 +73,12 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 #define ST40_TX_FLAG_SPLIT_ANC_BY_PKT (MTL_BIT32(8))
 
 /**
- * Test-only mutation pattern for st40 TX. These modes intentionally craft malformed or
- * edge-case RTP/ANC packets for validation. Defaults to NONE for production use.
+ * DEBUG / test-only mutation pattern for st40 TX.
+ * These modes intentionally craft malformed or edge-case RTP/ANC packets for
+ * validation.  The library acts on them **only** when compiled with
+ * MTL_SIMULATE_PACKET_DROPS (enabled automatically in debug builds); in release builds
+ * the hot-path checks are compiled out and any value set here is silently
+ * ignored.
  */
 enum st40_tx_test_pattern {
   ST40_TX_TEST_NONE = 0,
@@ -85,8 +89,9 @@ enum st40_tx_test_pattern {
 };
 
 /**
- * Optional test-only mutation controls for st40 TX. All fields default to zero/none and
- * are ignored in normal operation.
+ * DEBUG / test-only mutation controls for st40 TX.
+ * All fields default to zero/none.  Effective only when the library is built
+ * with MTL_SIMULATE_PACKET_DROPS (debug builds); otherwise silently ignored.
  */
 struct st40_tx_test_config {
   enum st40_tx_test_pattern pattern; /**< Mutation pattern to apply. */
@@ -106,6 +111,13 @@ struct st40_tx_test_config {
  * If enable the rtcp.
  */
 #define ST40_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st40_rx_ops.
+ * If set, skip auto-detection and use the `interlaced` field in st40_rx_ops as-is.
+ * Without this flag the library auto-detects progressive vs interlaced from
+ * RTP F bits and ignores the initial `interlaced` value once detection completes.
+ */
+#define ST40_RX_FLAG_DISABLE_AUTO_DETECT (MTL_BIT32(2))
 
 /**
  * Session type of st2110-40(ancillary) streaming
@@ -349,7 +361,9 @@ struct st40_tx_ops {
   /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
 
-  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  /** Optional. DEBUG / test-only mutation config (see struct st40_tx_test_config).
+   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored
+   * otherwise. */
   struct st40_tx_test_config test;
 
   /**
@@ -403,7 +417,7 @@ struct st40_rx_ops {
   union {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-    /** deprecated, use ip_addr instead, sip_addr is confused */
+    /** deprecated, use ip_addr instead, sip_addr is confusing */
     uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
         "Use ip_addr instead");
   };
@@ -417,7 +431,9 @@ struct st40_rx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
    * payload_type check on the RX pkt path */
   uint8_t payload_type;
-  /** Mandatory. interlaced or not */
+  /** Optional. interlaced or not. When ST40_RX_FLAG_DISABLE_AUTO_DETECT is set,
+   * this value is used as-is. Otherwise it serves as the initial value
+   * before auto-detection from RTP F bits overrides it. */
   bool interlaced;
 
   /** Optional. source filter IP address of multicast */
@@ -446,7 +462,6 @@ struct st40_rx_ops {
  */
 struct st40_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_epoch_mismatch;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -457,16 +472,16 @@ struct st40_tx_user_stats {
 struct st40_rx_user_stats {
   struct st_rx_user_stats common;
   uint64_t stat_pkts_dropped;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
+  uint64_t stat_pkts_wrong_interlace_dropped;
 };
 
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-40(ancillary) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-40(ancillary) session.
  * @param port
@@ -482,6 +497,7 @@ int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-40(ancillary) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-40(ancillary) session.
  * @param port
@@ -547,6 +563,7 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(ancillary) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(ancillary) session.
  * @param port
@@ -562,6 +579,7 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-40(ancillary) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(ancillary) session.
  * @param port

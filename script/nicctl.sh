@@ -11,9 +11,9 @@ if [ $# -lt 2 ]; then
 	echo "Commands:"
 	echo "   bind_pmd                 Bind driver to DPDK PMD driver"
 	echo "   bind_kernel              Bind driver to kernel driver"
-	echo "   create_vf                Create VFs and bind to VFIO"
+	echo "   create_vf                Create VFs, bind to VFIO, and bring PF UP"
 	echo "   create_kvf               Create VFs and bind to kernel driver"
-	echo "   create_tvf               Create trusted VFs and bind to VFIO"
+	echo "   create_tvf               Create trusted VFs, bind to VFIO, and bring PF UP"
 	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
 	echo "   disable_vf               Disable VF"
 	echo "   list all                 List all NIC devices and the brief"
@@ -132,6 +132,7 @@ list_vf() {
 }
 
 list() {
+	trap '' PIPE
 	printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" "ID" "PCI BDF" "Driver" "NUMA" "IOMMU" "IF Name"
 
 	id_counter=0
@@ -144,14 +145,14 @@ list() {
 
 		iommu_group=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/iommu_group)" 2>/dev/null || echo "N/A")
 
-		interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/*)
+		interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/* 2>/dev/null || echo "N/A")
 
 		if [[ $1 == "up" ]]; then
 			ip link show "$interface_name" 2>/dev/null | grep -q "state UP" || continue
 		fi
 
 		printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" \
-			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name"
+			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name" 2>/dev/null || break
 
 		id_counter=$((id_counter + 1))
 	done
@@ -255,6 +256,10 @@ if [ "$cmd" == "create_vf" ]; then
 	modprobe vfio-pci
 	disable_vf
 	create_vf $numvfs
+	# Ensure PF is UP so the VF admin queue works for DPDK init
+	if [ -n "$inf" ]; then
+		ip link set "$inf" up
+	fi
 	echo "Create $numvfs VFs on PF bdf: $bdf $inf succ"
 fi
 
@@ -268,6 +273,10 @@ if [ "$cmd" == "create_tvf" ]; then
 	modprobe vfio-pci
 	disable_vf
 	create_vf $numvfs trusted
+	# Ensure PF is UP so the VF admin queue works for DPDK init
+	if [ -n "$inf" ]; then
+		ip link set "$inf" up
+	fi
 	echo "Create trusted $numvfs VFs on PF bdf: $bdf $inf succ"
 fi
 

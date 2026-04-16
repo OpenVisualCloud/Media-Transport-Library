@@ -693,10 +693,10 @@ static int app_tx_video_result(struct st_app_tx_video_session* s) {
 
   if (!s->st20_frame_done_cnt) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frames send\n", __func__, idx,
-           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                              : "FAILED",
-           framerate, s->st20_frame_done_cnt);
+  notce("%s(%d), %s, fps %f, %d frames send\n", __func__, idx,
+        ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                           : "FAILED",
+        framerate, s->st20_frame_done_cnt);
   return 0;
 }
 

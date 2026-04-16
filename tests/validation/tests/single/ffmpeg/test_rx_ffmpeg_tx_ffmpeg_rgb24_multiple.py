@@ -32,7 +32,7 @@ from mtl_engine.media_files import yuv_files
 def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
     hosts,
     test_time,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     video_format_1,
     video_format_2,
@@ -86,7 +86,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
 
     ffmpeg_app.execute_test_rgb24_multiple(
         test_time=test_time * test_time_mutlipler,
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list,
         type_="frame",
         video_format_list=[video_format_1, video_format_2],

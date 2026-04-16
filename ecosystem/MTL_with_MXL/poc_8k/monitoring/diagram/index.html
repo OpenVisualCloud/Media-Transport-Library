@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>poc_8k — 8K Tiled JPEG XS Pipeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --card: #141a22;
+    --card-bright: #1a2230;
+    --border: #2a3444;
+    --border-bright: #3a4a5e;
+    --text: #d0d8e0;
+    --dim: #707c8c;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #79c0ff;
+    --jxs: #ff7b72;
+    --glow-green: rgba(63,185,80,0.25);
+    --glow-blue: rgba(88,166,255,0.15);
+    --server-border: #4a9eff;
+    --server-border-active: #5ce882;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { display: none; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 40px;
+    position: relative;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 3em;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #f0f6fc;
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+  .header h1 .k8 {
+    background: linear-gradient(135deg, #ff7b72 0%, #ffa657 50%, #ff7b72 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header h1 .jxs {
+    display: block;
+    font-size: 0.5em;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 4px;
+    background: linear-gradient(90deg, var(--green), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header .subtitle {
+    font-size: 1.2em;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+
+  /* ── Page layout ── */
+  .page-layout {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    max-width: 3600px;
+  }
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── Preview panels ── */
+  .preview-column {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-width: 380px;
+    max-width: 520px;
+    gap: 16px;
+  }
+  .preview-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .preview-panel h3 {
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+  .preview-panel .thumb-container {
+    position: relative;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16/9;
+  }
+  .preview-panel img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 10px;
+  }
+  .preview-panel .thumb-placeholder {
+    color: var(--dim);
+    font-size: 0.95em;
+    padding: 60px 24px;
+  }
+  .preview-panel .thumb-meta {
+    font-size: 0.85em;
+    color: var(--dim);
+    margin-top: 8px;
+  }
+  .preview-panel .resolution-badge {
+    display: inline-block;
+    background: var(--jxs);
+    color: #0a0e14;
+    font-size: 0.75em;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Status bar ── */
+  .status-bar {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 14px;
+    font-size: 1em;
+    color: var(--dim);
+    align-items: center;
+  }
+  .status-bar .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.red   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  .dot.grey  { background: var(--dim); }
+
+  /* ── Pipeline SVG ── */
+  .pipeline-container {
+    position: relative;
+    width: 100%;
+    max-width: 1800px;
+  }
+  svg.pipeline {
+    width: 100%;
+    height: auto;
+  }
+  .node-box {
+    fill: var(--card-bright);
+    stroke: var(--border-bright);
+    stroke-width: 2;
+    rx: 12;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+  }
+  .node-box.active {
+    stroke: var(--green);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 12px rgba(63,185,80,0.35));
+  }
+  .server-box {
+    stroke: var(--server-border);
+    stroke-width: 2.5;
+    rx: 14;
+    filter: drop-shadow(0 4px 20px rgba(0,0,0,0.5))
+           drop-shadow(0 0 8px rgba(74,158,255,0.15));
+  }
+  .server-box.active {
+    stroke: var(--server-border-active);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 24px rgba(92,232,130,0.35))
+           drop-shadow(0 4px 20px rgba(0,0,0,0.5));
+  }
+  .machine-zone {
+    fill: none;
+    stroke: #3a6a9e;
+    stroke-width: 1.5;
+    stroke-dasharray: 8 4;
+    rx: 16;
+    opacity: 0.55;
+  }
+  .machine-zone-label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-anchor: middle;
+  }
+  .node-label {
+    fill: #f0f6fc;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .node-sublabel {
+    fill: var(--dim);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .node-metric {
+    fill: var(--cyan);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    text-anchor: middle;
+  }
+  .flow-path {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+  }
+  .flow-label {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .flow-throughput {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-weight: 500;
+    text-anchor: middle;
+  }
+  .arrow-label {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    fill: var(--dim);
+    text-anchor: middle;
+  }
+
+  /* Stream input lines */
+  .stream-line { stroke-width: 1.5; fill: none; opacity: 0.7; }
+  .stream-particle { opacity: 0.85; }
+
+  /* Particles */
+  .particle { opacity: 0.9; }
+  .particle.rdma-particle { fill: var(--green); filter: drop-shadow(0 0 5px var(--green)); }
+  .particle.inner-particle { fill: var(--cyan); filter: drop-shadow(0 0 6px rgba(121,192,255,0.8)); }
+  .particle.jxs-particle { fill: var(--jxs); filter: drop-shadow(0 0 5px var(--jxs)); }
+
+  /* ── Metrics cards ── */
+  .metrics-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 18px;
+    max-width: 1800px;
+  }
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 18px;
+    min-width: 140px;
+    text-align: center;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  }
+  .metric-card:hover {
+    border-color: var(--blue);
+    box-shadow: 0 0 16px var(--glow-blue);
+  }
+  .metric-card .label {
+    font-size: 0.78em;
+    font-weight: 500;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+  .metric-card .value {
+    font-size: 1.4em;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+  }
+  .metric-card .unit {
+    font-size: 0.5em;
+    color: var(--dim);
+    margin-left: 2px;
+  }
+
+  /* ── Live Charts ── */
+  .charts-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 24px;
+    width: 100%;
+    max-width: 1800px;
+  }
+  .chart-panel {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    min-width: 0;
+  }
+  .chart-panel:hover {
+    border-color: var(--blue);
+    box-shadow: 0 0 16px var(--glow-blue);
+  }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .chart-header h4 {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 0;
+  }
+  .chart-header .chart-latest {
+    font-size: 1em;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+  }
+  .chart-panel canvas {
+    width: 100%;
+    height: 180px;
+    display: block;
+  }
+  .chart-legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 8px;
+    justify-content: center;
+  }
+  .chart-legend span {
+    font-size: 0.8em;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--dim);
+  }
+  .chart-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<img src="../../../poc/monitoring/diagram/intel_logo_boxed.svg" alt="Intel"
+     style="position:fixed;top:20px;left:75px;height:213px;z-index:100;"
+     onerror="this.style.display='none'">
+<img src="../../../poc/monitoring/diagram/mxl_logo.png" alt="MXL"
+     style="position:fixed;top:20px;right:24px;height:80px;z-index:100;opacity:0.85;"
+     onerror="this.style.display='none'">
+
+<div class="header">
+  <h1>
+    <span class="k8">8K Tiled Compositor</span>
+    <span class="jxs">JPEG XS &bull; ST 2110-22 &bull; MXL RDMA Fabrics</span>
+  </h1>
+  <p class="subtitle">16 &times; 1080p ST2110-20 &rarr; 4&times;4 Tile &rarr; JPEG XS Encode &rarr; RDMA &rarr; Decode</p>
+</div>
+
+<div class="page-layout">
+
+<!-- ══════ Compositor TX Preview (Left) ══════ -->
+<div class="preview-column">
+  <div class="preview-panel" style="border:2px solid rgba(255,123,114,0.5);box-shadow:0 0 16px rgba(255,123,114,0.15), 0 4px 24px rgba(0,0,0,0.3);">
+    <h3>Compositor Output <span class="resolution-badge">7680&times;4320</span></h3>
+    <div class="thumb-container">
+      <img id="thumb-tx-img" alt="Compositor preview"
+           src="http://localhost:8087/stream"
+           onload="this.style.display='block'; document.getElementById('thumb-tx-ph').style.display='none';"
+           onerror="this.style.display='none'; document.getElementById('thumb-tx-ph').style.display='block';">
+      <div id="thumb-tx-ph" class="thumb-placeholder">
+        No compositor preview.<br>Waiting for MJPEG stream on port 8087.
+      </div>
+    </div>
+    <div class="thumb-meta">live MJPEG &mdash; Compositor TX (pre-RDMA)</div>
+  </div>
+</div>
+
+<!-- ══════ Main Content ══════ -->
+<div class="main-content">
+
+<div class="status-bar">
+  <span><span class="dot grey" id="dot-comp"></span> Compositor</span>
+  <span><span class="dot grey" id="dot-sender"></span> Sender</span>
+  <span><span class="dot grey" id="dot-receiver"></span> Receiver</span>
+  <span id="last-update" style="font-family:'JetBrains Mono',monospace;font-size:0.9em;">&mdash;</span>
+</div>
+
+<!-- ══════ Pipeline SVG ══════ -->
+<div class="pipeline-container">
+<svg class="pipeline" viewBox="0 0 1700 600" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--green)"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--cyan)"/>
+    </marker>
+    <marker id="arrowJxs" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--jxs)"/>
+    </marker>
+    <linearGradient id="serverGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e2838"/>
+      <stop offset="100%" stop-color="#141c28"/>
+    </linearGradient>
+    <!-- Stream input color palette (4 colors cycling) -->
+  </defs>
+
+  <!-- ── Machine zones ── -->
+  <rect class="machine-zone" x="8" y="8" width="1060" height="584"/>
+  <text class="machine-zone-label" x="540" y="36" fill="var(--cyan)" opacity="0.7">Server 0 &mdash; TX Side</text>
+
+  <rect class="machine-zone" x="1090" y="8" width="600" height="584"/>
+  <text class="machine-zone-label" x="1390" y="36" fill="var(--cyan)" opacity="0.7">Server 1 &mdash; RX Side</text>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  16 Input Streams (animated lines)         -->
+  <!-- ═══════════════════════════════════════════ -->
+  <g id="input-streams">
+    <!-- Labels on the left -->
+    <text class="node-label" x="38" y="75" style="font-size:13px;text-anchor:start;fill:var(--dim)">16&times; ST2110-20</text>
+    <text class="node-sublabel" x="38" y="91" style="text-anchor:start;font-size:10px">1920&times;1080 YUV422 10-bit</text>
+  </g>
+  <!-- Stream lines created by JS below -->
+
+  <!-- ═══ NODE: Compositor ═══ -->
+  <rect class="server-box" id="box-comp" x="290" y="65" width="310" height="480" fill="url(#serverGrad)"/>
+  <text class="node-label" x="445" y="100" style="font-size:19px">Compositor</text>
+  <text class="node-sublabel" x="445" y="120">16&times; st20p_rx &rarr; 4&times;4 tile</text>
+
+  <!-- Tile grid visual (small 4×4) -->
+  <g transform="translate(370, 140)">
+    <rect x="0"  y="0"  width="36" height="22" rx="2" fill="#1e324a" stroke="var(--blue)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="38" y="0"  width="36" height="22" rx="2" fill="#1e324a" stroke="var(--purple)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="76" y="0"  width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="114" y="0" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="0"  y="24" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="38" y="24" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="76" y="24" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="114" y="24" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="0"  y="48" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="38" y="48" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="76" y="48" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="114" y="48" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="0"  y="72" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="38" y="72" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="76" y="72" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+    <rect x="114" y="72" width="36" height="22" rx="2" fill="#1e324a" stroke="var(--orange)" stroke-width="0.8" opacity="0.7"/>
+  </g>
+
+  <!-- Divider: tile → encode -->
+  <line x1="310" y1="260" x2="580" y2="260" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- SVT-JPEG-XS Encode section -->
+  <text class="node-label" x="445" y="290" style="font-size:17px;fill:var(--jxs)">SVT-JPEG-XS Encode</text>
+  <text class="node-sublabel" x="445" y="310">8K YUV422P10LE &rarr; codestream</text>
+  <text class="node-sublabel" x="445" y="328" style="fill:var(--orange)">5:1 compression &bull; 20 threads</text>
+  <text class="node-metric" id="m-comp-fps" x="445" y="356">&mdash; fps</text>
+  <text class="node-metric" id="m-comp-enc" x="445" y="378" style="fill:var(--orange)">&mdash;</text>
+
+  <!-- Divider: encode → ST22 TX -->
+  <line x1="310" y1="398" x2="580" y2="398" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- ST22 TX section -->
+  <text class="node-label" x="445" y="428" style="font-size:15px">ST22 TX</text>
+  <text class="node-sublabel" x="445" y="448">239.0.4.1:30000</text>
+  <text class="node-sublabel" x="445" y="466" style="fill:var(--jxs)">~16.6 MB/frame</text>
+  <text class="node-metric" id="m-comp-status" x="445" y="495" style="fill:var(--green)">&bull; ACTIVE</text>
+
+  <!-- ═══ FLOW: ST22 multicast → Sender ═══ -->
+  <path class="flow-path" id="flow-st22"
+        d="M600,310 C680,310 720,310 770,310"
+        stroke="var(--jxs)" stroke-width="2.5"/>
+  <line x1="756" y1="310" x2="769" y2="310" stroke="var(--jxs)" stroke-width="2.5" marker-end="url(#arrowJxs)"/>
+  <text class="flow-label" x="686" y="296" fill="var(--jxs)">ST2110-22</text>
+  <text class="arrow-label" x="686" y="330">VF7 &rarr; VF8</text>
+  <!-- ST22 particles -->
+  <circle class="particle jxs-particle" r="4.5">
+    <animateMotion dur="1.2s" repeatCount="indefinite" begin="0s"
+      path="M600,310 C680,310 720,310 770,310"/>
+  </circle>
+  <circle class="particle jxs-particle" r="3">
+    <animateMotion dur="1.2s" repeatCount="indefinite" begin="0.6s"
+      path="M600,310 C680,310 720,310 770,310"/>
+  </circle>
+
+  <!-- ═══ NODE: Sender (MTL→MXL Bridge) ═══ -->
+  <rect class="server-box" id="box-sender" x="774" y="200" width="260" height="230" fill="url(#serverGrad)"/>
+  <text class="node-label" x="904" y="236" style="font-size:18px">Bridge</text>
+  <text class="node-sublabel" x="904" y="256">ST22 RX &rarr; MXL RDMA TX</text>
+
+  <line x1="790" y1="270" x2="1018" y2="270" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <text class="node-sublabel" x="904" y="294">Zero-Copy Grain Write</text>
+  <text class="node-metric" id="m-sender-fps" x="904" y="320">&mdash; fps</text>
+  <text class="node-metric" id="m-sender-rdma" x="904" y="344" style="fill:var(--green)">&mdash;</text>
+
+  <!-- Inner particle: ST22 RX → RDMA TX -->
+  <circle class="particle inner-particle" r="3">
+    <animateMotion dur="1s" repeatCount="indefinite"
+      path="M904,260 L904,340"/>
+  </circle>
+
+  <!-- RDMA throughput label -->
+  <text class="node-sublabel" x="904" y="400" style="fill:var(--green);font-weight:500">RDMA via ens1np0</text>
+
+  <!-- ═══ FLOW: RDMA Fabrics ═══ -->
+  <path class="flow-path" id="flow-rdma"
+        d="M1034,310 C1100,310 1140,310 1200,310"
+        stroke="var(--green)" stroke-width="3"/>
+  <line x1="1186" y1="310" x2="1199" y2="310" stroke="var(--green)" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <text class="flow-label" x="1116" y="294" fill="var(--green)">RDMA Fabrics</text>
+  <text class="flow-throughput" id="fl-rdma-throughput" x="1116" y="276" style="fill:var(--green)">&mdash; Gbps</text>
+  <text class="arrow-label" x="1116" y="330" style="fill:var(--green)">libfabric verbs</text>
+  <text class="arrow-label" x="1116" y="346" style="fill:var(--green)">Intel E810 RoCEv2</text>
+  <!-- RDMA particles -->
+  <circle class="particle rdma-particle" r="5">
+    <animateMotion dur="1.8s" repeatCount="indefinite" begin="0s"
+      path="M1034,310 C1100,310 1140,310 1200,310"/>
+  </circle>
+  <circle class="particle rdma-particle" r="5">
+    <animateMotion dur="1.8s" repeatCount="indefinite" begin="0.6s"
+      path="M1034,310 C1100,310 1140,310 1200,310"/>
+  </circle>
+  <circle class="particle rdma-particle" r="3.5">
+    <animateMotion dur="1.8s" repeatCount="indefinite" begin="1.2s"
+      path="M1034,310 C1100,310 1140,310 1200,310"/>
+  </circle>
+
+  <!-- ═══ NODE: Receiver ═══ -->
+  <rect class="server-box" id="box-receiver" x="1204" y="120" width="280" height="380" fill="url(#serverGrad)"/>
+  <text class="node-label" x="1344" y="160" style="font-size:18px">MXL Receiver</text>
+  <text class="node-sublabel" x="1344" y="180">Fabrics Target</text>
+
+  <line x1="1220" y1="196" x2="1468" y2="196" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- Inner arrow: RDMA RX → decode -->
+  <circle class="particle inner-particle" r="3">
+    <animateMotion dur="1.2s" repeatCount="indefinite"
+      path="M1344,200 L1344,280"/>
+  </circle>
+
+  <text class="node-label" x="1344" y="224" style="font-size:16px;fill:var(--jxs)">SVT-JPEG-XS Decode</text>
+  <text class="node-sublabel" x="1344" y="244">codestream &rarr; 8K YUV</text>
+  <text class="node-sublabel" x="1344" y="262" style="fill:var(--orange)">8 threads</text>
+  <text class="node-metric" id="m-recv-fps" x="1344" y="290">&mdash; fps</text>
+  <text class="node-metric" id="m-recv-decodems" x="1344" y="312" style="fill:var(--orange)">&mdash;</text>
+
+  <line x1="1220" y1="330" x2="1468" y2="330" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <text class="node-label" x="1344" y="358" style="font-size:15px">Consumer</text>
+  <text class="node-sublabel" x="1344" y="378">Downscale &rarr; JPEG thumbnail</text>
+  <text class="node-metric" id="m-recv-e2e" x="1344" y="406">&mdash;</text>
+  <text class="node-sublabel" x="1344" y="468" style="fill:var(--orange);font-weight:500">HTTP :8088</text>
+
+</svg>
+</div>
+
+<!-- ══════ Metrics Cards ══════ -->
+<div class="metrics-row">
+  <div class="metric-card">
+    <div class="label">Decoded FPS</div>
+    <div class="value" id="mc-fps">&mdash;</div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Compositor</div>
+    <div class="value" id="mc-transit">&mdash;<span class="unit">ms</span></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Encode Latency</div>
+    <div class="value" id="mc-encode">&mdash;<span class="unit">ms</span></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">RDMA</div>
+    <div class="value" id="mc-rdma-lat">&mdash;<span class="unit">ms</span></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Decode Latency</div>
+    <div class="value" id="mc-decode">&mdash;<span class="unit">ms</span></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">End-to-End</div>
+    <div class="value" id="mc-e2e">&mdash;<span class="unit">ms</span></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">RDMA Frames</div>
+    <div class="value" id="mc-rdma">&mdash;</div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Decode Errors</div>
+    <div class="value" id="mc-errors" style="color:var(--green)">&mdash;</div>
+  </div>
+</div>
+
+<!-- ══════ Live Charts ══════ -->
+<div class="charts-row">
+  <div class="chart-panel">
+    <div class="chart-header">
+      <h4>End-to-End Latency</h4>
+      <span class="chart-latest" id="chart-lat-latest" style="color:var(--cyan)">&mdash; ms</span>
+    </div>
+    <canvas id="chart-latency"></canvas>
+    <div class="chart-legend">
+      <span><span class="chart-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span>E2E</span>
+      <span><span class="chart-dot" style="background:var(--jxs);box-shadow:0 0 6px var(--jxs)"></span>Encode</span>
+      <span><span class="chart-dot" style="background:#da70d6;box-shadow:0 0 6px #da70d6"></span>Compositor</span>
+      <span><span class="chart-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>RDMA</span>
+      <span><span class="chart-dot" style="background:var(--orange);box-shadow:0 0 6px var(--orange)"></span>Decode</span>
+    </div>
+  </div>
+  <div class="chart-panel">
+    <div class="chart-header">
+      <h4>Frames Decoded</h4>
+      <span class="chart-latest" id="chart-fps-latest" style="color:var(--green)">&mdash; fps</span>
+    </div>
+    <canvas id="chart-fps"></canvas>
+    <div class="chart-legend">
+      <span><span class="chart-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>Decoded FPS</span>
+    </div>
+  </div>
+</div>
+
+</div><!-- .main-content -->
+
+<!-- ══════ RX Preview (Right) ══════ -->
+<div class="preview-column" style="margin-top: 140px;">
+  <div class="preview-panel" style="border:2px solid var(--server-border-active);box-shadow:0 0 24px rgba(92,232,130,0.25), 0 4px 24px rgba(0,0,0,0.3);background:linear-gradient(180deg, #1e2838 0%, #141c28 100%);">
+    <h3>Receiver Output <span class="resolution-badge">8K decoded</span></h3>
+    <div class="thumb-container">
+      <img id="thumb-rx-img" alt="Receiver preview"
+           src="http://localhost:8088/stream"
+           onload="this.style.display='block'; document.getElementById('thumb-rx-ph').style.display='none';"
+           onerror="this.style.display='none'; document.getElementById('thumb-rx-ph').style.display='block';">
+      <div id="thumb-rx-ph" class="thumb-placeholder">
+        No receiver preview.<br>Waiting for MJPEG stream on port 8088.
+      </div>
+    </div>
+    <div class="thumb-meta">live MJPEG &mdash; Receiver RX (post-RDMA &amp; decode)</div>
+  </div>
+</div>
+
+</div><!-- .page-layout -->
+
+<script>
+/* ══════════════════════════════════════════════════════════
+ *  poc_8k Dashboard — Stats from receiver HTTP /stats
+ *
+ *  Polls the receiver's /stats JSON endpoint every 2s.
+ *  No InfluxDB dependency — all metrics come directly from
+ *  the poc_8k_receiver process.
+ * ══════════════════════════════════════════════════════════ */
+
+const RECEIVER_URL = 'http://localhost:8088';
+const POLL_INTERVAL = 2000;
+
+let pollTimer = null;
+let prevStats = null;
+let prevTime  = 0;
+
+/* ── DOM helpers ── */
+function setDot(id, ok) { document.getElementById(id).className = 'dot ' + (ok ? 'green' : 'grey'); }
+function setText(id, t) { const e = document.getElementById(id); if (e) e.textContent = t; }
+function setHTML(id, h) { const e = document.getElementById(id); if (e) e.innerHTML = h; }
+function setActive(id, on) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (on) el.classList.add('active'); else el.classList.remove('active');
+}
+
+/* ── Create the 16 animated input stream lines ── */
+function createStreamLines() {
+  const svg = document.querySelector('svg.pipeline');
+  const g = document.getElementById('input-streams');
+  const colors = ['#58a6ff','#bc8cff','#d29922','#3fb950','#79c0ff','#ff7b72','#ffa657','#d2a8ff'];
+  const streamLabels = [
+    'poc P','poc R',
+    's0','s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11','s12','s13'
+  ];
+
+  for (let i = 0; i < 16; i++) {
+    const y = 110 + i * 28;
+    const color = colors[i % colors.length];
+    const endY = 80 + (Math.floor(i / 4)) * 24 + (i % 4) * 6 + 26;
+
+    /* Stream label */
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', '22');
+    label.setAttribute('y', String(y + 4));
+    label.setAttribute('fill', color);
+    label.setAttribute('font-family', "'JetBrains Mono', monospace");
+    label.setAttribute('font-size', '9');
+    label.setAttribute('font-weight', '500');
+    label.setAttribute('opacity', '0.7');
+    label.textContent = streamLabels[i];
+    g.appendChild(label);
+
+    /* Line: left edge → compositor box */
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = `M56,${y} C160,${y} 220,${y} 290,${y}`;
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', color);
+    path.setAttribute('class', 'stream-line');
+    path.setAttribute('opacity', '0.45');
+    svg.insertBefore(path, document.getElementById('box-comp'));
+
+    /* Animated particle */
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', '2.5');
+    circle.setAttribute('fill', color);
+    circle.setAttribute('filter', `drop-shadow(0 0 4px ${color})`);
+    circle.setAttribute('class', 'stream-particle');
+    const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+    anim.setAttribute('dur', (1.5 + (i % 4) * 0.15).toFixed(2) + 's');
+    anim.setAttribute('repeatCount', 'indefinite');
+    anim.setAttribute('begin', (i * 0.12).toFixed(2) + 's');
+    anim.setAttribute('path', d);
+    circle.appendChild(anim);
+    svg.insertBefore(circle, document.getElementById('box-comp'));
+  }
+}
+
+/* ── Poll receiver /stats ── */
+async function poll() {
+  const now = Date.now();
+
+  try {
+    const resp = await fetch(RECEIVER_URL + '/stats', { signal: AbortSignal.timeout(2000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    setDot('dot-receiver', true);
+    setActive('box-receiver', true);
+
+    /* Use server-reported FPS (precise CLOCK_MONOTONIC interval) */
+    {
+      const fps = data.fps || 0;
+      const senderFps = (data.sender_fps_delta && data.sender_fps_delta > 0)
+        ? data.sender_fps_delta : fps;
+      setText('mc-fps', fps.toFixed(1));
+      setText('m-recv-fps', fps.toFixed(0) + ' fps');
+      setText('m-comp-fps', fps.toFixed(0) + ' fps');
+      setText('m-sender-fps', senderFps.toFixed(0) + ' fps');
+
+      /* Push to chart */
+      chartState.fps.push(fps);
+      while (chartState.fps.length > chartState.maxPts) chartState.fps.shift();
+    }
+
+    /* Latencies */
+    const decMs = data.avg_decode_ms || 0;
+    const e2eMs = data.avg_e2e_ms || 0;
+    const encMs = data.avg_encode_ms || 0;
+    const rdmaMs  = data.real_rdma_ms || 0;
+    const transitMs = data.transit_ms || 0;
+
+    if (encMs > 0) {
+      setHTML('mc-encode', encMs.toFixed(1) + '<span class="unit">ms</span>');
+      setText('m-comp-enc', 'enc: ' + encMs.toFixed(0) + ' ms');
+    }
+    if (rdmaMs > 0) {
+      setHTML('mc-rdma-lat', rdmaMs.toFixed(1) + '<span class="unit">ms</span>');
+      setText('m-sender-rdma', 'rdma: ' + rdmaMs.toFixed(1) + ' ms');
+    }
+    if (transitMs > 0) {
+      setHTML('mc-transit', transitMs.toFixed(1) + '<span class="unit">ms</span>');
+    }
+    if (decMs > 0) {
+      setHTML('mc-decode', decMs.toFixed(1) + '<span class="unit">ms</span>');
+      setText('m-recv-decodems', 'dec: ' + decMs.toFixed(1) + ' ms');
+    }
+    if (e2eMs > 0) {
+      setHTML('mc-e2e', e2eMs.toFixed(1) + '<span class="unit">ms</span>');
+      setText('m-recv-e2e', 'E2E: ' + e2eMs.toFixed(1) + ' ms');
+    }
+
+    setText('mc-rdma', String(data.rdma_frames || 0));
+
+    const errEl = document.getElementById('mc-errors');
+    const errs = data.decode_errors || 0;
+    errEl.textContent = String(errs);
+    errEl.style.color = errs > 0 ? 'var(--red)' : 'var(--green)';
+
+    /* Push latency to chart */
+    chartState.lat.e2e.push(e2eMs);
+    chartState.lat.decode.push(decMs);
+    chartState.lat.encode.push(encMs);
+    chartState.lat.transit.push(transitMs);
+    chartState.lat.rdma.push(rdmaMs);
+    while (chartState.lat.e2e.length > chartState.maxPts) {
+      chartState.lat.e2e.shift();
+      chartState.lat.decode.shift();
+      chartState.lat.encode.shift();
+      chartState.lat.transit.shift();
+      chartState.lat.rdma.shift();
+    }
+
+    prevStats = data;
+    prevTime = now;
+
+    /* Infer compositor and sender are running if receiver gets frames */
+    if (data.rdma_frames > 0) {
+      setDot('dot-comp', true);
+      setDot('dot-sender', true);
+      setActive('box-comp', true);
+      setActive('box-sender', true);
+    }
+
+    drawAllCharts();
+    setText('last-update', 'Updated: ' + new Date().toLocaleTimeString());
+
+  } catch (e) {
+    setDot('dot-receiver', false);
+    setActive('box-receiver', false);
+    setText('last-update', 'Error: ' + e.message);
+  }
+}
+
+/* ── MJPEG streams are live (multipart/x-mixed-replace) ── */
+/* No polling needed — browser updates the <img> automatically. */
+/* Reconnect on error after a short delay */
+function setupStreamReconnect(imgId, phId, url) {
+  const img = document.getElementById(imgId);
+  img.addEventListener('error', () => {
+    img.style.display = 'none';
+    document.getElementById(phId).style.display = 'block';
+    setTimeout(() => {
+      img.src = url + '?' + Date.now();
+    }, 3000);
+  });
+}
+setupStreamReconnect('thumb-tx-img', 'thumb-tx-ph', 'http://localhost:8087/stream');
+setupStreamReconnect('thumb-rx-img', 'thumb-rx-ph', 'http://localhost:8088/stream');
+
+/* ══════════════════════════════════════════════════════════
+ *  Live Sparkline Charts
+ * ══════════════════════════════════════════════════════════ */
+const chartState = {
+  lat: { e2e: [], encode: [], transit: [], rdma: [], decode: [] },
+  fps: [],
+  maxPts: 90,
+};
+
+function drawAllCharts() {
+  drawChart('chart-latency', [
+    { data: chartState.lat.e2e,    color: '#79c0ff', glow: 'rgba(121,192,255,0.35)' },
+    { data: chartState.lat.encode, color: '#ff7b72', glow: 'rgba(255,123,114,0.35)' },
+    { data: chartState.lat.transit, color: '#da70d6', glow: 'rgba(218,112,214,0.30)' },
+    { data: chartState.lat.rdma,   color: '#3fb950', glow: 'rgba(63,185,80,0.30)' },
+    { data: chartState.lat.decode, color: '#d29922', glow: 'rgba(210,153,34,0.30)' },
+  ], 'ms', 'chart-lat-latest', 'var(--cyan)');
+  drawChart('chart-fps', [
+    { data: chartState.fps, color: '#3fb950', glow: 'rgba(63,185,80,0.35)' },
+  ], 'fps', 'chart-fps-latest', 'var(--green)');
+}
+
+function niceStep(maxVal, steps) {
+  if (maxVal <= 0) return 1;
+  const raw = maxVal / steps;
+  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+  const frac = raw / exp;
+  let nice;
+  if (frac <= 1.5) nice = 1;
+  else if (frac <= 3) nice = 2;
+  else if (frac <= 7) nice = 5;
+  else nice = 10;
+  return nice * exp;
+}
+
+function drawChart(canvasId, series, unit, latestId, latestColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (w < 10 || h < 10) return;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const ml = 52, mr = 14, mt = 6, mb = 22;
+  const cw = w - ml - mr, ch = h - mt - mb;
+  const maxPts = chartState.maxPts;
+  const nPts = series[0].data.length;
+  if (nPts < 2) {
+    ctx.fillStyle = '#3a4a5e';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for data\u2026', w / 2, h / 2);
+    return;
+  }
+
+  /* Y-axis auto-range */
+  let yMax = 0;
+  for (const s of series)
+    for (const v of s.data)
+      if (v > yMax) yMax = v;
+  if (yMax <= 0) yMax = 1;
+
+  const gridN = 4;
+  const yStep = niceStep(yMax * 1.1, gridN);
+  const nTicks = Math.max(gridN, Math.ceil((yMax * 1.1) / yStep));
+  yMax = yStep * nTicks;
+  const yMap = (v) => mt + ch - (v / yMax) * ch;
+
+  const xStep = cw / (maxPts - 1);
+  const offX  = (maxPts - nPts) * xStep;
+
+  /* Grid */
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#1a2430';
+  ctx.fillStyle = '#556070';
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= nTicks; i++) {
+    const val = yStep * i;
+    const y = yMap(val);
+    ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(ml + cw, y); ctx.stroke();
+    ctx.fillText(val < 10 ? val.toFixed(1) : Math.round(val), ml - 6, y + 4);
+  }
+  /* X-axis */
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#3e4c5e';
+  const totalSec = (nPts - 1) * 2;
+  for (let sec = 0; sec <= totalSec && sec <= (maxPts - 1) * 2; sec += 30) {
+    const idx = nPts - 1 - sec / 2;
+    if (idx < 0) continue;
+    const x = ml + offX + idx * xStep;
+    if (x < ml - 2) continue;
+    ctx.fillText(sec === 0 ? 'now' : `-${sec}s`, x, mt + ch + 16);
+  }
+
+  /* Series */
+  for (let si = series.length - 1; si >= 0; si--) {
+    const s = series[si];
+    if (s.data.length < 2) continue;
+    ctx.beginPath();
+    for (let i = 0; i < s.data.length; i++) {
+      const x = ml + offX + i * xStep;
+      const y = yMap(s.data[i]);
+      if (i === 0) { ctx.moveTo(x, y); continue; }
+      const px = ml + offX + (i - 1) * xStep;
+      const py = yMap(s.data[i - 1]);
+      const cpx = (px + x) / 2;
+      ctx.bezierCurveTo(cpx, py, cpx, y, x, y);
+    }
+    ctx.save();
+    ctx.shadowColor = s.glow;
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.restore();
+
+    const lastX = ml + offX + (s.data.length - 1) * xStep;
+    const firstX = ml + offX;
+    ctx.lineTo(lastX, mt + ch);
+    ctx.lineTo(firstX, mt + ch);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, mt, 0, mt + ch);
+    grad.addColorStop(0, s.color + '22');
+    grad.addColorStop(1, s.color + '03');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    const lx = lastX;
+    const ly = yMap(s.data[s.data.length - 1]);
+    ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = s.color; ctx.fill();
+    ctx.beginPath(); ctx.arc(lx, ly, 7, 0, Math.PI * 2);
+    ctx.fillStyle = s.glow; ctx.fill();
+  }
+
+  if (latestId && series[0].data.length) {
+    const v = series[0].data[series[0].data.length - 1];
+    const el = document.getElementById(latestId);
+    if (el) {
+      el.textContent = (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ' + unit;
+      el.style.color = latestColor;
+    }
+  }
+}
+
+/* ── Startup ── */
+window.addEventListener('load', () => {
+  createStreamLines();
+  poll();
+  pollTimer = setInterval(poll, POLL_INTERVAL);
+  /* MJPEG streams auto-update — no polling needed */
+});
+</script>
+</body>
+</html>

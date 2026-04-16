@@ -7,11 +7,11 @@
 #include "../../mt_log.h"
 
 static const char* st22p_tx_frame_stat_name[ST22P_TX_FRAME_STATUS_MAX] = {
-    "free", "in_user", "ready", "in_encoding", "encoded", "in_trans",
+    "free", "in_user", "ready", "in_encoding", "encoded", "dropped", "in_trans",
 };
 
 static const char* st22p_tx_frame_stat_name_short[ST22P_TX_FRAME_STATUS_MAX] = {
-    "F", "U", "R", "IE", "E", "T",
+    "F", "U", "R", "IE", "E", "D", "T",
 };
 
 static const char* tx_st22p_stat_name(enum st22p_tx_frame_status stat) {
@@ -97,18 +97,97 @@ static struct st22p_tx_frame* tx_st22p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if the newest ENCODED frame has missed its transmission window.
+ * Drops the frame (ENCODED -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
+ *
+ * Locking contract (mirrors st20p):
+ *   1. Caller holds ctx->lock.
+ *   2. This function drops the lock to fire app callbacks outside it.
+ *   3. Returns with ctx->lock held.
+ *   4. Returns true if the frame was dropped (caller should retry).
+ */
+static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
+                                   struct st22p_tx_frame* framebuff) {
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  uint32_t rtp_ts;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST22P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be compared against PTP wall time */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST22P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
+         "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
+         __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+         cur_tai, frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame->status = ST_FRAME_STATUS_DROPPED;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST22P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  framebuff->stat = ST22P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st22p_notify_frame_available(ctx);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st22_tx_frame_meta* meta) {
   struct st22p_tx_ctx* ctx = priv;
   struct st22p_tx_frame* framebuff;
+  int drop_cnt = 0;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
+  do {
+    framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
+    if (!framebuff) break; /* no encoded frame available */
+    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
+  } while (tx_st22p_if_frame_late(ctx, framebuff));
+
   /* not any encoded frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE))
+        tx_st22p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -128,42 +207,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
 
-int st22p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st22p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST22P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st22p_user_frame(ctx, framebuff));
-  }
-
-  /* notify app can get frame */
-  tx_st22p_notify_frame_available(ctx);
-  MT_USDT_ST22P_TX_FRAME_DONE(ctx->idx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -191,9 +235,12 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
     struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+    frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
   }
 
   tx_st22p_notify_frame_available(ctx);
@@ -695,6 +742,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   }
 
   framebuff->stat = ST22P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   framebuff->seq_number = ctx->framebuff_sequence_number++;
   mt_pthread_mutex_unlock(&ctx->lock);
 
@@ -758,6 +806,29 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   }
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
+  return 0;
+}
+
+int st22p_tx_put_frame_abort(st22p_tx_handle handle, struct st_frame* frame) {
+  struct st22p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st22p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  framebuff->stat = ST22P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   return 0;
 }
 

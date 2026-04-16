@@ -293,6 +293,16 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
       g_param_spec_boolean("enable-dma-offload", "Enable DMA offload",
                            "Request DMA offload for compatible sessions.", FALSE,
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_DEV_ARGS_ALLOW_DOWN,
+      g_param_spec_boolean(
+          "allow-down-ports", "Allow ports down",
+          "Allow MTL to initialize even if port links are down. Sets "
+          "MTL_FLAG_ALLOW_DOWN_PORTS which enables "
+          "MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION on every configured port. "
+          "Note: sessions still require at least one functioning port to operate.",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
@@ -359,6 +369,9 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_ENABLE_DMA_OFFLOAD:
       general_args->enable_dma_offload = g_value_get_boolean(value);
       break;
+    case PROP_GENERAL_DEV_ARGS_ALLOW_DOWN:
+      general_args->allow_down_ports = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -420,6 +433,9 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       break;
     case PROP_GENERAL_ENABLE_DMA_OFFLOAD:
       g_value_set_boolean(value, general_args->enable_dma_offload);
+      break;
+    case PROP_GENERAL_DEV_ARGS_ALLOW_DOWN:
+      g_value_set_boolean(value, general_args->allow_down_ports);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -609,6 +625,11 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
     mtl_init_params->num_ports++;
 
     mtl_port_idx++;
+  }
+
+  if (general_args->allow_down_ports) {
+    mtl_init_params->flags |= MTL_FLAG_ALLOW_DOWN_PORTS;
+    GST_INFO("allow-down-ports enabled: MTL_FLAG_ALLOW_DOWN_PORTS set for all ports");
   }
 
   if (general_args->dma_dev && strlen(general_args->dma_dev)) {

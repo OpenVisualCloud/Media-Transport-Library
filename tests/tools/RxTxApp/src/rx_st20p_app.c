@@ -31,12 +31,14 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
     dbg("%s(%d): pkts_total %u, pkts per port P %u R %u\n", __func__, idx,
         frame->pkts_total, frame->pkts_recv[MTL_SESSION_PORT_P],
         frame->pkts_recv[MTL_SESSION_PORT_R]);
-    if (frame->pkts_recv[MTL_SESSION_PORT_P] < (frame->pkts_total / 2))
-      warn("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_P], frame->pkts_total);
-    if (frame->pkts_recv[MTL_SESSION_PORT_R] < (frame->pkts_total / 2))
-      warn("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
+    if (s->stat_frame_total_received % 60 == 0 &&
+        frame->pkts_recv[MTL_SESSION_PORT_P] < (frame->pkts_total / 2))
+      dbg("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
+          frame->pkts_recv[MTL_SESSION_PORT_P], frame->pkts_total);
+    if (s->stat_frame_total_received % 60 &&
+        frame->pkts_recv[MTL_SESSION_PORT_R] < (frame->pkts_total / 2))
+      dbg("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
+          frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
   }
 
   if (frame->interlaced) {
@@ -364,10 +366,10 @@ static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                              : "FAILED",
-           framerate, s->stat_frame_total_received);
+  notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+        ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                           : "FAILED",
+        framerate, s->stat_frame_total_received);
   return 0;
 }
 

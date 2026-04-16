@@ -8,10 +8,16 @@
 #include "../st_main.h"
 #include "st30_pipeline_api.h"
 
+/* Maximum number of late frames that can be dropped in a single next_frame call. */
+#ifndef ST_TX_ST30P_DROP_MAX_BATCH
+#define ST_TX_ST30P_DROP_MAX_BATCH (80)
+#endif
+
 enum st30p_tx_frame_status {
   ST30P_TX_FRAME_FREE = 0,
   ST30P_TX_FRAME_IN_USER,         /* in user */
   ST30P_TX_FRAME_READY,           /* ready to transport */
+  ST30P_TX_FRAME_DROPPED,         /* ready but arrived too late; recycled in next_frame */
   ST30P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST30P_TX_FRAME_STATUS_MAX,
 };
@@ -21,6 +27,7 @@ struct st30p_tx_frame {
   struct st30_frame frame;
   uint16_t idx;
   uint32_t seq_number;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
 struct st30p_tx_ctx {

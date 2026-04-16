@@ -76,6 +76,7 @@ build_openh264() {
 }
 
 build_ffmpeg() {
+	pushd "$script_path"
 	if [ -d "FFmpeg-release-${FFMPEG_VERSION}" ]; then
 		echo "FFmpeg directory already exists. Removing it to ensure a clean build."
 		rm -rf "FFmpeg-release-${FFMPEG_VERSION}"
@@ -84,7 +85,7 @@ build_ffmpeg() {
 	wget "https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/${FFMPEG_VERSION}.zip"
 	unzip "${FFMPEG_VERSION}.zip" && rm -f "${FFMPEG_VERSION}.zip"
 
-	cd "FFmpeg-release-${FFMPEG_VERSION}"
+	pushd "./FFmpeg-release-${FFMPEG_VERSION}"
 	cp -f "$script_path"/mtl_* ./libavdevice/
 
 	for patch_file in "$script_path"/"$FFMPEG_VERSION"/*.patch; do
@@ -105,7 +106,8 @@ build_ffmpeg() {
 	make -j "$(nproc)"
 	sudo make install
 	sudo ldconfig
-	cd ../
+	popd
+	popd
 }
 
 build_openh264

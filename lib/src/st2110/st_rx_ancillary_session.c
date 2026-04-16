@@ -112,7 +112,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                   s_port, payload_type, ops->payload_type);
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -122,44 +122,38 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                     ssrc, ops->ssrc);
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
 
+  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
+
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
-  if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
+  if (f_bits == 0x1) {
     ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
                   rfc8331->first_hdr_chunk.f);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+    s->port_user_stats.stat_pkts_wrong_interlace_dropped++;
     return -EINVAL;
   }
-  /* Enforce interlace expectation vs header F bits */
-  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
-  if (ops->interlaced) {
-    /* Expect interlaced: drop progressive/unspecified (0b00) */
-    if (f_bits == 0x0) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
-                    __func__, s->idx, s_port);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
-    }
-  } else {
-    /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
-    if (f_bits & 0x2) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
-                    __func__, s->idx, s_port, f_bits);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
+  /* Auto-detect interlace if enabled */
+  bool pkt_interlaced = f_bits & 0x2;
+  if (s->interlace_auto) {
+    if (!s->interlace_detected || s->interlace_interlaced != pkt_interlaced) {
+      s->interlace_detected = true;
+      s->interlace_interlaced = pkt_interlaced;
+      s->ops.interlaced = pkt_interlaced;
+      info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
+           pkt_interlaced ? "interlaced" : "progressive", f_bits);
     }
   }
 
   /* Count field polarity when interlaced frames are accepted */
-  if (f_bits & 0x2) {
+  if (pkt_interlaced) {
     if (f_bits & 0x1) {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      s->port_user_stats.stat_interlace_second_field++;
     } else {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      s->port_user_stats.stat_interlace_first_field++;
     }
   }
 
@@ -169,12 +163,17 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* not a big deal as long as stream is continous */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
+    s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+    s->port_user_stats.common.stat_pkts_out_of_order += gap;
   }
   s->latest_seq_id[s_port] = seq_id;
+
+  /* count per-port stats before redundancy filtering for consistent reporting */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp)) */
@@ -193,7 +192,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
 
     s->redundant_error_cnt[s_port]++;
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->port_user_stats.common.stat_pkts_redundant++;
 
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
@@ -210,10 +209,15 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
   if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+    if (s->interlace_auto && s->interlace_detected) {
+      s->interlace_detected = false;
+      dbg("%s(%d,%d), reset interlace detect after seq discont %u->%u\n", __func__,
+          s->idx, s_port, s->session_seq_id, seq_id);
+    }
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* update seq id */
@@ -226,7 +230,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
         s->idx, seq_id);
     ST40_FUZZ_LOG("%s(%d,%d), enqueue failure for seq %u len %u\n", __func__, s->idx,
                   s_port, seq_id, pkt_len);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
+    s->port_user_stats.stat_pkts_enqueue_fail++;
     MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
@@ -237,8 +241,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
-  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.stat_pkts_received++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
@@ -262,23 +265,16 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
 
   s->session_seq_id = -1;
   s->tmstamp = -1;
-  s->stat_pkts_dropped = 0;
-  s->stat_pkts_redundant = 0;
-  s->stat_pkts_out_of_order = 0;
-  s->stat_pkts_enqueue_fail = 0;
-  s->stat_pkts_wrong_pt_dropped = 0;
-  s->stat_pkts_wrong_ssrc_dropped = 0;
-  s->stat_pkts_received = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
-  s->stat_interlace_first_field = 0;
-  s->stat_interlace_second_field = 0;
-  s->stat_pkts_wrong_interlace_dropped = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-  memset(s->stat_pkts_out_of_order_per_port, 0,
-         sizeof(s->stat_pkts_out_of_order_per_port));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+
+  /* Reset interlace detection state */
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = s->ops.interlaced;
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     s->latest_seq_id[i] = -1;
@@ -311,8 +307,10 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
     return -EIO;
   }
 
-  for (uint16_t i = 0; i < nb; i++)
-    rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
+  for (uint16_t i = 0; i < nb; i++) {
+    if (rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port) < 0)
+      s->port_user_stats.common.port[s_port].err_packets++;
+  }
 
   return 0;
 }
@@ -516,6 +514,9 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  s->interlace_auto = !(ops->flags & ST40_RX_FLAG_DISABLE_AUTO_DETECT);
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
@@ -545,7 +546,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
 
   s->attached = true;
   info("%s(%d), flags 0x%x pt %u, %s\n", __func__, idx, ops->flags, ops->payload_type,
-       ops->interlaced ? "interlace" : "progressive");
+       s->interlace_auto ? "auto" : (ops->interlaced ? "interlace" : "progressive"));
   return 0;
 }
 
@@ -558,58 +559,78 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
+  struct st40_rx_user_stats* us = &s->port_user_stats;
+  struct st40_rx_user_stats* snap = &s->stat_snapshot;
+
+  uint64_t pkts_received =
+      us->common.stat_pkts_received - snap->common.stat_pkts_received;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
+  uint64_t pkts_out_of_order =
+      us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  uint64_t pkts_unrecovered =
+      us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
+  uint64_t pkts_dropped = us->stat_pkts_dropped - snap->stat_pkts_dropped;
+  uint64_t pkts_wrong_pt_dropped =
+      us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
+  uint64_t pkts_wrong_ssrc_dropped =
+      us->common.stat_pkts_wrong_ssrc_dropped - snap->common.stat_pkts_wrong_ssrc_dropped;
+  uint64_t pkts_enqueue_fail = us->stat_pkts_enqueue_fail - snap->stat_pkts_enqueue_fail;
+  uint64_t pkts_wrong_interlace_dropped =
+      us->stat_pkts_wrong_interlace_dropped - snap->stat_pkts_wrong_interlace_dropped;
+  uint64_t interlace_first_field =
+      us->stat_interlace_first_field - snap->stat_interlace_first_field;
+  uint64_t interlace_second_field =
+      us->stat_interlace_second_field - snap->stat_interlace_second_field;
+
+  if (pkts_redundant) {
+    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 " (redundant %" PRIu64
+           ")\n",
+           idx, s->ops_name, framerate, frames_received, pkts_received, pkts_redundant);
   } else {
-    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name,
-           framerate, frames_received, s->stat_pkts_received);
+    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 "\n", idx, s->ops_name,
+           framerate, frames_received, pkts_received);
   }
-  s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
 
-  if (s->stat_pkts_dropped) {
-    notice("RX_ANC_SESSION(%d): dropped pkts %d\n", idx, s->stat_pkts_dropped);
-    s->stat_pkts_dropped = 0;
+  if (pkts_dropped) {
+    notice("RX_ANC_SESSION(%d): dropped pkts %" PRIu64 "\n", idx, pkts_dropped);
   }
-  if (s->stat_pkts_out_of_order) {
-    warn("RX_ANC_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
-         s->stat_pkts_out_of_order,
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+  if (pkts_out_of_order) {
+    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
+    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
+                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
+    warn("RX_ANC_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64 ")\n",
+         idx, pkts_out_of_order, d_p, d_r);
+  }
+  if (pkts_unrecovered) {
+    warn("RX_ANC_SESSION(%d): unrecovered pkts %" PRIu64 "\n", idx, pkts_unrecovered);
   }
 
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (pkts_wrong_pt_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_pt_dropped);
   }
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (pkts_wrong_ssrc_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_ssrc_dropped);
   }
-  if (s->stat_pkts_wrong_interlace_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_interlace_dropped);
-    s->stat_pkts_wrong_interlace_dropped = 0;
+  if (pkts_wrong_interlace_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_interlace_dropped);
   }
-  if (s->stat_pkts_enqueue_fail) {
-    notice("RX_ANC_SESSION(%d): enqueue failed pkts %d\n", idx,
-           s->stat_pkts_enqueue_fail);
-    s->stat_pkts_enqueue_fail = 0;
+  if (pkts_enqueue_fail) {
+    notice("RX_ANC_SESSION(%d): enqueue failed pkts %" PRIu64 "\n", idx,
+           pkts_enqueue_fail);
   }
   if (s->ops.interlaced) {
-    notice("RX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    notice("RX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, interlace_first_field, interlace_second_field);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -656,6 +677,10 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
+  if (s->interlace_auto) {
+    s->interlace_detected = false;
+    s->interlace_interlaced = s->ops.interlaced;
+  }
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
@@ -837,6 +862,55 @@ static int rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* 
   return 0;
 }
 
+/* Remove any session ports that map to a down physical port.
+ * When a down port is found at index i, all further entries are shifted down
+ * one slot (port[i] = port[i+1], ...) and num_port is decremented.
+ * Only ops->port[] is shifted — all other per-port arrays (ip_addr, udp_port, etc.)
+ * are left untouched; with the reduced num_port they are simply never indexed.
+ * Returns -EIO if every port is down (caller must abort). */
+/* Prune down ports that are not available. Shifts port names, IP addresses,
+ * UDP ports, and multicast source IP addresses for remaining ports. */
+static int rx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                             struct st40_rx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -918,6 +992,12 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  ret = rx_ancillary_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, rx_ancillary_ops_prune_down_ports fail %d\n", __func__, ret);
     return NULL;
   }
 
@@ -1130,7 +1210,9 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
   }
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }
 
@@ -1148,6 +1230,10 @@ int st40_rx_reset_session_stats(st40_rx_handle handle) {
   }
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }

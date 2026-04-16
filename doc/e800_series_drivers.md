@@ -1,10 +1,10 @@
-# E810 Driver Guide
+# E800 Series Driver Guide
 
-NIC setup steps for Intel® E810 Series Ethernet Adapter
+NIC setup steps for Intel® E810 and E830 Series Ethernet Adapters
 
 ## 1. Update Driver Version with Media Transport Library Patches
 
-The Media Transport Library relies on certain rate limit patches that are currently not included in the E810 driver. These patches need to be applied to the driver before rebuilding it.
+The Media Transport Library relies on certain rate limit patches that are currently not included in the E810/E830 driver. These patches need to be applied to the driver before rebuilding it.
 
 > **Note:** Occasionally, after a system reboot, the operating system (Ubuntu) may automatically upgrade to a new kernel version. In such cases, it is important to remember to rebuild the driver to ensure compatibility with the new kernel version.
 
@@ -117,15 +117,21 @@ This step is a one-time setup and can be skipped if you have already completed i
 
 Download from <https://downloadcenter.intel.com/download/22283/Intel-Ethernet-Adapter-CompleteDriver-Pack>
 
-### 2.2. Unzip E810 NVMUpdatePackage
+### 2.2. Unzip NVMUpdatePackage
 
-Note: Change the below version number if there's a new Intel-Ethernet-Adapter-CompleteDriver-Pack release. The steps are based on the 29.0 version.
+Note: Change the below version number if there's a new Intel-Ethernet-Adapter-CompleteDriver-Pack release. The steps are based on the 31.0 version.
+
 
 ```bash
-unzip Release_29.0.zip
+unzip Release_31.0.zip
+# For E810:
 cd NVMUpdatePackage/E810
 tar xvf E810_NVMUpdatePackage_v4_40_Linux.tar.gz
 cd E810/Linux_x64/
+# For E830:
+cd NVMUpdatePackage/E830
+tar xvf E830_NVMUpdatePackage_v<version>_Linux.tar.gz
+cd E830/Linux_x64/
 ```
 
 ### 2.3. Run nvmupdate64e
@@ -138,7 +144,7 @@ sudo ./nvmupdate64e
 
 ### 2.4. Verify Firmware Version
 
-To verify the firmware version, you can use the ethtool command with the interface name of your E810 card. Please replace "enp175s0f0" with the actual interface name in your setup.
+To verify the firmware version, you can use the ethtool command with the interface name of your E810 or E830 card. Please replace "enp175s0f0" with the actual interface name in your setup.
 
 ```bash
 ethtool -i enp175s0f0
@@ -151,7 +157,10 @@ A correct setup should have an output similar to the following:
 ```text
 driver: ice
 version: Kahawai_2.2.8
-firmware-version: 4.40 0x8001c967 1.3534.0
+# For E810:
+firmware-version: 4.91 0x800214af 1.3909.0
+# For E830:
+firmware-version: 1.20 0x80017ef4 1.3909.0 
 expansion-rom-version:
 bus-info: 0000:af:00.0
 supports-statistics: yes

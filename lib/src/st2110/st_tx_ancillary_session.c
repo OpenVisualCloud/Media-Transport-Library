@@ -11,6 +11,7 @@
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 #include "st_err.h"
+#include "st_tx_ancillary_test.h"
 
 /* call tx_ancillary_session_put always if get successfully */
 static inline struct st_tx_ancillary_session_impl* tx_ancillary_session_get(
@@ -57,11 +58,6 @@ static inline void tx_ancillary_session_put(struct st_tx_ancillary_sessions_mgr*
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
-static inline bool tx_ancillary_test_frame_active(
-    struct st_tx_ancillary_session_impl* s) {
-  return s->test.pattern != ST40_TX_TEST_NONE && s->test_frame_active;
-}
-
 static inline void tx_ancillary_seq_advance(struct st_tx_ancillary_session_impl* s,
                                             uint16_t step) {
   uint32_t seq = s->st40_seq_id;
@@ -80,12 +76,7 @@ static inline void tx_ancillary_seq_advance(struct st_tx_ancillary_session_impl*
 static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl* s,
                                             struct st40_rfc8331_rtp_hdr* rtp) {
   uint16_t step = 1;
-
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
-      !s->test_seq_gap_fired) {
-    step = 2;
-    s->test_seq_gap_fired = true;
-  }
+  TX_ANC_TEST_SEQ_STEP(s, step);
 
   rtp->base.seq_number = htons(s->st40_seq_id);
   rtp->seq_number_ext = htons(s->st40_ext_seq_id);
@@ -93,11 +84,9 @@ static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl*
   tx_ancillary_seq_advance(s, step);
 }
 
-static inline uint16_t tx_ancillary_apply_parity(struct st_tx_ancillary_session_impl* s,
-                                                 uint16_t value) {
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_BAD_PARITY) {
-    return value & 0x3FF; /* strip parity to intentionally corrupt */
-  }
+static inline uint16_t tx_ancillary_apply_parity(
+    struct st_tx_ancillary_session_impl* s __rte_unused, uint16_t value) {
+  TX_ANC_TEST_APPLY_PARITY(s, value);
   return st40_add_parity_bits(value);
 }
 
@@ -124,8 +113,7 @@ static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
   s->st40_pkt_idx = 0;
   s->st40_anc_idx = 0;
   s->calculate_time_cursor = false;
-  s->test_frame_active = false;
-  s->test_seq_gap_fired = false;
+  TX_ANC_TEST_RESET_STATE(s);
   s->check_frame_done_time = false;
   s->pacing.tsc_time_cursor = 0;
 }
@@ -340,7 +328,7 @@ static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_
                                                  uint64_t requested_epoch,
                                                  uint64_t current_epoch) {
   if (requested_epoch < current_epoch) {
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    s->port_user_stats.common.stat_error_user_timestamp++;
     dbg("%s(%d), user requested transmission time in the past, required_epoch %" PRIu64
         ", cur_epoch %" PRIu64 "\n",
         __func__, s->idx, requested_epoch, current_epoch);
@@ -348,7 +336,7 @@ static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_
     dbg("%s(%d), requested epoch %" PRIu64
         " too far in the future, current epoch %" PRIu64 "\n",
         __func__, s->idx, requested_epoch, current_epoch);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    s->port_user_stats.common.stat_error_user_timestamp++;
   }
 }
 
@@ -369,16 +357,14 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
       dbg("%s(%d), onward range exceeded, next_free_epoch %" PRIu64
           ", current_epoch %" PRIu64 "\n",
           __func__, s->idx, next_free_epoch, current_epoch);
-      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                          (next_free_epoch - current_epoch));
+      s->port_user_stats.common.stat_epoch_onward += (next_free_epoch - current_epoch);
     }
 
     if (!required_tai) epoch = next_free_epoch;
   } else {
     dbg("%s(%d), frame is late, current_epoch %" PRIu64 " next_free_epoch %" PRIu64 "\n",
         __func__, s->idx, current_epoch, next_free_epoch);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (current_epoch - next_free_epoch));
+    s->port_user_stats.common.stat_epoch_drop += (current_epoch - next_free_epoch);
 
     if (s->ops.notify_frame_late) {
       s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
@@ -409,7 +395,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   time_to_tx_ns = (int64_t)start_time_tai - (int64_t)cur_tai;
   if (time_to_tx_ns < 0) {
     /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
+    s->port_user_stats.common.stat_epoch_mismatch++;
     time_to_tx_ns = 0; /* send asap */
   }
 
@@ -524,8 +510,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
-  bool test_no_marker =
-      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
+  bool test_no_marker = TX_ANC_TEST_NO_MARKER(s);
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
@@ -533,9 +518,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   struct st40_frame* src = frame_info->addr;
   int anc_idx = s->st40_anc_idx;
   int anc_count = src->meta_num;
-  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
-      anc_idx >= anc_count)
-    anc_idx = anc_count - 1; /* repeat last ANC when test demands extra packets */
+  TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
   int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
@@ -627,17 +610,14 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
-  bool test_no_marker =
-      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
+  bool test_no_marker = TX_ANC_TEST_NO_MARKER(s);
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
   struct st40_frame* src = frame_info->addr;
   int anc_count = src->meta_num;
-  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
-      anc_idx >= anc_count)
-    anc_idx = anc_count - 1;
+  TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
   int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
@@ -733,7 +713,6 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     s->st40_anc_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st40_rtp_time = rtp->tmstamp;
@@ -745,20 +724,13 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     }
     if (s->ops.interlaced) {
       if (second_field) {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        s->port_user_stats.stat_interlace_second_field++;
       } else {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
-      s->test_frame_active = true;
-      s->test_frames_left--;
-      s->test_seq_gap_fired = false;
-    } else {
-      s->test_frame_active = false;
-    }
-    if (s->test_frame_active && s->test.paced_pkt_count)
-      s->st40_total_pkts = RTE_MAX(1, (int)s->test.paced_pkt_count);
+    TX_ANC_TEST_ACTIVATE_FRAME(s);
+    TX_ANC_TEST_SEQ_GAP_PLAN(s);
     tx_ancillary_session_sync_pacing(impl, s, 0);
     tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
                                        ntohl(rtp->tmstamp));
@@ -808,7 +780,6 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         s->st40_anc_idx = 0;
-        rte_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
@@ -819,9 +790,9 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         }
         if (s->ops.interlaced) {
           if (second_field) {
-            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+            s->port_user_stats.stat_interlace_second_field++;
           } else {
-            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+            s->port_user_stats.stat_interlace_first_field++;
           }
         }
         tx_ancillary_session_sync_pacing(impl, s, 0);
@@ -862,6 +833,8 @@ static inline int tx_ancillary_session_send_pkt(struct st_tx_ancillary_sessions_
   int ret;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_ring* ring = mgr->ring[port];
+
+  if (TX_ANC_TEST_DROP_PKT(s, s_port, pkt)) return 0;
 
   if (s->queue[s_port]) {
     uint16_t tx = mt_txq_burst(s->queue[s_port], &pkt, 1);
@@ -930,7 +903,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
+        s->port_user_stats.common.stat_exceed_frame_time++;
         dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
             s->st40_frame_idx,
             (uint64_t)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
@@ -987,13 +960,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       }
     }
 
-    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
-      s->test_frame_active = true;
-      s->test_frames_left--;
-      s->test_seq_gap_fired = false;
-    } else {
-      s->test_frame_active = false;
-    }
+    TX_ANC_TEST_ACTIVATE_FRAME(s);
+    TX_ANC_TEST_SEQ_GAP_PLAN(s);
 
     MT_USDT_ST40_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                src->meta_num, total_udw);
@@ -1008,9 +976,9 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     bool second_field = frame->tc_meta.second_field;
     if (s->ops.interlaced) {
       if (second_field) {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        s->port_user_stats.stat_interlace_second_field++;
       } else {
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        s->port_user_stats.stat_interlace_first_field++;
       }
     }
     tx_ancillary_session_sync_pacing(impl, s, required_tai);
@@ -1105,18 +1073,20 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   s->st40_pkt_idx++;
   double pkt_time = pacing->frame_time / RTE_MAX(1, s->st40_total_pkts);
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_PACED &&
-      s->test.paced_gap_ns)
-    pkt_time = s->test.paced_gap_ns;
+  TX_ANC_TEST_PACING_OVERRIDE(s, pkt_time);
   pacing->tsc_time_cursor += pkt_time;
   /* keep one RTP timestamp across a multi-packet frame; re-sync after the last pkt */
   s->calculate_time_cursor = s->st40_pkt_idx >= s->st40_total_pkts;
@@ -1157,9 +1127,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
     s->st40_anc_idx = 0;
-    s->test_frame_active = false;
-    s->test_seq_gap_fired = false;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    TX_ANC_TEST_FRAME_DONE(s);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
@@ -1272,7 +1240,9 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1290,7 +1260,9 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     }
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   bool done = true;
@@ -1694,15 +1666,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   }
   s->ops = *ops;
   s->split_payload = (ops->flags & ST40_TX_FLAG_SPLIT_ANC_BY_PKT) ? true : false;
-
-  /* test-only mutation config */
-  s->test = ops->test;
-  if (s->test.pattern != ST40_TX_TEST_NONE && !s->test.frame_count)
-    s->test.frame_count = 1;
-  s->test_frames_left = s->test.frame_count;
-  s->test_frame_active = false;
-  s->test_seq_gap_fired = false;
-  if (s->test.pattern != ST40_TX_TEST_NONE) s->split_payload = true;
+  TX_ANC_TEST_INIT(s, ops);
 
   /* if disable shared queue */
   s->shared_queue = true;
@@ -1736,7 +1700,8 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
 
   s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
   s->st40_frame_idx = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1791,52 +1756,58 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
 
 static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  struct st40_tx_user_stats* us = &s->port_user_stats;
+  struct st40_tx_user_stats* snap = &s->stat_snapshot;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  double framerate = frame_cnt / time_sec;
-
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->stat_pkt_cnt[MTL_SESSION_PORT_R]);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
+  uint64_t frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
+                      snap->common.port[MTL_SESSION_PORT_P].frames;
+  double framerate = frames_p / time_sec;
+  uint64_t pkts_p = us->common.port[MTL_SESSION_PORT_P].build -
+                    snap->common.port[MTL_SESSION_PORT_P].build;
+  uint64_t pkts_r = us->common.port[MTL_SESSION_PORT_R].build -
+                    snap->common.port[MTL_SESSION_PORT_R].build;
 
-  if (s->stat_epoch_mismatch) {
-    notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);
-    s->stat_epoch_mismatch = 0;
+  notice("TX_ANC_SESSION(%d:%s): fps %f frames %" PRIu64 " pkts %" PRIu64 ":%" PRIu64
+         "\n",
+         idx, s->ops_name, framerate, frames_p, pkts_p, pkts_r);
+
+  uint64_t d;
+  d = us->common.stat_epoch_mismatch - snap->common.stat_epoch_mismatch;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): st40 epoch mismatch %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_drop) {
-    notice("TX_ANC_SESSION(%d): epoch drop %u\n", idx, s->stat_epoch_drop);
-    s->stat_epoch_drop = 0;
+  d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): epoch drop %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_onward) {
-    notice("TX_ANC_SESSION(%d): epoch onward %d\n", idx, s->stat_epoch_onward);
-    s->stat_epoch_onward = 0;
+  d = us->common.stat_epoch_onward - snap->common.stat_epoch_onward;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): epoch onward %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_exceed_frame_time) {
-    notice("TX_AUDIO_SESSION(%d): build timeout frames %u\n", idx,
-           s->stat_exceed_frame_time);
-    s->stat_exceed_frame_time = 0;
+  d = us->common.stat_exceed_frame_time - snap->common.stat_exceed_frame_time;
+  if (d) {
+    notice("TX_AUDIO_SESSION(%d): build timeout frames %" PRIu64 "\n", idx, d);
   }
-  if (frame_cnt <= 0) {
+  if (frames_p == 0) {
     warn("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
   if (s->ops.interlaced) {
-    notice("TX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    uint64_t first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
+    uint64_t second = us->stat_interlace_second_field - snap->stat_interlace_second_field;
+    notice("TX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, first, second);
   }
 
-  if (s->stat_error_user_timestamp) {
-    notice("TX_ANC_SESSION(%d): error user timestamp %u\n", idx,
-           s->stat_error_user_timestamp);
-    s->stat_error_user_timestamp = 0;
+  d = us->common.stat_error_user_timestamp - snap->common.stat_error_user_timestamp;
+  if (d) {
+    notice("TX_ANC_SESSION(%d): error user timestamp %" PRIu64 "\n", idx, d);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -2075,6 +2046,56 @@ static int tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* 
   return 0;
 }
 
+/* Remove any session ports that map to a down physical port.
+ * When a down port is found at index i, all further entries are shifted down
+ * one slot (port[i] = port[i+1], ...) and num_port is decremented.
+ * Only ops->port[] is shifted — all other per-port arrays (dip_addr, udp_port, etc.)
+ * are left untouched; with the reduced num_port they are simply never indexed.
+ * Returns -EIO if every port is down (caller must abort). */
+/* Prune down ports that are not available. Shifts port names, destination IP addresses,
+ * UDP ports, UDP source ports, and destination MAC addresses for remaining ports. */
+static int tx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                             struct st40_tx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+      ops->udp_src_port[j] = ops->udp_src_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int tx_ancillary_ops_check(struct st40_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -2179,6 +2200,12 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  ret = tx_ancillary_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, tx_ancillary_ops_prune_down_ports fail %d\n", __func__, ret);
     return NULL;
   }
 
@@ -2424,7 +2451,9 @@ int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_user_stats* 
   }
   struct st_tx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }
 
@@ -2442,6 +2471,9 @@ int st40_tx_reset_session_stats(st40_tx_handle handle) {
   }
   struct st_tx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   return 0;
 }

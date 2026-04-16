@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 720
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
@@ -68,23 +68,14 @@ jobs:
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
-            --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         shell: bash
         run: |
@@ -109,7 +100,7 @@ jobs:
           # Rename to include NIC info
           for dir in mtl_system_status_*; do
             if [ -d "$dir" ]; then
-              mv "$dir" "system-info-${{ matrix.nic }}"
+              mv "$dir" "system-info-${{ matrix.nic }}-${{ matrix.dir }}"
               break
             fi
           done
@@ -120,13 +111,13 @@ jobs:
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
-      
+
       - name: "upload system info"
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: system-info-${{ matrix.nic }}
-          path: system-info-${{ matrix.nic }}/
+          name: system-info-${{ matrix.nic }}-${{ matrix.dir }}
+          path: ./system-info-${{ matrix.nic }}-${{ matrix.dir }}
 
   aggregate-python-reports:
     needs: run-pytest

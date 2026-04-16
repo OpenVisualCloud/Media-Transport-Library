@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Parsers for pytest, gtest, and system information files."""
 
 import re
@@ -84,20 +86,22 @@ def parse_system_info(info_file):
 
         info = {}
 
-        # Extract hostname
-        filename = Path(info_file).parent.name
-        match = re.match(r"system-info-(.+)", filename)
-        info["hostname"] = match.group(1) if match else "unknown"
+        # Extract tested NIC from directory name (e.g. system-info-e810-video)
+        dirname = Path(info_file).parent.name
+        dir_match = re.match(r"system-info-([^-]+)", dirname)
+        info["tested_nic"] = dir_match.group(1).upper() if dir_match else "Unknown"
 
-        # Extract OS/Kernel from uname
+        # Extract hostname and kernel from uname line
         uname_match = re.search(r"Linux (\S+) ([\d\.-]+\S*)", content)
         if uname_match:
             info["hostname"] = uname_match.group(1)
             info["kernel"] = uname_match.group(2)
+        else:
+            info["hostname"] = "unknown"
+            info["kernel"] = "unknown"
 
-        # Extract OS version
-        ubuntu_match = re.search(r"#\d+[~-]Ubuntu.*?(\d{4})", content)
-        info["os"] = f"Ubuntu {ubuntu_match.group(1)}" if ubuntu_match else "Unknown"
+        # Extract OS version from kernel version
+        info["os"] = _detect_ubuntu_version(info["kernel"])
 
         # Extract CPU info
         cpu_match = re.search(r"Model name:\s+(.+)", content)
@@ -105,8 +109,7 @@ def parse_system_info(info_file):
 
         # Extract CPU cores
         cores_match = re.search(r"CPU\(s\):\s+(\d+)", content)
-        if cores_match:
-            info["cpu_cores"] = cores_match.group(1)
+        info["cpu_cores"] = cores_match.group(1) if cores_match else "Unknown"
 
         # Extract HugePages
         hugepages_match = re.search(r"HugePages_Total:\s+(\d+)", content)
@@ -114,37 +117,29 @@ def parse_system_info(info_file):
         if hugepages_match and hugepagesize_match:
             total_pages = int(hugepages_match.group(1))
             page_size_kb = int(hugepagesize_match.group(1))
+            page_size_mb = page_size_kb // 1024
             total_gb = (total_pages * page_size_kb) / (1024 * 1024)
-            info["hugepages"] = (
-                f"{total_pages} x {page_size_kb//1024//1024}GB = {total_gb:.0f}GB"
-            )
+            if page_size_mb >= 1024:
+                info["hugepages"] = (
+                    f"{total_pages} x {page_size_mb // 1024}GB = {total_gb:.0f}GB"
+                )
+            else:
+                info["hugepages"] = (
+                    f"{total_pages} x {page_size_mb}MB = {total_gb:.1f}GB"
+                )
+        else:
+            info["hugepages"] = "Unknown"
 
-        # Extract RAM
-        mem_match = re.search(r"MemTotal:\s+(\d+)\s+kB", content)
-        if mem_match:
-            mem_gb = int(mem_match.group(1)) / (1024 * 1024)
-            info["ram"] = f"{mem_gb:.0f}GB"
-
-        # Extract NIC info
-        nic_list = []
-        e810_matches = re.findall(r"'Ethernet Controller (E\d+[^']*)'", content)
-        nic_list.extend([nic for nic in e810_matches if nic not in nic_list])
-
-        broadcom_matches = re.findall(r"'(BCM\d+[^']*)'", content)
-        nic_list.extend(
-            [
-                nic
-                for nic in broadcom_matches
-                if "NetXtreme" in nic and nic not in nic_list
-            ]
-        )
-
-        info["nics"] = ", ".join(nic_list) if nic_list else "Unknown"
-
-        # Extract platform
-        platform_match = re.search(r"Product Name:\s+(.+)", content)
-        info["platform"] = (
-            platform_match.group(1).strip() if platform_match else "Unknown"
+        # Extract unique NIC models from dpdk-devbind output
+        nic_models = set()
+        for m in re.finditer(r"'Ethernet Controller (E\d+-\S+)[^']*'", content):
+            nic_models.add(m.group(1))
+        for m in re.finditer(r"'Ethernet.*?(E8[0-9]{2}[^']*?)(?:\\\\x00|')", content):
+            short = m.group(1).strip().split()[0]
+            if short:
+                nic_models.add(short)
+        info["nics"] = (
+            ", ".join(sorted(nic_models)) if nic_models else info["tested_nic"]
         )
 
         return info
@@ -156,11 +151,32 @@ def parse_system_info(info_file):
             "os": "unknown",
             "cpu": "unknown",
             "cpu_cores": "unknown",
-            "ram": "unknown",
             "hugepages": "unknown",
-            "nics": "unknown",
-            "platform": "unknown",
+            "nics": "Unknown",
+            "tested_nic": "Unknown",
         }
+
+
+# Ubuntu kernel-to-release mapping (major.minor prefix)
+_UBUNTU_KERNEL_MAP = {
+    "5.4": "20.04",
+    "5.15": "22.04",
+    "5.19": "22.10",
+    "6.2": "23.04",
+    "6.5": "23.10",
+    "6.8": "24.04",
+    "6.11": "24.10",
+}
+
+
+def _detect_ubuntu_version(kernel_version):
+    """Map kernel version to Ubuntu release."""
+    m = re.match(r"(\d+\.\d+)", kernel_version)
+    if m:
+        ver = _UBUNTU_KERNEL_MAP.get(m.group(1))
+        if ver:
+            return f"Ubuntu {ver}"
+    return f"Linux {kernel_version}"
 
 
 # Private helper functions
@@ -189,16 +205,13 @@ def _parse_pytest_test_cases(soup, nic, category, html_file):
     test_cases = []
     test_details = soup.find_all("details", class_="test")
 
-    print(
-        f"  DEBUG: Found {len(test_details)} test details elements for {Path(html_file).name}"
-    )
-
     for test_idx, test_detail in enumerate(test_details):
         test_classes = test_detail.get("class", [])
-        if isinstance(test_classes, list):
-            test_classes = " ".join(test_classes)
-        else:
-            test_classes = str(test_classes)
+        test_classes = (
+            " ".join(test_classes)
+            if isinstance(test_classes, list)
+            else str(test_classes)
+        )
 
         summary = test_detail.find("summary")
         if not summary:
@@ -227,7 +240,12 @@ def _parse_pytest_test_cases(soup, nic, category, html_file):
         # Determine result
         result = _determine_test_result(test_classes, result_text)
 
-        if test_name and len(test_name) > 0:
+        # Extract failure log from the detail body (only for non-passing tests)
+        log = ""
+        if result in ("FAILED", "ERROR"):
+            log = _extract_pytest_log(test_detail, summary)
+
+        if test_name:
             test_cases.append(
                 {
                     "nic": nic,
@@ -236,12 +254,46 @@ def _parse_pytest_test_cases(soup, nic, category, html_file):
                     "result": result,
                     "duration": duration,
                     "platform": "pytest",
+                    "log": log,
                 }
             )
-            if test_idx < 3:  # Debug first few
-                print(f"  DEBUG: Test {test_idx}: {test_name[:50]} -> {result}")
 
     return test_cases
+
+
+def _extract_pytest_log(test_detail, summary):
+    """Extract failure log/traceback from a pytest test detail element.
+
+    Collects all <pre> blocks (tracebacks, captured output) preserving
+    newlines so the full multi-line log is available in the report.
+    """
+    parts = []
+
+    # Collect <div class="log"> content
+    log_div = test_detail.find("div", class_="log")
+    if log_div:
+        text = log_div.get_text(separator="\n").strip()
+        if text:
+            parts.append(text)
+
+    # Collect ALL <pre> blocks (tracebacks, captured stdout/stderr)
+    for pre in test_detail.find_all("pre"):
+        text = pre.get_text(separator="\n").strip()
+        if text and text not in parts:
+            parts.append(text)
+
+    if parts:
+        return "\n\n".join(parts)
+
+    # Last resort: all text after summary
+    full_text = test_detail.get_text(separator="\n", strip=True)
+    summary_text = summary.get_text(strip=True)
+    idx = full_text.find(summary_text)
+    if idx >= 0:
+        remainder = full_text[idx + len(summary_text) :].strip()
+        if remainder:
+            return remainder
+    return ""
 
 
 def _determine_test_result(test_classes, result_text):
@@ -265,6 +317,70 @@ def _determine_test_result(test_classes, result_text):
         return "XFAILED"
 
     return "UNKNOWN"
+
+
+def _extract_gtest_failure_logs(content):
+    """Extract failure output for each test from gtest log.
+
+    For each test, finds ALL executions by pairing each '[ RUN      ]' with
+    its immediately following '[ FAILED  ] ... (N ms)' line. Collects output
+    from every failed execution so the full log is available in the report.
+    """
+    logs = {}
+    # Match [ FAILED ] lines WITH duration (actual test results, not summary)
+    marker_pattern = re.compile(
+        r"^\[ RUN      \]\s+(\S+)" r"|^\[  FAILED  \]\s+(\S+)\s+\(",
+        re.MULTILINE,
+    )
+
+    # Track the start of the current test run
+    current_test = None
+    current_start = None
+
+    for m in marker_pattern.finditer(content):
+        run_name = m.group(1)
+        fail_name = m.group(2)
+
+        if run_name:
+            # [ RUN ] marker — record start position
+            current_test = run_name
+            current_start = m.end()
+        elif fail_name and fail_name == current_test and current_start is not None:
+            # [ FAILED ] marker matching the current [ RUN ] — extract log
+            log_text = content[current_start : m.start()].strip()
+            if log_text:
+                if fail_name in logs:
+                    # Append subsequent execution logs separated by a header
+                    logs[fail_name] += f"\n\n--- retry ---\n\n{log_text}"
+                else:
+                    logs[fail_name] = log_text
+            current_test = None
+            current_start = None
+
+    return logs
+
+
+def _extract_suite_name(test_name):
+    """Extract suite name from dotted test name (everything before the last dot)."""
+    if "." in test_name:
+        return test_name.rsplit(".", 1)[0]
+    return "unknown"
+
+
+def _init_suite_result(results, suite, nic):
+    """Initialize a suite entry in the results dict if not already present."""
+    if suite not in results:
+        results[suite] = {
+            "nic": nic,
+            "category": suite,
+            "passed": 0,
+            "failed": 0,
+            "skipped": 0,
+            "error": 0,
+            "xpassed": 0,
+            "xfailed": 0,
+            "total": 0,
+        }
 
 
 def _parse_gtest_multi_execution(content, nic):
@@ -292,6 +408,9 @@ def _parse_gtest_multi_execution(content, nic):
     passed_tests = {}  # key: "Suite.TestName", value: duration
     failed_tests = {}  # key: "Suite.TestName", value: duration
 
+    # Extract failure logs: text between [ RUN ] and [ FAILED ] for each test
+    failure_logs = _extract_gtest_failure_logs(content)
+
     # Find all passed tests
     for match in re.finditer(passed_pattern, content):
         test_name, duration = match.group(1), match.group(2)
@@ -311,26 +430,8 @@ def _parse_gtest_multi_execution(content, nic):
 
     # Process all passed tests (including those that also failed but eventually passed)
     for test_name, duration in passed_tests.items():
-        # Extract suite name (everything before last dot)
-        if "." in test_name:
-            parts = test_name.rsplit(".", 1)
-            suite = parts[0]
-        else:
-            suite = "unknown"
-
-        # Initialize suite in results if not present
-        if suite not in results:
-            results[suite] = {
-                "nic": nic,
-                "category": suite,
-                "passed": 0,
-                "failed": 0,
-                "skipped": 0,
-                "error": 0,
-                "xpassed": 0,
-                "xfailed": 0,
-                "total": 0,
-            }
+        suite = _extract_suite_name(test_name)
+        _init_suite_result(results, suite, nic)
 
         results[suite]["passed"] += 1
         results[suite]["total"] += 1
@@ -343,34 +444,16 @@ def _parse_gtest_multi_execution(content, nic):
                 "result": "PASSED",
                 "duration": f"{duration} ms",
                 "platform": "gtest",
-                "unstable": test_name
-                in failed_tests,  # Mark if it failed before passing
+                "unstable": test_name in failed_tests,
+                "log": "",
             }
         )
 
     # Process tests that ONLY failed (never passed)
     for test_name, duration in failed_tests.items():
         if test_name not in passed_tests:
-            # This test failed and never passed
-            if "." in test_name:
-                parts = test_name.rsplit(".", 1)
-                suite = parts[0]
-            else:
-                suite = "unknown"
-
-            # Initialize suite in results if not present
-            if suite not in results:
-                results[suite] = {
-                    "nic": nic,
-                    "category": suite,
-                    "passed": 0,
-                    "failed": 0,
-                    "skipped": 0,
-                    "error": 0,
-                    "xpassed": 0,
-                    "xfailed": 0,
-                    "total": 0,
-                }
+            suite = _extract_suite_name(test_name)
+            _init_suite_result(results, suite, nic)
 
             results[suite]["failed"] += 1
             results[suite]["total"] += 1
@@ -384,6 +467,7 @@ def _parse_gtest_multi_execution(content, nic):
                     "duration": f"{duration} ms",
                     "platform": "gtest",
                     "unstable": False,
+                    "log": failure_logs.get(test_name, ""),
                 }
             )
 
@@ -422,65 +506,38 @@ def _parse_gtest_individual_tests(content, nic):
     """Parse individual gtest test cases."""
     test_suites = {}
     all_test_cases = []
+    failure_logs = _extract_gtest_failure_logs(content)
 
-    passed_pattern = r"\[\s*PASSED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)"
-    failed_pattern = r"\[\s*FAILED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)"
-    skipped_pattern = r"\[\s*SKIPPED\s*\]\s+(\w+)\.(\w+)"
+    # (regex, result_string, has_duration)
+    patterns = [
+        (r"\[\s*PASSED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)", "PASSED", True),
+        (r"\[\s*FAILED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)", "FAILED", True),
+        (r"\[\s*SKIPPED\s*\]\s+(\w+)\.(\w+)", "SKIPPED", False),
+    ]
 
     for line in content.split("\n"):
-        # Track passed tests
-        match = re.search(passed_pattern, line)
-        if match:
-            suite, test_name, duration = match.group(1), match.group(2), match.group(3)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["passed"] += 1
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "PASSED",
-                    "duration": f"{duration} ms",
-                    "platform": "gtest",
-                }
-            )
-
-        # Track failed tests
-        match = re.search(failed_pattern, line)
-        if match:
-            suite, test_name, duration = match.group(1), match.group(2), match.group(3)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["failed"] += 1
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "FAILED",
-                    "duration": f"{duration} ms",
-                    "platform": "gtest",
-                }
-            )
-
-        # Track skipped tests
-        match = re.search(skipped_pattern, line)
-        if match:
-            suite, test_name = match.group(1), match.group(2)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["skipped"] += 1
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "SKIPPED",
-                    "duration": "N/A",
-                    "platform": "gtest",
-                }
-            )
+        for pattern, result, has_duration in patterns:
+            match = re.search(pattern, line)
+            if match:
+                suite, test_name = match.group(1), match.group(2)
+                full_name = f"{suite}.{test_name}"
+                duration = f"{match.group(3)} ms" if has_duration else "N/A"
+                if suite not in test_suites:
+                    test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
+                test_suites[suite][result.lower()] += 1
+                log = failure_logs.get(full_name, "") if result == "FAILED" else ""
+                all_test_cases.append(
+                    {
+                        "nic": nic,
+                        "category": suite,
+                        "test_name": full_name,
+                        "result": result,
+                        "duration": duration,
+                        "platform": "gtest",
+                        "log": log,
+                    }
+                )
+                break  # Only match one pattern per line
 
     return test_suites, all_test_cases
 

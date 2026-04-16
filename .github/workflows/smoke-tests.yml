@@ -44,7 +44,7 @@ jobs:
     steps:
       - name: 'preparation: Harden Runner'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
@@ -82,26 +82,14 @@ jobs:
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
-            --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          sudo pkill -9 -f "gtest.sh" || true
-          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         shell: bash

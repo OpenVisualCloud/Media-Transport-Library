@@ -91,6 +91,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->timestamp = meta->timestamp;
   frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
+  frame->status = ST_FRAME_STATUS_COMPLETE;
   framebuff->stat = ST30P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st30p_next_idx(ctx, framebuff->idx);
@@ -366,6 +367,30 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
 
   MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, consumer_idx, frame->addr);
+  return 0;
+}
+
+int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame) {
+  struct st30p_rx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st30p_rx_frame* framebuff = frame->priv;
+  uint16_t consumer_idx = framebuff->idx;
+
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  /* free the frame without processing */
+  st30_rx_put_framebuff(ctx->transport, frame->addr);
+  framebuff->stat = ST30P_RX_FRAME_FREE;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
   return 0;
 }
 

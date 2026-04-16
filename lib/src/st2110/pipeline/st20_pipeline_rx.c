@@ -943,6 +943,30 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
+int st20p_rx_put_frame_abort(st20p_rx_handle handle, struct st_frame* frame) {
+  struct st20p_rx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_rx_frame* framebuff = frame->priv;
+  uint16_t consumer_idx = framebuff->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  /* free the frame without processing */
+  st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
+  framebuff->stat = ST20P_RX_FRAME_FREE;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
+  return 0;
+}
+
 st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   static int st20p_rx_idx;
   struct mtl_main_impl* impl = mt;

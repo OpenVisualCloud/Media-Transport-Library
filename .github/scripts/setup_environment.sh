@@ -40,6 +40,8 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 : "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:=0}"
 : "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:=0}"
 : "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:=0}"
+: "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:=0}"
+: "${TOOLS_RUN_SET_TAI_OFFSET:=0}"
 
 # CICD ONLY ARGUMENTS
 : "${CICD_BUILD:=0}"
@@ -100,7 +102,7 @@ function setup_ubuntu_install_dependencies() {
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
-		if sudo apt install -y "linux-headers-$(uname -r)"; then
+		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
 			if [ "${CICD_BUILD}" != "0" ]; then
 				ret=0
 			else
@@ -311,10 +313,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		tar xvzf "ice-${ICE_VER}.tar.gz"
 		pushd "ice-${ICE_VER}" >/dev/null || exit 1
 
-		git init
-		git add .
-		git commit -m "init version ${ICE_VER}"
-		git am "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch
+		for patch_file in "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
+			patch -p1 -i "$patch_file"
+		done
 
 		pushd src >/dev/null || exit 1
 		make -j"${nproc}"
@@ -547,6 +548,29 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
+	if [ "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET}" == "1" ]; then
+		echo "$STEP Tools set_tai_offset build"
+		pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
+		meson setup build || true
+		ninja -C build -j"${nproc}"
+		popd >/dev/null
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${TOOLS_RUN_SET_TAI_OFFSET}" == "1" ]; then
+		echo "$STEP Tools set_tai_offset run"
+		tai_bin="${root_folder}/tools/set_tai_offset/build/set_tai_offset"
+		if [ ! -x "${tai_bin}" ]; then
+			echo "set_tai_offset not built, building first..."
+			pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
+			meson setup build || true
+			ninja -C build -j"${nproc}"
+			popd >/dev/null
+		fi
+		sudo "${tai_bin}" -v -0
+		STEP=$((STEP + 1))
+	fi
+
 	echo "Selected setup options:"
 	show_flag() {
 		local name="$1"
@@ -584,6 +608,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:MTL monitors" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:MTL readpcap" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator" \
+		"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool" \
+		"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run" \
 		"CICD_BUILD:CICD mode" \
 		"CICD_BUILD_BUILD_ICE_DRIVER:CICD ICE driver build"; do
 

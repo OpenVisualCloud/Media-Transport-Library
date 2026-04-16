@@ -1,6 +1,5 @@
 session_id: 0
-build: /path/to/mtl
-mtl_path: /path/to/mtl
+mtl_path: path/to/Media-Transport-Library
 media_path: /mnt/media
 ramdisk:
   media:

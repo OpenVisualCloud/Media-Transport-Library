@@ -24,7 +24,7 @@ sudo yum install virt-manager
 
 ### 1.4. Install latest ICE driver with patches
 
-Please refer to the driver update section in [Intel® E810 Series Ethernet Adapter driver guide](e810.md).
+Please refer to the driver update section in [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md).
 
 ### 1.5. Create VFs
 

@@ -8,17 +8,11 @@
 #include "../../mt_stat.h"
 
 static const char* st40p_tx_frame_stat_name[ST40P_TX_FRAME_STATUS_MAX] = {
-    "free",
-    "in_user",
-    "ready",
-    "in_transmitting",
+    "free", "in_user", "ready", "dropped", "in_transmitting",
 };
 
 static const char* st40p_tx_frame_stat_name_short[ST40P_TX_FRAME_STATUS_MAX] = {
-    "F",
-    "U",
-    "R",
-    "T",
+    "F", "U", "R", "D", "T",
 };
 
 static const char* tx_st40p_stat_name(enum st40p_tx_frame_status stat) {
@@ -76,19 +70,98 @@ static struct st40p_tx_frame* tx_st40p_next_available(
   return NULL;
 }
 
+/* Check if the newest READY frame has missed its transmission window.
+ * Drops the frame (READY -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
+ *
+ * Locking contract (mirrors st20p):
+ *   1. Caller holds ctx->lock.
+ *   2. This function drops the lock to fire app callbacks outside it.
+ *   3. Returns with ctx->lock held.
+ *   4. Returns true if the frame was dropped (caller should retry).
+ */
+static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
+                                   struct st40p_tx_frame* framebuff) {
+  struct st40_frame_info* frame_info = &framebuff->frame_info;
+  uint32_t rtp_ts;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST40P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST40P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be compared against PTP wall time */
+  if (frame_info->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame_info->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  rtp_ts = frame_info->rtp_timestamp;
+  framebuff->stat = ST40P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
+      " frame %" PRIu64 "\n",
+      __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+      cur_tai, frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame_info->status = ST_FRAME_STATUS_DROPPED;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST40P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  framebuff->stat = ST40P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st40p_notify_frame_available(ctx);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st40_tx_frame_meta* meta) {
   struct st40p_tx_ctx* ctx = priv;
   struct st40p_tx_frame* framebuff;
+  uint32_t drop_cnt = 0;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
-  /* not any converted frame */
+  do {
+    framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
+    if (!framebuff) break; /* no ready frame available */
+    if (drop_cnt >= ST_TX_ST40P_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
+  } while (tx_st40p_if_frame_late(ctx, framebuff));
+
+  /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st40p_next_available(ctx, ST40P_TX_FRAME_FREE))
+        tx_st40p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -103,42 +176,6 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST40P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
-
-int st40p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st40p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st40p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY;
-
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST40P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, ctx->idx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->frame_info);
-  }
-
-  tx_st40p_notify_frame_available(ctx);
-  MT_USDT_ST40P_TX_FRAME_DROP(ctx->idx, framebuff->idx,
-                              framebuff->frame_info.rtp_timestamp);
 
   return 0;
 }
@@ -157,6 +194,8 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   frame_info->timestamp = meta->timestamp;
   frame_info->epoch = meta->epoch;
   frame_info->rtp_timestamp = meta->rtp_timestamp;
+  frame_info->interlaced = ctx->ops.interlaced;
+  frame_info->second_field = ctx->ops.interlaced ? meta->second_field : false;
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -170,8 +209,11 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame_info->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
+    framebuff->frame_done_cb_called = true;
   }
 
   /* notify app can get frame */
@@ -243,11 +285,7 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
     ops_tx.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (ops->flags & ST40P_TX_FLAG_SPLIT_ANC_BY_PKT)
     ops_tx.flags |= ST40_TX_FLAG_SPLIT_ANC_BY_PKT;
-  if (ops->flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st40p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
   if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
   /* test-only mutation config */
@@ -321,12 +359,17 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     }
     frame_info->udw_buffer_size = ops->max_udw_buff_size;
     frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    for (int p = 0; p < MTL_SESSION_PORT_MAX; p++) {
+      frame_info->pkts_recv[p] = 0;
+      frame_info->port_seq_lost[p] = 0;
+      frame_info->port_seq_discont[p] = false;
+    }
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->second_field = false;
+    frame_info->interlaced = false;
 
     /* addr will be resolved later in tx_st40p_create_transport */
     frame_info->priv = framebuff;
@@ -447,6 +490,7 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
   }
 
   framebuff->stat = ST40P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   framebuff->seq_number = ctx->framebuff_seq_number++;
   mt_pthread_mutex_unlock(&ctx->lock);
 
@@ -488,6 +532,29 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
   ctx->stat_put_frame++;
   MT_USDT_ST40P_TX_FRAME_PUT(idx, framebuff->idx, framebuff->anc_frame->data);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, framebuff->anc_frame);
+  return 0;
+}
+
+int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* frame_info) {
+  struct st40p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st40p_tx_frame* framebuff = frame_info->priv;
+  uint16_t producer_idx = framebuff->idx;
+
+  if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST40P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  framebuff->stat = ST40P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   return 0;
 }
 
@@ -700,41 +767,19 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
 }
 
 int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats* stats) {
-  struct st40p_tx_ctx* ctx;
+  struct st40p_tx_ctx* ctx = handle;
   int cidx;
-  struct st40p_tx_frame* framebuff;
-  uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  ctx = handle;
   cidx = ctx->idx;
-  framebuff = ctx->framebuffs;
-
   if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return -EINVAL;
   }
-
-  for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st40p_tx_frame_status stat = framebuff[j].stat;
-    if (stat < ST40P_TX_FRAME_STATUS_MAX) {
-      status_counts[stat]++;
-    }
-  }
-
-  char status_str[256];
-  int offset = 0;
-  for (uint16_t i = 0; i < ST40P_TX_FRAME_STATUS_MAX; i++) {
-    if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st40p_tx_frame_stat_name_short[i], status_counts[i]);
-    }
-  }
-  notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   return st40_tx_get_session_stats(ctx->transport, stats);
 }

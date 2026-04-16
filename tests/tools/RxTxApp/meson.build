@@ -67,12 +67,15 @@ app_c_args += ['-Wunused-parameter']
 
 if is_windows
   app_c_args += ['-DWINDOWSENV']
-  windows_include_dir = '..\..\lib\windows'
+  windows_include_dir = '..\..\..\..\lib\windows'
   app_c_args += ['-I' + windows_include_dir]
 endif
 
 # simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
 app_c_args += ['-msse4.2']
+
+# Keep column tracking enabled on large translation units to avoid misleading-indentation noise.
+app_c_args += ['-flarge-source-files']
 
 if is_windows
   ws2_32_dep = cc.find_library('ws2_32', required: true)

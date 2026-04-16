@@ -11,7 +11,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
 @pytest.mark.parametrize("file", ["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"])
 def test_multicast_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     test_time,
@@ -44,7 +44,7 @@ def test_multicast_dual(
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

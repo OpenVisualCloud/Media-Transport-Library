@@ -108,8 +108,15 @@ By default, the lcore resources for each MTL instance are automatically assigned
 
 Additionally, timing-sensitive applications may require the execution of workloads on isolated cores for improved accuracy. To facilitate this, the `struct mtl_init_params` includes a parameter named `lcores`. This parameter allows applications to specify a custom list of logical cores that the MTL can utilize.
 
+For instructions on how to isolate CPU cores using the `isolcpus` kernel boot parameter, refer to the DPDK guide: [Using Linux Core Isolation to Reduce Context Switches](https://doc.dpdk.org/guides/linux_gsg/enable_func.html#using-linux-core-isolation-to-reduce-context-switches).
+
 For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
 
+> **Warning:** On newer Intel platforms with Xeon 6 CPU, the `isolcpus` kernel parameter may not be fully respected due to a kernel bug in CPU topology handling. Isolated cores can still receive work from the scheduler, undermining latency-sensitive workloads.
+>
+> This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix,
+> upgrading your kernel, or working with taskset.
+>
 ## 3. Memory management
 
 ### 3.1. Huge Page
@@ -295,7 +302,7 @@ There are 3 different types of API between MTL and application:
 MTL orchestrates the packet processing from the frame level to L2 network packets and vice versa, with the frame buffer serving as the interface for video context exchange between MTL and the application.
 
 For transmission, the MTL TX session will get the index of the next available frame buffer via the `get_next_frame` callback function. Once transmission of the entire frame to the network is complete, the application will be notified through the `notify_frame_done` callback.
-It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted.
+It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted. For pipeline TX sessions using external frames, see section 6.9 for additional lifecycle requirements.
 
 For reception, the MTL RX session will process packets received from the network. Once a complete frame is assembled, the application will be alerted via the `notify_frame_ready` callback. However, it is important to note that the application must return the frame to MTL using the `st**_rx_put_framebuff` function after video frame processing is complete.
 
@@ -464,6 +471,9 @@ For more details, please refer to [RTCP doc](rtcp.md).
 
 By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves — especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
+For st20p TX external frames, an optional two-phase release mode is available via `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE`.
+When enabled, after transmission completes the library parks the frame in an intermediate state and notifies the application via the `notify_frame_done` callback. The application must free its resources and then call `st20p_tx_notify_ext_frame_free` to release the frame buffer back to the library.
+This two-phase release prevents the library from reusing the frame slot while the application still holds references to the external memory. Without this flag, the legacy behavior is preserved and the frame slot is released immediately.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
 For more comprehensive information and instructions on using these converters, please refer to the [External Frame API Guide](external_frame.md).
@@ -588,3 +598,22 @@ In a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ER
 ### 7.2. USDT
 
 MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, for details see [usdt](usdt.md) doc.
+
+## 8. Known Issues
+
+### 8.1. Xeon 6 (Granite Rapids) `isolcpus` not fully respected
+
+On Intel Xeon 6 CPUs (GNR), the `isolcpus` kernel parameter may not be fully respected due to a kernel bug in CPU topology handling. Isolated cores can still receive work from the scheduler, undermining latency-sensitive workloads.
+
+This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix, upgrading your kernel, or using `taskset` as a workaround for pinning threads to specific cores.
+
+### 8.2. RTP timestamps and latency compensation in rate-limit pacing
+
+When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: packets rtp_timestamps are increased to account for NIC queue and processing delay.
+Without this workaround, packets appear on the wire marginally earlier than the theoretical transmission schedule.
+
+Because the RTP timestamp embedded in frame packets reflects the actual wire time (the moment the first packet leaves the NIC), the compensation shift is subtracted from the RTP timestamp so that receivers see timestamps consistent with the true on-wire timing.
+
+Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
+which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.
+

@@ -90,13 +90,17 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   st30p_tx_get_session_stats(primaryBundle.handler->sessionsHandleTx, &statsTxPrimary);
 
   uint64_t packetsSend = statsTxPrimary.common.port[0].packets;
-  uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
+  uint64_t packetsRecievedPort0 = stats.common.port[0].packets;
+  uint64_t packetsRecievedPort1 = stats.common.port[1].packets;
   uint64_t framesSend = primaryStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
 
-  ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
-      << "Comparison against primary stream";
-  ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
+  ASSERT_NEAR(packetsSend, packetsRecievedPort0, packetsSend / 10)
+      << "Comparison against primary stream (port 0)";
+  ASSERT_NEAR(packetsSend, packetsRecievedPort1, packetsSend / 10)
+      << "Comparison against primary stream (port 1)";
+  ASSERT_LE(stats.common.stat_pkts_out_of_order,
+            (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Out of order packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
@@ -187,13 +191,21 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   st30p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx, &statsTxRedundant);
 
   uint64_t packetsSend = statsTxRedundant.common.port[0].packets;
-  uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
+  uint64_t packetsRecievedPort0 = stats.common.port[0].packets;
+  uint64_t packetsRecievedPort1 = stats.common.port[1].packets;
   uint64_t framesSend = latencyStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
 
-  ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
-      << "Comparison against primary stream";
-  ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
+  /* In this test the primary TX stops after 10s while the redundant TX runs for 20s.
+   * Port 0 (primary) only receives ~half the packets, port 1 (redundant) receives all.
+   * Compare the redundant port against TX, and verify accepted packets match. */
+  ASSERT_NEAR(packetsSend, packetsRecievedPort1, packetsSend / 10)
+      << "Comparison against redundant stream (port 1)";
+  ASSERT_GT(packetsRecievedPort0, 0u) << "Primary port must have received packets";
+  ASSERT_NEAR(packetsSend, stats.common.stat_pkts_received, packetsSend / 100)
+      << "Accepted packets should match TX";
+  ASSERT_LE(stats.common.stat_pkts_out_of_order,
+            (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Out of order packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";

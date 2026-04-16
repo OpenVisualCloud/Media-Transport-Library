@@ -11,6 +11,32 @@
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
 
+/* Port link-up detection loop parameters.
+ *
+ * When "allow_down_init" is NOT set (strict mode):
+ *   Total max wait = MT_DEV_LINK_RETRY_COUNT
+ *                  * MT_DEV_LINK_POLL_COUNT
+ *                  * MT_DEV_LINK_POLL_INTERVAL_MS
+ *                  = 3 × 300 × 100ms = 90 seconds
+ *
+ * When "allow_down_init" IS set (relaxed mode):
+ *   Total max wait = MT_DEV_LINK_POLL_COUNT
+ *                  * MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED
+ *                  = 300 × 10ms = 3 seconds
+ */
+
+/** Number of outer retry attempts (strict mode only). */
+#define MT_DEV_LINK_RETRY_COUNT 3
+
+/** Number of poll iterations per retry attempt. */
+#define MT_DEV_LINK_POLL_COUNT 300
+
+/** Sleep between polls in strict mode (ms). */
+#define MT_DEV_LINK_POLL_INTERVAL_MS 100
+
+/** Sleep between polls in relaxed/allow_down_init mode (ms). */
+#define MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED 10
+
 #define MT_EAL_MAX_ARGS (32)
 
 #define MT_TX_MEMPOOL_PREFIX "T_"
@@ -63,6 +89,8 @@ static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
 }
 
 int mt_dev_if_init(struct mtl_main_impl* impl);
+int mt_dev_setup_port(struct mtl_main_impl* impl, struct mt_interface* inf,
+                      enum mt_port_type port_type);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);
 int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
 

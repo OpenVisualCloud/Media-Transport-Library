@@ -12,7 +12,7 @@ from mtl_engine.media_files import anc_files, audio_files, yuv_files
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 def test_rx_timing_mode(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -64,7 +64,7 @@ def test_rx_timing_mode(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         rx_timing_parser=True,
         host=host,

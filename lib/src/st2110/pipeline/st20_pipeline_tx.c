@@ -8,11 +8,12 @@
 #include "../../mt_stat.h"
 
 static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
-    "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
+    "free",    "ready",   "in_converting",   "converted",
+    "dropped", "in_user", "in_transmitting",
 };
 
 static const char* st20p_tx_frame_stat_name_short[ST20P_TX_FRAME_STATUS_MAX] = {
-    "F", "R", "IC", "C", "U", "T",
+    "F", "R", "IC", "C", "D", "U", "T",
 };
 
 static const char* tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
@@ -74,25 +75,125 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if a CONVERTED frame is late.
+ *
+ * If late, the sequence is:
+ *   1. Park as DROPPED under lock — invisible to both next_frame (CONVERTED) and
+ *      get_frame (FREE), so no other thread can grab the slot while we clean up.
+ *   2. Unlock before all callbacks so app callbacks cannot deadlock on ctx->lock.
+ *   3. Fire notify_frame_done — app sees the frame and can safely release any
+ *      external buffer it owns (EXT_FRAME mode).
+ *   4. Fire notify_frame_late + USDT probe.
+ *   5. Re-acquire lock, clear ext-buffer pointers on the framebuff so the next
+ *      get_frame call receives a clean slot with no stale external pointers.
+ *   6. If EXT_FRAME_USER_DONE: advance to IN_USER — app must call
+ *      st20p_tx_notify_ext_frame_free to release the slot to FREE.
+ *      Otherwise: advance to FREE, unlock, then notify_frame_available —
+ *      the slot is immediately visible to get_frame callers.
+ *   7. Re-acquire for the caller's do-while loop and return true.
+ *
+ * Must be called with ctx->lock held. Returns with ctx->lock held. */
+static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
+                                   struct st20p_tx_frame* framebuff) {
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  uint32_t rtp_ts; /* captured under lock for use in USDT after unlock */
+  bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
+  /* Park in IN_USER only when user_done flag is set and derive path */
+  bool need_in_user = user_done && !framebuff->frame_done_cb_called;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST20P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be directly compared against PTP wall time;
+   * skip the check for other formats (e.g. ST10_TIMESTAMP_FMT_MEDIA_CLK) */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  /* one frame period as grace window: the pipeline has inherent processing latency
+   * (conversion + scheduling) between put_frame and get_next_frame. A frame is only
+   * truly "late" if it missed its TX window by more than one full frame period. */
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST20P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
+      " frame %" PRIu64 "\n",
+      __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+      cur_tai, frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame->status = ST_FRAME_STATUS_DROPPED;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST20P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+
+  /* ext_frame derive: park in IN_USER until app calls
+   * st20p_tx_notify_ext_frame_free */
+  framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  if (!need_in_user) {
+    tx_st20p_notify_frame_available(ctx);
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
   struct st20p_tx_ctx* ctx = priv;
   struct st20p_tx_frame* framebuff;
+  struct st_frame* frame;
+  int drop_cnt = 0;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
+  do {
+    framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
+    if (!framebuff) break; /* no converted frame available */
+    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
+  } while (tx_st20p_if_frame_late(ctx, framebuff));
+
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE))
+        tx_st20p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  frame = tx_st20p_user_frame(ctx, framebuff);
   meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = frame->tfmt;
@@ -103,49 +204,11 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->user_meta_size = framebuff->user_meta_data_size;
   }
 
-  /* point to next */
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
 
-int st20p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST20P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done &&
-             !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st20p_user_frame(ctx, framebuff));
-    framebuff->frame_done_cb_called = true;
-  }
-
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
-  MT_USDT_ST20P_TX_FRAME_DROP(cidx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -154,16 +217,25 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   struct st20p_tx_ctx* ctx = priv;
   int ret;
   struct st20p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
+  bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
+  /* Park in IN_USER only when user_done flag is set and the app has not yet
+   * been notified (derive path).  When an internal converter is used,
+   * notify_frame_done fires early during put_ext_frame so the app already
+   * released the ext buffer — go to FREE. */
+  bool need_in_user = user_done && !framebuff->frame_done_cb_called;
 
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
+
+  /* Transition state BEFORE the callback so the app can call
+   * st20p_tx_notify_ext_frame_free from within notify_frame_done. */
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
-    framebuff->stat = ST20P_TX_FRAME_FREE;
+    framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
     dbg("%s(%d), frame_idx: %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
@@ -174,12 +246,15 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
 
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
+  if (!need_in_user) {
+    /* notify app can get frame */
+    tx_st20p_notify_frame_available(ctx);
+  }
 
   MT_USDT_ST20P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
 
@@ -337,11 +412,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-  if (ops->flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st20p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
@@ -606,6 +677,8 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
 
     while (1) {
       if (framebuff->stat == ST20P_TX_FRAME_FREE) break;
+      if (framebuff->stat == ST20P_TX_FRAME_DROPPED)
+        break; /* dropped, effectively free */
       if (framebuff->stat == ST20P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */
@@ -751,6 +824,29 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
+int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
+  return 0;
+}
+
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame) {
   struct st20p_tx_ctx* ctx = handle;
@@ -837,6 +933,41 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   }
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
+  return 0;
+}
+
+int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* frame) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff = frame->priv;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (!(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE)) {
+    /* Two-phase release not enabled — silently succeed for unconditional callers. */
+    return 0;
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+    /* Frame is not in IN_USER — this happens when the converter already released
+     * the ext buffer during put_ext_frame and the frame went CONVERTED → FREE
+     * without the IN_USER step.  Silently succeed so callers can always call
+     * this unconditionally from notify_frame_done. */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    dbg("%s(%d), frame %u not in_user (stat %d), skip\n", __func__, idx, framebuff->idx,
+        framebuff->stat);
+    return 0;
+  }
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st20p_notify_frame_available(ctx);
+
+  dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return 0;
 }
 

@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import argparse
 
 import yaml
@@ -5,190 +9,216 @@ import yaml
 
 def gen_test_config(
     session_id: int,
-    build: str,
     mtl_path: str,
     pci_device: str,
-    ebu_ip: str,
-    ebu_user: str,
-    ebu_password: str,
+    ebu_ip: str = None,
+    ebu_user: str = None,
+    ebu_password: str = None,
+    media_path: str = "/mnt/media",
+    test_time: int = 120,
+    no_capture: bool = False,
 ) -> str:
-    # Support comma-separated PCI devices for multiple interfaces.
-    # The capture sniff interface must be explicitly provided as the second device.
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
-    if len(pci_devices) < 2:
-        raise ValueError(
-            "At least two PCI devices are required (e.g., '0000:4b:00.0,0000:4b:00.1'); "
-            "the second device is used as sniff_pci_device"
-        )
 
     test_config = {
         "session_id": session_id,
-        "build": build,
         "mtl_path": mtl_path,
-        "media_path": "/mnt/media",
+        "media_path": media_path,
+        "test_time": test_time,
         "ramdisk": {
             "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 16},
             "tmpfs_size_gib": 8,
-            "pcap_dir": "/mnt/ramdisk/pcap",
         },
-        "compliance": True,
-        "capture_cfg": {
+    }
+
+    has_ebu = all([ebu_ip, ebu_user, ebu_password])
+    has_sniff = len(pci_devices) >= 2 and not no_capture
+    test_config["compliance"] = has_ebu and has_sniff
+
+    if has_sniff:
+        test_config["ramdisk"]["pcap_dir"] = "/mnt/ramdisk/pcap"
+        test_config["capture_cfg"] = {
             "enable": True,
             "pcap_dir": "/mnt/ramdisk/pcap",
             "sniff_pci_device": pci_devices[1],
-        },
-        "ebu_server": {
+        }
+    if has_ebu:
+        test_config["ebu_server"] = {
             "ebu_ip": ebu_ip,
             "user": ebu_user,
             "password": ebu_password,
             "proxy": False,
-        },
-    }
+        }
+
     return yaml.safe_dump(test_config, sort_keys=False)
 
 
-def gen_topology_config(
-    pci_device: str, ip_address: str, username: str, password: str, key_path: str
-) -> str:
-    # Support comma-separated PCI devices for multiple interfaces
+def _make_host(
+    name: str,
+    role: str,
+    pci_device: str,
+    ip_address: str,
+    username: str,
+    password: str,
+    key_path: str,
+    extra_info: dict = None,
+) -> dict:
     pci_devices = [dev.strip() for dev in pci_device.split(",")]
-
     network_interfaces = [
-        {
-            "pci_device": pci_dev,
-            "interface_index": idx,
-        }
+        {"pci_device": pci_dev, "interface_index": idx}
         for idx, pci_dev in enumerate(pci_devices)
     ]
-
-    topology_config = {
-        "metadata": {"version": "2.4"},
-        "hosts": [
+    connection_options = {"port": 22, "username": username}
+    connection_options["password"] = password if password else ""
+    if key_path:
+        connection_options["key_path"] = key_path
+    host = {
+        "name": name,
+        "instantiate": True,
+        "role": role,
+        "network_interfaces": network_interfaces,
+        "connections": [
             {
-                "name": "host",
-                "instantiate": True,
-                "role": "sut",
-                "network_interfaces": network_interfaces,
-                "connections": [
-                    {
-                        "ip_address": ip_address,
-                        "connection_type": "SSHConnection",
-                        "connection_options": {
-                            "port": 22,
-                            "username": username,
-                            "password": password,
-                        },
-                    }
-                ],
+                "ip_address": ip_address,
+                "connection_type": "SSHConnection",
+                "connection_options": connection_options,
             }
         ],
     }
-    if key_path != "None":
-        topology_config["hosts"][0]["connections"][0]["connection_options"][
-            "key_path"
-        ] = key_path
+    if extra_info:
+        host["extra_info"] = extra_info
+    return host
+
+
+def gen_topology_config(
+    pci_devices: list[str],
+    ip_addresses: list[str],
+    usernames: list[str],
+    passwords: list[str],
+    key_paths: list[str],
+    mtl_paths: list[str],
+    media_path: str = "/mnt/media",
+) -> str:
+    n = len(ip_addresses)
+    hosts = []
+    for i in range(n):
+        is_sut = i == n - 1
+        extra_info = {"mtl_path": mtl_paths[i], "media_path": media_path}
+        hosts.append(
+            _make_host(
+                name="host" if is_sut else f"host_{i}",
+                role="sut" if is_sut else "client",
+                pci_device=pci_devices[i],
+                ip_address=ip_addresses[i],
+                username=usernames[i],
+                password=passwords[i],
+                key_path=key_paths[i],
+                extra_info=extra_info,
+            )
+        )
+
+    topology_config = {
+        "metadata": {"version": "2.4"},
+        "hosts": hosts,
+    }
     return yaml.safe_dump(topology_config, explicit_start=True, sort_keys=False)
+
+
+def _extend_list(lst: list, n: int) -> list:
+    """Extend a list to length n by repeating the last element."""
+    return (lst + [lst[-1]] * (n - len(lst)))[:n]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate example test and topology configs for the test framework."
+        description="Generate test and topology configs for the test framework."
     )
     parser.add_argument(
         "--session_id",
         type=int,
         choices=range(0, 256),
         required=True,
-        help="specify session ID (0 - 255)",
-    )
-    parser.add_argument(
-        "--build",
-        type=str,
-        required=True,
-        help="specify path to MTL directory",
+        help="session ID (0-255)",
     )
     parser.add_argument(
         "--mtl_path",
         type=str,
+        nargs="+",
         required=True,
-        help="specify path to MTL directory",
+        help="MTL path(s) — one per host",
     )
     parser.add_argument(
         "--pci_device",
         type=str,
+        nargs="+",
         required=True,
-        help="specify PCI BDF(s) of the NIC (comma-separated for multiple interfaces, e.g., \
-            '0000:4b:00.0,0000:4b:00.1'); the second device is used for capture sniffing",
-    )
-    parser.add_argument(
-        "--ebu_ip",
-        type=str,
-        required=True,
-        help="EBU LIST server IP/hostname (RUNNER_EBU_LIST_IP)",
-    )
-    parser.add_argument(
-        "--ebu_user",
-        type=str,
-        required=True,
-        help="EBU LIST username (RUNNER_EBU_LIST_USER)",
-    )
-    parser.add_argument(
-        "--ebu_password",
-        type=str,
-        required=True,
-        help="EBU LIST password (RUNNER_EBU_LIST_PASSWORD)",
+        help="PCI BDF(s) per host (comma-separated within each host)",
     )
     parser.add_argument(
         "--ip_address",
         type=str,
+        nargs="+",
         required=True,
-        help="specify IP address of the test host",
+        help="IP address(es) — one per host",
     )
     parser.add_argument(
         "--username",
         type=str,
+        nargs="+",
         required=True,
-        help="specify username for the test host",
+        help="SSH username(s) — one per host",
     )
+    parser.add_argument("--password", type=str, nargs="+", default=[None])
+    parser.add_argument("--key_path", type=str, nargs="+", default=[None])
+    # Optional EBU args
+    parser.add_argument("--ebu_ip", type=str, default=None)
+    parser.add_argument("--ebu_user", type=str, default=None)
+    parser.add_argument("--ebu_password", type=str, default=None)
+    # Optional test settings
+    parser.add_argument("--test_time", type=int, default=120)
+    parser.add_argument("--media_path", type=str, default="/mnt/media")
     parser.add_argument(
-        "--password",
-        type=str,
-        default="None",
-        help="specify password for the test host",
+        "--no_capture",
+        action="store_true",
+        help="Disable packet capture so the 2nd NIC port is available for redundant (ST2022-7) tests",
     )
-    parser.add_argument(
-        "--key_path",
-        type=str,
-        default="None",
-        help="specify path to SSH private key for the test host",
-    )
-    args = parser.parse_args()
-    if args.password == "None" and args.key_path == "None":
-        parser.error("one of the arguments --password --key_path is required")
 
-    try:
-        test_config_yaml = gen_test_config(
-            session_id=args.session_id,
-            build=args.build,
-            mtl_path=args.mtl_path,
-            pci_device=args.pci_device,
-            ebu_ip=args.ebu_ip,
-            ebu_user=args.ebu_user,
-            ebu_password=args.ebu_password,
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
+    args = parser.parse_args()
+
+    n = len(args.ip_address)
+    passwords = _extend_list(args.password, n)
+    key_paths = _extend_list(args.key_path, n)
+    mtl_paths = _extend_list(args.mtl_path, n)
+    pci_devices = _extend_list(args.pci_device, n)
+    usernames = _extend_list(args.username, n)
+
+    if not any(passwords) and not any(key_paths):
+        parser.error("at least one of --password or --key_path is required")
+
+    test_config_yaml = gen_test_config(
+        session_id=args.session_id,
+        mtl_path=mtl_paths[-1],
+        pci_device=pci_devices[-1],
+        ebu_ip=args.ebu_ip,
+        ebu_user=args.ebu_user,
+        ebu_password=args.ebu_password,
+        media_path=args.media_path,
+        test_time=args.test_time,
+        no_capture=args.no_capture,
+    )
 
     with open("test_config.yaml", "w") as file:
         file.write(test_config_yaml)
     with open("topology_config.yaml", "w") as file:
         file.write(
             gen_topology_config(
-                pci_device=args.pci_device,
-                ip_address=args.ip_address,
-                username=args.username,
-                password=args.password,
-                key_path=args.key_path,
+                pci_devices=pci_devices,
+                ip_addresses=args.ip_address,
+                usernames=usernames,
+                passwords=passwords,
+                key_paths=key_paths,
+                mtl_paths=mtl_paths,
+                media_path=args.media_path,
             )
         )
 

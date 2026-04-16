@@ -45,6 +45,11 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** Packet loss per session port based on per-port sequence tracking. */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX];
+  /** True when a per-port sequence discontinuity was detected in this frame. */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];
+
   /** Whether a marker bit was seen on any RTP packet in this frame. */
   bool rtp_marker;
   /** True if a sequence number discontinuity was observed within this frame. */
@@ -54,6 +59,14 @@ struct st40_frame_info {
 
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
+
+  /** True if this frame represents the second interlaced field (F=0b11). */
+  bool second_field;
+  /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
+  bool interlaced;
+
+  /** frame status, set by lib before notify_frame_done: complete or dropped */
+  enum st_frame_status status;
 
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -137,7 +150,9 @@ struct st40p_tx_ops {
   void* priv;
   /** Optional. see ST40P_TX_FLAG_* for possible flags */
   uint32_t flags;
-  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  /** Optional. DEBUG / test-only mutation config (see struct st40_tx_test_config).
+   *  Effective only in debug builds (MTL_SIMULATE_PACKET_DROPS); silently ignored
+   * otherwise. */
   struct st40_tx_test_config test;
   /**
    * Optional. Callback when frame available.
@@ -187,6 +202,12 @@ enum st40p_rx_flag {
    * Force the numa of the created session, both CPU and memory
    */
   ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
+  /**
+   * If set, skip auto-detection and use the `interlaced` field in st40p_rx_ops as-is.
+   * Without this flag the library auto-detects progressive vs interlaced from
+   * RTP F bits and ignores the initial `interlaced` value once detection completes.
+   */
+  ST40P_RX_FLAG_DISABLE_AUTO_DETECT = (MTL_BIT32(3)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
   ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -199,7 +220,9 @@ enum st40p_rx_flag {
 struct st40p_rx_ops {
   /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** Mandatory. interlaced or not */
+  /** Optional. interlaced or not. When ST40P_RX_FLAG_DISABLE_AUTO_DETECT is set,
+   * this value is used as-is. Otherwise it serves as the initial value
+   * before auto-detection from RTP F bits overrides it. */
   bool interlaced;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;
@@ -224,6 +247,7 @@ struct st40p_rx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @param port
@@ -239,6 +263,7 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @param port
@@ -260,6 +285,10 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle);
 
 /** Return the frame that was requested by st40p_tx_get_frame. */
 int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_info);
+
+/** Abort and release a frame obtained by st40p_tx_get_frame. Returns frame to free pool
+ * immediately. */
+int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* frame_info);
 
 /** Free the tx st2110-40 pipeline session. */
 int st40p_tx_free(st40p_tx_handle handle);
@@ -294,6 +323,10 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle);
 /** Return the frame that was requested by st40p_rx_get_frame. */
 int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_info);
 
+/** Abort and release a frame obtained by st40p_rx_get_frame. Returns frame to free pool
+ * immediately. */
+int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* frame_info);
+
 /** Free the rx st2110-40 pipeline session. */
 int st40p_rx_free(st40p_rx_handle handle);
 
@@ -313,6 +346,7 @@ int st40p_rx_get_queue_meta(st40p_rx_handle handle, struct st_queue_meta* meta);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @param stats
@@ -326,6 +360,7 @@ int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @return
@@ -348,6 +383,24 @@ size_t st40p_rx_max_udw_buff_size(st40p_rx_handle handle);
 
 /** Get the user data words buffer address for the rx st2110-40 pipeline session. */
 void* st40p_rx_get_udw_buff_addr(st40p_rx_handle handle, uint16_t idx);
+
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame_info
+ *   The frame info pointer.
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st40_frame_is_late(mtl_handle mt, struct st40_frame_info* frame_info) {
+  if (frame_info->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  return (int64_t)(frame_info->timestamp - ptp_now) < 0;
+}
 
 #if defined(__cplusplus)
 }

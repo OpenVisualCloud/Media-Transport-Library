@@ -23,7 +23,7 @@ from mtl_engine.media_files import yuv_files
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_video(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     rss_mode,
@@ -54,7 +54,7 @@ def test_rss_mode_video(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

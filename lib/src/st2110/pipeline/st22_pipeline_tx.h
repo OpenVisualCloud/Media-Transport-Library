@@ -14,6 +14,7 @@ enum st22p_tx_frame_status {
   ST22P_TX_FRAME_READY,
   ST22P_TX_FRAME_IN_ENCODING, /* for encoding */
   ST22P_TX_FRAME_ENCODED,
+  ST22P_TX_FRAME_DROPPED, /* encoded but arrived too late; recycled in next_frame */
   ST22P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST22P_TX_FRAME_STATUS_MAX,
 };
@@ -25,6 +26,7 @@ struct st22p_tx_frame {
   struct st22_encode_frame_meta encode_frame;
   uint16_t idx;
   uint32_t seq_number;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
 struct st22p_tx_ctx {

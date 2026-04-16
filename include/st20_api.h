@@ -1714,8 +1714,6 @@ struct st20_tx_user_stats {
   uint64_t stat_pkts_chain_realloc_fail;
   uint64_t stat_user_meta_cnt;
   uint64_t stat_user_meta_pkt_cnt;
-  uint64_t stat_recoverable_error;
-  uint64_t stat_unrecoverable_error;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -1731,10 +1729,8 @@ struct st20_rx_user_stats {
   uint64_t stat_pkts_offset_dropped;
   uint64_t stat_frames_dropped;
   uint64_t stat_pkts_idx_oo_bitmap;
-  uint64_t stat_frames_pks_missed;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
-  uint64_t stat_pkts_redundant_dropped;
   uint64_t stat_pkts_wrong_interlace_dropped;
   uint64_t stat_pkts_wrong_len_dropped;
   uint64_t stat_pkts_enqueue_fallback;
@@ -1914,6 +1910,7 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param port
@@ -1929,6 +1926,7 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param port
@@ -2263,6 +2261,7 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param port
@@ -2278,6 +2277,7 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param port

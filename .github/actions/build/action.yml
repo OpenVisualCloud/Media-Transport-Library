@@ -1,7 +1,26 @@
 name: Build
+description: Build MTL and its ecosystem components. Optionally build on a remote host via SSH.
+inputs:
+  remote_host:
+    description: 'SSH destination (user@host) for remote build. Skipped if empty.'
+    required: false
+    default: ''
+  remote_mtl_path:
+    description: 'MTL repo path on the remote host'
+    required: false
+    default: ''
+  remote_branch:
+    description: 'Branch to checkout on the remote host'
+    required: false
+    default: ''
+  remote_env_file:
+    description: 'Build env file on the runner to forward to remote host'
+    required: false
+    default: '~/.mtl_build_env'
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/cleanup
     - name: Setup environment and build
       shell: bash
       env:
@@ -12,4 +31,19 @@ runs:
         MTL_BUILD_AND_INSTALL: '1'
         ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: '1'
         ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: '1'
-      run: bash .github/scripts/setup_environment.sh
+        TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: '1'
+        TOOLS_RUN_SET_TAI_OFFSET: '1'
+      run: |
+        bash .github/scripts/setup_environment.sh
+        if [ -n "${{ inputs.remote_host }}" ]; then
+          BRANCH="${{ inputs.remote_branch }}"
+          BRANCH="${BRANCH#refs/heads/}"
+          ENV_FILE="${{ inputs.remote_env_file }}"
+          ENV_FILE="${ENV_FILE/#\~/$HOME}"
+          {
+            [ -f "$ENV_FILE" ] && cat "$ENV_FILE" \
+              || echo "::warning::No env file at $ENV_FILE — using defaults"
+            cat .github/scripts/remote_build.sh
+          } | ssh -o StrictHostKeyChecking=no "${{ inputs.remote_host }}" \
+              bash -s -- "${{ inputs.remote_mtl_path }}" "${BRANCH}"
+        fi

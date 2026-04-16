@@ -23,7 +23,7 @@ from mtl_engine.media_files import yuv_files
 def test_rx_ffmpeg_tx_ffmpeg_rgb24(
     hosts,
     test_time,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     video_format,
     test_time_mutlipler,
@@ -68,7 +68,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24(
 
     ffmpeg_app.execute_test_rgb24(
         test_time=test_time * test_time_mutlipler,
-        build=build,
+        build=mtl_path,
         host=host,
         type_="frame",
         video_format=video_format,

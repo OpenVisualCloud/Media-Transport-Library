@@ -9,7 +9,7 @@ from mtl_engine.media_files import yuv_files_interlace
 
 @pytest.mark.dual
 @pytest.mark.parametrize("file", yuv_files_interlace.keys())
-def test_interlace_dual(hosts, build, media, nic_port_list, test_time, file):
+def test_interlace_dual(hosts, mtl_path, media, nic_port_list, test_time, file):
     st20p_file = yuv_files_interlace[file]
 
     # Get TX and RX hosts
@@ -38,7 +38,7 @@ def test_interlace_dual(hosts, build, media, nic_port_list, test_time, file):
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

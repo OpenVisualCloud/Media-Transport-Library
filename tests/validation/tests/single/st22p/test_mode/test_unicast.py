@@ -16,7 +16,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 )
 def test_unicast(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -47,7 +47,7 @@ def test_unicast(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
