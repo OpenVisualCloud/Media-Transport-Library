@@ -32,17 +32,39 @@ class St20RxRedundancyTest : public ::testing::Test {
   }
 
   /* convenience wrappers */
-  uint64_t received() { return ut20_stat_received(ctx_); }
-  uint64_t redundant() { return ut20_stat_redundant(ctx_); }
-  uint64_t ooo() { return ut20_stat_out_of_order(ctx_); }
-  uint64_t no_slot() { return ut20_stat_no_slot(ctx_); }
-  uint64_t idx_oo_bitmap() { return ut20_stat_idx_oo_bitmap(ctx_); }
-  uint64_t frames_dropped() { return ut20_stat_frames_dropped(ctx_); }
-  int frames_received() { return ut20_frames_received(ctx_); }
-  uint64_t wrong_pt() { return ut20_stat_wrong_pt(ctx_); }
-  uint64_t wrong_ssrc() { return ut20_stat_wrong_ssrc(ctx_); }
-  uint64_t wrong_interlace() { return ut20_stat_wrong_interlace(ctx_); }
-  uint64_t offset_dropped() { return ut20_stat_offset_dropped(ctx_); }
+  uint64_t received() {
+    return ut20_stat_received(ctx_);
+  }
+  uint64_t redundant() {
+    return ut20_stat_redundant(ctx_);
+  }
+  uint64_t ooo() {
+    return ut20_stat_out_of_order(ctx_);
+  }
+  uint64_t no_slot() {
+    return ut20_stat_no_slot(ctx_);
+  }
+  uint64_t idx_oo_bitmap() {
+    return ut20_stat_idx_oo_bitmap(ctx_);
+  }
+  uint64_t frames_dropped() {
+    return ut20_stat_frames_dropped(ctx_);
+  }
+  int frames_received() {
+    return ut20_frames_received(ctx_);
+  }
+  uint64_t wrong_pt() {
+    return ut20_stat_wrong_pt(ctx_);
+  }
+  uint64_t wrong_ssrc() {
+    return ut20_stat_wrong_ssrc(ctx_);
+  }
+  uint64_t wrong_interlace() {
+    return ut20_stat_wrong_interlace(ctx_);
+  }
+  uint64_t offset_dropped() {
+    return ut20_stat_offset_dropped(ctx_);
+  }
 
   void feed(int pkt_idx, uint32_t ts, enum mtl_session_port port) {
     ut20_feed_frame_pkt(ctx_, pkt_idx, ts, port);
@@ -142,8 +164,7 @@ TEST_F(St20RxRedundancyTest, PastTimestampRejected) {
   uint64_t recv_before = received();
   feed(0, 1000, MTL_SESSION_PORT_P);
 
-  EXPECT_EQ(received(), recv_before)
-      << "Pkt older than all slots should be rejected";
+  EXPECT_EQ(received(), recv_before) << "Pkt older than all slots should be rejected";
 }
 
 /* Redundancy error threshold bypass for video. ST20 has two threshold paths:
@@ -217,16 +238,19 @@ TEST_F(St20RxRedundancyTest, PktIdxOutOfBitmap) {
 }
 
 /* Out-of-order packets within a frame: pkt 1 arrives before pkt 0.
- * Both must be accepted (bitmap allows any order) and OOO counter must
- * be incremented by exactly 1. Tests that negative pkt_idx gaps do not
- * cause unsigned integer wrapping in the OOO counter. */
+ * Both must be accepted (bitmap allows any order). The first packet
+ * establishes the slot base (no prior reference), and the backward
+ * arrival of pkt 0 must NOT inflate the counter — forward gap counting
+ * already tracks reordering when a later pkt_idx is seen first. This
+ * test verifies no unsigned underflow from negative gap arithmetic. */
 TEST_F(St20RxRedundancyTest, OutOfOrderWithinFrame) {
   feed(1, 1000, MTL_SESSION_PORT_P);
   feed(0, 1000, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(received(), 2u);
   EXPECT_EQ(frames_received(), 1);
-  EXPECT_EQ(ooo(), 1u) << "Reverse-order within frame should count exactly 1 OOO";
+  EXPECT_EQ(ooo(), 0u)
+      << "Backward pkt_idx should not cause OOO underflow or double-counting";
 }
 
 /* ── Cross-port interleaving ────────────────────────────────────────────── */
@@ -291,8 +315,7 @@ TEST_F(St20RxRedundancyTest, IncompleteFrameOnSlotReuse) {
 
   /* frame 1 was notified as incomplete (dropped), frames 2 & 3 complete */
   EXPECT_EQ(frames_received(), 2) << "Only complete frames increment stat";
-  EXPECT_GE(frames_dropped(), 1u)
-      << "Incomplete frame should be counted as dropped";
+  EXPECT_GE(frames_dropped(), 1u) << "Incomplete frame should be counted as dropped";
 }
 
 /* After completing a frame the bitmap is reset. A new frame reusing the
@@ -391,8 +414,7 @@ TEST_F(St20RxRedundancyTest, FrameGoneNoDoubleCount) {
   feed(1, 1000, MTL_SESSION_PORT_R);
 
   /* Received must NOT increase — these are redundant */
-  EXPECT_EQ(received(), 2u)
-      << "Frame-gone redundant packets must not increment received";
+  EXPECT_EQ(received(), 2u) << "Frame-gone redundant packets must not increment received";
   EXPECT_EQ(redundant(), 2u);
   /* Invariant: received + redundant == total accepted packets */
   EXPECT_EQ(received() + redundant(), 4u);

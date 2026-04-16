@@ -1658,7 +1658,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
       return 0;
     }
-    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+    if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
       s->port_user_stats.common.stat_pkts_out_of_order += gap;
       s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
@@ -1849,7 +1849,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->port_user_stats.common.stat_pkts_redundant++;
       return 0;
     }
-    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+    if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
       s->port_user_stats.common.stat_pkts_out_of_order += gap;
       s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
@@ -2044,7 +2044,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+    if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
       s->port_user_stats.common.stat_pkts_out_of_order += gap;
       s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
@@ -2210,7 +2210,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+    if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
       s->port_user_stats.common.stat_pkts_out_of_order += gap;
       s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
