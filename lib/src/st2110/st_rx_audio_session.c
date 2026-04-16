@@ -301,14 +301,16 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     s->port_user_stats.common.stat_pkts_out_of_order += gap;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
 
   /* count per-port stats before redundancy filtering for consistent reporting */
   s->port_user_stats.common.port[s_port].packets++;
@@ -470,14 +472,16 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
     s->port_user_stats.common.stat_pkts_out_of_order += gap;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
 
   /* count per-port stats before redundancy filtering for consistent reporting */
   s->port_user_stats.common.port[s_port].packets++;
