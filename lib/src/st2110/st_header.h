@@ -1118,6 +1118,15 @@ struct st_rx_ancillary_session_impl {
    * and 2^15 seq_id wraparound (unlikely). */
   int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
+  /* Lightweight per-frame bitmap for cross-port late arrival detection.
+   * Ancillary frames are small (typically 1-10 pkts), so a uint64_t covers
+   * up to 64 packets per frame. Packets beyond offset 63 fall back to
+   * watermark-only filtering. */
+  uint64_t anc_bitmap;          /* 1 bit per seq offset within current frame */
+  uint32_t anc_bitmap_tmstamp;  /* timestamp this bitmap belongs to */
+  uint16_t anc_bitmap_base_seq; /* first seq_id of this frame */
+  bool anc_bitmap_valid;        /* false until first frame is established */
+
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   int64_t tmstamp;
