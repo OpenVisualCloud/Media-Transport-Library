@@ -18,7 +18,12 @@
 #include "st20_api.h"
 #include "st2110/st_fmt.h"
 #include "st2110/st_pkt.h"
-#include "st2110/st_rx_video_session.h"
+/*
+ * Include the production .c directly so that all static functions become visible.
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_video_session.c"
 #include "st40_api.h"
 #include "st41_api.h"
 #include "st_api.h"
@@ -210,7 +215,7 @@ static void st22_fuzz_reset_context(void) {
     g_session.slots[i].frame_bitmap = g_slot_bitmaps[i];
   }
 
-  st_rx_video_session_fuzz_reset(&g_session);
+  rv_session_reset(&g_session, true);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -235,7 +240,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   mbuf->data_len = pkt_size;
   mbuf->pkt_len = pkt_size;
 
-  st_rx_video_session_fuzz_handle_pkt(&g_session, mbuf, MTL_SESSION_PORT_P);
+  rv_handle_st22_pkt(&g_session, mbuf, MTL_SESSION_PORT_P, true);
   rte_pktmbuf_free(mbuf);
   return 0;
 }
