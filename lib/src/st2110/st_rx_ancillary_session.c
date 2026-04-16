@@ -201,6 +201,9 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
         return -EIO;
       }
     }
+    /* threshold exceeded on all ports — accept the packet and undo the redundant count
+     * so the packet is only counted as received, not both */
+    s->port_user_stats.common.stat_pkts_redundant--;
     warn(
         "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
         "%d), timestamp %u (old timestamp %ld)\n",
