@@ -717,7 +717,7 @@ TEST_F(St40RxRedundancyTest, DuplicateSeqPortOOOWrapping) {
  *
  * The redundancy filter must accept R's late packets for the immediately
  * previous timestamp and preserve the marker bit through to the ring. */
-TEST_F(St40RxRedundancyTest, DISABLED_MarkerPreservedAfterTimestampAdvance) {
+TEST_F(St40RxRedundancyTest, MarkerPreservedAfterTimestampAdvance) {
   ut40_set_skip_drain(true);
   uint32_t ts_frame_n = 1000;
   uint32_t ts_frame_n1 = 2000;
@@ -959,7 +959,7 @@ TEST_F(St40RxRedundancyTest, MarkerSurvivesThresholdBypass) {
  * previous frame) must still be accepted by the redundancy filter.  This enables
  * the pipeline layer to receive late-arriving packets from the redundant port
  * and resolve pending frames with the correct marker bit. */
-TEST_F(St40RxRedundancyTest, DISABLED_PrevTimestampPacketsAccepted) {
+TEST_F(St40RxRedundancyTest, PrevTimestampPacketsAccepted) {
   ut40_set_skip_drain(true);
   uint32_t ts_n = 1000;
   uint32_t ts_n1 = 2000;
@@ -1011,7 +1011,7 @@ TEST_F(St40RxRedundancyTest, TwoFramesBackRejected) {
 /* Late prev_tmstamp duplicates (same seq already accepted from P) must
  * still be filtered as redundant.  The prev_tmstamp acceptance window
  * must not bypass the bitmap deduplication. */
-TEST_F(St40RxRedundancyTest, DISABLED_PrevTimestampDuplicatesFiltered) {
+TEST_F(St40RxRedundancyTest, PrevTimestampDuplicatesFiltered) {
   ut40_set_skip_drain(true);
   uint32_t ts_n = 1000;
   uint32_t ts_n1 = 2000;

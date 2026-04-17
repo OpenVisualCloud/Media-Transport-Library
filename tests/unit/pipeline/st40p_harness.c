@@ -147,6 +147,8 @@ ut40p_ctx* ut40p_ctx_create(int num_port, int framebuff_cnt) {
   p->framebuffs = ctx->framebuffs;
   p->inflight_frame = NULL;
 
+  p->ops.port.num_port = num_port;
+
   /* port mapping: session port 0 → DPDK port id 0, session port 1 → 1 */
   p->port_map[MTL_SESSION_PORT_P] = MTL_PORT_P;
   p->port_map[MTL_SESSION_PORT_R] = MTL_PORT_R;

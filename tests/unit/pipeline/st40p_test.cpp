@@ -76,6 +76,10 @@ TEST_F(St40PipelineRxTest, SingleFrameCompletion) {
 
 /* Timestamp change completes the previous frame without marker. */
 TEST_F(St40PipelineRxTest, TimestampChangeCompletesFrame) {
+  /* Single-port: ts change → immediate READY (no PENDING) */
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 3);
+
   /* frame 1: 3 pkts, no marker */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   /* frame 2: 1 pkt with new ts → completes frame 1 */
@@ -236,7 +240,7 @@ TEST_F(St40PipelineRxTest, MarkerPreservedMidFrameSwitchover) {
  *
  * With the PENDING state, step 2 puts ts=1000 into PENDING (not READY).
  * Step 3's late marker resolves the PENDING frame. */
-TEST_F(St40PipelineRxTest, DISABLED_MarkerPreservedOnTimestampAdvance) {
+TEST_F(St40PipelineRxTest, MarkerPreservedOnTimestampAdvance) {
   /* Step 1: P delivers frame body */
   for (int i = 0; i < 5; i++) enqueue(i, 1000, false, MTL_SESSION_PORT_P);
 
@@ -265,9 +269,9 @@ TEST_F(St40PipelineRxTest, DISABLED_MarkerPreservedOnTimestampAdvance) {
  * When all framebuffers are occupied and a new timestamp arrives, the pipeline
  * must still process the marker correctly when framebuffers become available. */
 TEST_F(St40PipelineRxTest, MarkerPreservedOnFramebufferExhaustion) {
-  /* Use ctx with only 2 framebuffs to make exhaustion easier */
+  /* Use single-port ctx with only 2 framebuffs to make exhaustion easier */
   ut40p_ctx_destroy(ctx_);
-  ctx_ = ut40p_ctx_create(2, 2);
+  ctx_ = ut40p_ctx_create(1, 2);
   ASSERT_NE(ctx_, nullptr);
 
   /* Frame 1: ts=1000, 3 pkts, no marker */
@@ -323,6 +327,10 @@ TEST_F(St40PipelineRxTest, MarkerPreservedOnFramebufferExhaustion) {
 
 /* Marker absent when no packet has it set. */
 TEST_F(St40PipelineRxTest, MarkerAbsentWhenNotSet) {
+  /* Single-port: ts change → immediate READY (no PENDING) */
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 3);
+
   /* 3 pkts, no marker. Complete frame via timestamp change. */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   enqueue(3, 2000, false, MTL_SESSION_PORT_P);
@@ -382,7 +390,7 @@ TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
 
 /* When P advances timestamp before R's marker, the old frame enters PENDING.
  * It must NOT be visible via get_frame() until resolved. */
-TEST_F(St40PipelineRxTest, DISABLED_PendingFrameNotVisibleBeforeResolution) {
+TEST_F(St40PipelineRxTest, PendingFrameNotVisibleBeforeResolution) {
   /* Frame body: 4 pkts for ts=1000, no marker */
   enqueue_burst(0, 4, 1000, false, MTL_SESSION_PORT_P);
   /* P starts next frame → ts=1000 enters PENDING */
@@ -407,7 +415,7 @@ TEST_F(St40PipelineRxTest, DISABLED_PendingFrameNotVisibleBeforeResolution) {
 
 /* Late marker from R resolves a PENDING frame: the frame becomes READY
  * with rtp_marker=true and the correct total packet count. */
-TEST_F(St40PipelineRxTest, DISABLED_PendingResolvedByLateMarker) {
+TEST_F(St40PipelineRxTest, PendingResolvedByLateMarker) {
   /* P: 3 pkts for ts=1000, no marker */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   /* P advances to ts=2000 → ts=1000 enters PENDING */
@@ -435,7 +443,7 @@ TEST_F(St40PipelineRxTest, DISABLED_PendingResolvedByLateMarker) {
  *
  * Sequence: ts=1000 (no marker) → ts=2000 (ts=1000 PENDING) →
  *           ts=3000 (ts=1000 force-READY, ts=2000 PENDING) */
-TEST_F(St40PipelineRxTest, DISABLED_PendingForcedBySecondTimestampChange) {
+TEST_F(St40PipelineRxTest, PendingForcedBySecondTimestampChange) {
   /* Frame 1: ts=1000, 3 pkts, no marker */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   /* ts change → ts=1000 PENDING */
@@ -488,7 +496,7 @@ TEST_F(St40PipelineRxTest, NoPendingWhenMarkerPresent) {
 
 /* A PENDING frame accumulates late packets from R, including their count.
  * The marker resolves it and the total reflects all received packets. */
-TEST_F(St40PipelineRxTest, DISABLED_PendingLatePacketsAccumulate) {
+TEST_F(St40PipelineRxTest, PendingLatePacketsAccumulate) {
   /* P: 3 pkts for ts=1000, no marker */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   /* P advances to ts=2000 → ts=1000 PENDING */
@@ -513,7 +521,7 @@ TEST_F(St40PipelineRxTest, DISABLED_PendingLatePacketsAccumulate) {
 
 /* Multiple successive frames cycling through PENDING → resolved.
  * Each frame's marker arrives late from R after P has advanced. */
-TEST_F(St40PipelineRxTest, DISABLED_PendingMultiFrameCycle) {
+TEST_F(St40PipelineRxTest, PendingMultiFrameCycle) {
   /* Frame 1: P sends body, advances to ts=2000 */
   enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
   enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → PENDING */
@@ -550,4 +558,187 @@ TEST_F(St40PipelineRxTest, DISABLED_PendingMultiFrameCycle) {
   put_frame(f3);
 
   EXPECT_EQ(get_frame(), nullptr);
+}
+
+/* ── Single-port vs multi-port PENDING behavior ──────────────────────── */
+/*
+ * These tests verify the behavioral split: single-port sessions never enter
+ * PENDING (timestamp change → immediate READY), while multi-port sessions
+ * defer delivery until a late marker or a second timestamp change.
+ */
+
+/* Single-port: timestamp change delivers frame immediately, no PENDING. */
+TEST_F(St40PipelineRxTest, SinglePortTsChangeImmediateReady) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 3);
+
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts change */
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr) << "Single-port: ts change must deliver frame immediately";
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_FALSE(frame->rtp_marker);
+  put_frame(frame);
+}
+
+/* Multi-port: same packet sequence as above → frame enters PENDING, not visible. */
+TEST_F(St40PipelineRxTest, MultiPortTsChangePending) {
+  /* Default fixture is 2-port */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts change */
+  process_all();
+
+  EXPECT_EQ(get_frame(), nullptr)
+      << "Multi-port: ts change must enter PENDING, not deliver";
+}
+
+/* Single-port: three rapid ts changes → all three frames immediately READY.
+ * No PENDING, no force-delivery — each frame completes on ts change. */
+TEST_F(St40PipelineRxTest, SinglePortRapidTsChangesAllReady) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 4); /* 4 fbs to hold all frames */
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* completes ts=1000 */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P); /* completes ts=2000 */
+  enqueue(3, 4000, false, MTL_SESSION_PORT_P); /* completes ts=3000 */
+  process_all();
+
+  for (uint32_t ts = 1000; ts <= 3000; ts += 1000) {
+    auto* f = get_frame();
+    ASSERT_NE(f, nullptr) << "ts=" << ts << " must be immediately READY";
+    EXPECT_EQ(f->rtp_timestamp, ts);
+    EXPECT_FALSE(f->rtp_marker);
+    put_frame(f);
+  }
+}
+
+/* Multi-port: three rapid ts changes without markers.
+ * Frame 1 is force-delivered when frame 2 enters PENDING on the third change.
+ * Frame 2 stays PENDING. Frame 3 is inflight. */
+TEST_F(St40PipelineRxTest, MultiPortRapidTsChangesForceDelivery) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(2, 4);
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → PENDING */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P); /* ts=1000 force-READY, ts=2000 PENDING */
+  process_all();
+
+  /* Only ts=1000 should be visible (force-delivered) */
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(f1->rtp_marker) << "Force-delivered frame has no marker";
+  put_frame(f1);
+
+  /* ts=2000 is PENDING, ts=3000 is inflight — neither visible */
+  EXPECT_EQ(get_frame(), nullptr) << "ts=2000 PENDING, ts=3000 inflight";
+}
+
+/* Multi-port: PENDING frame occupies a framebuffer slot.
+ * With 2 fbs total: pending(1) + inflight(1) = 0 free → next ts change hits busy. */
+TEST_F(St40PipelineRxTest, MultiPortPendingReducesAvailableFramebuffers) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(2, 2);
+
+  /* ts=1000 fills fb 0 */
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  /* ts=2000: fb 0 → PENDING, fb 1 starts inflight */
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P);
+  /* ts=3000: fb 0 force-READY, fb 1 → PENDING, try alloc new fb → no free → busy */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u)
+      << "PENDING must occupy a framebuffer slot, causing exhaustion";
+
+  /* Force-delivered ts=1000 should still be retrievable */
+  auto* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->rtp_timestamp, 1000u);
+  put_frame(f);
+}
+
+/* Single-port: same 2-fb sequence — no PENDING means both frames are READY.
+ * The third ts change still hits busy (both fbs occupied), but both are consumable. */
+TEST_F(St40PipelineRxTest, SinglePortNoPendingAvoidsBusyWith2Fbs) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 2);
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → READY */
+  /* ts=1000 READY (fb 0), ts=2000 inflight (fb 1). No free fb.
+   * ts=3000 completes ts=2000 → READY (fb 1), tries alloc → fb 0 still READY → busy. */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u) << "ts=3000 hit busy (both fbs occupied)";
+
+  /* Both frames are READY and consumable — single port doesn't block on PENDING */
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  put_frame(f1);
+
+  auto* f2 = get_frame();
+  ASSERT_NE(f2, nullptr);
+  EXPECT_EQ(f2->rtp_timestamp, 2000u);
+  put_frame(f2);
+}
+
+/* Multi-port: late non-marker packet routes to PENDING but does NOT resolve it.
+ * The frame stays PENDING until a marker or a second ts change. */
+TEST_F(St40PipelineRxTest, MultiPortLateNonMarkerKeepsPending) {
+  /* P: body for ts=1000 */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances → ts=1000 PENDING */
+  enqueue(5, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* R: late non-marker packets route to pending ts=1000 */
+  enqueue(3, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(4, 1000, false, MTL_SESSION_PORT_R); /* no marker */
+  process_all();
+
+  /* Frame must still be invisible (PENDING, not resolved) */
+  EXPECT_EQ(get_frame(), nullptr)
+      << "Non-marker late packets must not resolve PENDING frame";
+}
+
+/* Multi-port: marker on the current inflight does not affect a pending frame.
+ * The inflight completes independently; pending stays PENDING. */
+TEST_F(St40PipelineRxTest, MultiPortMarkerOnInflightLeavesPendingAlone) {
+  /* P: body for ts=1000, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances → ts=1000 enters PENDING */
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P);
+  /* P completes ts=2000 with marker */
+  enqueue(4, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* ts=2000 is READY (marker). ts=1000 is PENDING.
+   * get_frame scans from consumer_idx: fb 0 (PENDING, skip) → fb 1 (READY). */
+  auto* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->rtp_timestamp, 2000u) << "Inflight marker delivers independently";
+  EXPECT_TRUE(f->rtp_marker);
+  put_frame(f);
+
+  /* ts=1000 still PENDING — not visible */
+  EXPECT_EQ(get_frame(), nullptr) << "PENDING ts=1000 must remain invisible";
+
+  /* Force-deliver ts=1000 via ts change: start ts=3000 inflight, then ts=4000 */
+  enqueue(5, 3000, false, MTL_SESSION_PORT_P); /* new inflight, no ts change */
+  enqueue(6, 4000, false,
+          MTL_SESSION_PORT_P); /* ts change: ts=1000 force-READY, ts=3000 PENDING */
+  process_all();
+
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(f1->rtp_marker) << "Force-delivered PENDING frame has no marker";
+  put_frame(f1);
 }

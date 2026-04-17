@@ -8,10 +8,7 @@
 #include "../../mt_stat.h"
 
 static const char* st40p_rx_frame_stat_name[ST40P_RX_FRAME_STATUS_MAX] = {
-    "free",
-    "receiving",
-    "ready",
-    "in_user",
+    "free", "receiving", "pending", "ready", "in_user",
 };
 
 static const char* rx_st40p_stat_name(enum st40p_rx_frame_status stat) {
@@ -124,62 +121,88 @@ static int rx_st40p_rtp_ready(void* priv) {
 
   mt_pthread_mutex_lock(&ctx->lock);
 
-  /* complete previous frame if timestamp advanced */
-  if (ctx->inflight_frame && ctx->inflight_rtp_timestamp != rtp_timestamp) {
-    ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
-    notify_frame = true;
-    done_frames[done_count] = ctx->inflight_frame;
-    done_infos[done_count] = &ctx->inflight_frame->frame_info;
-    done_count++;
-    ctx->inflight_frame = NULL;
-  }
-
-  if (!ctx->inflight_frame) {
-    framebuff =
-        rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
-
-    if (!framebuff) {
-      ctx->stat_busy++;
-      ret = -EBUSY;
-      goto out;
-    }
-
-    framebuff->stat = ST40P_RX_FRAME_RECEIVING;
-    frame_info = &framebuff->frame_info;
-    frame_info->meta_num = 0;
-    frame_info->udw_buffer_fill = 0;
-    frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
-    frame_info->seq_discont = false;
-    frame_info->seq_lost = 0;
-    frame_info->rtp_marker = false;
-    frame_info->receive_timestamp = receive_timestamp;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame_info->rtp_timestamp = rtp_timestamp;
-    frame_info->timestamp = rtp_timestamp;
-    frame_info->epoch = 0;
-    uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
-    frame_info->interlaced = (f_bits & 0x2) ? true : false;
-    frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
-    ctx->inflight_frame = framebuff;
-    ctx->inflight_rtp_timestamp = rtp_timestamp;
-  } else {
-    framebuff = ctx->inflight_frame;
+  /* Route late packet to pending frame if it matches the pending timestamp */
+  if (ctx->pending_frame && rtp_timestamp == ctx->pending_rtp_timestamp) {
+    framebuff = ctx->pending_frame;
     frame_info = &framebuff->frame_info;
     if (!frame_info->receive_timestamp ||
         (frame_info->receive_timestamp > receive_timestamp))
       frame_info->receive_timestamp = receive_timestamp;
+  } else {
+    /* Handle timestamp change on inflight frame */
+    if (ctx->inflight_frame && ctx->inflight_rtp_timestamp != rtp_timestamp) {
+      if (ctx->ops.port.num_port > 1) {
+        /* Multi-port: inflight → PENDING (wait for late marker from redundant port) */
+        if (ctx->pending_frame) {
+          /* Force-deliver existing pending frame first */
+          ctx->pending_frame->stat = ST40P_RX_FRAME_READY;
+          notify_frame = true;
+          done_frames[done_count] = ctx->pending_frame;
+          done_infos[done_count] = &ctx->pending_frame->frame_info;
+          done_count++;
+        }
+        ctx->inflight_frame->stat = ST40P_RX_FRAME_PENDING;
+        ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
+        ctx->pending_frame = ctx->inflight_frame;
+        ctx->pending_rtp_timestamp = ctx->inflight_rtp_timestamp;
+      } else {
+        /* Single-port: no redundant port → directly READY */
+        ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
+        ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
+        notify_frame = true;
+        done_frames[done_count] = ctx->inflight_frame;
+        done_infos[done_count] = &ctx->inflight_frame->frame_info;
+        done_count++;
+      }
+      ctx->inflight_frame = NULL;
+    }
 
-    /* Update field metadata if a later packet carries interlace info */
-    uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
-    bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
-    bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
-    if ((frame_info->interlaced != pkt_interlaced) ||
-        (frame_info->second_field != pkt_second_field)) {
-      frame_info->interlaced = pkt_interlaced;
-      frame_info->second_field = pkt_second_field;
+    if (!ctx->inflight_frame) {
+      framebuff =
+          rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
+
+      if (!framebuff) {
+        ctx->stat_busy++;
+        ret = -EBUSY;
+        goto out;
+      }
+
+      framebuff->stat = ST40P_RX_FRAME_RECEIVING;
+      frame_info = &framebuff->frame_info;
+      frame_info->meta_num = 0;
+      frame_info->udw_buffer_fill = 0;
+      frame_info->pkts_total = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+      frame_info->seq_discont = false;
+      frame_info->seq_lost = 0;
+      frame_info->rtp_marker = false;
+      frame_info->receive_timestamp = receive_timestamp;
+      frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame_info->rtp_timestamp = rtp_timestamp;
+      frame_info->timestamp = rtp_timestamp;
+      frame_info->epoch = 0;
+      uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+      frame_info->interlaced = (f_bits & 0x2) ? true : false;
+      frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
+      ctx->inflight_frame = framebuff;
+      ctx->inflight_rtp_timestamp = rtp_timestamp;
+    } else {
+      framebuff = ctx->inflight_frame;
+      frame_info = &framebuff->frame_info;
+      if (!frame_info->receive_timestamp ||
+          (frame_info->receive_timestamp > receive_timestamp))
+        frame_info->receive_timestamp = receive_timestamp;
+
+      /* Update field metadata if a later packet carries interlace info */
+      uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
+      bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
+      bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
+      if ((frame_info->interlaced != pkt_interlaced) ||
+          (frame_info->second_field != pkt_second_field)) {
+        frame_info->interlaced = pkt_interlaced;
+        frame_info->second_field = pkt_second_field;
+      }
     }
   }
 
@@ -305,13 +328,29 @@ static int rx_st40p_rtp_ready(void* priv) {
 
   if (hdr->base.marker) {
     frame_info->rtp_marker = true;
-    framebuff->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-    ctx->inflight_frame = NULL;
+    if (framebuff == ctx->pending_frame) {
+      /* Late marker resolves PENDING → READY */
+      framebuff->stat = ST40P_RX_FRAME_READY;
+      ctx->pending_frame = NULL;
+    } else {
+      /* Normal inflight → READY */
+      framebuff->stat = ST40P_RX_FRAME_READY;
+      ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
+      ctx->inflight_frame = NULL;
+    }
     notify_frame = true;
     done_frames[done_count] = framebuff;
     done_infos[done_count] = frame_info;
     done_count++;
+  }
+
+  /* Assign frame status while still under lock — app thread may read status
+   * after get_frame() returns, so the write must be visible before unlock. */
+  for (int n = 0; n < done_count; n++) {
+    struct st40_frame_info* done_info = done_infos[n];
+    if (done_info)
+      done_info->status =
+          done_info->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
   }
 
 out:
@@ -327,8 +366,6 @@ out:
       if (!report_frame || !report_info) continue;
       dbg("%s(%d), frame %u succ, meta_num %u\n", __func__, ctx->idx, report_frame->idx,
           report_info->meta_num);
-      report_info->status =
-          report_info->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
       /* notify app to a ready frame */
       rx_st40p_notify_frame_available(ctx);
       MT_USDT_ST40P_RX_FRAME_AVAILABLE(ctx->idx, report_frame->idx,
@@ -684,6 +721,8 @@ int st40p_rx_free(st40p_rx_handle handle) {
     ctx->transport = NULL;
   }
 
+  ctx->inflight_frame = NULL;
+  ctx->pending_frame = NULL;
   rx_st40p_uinit_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
