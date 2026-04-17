@@ -91,7 +91,7 @@ rich==14.0.0
 rpyc==6.0.2
 ruamel.yaml==0.18.14
 ruamel.yaml.clib==0.2.12
-scp==0.13.6
+scp==0.15.0
 six==1.17.0
 soupsieve==2.7
 textfsm==1.1.3
