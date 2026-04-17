@@ -4,12 +4,12 @@
  * Unit tests for ST2110-40 (ancillary) RX redundancy filter.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
- * Run:   ./build_unit/tests/unit/UnitTest (no NIC ports or sudo required)
+ * Run:   ./build_unit/tests/unit/UnitTest
  */
 
 #include <gtest/gtest.h>
 
-#include "st40_rx_redundancy_harness.h"
+#include "session/st40_harness.h"
 
 /* ── fixture ───────────────────────────────────────────────────────── */
 
@@ -18,76 +18,76 @@ class St40RxRedundancyTest : public ::testing::Test {
   ut_test_ctx* ctx_ = nullptr;
 
   void SetUp() override {
-    ASSERT_EQ(ut_eal_init(), 0) << "EAL init failed";
-    ut_drain_ring();
-    ctx_ = ut_ctx_create(2); /* 2 ports = redundant */
+    ASSERT_EQ(ut40_init(), 0) << "EAL init failed";
+    ut40_drain_ring();
+    ctx_ = ut40_ctx_create(2); /* 2 ports = redundant */
     ASSERT_NE(ctx_, nullptr);
   }
 
   void TearDown() override {
-    ut_drain_ring();
-    ut_ctx_destroy(ctx_);
+    ut40_drain_ring();
+    ut40_ctx_destroy(ctx_);
     ctx_ = nullptr;
   }
 
   /* convenience wrappers */
   int feed(uint16_t seq, uint32_t ts, bool marker, enum mtl_session_port port) {
-    return ut_feed_pkt(ctx_, seq, ts, marker ? 1 : 0, port);
+    return ut40_feed_pkt(ctx_, seq, ts, marker ? 1 : 0, port);
   }
 
   void feed_burst(uint16_t seq_start, int count, uint32_t ts, bool last_marker,
                   enum mtl_session_port port) {
-    ut_feed_burst(ctx_, seq_start, count, ts, last_marker ? 1 : 0, port);
+    ut40_feed_burst(ctx_, seq_start, count, ts, last_marker ? 1 : 0, port);
   }
 
   uint64_t unrecovered() {
-    return ut_stat_unrecovered(ctx_);
+    return ut40_stat_unrecovered(ctx_);
   }
   uint64_t redundant() {
-    return ut_stat_redundant(ctx_);
+    return ut40_stat_redundant(ctx_);
   }
   uint64_t received() {
-    return ut_stat_received(ctx_);
+    return ut40_stat_received(ctx_);
   }
   uint64_t ooo() {
-    return ut_stat_out_of_order(ctx_);
+    return ut40_stat_out_of_order(ctx_);
   }
   int session_seq() {
-    return ut_session_seq_id(ctx_);
+    return ut40_session_seq_id(ctx_);
   }
 
   uint64_t port_pkts(enum mtl_session_port p) {
-    return ut_stat_port_pkts(ctx_, p);
+    return ut40_stat_port_pkts(ctx_, p);
   }
   uint64_t port_bytes(enum mtl_session_port p) {
-    return ut_stat_port_bytes(ctx_, p);
+    return ut40_stat_port_bytes(ctx_, p);
   }
   uint64_t port_ooo(enum mtl_session_port p) {
-    return ut_stat_port_ooo(ctx_, p);
+    return ut40_stat_port_ooo(ctx_, p);
   }
   uint64_t port_frames(enum mtl_session_port p) {
-    return ut_stat_port_frames(ctx_, p);
+    return ut40_stat_port_frames(ctx_, p);
   }
   uint64_t wrong_pt() {
-    return ut_stat_wrong_pt(ctx_);
+    return ut40_stat_wrong_pt(ctx_);
   }
   uint64_t wrong_ssrc() {
-    return ut_stat_wrong_ssrc(ctx_);
+    return ut40_stat_wrong_ssrc(ctx_);
   }
   uint64_t wrong_interlace() {
-    return ut_stat_wrong_interlace(ctx_);
+    return ut40_stat_wrong_interlace(ctx_);
   }
   uint64_t interlace_first() {
-    return ut_stat_interlace_first(ctx_);
+    return ut40_stat_interlace_first(ctx_);
   }
   uint64_t interlace_second() {
-    return ut_stat_interlace_second(ctx_);
+    return ut40_stat_interlace_second(ctx_);
   }
   uint64_t enqueue_fail() {
-    return ut_stat_enqueue_fail(ctx_);
+    return ut40_stat_enqueue_fail(ctx_);
   }
   int frames_received() {
-    return ut_frames_received(ctx_);
+    return ut40_frames_received(ctx_);
   }
 };
 
@@ -130,7 +130,7 @@ TEST_F(St40RxRedundancyTest, BurstSwitchoverClean) {
  * late arrivals for the same frame (same timestamp). The filter must accept
  * late packets from P that fill gaps rather than rejecting them as redundant.
  * Expects zero unrecovered. */
-TEST_F(St40RxRedundancyTest, BurstSwitchoverReorderedBug) {
+TEST_F(St40RxRedundancyTest, BurstSwitchoverReordered) {
   constexpr uint16_t N = 100;
   constexpr uint32_t ts_prev = 5000;
   constexpr uint32_t ts_cur = 6500;
@@ -212,8 +212,8 @@ TEST_F(St40RxRedundancyTest, MidFrameSwitchoverNoReorder) {
 /* Single-port baseline: only one port configured, no redundancy filtering.
  * All packets accepted, zero redundant. */
 TEST_F(St40RxRedundancyTest, SinglePortBaseline) {
-  ut_ctx_destroy(ctx_);
-  ctx_ = ut_ctx_create(1); /* re-create with 1 port */
+  ut40_ctx_destroy(ctx_);
+  ctx_ = ut40_ctx_create(1); /* re-create with 1 port */
   ASSERT_NE(ctx_, nullptr);
 
   feed_burst(0, 6, 1000, true, MTL_SESSION_PORT_P);
@@ -463,8 +463,8 @@ TEST_F(St40RxRedundancyTest, FullGapThenLateArrival) {
 /* Back-to-back frames on a single port: 10 frames × 4 packets each.
  * No gaps, no redundancy. Expects exact received count of 40. */
 TEST_F(St40RxRedundancyTest, BackToBackFrames) {
-  ut_ctx_destroy(ctx_);
-  ctx_ = ut_ctx_create(1);
+  ut40_ctx_destroy(ctx_);
+  ctx_ = ut40_ctx_create(1);
   ASSERT_NE(ctx_, nullptr);
 
   uint16_t seq = 0;
@@ -511,21 +511,21 @@ TEST_F(St40RxRedundancyTest, ReturnValueAccepted) {
 
 /* Wrong payload type must return -EINVAL. */
 TEST_F(St40RxRedundancyTest, ReturnValueWrongPT) {
-  ut_ctx_set_pt(ctx_, 96);
-  int rc = ut_feed_pkt_pt(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 97);
+  ut40_ctx_set_pt(ctx_, 96);
+  int rc = ut40_feed_pkt_pt(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 97);
   EXPECT_EQ(rc, -EINVAL);
 }
 
 /* Wrong SSRC must return -EINVAL. */
 TEST_F(St40RxRedundancyTest, ReturnValueWrongSSRC) {
-  ut_ctx_set_ssrc(ctx_, 1234);
-  int rc = ut_feed_pkt_ssrc(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 5678);
+  ut40_ctx_set_ssrc(ctx_, 1234);
+  int rc = ut40_feed_pkt_ssrc(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 5678);
   EXPECT_EQ(rc, -EINVAL);
 }
 
 /* Invalid F-bits (0b01) must return -EINVAL. */
 TEST_F(St40RxRedundancyTest, ReturnValueInvalidFBits) {
-  int rc = ut_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x1);
+  int rc = ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x1);
   EXPECT_EQ(rc, -EINVAL);
 }
 
@@ -538,9 +538,9 @@ TEST_F(St40RxRedundancyTest, ReturnValueRedundant) {
 
 /* Wrong PT packets are dropped and counted in wrong_pt stat. */
 TEST_F(St40RxRedundancyTest, WrongPayloadTypeDropped) {
-  ut_ctx_set_pt(ctx_, 96);
+  ut40_ctx_set_pt(ctx_, 96);
   for (int i = 0; i < 5; i++)
-    ut_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 97);
+    ut40_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 97);
 
   EXPECT_EQ(wrong_pt(), 5u);
   EXPECT_EQ(received(), 0u);
@@ -548,9 +548,9 @@ TEST_F(St40RxRedundancyTest, WrongPayloadTypeDropped) {
 
 /* Correct PT packets are accepted with zero wrong_pt. */
 TEST_F(St40RxRedundancyTest, CorrectPayloadTypeAccepted) {
-  ut_ctx_set_pt(ctx_, 96);
+  ut40_ctx_set_pt(ctx_, 96);
   for (int i = 0; i < 4; i++)
-    ut_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 96);
+    ut40_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 96);
 
   EXPECT_EQ(wrong_pt(), 0u);
   EXPECT_EQ(received(), 4u);
@@ -558,9 +558,9 @@ TEST_F(St40RxRedundancyTest, CorrectPayloadTypeAccepted) {
 
 /* Wrong SSRC packets are dropped and counted in wrong_ssrc stat. */
 TEST_F(St40RxRedundancyTest, WrongSSRCDropped) {
-  ut_ctx_set_ssrc(ctx_, 0xDEAD);
+  ut40_ctx_set_ssrc(ctx_, 0xDEAD);
   for (int i = 0; i < 3; i++)
-    ut_feed_pkt_ssrc(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 0xBEEF);
+    ut40_feed_pkt_ssrc(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 0xBEEF);
 
   EXPECT_EQ(wrong_ssrc(), 3u);
   EXPECT_EQ(received(), 0u);
@@ -569,8 +569,8 @@ TEST_F(St40RxRedundancyTest, WrongSSRCDropped) {
 /* PT=0 disables the payload type check: any PT value is accepted. */
 TEST_F(St40RxRedundancyTest, ZeroPTDisablesCheck) {
   /* PT=0 by default */
-  ut_feed_pkt_pt(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 99);
-  ut_feed_pkt_pt(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 111);
+  ut40_feed_pkt_pt(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 99);
+  ut40_feed_pkt_pt(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 111);
 
   EXPECT_EQ(wrong_pt(), 0u);
   EXPECT_EQ(received(), 2u);
@@ -623,8 +623,8 @@ TEST_F(St40RxRedundancyTest, PortOOOPerPort) {
 
 /* Invalid F-bits packets are dropped and counted in wrong_interlace stat. */
 TEST_F(St40RxRedundancyTest, InvalidFBitsDropped) {
-  ut_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x1);
-  ut_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x1);
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x1);
+  ut40_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x1);
 
   EXPECT_EQ(wrong_interlace(), 2u);
   EXPECT_EQ(received(), 0u);
@@ -632,8 +632,8 @@ TEST_F(St40RxRedundancyTest, InvalidFBitsDropped) {
 
 /* Progressive F-bits (0b00) are accepted without incrementing interlace counters. */
 TEST_F(St40RxRedundancyTest, ProgressiveFBits) {
-  ut_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x0);
-  ut_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x0);
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x0);
+  ut40_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x0);
 
   EXPECT_EQ(wrong_interlace(), 0u);
   EXPECT_EQ(interlace_first(), 0u);
@@ -645,10 +645,10 @@ TEST_F(St40RxRedundancyTest, ProgressiveFBits) {
  * and tracked in their respective interlace counters. */
 TEST_F(St40RxRedundancyTest, InterlaceFieldCounting) {
   /* F=0x2 → first field */
-  ut_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x2);
-  ut_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x2);
   /* F=0x3 → second field */
-  ut_feed_pkt_fbits(ctx_, 2, 1002, 0, MTL_SESSION_PORT_P, 0x3);
+  ut40_feed_pkt_fbits(ctx_, 2, 1002, 0, MTL_SESSION_PORT_P, 0x3);
 
   EXPECT_EQ(interlace_first(), 2u);
   EXPECT_EQ(interlace_second(), 1u);
@@ -706,9 +706,330 @@ TEST_F(St40RxRedundancyTest, DuplicateSeqPortOOOWrapping) {
       << "Duplicate seq on same port should not inflate OOO counter";
 }
 
-/* ── main ──────────────────────────────────────────────────────────── */
+/* ── RTP marker bit preservation ──────────────────────────────────── */
 
-int main(int argc, char** argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+/* Marker preservation when P advances timestamp before R delivers marker.
+ *
+ * Scenario:
+ *   1. P delivers frame N body: seq 0-4, ts=1000, no marker
+ *   2. P delivers frame N+1 first packet: seq 7, ts=2000 — tmstamp advances
+ *   3. R delivers frame N tail: seq 5-6, ts=1000, marker on seq 6
+ *
+ * The redundancy filter must accept R's late packets for the immediately
+ * previous timestamp and preserve the marker bit through to the ring. */
+TEST_F(St40RxRedundancyTest, DISABLED_MarkerPreservedAfterTimestampAdvance) {
+  ut40_set_skip_drain(true);
+  uint32_t ts_frame_n = 1000;
+  uint32_t ts_frame_n1 = 2000;
+
+  /* P delivers frame N body: seq 0-4, no marker */
+  for (int i = 0; i < 5; i++) feed(i, ts_frame_n, false, MTL_SESSION_PORT_P);
+
+  /* P starts frame N+1 before R delivers frame N's marker */
+  feed(7, ts_frame_n1, false, MTL_SESSION_PORT_P);
+
+  /* R delivers frame N's tail: seq 5 (no marker), seq 6 (MARKER) */
+  feed(5, ts_frame_n, false, MTL_SESSION_PORT_R);
+  feed(6, ts_frame_n, true, MTL_SESSION_PORT_R); /* MARKER */
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+
+  EXPECT_TRUE(has_marker)
+      << "Marker from R must survive when P advances to next frame first";
+  ut40_set_skip_drain(false);
+}
+
+/* Marker bit on the last packet of a single-port burst survives into the ring. */
+TEST_F(St40RxRedundancyTest, MarkerPreservedSinglePort) {
+  ut40_set_skip_drain(true);
+  /* 6 packets, marker on last */
+  feed_burst(0, 6, 1000, true, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 6);
+  EXPECT_TRUE(has_marker) << "Marker bit must survive into the ring";
+  ut40_set_skip_drain(false);
+}
+
+/* Mid-frame port switchover: P sends the body, R sends the tail including marker.
+ * Reproduces the pcap scenario where P sends seq 0-4, R sends seq 5-6 with
+ * marker on seq 6.  The marker-bearing packet from R must pass the redundancy
+ * filter and be enqueued with the marker bit intact. */
+TEST_F(St40RxRedundancyTest, MarkerPreservedMidFrameSwitchover) {
+  ut40_set_skip_drain(true);
+  uint32_t ts = 2000;
+  /* P sends seq 0-4, no marker, same timestamp */
+  for (int i = 0; i < 5; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  /* R sends seq 5-6, marker on seq 6, same timestamp */
+  feed(5, ts, false, MTL_SESSION_PORT_R);
+  feed(6, ts, true, MTL_SESSION_PORT_R);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 7);
+  EXPECT_TRUE(has_marker) << "Marker from R port must survive mid-frame switchover";
+  ut40_set_skip_drain(false);
+}
+
+/* Cross-port reorder with bitmap: R delivers seq 7-11 (marker on 11) before
+ * P's late-arriving seq 5-6.  A warm-up frame establishes session_seq so the
+ * bitmap base covers the late arrivals.  The marker from R must survive. */
+TEST_F(St40RxRedundancyTest, MarkerPreservedCrossPortReorder) {
+  /* Previous frame to set session_seq_id=4, so bitmap base for next frame = 5 */
+  feed_burst(0, 5, 2999, true, MTL_SESSION_PORT_P);
+  ut40_drain_ring();
+  ut40_set_skip_drain(true);
+
+  uint32_t ts = 3000;
+  /* R sends seq 7-10 (no marker), then seq 11 (marker) */
+  for (int i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  feed(11, ts, true, MTL_SESSION_PORT_R);
+  /* P's late arrivals: seq 5-6, same timestamp, no marker */
+  feed(5, ts, false, MTL_SESSION_PORT_P);
+  feed(6, ts, false, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 7);
+  EXPECT_TRUE(has_marker) << "Marker must survive cross-port reorder";
+  ut40_set_skip_drain(false);
+}
+
+/* Negative test: no marker set on any packet, verify has_marker is false.
+ * Guards against false positives in the test infrastructure. */
+TEST_F(St40RxRedundancyTest, MarkerAbsentWhenNotSet) {
+  ut40_set_skip_drain(true);
+  /* 6 packets, NO marker on any */
+  feed_burst(0, 6, 1000, false, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 6);
+  EXPECT_FALSE(has_marker) << "No packet had marker=1, has_marker must be false";
+  ut40_set_skip_drain(false);
+}
+
+/* Marker on the first packet (not last) of a frame.  Verifies position-
+ * independence: the handler must never strip the marker regardless of
+ * where it appears in the sequence. */
+TEST_F(St40RxRedundancyTest, MarkerOnFirstPacket) {
+  ut40_set_skip_drain(true);
+  uint32_t ts = 4000;
+  /* First packet carries the marker */
+  feed(0, ts, true, MTL_SESSION_PORT_P);
+  for (int i = 1; i < 6; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 6);
+  EXPECT_TRUE(has_marker) << "Marker on first packet must survive into ring";
+  ut40_set_skip_drain(false);
+}
+
+/* Late arrival via bitmap carries the marker.  R advances the session seq,
+ * then P's late packet (carrying the marker) is accepted through the bitmap
+ * path (goto accept_pkt).  The marker must survive this alternate code path. */
+TEST_F(St40RxRedundancyTest, MarkerOnBitmapLateArrival) {
+  /* Warm-up frame to establish session_seq = 4 */
+  feed_burst(0, 5, 4999, true, MTL_SESSION_PORT_P);
+  ut40_drain_ring();
+  ut40_set_skip_drain(true);
+
+  uint32_t ts = 5000;
+  /* R sends seq 7-10, no marker */
+  for (int i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  /* P's late arrivals: seq 5 (no marker), seq 6 (MARKER) */
+  feed(5, ts, false, MTL_SESSION_PORT_P);
+  feed(6, ts, true, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 6);
+  EXPECT_TRUE(has_marker) << "Marker on bitmap-accepted late arrival must survive";
+  ut40_set_skip_drain(false);
+}
+
+/* Pcap-accurate scenario: a complete prior frame establishes session history,
+ * then P sends the body of the next frame and R sends the tail with marker.
+ * This closely mirrors the actual pcap (frame ts=0xef6fef62, P sends 5 pkts,
+ * R sends 2 pkts with marker on the last). */
+TEST_F(St40RxRedundancyTest, MarkerPcapMidFrameSwitchoverWithHistory) {
+  /* Complete prior frame on P (7 packets) to establish session history */
+  feed_burst(0, 7, 1000, true, MTL_SESSION_PORT_P);
+  ut40_drain_ring();
+  ut40_set_skip_drain(true);
+
+  uint32_t ts = 2000;
+  /* P sends body: seq 7-11, no marker, same ts (like pcap's seq 58363-58367) */
+  for (int i = 7; i <= 11; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  /* R sends tail: seq 12-13, marker on seq 13 (like pcap's seq 58368-58369) */
+  feed(12, ts, false, MTL_SESSION_PORT_R);
+  feed(13, ts, true, MTL_SESSION_PORT_R);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 7);
+  EXPECT_TRUE(has_marker)
+      << "Marker must survive mid-frame switchover with prior history";
+  ut40_set_skip_drain(false);
+}
+
+/* Single-packet frame carrying the marker.  The simplest possible frame. */
+TEST_F(St40RxRedundancyTest, MarkerOnSinglePacketFrame) {
+  ut40_set_skip_drain(true);
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 1);
+  EXPECT_TRUE(has_marker) << "Marker on single-packet frame must survive";
+  ut40_set_skip_drain(false);
+}
+
+/* Both P and R send the same marker packet (same seq, same ts, both with marker=1).
+ * P's packet is accepted, R's duplicate is filtered as redundant.
+ * The accepted packet must carry the marker into the ring. */
+TEST_F(St40RxRedundancyTest, MarkerDuplicateFromBothPorts) {
+  ut40_set_skip_drain(true);
+  uint32_t ts = 1000;
+  /* P sends 4 packets, marker on seq 3 */
+  for (int i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  feed(3, ts, true, MTL_SESSION_PORT_P);
+  /* R sends same 4 packets (duplicates), marker on seq 3 too — all filtered */
+  for (int i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  feed(3, ts, true, MTL_SESSION_PORT_R);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 4) << "Only P's packets should be accepted, R's are redundant";
+  EXPECT_TRUE(has_marker) << "Marker from P's accepted packet must survive";
+  ut40_set_skip_drain(false);
+}
+
+/* Marker on a packet accepted via the threshold bypass path.
+ * After 20+ consecutive redundant rejections on ALL ports, the filter
+ * force-accepts the next packet.  The marker must survive this path. */
+TEST_F(St40RxRedundancyTest, MarkerSurvivesThresholdBypass) {
+  constexpr uint32_t ts_new = 6000;
+  constexpr uint32_t ts_old = 5000;
+
+  /* Establish state with newer timestamp */
+  feed_burst(0, 4, ts_new, true, MTL_SESSION_PORT_P);
+  feed_burst(0, 4, ts_new, true, MTL_SESSION_PORT_R);
+  ut40_drain_ring();
+  ut40_set_skip_drain(true);
+
+  /* Send 20 old-ts packets on BOTH ports (below threshold, all rejected) */
+  for (int i = 0; i < 20; i++) {
+    feed(50 + i, ts_old, false, MTL_SESSION_PORT_P);
+    feed(50 + i, ts_old, false, MTL_SESSION_PORT_R);
+  }
+
+  /* 21st pair: R goes first so its marker-bearing packet triggers the bypass.
+   * The bypass resets R's error counter, so P's packet will be rejected
+   * (P's counter is still >= threshold, but R's is now 0 < threshold).
+   * Only R's marker packet gets accepted. */
+  feed(70, ts_old, true, MTL_SESSION_PORT_R); /* marker — triggers bypass */
+  feed(70, ts_old, false, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_GT(count, 0) << "At least one packet must be accepted via threshold bypass";
+  EXPECT_TRUE(has_marker)
+      << "Marker on threshold-bypass-accepted packet must survive into ring";
+  ut40_set_skip_drain(false);
+}
+
+/* ── Previous-timestamp acceptance window ─────────────────────────────── */
+
+/* After tmstamp advances from N to N+1, packets for timestamp N (the immediately
+ * previous frame) must still be accepted by the redundancy filter.  This enables
+ * the pipeline layer to receive late-arriving packets from the redundant port
+ * and resolve pending frames with the correct marker bit. */
+TEST_F(St40RxRedundancyTest, DISABLED_PrevTimestampPacketsAccepted) {
+  ut40_set_skip_drain(true);
+  uint32_t ts_n = 1000;
+  uint32_t ts_n1 = 2000;
+
+  /* P delivers frame N body: seq 0-2, ts=1000 */
+  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
+  /* P advances to frame N+1: seq 3, ts=2000 → tmstamp now 2000 */
+  feed(3, ts_n1, false, MTL_SESSION_PORT_P);
+  /* R delivers late packets for frame N: seq 4-5, ts=1000 */
+  feed(4, ts_n, false, MTL_SESSION_PORT_R);
+  feed(5, ts_n, true, MTL_SESSION_PORT_R); /* marker */
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+
+  /* All 6 packets should be accepted: the filter must recognize ts=1000
+   * as the immediately previous frame and accept R's late packets. */
+  EXPECT_EQ(count, 6) << "Late prev-frame packets from R must be accepted";
+  EXPECT_TRUE(has_marker) << "Late marker from R for prev_tmstamp must reach the ring";
+  ut40_set_skip_drain(false);
+}
+
+/* Packets two frames back (tmstamp - 2) must still be rejected.
+ * Only the immediately previous timestamp gets the acceptance window. */
+TEST_F(St40RxRedundancyTest, TwoFramesBackRejected) {
+  ut40_set_skip_drain(true);
+  uint32_t ts_old = 1000;
+  uint32_t ts_mid = 2000;
+  uint32_t ts_cur = 3000;
+
+  /* Advance through two frames: 1000 → 2000 → 3000 */
+  feed(0, ts_old, false, MTL_SESSION_PORT_P);
+  feed(1, ts_mid, false, MTL_SESSION_PORT_P); /* completes ts_old */
+  feed(2, ts_cur, false, MTL_SESSION_PORT_P); /* completes ts_mid */
+
+  /* Try sending a late packet for ts_old (two frames back) */
+  feed(3, ts_old, false, MTL_SESSION_PORT_R);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  /* Only 3 packets should be accepted (one per each ts advance).
+   * The late ts_old packet must be rejected — it's 2 frames behind. */
+  EXPECT_EQ(count, 3) << "Packets two timestamps behind must be rejected";
+  ut40_set_skip_drain(false);
+}
+
+/* Late prev_tmstamp duplicates (same seq already accepted from P) must
+ * still be filtered as redundant.  The prev_tmstamp acceptance window
+ * must not bypass the bitmap deduplication. */
+TEST_F(St40RxRedundancyTest, DISABLED_PrevTimestampDuplicatesFiltered) {
+  ut40_set_skip_drain(true);
+  uint32_t ts_n = 1000;
+  uint32_t ts_n1 = 2000;
+
+  /* P delivers full frame N: seq 0-3, marker on 3 */
+  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
+  feed(3, ts_n, true, MTL_SESSION_PORT_P);
+  /* P starts frame N+1 → tmstamp advances to 2000 */
+  feed(4, ts_n1, false, MTL_SESSION_PORT_P);
+  /* R sends duplicates for frame N (same seq, same ts) */
+  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_R);
+  feed(3, ts_n, true, MTL_SESSION_PORT_R);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  /* Only 5 unique packets: 4 from P (ts=1000) + 1 from P (ts=2000).
+   * R's 4 duplicates must be filtered out by the bitmap dedup. */
+  EXPECT_EQ(count, 5) << "Late prev-frame duplicates from R must be filtered";
+  ut40_set_skip_drain(false);
 }

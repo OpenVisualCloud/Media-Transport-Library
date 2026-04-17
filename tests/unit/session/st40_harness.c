@@ -1,15 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2025 Intel Corporation
  *
- * C harness for ST40 RX redundancy unit tests.
+ * C harness for ST40 RX redundancy unit tests (session layer).
  * Wraps internal MTL functions that cannot be called directly from C++
  * (internal headers use C keywords like "new" as identifiers).
  */
 
-#include <rte_eal.h>
-#include <rte_mbuf.h>
-#include <rte_mempool.h>
-#include <rte_ring.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,12 +18,10 @@
  * Disable USDT to avoid linker references to probe semaphores.
  */
 #undef MTL_HAS_USDT
+#include "common/ut_common.h"
 #include "st2110/st_rx_ancillary_session.c"
 
 /* ── define the opaque context ────────────────────────────────────────── */
-
-#define UT_RING_SIZE 512
-#define UT_POOL_SIZE 2048
 
 struct ut_test_ctx {
   struct mtl_main_impl impl;
@@ -36,66 +30,36 @@ struct ut_test_ctx {
 };
 
 /* pull in the header after the struct definition so types resolve */
-#include "st40_rx_redundancy_harness.h"
+#include "session/st40_harness.h"
 
 /* ── globals ──────────────────────────────────────────────────────────── */
 
-static struct rte_mempool* g_pool;
 static struct rte_ring* g_ring;
-static bool g_eal_ready;
-
-/* ── drain helper ─────────────────────────────────────────────────────── */
-
-void ut_drain_ring(void) {
-  if (!g_ring) return;
-  struct rte_mbuf* pkt = NULL;
-  while (rte_ring_sc_dequeue(g_ring, (void**)&pkt) == 0) rte_pktmbuf_free(pkt);
-}
+static bool g_skip_drain; /* when true, notify_rtp_ready does not drain the ring */
 
 /* ── RTP ready callback ──────────────────────────────────────────────── */
 
 static int ut_notify_rtp_ready(void* priv) {
   (void)priv;
-  ut_drain_ring();
+  if (!g_skip_drain) ut_ring_drain(g_ring);
   return 0;
 }
 
-/* ── EAL + pool + ring init ──────────────────────────────────────────── */
+/* ── init (delegates to common) ───────────────────────────────────────── */
 
-int ut_eal_init(void) {
-  if (g_eal_ready && g_pool && g_ring) return 0;
-
-  if (!g_eal_ready) {
-    static char a0[] = "unit_test";
-    static char a1[] = "--no-huge";
-    static char a2[] = "--no-shconf";
-    static char a3[] = "-c1";
-    static char a4[] = "-n1";
-    static char a5[] = "--no-pci";
-    static char a6[] = "--vdev=net_null0";
-    static char* args[] = {a0, a1, a2, a3, a4, a5, a6};
-    if (rte_eal_init(7, args) < 0) return -1;
-    g_eal_ready = true;
-  }
-
-  if (!g_pool) {
-    g_pool = rte_pktmbuf_pool_create("unit_pool", UT_POOL_SIZE, 0, 0,
-                                     RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-    if (!g_pool) return -1;
-  }
+int ut40_init(void) {
+  if (ut_eal_init() < 0) return -1;
 
   if (!g_ring) {
-    g_ring = rte_ring_create("unit_ring", UT_RING_SIZE, rte_socket_id(),
-                             RING_F_SP_ENQ | RING_F_SC_DEQ);
+    g_ring = ut_ring_create("st40_ring", UT_RING_SIZE);
     if (!g_ring) return -1;
   }
-
   return 0;
 }
 
 /* ── context create / destroy ─────────────────────────────────────────── */
 
-ut_test_ctx* ut_ctx_create(int num_port) {
+ut_test_ctx* ut40_ctx_create(int num_port) {
   ut_test_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
@@ -125,15 +89,19 @@ ut_test_ctx* ut_ctx_create(int num_port) {
   return ctx;
 }
 
-void ut_ctx_destroy(ut_test_ctx* ctx) {
+void ut40_ctx_destroy(ut_test_ctx* ctx) {
   free(ctx);
+}
+
+void ut40_drain_ring(void) {
+  ut_ring_drain(g_ring);
 }
 
 /* ── mbuf builder (internal) ──────────────────────────────────────────── */
 
 static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker,
                                            uint8_t pt, uint32_t ssrc, uint8_t f_bits) {
-  struct rte_mbuf* m = rte_pktmbuf_alloc(g_pool);
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
   if (!m) return NULL;
 
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
@@ -169,10 +137,10 @@ static struct rte_mbuf* make_anc_mbuf(uint16_t seq, uint32_t ts, int marker) {
   return make_anc_mbuf_full(seq, ts, marker, 0, 0, 0);
 }
 
-/* ── feed one packet ──────────────────────────────────────────────────── */
+/* ── feed functions ───────────────────────────────────────────────────── */
 
-int ut_feed_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
-                enum mtl_session_port port) {
+int ut40_feed_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                  enum mtl_session_port port) {
   struct rte_mbuf* m = make_anc_mbuf(seq, ts, marker);
   if (!m) return -1;
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
@@ -180,42 +148,16 @@ int ut_feed_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   return rc;
 }
 
-/* ── feed a burst ─────────────────────────────────────────────────────── */
-
-void ut_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
-                   int last_marker, enum mtl_session_port port) {
+void ut40_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
+                     int last_marker, enum mtl_session_port port) {
   for (int i = 0; i < count; i++) {
     int marker = last_marker && (i == count - 1);
-    ut_feed_pkt(ctx, seq_start + i, ts, marker, port);
+    ut40_feed_pkt(ctx, seq_start + i, ts, marker, port);
   }
 }
 
-/* ── stat accessors ───────────────────────────────────────────────────── */
-
-uint64_t ut_stat_unrecovered(const ut_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
-}
-
-uint64_t ut_stat_redundant(const ut_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_redundant;
-}
-
-uint64_t ut_stat_received(const ut_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_received;
-}
-
-uint64_t ut_stat_out_of_order(const ut_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_out_of_order;
-}
-
-int ut_session_seq_id(const ut_test_ctx* ctx) {
-  return ctx->session.session_seq_id;
-}
-
-/* ── feed with custom PT ──────────────────────────────────────────────── */
-
-int ut_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
-                   enum mtl_session_port port, uint8_t payload_type) {
+int ut40_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                     enum mtl_session_port port, uint8_t payload_type) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, payload_type, 0, 0);
   if (!m) return -1;
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
@@ -223,10 +165,8 @@ int ut_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   return rc;
 }
 
-/* ── feed with custom SSRC ────────────────────────────────────────────── */
-
-int ut_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
-                     enum mtl_session_port port, uint32_t ssrc) {
+int ut40_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                       enum mtl_session_port port, uint32_t ssrc) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, ssrc, 0);
   if (!m) return -1;
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
@@ -234,10 +174,8 @@ int ut_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   return rc;
 }
 
-/* ── feed with custom F-bits ──────────────────────────────────────────── */
-
-int ut_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
-                      enum mtl_session_port port, uint8_t f_bits) {
+int ut40_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                        enum mtl_session_port port, uint8_t f_bits) {
   struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, 0, f_bits);
   if (!m) return -1;
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
@@ -245,64 +183,105 @@ int ut_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   return rc;
 }
 
-/* ── context config setters ───────────────────────────────────────────── */
+/* ── config setters ───────────────────────────────────────────────────── */
 
-void ut_ctx_set_pt(ut_test_ctx* ctx, uint8_t pt) {
+void ut40_ctx_set_pt(ut_test_ctx* ctx, uint8_t pt) {
   ctx->session.ops.payload_type = pt;
 }
 
-void ut_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc) {
+void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc) {
   ctx->session.ops.ssrc = ssrc;
 }
 
-void ut_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
+void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
   ctx->session.interlace_auto = enable;
 }
 
-/* ── per-port stat accessors ──────────────────────────────────────────── */
+/* ── stat accessors ───────────────────────────────────────────────────── */
 
-uint64_t ut_stat_port_pkts(const ut_test_ctx* ctx, enum mtl_session_port port) {
+uint64_t ut40_stat_unrecovered(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
+}
+
+uint64_t ut40_stat_redundant(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_redundant;
+}
+
+uint64_t ut40_stat_received(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_received;
+}
+
+uint64_t ut40_stat_out_of_order(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_out_of_order;
+}
+
+int ut40_session_seq_id(const ut_test_ctx* ctx) {
+  return ctx->session.session_seq_id;
+}
+
+uint64_t ut40_stat_port_pkts(const ut_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].packets;
 }
 
-uint64_t ut_stat_port_bytes(const ut_test_ctx* ctx, enum mtl_session_port port) {
+uint64_t ut40_stat_port_bytes(const ut_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].bytes;
 }
 
-uint64_t ut_stat_port_ooo(const ut_test_ctx* ctx, enum mtl_session_port port) {
+uint64_t ut40_stat_port_ooo(const ut_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].out_of_order_packets;
 }
 
-uint64_t ut_stat_port_frames(const ut_test_ctx* ctx, enum mtl_session_port port) {
+uint64_t ut40_stat_port_frames(const ut_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].frames;
 }
 
-/* ── validation stat accessors ────────────────────────────────────────── */
-
-uint64_t ut_stat_wrong_pt(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_wrong_pt(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_wrong_pt_dropped;
 }
 
-uint64_t ut_stat_wrong_ssrc(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_wrong_ssrc(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_wrong_ssrc_dropped;
 }
 
-uint64_t ut_stat_wrong_interlace(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_wrong_interlace(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_wrong_interlace_dropped;
 }
 
-uint64_t ut_stat_interlace_first(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_interlace_first(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_interlace_first_field;
 }
 
-uint64_t ut_stat_interlace_second(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_interlace_second(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_interlace_second_field;
 }
 
-uint64_t ut_stat_enqueue_fail(const ut_test_ctx* ctx) {
+uint64_t ut40_stat_enqueue_fail(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_enqueue_fail;
 }
 
-int ut_frames_received(const ut_test_ctx* ctx) {
+int ut40_frames_received(const ut_test_ctx* ctx) {
   return rte_atomic32_read(&ctx->session.stat_frames_received);
+}
+
+/* ── ring marker inspection ───────────────────────────────────────────── */
+
+void ut40_set_skip_drain(bool skip) {
+  g_skip_drain = skip;
+}
+
+int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker) {
+  *out_count = 0;
+  *out_has_marker = false;
+  if (!g_ring) return -1;
+
+  struct rte_mbuf* pkt = NULL;
+  while (rte_ring_sc_dequeue(g_ring, (void**)&pkt) == 0) {
+    size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
+    struct st_rfc3550_rtp_hdr* rtp =
+        rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*, hdr_offset);
+    if (rtp->marker) *out_has_marker = true;
+    (*out_count)++;
+    rte_pktmbuf_free(pkt);
+  }
+  return 0;
 }

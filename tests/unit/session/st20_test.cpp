@@ -13,7 +13,7 @@
 
 #include <gtest/gtest.h>
 
-#include "st20_rx_redundancy_harness.h"
+#include "session/st20_harness.h"
 
 /* ── test fixture ─────────────────────────────────────────────────────── */
 
@@ -22,7 +22,7 @@ class St20RxRedundancyTest : public ::testing::Test {
   ut20_test_ctx* ctx_ = nullptr;
 
   void SetUp() override {
-    ASSERT_EQ(ut20_eal_init(), 0);
+    ASSERT_EQ(ut20_init(), 0);
     ctx_ = ut20_ctx_create(2);
     ASSERT_NE(ctx_, nullptr);
   }

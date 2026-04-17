@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "st30_rx_redundancy_harness.h"
+#include "session/st30_harness.h"
 
 /* ── fixture ───────────────────────────────────────────────────────── */
 
@@ -17,7 +17,7 @@ class St30RxRedundancyTest : public ::testing::Test {
   ut30_test_ctx* ctx_ = nullptr;
 
   void SetUp() override {
-    ASSERT_EQ(ut30_eal_init(), 0) << "EAL init failed";
+    ASSERT_EQ(ut30_init(), 0) << "EAL init failed";
     ctx_ = ut30_ctx_create(2); /* 2 ports = redundant */
     ASSERT_NE(ctx_, nullptr);
   }

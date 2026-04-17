@@ -36,9 +36,15 @@ single-packet decision logic only.
 
 ```
   test.cpp  ──►  harness.h (opaque C API)  ──►  harness.c  ──►  production handler
-  (gtest)        ut_feed_pkt()                   builds mbuf     rx_*_handle_pkt()
-                 ut_stat_*()                     calls handler   (lib/src/st2110/)
+  (gtest)        ut40_feed_pkt()                 builds mbuf     rx_*_handle_pkt()
+                 ut40_stat_*()                   calls handler   (lib/src/st2110/)
 ```
+
+### Directory layout
+
+- **`common/`** — Shared infrastructure (EAL init, mempool, ring factory)
+- **`session/`** — Session-layer harnesses and tests (raw RTP handler level)
+- **`pipeline/`** — Pipeline-layer harnesses and tests (frame assembly level)
 
 ### Why the C/C++ split?
 
@@ -51,8 +57,8 @@ expose an **opaque context** (`ut_test_ctx*`) through a pure-C API in the
 
 | Component | How it's stubbed |
 |-----------|-----------------|
-| DPDK EAL | `rte_eal_init()` with `--no-huge --no-pci --vdev=net_null0` |
-| Packet buffers | `rte_pktmbuf_pool_create()` with 2048 mbufs |
+| DPDK EAL | `rte_eal_init()` with `--no-huge --no-pci --vdev=net_null0` (shared via `common/ut_common.c`) |
+| Packet buffers | Shared `rte_mempool` via `ut_pool()` (2048 mbufs) |
 | Packet ring (ST40) | `rte_ring_create()` — 512 entries, drained after each test |
 | Frame pool (ST30, ST20) | Pre-allocated arrays with atomic refcounting |
 | PTP clock (ST30, ST20) | Stub returning monotonically increasing microseconds |
@@ -84,14 +90,20 @@ LD_LIBRARY_PATH=build_unit/lib ./build_unit/tests/unit/UnitTest
 ```
 tests/unit/
 ├── meson.build                        # Build definition
+├── main.cpp                           # Shared gtest main()
 ├── README.md                          # This file
-├── st40_rx_redundancy_harness.h       # ST40 opaque C API
-├── st40_rx_redundancy_harness.c       # ST40 harness (builds ANC mbufs, calls handler)
-├── st40_rx_redundancy_test.cpp        # ST40 gtest cases + main()
-├── st30_rx_redundancy_harness.h       # ST30 opaque C API
-├── st30_rx_redundancy_harness.c       # ST30 harness (builds audio mbufs, frame pool)
-├── st30_rx_redundancy_test.cpp        # ST30 gtest cases
-├── st20_rx_redundancy_harness.h       # ST20 opaque C API
-├── st20_rx_redundancy_harness.c       # ST20 harness (builds video mbufs, slot setup)
-└── st20_rx_redundancy_test.cpp        # ST20 gtest cases
+├── common/
+│   ├── ut_common.h                    # Shared C API (EAL, pool, ring)
+│   └── ut_common.c                    # Shared infrastructure implementation
+├── session/
+│   ├── st40_harness.h                 # ST40 session opaque C API
+│   ├── st40_harness.c                 # ST40 session harness (ANC mbufs, ring)
+│   ├── st40_test.cpp                  # ST40 session gtest cases
+│   ├── st30_harness.h                 # ST30 session opaque C API
+│   ├── st30_harness.c                 # ST30 session harness (audio mbufs, frame pool)
+│   ├── st30_test.cpp                  # ST30 session gtest cases
+│   ├── st20_harness.h                 # ST20 session opaque C API
+│   ├── st20_harness.c                 # ST20 session harness (video mbufs, slot setup)
+│   └── st20_test.cpp                  # ST20 session gtest cases
+└── pipeline/                          # Pipeline-layer tests (future)
 ```

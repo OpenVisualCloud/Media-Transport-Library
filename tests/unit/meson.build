@@ -9,18 +9,23 @@ unit_link_args = ['-Wl,--allow-multiple-definition']
 unit_include_dirs = [
   include_directories('../../include'),
   include_directories('../../lib/src'),
+  include_directories('.'),
 ]
 
 gtest_dep = dependency('gtest', required : true)
 libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true)
 
 unit_sources = [
-  'st40_rx_redundancy_harness.c',
-  'st40_rx_redundancy_test.cpp',
-  'st30_rx_redundancy_harness.c',
-  'st30_rx_redundancy_test.cpp',
-  'st20_rx_redundancy_harness.c',
-  'st20_rx_redundancy_test.cpp',
+  'common/ut_common.c',
+  'session/st40_harness.c',
+  'session/st40_test.cpp',
+  'session/st30_harness.c',
+  'session/st30_test.cpp',
+  'session/st20_harness.c',
+  'session/st20_test.cpp',
+  'pipeline/st40p_harness.c',
+  'pipeline/st40p_test.cpp',
+  'main.cpp',
 ]
 
 executable('UnitTest', unit_sources,
