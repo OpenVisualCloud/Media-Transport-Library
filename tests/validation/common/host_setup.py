@@ -104,8 +104,7 @@ def ensure_turbo_boost_enabled(host) -> None:
         val = (result.stdout or "").strip()
         if val == "0":
             host.connection.execute_command(
-                "echo 1 | sudo tee"
-                " /sys/devices/system/cpu/cpufreq/boost >/dev/null",
+                "echo 1 | sudo tee" " /sys/devices/system/cpu/cpufreq/boost >/dev/null",
                 shell=True,
             )
             logger.info(f"Host {host.name}: turbo boost enabled (cpufreq)")

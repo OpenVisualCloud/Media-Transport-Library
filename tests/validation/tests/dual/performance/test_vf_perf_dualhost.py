@@ -682,9 +682,7 @@ def _run_session_sweep(
     measured_host = tx_host if is_tx else rx_host
     if is_tx and single_core:
         isolcpus = _get_isolcpus(measured_host)
-        original_online_cpus = optimize_cpu_cores_for_turbo(
-            measured_host, isolcpus
-        )
+        original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
 
     def _is_crash(detail: str) -> bool:
         """Return True if the detail indicates a crash requiring VF FLR."""
