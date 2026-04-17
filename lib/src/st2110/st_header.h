@@ -1127,9 +1127,18 @@ struct st_rx_ancillary_session_impl {
   uint16_t anc_bitmap_base_seq; /* first seq_id of this frame */
   bool anc_bitmap_valid;        /* false until first frame is established */
 
+  /* Previous-frame bitmap for late-arrival acceptance after timestamp advance.
+   * When tmstamp advances, current bitmap is moved here so that late packets
+   * from the redundant port can still be deduplicated and accepted. */
+  uint64_t anc_prev_bitmap;
+  uint32_t anc_prev_bitmap_tmstamp;
+  uint16_t anc_prev_bitmap_base_seq;
+  bool anc_prev_bitmap_valid;
+
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   int64_t tmstamp;
+  int64_t prev_tmstamp; /* immediately previous frame timestamp */
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st40_rx_user_stats port_user_stats;
   struct st40_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
