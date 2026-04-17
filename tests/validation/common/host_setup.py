@@ -78,6 +78,42 @@ def ensure_hugepage_access(host) -> None:
         logger.warning(f"Host {host.name}: could not ensure hugepage access: {e}")
 
 
+def ensure_turbo_boost_enabled(host) -> None:
+    """Enable turbo boost if it is currently disabled."""
+    try:
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null",
+            shell=True,
+        )
+        val = (result.stdout or "").strip()
+        if val == "1":
+            host.connection.execute_command(
+                "echo 0 | sudo tee"
+                " /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null",
+                shell=True,
+            )
+            logger.info(f"Host {host.name}: turbo boost enabled (intel_pstate)")
+            return
+        if val == "0":
+            return
+
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null",
+            shell=True,
+        )
+        val = (result.stdout or "").strip()
+        if val == "0":
+            host.connection.execute_command(
+                "echo 1 | sudo tee"
+                " /sys/devices/system/cpu/cpufreq/boost >/dev/null",
+                shell=True,
+            )
+            logger.info(f"Host {host.name}: turbo boost enabled (cpufreq)")
+            return
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not enable turbo boost: {e}")
+
+
 def ensure_cpu_performance_governor(host) -> None:
     """Set the CPU frequency scaling governor to 'performance' on all cores."""
     try:
