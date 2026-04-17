@@ -44,7 +44,7 @@ jobs:
     steps:
       - name: 'preparation: Harden Runner'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
