@@ -11,6 +11,7 @@ import time
 import traceback
 
 import pytest
+from common.host_setup import optimize_cpu_cores_for_turbo, restore_cpu_cores
 from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
 from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
@@ -673,6 +674,18 @@ def _run_session_sweep(
     reset_vfio_bindings(rx_host, rx_host.name, presweep_rx_vfs)
     time.sleep(5)
 
+    # ── Turbo boost optimization for TX single-core tests ──
+    # On high-core-count servers, offline unused cores on the SUT so the
+    # active cores reach higher turbo bins (e.g. 3800 MHz vs 3600 MHz).
+    # Only safe for TX (no DPDK flow/queue issues from offlining).
+    original_online_cpus: str | None = None
+    measured_host = tx_host if is_tx else rx_host
+    if is_tx and single_core:
+        isolcpus = _get_isolcpus(measured_host)
+        original_online_cpus = optimize_cpu_cores_for_turbo(
+            measured_host, isolcpus
+        )
+
     def _is_crash(detail: str) -> bool:
         """Return True if the detail indicates a crash requiring VF FLR."""
         crash_codes = (
@@ -837,12 +850,17 @@ def _run_session_sweep(
         logger.info(f"{'═' * 70}\n")
 
         if not passed:
+            if original_online_cpus:
+                restore_cpu_cores(measured_host, original_online_cpus)
             pytest.fail(
                 f"Fixed run FAILED: {num_sessions} sessions for "
                 f"{mode_tag}{direction.upper()} "
                 f"{'SC' if single_core else 'MC'}{dma_label} "
                 f"@ {fps}fps / {resolution}"
             )
+
+        if original_online_cpus:
+            restore_cpu_cores(measured_host, original_online_cpus)
 
         logger.log(
             TEST_PASS,
@@ -927,12 +945,17 @@ def _run_session_sweep(
         logger.info(f"{'═' * 70}\n")
 
         if max_passing == 0:
+            if original_online_cpus:
+                restore_cpu_cores(measured_host, original_online_cpus)
             pytest.fail(
                 f"Sweep FAILED: no sessions passed for "
                 f"{mode_tag}{direction.upper()} "
                 f"{'SC' if single_core else 'MC'}{dma_label} "
                 f"@ {fps}fps / {resolution}"
             )
+
+        if original_online_cpus:
+            restore_cpu_cores(measured_host, original_online_cpus)
 
         logger.log(
             TEST_PASS,
