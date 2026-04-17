@@ -106,6 +106,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
+  bool threshold_bypass = false;
 
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     ST40_FUZZ_LOG("%s(%d,%d), drop payload_type %u expected %u\n", __func__, s->idx,
@@ -199,6 +200,21 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       }
     }
 
+    /* Previous-timestamp window: accept unique late packets for the immediately
+     * previous frame.  This enables the pipeline layer to receive late-arriving
+     * marker packets from the redundant port after the primary has advanced. */
+    if (s->prev_tmstamp >= 0 && tmstamp == (uint32_t)s->prev_tmstamp &&
+        s->anc_prev_bitmap_valid && tmstamp == s->anc_prev_bitmap_tmstamp) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_prev_bitmap_base_seq);
+      if (offset < 64 && !(s->anc_prev_bitmap & ((uint64_t)1 << offset))) {
+        if (s->port_user_stats.common.stat_pkts_unrecovered > 0)
+          s->port_user_stats.common.stat_pkts_unrecovered--;
+        dbg("%s(%d,%d), prev-frame late arrival seq %u accepted (offset %u)\n", __func__,
+            s->idx, s_port, seq_id, offset);
+        goto accept_pkt;
+      }
+    }
+
     if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
       ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
                     seq_id, s->session_seq_id);
@@ -222,6 +238,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     /* threshold exceeded on all ports — accept the packet and undo the redundant count
      * so the packet is only counted as received, not both */
     s->port_user_stats.common.stat_pkts_redundant--;
+    threshold_bypass = true;
     warn(
         "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
         "%d), timestamp %u (old timestamp %ld)\n",
@@ -255,15 +272,28 @@ accept_pkt:
   /* Update per-frame bitmap: track which seq offsets have been delivered.
    * base_seq = old_session_seq + 1 = first expected seq of this frame.
    * This ensures late arrivals (seq < first accepted seq) still fit in the bitmap. */
-  if (!s->anc_bitmap_valid || tmstamp != s->anc_bitmap_tmstamp) {
-    s->anc_bitmap = 0;
-    s->anc_bitmap_tmstamp = tmstamp;
-    s->anc_bitmap_base_seq = (uint16_t)(old_session_seq + 1);
-    s->anc_bitmap_valid = true;
-  }
-  {
-    uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
-    if (offset < 64) s->anc_bitmap |= ((uint64_t)1 << offset);
+  if (s->anc_prev_bitmap_valid && tmstamp == s->anc_prev_bitmap_tmstamp) {
+    /* This packet belongs to the previous frame — update prev bitmap only */
+    uint16_t offset = (uint16_t)(seq_id - s->anc_prev_bitmap_base_seq);
+    if (offset < 64) s->anc_prev_bitmap |= ((uint64_t)1 << offset);
+  } else {
+    if (!s->anc_bitmap_valid || tmstamp != s->anc_bitmap_tmstamp) {
+      /* Save current bitmap as prev before resetting for new frame */
+      if (s->anc_bitmap_valid) {
+        s->anc_prev_bitmap = s->anc_bitmap;
+        s->anc_prev_bitmap_tmstamp = s->anc_bitmap_tmstamp;
+        s->anc_prev_bitmap_base_seq = s->anc_bitmap_base_seq;
+        s->anc_prev_bitmap_valid = true;
+      }
+      s->anc_bitmap = 0;
+      s->anc_bitmap_tmstamp = tmstamp;
+      s->anc_bitmap_base_seq = (uint16_t)(old_session_seq + 1);
+      s->anc_bitmap_valid = true;
+    }
+    {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
+      if (offset < 64) s->anc_bitmap |= ((uint64_t)1 << offset);
+    }
   }
 
   /* enqueue to packet ring to let app to handle */
@@ -279,7 +309,13 @@ accept_pkt:
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
-  if (tmstamp != s->tmstamp) {
+  /* Only advance timestamp forward — prev-frame late arrivals must not roll back.
+   * Exception: threshold bypass is a recovery mechanism that may legitimately
+   * move the timestamp backward when the session is stuck. */
+  if (tmstamp != s->tmstamp &&
+      (mt_seq32_greater(tmstamp, s->tmstamp) || threshold_bypass)) {
+    s->prev_tmstamp = s->tmstamp;
+
     rte_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
@@ -308,6 +344,8 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
 
   s->session_seq_id = -1;
   s->tmstamp = -1;
+  s->prev_tmstamp = -1;
+  s->anc_prev_bitmap_valid = false;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
