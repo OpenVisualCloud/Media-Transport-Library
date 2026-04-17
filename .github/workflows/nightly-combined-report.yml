@@ -58,13 +58,13 @@ jobs:
       both_completed: ${{ steps.check-status.outputs.both_completed }}
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
 
       - name: Wait for both workflows to complete
         id: get-runs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const workflows = ['nightly-gtest', 'nightly-pytest'];
@@ -201,16 +201,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
 
       - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Get pytest run metadata
         id: pytest-metadata
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runId = ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }};
@@ -228,7 +228,7 @@ jobs:
 
       - name: Get gtest run metadata
         id: gtest-metadata
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runId = ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }};
@@ -366,7 +366,7 @@ jobs:
       - name: Get baseline pytest run metadata
         id: baseline-pytest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runId = ${{ needs.wait-for-both-workflows.outputs.baseline_pytest_run_id }};
@@ -385,7 +385,7 @@ jobs:
       - name: Get baseline gtest run metadata
         id: baseline-gtest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runId = ${{ needs.wait-for-both-workflows.outputs.baseline_gtest_run_id }};
@@ -454,14 +454,14 @@ jobs:
 
       - name: Upload combined Excel report
         if: steps.combine.outputs.reports_generated == 'true'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-combined-report-excel
           path: combined_nightly_report.xlsx
 
       - name: Upload combined HTML report
         if: steps.combine.outputs.reports_generated == 'true'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-combined-report-html
           path: combined_nightly_report.html

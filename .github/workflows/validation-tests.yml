@@ -120,7 +120,7 @@ jobs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
 
@@ -131,12 +131,12 @@ jobs:
           env | grep TEST_ || true
 
       - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ inputs.branch-to-checkout }}'
 
       - name: 'preparation: Checkout DPDK'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: env.DPDK_REBUILD == 'true'
         with:
           repository: 'DPDK/dpdk'
@@ -202,7 +202,7 @@ jobs:
       PYTEST_RETRIES: '3'
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
 
@@ -285,7 +285,7 @@ jobs:
 
       - name: 'cleanup: Validation execution logs'
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: 'validation-execution-logs.tar.gz'
           path: '${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz'

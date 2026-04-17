@@ -35,11 +35,11 @@ jobs:
     timeout-minutes: 720
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ github.ref }}'
       - uses: ./.github/actions/build
@@ -107,14 +107,14 @@ jobs:
       - name: "upload report python"
         if: always()
         id: upload-report
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
 
       - name: "upload system info"
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: system-info-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./system-info-${{ matrix.nic }}-${{ matrix.dir }}
@@ -125,7 +125,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Download python report artifacts
         uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
         with:
@@ -169,7 +169,7 @@ jobs:
           printf 'report_path=%s\n' "$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
       - name: Upload combined python report
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-pytest-combined-report
           path: ${{ steps.combine.outputs.report_path }}
