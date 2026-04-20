@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
+"""Refactored: st40p (ancillary pipeline) multicast + compliance.
 
+Mirrors ``test_multicast_with_compliance.py`` but uses the unified
+``rxtxapp`` fixture (``session_type="st40p"``).
+"""
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files
@@ -12,7 +16,7 @@ from mtl_engine.media_files import anc_files
     [
         anc_files["text_p29"],
         anc_files["text_p50"],
-        anc_files["text_p59"],
+        pytest.param(anc_files["text_p59"], marks=pytest.mark.smoke),
     ],
     indirect=["media_file"],
     ids=[
@@ -21,7 +25,8 @@ from mtl_engine.media_files import anc_files
         "text_p59",
     ],
 )
-def test_multicast_with_compliance_refactored(
+@pytest.mark.refactored
+def test_st40p_multicast_with_compliance_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
@@ -39,13 +44,11 @@ def test_multicast_with_compliance_refactored(
     )
 
     rxtxapp.create_command(
-        session_type="ancillary",
+        session_type="st40p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
-        type_mode="frame",
-        ancillary_format="closed_caption",
-        ancillary_fps=media_file_info["fps"],
-        ancillary_url=media_file_path,
+        framerate=media_file_info["fps"],
+        input_file=media_file_path,
         test_time=test_time,
     )
 

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
+"""Refactored: st40p (ancillary pipeline) basic single-host test.
 
+Mirrors ``test_basic.py`` (legacy session API ancillary type_mode test) but
+uses the unified ``rxtxapp`` fixture (``session_type="st40p"``).
+"""
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files
@@ -21,8 +25,8 @@ from mtl_engine.media_files import anc_files
         "text_p59",
     ],
 )
-@pytest.mark.parametrize("type_mode", ["rtp", "frame"])
-def test_type_mode_refactored(
+@pytest.mark.refactored
+def test_st40p_basic_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
@@ -30,9 +34,9 @@ def test_type_mode_refactored(
     test_config,
     prepare_ramdisk,
     media_file,
-    type_mode,
     rxtxapp,
 ):
+    """Smoke test: TX st40p -> RX st40p over the pipeline ancillary API (unicast)."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -40,13 +44,11 @@ def test_type_mode_refactored(
     )
 
     rxtxapp.create_command(
-        session_type="ancillary",
+        session_type="st40p",
         nic_port_list=interfaces_list,
         test_mode="unicast",
-        type_mode=type_mode,
-        ancillary_format="closed_caption",
-        ancillary_fps=media_file_info["fps"],
-        ancillary_url=media_file_path,
+        framerate=media_file_info["fps"],
+        input_file=media_file_path,
         test_time=test_time,
     )
 
