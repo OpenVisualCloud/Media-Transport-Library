@@ -518,6 +518,26 @@ struct st_app_tx_st40p_session {
   int fb_send_done;
 };
 
+struct st_app_rx_st40p_session {
+  struct st_app_context* ctx;
+  int idx;
+  mtl_handle st;
+  st40p_rx_handle handle;
+  int framebuff_cnt;
+
+  pthread_t st40p_app_thread;
+  pthread_cond_t st40p_wake_cond;
+  pthread_mutex_t st40p_wake_mutex;
+  bool st40p_app_thread_stop;
+
+  /* stat */
+  int stat_frame_total_received;
+  uint64_t stat_frame_first_rx_time;
+  int stat_frame_seq_discont;
+  int stat_frame_marker_missing;
+  uint32_t stat_seq_lost_total;
+};
+
 struct st_app_rx_st22p_session {
   int idx;
   mtl_handle st;
@@ -798,6 +818,9 @@ struct st_app_context {
 
   struct st_app_rx_st30p_session* rx_st30p_sessions;
   int rx_st30p_session_cnt;
+
+  struct st_app_rx_st40p_session* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
 
   struct st_app_rx_video_session* rx_st20r_sessions;
   int rx_st20r_session_cnt;
