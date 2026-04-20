@@ -366,10 +366,56 @@ static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
+  bool fps_ok = ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05);
   notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-        ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                           : "FAILED",
-        framerate, s->stat_frame_total_received);
+        fps_ok ? "OK" : "FAILED", framerate, s->stat_frame_total_received);
+
+  /* When fps is off or wire-layer reports any anomaly, fetch wire-layer counters
+   * and classify the cause from already-published stats so the user can tell
+   * whether frames were dropped due to packet loss, protocol drops, slow
+   * consumer, etc.  All numbers come from existing counters; we only print. */
+  if (s->handle) {
+    struct st20_rx_user_stats wire = {0};
+    if (st20p_rx_get_session_stats(s->handle, &wire) == 0) {
+      bool wire_trouble = wire.common.stat_pkts_unrecovered ||
+                          wire.common.stat_lost_packets || wire.stat_frames_dropped ||
+                          wire.stat_pkts_idx_dropped || wire.stat_pkts_offset_dropped ||
+                          wire.stat_pkts_rtp_ring_full || wire.stat_pkts_no_slot ||
+                          wire.incomplete_frames_cnt;
+      if (!fps_ok || wire_trouble) {
+        const char* cause;
+        if (wire.common.stat_pkts_unrecovered > 0) {
+          cause = "true bilateral data loss \u2192 incomplete frames";
+        } else if (wire.common.stat_pkts_wrong_pt_dropped ||
+                   wire.common.stat_pkts_wrong_ssrc_dropped ||
+                   wire.stat_pkts_wrong_interlace_dropped ||
+                   wire.stat_pkts_wrong_len_dropped) {
+          cause = "producer protocol violation (check wrong_*_dropped)";
+        } else if (wire.stat_pkts_rtp_ring_full || wire.stat_pkts_no_slot) {
+          cause = "receiver too slow (ring full / no slot)";
+        } else if (wire.stat_pkts_idx_dropped || wire.stat_pkts_offset_dropped) {
+          cause =
+              "out-of-bounds pkt idx/offset \u2014 producer pacing or wire corruption";
+        } else if (wire.common.stat_lost_packets > 0) {
+          cause = "wire pkt loss healed by redundancy (no frame impact)";
+        } else if (!fps_ok) {
+          cause = "no wire anomaly \u2014 check upstream pacing or test fixture";
+        } else {
+          cause = "wire anomaly without classification \u2014 please file a bug";
+        }
+        notce(
+            "%s(%d), reconciliation: wire received=%" PRIu64 " lost=%" PRIu64
+            " unrecovered=%" PRIu64 " redundant=%" PRIu64 " incomplete_frames=%" PRIu64
+            " frames_dropped=%" PRIu64 " idx_dropped=%" PRIu64 " offset_dropped=%" PRIu64
+            " ring_full=%" PRIu64 " no_slot=%" PRIu64 " \u21d2 %s\n",
+            __func__, idx, wire.common.stat_pkts_received, wire.common.stat_lost_packets,
+            wire.common.stat_pkts_unrecovered, wire.common.stat_pkts_redundant,
+            wire.incomplete_frames_cnt, wire.stat_frames_dropped,
+            wire.stat_pkts_idx_dropped, wire.stat_pkts_offset_dropped,
+            wire.stat_pkts_rtp_ring_full, wire.stat_pkts_no_slot, cause);
+      }
+    }
+  }
   return 0;
 }
 
