@@ -123,7 +123,7 @@ RE_REDUNDANT_MODE = re.compile(
     r"Redundant mode:\s*interfaces=\[(.+?)\],\s*direction=(\w+)"
 )
 RE_NICCTL_CMD = re.compile(
-    r"Executing\s+>[\d.]+\.(\d+)>\s+'[^']*nicctl\.sh\s+list\s+([\da-fA-F:.]+)'"
+    r"Executing\s+>(?:[\d.]+\.(\d+)|\S+)>\s+'[^']*nicctl\.sh\s+list\s+([\da-fA-F:.]+)'"
 )
 RE_PCI_LINE = re.compile(r"^([\da-fA-F]{4}:[\da-fA-F]{2}:[\da-fA-F]{2}\.\d+)\s*$")
 RE_LOG_PREFIX = re.compile(
@@ -237,7 +237,8 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
             # ── nicctl PF→VF mapping ──
             m = RE_NICCTL_CMD.search(line)
             if m:
-                nicctl_suffix, nicctl_pf = m.group(1), m.group(2)
+                nicctl_suffix = m.group(1)  # None when IP is masked (e.g. ***)
+                nicctl_pf = m.group(2) if nicctl_suffix else None
                 collecting_vfs = False
                 continue
             if nicctl_pf and "stdout>>" in line:
@@ -488,10 +489,12 @@ def scan_logs(log_root: str):
                 log_files.extend(
                     os.path.join(root, fn) for fn in files if fn.endswith(".log")
                 )
-        if not log_files:
-            lp = os.path.join(dp, "pytest.log")
-            if os.path.exists(lp):
-                log_files.append(lp)
+        # Also parse pytest.log for fixture/setup data (nicctl PF→VF
+        # mapping, VF creation, DMA setup) that is NOT in per-test logs.
+        # Sweep tests found here are harmless duplicates (overwritten by key).
+        pytest_log = os.path.join(dp, "pytest.log")
+        if os.path.exists(pytest_log):
+            log_files.append(pytest_log)
         if not log_files:
             continue
 
@@ -527,23 +530,48 @@ def scan_logs(log_root: str):
     all_tests = [t for t in best.values() if not (t.tested_side == "TX" and t.dma)]
     hosts = _extract_hosts(all_tests, vf_map)
 
+    # Build a VF map from rxtxapp_config interfaces for DUT host.
+    # This is the most reliable source: the captured JSON config always
+    # contains the VF PCI address used by the measured (DUT) application.
+    config_vf_map: dict[str, str] = {}  # {hostname: vf_addr}
+    for t in all_tests:
+        cfg = t.rxtxapp_config
+        if not cfg:
+            continue
+        ifaces = cfg.get("interfaces", [])
+        if not ifaces:
+            continue
+        vf_from_cfg = ifaces[0].get("name", "")
+        if not vf_from_cfg:
+            continue
+        # Determine DUT hostname from host_assignment
+        ha = RE_HOST_ASSIGN.search(t.host_assignment or "")
+        if ha:
+            dut_name = ha.group(1)
+            config_vf_map.setdefault(dut_name, vf_from_cfg)
+
     # Enrich hosts with NIC/DMA info
     for h in hosts:
         nd = nic_dma_map.get(h.name)
         if nd:
             h.nic_dma = nd
-        # Companion: use "redundant port VFs" as authoritative VF source
-        if h.role != "dut":
-            host_vfs = vf_map.get(h.name, [])
-            if host_vfs:
-                h.nic_dma.vf_addr = host_vfs[0]
-                if not h.nic_dma.pf_addr:
-                    suffix_m = re.search(r"_(\d+)$", h.name)
-                    if suffix_m:
-                        for pf, pf_vfs in all_pf_vf.get(suffix_m.group(1), {}).items():
-                            if h.nic_dma.vf_addr in pf_vfs:
-                                h.nic_dma.pf_addr = pf
-                                break
+        # Use "redundant port VFs" as authoritative VF source (all hosts)
+        host_vfs = vf_map.get(h.name, [])
+        if host_vfs and not h.nic_dma.vf_addr:
+            h.nic_dma.vf_addr = host_vfs[0]
+        # Fallback: use VF from rxtxapp_config interfaces
+        if not h.nic_dma.vf_addr:
+            cfg_vf = config_vf_map.get(h.name, "")
+            if cfg_vf:
+                h.nic_dma.vf_addr = cfg_vf
+        # Resolve PF from nicctl output
+        if h.nic_dma.vf_addr and not h.nic_dma.pf_addr:
+            suffix_m = re.search(r"_(\d+)$", h.name)
+            if suffix_m:
+                for pf, pf_vfs in all_pf_vf.get(suffix_m.group(1), {}).items():
+                    if h.nic_dma.vf_addr in pf_vfs:
+                        h.nic_dma.pf_addr = pf
+                        break
         # Default single PF/VF pair
         if not h.nic_dma.pf_vf_pairs and h.nic_dma.pf_addr and h.nic_dma.vf_addr:
             h.nic_dma.pf_vf_pairs = [(h.nic_dma.pf_addr, h.nic_dma.vf_addr)]
