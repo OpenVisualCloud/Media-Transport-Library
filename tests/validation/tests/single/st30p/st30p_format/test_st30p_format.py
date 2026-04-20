@@ -13,14 +13,13 @@ from mtl_engine.media_files import audio_files
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.smoke
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [
         audio_files["PCM8"],
         audio_files["PCM16"],
-        audio_files["PCM24"],
+        pytest.param(audio_files["PCM24"], marks=pytest.mark.smoke),
     ],
     indirect=["media_file"],
     ids=[
