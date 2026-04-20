@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 """Multicast + compliance tests for the st40p (ancillary pipeline) path.
 
 Replaces the legacy ``ancillary/multicast_with_compliance`` test that
@@ -20,7 +20,7 @@ from mtl_engine.media_files import anc_files
     [
         anc_files["text_p29"],
         anc_files["text_p50"],
-        anc_files["text_p59"],
+        pytest.param(anc_files["text_p59"], marks=pytest.mark.smoke),
     ],
     indirect=["media_file"],
     ids=[
