@@ -19,6 +19,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
     indirect=["media_file"],
     ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
 )
+@pytest.mark.refactored
 def test_packing_refactored(
     hosts,
     mtl_path,

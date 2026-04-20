@@ -28,6 +28,7 @@ from mtl_engine.media_files import yuv_files_422p10le
         "p120",
     ],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
 def test_fps_refactored(
     hosts,

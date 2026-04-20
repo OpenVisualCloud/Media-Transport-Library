@@ -26,6 +26,7 @@ from mtl_engine.media_files import yuv_files
         "i2160p60_10",
     ],
 )
+@pytest.mark.refactored
 def test_virtio_user_refactored(
     hosts,
     mtl_path,

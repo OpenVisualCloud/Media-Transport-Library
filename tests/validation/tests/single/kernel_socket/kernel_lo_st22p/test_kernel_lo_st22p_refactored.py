@@ -13,6 +13,7 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st22p_video_format_refactored(
     hosts,

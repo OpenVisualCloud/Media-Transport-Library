@@ -32,6 +32,7 @@ _SMOKE_CASE = ("PCM16", "M")
     ],
     indirect=["media_file"],
 )
+@pytest.mark.refactored
 def test_st30p_channel_refactored(
     hosts,
     mtl_path,

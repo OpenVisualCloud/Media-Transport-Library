@@ -32,6 +32,7 @@ k_bit_mapping = {
     "fps",
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
+@pytest.mark.refactored
 def test_fps_refactored(
     hosts,
     mtl_path,

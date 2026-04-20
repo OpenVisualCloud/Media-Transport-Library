@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
         "PCM24",
     ],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_audio_refactored(
     hosts,

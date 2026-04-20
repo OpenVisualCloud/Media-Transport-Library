@@ -14,6 +14,7 @@ from mtl_engine.media_files import yuv_files_interlace
     indirect=["media_file"],
     ids=list(yuv_files_interlace.keys()),
 )
+@pytest.mark.refactored
 def test_interlace_refactored(
     hosts,
     mtl_path,

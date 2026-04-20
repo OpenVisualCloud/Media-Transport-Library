@@ -54,6 +54,7 @@ def _is_supported_runner() -> bool:
     indirect=["media_file"],
     ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
 )
+@pytest.mark.refactored
 def test_st20_interfaces_mix_refactored(
     hosts,
     mtl_path,

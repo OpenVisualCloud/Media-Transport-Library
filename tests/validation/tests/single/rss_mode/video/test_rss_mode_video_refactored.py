@@ -19,6 +19,7 @@ from mtl_engine.media_files import yuv_files
         "i2160p60",
     ],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_video_refactored(
     hosts,

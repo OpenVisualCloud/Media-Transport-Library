@@ -20,6 +20,7 @@ from mtl_engine.media_files import yuv_files
         "i2160p60",
     ],
 )
+@pytest.mark.refactored
 def test_rx_timing_video_video_format_refactored(
     hosts,
     mtl_path,

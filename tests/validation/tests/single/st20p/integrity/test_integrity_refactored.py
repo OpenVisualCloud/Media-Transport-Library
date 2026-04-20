@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
         "Penguin_1080p_422p10le",
     ],
 )
+@pytest.mark.refactored
 def test_integrity_refactored(
     hosts,
     mtl_path,

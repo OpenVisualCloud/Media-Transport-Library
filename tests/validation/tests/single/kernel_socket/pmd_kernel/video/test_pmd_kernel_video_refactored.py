@@ -20,6 +20,7 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
     ids=["i1080p59"],
 )
 # Note: i2160p59 excluded - kernel socket cannot handle 4K@59fps bandwidth (10.4Gbps)
+@pytest.mark.refactored
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_pmd_kernel_video_format_refactored(
     hosts,

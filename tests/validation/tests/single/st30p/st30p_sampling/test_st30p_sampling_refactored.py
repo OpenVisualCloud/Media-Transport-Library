@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
         "PCM24",
     ],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("audio_sampling", ["48kHz", "96kHz"])
 def test_st30p_sampling_refactored(
     hosts,

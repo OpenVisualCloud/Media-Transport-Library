@@ -28,6 +28,7 @@ k_bit_mapping = {
     indirect=["media_file"],
     ids=["st41_p29_long_file"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("dit", ["dit0", "dit1"])
 def test_dit_refactored(
     hosts,

@@ -30,6 +30,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
         "p120",
     ],
 )
+@pytest.mark.refactored
 def test_fps_refactored(
     hosts,
     mtl_path,

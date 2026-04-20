@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
         "PCM24",
     ],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("audio_ptime", ["1", "0.12", "0.25", "0.33", "4"])
 def test_st30p_ptime_refactored(
     hosts,

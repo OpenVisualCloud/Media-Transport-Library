@@ -23,6 +23,7 @@ from mtl_engine.media_files import audio_files
         "PCM24",
     ],
 )
+@pytest.mark.refactored
 def test_multicast_refactored(
     hosts,
     mtl_path,

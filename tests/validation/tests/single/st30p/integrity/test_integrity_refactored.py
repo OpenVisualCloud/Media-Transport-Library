@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
         "PCM24",
     ],
 )
+@pytest.mark.refactored
 def test_integrity_refactored(
     hosts,
     mtl_path,

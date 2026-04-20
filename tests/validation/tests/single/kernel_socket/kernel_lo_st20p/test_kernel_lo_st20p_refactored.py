@@ -17,6 +17,7 @@ from mtl_engine.media_files import yuv_files_422p10le
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st20p_video_format_refactored(
     hosts,

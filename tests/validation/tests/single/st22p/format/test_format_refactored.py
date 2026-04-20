@@ -12,6 +12,7 @@ from mtl_engine.media_files import yuv_files_422p10le
     indirect=["media_file"],
     ids=list(yuv_files_422p10le.keys()),
 )
+@pytest.mark.refactored
 def test_format_refactored(
     hosts,
     mtl_path,

@@ -28,6 +28,7 @@ k_bit_mapping = {
     indirect=["media_file"],
     ids=["st41_p29_long_file"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_type_mode_refactored(

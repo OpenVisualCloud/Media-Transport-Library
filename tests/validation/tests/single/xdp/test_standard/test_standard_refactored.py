@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
 
 
+@pytest.mark.refactored
 @pytest.mark.parametrize("standard_mode", ["st20p", "st22p"])
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])
