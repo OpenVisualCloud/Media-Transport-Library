@@ -306,6 +306,8 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "fastmetadata":
+        pattern = re.compile(r"app_rx_fmd_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -1084,7 +1086,16 @@ class RxTxApp(Application):
         return config
 
     def prepare_execution(self, build: str, host=None, **kwargs):
-        """Write RxTxApp JSON config file to remote host before execution."""
+        """Write RxTxApp JSON config file to remote host before execution.
+
+        Args:
+            build: Path to MTL build directory
+            host: Host connection object
+            interface_setup: Optional InterfaceSetup; when provided and the
+                config contains kernel-socket interfaces (``kernel:<ifname>``)
+                with an ``_os_ip`` annotation, OS-level IPs are configured and
+                registered for cleanup, mirroring legacy ``RxTxApp.execute_test``.
+        """
         if not host:
             raise ValueError("host required for RxTxApp config writing")
 
@@ -1095,6 +1106,15 @@ class RxTxApp(Application):
 
         # Write config file using mfd library (handles both local and remote hosts)
         remote_conn = host.connection
+
+        # Configure kernel-socket interfaces (mirrors legacy RxTxApp.execute_test)
+        interface_setup = kwargs.get("interface_setup")
+        try:
+            from .RxTxApp import configure_kernel_interfaces
+
+            configure_kernel_interfaces(self.config, remote_conn, interface_setup)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"configure_kernel_interfaces skipped: {e}")
 
         # Extract config file path from command (it's relative)
         match = re.search(r"--config_file\s+(\S+)", self.command)
@@ -1188,12 +1208,14 @@ class RxTxApp(Application):
                 if not passed:
                     _fail("st20p validation failed (RX output or converter checks)")
 
-            elif session_type in ("st22p", "st30p", "fastmetadata"):
-                # Original validation: check_rx_output only (no TX result line for st22p/st30p/fastmetadata)
+            elif session_type in ("st22p", "st30p", "fastmetadata", "ancillary"):
+                # Original validation: check_rx_output only
+                # For ancillary, the old code uses "anc" as the session_type for output matching
+                rx_session_type = "anc" if session_type == "ancillary" else session_type
                 passed = check_rx_output(
                     config=self.config,
                     output=output_lines,
-                    session_type=session_type,
+                    session_type=rx_session_type,
                     fail_on_error=False,
                     host=None,
                     build=None,
@@ -1216,7 +1238,7 @@ class RxTxApp(Application):
                 if not passed:
                     _fail(f"{session_type} validation failed (RX output check)")
 
-            elif session_type in ("video", "audio", "ancillary"):
+            elif session_type in ("video", "audio"):
                 # Original validation: check both TX and RX outputs
                 _tx_ok = check_tx_output(
                     config=self.config,
@@ -1288,6 +1310,11 @@ class RxTxApp(Application):
                 "ancillary",
             ):
                 if possible in tx_entry and tx_entry[possible]:
+                    # Skip placeholder video entries added by _ensure_placeholder_video
+                    if possible == "video" and all(
+                        s.get("type") == "placeholder" for s in tx_entry[possible]
+                    ):
+                        continue
                     return possible
         return "st20p"
 

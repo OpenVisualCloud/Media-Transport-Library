@@ -153,6 +153,8 @@ class Application(ABC):
         tx_first: bool = True,
         capture_cfg=None,
         netsniff=None,
+        interface_setup=None,
+        fail_on_error: bool = True,
     ) -> bool:
         """Execute a prepared command (or two for dual host).
 
@@ -165,6 +167,15 @@ class Application(ABC):
           tx_app.create_command(direction='tx', ...)
           rx_app.create_command(direction='rx', ...)
           tx_app.execute_test(build=..., tx_host=hostA, rx_host=hostB, rx_app=rx_app)
+
+        Args:
+            interface_setup: Optional InterfaceSetup helper. Forwarded to framework
+                ``prepare_execution`` so frameworks (e.g. RxTxApp) can configure
+                kernel-socket interfaces and register IPs for cleanup.
+            fail_on_error: When True (default) propagate validation failures
+                (AssertionError) to the caller. When False, swallow validation
+                failures and return ``False`` instead. Used by performance/binary
+                search tests that drive the call site based on the boolean.
         """
         is_dual = tx_host is not None and rx_host is not None
         if is_dual and not rx_app:
@@ -178,11 +189,17 @@ class Application(ABC):
 
         # Call framework-specific preparation hook
         if not is_dual:
-            self.prepare_execution(build=build, host=host)
+            self.prepare_execution(
+                build=build, host=host, interface_setup=interface_setup
+            )
         else:
-            self.prepare_execution(build=build, host=tx_host)
+            self.prepare_execution(
+                build=build, host=tx_host, interface_setup=interface_setup
+            )
             if rx_app:
-                rx_app.prepare_execution(build=build, host=rx_host)
+                rx_app.prepare_execution(
+                    build=build, host=rx_host, interface_setup=interface_setup
+                )
 
         # Adjust test_time for PTP synchronization
         effective_test_time = test_time
@@ -221,7 +238,15 @@ class Application(ABC):
                 )
             self.last_output = self.capture_stdout(proc, framework_name)
             self.last_return_code = proc.return_code
-            return self.validate_results()
+            try:
+                return self.validate_results()
+            except AssertionError:
+                if fail_on_error:
+                    raise
+                logger.info(
+                    f"{framework_name} validation failed (fail_on_error=False); returning False"
+                )
+                return False
 
         # Dual-host execution (tx self, rx rx_app)
         assert rx_app is not None
@@ -271,8 +296,16 @@ class Application(ABC):
             self.last_output = self.capture_stdout(second_proc, second_label)
         self.last_return_code = first_proc.return_code
         rx_app.last_return_code = second_proc.return_code
-        tx_ok = self.validate_results()
-        rx_ok = rx_app.validate_results()
+        try:
+            tx_ok = self.validate_results()
+            rx_ok = rx_app.validate_results()
+        except AssertionError:
+            if fail_on_error:
+                raise
+            logger.info(
+                f"{framework_name} validation failed (fail_on_error=False); returning False"
+            )
+            return False
         return tx_ok and rx_ok
 
     def add_timeout(self, command: str, test_time: int, grace: int = None) -> str:
