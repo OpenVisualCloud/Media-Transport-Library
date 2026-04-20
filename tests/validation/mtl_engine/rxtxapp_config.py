@@ -23,6 +23,7 @@ config_empty = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
             "fastmetadata": [],
         },
     ],
@@ -36,6 +37,7 @@ config_empty = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
             "fastmetadata": [],
         },
     ],
@@ -310,6 +312,26 @@ config_rx_st41_session = {
     "fastmetadata_data_item_type": 1234567,
     "fastmetadata_k_bit": 0,
     "fastmetadata_url": "",
+}
+
+# st40p (ancillary pipeline API)
+
+config_tx_st40p_session = {
+    "replicas": 1,
+    "start_port": 40000,
+    "payload_type": 113,
+    "fps": "p59",
+    "st40p_url": "",
+    "interlaced": False,
+    "enable_rtcp": False,
+}
+
+config_rx_st40p_session = {
+    "replicas": 1,
+    "start_port": 40000,
+    "payload_type": 113,
+    "interlaced": False,
+    "enable_rtcp": False,
 }
 
 # performance tests

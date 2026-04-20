@@ -433,6 +433,38 @@ def add_ancillary_sessions(
     return config
 
 
+def add_st40p_sessions(
+    config: dict,
+    nic_port_list: list,
+    test_mode: str,
+    fps: str,
+    st40p_url: str,
+    payload_type: int = 113,
+    interlaced: bool = False,
+    enable_rtcp: bool = False,
+) -> dict:
+    """Add a TX st40p (pipeline ancillary) and matching RX st40p session pair."""
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    config["tx_sessions"][0]["st40p"].append(tx_session)
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    config["rx_sessions"][0]["st40p"].append(rx_session)
+
+    config["tx_sessions"][0]["st40p"][0]["fps"] = fps
+    config["tx_sessions"][0]["st40p"][0]["st40p_url"] = st40p_url
+    config["tx_sessions"][0]["st40p"][0]["payload_type"] = payload_type
+    config["tx_sessions"][0]["st40p"][0]["interlaced"] = interlaced
+    config["tx_sessions"][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    config["rx_sessions"][0]["st40p"][0]["payload_type"] = payload_type
+    config["rx_sessions"][0]["st40p"][0]["interlaced"] = interlaced
+    config["rx_sessions"][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    return config
+
+
 def add_st41_sessions(
     config: dict,
     no_chain: bool,
