@@ -268,9 +268,30 @@ struct st_rx_port_stats {
   uint64_t packets;
   /** Total number of received bytes (pre-redundancy). */
   uint64_t bytes;
-  /** Total number of received frames / memory buffers. */
+  /**
+   * Per-port frame counter. Two flavors, picked by frame size:
+   *
+   *   - Many packets per frame  (Video ST20 / ST22):
+   *       Increments when a frame is **completed by this port**, i.e. this
+   *       port delivered enough packets to satisfy completion on its own.
+   *       Sister field: incomplete_frames (this port was short, but the
+   *       redundant port covered the gap).
+   *
+   *   - Few packets per frame   (Audio ST30, Ancillary ST40, Metadata ST41):
+   *       Increments when a new frame's **first** packet arrives on this
+   *       port — i.e. this port "won the race" for that frame.
+   *       Sister field: incomplete_frames is unused (always 0).
+   *
+   * port[0].frames + port[1].frames is NOT total frames delivered to the
+   * app; use stat_pkts_received plus the type-specific stat_frames_dropped
+   * / incomplete_frames_cnt for end-to-end accounting.
+   */
   uint64_t frames;
-  /** Total number of incomplete frames */
+  /**
+   * Per-port count of frames where this port could not complete the frame
+   * on its own (the other port's redundant copy filled the missing pkts).
+   * Video (ST20 / ST22) only; always 0 for ST30/ST40/ST41.
+   */
   uint64_t incomplete_frames;
   /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
