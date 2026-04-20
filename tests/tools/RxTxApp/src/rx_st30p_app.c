@@ -200,10 +200,48 @@ static int app_rx_st30p_result(struct st_app_rx_st30p_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
+  bool fps_ok = ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05);
   notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-        ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                           : "FAILED",
-        framerate, s->stat_frame_total_received);
+        fps_ok ? "OK" : "FAILED", framerate, s->stat_frame_total_received);
+
+  /* When fps is off or wire-layer reports any anomaly, fetch wire-layer counters
+   * and classify the cause from already-published stats so the user can tell
+   * whether audio frames were lost, dropped due to len mismatch, slow consumer,
+   * etc.  All numbers come from existing counters; we only print. */
+  if (s->handle) {
+    struct st30_rx_user_stats wire = {0};
+    if (st30p_rx_get_session_stats(s->handle, &wire) == 0) {
+      bool wire_trouble = wire.common.stat_pkts_unrecovered ||
+                          wire.common.stat_lost_packets || wire.stat_pkts_dropped ||
+                          wire.stat_pkts_len_mismatch_dropped ||
+                          wire.stat_slot_get_frame_fail;
+      if (!fps_ok || wire_trouble) {
+        const char* cause;
+        if (wire.common.stat_pkts_unrecovered > 0) {
+          cause = "true bilateral data loss \u2192 audio gap";
+        } else if (wire.common.stat_pkts_wrong_pt_dropped ||
+                   wire.common.stat_pkts_wrong_ssrc_dropped ||
+                   wire.stat_pkts_len_mismatch_dropped) {
+          cause = "producer protocol violation (check wrong_*_dropped / len_mismatch)";
+        } else if (wire.stat_slot_get_frame_fail) {
+          cause = "no free framebuffer \u2014 receiver too slow";
+        } else if (wire.common.stat_lost_packets > 0) {
+          cause = "wire pkt loss healed by redundancy (no audio impact)";
+        } else if (!fps_ok) {
+          cause = "no wire anomaly \u2014 check upstream pacing or test fixture";
+        } else {
+          cause = "wire anomaly without classification \u2014 please file a bug";
+        }
+        notce("%s(%d), reconciliation: wire received=%" PRIu64 " lost=%" PRIu64
+              " unrecovered=%" PRIu64 " redundant=%" PRIu64 " dropped=%" PRIu64
+              " len_mismatch=%" PRIu64 " slot_get_fail=%" PRIu64 " \u21d2 %s\n",
+              __func__, idx, wire.common.stat_pkts_received,
+              wire.common.stat_lost_packets, wire.common.stat_pkts_unrecovered,
+              wire.common.stat_pkts_redundant, wire.stat_pkts_dropped,
+              wire.stat_pkts_len_mismatch_dropped, wire.stat_slot_get_frame_fail, cause);
+      }
+    }
+  }
   return 0;
 }
 
