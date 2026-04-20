@@ -40,14 +40,16 @@ void ut30_ctx_set_ssrc(ut30_test_ctx* ctx, uint32_t ssrc);
 uint64_t ut30_stat_unrecovered(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_redundant(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_received(const ut30_test_ctx* ctx);
-uint64_t ut30_stat_out_of_order(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_lost_pkts(const ut30_test_ctx* ctx);
 int ut30_session_seq_id(const ut30_test_ctx* ctx);
 int ut30_frames_received(const ut30_test_ctx* ctx);
 int ut30_pkts_per_frame(const ut30_test_ctx* ctx);
 
 uint64_t ut30_stat_port_pkts(const ut30_test_ctx* ctx, enum mtl_session_port port);
 uint64_t ut30_stat_port_bytes(const ut30_test_ctx* ctx, enum mtl_session_port port);
-uint64_t ut30_stat_port_ooo(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_lost(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_reordered(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_duplicates(const ut30_test_ctx* ctx, enum mtl_session_port port);
 
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_wrong_ssrc(const ut30_test_ctx* ctx);

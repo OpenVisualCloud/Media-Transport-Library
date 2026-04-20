@@ -293,8 +293,16 @@ uint64_t ut20_stat_redundant(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_redundant;
 }
 
-uint64_t ut20_stat_out_of_order(const ut20_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_out_of_order;
+uint64_t ut20_stat_lost_pkts(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_lost_packets;
+}
+
+uint64_t ut20_stat_port_reordered(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].reordered_packets;
+}
+
+uint64_t ut20_stat_port_lost(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].lost_packets;
 }
 
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx) {

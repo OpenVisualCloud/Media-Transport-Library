@@ -47,7 +47,9 @@ void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc);
 
 uint64_t ut20_stat_received(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_redundant(const ut20_test_ctx* ctx);
-uint64_t ut20_stat_out_of_order(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_lost_pkts(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_port_reordered(const ut20_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut20_stat_port_lost(const ut20_test_ctx* ctx, enum mtl_session_port port);
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_frames_dropped(const ut20_test_ctx* ctx);

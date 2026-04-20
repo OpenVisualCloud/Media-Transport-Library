@@ -128,7 +128,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
+  uint8_t f_bits = rfc8331->first_hdr_chunk.f; /* 2-bit field, no mask needed */
 
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
   if (f_bits == 0x1) {
@@ -158,6 +158,26 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
+  /* Cross-port F-bit divergence: a mismatch on the same timestamp means the
+   * producer sends different field bits per port — a SMPTE 2110-40 violation.
+   * Rate-limit the warn to one per second. MTL only ever has P/R (max 2). */
+  if (s->ops.num_port > 1) {
+    int other = s_port ^ 1;
+    if (s->last_f_bits[other] != 0xff && s->last_f_tmstamp[other] == tmstamp &&
+        s->last_f_bits[other] != f_bits) {
+      s->stat_internal_field_bit_mismatch++;
+      uint64_t now_ns = mt_get_monotonic_time();
+      if (now_ns - s->f_mismatch_warn_last_ns > NS_PER_S) {
+        err("RX_ANC_SESSION(%d): redundant ports disagree on F bits at ts %u "
+            "(port%d=F=0x%x port%d=F=0x%x) — SMPTE 2110-40 producer violation\n",
+            s->idx, tmstamp, other, s->last_f_bits[other], s_port, f_bits);
+        s->f_mismatch_warn_last_ns = now_ns;
+      }
+    }
+  }
+  s->last_f_bits[s_port] = f_bits;
+  s->last_f_tmstamp[s_port] = tmstamp;
+
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
@@ -168,8 +188,15 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
-    s->port_user_stats.common.stat_pkts_out_of_order += gap;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — a real same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
   if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
@@ -360,7 +387,10 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     s->latest_seq_id[i] = -1;
     s->redundant_error_cnt[i] = 0;
+    s->last_f_bits[i] = 0xff; /* sentinel: no F bits seen yet on this port */
+    s->last_f_tmstamp[i] = 0;
   }
+  s->f_mismatch_warn_last_ns = 0;
 }
 
 static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
@@ -634,8 +664,7 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
       us->common.stat_pkts_received - snap->common.stat_pkts_received;
   uint64_t pkts_redundant =
       us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
-  uint64_t pkts_out_of_order =
-      us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  uint64_t lost_pkts = us->common.stat_lost_packets - snap->common.stat_lost_packets;
   uint64_t pkts_unrecovered =
       us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
   uint64_t pkts_dropped = us->stat_pkts_dropped - snap->stat_pkts_dropped;
@@ -650,6 +679,9 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
       us->stat_interlace_first_field - snap->stat_interlace_first_field;
   uint64_t interlace_second_field =
       us->stat_interlace_second_field - snap->stat_interlace_second_field;
+  uint64_t f_mismatch =
+      s->stat_internal_field_bit_mismatch - s->stat_internal_field_bit_mismatch_snap;
+  s->stat_internal_field_bit_mismatch_snap = s->stat_internal_field_bit_mismatch;
 
   if (pkts_redundant) {
     notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 " (redundant %" PRIu64
@@ -664,16 +696,56 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   if (pkts_dropped) {
     notice("RX_ANC_SESSION(%d): dropped pkts %" PRIu64 "\n", idx, pkts_dropped);
   }
-  if (pkts_out_of_order) {
-    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
-    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
-    warn("RX_ANC_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64 ")\n",
-         idx, pkts_out_of_order, d_p, d_r);
+
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  uint64_t port_pkts[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_frames[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_lost[MTL_SESSION_PORT_MAX] = {0};
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port_pkts[i] = us->common.port[i].packets - snap->common.port[i].packets;
+    port_frames[i] = us->common.port[i].frames - snap->common.port[i].frames;
+    port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
+  }
+  if (s->ops.num_port > 1) {
+    notice("RX_ANC_SESSION(%d): port stats P=%" PRIu64 " pkts/%" PRIu64
+           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+           idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
+           port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
+  }
+
+  if (lost_pkts) {
+    uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
+    if (s->ops.num_port > 1) {
+      double pct_p =
+          port_pkts[MTL_SESSION_PORT_P]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
+                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
+              : 0.0;
+      double pct_r =
+          port_pkts[MTL_SESSION_PORT_R]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
+                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
+              : 0.0;
+      double save_rate =
+          (lost_pkts + pkts_unrecovered)
+              ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
+              : 100.0;
+      warn("RX_ANC_SESSION(%d): per-port loss covered by redundancy: %" PRIu64
+           " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+           "=%.1f%%, save_rate=%.1f%%)\n",
+           idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
+           port_lost[MTL_SESSION_PORT_R], pct_r, save_rate);
+    } else {
+      warn("RX_ANC_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
+    }
   }
   if (pkts_unrecovered) {
-    warn("RX_ANC_SESSION(%d): unrecovered pkts %" PRIu64 "\n", idx, pkts_unrecovered);
+    err("RX_ANC_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
+        pkts_unrecovered);
+  }
+  if (f_mismatch) {
+    err("RX_ANC_SESSION(%d): F-bit mismatches between redundant ports %" PRIu64 "\n", idx,
+        f_mismatch);
   }
 
   if (pkts_wrong_pt_dropped) {

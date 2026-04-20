@@ -50,7 +50,7 @@ class St40RxRedundancyTest : public ::testing::Test {
     return ut40_stat_received(ctx_);
   }
   uint64_t ooo() {
-    return ut40_stat_out_of_order(ctx_);
+    return ut40_stat_lost_pkts(ctx_);
   }
   int session_seq() {
     return ut40_session_seq_id(ctx_);
@@ -63,10 +63,19 @@ class St40RxRedundancyTest : public ::testing::Test {
     return ut40_stat_port_bytes(ctx_, p);
   }
   uint64_t port_ooo(enum mtl_session_port p) {
-    return ut40_stat_port_ooo(ctx_, p);
+    return ut40_stat_port_lost(ctx_, p);
   }
   uint64_t port_frames(enum mtl_session_port p) {
     return ut40_stat_port_frames(ctx_, p);
+  }
+  uint64_t port_reordered(enum mtl_session_port p) {
+    return ut40_stat_port_reordered(ctx_, p);
+  }
+  uint64_t port_duplicates(enum mtl_session_port p) {
+    return ut40_stat_port_duplicates(ctx_, p);
+  }
+  uint64_t field_bit_mismatch() {
+    return ut40_stat_field_bit_mismatch(ctx_);
   }
   uint64_t wrong_pt() {
     return ut40_stat_wrong_pt(ctx_);
@@ -1032,4 +1041,374 @@ TEST_F(St40RxRedundancyTest, PrevTimestampDuplicatesFiltered) {
    * R's 4 duplicates must be filtered out by the bitmap dedup. */
   EXPECT_EQ(count, 5) << "Late prev-frame duplicates from R must be filtered";
   ut40_set_skip_drain(false);
+}
+
+/* ── Hitless-merge redundancy scenarios ──────────────────────────── */
+
+/*
+ * The following tests exercise the per-port `lost_packets` counter
+ * and the session-wide `stat_lost_packets` aggregate under various
+ * loss / reorder / duplication patterns on a redundant pair.
+ */
+
+/* True correlated loss: same seq missing on BOTH ports.  This is the
+ * only condition that should produce unrecovered > 0 in a redundant
+ * session. */
+TEST_F(St40RxRedundancyTest, CorrelatedLossBothPorts) {
+  /* Frame N: deliver seq 0,1,3,4 on both ports — seq 2 is lost on both. */
+  feed(0, 1000, false, MTL_SESSION_PORT_P);
+  feed(1, 1000, false, MTL_SESSION_PORT_P);
+  /* gap: seq 2 missing on P */
+  feed(3, 1000, false, MTL_SESSION_PORT_P);
+  feed(4, 1000, true, MTL_SESSION_PORT_P);
+
+  feed(0, 1000, false, MTL_SESSION_PORT_R);
+  feed(1, 1000, false, MTL_SESSION_PORT_R);
+  /* gap: seq 2 missing on R as well */
+  feed(3, 1000, false, MTL_SESSION_PORT_R);
+  feed(4, 1000, true, MTL_SESSION_PORT_R);
+
+  /* Per-port gap counted on each port. */
+  EXPECT_GE(port_ooo(MTL_SESSION_PORT_P), 1u);
+  EXPECT_GE(port_ooo(MTL_SESSION_PORT_R), 1u);
+  /* And — the meaningful number — true unrecovered loss. */
+  EXPECT_GE(unrecovered(), 1u) << "seq lost on both ports must produce unrecovered > 0";
+}
+
+/* Healthy redundancy: each port loses different packets, the merged
+ * stream is intact.  Asserts that the per-port loss counter rises
+ * while the merged stream sees zero unrecovered loss. */
+TEST_F(St40RxRedundancyTest, UncorrelatedLossOnePortAtATime) {
+  /* P loses even seqs (2,4,6,8); R loses odd seqs (1,3,5,7).
+   * Together every seq 0..9 is delivered exactly once. */
+  feed(0, 1000, false, MTL_SESSION_PORT_P);
+  feed(1, 1000, false, MTL_SESSION_PORT_P);
+  feed(3, 1000, false, MTL_SESSION_PORT_P);
+  feed(5, 1000, false, MTL_SESSION_PORT_P);
+  feed(7, 1000, false, MTL_SESSION_PORT_P);
+  feed(9, 1000, true, MTL_SESSION_PORT_P);
+
+  feed(0, 1000, false, MTL_SESSION_PORT_R);
+  feed(2, 1000, false, MTL_SESSION_PORT_R);
+  feed(4, 1000, false, MTL_SESSION_PORT_R);
+  feed(6, 1000, false, MTL_SESSION_PORT_R);
+  feed(8, 1000, false, MTL_SESSION_PORT_R);
+
+  /* Both ports report per-port loss (gap counter rises). */
+  EXPECT_GT(port_ooo(MTL_SESSION_PORT_P), 0u);
+  EXPECT_GT(port_ooo(MTL_SESSION_PORT_R), 0u);
+  /* But redundancy covers everything -> no unrecovered loss. */
+  EXPECT_EQ(unrecovered(), 0u)
+      << "per-port loss covered by the other port must not show as unrecovered";
+}
+
+/* Producer-side defect: port P emits F=0x2 (first field) while port R
+ * emits F=0x3 (second field) for the same logical frame.  This is a
+ * SMPTE 2110-40 violation.  MTL currently accepts both polarities
+ * silently; this test pins that behaviour. */
+TEST_F(St40RxRedundancyTest, AsymmetricFieldBitsBetweenPorts) {
+  /* P sends F=0x2, R sends F=0x3 for the same ts — disagreement. */
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 1, 1000, 1, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_R, 0x3);
+  ut40_feed_pkt_fbits(ctx_, 1, 1000, 1, MTL_SESSION_PORT_R, 0x3);
+
+  /* Current behaviour: both polarities are counted, no drop. */
+  EXPECT_EQ(wrong_interlace(), 0u);
+  EXPECT_GE(interlace_first(), 2u);  /* F=0x2 from P */
+  EXPECT_GE(interlace_second(), 2u); /* F=0x3 from R */
+}
+
+/* Deterministic high per-port loss with full redundancy: ~25% per-port
+ * loss, complementary, so the merged stream is complete.  Every
+ * per-port drop must be counted as a per-port gap exactly once, and
+ * the merged stream must have zero unrecovered loss. */
+TEST_F(St40RxRedundancyTest, HighPerLegLossRedundancySaves) {
+  constexpr uint32_t ts = 1000;
+  constexpr int kPkts = 100;
+  /* P drops every 4th seq (i%4==3); R supplies those interleaved so the
+   * rescue lands inside the bitmap / prev_tmstamp window. */
+  int p_drops = 0;
+  for (int i = 0; i < kPkts; i++) {
+    if (i % 4 == 3) {
+      p_drops++;
+      feed(i, ts, false, MTL_SESSION_PORT_R); /* R covers immediately */
+      continue;
+    }
+    feed(i, ts, false, MTL_SESSION_PORT_P);
+  }
+  /* Close the trailing per-port gap on P (i==99 was a hole that has no
+   * follow-up P packet to expose it).  Forward gaps are observations —
+   * a hole is only counted when a later packet on the same port arrives
+   * past it, so we deliver one more packet at seq=kPkts. */
+  feed(kPkts, ts, true, MTL_SESSION_PORT_P);
+  /* Each per-port drop must show as a per-port gap on P. */
+  EXPECT_EQ(port_ooo(MTL_SESSION_PORT_P), (uint64_t)p_drops);
+  /* The merged stream must be intact — every seq delivered once. */
+  EXPECT_EQ(unrecovered(), 0u) << "complementary per-port loss must be fully recovered";
+}
+
+/* Within a single timestamp, packets may legitimately arrive on a
+ * single port in non-monotonic order (mid-frame reordering).  All
+ * forward packets must be delivered; the backward arrival exercises
+ * the bitmap acceptance path and must not be filtered as redundant. */
+TEST_F(St40RxRedundancyTest, IntraFrameReorderSingleLeg) {
+  /* deliver seqs in order 0,2,1,3 on port P only */
+  feed(0, 1000, false, MTL_SESSION_PORT_P);
+  feed(2, 1000, false, MTL_SESSION_PORT_P);
+  /* seq 2 jumped over seq 1 -> per-port gap */
+  EXPECT_GE(port_ooo(MTL_SESSION_PORT_P), 1u);
+  feed(1, 1000, false, MTL_SESSION_PORT_P); /* backward arrival */
+  feed(3, 1000, true, MTL_SESSION_PORT_P);
+  /* Backward seq 1 lands inside the per-frame bitmap window: it is a
+   * legitimate same-frame late arrival.  The bitmap path undoes the
+   * earlier unrecovered++ that fired when seq 2 jumped over seq 1, so
+   * the final unrecovered count must be 0. */
+  EXPECT_EQ(unrecovered(), 0u)
+      << "intra-frame backward arrival should cancel the pending unrecovered count";
+}
+
+/* Port R lags by more than the prev_tmstamp window (1 frame).  Once R
+ * catches up, its packets for the long-stale frame should be filtered
+ * as redundant — neither delivered nor counted as unrecovered.  This
+ * documents the current 1-frame acceptance window depth. */
+TEST_F(St40RxRedundancyTest, PortRLagsBeyondPrevTimestampWindow) {
+  /* P advances through frames N, N+1, N+2 */
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+  feed(1, 2000, true, MTL_SESSION_PORT_P);
+  feed(2, 3000, true, MTL_SESSION_PORT_P);
+
+  uint64_t redundant_before = redundant();
+  /* R now arrives with frame N data — 2 frames stale, outside the
+   * prev_tmstamp window.  Must be filtered as redundant. */
+  feed(0, 1000, true, MTL_SESSION_PORT_R);
+
+  EXPECT_GT(redundant(), redundant_before)
+      << "stale packets beyond prev-tmstamp window must be filtered as redundant";
+}
+
+/* Frame consisting of only a single marker packet (degenerate but
+ * legal — e.g. an ANC frame with one ADF payload).  Must be delivered
+ * cleanly to the ring with marker bit preserved. */
+TEST_F(St40RxRedundancyTest, SinglePacketFrameMarkerOnly) {
+  ut40_set_skip_drain(true);
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+
+  int count = 0;
+  bool has_marker = false;
+  ASSERT_EQ(ut40_ring_dequeue_markers(&count, &has_marker), 0);
+  EXPECT_EQ(count, 1);
+  EXPECT_TRUE(has_marker);
+  EXPECT_EQ(unrecovered(), 0u);
+  ut40_set_skip_drain(false);
+}
+
+/* Mid-stream field-bit flip in interlace_auto mode: producer suddenly
+ * starts emitting progressive packets after a run of interlaced ones.
+ * Detection must re-fire (interlace_detected reset) and progressive
+ * packets must not be counted in either field bucket. */
+TEST_F(St40RxRedundancyTest, InterlaceAutoFieldBitFlip) {
+  ut40_ctx_set_interlace_auto(ctx_, true);
+  /* warm up with interlaced first-field (F=0x2) */
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 1, 1001, 0, MTL_SESSION_PORT_P, 0x2);
+  EXPECT_EQ(interlace_first(), 2u);
+  /* now flip to progressive (F=0x0) */
+  ut40_feed_pkt_fbits(ctx_, 2, 1002, 0, MTL_SESSION_PORT_P, 0x0);
+  ut40_feed_pkt_fbits(ctx_, 3, 1003, 0, MTL_SESSION_PORT_P, 0x0);
+  /* progressive packets must NOT bump field counters */
+  EXPECT_EQ(interlace_first(), 2u);
+  EXPECT_EQ(interlace_second(), 0u);
+  EXPECT_EQ(wrong_interlace(), 0u);
+  EXPECT_EQ(received(), 4u);
+}
+
+/* Long accumulation: feed > 1000 packets with a regular gap pattern
+ * to ensure the per-port OOO counter accumulates monotonically and
+ * does not wrap.  Logically: the counter equals the number of
+ * injected gap events.  Regression for `Fix: per-port OOO counter
+ * uint16 wraparound`. */
+TEST_F(St40RxRedundancyTest, PerPortOOOLargeAccumulation) {
+  uint16_t seq = 0;
+  uint32_t ts = 1000;
+  int gap_events = 0;
+  for (int i = 0; i < 1000; i++) {
+    feed(seq, ts, false, MTL_SESSION_PORT_P);
+    seq++;
+    if (i % 5 == 4) {
+      seq++; /* skip one -> 1-pkt forward gap */
+      gap_events++;
+    }
+    if (i % 50 == 49) ts++;
+  }
+  /* Close the trailing forward gap created on the last iteration: forward
+   * gaps are only counted when a later packet exposes them, so deliver one
+   * more packet at the post-skip seq. */
+  feed(seq, ts, false, MTL_SESSION_PORT_P);
+  EXPECT_EQ(port_ooo(MTL_SESSION_PORT_P), (uint64_t)gap_events);
+}
+
+/* ------------------------------------------------------------------------- */
+/* New counters: per-port reordered_packets, per-port duplicates_same_port,  */
+/* added in the proposal §3 implementation.                                  */
+/* ------------------------------------------------------------------------- */
+
+/* Backward seq on the same port (never seen on the other port) is a real
+ * intra-port reorder and must bump reordered_packets, NOT lost_packets.
+ */
+TEST_F(St40RxRedundancyTest, ReorderedPacketsCounted) {
+  constexpr uint32_t ts = 1000;
+  /* feed 0, 2, 1, 3 on port P only. Order 0-2 creates a forward gap (lost=1).
+   * When seq 1 then arrives, the old "late" packet is a same-port reorder. */
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(2, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P); /* backward — reorder */
+  feed(3, ts, true, MTL_SESSION_PORT_P);
+
+  EXPECT_GE(port_reordered(MTL_SESSION_PORT_P), 1u)
+      << "Backward seq on same port must be counted as reordered";
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 0u) << "Reorder is not a duplicate";
+}
+
+/* Exact same seq seen twice on the *same* port is a same-port duplicate
+ * (e.g. switch/cable loop). It must NOT be confused with the cross-port
+ * redundant copy tracked by stat_pkts_redundant. */
+TEST_F(St40RxRedundancyTest, DuplicateSamePortCounted) {
+  constexpr uint32_t ts = 1000;
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P); /* true same-port dup */
+  feed(2, ts, true, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+}
+
+/* Cross-port F-bit divergence: same timestamp, same seq on each port, but
+ * different F bits. Producer violation of SMPTE 2110-40. */
+TEST_F(St40RxRedundancyTest, FieldBitMismatchDetected) {
+  constexpr uint32_t ts = 1000;
+  /* P sends F=0x2, R sends F=0x3 for the same frame (same tmstamp). */
+  ut40_feed_pkt_fbits(ctx_, 0, ts, 1, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 0, ts, 1, MTL_SESSION_PORT_R, 0x3);
+
+  EXPECT_GE(field_bit_mismatch(), 1u) << "Cross-port F-bit divergence must be detected";
+}
+
+/* ------------------------------------------------------------------------- */
+/* Additional edge-case tests for new counters. Testing against the spec:    */
+/* - reordered/duplicates live in pre-redundancy per-port counters           */
+/* - they MUST NOT be conflated with lost_packets or stat_pkts_redundant     */
+/* - F-bit mismatch is per-packet and scoped to same-timestamp cross-port     */
+/* ------------------------------------------------------------------------- */
+
+/* Backward arrival must NOT inflate lost_packets (lost is forward-gap only). */
+TEST_F(St40RxRedundancyTest, ReorderDoesNotInflateLostPackets) {
+  constexpr uint32_t ts = 1000;
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P);
+  feed(2, ts, false, MTL_SESSION_PORT_P);
+  uint64_t lost_before = port_ooo(MTL_SESSION_PORT_P);
+
+  /* Pure reorder: 1 arrives again-as-backward (after 2). No forward gap. */
+  feed(1, ts, false, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_ooo(MTL_SESSION_PORT_P), lost_before)
+      << "A backward arrival must not bump lost_packets";
+  EXPECT_GE(port_reordered(MTL_SESSION_PORT_P), 1u);
+}
+
+/* Multiple same-port duplicates must each be counted. */
+TEST_F(St40RxRedundancyTest, DuplicateSamePortMultiple) {
+  constexpr uint32_t ts = 1000;
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P); /* dup #1 */
+  feed(1, ts, false, MTL_SESSION_PORT_P); /* dup #2 */
+  feed(1, ts, true, MTL_SESSION_PORT_P);  /* dup #3 */
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 3u)
+      << "Every same-port re-arrival of the same seq must be counted";
+}
+
+/* Cross-port "normal" redundancy must NOT bump reordered_packets / duplicates_same_port
+ * on either port. The counter is strictly for same-port repetitions. */
+TEST_F(St40RxRedundancyTest, CrossPortRedundantIsNotSamePortDuplicate) {
+  constexpr uint32_t ts = 1000;
+  feed_burst(0, 4, ts, true, MTL_SESSION_PORT_P);
+  feed_burst(0, 4, ts, true, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_R), 0u);
+  EXPECT_GE(redundant(), 1u) << "Cross-port redundancy must still count as redundant";
+}
+
+/* Matching F bits on both ports must NOT register a mismatch. */
+TEST_F(St40RxRedundancyTest, FieldBitsMatchNoMismatch) {
+  constexpr uint32_t ts = 1000;
+  ut40_feed_pkt_fbits(ctx_, 0, ts, 1, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 0, ts, 1, MTL_SESSION_PORT_R, 0x2);
+
+  EXPECT_EQ(field_bit_mismatch(), 0u)
+      << "Matching F bits must not trigger the mismatch counter";
+}
+
+/* F-bit mismatches must be counted per packet — one mismatch per packet. */
+TEST_F(St40RxRedundancyTest, FieldBitMismatchMultiple) {
+  uint32_t ts = 1000;
+  for (uint16_t i = 0; i < 5; i++) {
+    ut40_feed_pkt_fbits(ctx_, i, ts, 1, MTL_SESSION_PORT_P, 0x2);
+    ut40_feed_pkt_fbits(ctx_, i, ts, 1, MTL_SESSION_PORT_R, 0x3);
+    ts += 3600;
+  }
+  EXPECT_GE(field_bit_mismatch(), 5u) << "One mismatch per offending packet expected";
+}
+
+/* F-bit check must be scoped to the *same* timestamp: different ts on each
+ * port (intentional skew test) must not produce a mismatch. */
+TEST_F(St40RxRedundancyTest, FieldBitMismatchOnlyWhenSameTs) {
+  ut40_feed_pkt_fbits(ctx_, 0, 1000, 1, MTL_SESSION_PORT_P, 0x2);
+  ut40_feed_pkt_fbits(ctx_, 0, 2000, 1, MTL_SESSION_PORT_R, 0x3);
+
+  EXPECT_EQ(field_bit_mismatch(), 0u)
+      << "Different timestamps: F bits belong to different frames, no divergence";
+}
+
+/* Reorder at the seq-wrap boundary: a small-value seq arriving after a
+ * near-max seq must NOT be counted as reorder — mt_seq16_greater treats
+ * the small value as the *forward* next wrap. */
+TEST_F(St40RxRedundancyTest, SeqWrapNotCountedAsReorder) {
+  constexpr uint32_t ts = 1000;
+  feed(65534, ts, false, MTL_SESSION_PORT_P);
+  feed(65535, ts, false, MTL_SESSION_PORT_P);
+  uint64_t reord_before = port_reordered(MTL_SESSION_PORT_P);
+
+  feed(0, ts, false, MTL_SESSION_PORT_P); /* wraps forward, not backward */
+  feed(1, ts, true, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), reord_before)
+      << "Wrap-around must be seen as forward, not reorder";
+}
+
+/* Same-port duplicate at seq-wrap boundary must still be counted. */
+TEST_F(St40RxRedundancyTest, DuplicateSamePortAtSeqWrap) {
+  constexpr uint32_t ts = 1000;
+  feed(65534, ts, false, MTL_SESSION_PORT_P);
+  feed(65535, ts, false, MTL_SESSION_PORT_P);
+  feed(65535, ts, false, MTL_SESSION_PORT_P); /* dup right at boundary */
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 1u);
+}
+
+/* Invariant: stat_lost_packets == port[0].lost + port[1].lost at all times. */
+TEST_F(St40RxRedundancyTest, LostPacketsInvariant) {
+  constexpr uint32_t ts = 1000;
+  /* Induce forward gap on each port, interleaved. */
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(2, ts, false, MTL_SESSION_PORT_P); /* gap of 1 */
+  feed(0, ts, false, MTL_SESSION_PORT_R);
+  feed(3, ts, false, MTL_SESSION_PORT_R); /* gap of 2 */
+
+  EXPECT_EQ(ooo(), port_ooo(MTL_SESSION_PORT_P) + port_ooo(MTL_SESSION_PORT_R))
+      << "stat_lost_packets must equal the sum of per-port lost_packets";
 }

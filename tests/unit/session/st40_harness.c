@@ -211,8 +211,8 @@ uint64_t ut40_stat_received(const ut_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_received;
 }
 
-uint64_t ut40_stat_out_of_order(const ut_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_out_of_order;
+uint64_t ut40_stat_lost_pkts(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_lost_packets;
 }
 
 int ut40_session_seq_id(const ut_test_ctx* ctx) {
@@ -227,12 +227,24 @@ uint64_t ut40_stat_port_bytes(const ut_test_ctx* ctx, enum mtl_session_port port
   return ctx->session.port_user_stats.common.port[port].bytes;
 }
 
-uint64_t ut40_stat_port_ooo(const ut_test_ctx* ctx, enum mtl_session_port port) {
-  return ctx->session.port_user_stats.common.port[port].out_of_order_packets;
+uint64_t ut40_stat_port_lost(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].lost_packets;
 }
 
 uint64_t ut40_stat_port_frames(const ut_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].frames;
+}
+
+uint64_t ut40_stat_port_reordered(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].reordered_packets;
+}
+
+uint64_t ut40_stat_port_duplicates(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].duplicates_same_port;
+}
+
+uint64_t ut40_stat_field_bit_mismatch(const ut_test_ctx* ctx) {
+  return ctx->session.stat_internal_field_bit_mismatch;
 }
 
 uint64_t ut40_stat_wrong_pt(const ut_test_ctx* ctx) {

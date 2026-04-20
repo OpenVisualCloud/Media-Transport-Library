@@ -39,7 +39,13 @@ class St20RxRedundancyTest : public ::testing::Test {
     return ut20_stat_redundant(ctx_);
   }
   uint64_t ooo() {
-    return ut20_stat_out_of_order(ctx_);
+    return ut20_stat_lost_pkts(ctx_);
+  }
+  uint64_t port_reordered(enum mtl_session_port p) {
+    return ut20_stat_port_reordered(ctx_, p);
+  }
+  uint64_t port_lost(enum mtl_session_port p) {
+    return ut20_stat_port_lost(ctx_, p);
   }
   uint64_t no_slot() {
     return ut20_stat_no_slot(ctx_);
@@ -428,4 +434,63 @@ TEST_F(St20RxRedundancyTest, MultipleFrameDelivery) {
 
   EXPECT_EQ(frames_received(), 10);
   EXPECT_EQ(redundant(), 0u);
+}
+
+/* ── ST20 intra-frame reorder detection ─────────────────────────────────── */
+
+/* Within a single frame, a packet whose pkt_idx is below the highest accepted
+ * pkt_idx so far is an intra-frame reorder. It must bump
+ * port[s_port].reordered_packets and must NOT be counted as redundant or lost. */
+TEST_F(St20RxRedundancyTest, IntraFrameReorderCounted) {
+  /* Send pkt_idx 1 first (becomes last_pkt_idx=1), then pkt_idx 0 (reorder). */
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(0, 1000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 1u)
+      << "pkt_idx 0 arriving after pkt_idx 1 must count as intra-frame reorder";
+  EXPECT_EQ(redundant(), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+  /* Both packets accepted, frame complete */
+  EXPECT_EQ(received(), 2u);
+  EXPECT_EQ(frames_received(), 1);
+}
+
+/* In-order delivery must not trip the reorder counter. */
+TEST_F(St20RxRedundancyTest, InOrderDoesNotBumpReorder) {
+  feed_full(1000, MTL_SESSION_PORT_P);
+  feed_full(1001, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 0u);
+}
+
+/* Reorder on port R must be attributed to R, not P. */
+TEST_F(St20RxRedundancyTest, IntraFrameReorderPerPortIsolation) {
+  feed(1, 1000, MTL_SESSION_PORT_R);
+  feed(0, 1000, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 1u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+}
+
+/* Each new frame (new RTP timestamp) opens a fresh slot with last_pkt_idx
+ * starting at 0 — in-order delivery in the next frame must not be misclassified
+ * as reorder just because the previous frame ended at pkt_idx == 1. */
+TEST_F(St20RxRedundancyTest, ReorderDoesNotLeakAcrossFrames) {
+  feed_full(1000, MTL_SESSION_PORT_P); /* in-order, frame 1 */
+  feed_full(1001, MTL_SESSION_PORT_P); /* in-order, frame 2 */
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+}
+
+/* Reorder followed by a duplicate of the late packet must count exactly one
+ * reorder and one redundant — never a second reorder. */
+TEST_F(St20RxRedundancyTest, ReorderThenDuplicateNotDoubleCounted) {
+  feed(1, 1000, MTL_SESSION_PORT_P); /* sets last_pkt_idx=1 */
+  feed(0, 1000, MTL_SESSION_PORT_P); /* reorder: bit not yet set */
+  feed(0, 1000, MTL_SESSION_PORT_P); /* duplicate: bit already set */
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(redundant(), 1u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
 }

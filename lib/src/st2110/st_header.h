@@ -1135,6 +1135,17 @@ struct st_rx_ancillary_session_impl {
   uint16_t anc_prev_bitmap_base_seq;
   bool anc_prev_bitmap_valid;
 
+  /* Per-port last accepted F bits and matching timestamp, used to detect
+   * cross-port F-bit divergence (SMPTE 2110-40 producer violation).
+   * last_f_bits[] uses 0xff as sentinel meaning "unset". */
+  uint8_t last_f_bits[MTL_SESSION_PORT_MAX];
+  uint32_t last_f_tmstamp[MTL_SESSION_PORT_MAX];
+  uint64_t f_mismatch_warn_last_ns; /* rate-limit warn emission */
+  /* internal-only debug counter for F-bit mismatches (not exposed in public API,
+   * surfaced only in periodic err() log). */
+  uint64_t stat_internal_field_bit_mismatch;
+  uint64_t stat_internal_field_bit_mismatch_snap;
+
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   int64_t tmstamp;

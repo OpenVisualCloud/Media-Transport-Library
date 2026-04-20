@@ -241,8 +241,8 @@ uint64_t ut30_stat_received(const ut30_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_received;
 }
 
-uint64_t ut30_stat_out_of_order(const ut30_test_ctx* ctx) {
-  return ctx->session.port_user_stats.common.stat_pkts_out_of_order;
+uint64_t ut30_stat_lost_pkts(const ut30_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_lost_packets;
 }
 
 int ut30_session_seq_id(const ut30_test_ctx* ctx) {
@@ -265,8 +265,16 @@ uint64_t ut30_stat_port_bytes(const ut30_test_ctx* ctx, enum mtl_session_port po
   return ctx->session.port_user_stats.common.port[port].bytes;
 }
 
-uint64_t ut30_stat_port_ooo(const ut30_test_ctx* ctx, enum mtl_session_port port) {
-  return ctx->session.port_user_stats.common.port[port].out_of_order_packets;
+uint64_t ut30_stat_port_lost(const ut30_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].lost_packets;
+}
+
+uint64_t ut30_stat_port_reordered(const ut30_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].reordered_packets;
+}
+
+uint64_t ut30_stat_port_duplicates(const ut30_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].duplicates_same_port;
 }
 
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx) {

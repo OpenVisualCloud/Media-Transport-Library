@@ -46,7 +46,7 @@ class St30RxRedundancyTest : public ::testing::Test {
     return ut30_stat_received(ctx_);
   }
   uint64_t ooo() {
-    return ut30_stat_out_of_order(ctx_);
+    return ut30_stat_lost_pkts(ctx_);
   }
   int session_seq() {
     return ut30_session_seq_id(ctx_);
@@ -65,7 +65,7 @@ class St30RxRedundancyTest : public ::testing::Test {
     return ut30_stat_port_bytes(ctx_, p);
   }
   uint64_t port_ooo(enum mtl_session_port p) {
-    return ut30_stat_port_ooo(ctx_, p);
+    return ut30_stat_port_lost(ctx_, p);
   }
   uint64_t wrong_pt() {
     return ut30_stat_wrong_pt(ctx_);
@@ -75,6 +75,12 @@ class St30RxRedundancyTest : public ::testing::Test {
   }
   uint64_t len_mismatch() {
     return ut30_stat_len_mismatch(ctx_);
+  }
+  uint64_t port_reordered(enum mtl_session_port p) {
+    return ut30_stat_port_reordered(ctx_, p);
+  }
+  uint64_t port_duplicates(enum mtl_session_port p) {
+    return ut30_stat_port_duplicates(ctx_, p);
   }
 };
 
@@ -466,4 +472,89 @@ TEST_F(St30RxRedundancyTest, DuplicateSeqPortOOOWrapping) {
   /* Duplicate seq should not inflate OOO counter */
   EXPECT_EQ(port_ooo(MTL_SESSION_PORT_P), ooo_before)
       << "Duplicate seq on same port should not inflate OOO counter";
+}
+
+/* ------------------------------------------------------------------------- */
+/* New counters: per-port reordered_packets and duplicates_same_port for audio.        */
+/* Audio/ST30 uses timestamp-only redundancy, but per-port seq tracking is   */
+/* identical to ST40/FMD, so these counters must behave the same.            */
+/* ------------------------------------------------------------------------- */
+
+/* Backward arrival on same port: must bump reordered_packets, not lost.
+ */
+TEST_F(St30RxRedundancyTest, ReorderedPacketsCounted) {
+  /* feed strictly increasing ts (required by ST30) but re-send seq 1 */
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1001, MTL_SESSION_PORT_P);
+  feed(1, 1002, MTL_SESSION_PORT_P); /* backward seq, fresh ts */
+  feed(3, 1003, MTL_SESSION_PORT_P);
+
+  EXPECT_GE(port_reordered(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 0u);
+}
+
+/* Same seq re-sent on same port must bump duplicates_same_port. */
+TEST_F(St30RxRedundancyTest, DuplicateSamePortCounted) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1001, MTL_SESSION_PORT_P);
+  feed(1, 1002, MTL_SESSION_PORT_P); /* same seq, fresh ts */
+  feed(2, 1003, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+}
+
+/* Reorder must NOT inflate lost_packets. */
+TEST_F(St30RxRedundancyTest, ReorderDoesNotInflateLost) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1001, MTL_SESSION_PORT_P);
+  feed(2, 1002, MTL_SESSION_PORT_P);
+  uint64_t lost_before = port_ooo(MTL_SESSION_PORT_P);
+
+  feed(1, 1003, MTL_SESSION_PORT_P); /* pure reorder */
+
+  EXPECT_EQ(port_ooo(MTL_SESSION_PORT_P), lost_before);
+}
+
+/* Multiple same-port duplicates must each be counted. */
+TEST_F(St30RxRedundancyTest, DuplicateSamePortMultiple) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1001, MTL_SESSION_PORT_P);
+  feed(1, 1002, MTL_SESSION_PORT_P);
+  feed(1, 1003, MTL_SESSION_PORT_P);
+  feed(1, 1004, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 3u);
+}
+
+/* Cross-port normal redundancy must NOT count as same-port duplicate. */
+TEST_F(St30RxRedundancyTest, CrossPortRedundantIsNotSamePortDuplicate) {
+  feed_burst(0, 4, 1000, MTL_SESSION_PORT_P);
+  feed_burst(0, 4, 1000, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_duplicates(MTL_SESSION_PORT_R), 0u);
+  EXPECT_GE(redundant(), 1u);
+}
+
+/* stat_lost_packets == port[0].lost + port[1].lost invariant. */
+TEST_F(St30RxRedundancyTest, LostPacketsInvariant) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1001, MTL_SESSION_PORT_P);
+  feed(0, 1002, MTL_SESSION_PORT_R);
+  feed(3, 1003, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(ooo(), port_ooo(MTL_SESSION_PORT_P) + port_ooo(MTL_SESSION_PORT_R));
+}
+
+/* Seq-wrap must be seen as forward, not reorder. */
+TEST_F(St30RxRedundancyTest, SeqWrapNotCountedAsReorder) {
+  feed(65534, 1000, MTL_SESSION_PORT_P);
+  feed(65535, 1001, MTL_SESSION_PORT_P);
+  uint64_t reord_before = port_reordered(MTL_SESSION_PORT_P);
+
+  feed(0, 1002, MTL_SESSION_PORT_P);
+  feed(1, 1003, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), reord_before);
 }

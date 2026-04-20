@@ -119,14 +119,23 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
   /* not a big deal as long as stream is continous */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
-    s->port_user_stats.common.stat_pkts_out_of_order += gap;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
 
   /* count per-port stats before redundancy filtering for consistent reporting */
   s->port_user_stats.common.port[s_port].packets++;
@@ -483,8 +492,7 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
       us->common.stat_pkts_received - snap->common.stat_pkts_received;
   uint64_t pkts_redundant =
       us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
-  uint64_t pkts_out_of_order =
-      us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  uint64_t lost_pkts = us->common.stat_lost_packets - snap->common.stat_lost_packets;
   uint64_t pkts_unrecovered =
       us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
   uint64_t pkts_wrong_pt_dropped =
@@ -509,16 +517,51 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
   }
   s->stat_last_time = cur_time_ns;
 
-  if (pkts_out_of_order) {
-    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
-    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
-    warn("RX_FMD_SESSION(%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64 ")\n",
-         idx, pkts_out_of_order, d_p, d_r);
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  uint64_t port_pkts[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_frames[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_lost[MTL_SESSION_PORT_MAX] = {0};
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port_pkts[i] = us->common.port[i].packets - snap->common.port[i].packets;
+    port_frames[i] = us->common.port[i].frames - snap->common.port[i].frames;
+    port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
+  }
+  if (s->ops.num_port > 1) {
+    notice("RX_FMD_SESSION(%d): port stats P=%" PRIu64 " pkts/%" PRIu64
+           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+           idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
+           port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
+  }
+
+  if (lost_pkts) {
+    if (s->ops.num_port > 1) {
+      double pct_p =
+          port_pkts[MTL_SESSION_PORT_P]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
+                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
+              : 0.0;
+      double pct_r =
+          port_pkts[MTL_SESSION_PORT_R]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
+                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
+              : 0.0;
+      double save_rate =
+          (lost_pkts + pkts_unrecovered)
+              ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
+              : 100.0;
+      uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
+      warn("RX_FMD_SESSION(%d): per-port loss covered by redundancy: %" PRIu64
+           " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+           "=%.1f%%, save_rate=%.1f%%)\n",
+           idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
+           port_lost[MTL_SESSION_PORT_R], pct_r, save_rate);
+    } else {
+      warn("RX_FMD_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
+    }
   }
   if (pkts_unrecovered) {
-    warn("RX_FMD_SESSION(%d): unrecovered pkts %" PRIu64 "\n", idx, pkts_unrecovered);
+    err("RX_FMD_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
+        pkts_unrecovered);
   }
 
   if (pkts_wrong_pt_dropped) {

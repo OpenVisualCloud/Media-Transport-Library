@@ -1660,8 +1660,12 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
     if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
-      s->port_user_stats.common.stat_pkts_out_of_order += gap;
-      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+      s->port_user_stats.common.stat_lost_packets += gap;
+      s->port_user_stats.common.port[s_port].lost_packets += gap;
+    } else if (pkt_idx < slot->last_pkt_idx) {
+      /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
+       * behind the highest accepted index in the current frame */
+      s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
     /* the first pkt should always dispatch to control thread */
@@ -1851,8 +1855,12 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     }
     if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
-      s->port_user_stats.common.stat_pkts_out_of_order += gap;
-      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+      s->port_user_stats.common.stat_lost_packets += gap;
+      s->port_user_stats.common.port[s_port].lost_packets += gap;
+    } else if (pkt_idx < slot->last_pkt_idx) {
+      /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
+       * behind the highest accepted index in the current frame */
+      s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
     if (!slot->seq_id_got) { /* first packet */
@@ -2046,8 +2054,12 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     }
     if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
-      s->port_user_stats.common.stat_pkts_out_of_order += gap;
-      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+      s->port_user_stats.common.stat_lost_packets += gap;
+      s->port_user_stats.common.port[s_port].lost_packets += gap;
+    } else if (pkt_idx < slot->last_pkt_idx) {
+      /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
+       * behind the highest accepted index in the current frame */
+      s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
     /* first packet */
@@ -2212,8 +2224,12 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     }
     if (pkt_idx > (slot->last_pkt_idx + 1)) {
       int gap = pkt_idx - slot->last_pkt_idx - 1;
-      s->port_user_stats.common.stat_pkts_out_of_order += gap;
-      s->port_user_stats.common.port[s_port].out_of_order_packets += gap;
+      s->port_user_stats.common.stat_lost_packets += gap;
+      s->port_user_stats.common.port[s_port].lost_packets += gap;
+    } else if (pkt_idx < slot->last_pkt_idx) {
+      /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
+       * behind the highest accepted index in the current frame */
+      s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
     if (!line1_number && !line1_offset) { /* first packet */
@@ -3528,15 +3544,45 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): dropped pkts %" PRIu64 " as no slot\n", m_idx, idx,
            d);
   }
-  d = us->common.stat_pkts_out_of_order - snap->common.stat_pkts_out_of_order;
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  if (s->ops.num_port > 1) {
+    uint64_t port_pkts_p = us->common.port[MTL_SESSION_PORT_P].packets -
+                           snap->common.port[MTL_SESSION_PORT_P].packets;
+    uint64_t port_pkts_r = us->common.port[MTL_SESSION_PORT_R].packets -
+                           snap->common.port[MTL_SESSION_PORT_R].packets;
+    uint64_t port_frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
+                             snap->common.port[MTL_SESSION_PORT_P].frames;
+    uint64_t port_frames_r = us->common.port[MTL_SESSION_PORT_R].frames -
+                             snap->common.port[MTL_SESSION_PORT_R].frames;
+    notice("RX_VIDEO_SESSION(%d,%d): port stats P=%" PRIu64 " pkts/%" PRIu64
+           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+           m_idx, idx, port_pkts_p, port_frames_p, port_pkts_r, port_frames_r);
+  }
+  d = us->common.stat_lost_packets - snap->common.stat_lost_packets;
   if (d) {
-    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_P].out_of_order_packets;
-    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].out_of_order_packets -
-                   snap->common.port[MTL_SESSION_PORT_R].out_of_order_packets;
-    notice("RX_VIDEO_SESSION(%d,%d): out of order pkts %" PRIu64 " (%" PRIu64 ":%" PRIu64
-           ")\n",
-           m_idx, idx, d, d_p, d_r);
+    uint64_t port_pkts_p = us->common.port[MTL_SESSION_PORT_P].packets -
+                           snap->common.port[MTL_SESSION_PORT_P].packets;
+    uint64_t port_pkts_r = us->common.port[MTL_SESSION_PORT_R].packets -
+                           snap->common.port[MTL_SESSION_PORT_R].packets;
+    uint64_t d_p = us->common.port[MTL_SESSION_PORT_P].lost_packets -
+                   snap->common.port[MTL_SESSION_PORT_P].lost_packets;
+    uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].lost_packets -
+                   snap->common.port[MTL_SESSION_PORT_R].lost_packets;
+    uint64_t pkts_unrec =
+        us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
+    if (s->ops.num_port > 1) {
+      double pct_p = port_pkts_p ? 100.0 * d_p / (port_pkts_p + d_p) : 0.0;
+      double pct_r = port_pkts_r ? 100.0 * d_r / (port_pkts_r + d_r) : 0.0;
+      double save_rate =
+          (d + pkts_unrec) ? 100.0 * (double)d / (double)(d + pkts_unrec) : 100.0;
+      notice("RX_VIDEO_SESSION(%d,%d): per-port loss covered by redundancy: %" PRIu64
+             " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+             "=%.1f%%, save_rate=%.1f%%)\n",
+             m_idx, idx, d, port_pkts_p + port_pkts_r + d, d_p, pct_p, d_r, pct_r,
+             save_rate);
+    } else {
+      notice("RX_VIDEO_SESSION(%d,%d): per-port lost pkts %" PRIu64 "\n", m_idx, idx, d);
+    }
   }
   d = us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
   if (d) {
