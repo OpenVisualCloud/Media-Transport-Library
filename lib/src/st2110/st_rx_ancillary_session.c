@@ -279,14 +279,12 @@ accept_pkt:
   int old_session_seq = s->session_seq_id;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
-   * consistent */
+   * consistent.  Note: do NOT reset interlace_detected here — a session-merged seq gap
+   * does not imply the producer changed interlacing.  Resetting caused spurious
+   * "detected interlaced stream (F=0x?)" log lines on every seq gap, which on a
+   * redundant stream looked like the two ports disagreed on interlacing. */
   if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
       mt_seq16_greater(seq_id, s->session_seq_id)) {
-    if (s->interlace_auto && s->interlace_detected) {
-      s->interlace_detected = false;
-      dbg("%s(%d,%d), reset interlace detect after seq discont %u->%u\n", __func__,
-          s->idx, s_port, s->session_seq_id, seq_id);
-    }
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
@@ -707,8 +705,8 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
   }
   if (s->ops.num_port > 1) {
-    notice("RX_ANC_SESSION(%d): port stats P=%" PRIu64 " pkts/%" PRIu64
-           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+    notice("RX_ANC_SESSION(%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
+           " frames first), R=%" PRIu64 " pkts (%" PRIu64 " frames first)\n",
            idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
            port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
   }
@@ -730,16 +728,18 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
           (lost_pkts + pkts_unrecovered)
               ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
               : 100.0;
-      warn("RX_ANC_SESSION(%d): per-port loss covered by redundancy: %" PRIu64
-           " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
-           "=%.1f%%, save_rate=%.1f%%)\n",
+      warn("RX_ANC_SESSION(%d): per-port loss %" PRIu64 " of %" PRIu64 " pkts (P:%" PRIu64
+           "=%.1f%%, R:%" PRIu64 "=%.1f%%), unrecovered (lost on both) %" PRIu64
+           ", save_rate=%.1f%%\n",
            idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
-           port_lost[MTL_SESSION_PORT_R], pct_r, save_rate);
+           port_lost[MTL_SESSION_PORT_R], pct_r, pkts_unrecovered, save_rate);
     } else {
-      warn("RX_ANC_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
+      warn("RX_ANC_SESSION(%d): per-port lost pkts %" PRIu64 ", unrecovered %" PRIu64
+           "\n",
+           idx, lost_pkts, pkts_unrecovered);
     }
-  }
-  if (pkts_unrecovered) {
+  } else if (pkts_unrecovered) {
+    /* unrecovered without per-port loss in this window — orphan, surface separately */
     err("RX_ANC_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
         pkts_unrecovered);
   }

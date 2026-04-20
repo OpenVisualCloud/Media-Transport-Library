@@ -365,6 +365,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
       return -EIO;
     }
+
+    s->port_user_stats.common.port[s_port].frames++;
   }
 
   uint32_t offset = s->st30_pkt_idx * s->pkt_len;
@@ -439,7 +441,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats.common.port[s_port].frames++;
     s->st30_cur_frame = NULL;
   }
 
@@ -1033,8 +1034,10 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
     port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
   }
   if (s->ops.num_port > 1) {
-    notice("RX_AUDIO_SESSION(%d,%d): port stats P=%" PRIu64 " pkts/%" PRIu64
-           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+    /* port[].frames here counts frames whose first packet arrived on this
+     * port — i.e. this port "won the race" for that frame. */
+    notice("RX_AUDIO_SESSION(%d,%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
+           " frames first), R=%" PRIu64 " pkts (%" PRIu64 " frames first)\n",
            m_idx, idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
            port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
   }
@@ -1056,16 +1059,15 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
               ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
               : 100.0;
       uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
-      warn("RX_AUDIO_SESSION(%d): per-port loss covered by redundancy: %" PRIu64
-           " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
-           "=%.1f%%, save_rate=%.1f%%)\n",
+      warn("RX_AUDIO_SESSION(%d): per-port loss %" PRIu64 " of %" PRIu64
+           " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+           "=%.1f%%), unrecovered (lost on both) %" PRIu64 ", save_rate=%.1f%%\n",
            idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
-           port_lost[MTL_SESSION_PORT_R], pct_r, save_rate);
+           port_lost[MTL_SESSION_PORT_R], pct_r, pkts_unrecovered, save_rate);
     } else {
       warn("RX_AUDIO_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
     }
-  }
-  if (pkts_unrecovered) {
+  } else if (pkts_unrecovered) {
     err("RX_AUDIO_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
         pkts_unrecovered);
   }
