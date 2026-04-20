@@ -175,6 +175,42 @@ static int app_rx_st40p_result(struct st_app_rx_st40p_session* s) {
       "seq_lost %u\n",
       __func__, idx, s->stat_frame_total_received, framerate, s->stat_frame_seq_discont,
       s->stat_frame_marker_missing, s->stat_seq_lost_total);
+
+  /* When the pipeline observed seq gaps, the user has no easy way to tell whether
+   * the wire layer also lost the packets (true loss) or healed them via redundancy /
+   * the late-arrival bitmap (cross-port reorder, harmless).  Fetch the wire-layer
+   * counters and classify the cause from already-published stats. */
+  if (s->stat_seq_lost_total > 0 && s->handle) {
+    struct st40_rx_user_stats wire = {0};
+    if (st40p_rx_get_session_stats(s->handle, &wire) == 0) {
+      const char* cause;
+      if (wire.common.stat_pkts_unrecovered > 0) {
+        cause = "true bilateral data loss";
+      } else if (wire.common.stat_pkts_wrong_pt_dropped ||
+                 wire.stat_pkts_wrong_interlace_dropped ||
+                 wire.common.stat_pkts_wrong_ssrc_dropped) {
+        cause = "producer protocol violation (check wrong_*_dropped)";
+      } else if (wire.stat_pkts_enqueue_fail) {
+        cause = "RTP ring full \u2014 receiver too slow";
+      } else if (wire.common.stat_lost_packets > 0) {
+        cause =
+            "cross-port reorder / late arrival beyond pipeline merge window (not data "
+            "loss)";
+      } else {
+        cause =
+            "unknown \u2014 pipeline saw a gap the wire layer did not, please file a bug";
+      }
+      notce("%s(%d), seq_lost=%u reconciliation: wire lost=%" PRIu64
+            " unrecovered=%" PRIu64 " redundant=%" PRIu64 " wrong_pt=%" PRIu64
+            " wrong_ssrc=%" PRIu64 " wrong_interlace=%" PRIu64 " enqueue_fail=%" PRIu64
+            " \u21d2 %s\n",
+            __func__, idx, s->stat_seq_lost_total, wire.common.stat_lost_packets,
+            wire.common.stat_pkts_unrecovered, wire.common.stat_pkts_redundant,
+            wire.common.stat_pkts_wrong_pt_dropped,
+            wire.common.stat_pkts_wrong_ssrc_dropped,
+            wire.stat_pkts_wrong_interlace_dropped, wire.stat_pkts_enqueue_fail, cause);
+    }
+  }
   return 0;
 }
 
