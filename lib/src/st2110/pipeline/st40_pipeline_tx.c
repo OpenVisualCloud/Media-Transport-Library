@@ -405,7 +405,7 @@ static int tx_st40p_stat(void* priv) {
                          st40p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st40p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
