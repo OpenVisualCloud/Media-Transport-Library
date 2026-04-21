@@ -198,7 +198,7 @@ of the two counters per port. Frames that never complete on either port bump
 > **Does NOT hold for:** ST22 single-port (port R is left at zero, since
 > there is no port R to account for) or any RTP-mode session (only the
 > winning port's `frames` is bumped; `frames_partial` is unused).
-
+>
 > **Example.** A 2-port redundant RX session reports:
 >
 > ```text

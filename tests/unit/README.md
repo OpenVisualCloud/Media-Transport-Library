@@ -63,7 +63,7 @@ ASan; preloading the runtime first prevents init-order issues.
 
 ### File layout
 
-```
+```text
 tests/unit/
 ├── meson.build                # one executable, all sources listed
 ├── main.cpp                   # gtest entry point
@@ -81,7 +81,7 @@ tests/unit/
 
 ### Per-suite shape
 
-```
+```text
   *_test.cpp ──► *_harness.h (opaque C API) ──► *_harness.c ──► production .c
    (gtest)        ut*_feed_pkt(...)              builds mbuf,    rx_*_handle_pkt()
                   ut*_stat_*(...)                calls handler   or rx_*_rtp_ready()
