@@ -161,6 +161,15 @@ RX and TX). For transport-only paths and types with no per-frame
 integrity concept (`stat_frames_corrupted` on `ST30p` audio, `ST41` RX),
 the relevant counters stay 0.
 
+> **ST20 only:** the transport-layer field `incomplete_frames_cnt` (in
+> `st20_rx_user_stats`) is **not** the same as `stat_frames_corrupted`.
+> `incomplete_frames_cnt` fires whenever the transport detects intra-frame
+> loss, including when the frame is then silently discarded because
+> `RECEIVE_INCOMPLETE_FRAME` is not set; `stat_frames_corrupted` only
+> counts corrupted frames the app actually consumed via `get_frame()`.
+> `incomplete_frames_cnt - stat_frames_corrupted` = corrupted frames
+> dropped before reaching the app.
+
 ## `port[i].frames` — two flavors (per-port, **not** a session total)
 
 | Sessions | `frames++` when… | `incomplete_frames` |
