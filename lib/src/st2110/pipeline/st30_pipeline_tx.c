@@ -358,7 +358,7 @@ static int tx_st30p_stat(void* priv) {
                          st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st30p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
@@ -792,7 +792,7 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
                          st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   return st30_tx_get_session_stats(ctx->transport, stats);
 }
