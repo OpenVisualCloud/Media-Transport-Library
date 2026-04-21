@@ -1120,20 +1120,17 @@ struct st_rx_ancillary_session_impl {
 
   /* Lightweight per-frame bitmap for cross-port late arrival detection.
    * Ancillary frames are small (typically 1-10 pkts), so a uint64_t covers
-   * up to 64 packets per frame. Packets beyond offset 63 fall back to
-   * watermark-only filtering. */
-  uint64_t anc_bitmap;          /* 1 bit per seq offset within current frame */
-  uint32_t anc_bitmap_tmstamp;  /* timestamp this bitmap belongs to */
-  uint16_t anc_bitmap_base_seq; /* first seq_id of this frame */
-  bool anc_bitmap_valid;        /* false until first frame is established */
-
-  /* Previous-frame bitmap for late-arrival acceptance after timestamp advance.
-   * When tmstamp advances, current bitmap is moved here so that late packets
-   * from the redundant port can still be deduplicated and accepted. */
-  uint64_t anc_prev_bitmap;
-  uint32_t anc_prev_bitmap_tmstamp;
-  uint16_t anc_prev_bitmap_base_seq;
-  bool anc_prev_bitmap_valid;
+   * up to ST_RX_ANC_BITMAP_BITS packets per frame. Packets beyond that
+   * fall back to watermark-only filtering.
+   * `cur` tracks the current frame; `prev` is moved aside when the timestamp
+   * advances so late packets from the redundant port can still be deduped. */
+#define ST_RX_ANC_BITMAP_BITS (sizeof(uint64_t) * 8)
+  struct anc_window {
+    uint64_t bitmap;   /* 1 bit per seq offset within the frame */
+    uint32_t tmstamp;  /* timestamp this bitmap belongs to */
+    uint16_t base_seq; /* first seq_id of this frame */
+    bool valid;        /* false until first frame is established */
+  } anc_window_cur, anc_window_prev;
 
   /* Per-port last accepted F bits and matching timestamp, used to detect
    * cross-port F-bit divergence (SMPTE 2110-40 producer violation).
