@@ -274,28 +274,36 @@ struct st_rx_port_stats {
    *   - Many packets per frame  (Video ST20 / ST22):
    *       Increments when a frame is **completed by this port**, i.e. this
    *       port delivered enough packets to satisfy completion on its own.
-   *       Sister field: incomplete_frames (this port was short, but the
+   *       Sister field: frames_partial (this port was short, but the
    *       redundant port covered the gap).
    *
    *   - Few packets per frame   (Audio ST30, Ancillary ST40, Metadata ST41):
    *       Increments when a new frame's **first** packet arrives on this
    *       port — i.e. this port "won the race" for that frame.
-   *       Sister field: incomplete_frames is unused (always 0).
+   *       Sister field: frames_partial is unused (always 0).
    *
    * port[i].frames is per-port, not session-wide. The two semantics above
    * do not compose: summing across ports does not yield total frames
    * delivered to the app. For end-to-end frame accounting use the common
    * counters in st_rx_user_stats: stat_frames_received,
    * stat_frames_dropped, stat_frames_corrupted. Use port[i].frames /
-   * incomplete_frames only for per-port redundancy debugging.
+   * frames_partial only for per-port redundancy debugging.
    */
   uint64_t frames;
   /**
    * Per-port count of frames where this port could not complete the frame
    * on its own (the other port's redundant copy filled the missing pkts).
    * Video (ST20 / ST22) only; always 0 for ST30/ST40/ST41.
+   *
+   * @note ABI rename: previously named `incomplete_frames`. The semantics
+   *       are unchanged — only the field name was clarified to avoid
+   *       collision with the transport-layer
+   *       `st20_rx_user_stats::stat_frames_incomplete` (formerly
+   *       `incomplete_frames_cnt`). Migration: replace any
+   *       `port[i].incomplete_frames` reference with
+   *       `port[i].frames_partial`.
    */
-  uint64_t incomplete_frames;
+  uint64_t frames_partial; /* old name: incomplete_frames */
   /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
   /**

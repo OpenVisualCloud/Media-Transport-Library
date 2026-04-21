@@ -1727,7 +1727,6 @@ struct st20_rx_user_stats {
   uint64_t stat_slices_received;
   uint64_t stat_pkts_idx_dropped;
   uint64_t stat_pkts_offset_dropped;
-  uint64_t stat_frames_dropped;
   uint64_t stat_pkts_idx_oo_bitmap;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
@@ -1755,7 +1754,37 @@ struct st20_rx_user_stats {
   uint64_t stat_burst_pkts_max;
   uint64_t stat_burst_succ_cnt;
   uint64_t stat_burst_pkts_sum;
-  uint64_t incomplete_frames_cnt;
+  /**
+   * Transport-layer count of frames the receiver could not assemble fully
+   * from the wire (intra-frame packet loss). Bumped per incomplete frame
+   * for ST20 and ST22.
+   *
+   * Relation to common counters:
+   *   - common.stat_frames_corrupted: subset delivered to the app with
+   *     status=ST_FRAME_STATUS_CORRUPTED (only when
+   *     ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME is set). For ST22 the
+   *     pipeline always delivers, so the two should match.
+   *   - common.stat_frames_dropped: pipeline back-pressure (no free user
+   *     slot). Independent of this counter.
+   *
+   * Use stat_frames_incomplete for wire-loss diagnostics; use
+   * common.stat_frames_corrupted for app-visible delivery quality.
+   *
+   * @note ABI rename: this field replaces TWO separate fields previously
+   *       present in this struct:
+   *         - `uint64_t stat_frames_dropped;` (transport-layer; collided
+   *           with `common.stat_frames_dropped` which means pipeline
+   *           back-pressure). Removed.
+   *         - `uint64_t incomplete_frames_cnt;` (same event as the
+   *           transport `stat_frames_dropped` above). Renamed.
+   *       Both old fields were bumped on the same code path; they are now
+   *       merged into a single counter with a clearer name. Migration:
+   *       replace either `incomplete_frames_cnt` or the transport-level
+   *       `stat_frames_dropped` (NOT `common.stat_frames_dropped`) with
+   *       `stat_frames_incomplete`.
+   */
+  uint64_t stat_frames_incomplete; /* old names: incomplete_frames_cnt,
+                                      stat_frames_dropped (transport) */
   uint64_t stat_pkts_wrong_kmod_dropped;
 };
 

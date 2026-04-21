@@ -313,8 +313,8 @@ uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_idx_oo_bitmap;
 }
 
-uint64_t ut20_stat_frames_dropped(const ut20_test_ctx* ctx) {
-  return ctx->session.port_user_stats.stat_frames_dropped;
+uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_frames_incomplete;
 }
 
 int ut20_frames_received(const ut20_test_ctx* ctx) {

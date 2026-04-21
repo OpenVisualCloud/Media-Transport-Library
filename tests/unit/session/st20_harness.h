@@ -52,7 +52,7 @@ uint64_t ut20_stat_port_reordered(const ut20_test_ctx* ctx, enum mtl_session_por
 uint64_t ut20_stat_port_lost(const ut20_test_ctx* ctx, enum mtl_session_port port);
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx);
-uint64_t ut20_stat_frames_dropped(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx);
 int ut20_frames_received(const ut20_test_ctx* ctx);
 
 uint64_t ut20_stat_wrong_pt(const ut20_test_ctx* ctx);

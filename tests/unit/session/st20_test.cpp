@@ -53,8 +53,8 @@ class St20RxRedundancyTest : public ::testing::Test {
   uint64_t idx_oo_bitmap() {
     return ut20_stat_idx_oo_bitmap(ctx_);
   }
-  uint64_t frames_dropped() {
-    return ut20_stat_frames_dropped(ctx_);
+  uint64_t frames_incomplete() {
+    return ut20_stat_frames_incomplete(ctx_);
   }
   int frames_received() {
     return ut20_frames_received(ctx_);
@@ -321,7 +321,7 @@ TEST_F(St20RxRedundancyTest, IncompleteFrameOnSlotReuse) {
 
   /* frame 1 was notified as incomplete (dropped), frames 2 & 3 complete */
   EXPECT_EQ(frames_received(), 2) << "Only complete frames increment stat";
-  EXPECT_GE(frames_dropped(), 1u) << "Incomplete frame should be counted as dropped";
+  EXPECT_GE(frames_incomplete(), 1u) << "Incomplete frame should be counted";
 }
 
 /* After completing a frame the bitmap is reset. A new frame reusing the
