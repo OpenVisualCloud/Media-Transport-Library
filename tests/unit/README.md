@@ -1,109 +1,198 @@
-# Unit Tests — RX Redundancy Filters
+# MTL Unit Tests
 
-## Scope
+Lightweight, in-process tests that drive production MTL code paths
+**without a NIC, hugepages, or `sudo`**. They build into a single gtest
+binary, `tests/unit/UnitTest`, and run on any developer machine.
 
-These tests exercise the **per-packet RX redundancy filtering** logic for
-ST2110-20 (video), ST2110-30 (audio), and ST2110-40 (ancillary data).
-Each test suite calls the production packet handler directly through a
-lightweight C harness — no NIC ports, no real network, no sudo required.
+## Test philosophy
 
-### What is tested
+These tests are written to **find bugs**, not to mirror current behavior.
+Concretely:
 
-| Suite | Production function | Production source file |
-|-------|---------------------|------------------------|
-| ST40 (ancillary) | `rx_ancillary_session_handle_pkt()` | `lib/src/st2110/st_rx_ancillary_session.c` |
-| ST30 (audio) | `rx_audio_session_handle_frame_pkt()` | `lib/src/st2110/st_rx_audio_session.c` |
-| ST20 (video) | `rv_handle_frame_pkt()` | `lib/src/st2110/st_rx_video_session.c` |
+- Every assertion specifies what the library **must** do, with a comment
+  explaining why an app would be broken if the assertion did not hold.
+- When the lib does something illogical, the test **fails** — we fix the
+  lib, not the test.
+- Counters, statuses, and stat overlays are checked against invariants
+  (e.g. `corrupted ≤ received`, `dropped == busy` at the same site), not
+  against fixed magic numbers extracted from the source.
+- "Sanity asserts" (`EXPECT_GT(x, 0)`) are added next to equality checks
+  whenever the equality could be trivially satisfied with both sides zero.
 
-Each handler is exposed for direct calling via a `fuzz_handle_pkt` wrapper
-(compiled under `MTL_ENABLE_FUZZING_ST*` defines). The tests cover:
+If you find yourself weakening an assertion to make a test pass: stop,
+re-read the lib, and decide whether the lib is wrong or your inputs are
+wrong — but never silently delete the assertion.
 
-- **Validation filters** — PT, SSRC, F-bits (interlace), payload length
-- **Redundancy filtering** — timestamp-based and seq-based duplicate rejection
-- **Per-port statistics** — packets, bytes, OOO counters per port
-- **Threshold bypass** — force-accept after N consecutive redundant errors
-- **Slot management** (ST20) — bitmap dedup, frame-gone path, slot reuse
-- **Frame assembly** (ST30, ST20) — frame completion, incomplete frame eviction
-- **Edge cases** — seq/timestamp wraparound, backward arrivals, cross-port interleaving
+## Suites
 
-### What is NOT tested
+| Suite | Production source | Layer | What it tests |
+|-------|-------------------|-------|---------------|
+| `St20RedundancyTest` | `lib/src/st2110/st_rx_video_session.c` | session | RFC 4175 packet validation, slot bitmap, redundancy filtering |
+| `St30RedundancyTest` | `lib/src/st2110/st_rx_audio_session.c` | session | Audio frame assembly, redundancy filtering, frame eviction |
+| `St40RedundancyTest` | `lib/src/st2110/st_rx_ancillary_session.c` | session | RFC 8331 ANC validation, per-port sequence tracking, F-bit guard |
+| `St40PipelineRxTest` | `lib/src/st2110/pipeline/st40_pipeline_rx.c` | pipeline | Frame assembly above the session redundancy filter, frame status (COMPLETE/CORRUPTED), pipeline-owned stat counters |
 
-The full RX pipeline (burst polling, tasklet scheduling, DMA offload, frame
-callbacks to the application) is out of scope. These tests isolate the
-single-packet decision logic only.
+Each session suite calls a `fuzz_handle_pkt` wrapper exposed under
+`MTL_ENABLE_FUZZING_ST*`. The pipeline suite drives the
+`rx_st40p_rtp_ready()` tasklet callback directly via a mock
+`packet_ring`.
+
+## Build & run
+
+```bash
+# one-time
+meson setup build -Denable_unit_tests=true
+
+# build
+ninja -C build
+
+# run all
+LD_PRELOAD=/lib/x86_64-linux-gnu/libasan.so.6 ./build/tests/unit/UnitTest
+
+# run one suite
+./build/tests/unit/UnitTest --gtest_filter='St40PipelineRxTest.*'
+
+# run one test
+./build/tests/unit/UnitTest --gtest_filter='St40PipelineRxTest.GetSessionStatsOverlay'
+```
+
+`LD_PRELOAD=libasan.so` is required because `libmtl.so` is built with
+ASan; preloading the runtime first prevents init-order issues.
 
 ## Architecture
 
-```
-  test.cpp  ──►  harness.h (opaque C API)  ──►  harness.c  ──►  production handler
-  (gtest)        ut40_feed_pkt()                 builds mbuf     rx_*_handle_pkt()
-                 ut40_stat_*()                   calls handler   (lib/src/st2110/)
-```
-
-### Directory layout
-
-- **`common/`** — Shared infrastructure (EAL init, mempool, ring factory)
-- **`session/`** — Session-layer harnesses and tests (raw RTP handler level)
-- **`pipeline/`** — Pipeline-layer harnesses and tests (frame assembly level)
-
-### Why the C/C++ split?
-
-Internal MTL headers use `new` as a C variable name, which is a reserved
-keyword in C++. The harness `.c` files include the internal headers and
-expose an **opaque context** (`ut_test_ctx*`) through a pure-C API in the
-`.h` files. The gtest `.cpp` files never include internal MTL headers.
-
-### What the harness stubs
-
-| Component | How it's stubbed |
-|-----------|-----------------|
-| DPDK EAL | `rte_eal_init()` with `--no-huge --no-pci --vdev=net_null0` (shared via `common/ut_common.c`) |
-| Packet buffers | Shared `rte_mempool` via `ut_pool()` (2048 mbufs) |
-| Packet ring (ST40) | `rte_ring_create()` — 512 entries, drained after each test |
-| Frame pool (ST30, ST20) | Pre-allocated arrays with atomic refcounting |
-| PTP clock (ST30, ST20) | Stub returning monotonically increasing microseconds |
-| Session structs | Zeroed and minimally initialized inline |
-
-### Test geometry
-
-| Suite | Packet layout | Frame size |
-|-------|--------------|------------|
-| ST40 | RFC 8331 ANC RTP header | Per-packet (ring enqueue) |
-| ST30 | PCM16 2ch 48kHz 1ms — 192 bytes/pkt | 8192 bytes, 42 pkts/frame |
-| ST20 | RFC 4175 YUV422-10bit 16×2 — 40 bytes/pkt | 80 bytes, 2 pkts/frame |
-
-## Build & Run
-
-```bash
-# Configure (one-time)
-meson setup build_unit -Denable_unit_tests=true
-
-# Build
-ninja -C build_unit
-
-# Run
-LD_LIBRARY_PATH=build_unit/lib ./build_unit/tests/unit/UnitTest
-```
-
-## File listing
+### File layout
 
 ```
 tests/unit/
-├── meson.build                        # Build definition
-├── main.cpp                           # Shared gtest main()
-├── README.md                          # This file
+├── meson.build                # one executable, all sources listed
+├── main.cpp                   # gtest entry point
+├── README.md                  # this file
 ├── common/
-│   ├── ut_common.h                    # Shared C API (EAL, pool, ring)
-│   └── ut_common.c                    # Shared infrastructure implementation
-├── session/
-│   ├── st40_harness.h                 # ST40 session opaque C API
-│   ├── st40_harness.c                 # ST40 session harness (ANC mbufs, ring)
-│   ├── st40_test.cpp                  # ST40 session gtest cases
-│   ├── st30_harness.h                 # ST30 session opaque C API
-│   ├── st30_harness.c                 # ST30 session harness (audio mbufs, frame pool)
-│   ├── st30_test.cpp                  # ST30 session gtest cases
-│   ├── st20_harness.h                 # ST20 session opaque C API
-│   ├── st20_harness.c                 # ST20 session harness (video mbufs, slot setup)
-│   └── st20_test.cpp                  # ST20 session gtest cases
-└── pipeline/                          # Pipeline-layer tests (future)
+│   ├── ut_common.h            # EAL init, mempool, ring factory
+│   └── ut_common.c
+├── session/                   # session-layer suites (raw RTP handler)
+│   ├── st20_harness.{h,c}     ; st20_test.cpp
+│   ├── st30_harness.{h,c}     ; st30_test.cpp
+│   └── st40_harness.{h,c}     ; st40_test.cpp
+└── pipeline/                  # pipeline-layer suites (frame assembly)
+    ├── st40p_harness.{h,c}    ; st40p_test.cpp
 ```
+
+### Per-suite shape
+
+```
+  *_test.cpp ──► *_harness.h (opaque C API) ──► *_harness.c ──► production .c
+   (gtest)        ut*_feed_pkt(...)              builds mbuf,    rx_*_handle_pkt()
+                  ut*_stat_*(...)                calls handler   or rx_*_rtp_ready()
+```
+
+### Why C/C++ split
+
+Internal MTL headers use `new` as a struct field name (a C++ reserved
+keyword). The harness `.c` files include those internal headers and
+expose an **opaque context** (`ut_test_ctx*`, `ut40p_ctx*`, …) through a
+pure-C API in the matching `.h` file. The gtest `.cpp` files only
+include the harness `.h` and never touch internal MTL headers.
+
+## How linking works
+
+The unit test executable depends on `libmtl.so` (`mtl_internal_dep` →
+`shared_library('mtl', …)` in `lib/meson.build`).  Each harness `.c`
+**`#include`s the production `.c` it wants to test**, e.g.
+`st40p_harness.c` does:
+
+```c
+#undef MTL_HAS_USDT          /* skip dtrace probe semaphores */
+#include "st2110/pipeline/st40_pipeline_rx.c"
+```
+
+This makes every `static` function in the production unit (the actual
+target of the test) callable from the harness. Every non-`static`
+symbol in that file is **redefined** in the test executable, colliding
+with the same symbol exported by `libmtl.so`.
+
+The collision is resolved by the link flag declared in `meson.build`:
+
+```meson
+unit_link_args = ['-Wl,--allow-multiple-definition']
+```
+
+With this flag the linker keeps the **first** definition it sees, which
+is always the one from the harness object file (test sources are listed
+before `libmtl.so` on the link line). So:
+
+- Functions defined in the included production `.c` → harness's copy is
+  used (identical code, just re-emitted).
+- Functions called by that `.c` but defined elsewhere in libmtl (e.g.
+  `mt_get_log_global_level`) → resolve to libmtl normally.
+- Functions the harness explicitly stubs (see below) → harness's stub
+  wins because it is defined in an object that links before libmtl.
+
+This is the **only** linkage trick — there is no `LD_PRELOAD` of fakes,
+no symbol versioning, no `dlsym`.
+
+## How stubs work
+
+A stub is just a non-static function with the same signature as a
+libmtl symbol, defined in a harness `.c`. Because of
+`--allow-multiple-definition`, the harness wins.
+
+Stubs exist for one of three reasons:
+
+1. **Hardware paths** — the symbol would touch a NIC, hugepage, or PTP
+   clock. Example: `mt_mbuf_time_stamp()` in `st40p_harness.c` returns
+   `0` because there is no real RX timestamp.
+2. **DTrace/USDT** — `MTL_HAS_USDT` is `#undef`'d before including the
+   production `.c`, so no probe semaphore symbols are referenced.
+3. **Logger boilerplate** — `mt_get_log_*` are pulled in from libmtl
+   unchanged; we don't stub them because they're cheap and harmless.
+
+### What is **not** stubbed (intentional)
+
+The `st40p_harness.c` provides a real `rte_spinlock_t` inside a mock
+`st_rx_ancillary_sessions_mgr` so that the libmtl
+`st40_rx_get_session_stats()` call path runs end-to-end against the
+mocked transport handle. This means the pipeline overlay test
+exercises the full `st40p_rx_get_session_stats()` →
+`st40_rx_get_session_stats()` → `memcpy(&port_user_stats)` → atomic
+overlay path, not just the pipeline half.
+
+## How DPDK is initialized
+
+`common/ut_common.c::ut_init()` runs `rte_eal_init()` once with
+`--no-huge --no-pci --vdev=net_null0`. A single shared `rte_mempool`
+backs all mbuf allocations, and a single `rte_ring` factory hands out
+named rings to harnesses that need them. Test fixtures drain rings in
+`TearDown()`, so tests are independent.
+
+## Adding a new test
+
+1. Decide the **layer** (session vs pipeline) and reuse an existing
+   harness if possible.
+2. Write the test as `EXPECT`/`ASSERT` over **invariants**:
+   - "Counter X must equal counter Y after operation Z" — not "X must
+     equal 7".
+   - Add a `<<` message explaining what app behavior the assertion
+     guards.
+3. If you need a new accessor on the harness, add it to the `.h` and
+   implement it in the `.c`. Keep accessors thin.
+4. If the production code reaches a libmtl symbol that crashes (NULL
+   deref, missing HW), add a stub in the harness `.c` and document why
+   in the comment above it.
+5. Build and run with ASan (`LD_PRELOAD=libasan`). Any new test must
+   pass under ASan with no leaks reported on the test allocations.
+
+## Adding a new harness
+
+1. Create `tests/unit/<layer>/<suite>_harness.{h,c}` and
+   `<suite>_test.cpp`.
+2. In the harness `.c`:
+   - `#undef MTL_HAS_USDT`
+   - `#include "common/ut_common.h"`
+   - `#include "<path/to/production>.c"`
+   - Declare `struct <suite>_ctx { … }` and include the harness `.h`.
+3. Stub only the symbols that the test would otherwise crash on; trust
+   `--allow-multiple-definition` for the rest.
+4. Add the three new files to `unit_sources` in
+   `tests/unit/meson.build`.

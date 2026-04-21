@@ -61,6 +61,8 @@ struct ut40p_ctx {
   /* mock transport: handle → session → packet_ring */
   struct st_rx_ancillary_session_handle_impl handle;
   struct st_rx_ancillary_session_impl session;
+  /* mock sessions mgr — only mutex[idx] is touched by the transport stats path. */
+  struct st_rx_ancillary_sessions_mgr session_mgr;
 
   /* the pipeline context under test */
   struct st40p_rx_ctx pipeline;
@@ -100,10 +102,11 @@ ut40p_ctx* ut40p_ctx_create(int num_port, int framebuff_cnt) {
   /* minimal impl */
   ctx->impl.type = MT_HANDLE_MAIN;
 
-  /* mock session — only needs idx, packet_ring, mgr */
+  /* mock session: idx, packet_ring, mgr (with a live spinlock) */
   ctx->session.idx = 0;
   ctx->session.packet_ring = g_mock_ring;
-  ctx->session.mgr = NULL; /* USDT disabled — mgr not accessed */
+  rte_spinlock_init(&ctx->session_mgr.mutex[0]);
+  ctx->session.mgr = &ctx->session_mgr;
 
   /* mock transport handle */
   ctx->handle.type = MT_HANDLE_RX_ANC;
@@ -302,4 +305,12 @@ uint64_t ut40p_stat_frames_dropped(const ut40p_ctx* ctx) {
 
 uint64_t ut40p_stat_frames_corrupted(const ut40p_ctx* ctx) {
   return ctx->pipeline.stat_frames_corrupted;
+}
+
+int ut40p_get_session_stats(ut40p_ctx* ctx, struct st40_rx_user_stats* stats) {
+  return st40p_rx_get_session_stats(&ctx->pipeline, stats);
+}
+
+int ut40p_reset_session_stats(ut40p_ctx* ctx) {
+  return st40p_rx_reset_session_stats(&ctx->pipeline);
 }

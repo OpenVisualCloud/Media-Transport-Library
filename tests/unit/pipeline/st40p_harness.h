@@ -63,6 +63,14 @@ uint64_t ut40p_stat_frames_received(const ut40p_ctx* ctx);
 uint64_t ut40p_stat_frames_dropped(const ut40p_ctx* ctx);
 uint64_t ut40p_stat_frames_corrupted(const ut40p_ctx* ctx);
 
+/* ── public-API wrappers ─────────────────────────────────────────── */
+
+/** Wraps st40p_rx_get_session_stats() — exercises the atomic overlay path. */
+int ut40p_get_session_stats(ut40p_ctx* ctx, struct st40_rx_user_stats* stats);
+
+/** Wraps st40p_rx_reset_session_stats() — exercises the atomic reset path. */
+int ut40p_reset_session_stats(ut40p_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

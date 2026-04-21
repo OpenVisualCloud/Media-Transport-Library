@@ -121,8 +121,8 @@ TEST_F(St40PipelineRxTest, FramebufferExhaustion) {
   process_all();
 
   EXPECT_GE(stat_busy(), 1u) << "Should hit framebuffer exhaustion";
-  /* Each stat_busy hit must also surface as a user-visible frame drop;
-   * otherwise apps cannot observe back-pressure via session stats. */
+  /* Every stat_busy hit must also surface as stat_frames_dropped so the
+   * back-pressure is visible via session stats. */
   EXPECT_EQ(stat_frames_dropped(), stat_busy());
 }
 
@@ -366,10 +366,9 @@ TEST_F(St40PipelineRxTest, MarkerOnSinglePacketFrame) {
   put_frame(frame);
 }
 
-/* Frame status is COMPLETE when no seq discontinuity, CORRUPTED when there is.
- * The COMPLETE/CORRUPTED classification must also bump the user-stats
- * counters that st40p_rx_get_session_stats() exposes; otherwise apps have no
- * way to observe per-frame integrity issues. */
+/* Frame status is COMPLETE when no seq discontinuity, CORRUPTED when there
+ * is. Each delivery must bump stat_frames_received; only CORRUPTED deliveries
+ * must additionally bump stat_frames_corrupted. */
 TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
   ASSERT_EQ(stat_frames_received(), 0u);
   ASSERT_EQ(stat_frames_corrupted(), 0u);
@@ -385,9 +384,9 @@ TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
   EXPECT_EQ(stat_frames_corrupted(), 0u);
   put_frame(clean);
 
-  /* Corrupted frame (seq gap) */
+  /* Corrupted frame: seq gap between 4 and 6. */
   enqueue(4, 2000, false, MTL_SESSION_PORT_P);
-  enqueue(6, 2000, true, MTL_SESSION_PORT_P); /* skip seq 5 */
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P);
   process_all();
 
   auto* corrupted = get_frame();
@@ -396,6 +395,115 @@ TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
   EXPECT_EQ(stat_frames_received(), 2u);
   EXPECT_EQ(stat_frames_corrupted(), 1u);
   put_frame(corrupted);
+
+  /* Second corrupted frame: corrupted accumulates independently of received. */
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 3000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* corrupted2 = get_frame();
+  ASSERT_NE(corrupted2, nullptr);
+  EXPECT_EQ(corrupted2->status, ST_FRAME_STATUS_CORRUPTED);
+  EXPECT_EQ(stat_frames_received(), 3u);
+  EXPECT_EQ(stat_frames_corrupted(), 2u);
+  put_frame(corrupted2);
+
+  /* Final clean frame: received bumps, corrupted does not. */
+  enqueue_burst(10, 4, 4000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* clean2 = get_frame();
+  ASSERT_NE(clean2, nullptr);
+  EXPECT_EQ(clean2->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 4u);
+  EXPECT_EQ(stat_frames_corrupted(), 2u) << "corrupted must not bump on COMPLETE";
+  put_frame(clean2);
+}
+
+/* st40p_rx_get_session_stats() must surface every pipeline-owned frame
+ * counter exactly as the pipeline tracks it. Drives one clean frame, one
+ * corrupted frame and a framebuffer-exhaustion drop so all three counters
+ * are non-zero, then compares the API output to the raw context fields. */
+TEST_F(St40PipelineRxTest, GetSessionStatsOverlay) {
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f0 = get_frame();
+  ASSERT_NE(f0, nullptr);
+  put_frame(f0);
+
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P); /* seq gap */
+  process_all();
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  /* Hold f1 so the next ts changes have no free framebuff and bump dropped. */
+
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(8, 4000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 5000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  struct st40_rx_user_stats api_stats;
+  ASSERT_EQ(ut40p_get_session_stats(ctx_, &api_stats), 0);
+
+  EXPECT_EQ(api_stats.common.stat_frames_received, stat_frames_received());
+  EXPECT_EQ(api_stats.common.stat_frames_dropped, stat_frames_dropped());
+  EXPECT_EQ(api_stats.common.stat_frames_corrupted, stat_frames_corrupted());
+  /* Guard against a trivially-equal pass on all-zero counters. */
+  EXPECT_GT(api_stats.common.stat_frames_received, 0u);
+  EXPECT_GT(api_stats.common.stat_frames_dropped, 0u);
+  EXPECT_GT(api_stats.common.stat_frames_corrupted, 0u);
+  /* Corrupted is a subset of received. */
+  EXPECT_LE(api_stats.common.stat_frames_corrupted,
+            api_stats.common.stat_frames_received);
+
+  put_frame(f1);
+}
+
+/* st40p_rx_reset_session_stats() must zero all three pipeline-owned frame
+ * counters, and subsequent activity must resume counting from zero. */
+TEST_F(St40PipelineRxTest, ResetClearsFrameCounters) {
+  /* Make all three counters non-zero. */
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f0 = get_frame();
+  ASSERT_NE(f0, nullptr);
+  put_frame(f0);
+
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(8, 4000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 5000, false, MTL_SESSION_PORT_P);
+  process_all();
+  put_frame(f1);
+
+  ASSERT_GT(stat_frames_received(), 0u);
+  ASSERT_GT(stat_frames_dropped(), 0u);
+  ASSERT_GT(stat_frames_corrupted(), 0u);
+
+  ASSERT_EQ(ut40p_reset_session_stats(ctx_), 0);
+
+  EXPECT_EQ(stat_frames_received(), 0u);
+  EXPECT_EQ(stat_frames_dropped(), 0u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u);
+
+  /* Continue at seq=7 so the first post-reset frame is contiguous with the
+   * last accepted seq (6) and arrives clean; framebuff-exhaustion drops do
+   * not advance session_last_seq. */
+  enqueue_burst(7, 4, 6000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* after = get_frame();
+  ASSERT_NE(after, nullptr);
+  EXPECT_EQ(after->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 1u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u)
+      << "clean frame after reset must not bump corrupted";
+  put_frame(after);
 }
 
 /* ── PENDING state: late-marker resolution ───────────────────────────── */
