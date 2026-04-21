@@ -406,7 +406,7 @@ static int tx_st22p_encode_dump(void* priv) {
                          st22p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st22p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st22p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_ST22P(%s), frame get try %d succ %d, put %d\n", ctx->ops_name,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
