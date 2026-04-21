@@ -67,16 +67,53 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  ┌──────────────────────────────────────────────────────────────────────────────┐
  │  6. POST-REDUNDANCY TOTAL                                                   │
  │                                                                             │
- │     stat_pkts_received++       ◄── "what the app actually got"              │
+ │     stat_pkts_received++       ◄── "what the app actually got" (per pkt)    │
  └──────┬───────────────────────────────────────────────────────────────────────┘
         │
         ▼
  ┌──────────────────────────────────────────────────────────────────────────────┐
- │  7. DELIVER to frame buffer / RTP ring                                      │
+ │  7. ENQUEUE to slot / RTP ring  (transport)                                 │
+ │                                                                             │
+ │     no free slot          ──► stat_pkts_no_slot++          (video)          │
+ │     ring full             ──► stat_pkts_rtp_ring_full++    (video RTP)      │
+ │     anc enqueue fail      ──► stat_pkts_enqueue_fail++     (anc/fmd)        │
+ │     audio length mismatch ──► stat_pkts_dropped++          (audio)          │
+ │     no free framebuff     ──► stat_slot_get_frame_fail++   (all types)      │
+ │                                                                             │
+ │     first pkt of a new frame on this port                                   │
+ │                           ──► port[i].frames++             (audio/anc/fmd)  │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │ frame complete (last pkt arrived, or timeout closed it)
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  8. FRAME COMPLETION  (transport notify_frame_ready → pipeline)             │
+ │                                                                             │
+ │     Video: per-port frame accounting                                        │
+ │       port P delivered enough pkts ──► port[P].frames++                     │
+ │       port P was short             ──► port[P].incomplete_frames++          │
+ │       (same for port R)                                                     │
+ │       gap → estimated missing pkts ──► stat_pkts_unrecovered += est         │
+ │                                                                             │
+ │     ST20p / ST40p: frame delivered with intra-frame loss             │
+ │                                    ──► stat_frames_corrupted++              │
+ │                                        (frame still delivered with          │
+ │                                         ST_FRAME_STATUS_CORRUPTED)          │
+ │                                                                             │
+ │     Pipeline (ST20p / ST30p / ST40p):                                       │
+ │       no free user framebuff       ──► stat_frames_dropped++                │
+ │                                        frame NOT delivered                  │
+ │       handed off to user ring      ──► stat_frames_received++               │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  9. APP get_frame()                                                         │
  └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-`port[i].packets` = what arrived on wire `i`. `stat_pkts_received` = what the app got.
+`port[i].packets` = what arrived on wire `i`. `stat_pkts_received` = packets the
+session accepted (post-redundancy). `stat_frames_received` = frames the app
+actually got.
 
 ## The five counters you monitor
 
@@ -121,8 +158,8 @@ frames did the app receive / drop / send".
 
 Populated by pipeline session types (`ST20p`, `ST30p`, `ST40p` for both
 RX and TX). For transport-only paths and types with no per-frame
-classification (audio `stat_frames_corrupted`, ST41 RX), the relevant
-counters stay 0.
+integrity concept (`stat_frames_corrupted` on `ST30p` audio, `ST41` RX),
+the relevant counters stay 0.
 
 ## `port[i].frames` — two flavors (per-port, **not** a session total)
 
@@ -154,6 +191,83 @@ SSRC, length mismatch, etc.). Does **not** reduce `stat_pkts_received` or cause
 `stat_pkts_unrecovered`. Most common benign cause: another stream on the same multicast
 group leaks in — confirm via `stat_pkts_wrong_pt_dropped` / `stat_pkts_wrong_ssrc_dropped`.
 
+## TX packet processing pipeline
+
+```text
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  APP put_frame() / put_frame_abort()                                        │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  1. PIPELINE INTAKE  (ST20p / ST30p / ST40p)                                │
+ │                                                                             │
+ │     put_frame_abort()         ──► stat_frames_dropped++                     │
+ │                                   notify_frame_done(DROPPED)                │
+ │     put_frame()               ──► hand frame to transport ring              │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │ frame ready for transport
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  2. USER-TIMESTAMP VALIDATION  (only if the app supplied an RTP timestamp)  │
+ │                                                                             │
+ │     timestamp invalid     ──► stat_error_user_timestamp++                   │
+ │                               (the frame is still scheduled)                │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  3. PACING DECISION                                                         │
+ │                                                                             │
+ │     app handed the frame too late, slots had to be skipped                  │
+ │                            ──► stat_epoch_drop += skipped_slots             │
+ │                                notify_frame_late() (if app registered)      │
+ │                                                                             │
+ │     app handed the frame too early, scheduled far in the future             │
+ │                            ──► stat_epoch_onward += onward_slots            │
+ │                                                                             │
+ │     pacing snapped to a different epoch than requested                      │
+ │                            ──► stat_epoch_mismatch++  (audio/anc/fmd)       │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │ frame slot assigned
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  4. PER-PORT BUILD  (transport tasklet, P and R independently)              │
+ │                                                                             │
+ │     packet built and queued ──► port[i].build++                             │
+ │     packet enqueued to NIC  ──► port[i].packets++                           │
+ │                                 port[i].bytes  += pkt_len                   │
+ │     transient build error   ──► stat_recoverable_error++                    │
+ │     fatal build/send error  ──► stat_unrecoverable_error++                  │
+ │                                 (session needs restart)                     │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  5. FRAME COMPLETION  (transport — last packet of frame committed to wire)  │
+ │                                                                             │
+ │     all packets sent on this port ──► port[i].frames++                      │
+ │                                                                             │
+ │     pipeline late-drop watchdog (post-send):                                │
+ │       cur_tai > frame_tai + frame_period                                    │
+ │                                  ──► stat_frames_dropped++                  │
+ │                                      notify_frame_done(DROPPED)             │
+ │     otherwise                       ──► stat_frames_sent++                  │
+ │                                          notify_frame_done(COMPLETE)        │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  6. APP notify_frame_done(status)                                           │
+ └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+`port[i].packets` = what was put on wire `i`. `stat_frames_sent` = frames the
+app successfully delivered end-to-end. `stat_frames_dropped` is the only
+counter that reflects `ST_FRAME_STATUS_DROPPED` — `stat_error_user_timestamp`
+only counts user-supplied RTP timestamp validation failures and is unrelated
+to drops.
+
 ## Per-session quirks
 
 **Video (ST20/ST22).** Loss uses **frame-internal `pkt_idx`**.
@@ -165,15 +279,19 @@ Cross-frame reorders are not tracked. Watch
 **Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
 `stat_pkts_unrecovered` is **exact**. ST30 adds `stat_pkts_dropped`,
 `stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`. ST40/41 add
-`stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`. ST40p RX
-marks frames whose constituent packets had unrecoverable intra-frame seq
-gaps as `ST_FRAME_STATUS_CORRUPTED` and counts them in
-`stat_frames_corrupted`; the frame is still delivered to the app (the app
-should consult `frame->status`).
+`stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`. ST20p and
+ST40p RX mark frames whose constituent packets had unrecoverable gaps as
+`ST_FRAME_STATUS_CORRUPTED` and count them in `stat_frames_corrupted`;
+the frame is still delivered to the app (the app should consult
+`frame->status`).
 
-**TX (any type).** `stat_epoch_drop` = app late, `stat_epoch_onward` = on time,
-`stat_epoch_mismatch` = pacing snapped to a different epoch,
-`stat_recoverable_error` / `stat_unrecoverable_error` = TX faults.
+**TX (any type).** `stat_epoch_drop` = app handed frame too late, slots were
+skipped (counter advanced by the number of skipped slots).
+`stat_epoch_onward` = system clock ran past `max_onward_epochs` ahead of the
+next free slot — the frame was still scheduled, but pacing skipped onward
+slots (advanced by the onward delta). `stat_epoch_mismatch` = pacing snapped
+to a different epoch than requested. `stat_recoverable_error` /
+`stat_unrecoverable_error` = TX faults during build/send.
 `stat_error_user_timestamp` counts user-supplied RTP timestamp validation
 failures during pacing setup; it does **not** track frames dropped because
 the pipeline handed them to TX too late — those are
