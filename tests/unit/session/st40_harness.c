@@ -156,31 +156,34 @@ void ut40_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t t
   }
 }
 
-int ut40_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
-                     enum mtl_session_port port, uint8_t payload_type) {
-  struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, payload_type, 0, 0);
+int ut40_feed_spec(ut_test_ctx* ctx, struct ut40_pkt_spec spec) {
+  struct rte_mbuf* m = make_anc_mbuf_full(spec.seq, spec.ts, spec.marker,
+                                          spec.payload_type, spec.ssrc, spec.f_bits);
   if (!m) return -1;
-  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, spec.port);
   rte_pktmbuf_free(m);
   return rc;
+}
+
+int ut40_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                     enum mtl_session_port port, uint8_t payload_type) {
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .payload_type = payload_type};
+  return ut40_feed_spec(ctx, spec);
 }
 
 int ut40_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                        enum mtl_session_port port, uint32_t ssrc) {
-  struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, ssrc, 0);
-  if (!m) return -1;
-  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
-  rte_pktmbuf_free(m);
-  return rc;
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .ssrc = ssrc};
+  return ut40_feed_spec(ctx, spec);
 }
 
 int ut40_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                         enum mtl_session_port port, uint8_t f_bits) {
-  struct rte_mbuf* m = make_anc_mbuf_full(seq, ts, marker, 0, 0, f_bits);
-  if (!m) return -1;
-  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
-  rte_pktmbuf_free(m);
-  return rc;
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .f_bits = f_bits};
+  return ut40_feed_spec(ctx, spec);
 }
 
 /* ── config setters ───────────────────────────────────────────────────── */
@@ -279,6 +282,10 @@ int ut40_frames_received(const ut_test_ctx* ctx) {
 
 void ut40_set_skip_drain(bool skip) {
   g_skip_drain = skip;
+}
+
+void ut40_session_reset(ut_test_ctx* ctx) {
+  rx_ancillary_session_reset(&ctx->session, false);
 }
 
 int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker) {
