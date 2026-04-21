@@ -888,13 +888,13 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     if (slot->pkts_recv_per_port[MTL_SESSION_PORT_P] >= slot->pkts_received) {
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     } else {
-      s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames_partial++;
+      s->port_user_stats.frames_partial[MTL_SESSION_PORT_P]++;
     }
 
     if (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] >= slot->pkts_received) {
       s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     } else {
-      s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames_partial++;
+      s->port_user_stats.frames_partial[MTL_SESSION_PORT_R]++;
     }
 
     /* notify frame */
@@ -993,11 +993,11 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
       if (slot->pkts_recv_per_port[MTL_SESSION_PORT_P] >= slot->pkts_received)
         s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
       else
-        s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames_partial++;
+        s->port_user_stats.frames_partial[MTL_SESSION_PORT_P]++;
       if (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] >= slot->pkts_received)
         s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
       else
-        s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames_partial++;
+        s->port_user_stats.frames_partial[MTL_SESSION_PORT_R]++;
     } else {
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     }
@@ -3559,7 +3559,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   /* Per-port arrival line: port-balance visible at a glance.
    * port[].frames counts frames the port could have completed alone (got all
-   * pkts).  port[].frames_partial counts frames that needed the other port
+   * pkts).  frames_partial[] counts frames that needed the other port
    * to fill the gap.  Both incremented per side regardless of the other.
    */
   if (s->ops.num_port > 1) {
@@ -3571,10 +3571,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                              snap->common.port[MTL_SESSION_PORT_P].frames;
     uint64_t port_frames_r = us->common.port[MTL_SESSION_PORT_R].frames -
                              snap->common.port[MTL_SESSION_PORT_R].frames;
-    uint64_t port_incomp_p = us->common.port[MTL_SESSION_PORT_P].frames_partial -
-                             snap->common.port[MTL_SESSION_PORT_P].frames_partial;
-    uint64_t port_incomp_r = us->common.port[MTL_SESSION_PORT_R].frames_partial -
-                             snap->common.port[MTL_SESSION_PORT_R].frames_partial;
+    uint64_t port_incomp_p =
+        us->frames_partial[MTL_SESSION_PORT_P] - snap->frames_partial[MTL_SESSION_PORT_P];
+    uint64_t port_incomp_r =
+        us->frames_partial[MTL_SESSION_PORT_R] - snap->frames_partial[MTL_SESSION_PORT_R];
     notice("RX_VIDEO_SESSION(%d,%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
            " frames complete, %" PRIu64 " needed redundancy), R=%" PRIu64
            " pkts (%" PRIu64 " frames complete, %" PRIu64 " needed redundancy)\n",

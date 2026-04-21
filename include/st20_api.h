@@ -1785,6 +1785,19 @@ struct st20_rx_user_stats {
    */
   uint64_t stat_frames_incomplete; /* old names: incomplete_frames_cnt,
                                       stat_frames_dropped (transport) */
+  /**
+   * Per-port count of frames where this port could not complete the frame
+   * on its own (the other port's redundant copy filled the missing pkts).
+   * Video-only (ST20 / ST22), so it lives here rather than in the common
+   * per-port struct. Index with `mtl_session_port` (P / R).
+   *
+   * @note ABI move + rename: previously `st_rx_port_stats::incomplete_frames`
+   *       (sat in the common per-port struct, but was always 0 for
+   *       ST30/ST40/ST41). Migration: replace
+   *       `common.port[i].incomplete_frames` with
+   *       `frames_partial[i]` (ST20 / ST22 only).
+   */
+  uint64_t frames_partial[MTL_SESSION_PORT_MAX]; /* old name: port[i].incomplete_frames */
   uint64_t stat_pkts_wrong_kmod_dropped;
 };
 
