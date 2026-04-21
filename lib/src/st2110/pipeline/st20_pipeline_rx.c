@@ -101,6 +101,9 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   }
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    /* relaxed atomic: written from tasklet, read from any thread via
+     * st20p_rx_get_session_stats(); no ordering vs other state required. */
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -174,6 +177,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -292,6 +296,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -901,6 +906,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     frame->user_meta_size = 0;
   }
   ctx->stat_get_frame_succ++;
+  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
   MT_USDT_ST20P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED()) {
@@ -1210,7 +1216,14 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
     return 0;
   }
 
-  return st20_rx_get_session_stats(ctx->transport, stats);
+  int ret = st20_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_received =
+      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
@@ -1228,6 +1241,8 @@ int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
     return 0;
   }
 
+  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   return st20_rx_reset_session_stats(ctx->transport);
 }
 
