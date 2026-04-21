@@ -6,8 +6,8 @@ How to read MTL per-session counters. Field-level docs live in the headers
 ## API
 
 ```c
-st<NN>_<rx|tx>_get_session_stats(handle, &stats);   /* snapshot */
-st<NN>_<rx|tx>_reset_session_stats(handle);         /* zero    */
+st<NN>_<rx|tx>_get_session_stats(handle, &stats);
+st<NN>_<rx|tx>_reset_session_stats(handle);
 ```
 
 `<NN>` ∈ `20` video, `30` audio, `40` ancillary, `41` fast metadata.
@@ -105,15 +105,39 @@ save_rate (%)         == 100 * lost / (lost + unrecovered)
 | 50 | 30 | 5 | < received | 5 pkts lost on both → real loss |
 | 10 | n/a | 10 | 0 | Single-port, no redundancy |
 
-## `port[i].frames` — two flavors
+## Frame-level counters
+
+Session-wide, type-agnostic counters living in `st_rx_user_stats` /
+`st_tx_user_stats`. Use these (not `port[i].frames`) to answer "how many
+frames did the app receive / drop / send".
+
+| Counter | Side | Meaning |
+|---|---|---|
+| `stat_frames_received`  | RX | Frames delivered to the app via the get-frame / notify path |
+| `stat_frames_dropped`   | RX | Frames the pipeline could not deliver (no free user slot) |
+| `stat_frames_corrupted` | RX | Frames delivered with `ST_FRAME_STATUS_CORRUPTED` (unrecovered intra-frame loss); the frame is still handed to the app |
+| `stat_frames_sent`      | TX | Frames whose final packet was committed to the wire (`notify_frame_done(COMPLETE)`) |
+| `stat_frames_dropped`   | TX | Frames the pipeline dropped because the app handed them too late (`notify_frame_done(DROPPED)`); also bumped on `put_frame_abort` |
+
+Populated by pipeline session types (`ST20p`, `ST30p`, `ST40p` for both
+RX and TX). For transport-only paths and types with no per-frame
+classification (audio `stat_frames_corrupted`, ST41 RX), the relevant
+counters stay 0.
+
+## `port[i].frames` — two flavors (per-port, **not** a session total)
 
 | Sessions | `frames++` when… | `incomplete_frames` |
 |---|---|---|
 | Video (ST20/ST22) | This port delivered enough pkts to **complete** the frame | Bumped when this port was short |
 | Audio/Anc/FMD     | New frame's **first** packet arrived on this port (race winner) | Always 0 |
 
-`port[0].frames + port[1].frames` ≠ total frames. Use `stat_pkts_received` and the
-type-specific `stat_frames_dropped` / `incomplete_frames_cnt` for end-to-end totals.
+`port[i].frames` is per-port and the two flavors above do not compose: summing
+across ports does not yield total frames delivered to the app. For end-to-end
+frame accounting, use the session-wide common counters:
+`stat_frames_received`, `stat_frames_dropped`, `stat_frames_corrupted` (RX)
+and `stat_frames_sent`, `stat_frames_dropped` (TX) — see
+[Frame-level counters](#frame-level-counters) below. Use `port[i].frames` /
+`incomplete_frames` only for per-port redundancy debugging.
 
 **Video invariant** (per port): `frames + incomplete_frames == total complete frames`.
 
@@ -141,11 +165,20 @@ Cross-frame reorders are not tracked. Watch
 **Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
 `stat_pkts_unrecovered` is **exact**. ST30 adds `stat_pkts_dropped`,
 `stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`. ST40/41 add
-`stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`.
+`stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`. ST40p RX
+marks frames whose constituent packets had unrecoverable intra-frame seq
+gaps as `ST_FRAME_STATUS_CORRUPTED` and counts them in
+`stat_frames_corrupted`; the frame is still delivered to the app (the app
+should consult `frame->status`).
 
 **TX (any type).** `stat_epoch_drop` = app late, `stat_epoch_onward` = on time,
 `stat_epoch_mismatch` = pacing snapped to a different epoch,
 `stat_recoverable_error` / `stat_unrecoverable_error` = TX faults.
+`stat_error_user_timestamp` counts user-supplied RTP timestamp validation
+failures during pacing setup; it does **not** track frames dropped because
+the pipeline handed them to TX too late — those are
+`stat_frames_dropped` (and surface to the app as
+`notify_frame_done(status=ST_FRAME_STATUS_DROPPED)`).
 
 ## Periodic stat log lines
 
