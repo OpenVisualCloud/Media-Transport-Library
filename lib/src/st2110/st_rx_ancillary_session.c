@@ -206,16 +206,17 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
-  get multiple packets with the same timestamp)) */
+  get multiple packets with the same timestamp) */
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
       !mt_seq16_greater(seq_id, s->session_seq_id)) {
     /* Check per-frame bitmap: if this is a same-frame late arrival carrying unique data,
      * accept it instead of filtering.  This handles cross-port reordering where port R
      * delivers seq N+2..N+5 before port P delivers seq N..N+1. */
-    if (s->anc_bitmap_valid && tmstamp == s->anc_bitmap_tmstamp &&
+    if (s->anc_window_cur.valid && tmstamp == s->anc_window_cur.tmstamp &&
         !mt_seq32_greater(s->tmstamp, tmstamp)) {
-      uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
-      if (offset < 64 && !(s->anc_bitmap & ((uint64_t)1 << offset))) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_cur.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS &&
+          !(s->anc_window_cur.bitmap & ((uint64_t)1 << offset))) {
         /* bit is clear — this seq was never delivered, accept as late arrival.
          * This packet was previously counted as unrecovered when the gap was seen,
          * so undo that count now that it has arrived. */
@@ -231,9 +232,10 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
      * previous frame.  This enables the pipeline layer to receive late-arriving
      * marker packets from the redundant port after the primary has advanced. */
     if (s->prev_tmstamp >= 0 && tmstamp == (uint32_t)s->prev_tmstamp &&
-        s->anc_prev_bitmap_valid && tmstamp == s->anc_prev_bitmap_tmstamp) {
-      uint16_t offset = (uint16_t)(seq_id - s->anc_prev_bitmap_base_seq);
-      if (offset < 64 && !(s->anc_prev_bitmap & ((uint64_t)1 << offset))) {
+        s->anc_window_prev.valid && tmstamp == s->anc_window_prev.tmstamp) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_prev.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS &&
+          !(s->anc_window_prev.bitmap & ((uint64_t)1 << offset))) {
         if (s->port_user_stats.common.stat_pkts_unrecovered > 0)
           s->port_user_stats.common.stat_pkts_unrecovered--;
         dbg("%s(%d,%d), prev-frame late arrival seq %u accepted (offset %u)\n", __func__,
@@ -297,27 +299,24 @@ accept_pkt:
   /* Update per-frame bitmap: track which seq offsets have been delivered.
    * base_seq = old_session_seq + 1 = first expected seq of this frame.
    * This ensures late arrivals (seq < first accepted seq) still fit in the bitmap. */
-  if (s->anc_prev_bitmap_valid && tmstamp == s->anc_prev_bitmap_tmstamp) {
+  if (s->anc_window_prev.valid && tmstamp == s->anc_window_prev.tmstamp) {
     /* This packet belongs to the previous frame — update prev bitmap only */
-    uint16_t offset = (uint16_t)(seq_id - s->anc_prev_bitmap_base_seq);
-    if (offset < 64) s->anc_prev_bitmap |= ((uint64_t)1 << offset);
+    uint16_t offset = (uint16_t)(seq_id - s->anc_window_prev.base_seq);
+    if (offset < ST_RX_ANC_BITMAP_BITS)
+      s->anc_window_prev.bitmap |= ((uint64_t)1 << offset);
   } else {
-    if (!s->anc_bitmap_valid || tmstamp != s->anc_bitmap_tmstamp) {
+    if (!s->anc_window_cur.valid || tmstamp != s->anc_window_cur.tmstamp) {
       /* Save current bitmap as prev before resetting for new frame */
-      if (s->anc_bitmap_valid) {
-        s->anc_prev_bitmap = s->anc_bitmap;
-        s->anc_prev_bitmap_tmstamp = s->anc_bitmap_tmstamp;
-        s->anc_prev_bitmap_base_seq = s->anc_bitmap_base_seq;
-        s->anc_prev_bitmap_valid = true;
-      }
-      s->anc_bitmap = 0;
-      s->anc_bitmap_tmstamp = tmstamp;
-      s->anc_bitmap_base_seq = (uint16_t)(old_session_seq + 1);
-      s->anc_bitmap_valid = true;
+      if (s->anc_window_cur.valid) s->anc_window_prev = s->anc_window_cur;
+      s->anc_window_cur.bitmap = 0;
+      s->anc_window_cur.tmstamp = tmstamp;
+      s->anc_window_cur.base_seq = (uint16_t)(old_session_seq + 1);
+      s->anc_window_cur.valid = true;
     }
     {
-      uint16_t offset = (uint16_t)(seq_id - s->anc_bitmap_base_seq);
-      if (offset < 64) s->anc_bitmap |= ((uint64_t)1 << offset);
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_cur.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS)
+        s->anc_window_cur.bitmap |= ((uint64_t)1 << offset);
     }
   }
 
@@ -370,7 +369,8 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   s->session_seq_id = -1;
   s->tmstamp = -1;
   s->prev_tmstamp = -1;
-  s->anc_prev_bitmap_valid = false;
+  memset(&s->anc_window_cur, 0, sizeof(s->anc_window_cur));
+  memset(&s->anc_window_prev, 0, sizeof(s->anc_window_prev));
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
