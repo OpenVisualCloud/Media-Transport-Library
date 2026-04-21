@@ -33,6 +33,8 @@ def test_quality_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # JPEG-XS plugin init adds 3-10s on top of MTL init.
+    test_time = max(test_time, 90)
 
     # Note: kahawai.json handling should be done via remote host connection if needed
     # For now, assume it's already available on the remote host or not required

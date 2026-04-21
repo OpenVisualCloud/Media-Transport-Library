@@ -30,6 +30,8 @@ def test_xdp_mode_refactored(
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
     interfaces_list = ["native_af_xdp:eth2", "native_af_xdp:eth3"]
+    # native_af_xdp + multi-session init is slower than VF.
+    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
         nic_port_list=interfaces_list,

@@ -30,6 +30,8 @@ def test_kernello_st20p_video_format_refactored(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    # Kernel-socket loopback init is slower than VF.
+    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
         session_type="st20p",

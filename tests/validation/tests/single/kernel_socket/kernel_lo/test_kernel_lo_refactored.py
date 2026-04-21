@@ -43,6 +43,8 @@ def test_kernello_mixed_format_refactored(
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
+    # Kernel-socket loopback + multi-session init is slower than VF.
+    test_time = max(test_time, 90)
 
     audio_in = str(host.connection.path(media) / audio_file["filename"])
     audio_out = str(

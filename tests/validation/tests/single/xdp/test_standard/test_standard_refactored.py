@@ -25,6 +25,8 @@ def test_xdp_standard_refactored(
     rxtxapp,
 ):
     host = list(hosts.values())[0]
+    # native_af_xdp program load + ARP resolution is slower than VF.
+    test_time = max(test_time, 90)
 
     if standard_mode == "st20p":
         video_file = yuv_files[video_format]

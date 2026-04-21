@@ -41,6 +41,8 @@ def test_pmd_kernel_mixed_format_refactored(
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
+    # PMD-TX + kernel-RX hybrid + multi-session init is slower than VF.
+    test_time = max(test_time, 90)
 
     interfaces_list = setup_interfaces.get_pmd_kernel_interfaces(
         test_config.get("interface_type", "VF")

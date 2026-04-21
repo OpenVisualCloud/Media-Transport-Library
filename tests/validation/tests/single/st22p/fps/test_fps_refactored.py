@@ -49,6 +49,8 @@ def test_fps_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # JPEG-XS / H264 plugin init adds 3-10s on top of MTL init.
+    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
         session_type="st22p",

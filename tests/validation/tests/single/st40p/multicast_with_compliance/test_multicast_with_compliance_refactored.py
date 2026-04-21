@@ -42,6 +42,8 @@ def test_st40p_multicast_with_compliance_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # EBU compliance verdict needs many ancillary packets to classify.
+    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
         session_type="st40p",

@@ -23,6 +23,9 @@ def test_rx_timing_video_replicas_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # Multi-replica + rx_timing parser needs headroom for the parser to
+    # collect enough samples to classify narrow/wide.
+    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
         session_type="st20p",
