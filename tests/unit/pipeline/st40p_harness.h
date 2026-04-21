@@ -59,6 +59,9 @@ int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame);
 
 uint32_t ut40p_stat_busy(const ut40p_ctx* ctx);
 uint32_t ut40p_stat_drop_frame(const ut40p_ctx* ctx);
+uint64_t ut40p_stat_frames_received(const ut40p_ctx* ctx);
+uint64_t ut40p_stat_frames_dropped(const ut40p_ctx* ctx);
+uint64_t ut40p_stat_frames_corrupted(const ut40p_ctx* ctx);
 
 #ifdef __cplusplus
 }

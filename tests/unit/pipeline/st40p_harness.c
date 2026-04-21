@@ -291,3 +291,15 @@ uint32_t ut40p_stat_busy(const ut40p_ctx* ctx) {
 uint32_t ut40p_stat_drop_frame(const ut40p_ctx* ctx) {
   return ctx->pipeline.stat_drop_frame;
 }
+
+uint64_t ut40p_stat_frames_received(const ut40p_ctx* ctx) {
+  return ctx->pipeline.stat_frames_received;
+}
+
+uint64_t ut40p_stat_frames_dropped(const ut40p_ctx* ctx) {
+  return ctx->pipeline.stat_frames_dropped;
+}
+
+uint64_t ut40p_stat_frames_corrupted(const ut40p_ctx* ctx) {
+  return ctx->pipeline.stat_frames_corrupted;
+}

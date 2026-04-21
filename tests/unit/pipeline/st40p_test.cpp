@@ -56,6 +56,15 @@ class St40PipelineRxTest : public ::testing::Test {
   uint32_t stat_busy() {
     return ut40p_stat_busy(ctx_);
   }
+  uint64_t stat_frames_received() {
+    return ut40p_stat_frames_received(ctx_);
+  }
+  uint64_t stat_frames_dropped() {
+    return ut40p_stat_frames_dropped(ctx_);
+  }
+  uint64_t stat_frames_corrupted() {
+    return ut40p_stat_frames_corrupted(ctx_);
+  }
 };
 
 /* ── Normal pipeline operation ────────────────────────────────────────── */
@@ -112,6 +121,9 @@ TEST_F(St40PipelineRxTest, FramebufferExhaustion) {
   process_all();
 
   EXPECT_GE(stat_busy(), 1u) << "Should hit framebuffer exhaustion";
+  /* Each stat_busy hit must also surface as a user-visible frame drop;
+   * otherwise apps cannot observe back-pressure via session stats. */
+  EXPECT_EQ(stat_frames_dropped(), stat_busy());
 }
 
 /* Sequence discontinuity tracking: gap between seq 1 and 3. */
@@ -354,8 +366,14 @@ TEST_F(St40PipelineRxTest, MarkerOnSinglePacketFrame) {
   put_frame(frame);
 }
 
-/* Frame status is COMPLETE when no seq discontinuity, CORRUPTED when there is. */
+/* Frame status is COMPLETE when no seq discontinuity, CORRUPTED when there is.
+ * The COMPLETE/CORRUPTED classification must also bump the user-stats
+ * counters that st40p_rx_get_session_stats() exposes; otherwise apps have no
+ * way to observe per-frame integrity issues. */
 TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
+  ASSERT_EQ(stat_frames_received(), 0u);
+  ASSERT_EQ(stat_frames_corrupted(), 0u);
+
   /* Clean frame */
   enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
   process_all();
@@ -363,6 +381,8 @@ TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
   auto* clean = get_frame();
   ASSERT_NE(clean, nullptr);
   EXPECT_EQ(clean->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 1u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u);
   put_frame(clean);
 
   /* Corrupted frame (seq gap) */
@@ -373,6 +393,8 @@ TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
   auto* corrupted = get_frame();
   ASSERT_NE(corrupted, nullptr);
   EXPECT_EQ(corrupted->status, ST_FRAME_STATUS_CORRUPTED);
+  EXPECT_EQ(stat_frames_received(), 2u);
+  EXPECT_EQ(stat_frames_corrupted(), 1u);
   put_frame(corrupted);
 }
 
