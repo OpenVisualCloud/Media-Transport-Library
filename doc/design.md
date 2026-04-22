@@ -354,7 +354,18 @@ st40p_rx_put_frame
 ```
 
 - **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
-- **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
+- **RX pipeline (`st40p_rx_*`)** is a thin shim over the **FRAME_LEVEL transport**
+  (`ST40_TYPE_FRAME_LEVEL` on `st40_rx_ops`). The transport owns the frame-buffer pool,
+  parses RFC 8331 packets, and assembles full frames using a 64-bit per-frame
+  **session-merged sequence bitmap** that natively absorbs cross-port redundancy.
+  Once a frame is complete the transport invokes
+  `notify_frame_ready(priv, addr, struct st40_rx_frame_meta*)`; the pipeline records
+  the buffer pointer plus all stats (timestamps, per-port and session-level
+  `seq_lost`/`seq_discont`, `pkts_total`, `pkts_recv[]`, `status`) into its slot —
+  zero-copy. The app returns ownership through `st40p_rx_put_frame`, which calls
+  `st40_rx_put_framebuff(transport, addr)` under the hood. Apps that still want raw
+  RTP can fall back to `ST40_TYPE_RTP_LEVEL` and pull mbufs via
+  `st40_rx_get_mbuf`/`st40_rx_put_mbuf`.
 
 Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
 `rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`
