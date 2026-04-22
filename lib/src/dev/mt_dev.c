@@ -836,7 +836,7 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
 }
 
 static int dev_start_timesync(struct mt_interface* inf) {
-  int ret, i = 0, max_retry = 10;
+  int ret, i = 0, max_retry = 100;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct timespec spec;
@@ -947,6 +947,12 @@ static int dev_config_port(struct mt_interface* inf) {
     port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
 #endif
   }
+
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+  if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+    port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+  }
+#endif
 
   dbg("%s(%d), rss mode %d\n", __func__, port, inf->rss_mode);
   if (mt_has_srss(impl, port)) {
@@ -1684,6 +1690,7 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
                            struct rte_mbuf* pad) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
+  struct mt_interface* inf = mt_if(impl, port);
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
@@ -1693,6 +1700,16 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
+    /* When txtime is active, the tsq path needs a valid future timestamp.
+     * tstamp=0 stalls the HW scheduler. Use PHC now + 1ms. */
+    if (inf->tx_launch_time_flag) {
+      struct timespec spec;
+      if (rte_eth_timesync_read_time(inf->port_id, &spec) == 0) {
+        *RTE_MBUF_DYNFIELD(pad, inf->tx_dynfield_offset, uint64_t*) =
+            mt_timespec_to_ns(&spec) + 1000000; /* +1ms margin */
+        pad->ol_flags |= inf->tx_launch_time_flag;
+      }
+    }
     mt_dpdk_tx_burst_busy(impl, queue, &pads[0], 1, 1);
   }
   dbg("%s, end\n", __func__);

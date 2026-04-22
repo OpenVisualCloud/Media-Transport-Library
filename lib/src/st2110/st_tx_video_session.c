@@ -73,9 +73,26 @@ static inline void pacing_set_mbuf_time_stamp(struct rte_mbuf* mbuf,
 }
 
 static inline void pacing_forward_cursor(struct st_tx_video_pacing* pacing) {
-  /* pkt forward */
-  pacing->tsc_time_cursor += pacing->trs;
-  pacing->ptp_time_cursor += pacing->trs;
+  if (pacing->ptp_cursor_128ns_align) {
+    /* Integer-only Bresenham pacing in 128ns ticks.
+     * Avoids `uint64_t += double` which loses ~256ns at PTP magnitude 1.77e18,
+     * causing the effective step to be floor(trs/256)*256 = 7680ns instead of
+     * the target ~7776ns. Bresenham distributes the fractional tick evenly
+     * across all packets, giving exact total frame span. */
+    uint32_t step_ticks = pacing->trs_128ns_ticks_base;
+    pacing->trs_128ns_accum += pacing->trs_128ns_ticks_extra;
+    if (pacing->trs_128ns_accum >= pacing->trs_128ns_total_pkts) {
+      step_ticks++;
+      pacing->trs_128ns_accum -= pacing->trs_128ns_total_pkts;
+    }
+    uint64_t step_ns = (uint64_t)step_ticks << 7; /* * 128 */
+    pacing->ptp_time_cursor += step_ns;
+    pacing->tsc_time_cursor += step_ns;
+  } else {
+    /* Non-TSN: use original double arithmetic */
+    pacing->tsc_time_cursor += pacing->trs;
+    pacing->ptp_time_cursor += pacing->trs;
+  }
 }
 
 static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
@@ -527,6 +544,40 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->pad_interval = s->st20_total_pkts;
   pacing->rl_rtp_offset_ticks = 0; /* set later for RL pacing */
 
+  /* E830 NIC LaunchTime quantizes timestamps to 128ns. Enable ptp_time_cursor
+   * alignment for TSN pacing to prevent cumulative truncation error. */
+  pacing->ptp_cursor_128ns_align =
+      (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN);
+  if (pacing->ptp_cursor_128ns_align) {
+    /* Pre-compute Bresenham parameters for integer-only 128ns-tick pacing.
+     * This avoids double-precision loss in pacing_forward_cursor(). */
+    pacing->trs_128ns_ticks_base = (uint32_t)(pacing->trs / 128.0);
+    uint64_t total_ticks =
+        (uint64_t)(pacing->trs * s->st20_total_pkts / 128.0 + 0.5); /* round */
+    pacing->trs_128ns_total_pkts = s->st20_total_pkts;
+    pacing->trs_128ns_ticks_extra =
+        (uint32_t)(total_ticks -
+                   (uint64_t)pacing->trs_128ns_ticks_base * s->st20_total_pkts);
+    pacing->trs_128ns_accum = 0;
+    info(
+        "%s[%02d], TSN Bresenham pacing: base=%u ticks (%u ns), extra=%u/%u, "
+        "total_ticks=%" PRIu64 ", frame_span=%.3f ms\n",
+        __func__, idx, pacing->trs_128ns_ticks_base, pacing->trs_128ns_ticks_base * 128,
+        pacing->trs_128ns_ticks_extra, pacing->trs_128ns_total_pkts, total_ticks,
+        (double)(total_ticks * 128) / 1e6);
+  }
+
+  info(
+      "%s[%02d], pacing params: trs=%.4f frame_time=%.2f tr_offset=%.2f\n"
+      "  reactive=%.6f vrx=%u total_pkts=%d frame_idle=%.2f\n"
+      "  trs_floor128=%u trs_ceil128=%u NIC_frame_span=%.3fms ideal_frame_span=%.3fms\n",
+      __func__, idx, pacing->trs, pacing->frame_time, pacing->tr_offset, pacing->reactive,
+      pacing->vrx, s->st20_total_pkts, pacing->frame_idle_time,
+      (uint32_t)(((uint64_t)pacing->trs >> 7) << 7),
+      (uint32_t)((((uint64_t)(pacing->trs + 127)) >> 7) << 7),
+      (double)(((uint64_t)pacing->trs >> 7) << 7) * s->st20_total_pkts / 1e6,
+      pacing->trs * s->st20_total_pkts / 1e6);
+
   int num_port = s->ops.num_port;
   int ret;
 
@@ -580,6 +631,12 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   } else if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSC_NARROW) {
     /* tsc narrow use single bulk for better accuracy */
     s->bulk = 1;
+  } else if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) {
+    /* TSN: compensate VRX for bulk batching.
+     * With large bulk sizes (e.g. 32) the compensation can exceed vrx_narrow
+     * for low-resolution formats, causing unsigned underflow. Clamp to 0. */
+    uint32_t vrx_comp = s->bulk - 1;
+    pacing->vrx = pacing->vrx > vrx_comp ? pacing->vrx - vrx_comp : 0;
   } else {
     pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
   }
@@ -624,6 +681,14 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_video_pacing* pacing = &s->pacing;
   pacing->cur_epochs = ptp_time / pacing->frame_time;
+  if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+      !s->stat_tsn_startup_init_logged) {
+    notice("%s(%d), TSN STARTUP INIT: ptp=%" PRIu64 " cur_epoch=%" PRIu64
+           " frame_time=%.2f tr_offset=%.2f vrx=%u\n",
+           __func__, s->idx, ptp_time, pacing->cur_epochs, pacing->frame_time,
+           pacing->tr_offset, pacing->vrx);
+    s->stat_tsn_startup_init_logged = true;
+  }
   return 0;
 }
 
@@ -673,10 +738,14 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
     }
 
   } else {
-    dbg("%s(%d), frame is late, frame_count_tai %" PRIu64 " next_free_frame_slot %" PRIu64
-        "\n",
-        __func__, s->idx, frame_count_tai, next_free_frame_slot);
+    notice("%s(%d), EPOCH DROP: frame_count_tai %" PRIu64 " > next_free %" PRIu64
+           " (drop %" PRIu64 "), cur_tai %" PRIu64 " frame_time %.2f\n",
+           __func__, s->idx, frame_count_tai, next_free_frame_slot,
+           frame_count_tai - next_free_frame_slot, cur_tai, s->pacing.frame_time);
     s->port_user_stats.common.stat_epoch_drop += (frame_count_tai - next_free_frame_slot);
+    s->stat_epoch_drop_prev_epoch = s->pacing.cur_epochs;
+    s->stat_epoch_drop_new_epoch = frame_count_tai;
+    s->stat_epoch_drop_pending = true;
 
     if (s->ops.notify_frame_late) {
       s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
@@ -694,9 +763,13 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t start_time_tai;
+  uint64_t init_epoch = pacing->cur_epochs;
+  uint64_t calc_epoch;
+  bool late_advance = false;
   int64_t time_to_tx_ns;
 
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
+  calc_epoch = pacing->cur_epochs;
 
   if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
     start_time_tai = required_tai;
@@ -705,8 +778,22 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   }
   time_to_tx_ns = start_time_tai - cur_tai;
 
+  /* For LaunchTime pacing, the NIC needs LaunchTime values in the future.
+   * If the current epoch's start time has already passed (time_to_tx <= 0),
+   * advance to the next epoch so the schedule is ~1 frame ahead.
+   * This check must happen BEFORE the negative clamp below, otherwise the
+   * clamp sets time_to_tx=0 and this condition triggers every frame, causing
+   * the system to skip every other epoch (fps=24 instead of 30).
+   * In steady state, the builder runs ~1 frame ahead so time_to_tx > 0 and
+   * this branch does not fire. */
+  if (pacing->ptp_cursor_128ns_align && time_to_tx_ns <= 0) {
+    pacing->cur_epochs++;
+    late_advance = true;
+    start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
+    time_to_tx_ns = start_time_tai - cur_tai;
+  }
+
   if (time_to_tx_ns < 0) {
-    /* should never happen, but it does. TODO: check why */
     dbg("%s(%d), negative time_to_tx_ns detected: %ld ns. Current PTP time: %" PRIu64
         "\n",
         __func__, s->idx, time_to_tx_ns, cur_tai);
@@ -718,7 +805,83 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   pacing->tsc_time_cursor = cur_tsc + time_to_tx_ns;
 
   pacing->tsc_time_frame_start = pacing->tsc_time_cursor;
+
   pacing->ptp_time_cursor = start_time_tai;
+  if (pacing->ptp_cursor_128ns_align) {
+    pacing->ptp_time_cursor = ((pacing->ptp_time_cursor + 127) >> 7) << 7;
+    pacing->trs_128ns_accum = 0;
+  }
+
+  if (s->stat_epoch_drop_pending) {
+    s->stat_epoch_drop_pending = false;
+    s->stat_epoch_drop_time_to_tx = time_to_tx_ns;
+    notice("%s(%d), EPOCH DROP PACING: prev_epoch %" PRIu64 " -> new_epoch %" PRIu64
+           " time_to_tx %" PRId64 "us start_tai %" PRIu64 " ptp_cursor %" PRIu64
+           " cur_tai %" PRIu64 "\n",
+           __func__, s->idx, s->stat_epoch_drop_prev_epoch, s->stat_epoch_drop_new_epoch,
+           time_to_tx_ns / 1000, start_time_tai, pacing->ptp_time_cursor, cur_tai);
+  }
+
+  /* Track time_to_tx_ns min/max for TSN diagnostics. */
+  if (!s->stat_time_to_tx_init) {
+    s->stat_time_to_tx_min = time_to_tx_ns;
+    s->stat_time_to_tx_max = time_to_tx_ns;
+    s->stat_time_to_tx_init = true;
+    s->stat_ptp_elapsed_sum = 0;
+    s->stat_tsc_elapsed_sum = 0;
+    s->stat_sync_count = 0;
+    s->stat_ttx_future = 0;
+    s->stat_ttx_borderline = 0;
+    s->stat_ttx_past = 0;
+  } else {
+    if (time_to_tx_ns < s->stat_time_to_tx_min) s->stat_time_to_tx_min = time_to_tx_ns;
+    if (time_to_tx_ns > s->stat_time_to_tx_max) s->stat_time_to_tx_max = time_to_tx_ns;
+    if (time_to_tx_ns > 1000000)
+      s->stat_ttx_future++;
+    else if (time_to_tx_ns < -1000000)
+      s->stat_ttx_past++;
+    else
+      s->stat_ttx_borderline++;
+    int64_t ptp_delta =
+        (int64_t)(cur_tai - s->stat_last_sync_ptp) - (int64_t)pacing->frame_time;
+    int64_t tsc_delta =
+        (int64_t)(cur_tsc - s->stat_last_sync_tsc) - (int64_t)pacing->frame_time;
+    s->stat_ptp_elapsed_sum += ptp_delta;
+    s->stat_tsc_elapsed_sum += tsc_delta;
+    s->stat_sync_count++;
+  }
+  s->stat_last_sync_ptp = cur_tai;
+  s->stat_last_sync_tsc = cur_tsc;
+
+  dbg("%s(%d), epoch %" PRIu64 " start_tai %" PRIu64 " ptp_cursor %" PRIu64
+      " tsc_cursor %" PRIu64 " time_to_tx %" PRId64 " trs %.4f\n",
+      __func__, s->idx, pacing->cur_epochs, start_time_tai, pacing->ptp_time_cursor,
+      pacing->tsc_time_cursor, time_to_tx_ns, pacing->trs);
+
+  if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+      (s->stat_tsn_startup_sync_logs < ST_TSN_STARTUP_TRACE_FRAMES)) {
+    notice("%s(%d), TSN STARTUP SYNC[%u]: init_epoch=%" PRIu64 " calc_epoch=%" PRIu64
+           " final_epoch=%" PRIu64 " late_advance=%d required_tai=%" PRIu64
+           " cur_tai=%" PRIu64 " start_tai=%" PRIu64 " time_to_tx_ns=%" PRId64
+           " ptp_cursor=%" PRIu64 " tsc_cursor=%" PRIu64 "\n",
+           __func__, s->idx, s->stat_tsn_startup_sync_logs, init_epoch, calc_epoch,
+           pacing->cur_epochs, late_advance, required_tai, cur_tai, start_time_tai,
+           time_to_tx_ns, pacing->ptp_time_cursor, pacing->tsc_time_cursor);
+    s->stat_tsn_startup_sync_logs++;
+  } else if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+             ((s->stat_tsn_trace_anchor_ptp == 0) ||
+              (cur_tai >=
+               (s->stat_tsn_trace_anchor_ptp + ST_TSN_STABLE_TRACE_DELAY_NS))) &&
+             (s->stat_tsn_stable_sync_logs < ST_TSN_STARTUP_TRACE_FRAMES)) {
+    notice("%s(%d), TSN STABLE SYNC[%u]: init_epoch=%" PRIu64 " calc_epoch=%" PRIu64
+           " final_epoch=%" PRIu64 " late_advance=%d required_tai=%" PRIu64
+           " cur_tai=%" PRIu64 " start_tai=%" PRIu64 " time_to_tx_ns=%" PRId64
+           " ptp_cursor=%" PRIu64 " tsc_cursor=%" PRIu64 "\n",
+           __func__, s->idx, s->stat_tsn_stable_sync_logs, init_epoch, calc_epoch,
+           pacing->cur_epochs, late_advance, required_tai, cur_tai, start_time_tai,
+           time_to_tx_ns, pacing->ptp_time_cursor, pacing->tsc_time_cursor);
+    s->stat_tsn_stable_sync_logs++;
+  }
 
   return 0;
 }
@@ -731,6 +894,61 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
   dbg("%s(%d), trs %f\n", __func__, s->idx, pacing->trs);
   return tv_sync_pacing(impl, s, required_tai);
+}
+
+static void tv_tsn_record_enqueue(struct mtl_main_impl* impl,
+                                  struct st_tx_video_session_impl* s,
+                                  enum mtl_session_port port, struct rte_mbuf* pkt,
+                                  struct rte_ring* ring) {
+  struct st_frame_trans* frame;
+  uint64_t cur_ptp;
+  uint64_t cur_tsc;
+  bool trace_stable;
+  uint64_t frame_epoch;
+
+  if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_TSN) return;
+  if (st_tx_mbuf_get_idx(pkt) != 0) return;
+
+  frame = st_tx_mbuf_get_priv(pkt);
+  if (!frame || frame->tsn_debug.first_enqueue_valid[port]) return;
+
+  cur_ptp = mt_get_ptp_time(impl, mt_port_logic2phy(s->port_maps, port));
+  cur_tsc = mt_get_tsc(impl);
+  frame->tsn_debug.first_enqueue_tsc[port] = cur_tsc;
+  frame->tsn_debug.first_enqueue_ptp[port] = cur_ptp;
+  frame->tsn_debug.first_enqueue_valid[port] = true;
+
+  if (s->st22_info)
+    frame_epoch = frame->tx_st22_meta.epoch;
+  else
+    frame_epoch = frame->tv_meta.epoch;
+
+  if (s->stat_tsn_trace_anchor_ptp == 0) s->stat_tsn_trace_anchor_ptp = cur_ptp;
+  trace_stable =
+      (cur_ptp >= (s->stat_tsn_trace_anchor_ptp + ST_TSN_STABLE_TRACE_DELAY_NS)) &&
+      (s->stat_tsn_stable_enqueue_logs[port] < ST_TSN_STARTUP_TRACE_FRAMES);
+
+  if (s->stat_tsn_startup_enqueue_logs[port] < ST_TSN_STARTUP_TRACE_FRAMES) {
+    notice("%s(%d), TSN STARTUP ENQ[%u]: frame_idx=%u epoch=%" PRIu64
+           " sync_to_enq_ptp_ns=%" PRIu64 " sync_to_enq_tsc_ns=%" PRIu64
+           " delta_ptp_ns=%" PRId64 " delta_tsc_ns=%" PRId64 " ring_count=%u\n",
+           __func__, s->idx, s->stat_tsn_startup_enqueue_logs[port], frame->idx,
+           frame_epoch, cur_ptp - frame->tsn_debug.sync_ptp,
+           cur_tsc - frame->tsn_debug.sync_tsc,
+           (int64_t)st_tx_mbuf_get_ptp(pkt) - (int64_t)cur_ptp,
+           (int64_t)st_tx_mbuf_get_tsc(pkt) - (int64_t)cur_tsc, rte_ring_count(ring));
+    s->stat_tsn_startup_enqueue_logs[port]++;
+  } else if (trace_stable) {
+    notice("%s(%d), TSN STABLE ENQ[%u]: frame_idx=%u epoch=%" PRIu64
+           " sync_to_enq_ptp_ns=%" PRIu64 " sync_to_enq_tsc_ns=%" PRIu64
+           " delta_ptp_ns=%" PRId64 " delta_tsc_ns=%" PRId64 " ring_count=%u\n",
+           __func__, s->idx, s->stat_tsn_stable_enqueue_logs[port], frame->idx,
+           frame_epoch, cur_ptp - frame->tsn_debug.sync_ptp,
+           cur_tsc - frame->tsn_debug.sync_tsc,
+           (int64_t)st_tx_mbuf_get_ptp(pkt) - (int64_t)cur_ptp,
+           (int64_t)st_tx_mbuf_get_tsc(pkt) - (int64_t)cur_tsc, rte_ring_count(ring));
+    s->stat_tsn_stable_enqueue_logs[port]++;
+  }
 }
 
 static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
@@ -1818,15 +2036,20 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   struct rte_ring* ring_r = NULL;
   int num_port = ops->num_port;
 
-  if (rte_ring_full(ring_p)) {
-    s->stat_build_ret_code = -STI_FRAME_RING_FULL;
-    return MTL_TASKLET_ALL_DONE;
-  }
-
   if (num_port > 1) {
     send_r = true;
     hdr_pool_r = s->mbuf_mempool_hdr[MTL_SESSION_PORT_R];
     ring_r = s->ring[MTL_SESSION_PORT_R];
+  }
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) {
+    unsigned int ring_cnt = rte_ring_count(ring_p);
+    if (ring_cnt > s->stat_tsn_build_ring_peak) s->stat_tsn_build_ring_peak = ring_cnt;
+  }
+  if (rte_ring_full(ring_p)) {
+    s->stat_build_ret_code = -STI_FRAME_RING_FULL;
+    if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN)
+      s->stat_tsn_build_ring_stop++;
+    return MTL_TASKLET_ALL_DONE;
   }
 
   /* check if any inflight pkts */
@@ -1834,9 +2057,13 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&s->inflight[MTL_SESSION_PORT_P][0],
                                  bulk, NULL);
     if (n > 0) {
+      tv_tsn_record_enqueue(impl, s, MTL_SESSION_PORT_P,
+                            s->inflight[MTL_SESSION_PORT_P][0], ring_p);
       s->inflight[MTL_SESSION_PORT_P][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_ENQUEUE_FAIL;
+      if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN)
+        s->stat_tsn_build_ring_stop++;
       return MTL_TASKLET_ALL_DONE;
     }
   }
@@ -1844,9 +2071,13 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&s->inflight[MTL_SESSION_PORT_R][0],
                                  bulk, NULL);
     if (n > 0) {
+      tv_tsn_record_enqueue(impl, s, MTL_SESSION_PORT_R,
+                            s->inflight[MTL_SESSION_PORT_R][0], ring_r);
       s->inflight[MTL_SESSION_PORT_R][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_R_ENQUEUE_FAIL;
+      if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN)
+        s->stat_tsn_build_ring_stop++;
       return MTL_TASKLET_ALL_DONE;
     }
   }
@@ -1860,8 +2091,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       tv_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
       bool time_measure = mt_sessions_time_measure(impl);
+      uint64_t tsc_pre_getframe = mt_get_tsc(impl);
       if (time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
+      uint64_t tsc_post_getframe = mt_get_tsc(impl);
       if (time_measure) {
         uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
         s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
@@ -1920,11 +2153,61 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         s->second_field = !frame->tv_meta.second_field;
       }
       tv_sync_pacing(impl, s, required_tai);
+      /* Measure per-frame overhead breakdown */
+      {
+        uint64_t tsc_after_sync = mt_get_tsc(impl);
+        if (s->stat_frame_done_tsc) {
+          uint64_t total = tsc_after_sync - s->stat_frame_done_tsc;
+          uint64_t getframe = tsc_post_getframe - tsc_pre_getframe;
+          uint64_t notify = tsc_pre_getframe - s->stat_frame_done_tsc;
+          uint64_t sync = tsc_after_sync - tsc_post_getframe;
+          if (total > s->stat_overhead_total_ns) s->stat_overhead_total_ns = total;
+          if (notify > s->stat_overhead_notify_ns) s->stat_overhead_notify_ns = notify;
+          if (getframe > s->stat_overhead_getframe_ns)
+            s->stat_overhead_getframe_ns = getframe;
+          if (sync > s->stat_overhead_sync_ns) s->stat_overhead_sync_ns = sync;
+          s->stat_overhead_sum_ns += total;
+          s->stat_overhead_count++;
+        }
+      }
       tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tv_meta.timestamp = pacing->ptp_time_cursor;
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;
+      memset(&frame->tsn_debug, 0, sizeof(frame->tsn_debug));
+      if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) {
+        frame->tsn_debug.sync_ptp =
+            mt_get_ptp_time(impl, mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P));
+        frame->tsn_debug.sync_tsc = mt_get_tsc(impl);
+        frame->tsn_debug.sync_time_to_tx_ns =
+            (int64_t)pacing->tsc_time_cursor - (int64_t)frame->tsn_debug.sync_tsc;
+        if (s->stat_tsn_trace_anchor_ptp == 0)
+          s->stat_tsn_trace_anchor_ptp = frame->tsn_debug.sync_ptp;
+      }
+      if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+          (s->stat_tsn_startup_frame_logs < ST_TSN_STARTUP_TRACE_FRAMES)) {
+        notice(
+            "%s(%d), TSN STARTUP FRAME[%u]: frame_idx=%u"
+            " app_epoch=%" PRIu64 " app_tai=%" PRIu64 " required_tai=%" PRIu64
+            " sync_epoch=%" PRIu64 " sync_ptp=%" PRIu64 " sync_rtp=%u second_field=%d\n",
+            __func__, idx, s->stat_tsn_startup_frame_logs, next_frame_idx, meta.epoch,
+            meta.timestamp, required_tai, frame->tv_meta.epoch, frame->tv_meta.timestamp,
+            frame->tv_meta.rtp_timestamp, frame->tv_meta.second_field);
+        s->stat_tsn_startup_frame_logs++;
+      } else if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+                 (frame->tsn_debug.sync_ptp >=
+                  (s->stat_tsn_trace_anchor_ptp + ST_TSN_STABLE_TRACE_DELAY_NS)) &&
+                 (s->stat_tsn_stable_frame_logs < ST_TSN_STARTUP_TRACE_FRAMES)) {
+        notice(
+            "%s(%d), TSN STABLE FRAME[%u]: frame_idx=%u"
+            " app_epoch=%" PRIu64 " app_tai=%" PRIu64 " required_tai=%" PRIu64
+            " sync_epoch=%" PRIu64 " sync_ptp=%" PRIu64 " sync_rtp=%u second_field=%d\n",
+            __func__, idx, s->stat_tsn_stable_frame_logs, next_frame_idx, meta.epoch,
+            meta.timestamp, required_tai, frame->tv_meta.epoch, frame->tv_meta.timestamp,
+            frame->tv_meta.rtp_timestamp, frame->tv_meta.second_field);
+        s->stat_tsn_stable_frame_logs++;
+      }
       /* init to next field */
       MT_USDT_ST20_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                  pacing->rtp_time_stamp);
@@ -2034,7 +2317,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
-    pacing_forward_cursor(pacing); /* pkt forward */
+    /* Only advance pacing cursor for real packets, not dummies. */
+    if (s->st20_pkt_idx < s->st20_total_pkts) {
+      pacing_forward_cursor(pacing); /* pkt forward */
+    }
     s->st20_pkt_idx++;
   }
 
@@ -2045,7 +2331,12 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     for (unsigned int i = 0; i < bulk; i++) s->inflight[MTL_SESSION_PORT_P][i] = pkts[i];
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     s->stat_build_ret_code = -STI_FRAME_PKT_ENQUEUE_FAIL;
+    if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN)
+      s->stat_tsn_build_ring_stop++;
     done = true;
+  } else if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+             (st_tx_mbuf_get_idx(pkts[0]) == 0)) {
+    tv_tsn_record_enqueue(impl, s, MTL_SESSION_PORT_P, pkts[0], ring_p);
   }
   if (send_r) {
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&pkts_r[0], bulk, NULL);
@@ -2054,7 +2345,12 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         s->inflight[MTL_SESSION_PORT_R][i] = pkts_r[i];
       s->inflight_cnt[MTL_SESSION_PORT_R]++;
       s->stat_build_ret_code = -STI_FRAME_PKT_R_ENQUEUE_FAIL;
+      if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN)
+        s->stat_tsn_build_ring_stop++;
       done = true;
+    } else if ((s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) &&
+               (st_tx_mbuf_get_idx(pkts_r[0]) == 0)) {
+      tv_tsn_record_enqueue(impl, s, MTL_SESSION_PORT_R, pkts_r[0], ring_r);
     }
   }
 
@@ -2072,13 +2368,25 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       tv_frame_free_cb(frame_info->addr, frame_info);
     }
 
-    uint64_t frame_end_time = mt_get_tsc(impl);
-    if (frame_end_time > pacing->tsc_time_cursor) {
-      s->port_user_stats.common.stat_exceed_frame_time++;
-      rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
-          (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+    /* Skip build timeout check for TSN: the NIC controls timing via LaunchTime
+     * descriptors. */
+    if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_TSN) {
+      uint64_t frame_end_time = mt_get_tsc(impl);
+      if (frame_end_time > pacing->tsc_time_cursor) {
+        s->port_user_stats.common.stat_exceed_frame_time++;
+        rte_atomic32_inc(&s->cbs_build_timeout);
+        dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
+            (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+      }
     }
+    /* Record TSC at frame completion for overhead measurement */
+    s->stat_frame_done_tsc = mt_get_tsc(impl);
+  }
+
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) {
+    s->stat_tsn_build_calls++;
+    s->stat_tsn_build_bulks_sum++;
+    if (s->stat_tsn_build_bulks_max < 1) s->stat_tsn_build_bulks_max = 1;
   }
 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
@@ -2576,12 +2884,14 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       tv_frame_free_cb(frame_info->addr, frame_info);
     }
 
-    uint64_t frame_end_time = mt_get_tsc(impl);
-    if (frame_end_time > pacing->tsc_time_cursor) {
-      s->port_user_stats.common.stat_exceed_frame_time++;
-      rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
-          (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+    if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_TSN) {
+      uint64_t frame_end_time = mt_get_tsc(impl);
+      if (frame_end_time > pacing->tsc_time_cursor) {
+        s->port_user_stats.common.stat_exceed_frame_time++;
+        rte_atomic32_inc(&s->cbs_build_timeout);
+        dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
+            (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+      }
     }
   }
 
@@ -3268,11 +3578,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   }
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   s->multi_src_port = mt_user_multi_src_port(impl);
-  s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
-  /* make sure the ring is smaller than total pkts */
-  while (s->ring_count > s->st20_total_pkts) {
-    s->ring_count /= 2;
-  }
 
   if (st22_frame_ops) {
     /* no chain support for st22 since the pkts for each frame may be very small */
@@ -3294,6 +3599,25 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     /* use tsc for st22 since pkts for each frame is vary */
     if (st22_frame_ops && s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
       s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
+    }
+  }
+
+  /* Ring sizing depends on pacing mode, so do it only AFTER pacing_way is initialized. */
+  s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSN) {
+    uint32_t min_ring = (uint32_t)s->st20_total_pkts * 2;
+    uint32_t ring_po2 = 1;
+    while (ring_po2 < min_ring) ring_po2 <<= 1;
+    s->ring_count = ring_po2;
+    info("%s(%d), TSN ring %u (2 * %d pkts, rounded to po2)\n", __func__, idx,
+         s->ring_count, s->st20_total_pkts);
+    if (!(ops->flags & ST20_TX_FLAG_DISABLE_BULK)) {
+      s->bulk = RTE_MIN(32, ST_SESSION_MAX_BULK);
+      info("%s(%d), TSN bulk %u\n", __func__, idx, s->bulk);
+    }
+  } else {
+    while (s->ring_count > s->st20_total_pkts) {
+      s->ring_count /= 2;
     }
   }
 
@@ -3361,6 +3685,9 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->trs_pad_inflight_num[i] = 0;
     s->trs_target_tsc[i] = 0;
     s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
+    s->stat_tsn_prev_last_delta_valid[i] = false;
+    s->stat_tsn_mode_lagging[i] = false;
+    s->stat_tsn_mode_diag_init[i] = false;
   }
 
   tv_init_pacing_epoch(impl, s);
@@ -3469,6 +3796,72 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   d = us->common.stat_exceed_frame_time - snap->common.stat_exceed_frame_time;
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): build timeout frames %" PRIu64 "\n", m_idx, idx, d);
+  }
+  if (s->stat_time_to_tx_init) {
+    notice("TX_VIDEO_SESSION(%d,%d): time_to_tx min %" PRId64 "us max %" PRId64 "us\n",
+           m_idx, idx, s->stat_time_to_tx_min / 1000, s->stat_time_to_tx_max / 1000);
+    if (s->stat_sync_count > 0) {
+      int64_t ptp_avg_drift_ns = s->stat_ptp_elapsed_sum / (int64_t)s->stat_sync_count;
+      int64_t tsc_avg_drift_ns = s->stat_tsc_elapsed_sum / (int64_t)s->stat_sync_count;
+      notice("TX_VIDEO_SESSION(%d,%d): drift ptp_avg %+" PRId64 "ns tsc_avg %+" PRId64
+             "ns per frame (n=%u)\n",
+             m_idx, idx, ptp_avg_drift_ns, tsc_avg_drift_ns, s->stat_sync_count);
+      notice("TX_VIDEO_SESSION(%d,%d): ttx_bands future=%u borderline=%u past=%u\n",
+             m_idx, idx, s->stat_ttx_future, s->stat_ttx_borderline, s->stat_ttx_past);
+      if (s->stat_lt_future_pkts || s->stat_lt_past_pkts) {
+        uint32_t total_lt = s->stat_lt_future_pkts + s->stat_lt_past_pkts;
+        notice("TX_VIDEO_SESSION(%d,%d): lt_pkts future=%u(%.1f%%) past=%u(%.1f%%)\n",
+               m_idx, idx, s->stat_lt_future_pkts,
+               total_lt ? 100.0 * s->stat_lt_future_pkts / total_lt : 0.0,
+               s->stat_lt_past_pkts,
+               total_lt ? 100.0 * s->stat_lt_past_pkts / total_lt : 0.0);
+        s->stat_lt_future_pkts = 0;
+        s->stat_lt_past_pkts = 0;
+      }
+      if (s->stat_overhead_count > 0) {
+        uint64_t avg_us = s->stat_overhead_sum_ns / s->stat_overhead_count / 1000;
+        notice("TX_VIDEO_SESSION(%d,%d): frame_overhead avg=%" PRIu64 "us max=%" PRIu64
+               "us (notify_max=%" PRIu64 "us getframe_max=%" PRIu64 "us sync_max=%" PRIu64
+               "us) n=%u\n",
+               m_idx, idx, avg_us, s->stat_overhead_total_ns / 1000,
+               s->stat_overhead_notify_ns / 1000, s->stat_overhead_getframe_ns / 1000,
+               s->stat_overhead_sync_ns / 1000, s->stat_overhead_count);
+        s->stat_overhead_total_ns = 0;
+        s->stat_overhead_notify_ns = 0;
+        s->stat_overhead_getframe_ns = 0;
+        s->stat_overhead_sync_ns = 0;
+        s->stat_overhead_sum_ns = 0;
+        s->stat_overhead_count = 0;
+      }
+      if (s->stat_tsn_build_calls || s->stat_tsn_tx_calls) {
+        uint64_t build_avg_x100 =
+            s->stat_tsn_build_calls
+                ? (100 * s->stat_tsn_build_bulks_sum) / s->stat_tsn_build_calls
+                : 0;
+        uint64_t tx_avg_x100 =
+            s->stat_tsn_tx_calls ? (100 * s->stat_tsn_tx_bulks_sum) / s->stat_tsn_tx_calls
+                                 : 0;
+        notice("TX_VIDEO_SESSION(%d,%d): tsn_loops build_avg=%" PRIu64 ".%02" PRIu64
+               " build_max=%u tx_avg=%" PRIu64 ".%02" PRIu64
+               " tx_max=%u ring_peak=%u/%u ring_stop=%u tx_partial=%u\n",
+               m_idx, idx, build_avg_x100 / 100, build_avg_x100 % 100,
+               s->stat_tsn_build_bulks_max, tx_avg_x100 / 100, tx_avg_x100 % 100,
+               s->stat_tsn_tx_bulks_max, s->stat_tsn_build_ring_peak,
+               s->stat_tsn_tx_ring_peak, s->stat_tsn_build_ring_stop,
+               s->stat_tsn_tx_partial);
+        s->stat_tsn_build_calls = 0;
+        s->stat_tsn_build_bulks_sum = 0;
+        s->stat_tsn_build_bulks_max = 0;
+        s->stat_tsn_build_ring_peak = 0;
+        s->stat_tsn_build_ring_stop = 0;
+        s->stat_tsn_tx_calls = 0;
+        s->stat_tsn_tx_bulks_sum = 0;
+        s->stat_tsn_tx_bulks_max = 0;
+        s->stat_tsn_tx_ring_peak = 0;
+        s->stat_tsn_tx_partial = 0;
+      }
+    }
+    s->stat_time_to_tx_init = false;
   }
   d = us->common.stat_error_user_timestamp - snap->common.stat_error_user_timestamp;
   if (d) {
@@ -4184,7 +4577,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
 
   uint16_t send = mt_drv_no_sys_txq(impl, port)
                       ? mt_txq_burst_busy(s->queue[s_port], &pkt, 1, 10)
-                      : mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+                      : mt_sys_queue_tx_burst(impl, port, &pkt, 1, NULL);
   if (send < 1) {
     err("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);

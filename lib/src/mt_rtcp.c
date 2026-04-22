@@ -305,7 +305,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   ipv4->total_length = htons(pkt->pkt_len - sizeof(struct rte_ether_hdr));
   udp->dgram_len = htons(pkt->pkt_len - sizeof(struct rte_ether_hdr) - sizeof(*ipv4));
 
-  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1, NULL);
   if (send != 1) {
     err("%s(%s), failed to send nack packet\n", __func__, rx->name);
     rte_pktmbuf_free(pkt);

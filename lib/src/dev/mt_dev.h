@@ -9,7 +9,7 @@
 
 /* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
-#define MT_DEV_TX_DESC (4096 / 8)
+#define MT_DEV_TX_DESC 4096
 
 /* Port link-up detection loop parameters.
  *
