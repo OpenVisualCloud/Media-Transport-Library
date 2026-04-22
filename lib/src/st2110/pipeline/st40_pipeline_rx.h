@@ -39,15 +39,6 @@ struct st40p_rx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
   struct st40p_rx_frame* framebuffs;
-  struct st40p_rx_frame* inflight_frame;
-  uint32_t inflight_rtp_timestamp;
-  struct st40p_rx_frame* pending_frame;
-  uint32_t pending_rtp_timestamp;
-  /* session-level continuity (post-dedup) */
-  bool session_last_seq_valid;
-  uint16_t session_last_seq;
-  bool last_seq_valid[MTL_SESSION_PORT_MAX];
-  uint16_t last_seq[MTL_SESSION_PORT_MAX];
   pthread_mutex_t lock;
   bool ready;
 

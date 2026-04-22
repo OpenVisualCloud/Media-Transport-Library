@@ -80,6 +80,64 @@ void ut40_set_skip_drain(bool skip);
 void ut40_session_reset(ut_test_ctx* ctx);
 int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker);
 
+/* T3: switch session to FRAME_LEVEL transport dispatch. After this returns,
+ * subsequent ut40_feed_* calls bypass the rtp ring and go to the assembler
+ * stub. Stats (received, port frames, seq tracking) still update. */
+void ut40_set_frame_level(ut_test_ctx* ctx);
+uint64_t ut40_stat_assemble_dispatched(const ut_test_ctx* ctx);
+int ut40_notify_rtp_calls(void);
+void ut40_notify_rtp_calls_reset(void);
+
+/* T4: full FRAME_LEVEL setup with allocated slot pool + capturing notify
+ * callback. After this, ut40_feed_* drives full assembly; delivered frames
+ * are captured and inspectable via ut40_captured_*. Tests must call
+ * ut40_release_frame() (or ut40_teardown_frame_pool) to recycle slots. */
+void ut40_setup_frame_pool(ut_test_ctx* ctx, uint16_t framebuff_cnt,
+                           uint32_t framebuff_size);
+void ut40_teardown_frame_pool(ut_test_ctx* ctx);
+
+int ut40_captured_count(void);
+void ut40_captured_reset(void);
+void* ut40_captured_addr(int i);
+uint16_t ut40_captured_meta_num(int i);
+uint32_t ut40_captured_udw_fill(int i);
+uint32_t ut40_captured_rtp_ts(int i);
+bool ut40_captured_marker(int i);
+bool ut40_captured_interlaced(int i);
+int ut40_captured_meta_did(int frame_i, int meta_i);
+int ut40_captured_meta_sdid(int frame_i, int meta_i);
+int ut40_captured_meta_udw_size(int frame_i, int meta_i);
+uint32_t ut40_captured_meta_udw_offset(int frame_i, int meta_i);
+uint8_t ut40_captured_udw_byte(int frame_i, uint32_t off);
+
+/* T5 seq-stat accessors */
+uint32_t ut40_captured_seq_lost(int i);
+bool ut40_captured_seq_discont(int i);
+uint32_t ut40_captured_port_seq_lost(int i, enum mtl_session_port p);
+bool ut40_captured_port_seq_discont(int i, enum mtl_session_port p);
+uint32_t ut40_captured_port_pkts_recv(int i, enum mtl_session_port p);
+uint32_t ut40_captured_pkts_total(int i);
+int ut40_captured_status(int i);
+
+void ut40_set_notify_frame_fail_after(int n);
+void ut40_release_frame(ut_test_ctx* ctx, void* addr);
+
+uint64_t ut40_stat_anc_frames_ready(const ut_test_ctx* ctx);
+uint64_t ut40_stat_anc_frames_dropped(const ut_test_ctx* ctx);
+uint64_t ut40_stat_anc_pkt_parse_err(const ut_test_ctx* ctx);
+
+/* Build + feed an mbuf carrying one real ANC packet (parity + checksum
+ * applied by harness). Use corrupt_parity_word>=0 to flip parity bits on
+ * that UDW word; corrupt_checksum=true to bit-flip the checksum word. */
+int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                      enum mtl_session_port port, uint8_t did, uint8_t sdid,
+                      const uint8_t* udw_bytes, uint16_t udw_size,
+                      int corrupt_parity_word, bool corrupt_checksum);
+
+/* Framing-only feed: well-formed empty ANC packet (udw_size=0). */
+int ut40_feed_pkt_anc0(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                       enum mtl_session_port port);
+
 #ifdef __cplusplus
 }
 
