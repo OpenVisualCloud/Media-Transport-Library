@@ -322,6 +322,19 @@ ST40p RX mark frames whose constituent packets had unrecoverable gaps as
 the frame is still delivered to the app (the app should consult
 `frame->status`).
 
+> **ST40p RX seq stats are bitmap-derived (transport-side).** From the
+> `ST40_TYPE_FRAME_LEVEL` transport refactor onwards, the `seq_lost` /
+> `seq_discont` fields on `st40_frame_info` (and the underlying
+> `st40_rx_frame_meta`) are computed in the RX session from a per-frame
+> 64-bit **session-merged** sequence bitmap. Each accepted packet (after
+> the per-port redundancy filter) flips its bit; at marker time
+> `seq_lost = (max_offset + 1) - popcount(bitmap)`. Packets that arrive on
+> the redundant port and fill a gap left by the primary port flip the same
+> bit, so cross-port redundancy is reflected directly in the count — no more
+> false positive `seq_discont` from cross-port reorder. The `port_seq_lost[]`
+> / `port_seq_discont[]` arrays still report the per-port intra-frame view
+> for observability.
+
 **TX (any type).** `stat_epoch_drop` = app handed frame too late, slots were
 skipped (counter advanced by the number of skipped slots).
 `stat_epoch_onward` = system clock ran past `max_onward_epochs` ahead of the

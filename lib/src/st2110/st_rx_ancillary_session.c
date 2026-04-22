@@ -90,6 +90,356 @@ static int rx_ancillary_sessions_tasklet_stop(void* priv) {
   return 0;
 }
 
+/* T4: FRAME_LEVEL assembler — ports the body of pipeline rx_st40p_rtp_ready()
+ * into the transport. Owns the frame slot pool allocated in T2; on marker,
+ * fills cur_meta and calls ops->notify_frame_ready(priv, addr, &meta).
+ *
+ * Slot lifecycle (single writer per side):
+ *   FREE      → tasklet picks for new frame      → RECEIVING
+ *   RECEIVING → marker arrives                    → READY (notify) → IN_USER
+ *   RECEIVING → tmstamp change, num_port>1        → PENDING (wait late marker)
+ *   PENDING   → matching late marker arrives      → READY (notify) → IN_USER
+ *   IN_USER   → app calls st40_rx_put_framebuff   → FREE
+ */
+
+static struct st_rx_anc_frame_slot* rx_anc_get_free_slot(
+    struct st_rx_ancillary_session_impl* s) {
+  for (uint16_t i = 0; i < s->frame_slots_cnt; i++) {
+    struct st_rx_anc_frame_slot* slot = &s->frame_slots[i];
+    if (slot->state == ST_RX_ANC_SLOT_FREE) return slot;
+  }
+  return NULL;
+}
+
+static void rx_anc_slot_init_frame(struct st_rx_anc_frame_slot* slot, uint32_t tmstamp,
+                                   bool interlaced, bool second_field, uint64_t recv_ts) {
+  slot->state = ST_RX_ANC_SLOT_RECEIVING;
+  slot->rtp_timestamp = tmstamp;
+  slot->udw_buffer_fill = 0;
+  slot->meta_num = 0;
+  slot->pkts_total = 0;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) slot->pkts_recv[i] = 0;
+  slot->receive_timestamp = recv_ts;
+  slot->interlaced = interlaced;
+  slot->second_field = second_field;
+  slot->rtp_marker = false;
+  /* T5 seq trackers */
+  slot->seq_bitmap = 0;
+  slot->seq_base = 0;
+  slot->seq_max_offset = 0;
+  slot->seq_base_valid = false;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    slot->port_last_seq[i] = -1;
+    slot->port_seq_lost[i] = 0;
+    slot->port_seq_discont[i] = false;
+  }
+}
+
+/* T5: record one accepted packet's seq into the slot's per-frame trackers.
+ * - Updates the session-merged bitmap (handles backward arrivals via rebase).
+ * - Updates per-port last_seq + per-port lost gaps.
+ * Backward seqs that don't fit (frame too large for 64-bit bitmap) silently
+ * do not contribute to the bitmap; they still update per-port. */
+static void rx_anc_slot_record_seq(struct st_rx_anc_frame_slot* slot, uint16_t seq_id,
+                                   enum mtl_session_port s_port) {
+  if (!slot->seq_base_valid) {
+    slot->seq_base = seq_id;
+    slot->seq_base_valid = true;
+    slot->seq_bitmap = 1; /* offset 0 set */
+    slot->seq_max_offset = 0;
+  } else {
+    int32_t delta = (int16_t)(seq_id - slot->seq_base);
+    if (delta < 0) {
+      /* Late backward arrival: rebase if shift fits the bitmap. */
+      uint32_t shift = (uint32_t)(-delta);
+      if (shift < ST_RX_ANC_BITMAP_BITS) {
+        slot->seq_bitmap <<= shift;
+        slot->seq_bitmap |= 1ULL; /* new offset 0 = the late seq */
+        slot->seq_base = seq_id;
+        slot->seq_max_offset += shift;
+      }
+      /* else: too far back to track; bitmap unchanged. */
+    } else {
+      uint32_t off = (uint32_t)delta;
+      if (off < ST_RX_ANC_BITMAP_BITS) {
+        slot->seq_bitmap |= ((uint64_t)1 << off);
+        if (off > slot->seq_max_offset) slot->seq_max_offset = (uint16_t)off;
+      }
+    }
+  }
+
+  if (s_port < MTL_SESSION_PORT_MAX) {
+    if (slot->port_last_seq[s_port] >= 0) {
+      uint16_t expected = (uint16_t)(slot->port_last_seq[s_port] + 1);
+      if (expected != seq_id) {
+        slot->port_seq_discont[s_port] = true;
+        if (mt_seq16_greater(seq_id, expected))
+          slot->port_seq_lost[s_port] += (uint32_t)(uint16_t)(seq_id - expected);
+      }
+    }
+    /* Only advance — don't rewind on backward arrivals. */
+    if (slot->port_last_seq[s_port] < 0 ||
+        mt_seq16_greater(seq_id, (uint16_t)slot->port_last_seq[s_port]))
+      slot->port_last_seq[s_port] = seq_id;
+  }
+}
+
+/* Parse one RTP packet's ANC chunks into the slot. Returns 0 on full parse,
+ * <0 if any ANC chunk failed validation (UDW parity, checksum, overflow).
+ * Best-effort: partial successes are kept (matches pipeline behavior). */
+static int rx_anc_slot_parse_pkt(struct st_rx_ancillary_session_impl* s,
+                                 struct st_rx_anc_frame_slot* slot,
+                                 struct st40_rfc8331_rtp_hdr* hdr, uint16_t len) {
+  uint32_t anc_count = hdr->first_hdr_chunk.anc_count;
+  uint8_t* payload = (uint8_t*)(hdr + 1);
+  uint32_t payload_room = (len > sizeof(*hdr)) ? (len - sizeof(*hdr)) : 0;
+  uint32_t payload_offset = 0;
+  int ret = 0;
+
+  for (uint32_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
+    if (slot->meta_num >= ST40_MAX_META) {
+      warn("%s(%d), meta slots exhausted at %u\n", __func__, s->idx, slot->meta_num);
+      ret = -ENOSPC;
+      break;
+    }
+    if (payload_offset + sizeof(struct st40_rfc8331_payload_hdr) > payload_room) {
+      warn("%s(%d), payload offset %u exceeds room %u\n", __func__, s->idx,
+           payload_offset, payload_room);
+      ret = -EINVAL;
+      break;
+    }
+
+    struct st40_rfc8331_payload_hdr* payload_hdr =
+        (struct st40_rfc8331_payload_hdr*)(payload + payload_offset);
+    struct st40_rfc8331_payload_hdr hdr_local = {0};
+    hdr_local.swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
+    hdr_local.swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+
+    uint16_t udw_words = hdr_local.second_hdr_chunk.data_count & 0xFF;
+    struct st40_meta* meta_entry = &slot->meta[slot->meta_num];
+    meta_entry->c = hdr_local.first_hdr_chunk.c;
+    meta_entry->line_number = hdr_local.first_hdr_chunk.line_number;
+    meta_entry->hori_offset = hdr_local.first_hdr_chunk.horizontal_offset;
+    meta_entry->s = hdr_local.first_hdr_chunk.s;
+    meta_entry->stream_num = hdr_local.first_hdr_chunk.stream_num;
+    meta_entry->did = hdr_local.second_hdr_chunk.did & 0xFF;
+    meta_entry->sdid = hdr_local.second_hdr_chunk.sdid & 0xFF;
+    meta_entry->udw_size = udw_words;
+    meta_entry->udw_offset = slot->udw_buffer_fill;
+
+    /* Match TX padding: floor to bytes then pad to next 4-byte multiple */
+    uint32_t total_bits = (3 + udw_words + 1) * 10;
+    uint32_t total_size = total_bits / 8;
+    uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
+    uint32_t anc_packet_bytes =
+        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
+    if (payload_offset + anc_packet_bytes > payload_room) {
+      warn("%s(%d), anc bytes %u + offset %u > room %u\n", __func__, s->idx,
+           anc_packet_bytes, payload_offset, payload_room);
+      ret = -EINVAL;
+      break;
+    }
+
+    bool meta_valid = true;
+    if (udw_words > 0) {
+      uint8_t* udw_src = (uint8_t*)&payload_hdr->second_hdr_chunk;
+      uint32_t original_fill = slot->udw_buffer_fill;
+      for (uint16_t udw_idx = 0; udw_idx < udw_words; udw_idx++) {
+        uint16_t udw = st40_get_udw(udw_idx + 3, udw_src);
+        if (!st40_check_parity_bits(udw)) {
+          warn("%s(%d), UDW parity fail anc=%u word=%u\n", __func__, s->idx, anc_idx,
+               udw_idx);
+          meta_valid = false;
+          break;
+        }
+        if (slot->udw_buffer_fill >= slot->udw_buf_size) {
+          warn("%s(%d), UDW buffer overflow anc=%u\n", __func__, s->idx, anc_idx);
+          meta_valid = false;
+          break;
+        }
+        slot->udw_buf[slot->udw_buffer_fill++] = (uint8_t)(udw & 0xFF);
+      }
+      if (meta_valid) {
+        uint16_t cs_udw = st40_get_udw(udw_words + 3, udw_src);
+        uint16_t cs_calc = st40_calc_checksum(3 + udw_words, udw_src);
+        if (cs_udw != cs_calc) {
+          warn("%s(%d), checksum mismatch anc=%u (0x%03x != 0x%03x)\n", __func__, s->idx,
+               anc_idx, cs_udw, cs_calc);
+          meta_valid = false;
+        }
+      }
+      if (!meta_valid) {
+        slot->udw_buffer_fill = original_fill;
+        s->stat_anc_pkt_parse_err++;
+        ret = -EINVAL;
+        break;
+      }
+    }
+
+    slot->meta_num++;
+    payload_offset += anc_packet_bytes;
+  }
+  return ret;
+}
+
+static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
+                                struct st_rx_ancillary_session_impl* s,
+                                struct st_rx_anc_frame_slot* slot) {
+  struct st40_rx_ops* ops = &s->ops;
+  struct st40_rx_frame_meta* meta = &slot->cur_meta;
+
+  memset(meta, 0, sizeof(*meta));
+  meta->meta = slot->meta;
+  meta->meta_num = slot->meta_num;
+  meta->udw_buffer_fill = slot->udw_buffer_fill;
+  meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  meta->timestamp = slot->rtp_timestamp;
+  meta->rtp_timestamp = slot->rtp_timestamp;
+  meta->interlaced = slot->interlaced;
+  meta->second_field = slot->second_field;
+  meta->rtp_marker = slot->rtp_marker;
+  /* T5: derive seq_lost / seq_discont from this slot's own per-frame bitmap.
+   * expected = max_offset + 1 (slots with at least one packet).
+   * seen     = popcount(bitmap).
+   * Cross-port redundancy is naturally accounted for: late R packets that
+   * fill in P gaps flip the corresponding bit, so they don't show as loss. */
+  if (slot->seq_base_valid) {
+    uint32_t expected = (uint32_t)slot->seq_max_offset + 1;
+    uint32_t seen = (uint32_t)__builtin_popcountll(slot->seq_bitmap);
+    meta->seq_lost = expected > seen ? (expected - seen) : 0;
+  } else {
+    meta->seq_lost = 0;
+  }
+  meta->seq_discont = meta->seq_lost > 0;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    meta->port_seq_lost[i] = slot->port_seq_lost[i];
+    meta->port_seq_discont[i] = slot->port_seq_discont[i];
+    meta->pkts_recv[i] = slot->pkts_recv[i];
+  }
+  meta->pkts_total = slot->pkts_total;
+  meta->status = meta->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
+
+  s->stat_anc_frames_ready++;
+  /* Note: stat_frames_received is incremented in handle_pkt() on each new
+   * timestamp (i.e. once per unique frame seen on the wire). Do NOT bump it
+   * again here — that double-counted FRAME_LEVEL deliveries 2x in the periodic
+   * stat dump and led to bogus "regression" reports vs the real pipeline get
+   * count. The pipeline's stat_anc_frames_ready / get_succ are the source of
+   * truth for delivered frames. */
+
+  /* Hand off to app. Slot ownership transfers until put_framebuff. */
+  enum st_rx_anc_slot_state prev_state = slot->state;
+  slot->state = ST_RX_ANC_SLOT_IN_USER;
+  uint64_t tsc_start = mt_sessions_time_measure(impl) ? mt_get_tsc(impl) : 0;
+  int ret = ops->notify_frame_ready
+                ? ops->notify_frame_ready(ops->priv, slot->udw_buf, meta)
+                : -EIO;
+  if (tsc_start) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
+  }
+  if (ret < 0) {
+    /* App rejected — reclaim slot ourselves so the pool isn't starved. */
+    err("%s(%d), notify_frame_ready ret %d, reclaim slot %u\n", __func__, s->idx, ret,
+        slot->idx);
+    slot->state = ST_RX_ANC_SLOT_FREE;
+    MTL_MAY_UNUSED(prev_state);
+  }
+}
+
+static int rx_ancillary_session_assemble_pkt(struct mtl_main_impl* impl,
+                                             struct st_rx_ancillary_session_impl* s,
+                                             struct rte_mbuf* mbuf, uint16_t seq_id,
+                                             uint32_t tmstamp, uint16_t pkt_len,
+                                             enum mtl_session_port s_port) {
+  s->stat_assemble_dispatched++;
+  MTL_MAY_UNUSED(seq_id);
+  MTL_MAY_UNUSED(pkt_len);
+
+  /* Re-derive header pointer (handle_pkt has already ntohl'd first chunk). */
+  size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
+  struct st40_rfc8331_rtp_hdr* hdr =
+      rte_pktmbuf_mtod_offset(mbuf, struct st40_rfc8331_rtp_hdr*, hdr_offset);
+
+  uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+  bool pkt_interlaced = (f_bits & 0x2) ? true : false;
+  bool pkt_second_field = pkt_interlaced && (f_bits & 0x1);
+  bool marker = hdr->base.marker ? true : false;
+  uint16_t len = mbuf->data_len - hdr_offset;
+  uint64_t recv_ts = 0; /* mt_mbuf_time_stamp needs phy_port; skip for now */
+
+  /* Pick or allocate the target slot. */
+  struct st_rx_anc_frame_slot* slot = NULL;
+
+  if (s->anc_pending_slot && s->anc_pending_slot->rtp_timestamp == tmstamp) {
+    /* Late packet for the pending frame — feed it. */
+    slot = s->anc_pending_slot;
+  } else if (s->anc_inflight_slot) {
+    if (s->anc_inflight_slot->rtp_timestamp == tmstamp) {
+      slot = s->anc_inflight_slot;
+    } else {
+      /* Timestamp moved on. Roll inflight to PENDING (multi-port) or READY (single). */
+      struct st_rx_anc_frame_slot* old = s->anc_inflight_slot;
+      s->anc_inflight_slot = NULL;
+      if (s->ops.num_port > 1) {
+        if (s->anc_pending_slot) {
+          /* Force-deliver existing pending — no late marker arrived. */
+          struct st_rx_anc_frame_slot* prev_pending = s->anc_pending_slot;
+          s->anc_pending_slot = NULL;
+          prev_pending->state = ST_RX_ANC_SLOT_READY;
+          rx_anc_slot_deliver(impl, s, prev_pending);
+        }
+        old->state = ST_RX_ANC_SLOT_PENDING;
+        s->anc_pending_slot = old;
+      } else {
+        old->state = ST_RX_ANC_SLOT_READY;
+        rx_anc_slot_deliver(impl, s, old);
+      }
+    }
+  }
+
+  if (!slot) {
+    /* Need a fresh slot for this rtp_timestamp. */
+    slot = rx_anc_get_free_slot(s);
+    if (!slot) {
+      s->stat_anc_frames_dropped++;
+      dbg("%s(%d), frame slot pool exhausted, drop tmstamp %u\n", __func__, s->idx,
+          tmstamp);
+      return -EBUSY;
+    }
+    rx_anc_slot_init_frame(slot, tmstamp, pkt_interlaced, pkt_second_field, recv_ts);
+    s->anc_inflight_slot = slot;
+  } else {
+    /* Existing slot: keep the earliest receive_timestamp seen. */
+    if (recv_ts && (!slot->receive_timestamp || slot->receive_timestamp > recv_ts))
+      slot->receive_timestamp = recv_ts;
+    /* Refresh interlace metadata if a later packet disagrees with our guess. */
+    if (slot->interlaced != pkt_interlaced || slot->second_field != pkt_second_field) {
+      slot->interlaced = pkt_interlaced;
+      slot->second_field = pkt_second_field;
+    }
+  }
+
+  slot->pkts_total++;
+  if (s_port < MTL_SESSION_PORT_MAX) slot->pkts_recv[s_port]++;
+  rx_anc_slot_record_seq(slot, seq_id, s_port);
+
+  /* Parse ANC payload into slot. Errors are recorded; assembly continues
+   * because partial frames are still useful (mirrors pipeline behavior). */
+  rx_anc_slot_parse_pkt(s, slot, hdr, len);
+
+  if (marker) {
+    slot->rtp_marker = true;
+    if (slot == s->anc_pending_slot)
+      s->anc_pending_slot = NULL;
+    else
+      s->anc_inflight_slot = NULL;
+    slot->state = ST_RX_ANC_SLOT_READY;
+    rx_anc_slot_deliver(impl, s, slot);
+  }
+  return 0;
+}
+
 static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                                            struct st_rx_ancillary_session_impl* s,
                                            struct rte_mbuf* mbuf,
@@ -320,18 +670,24 @@ accept_pkt:
     }
   }
 
-  /* enqueue to packet ring to let app to handle */
-  int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
-  if (ret < 0) {
-    err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
-        s->idx, seq_id);
-    ST40_FUZZ_LOG("%s(%d,%d), enqueue failure for seq %u len %u\n", __func__, s->idx,
-                  s_port, seq_id, pkt_len);
-    s->port_user_stats.stat_pkts_enqueue_fail++;
-    MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
-    return 0;
+  /* enqueue to packet ring (RTP_LEVEL) or hand off to assembler (FRAME_LEVEL) */
+  if (s->ops.type == ST40_TYPE_FRAME_LEVEL) {
+    /* T3: dispatch only — assembler stub does not take an mbuf refcnt; the
+     * caller's burst-free reclaims it. RTP-style notify is skipped. */
+    rx_ancillary_session_assemble_pkt(impl, s, mbuf, seq_id, tmstamp, pkt_len, s_port);
+  } else {
+    int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
+    if (ret < 0) {
+      err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
+          s->idx, seq_id);
+      ST40_FUZZ_LOG("%s(%d,%d), enqueue failure for seq %u len %u\n", __func__, s->idx,
+                    s_port, seq_id, pkt_len);
+      s->port_user_stats.stat_pkts_enqueue_fail++;
+      MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
+      return 0;
+    }
+    rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
   }
-  rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   /* Only advance timestamp forward — prev-frame late arrivals must not roll back.
    * Exception: threshold bypass is a recovery mechanism that may legitimately
@@ -350,7 +706,9 @@ accept_pkt:
   uint64_t tsc_start = 0;
   bool time_measure = mt_sessions_time_measure(impl);
   if (time_measure) tsc_start = mt_get_tsc(impl);
-  ops->notify_rtp_ready(ops->priv);
+  if (s->ops.type != ST40_TYPE_FRAME_LEVEL) {
+    ops->notify_rtp_ready(ops->priv);
+  }
   if (time_measure) {
     uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
@@ -373,6 +731,7 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   memset(&s->anc_window_prev, 0, sizeof(s->anc_window_prev));
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
+  s->stat_assemble_dispatched = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
@@ -549,12 +908,61 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int rx_ancillary_session_uinit_frames(struct st_rx_ancillary_session_impl* s) {
+  if (s->frame_slots) {
+    for (uint16_t i = 0; i < s->frame_slots_cnt; i++) {
+      if (s->frame_slots[i].udw_buf) {
+        mt_rte_free(s->frame_slots[i].udw_buf);
+        s->frame_slots[i].udw_buf = NULL;
+      }
+    }
+    mt_rte_free(s->frame_slots);
+    s->frame_slots = NULL;
+  }
+  s->frame_slots_cnt = 0;
+  return 0;
+}
+
+static int rx_ancillary_session_init_frames(struct st_rx_ancillary_session_impl* s) {
+  uint16_t cnt = s->ops.framebuff_cnt;
+  size_t buf_sz = s->ops.framebuff_size;
+  int idx = s->idx;
+
+  s->frame_slots = mt_rte_zmalloc_socket(sizeof(*s->frame_slots) * cnt, s->socket_id);
+  if (!s->frame_slots) {
+    err("%s(%d), frame_slots alloc fail (%u slots)\n", __func__, idx, cnt);
+    return -ENOMEM;
+  }
+  s->frame_slots_cnt = cnt;
+
+  for (uint16_t i = 0; i < cnt; i++) {
+    struct st_rx_anc_frame_slot* slot = &s->frame_slots[i];
+    slot->idx = i;
+    slot->state = ST_RX_ANC_SLOT_FREE;
+    slot->udw_buf_size = buf_sz;
+    slot->udw_buf = mt_rte_zmalloc_socket(buf_sz, s->socket_id);
+    if (!slot->udw_buf) {
+      err("%s(%d), udw_buf alloc fail (%zu bytes) for slot %u\n", __func__, idx, buf_sz,
+          i);
+      rx_ancillary_session_uinit_frames(s);
+      return -ENOMEM;
+    }
+  }
+
+  info("%s(%d), %u frame slots, %zu bytes UDW each\n", __func__, idx, cnt, buf_sz);
+  return 0;
+}
+
 static int rx_ancillary_session_init_sw(struct st_rx_ancillary_sessions_mgr* mgr,
                                         struct st_rx_ancillary_session_impl* s) {
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
+
+  if (s->ops.type == ST40_TYPE_FRAME_LEVEL) {
+    return rx_ancillary_session_init_frames(s);
+  }
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_ANCILLARY_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -579,6 +987,7 @@ static int rx_ancillary_session_uinit_sw(struct st_rx_ancillary_session_impl* s)
     rte_ring_free(s->packet_ring);
     s->packet_ring = NULL;
   }
+  rx_ancillary_session_uinit_frames(s);
 
   return 0;
 }
@@ -768,6 +1177,19 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     notice("RX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
            "\n",
            idx, interlace_first_field, interlace_second_field);
+  }
+
+  /* T4/T5: assembler observability for FRAME_LEVEL transport */
+  if (s->stat_anc_frames_dropped || s->stat_anc_pkt_parse_err ||
+      s->stat_assemble_dispatched) {
+    notice("RX_ANC_SESSION(%d): assembler dispatched %" PRIu64 " ready %" PRIu64
+           " dropped %" PRIu64 " parse_err %" PRIu64 "\n",
+           idx, s->stat_assemble_dispatched, s->stat_anc_frames_ready,
+           s->stat_anc_frames_dropped, s->stat_anc_pkt_parse_err);
+    s->stat_assemble_dispatched = 0;
+    s->stat_anc_frames_ready = 0;
+    s->stat_anc_frames_dropped = 0;
+    s->stat_anc_pkt_parse_err = 0;
   }
 
   memcpy(snap, us, sizeof(*snap));
@@ -1055,6 +1477,15 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
 
+  /* Back-compat: enum st40_type mirrors ST30 (FRAME_LEVEL=0). Existing ST40 RX
+   * callers (pipeline RX, RxTxApp, gstreamer plugin) zero-init their ops and
+   * set notify_rtp_ready, expecting legacy RTP_LEVEL behavior. Treat such
+   * ops as RTP_LEVEL until callers explicitly opt into FRAME_LEVEL (T6+). */
+  if (ops->type == ST40_TYPE_FRAME_LEVEL && !ops->notify_frame_ready &&
+      ops->framebuff_cnt == 0) {
+    ops->type = ST40_TYPE_RTP_LEVEL;
+  }
+
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
@@ -1076,14 +1507,29 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
     }
   }
 
-  if (ops->rtp_ring_size <= 0) {
-    err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
-    return -EINVAL;
-  }
-
-  if (!ops->notify_rtp_ready) {
-    err("%s, pls set notify_rtp_ready\n", __func__);
-    return -EINVAL;
+  if (ops->type == ST40_TYPE_FRAME_LEVEL) {
+    if (!ops->notify_frame_ready) {
+      err("%s, FRAME_LEVEL: pls set notify_frame_ready\n", __func__);
+      return -EINVAL;
+    }
+    if (ops->framebuff_cnt < 2) {
+      err("%s, FRAME_LEVEL: framebuff_cnt %u must be >= 2\n", __func__,
+          ops->framebuff_cnt);
+      return -EINVAL;
+    }
+    if (ops->framebuff_size == 0) {
+      err("%s, FRAME_LEVEL: framebuff_size must be > 0\n", __func__);
+      return -EINVAL;
+    }
+  } else { /* ST40_TYPE_RTP_LEVEL */
+    if (ops->rtp_ring_size <= 0) {
+      err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
+      return -EINVAL;
+    }
+    if (!ops->notify_rtp_ready) {
+      err("%s, pls set notify_rtp_ready\n", __func__);
+      return -EINVAL;
+    }
   }
 
   /* Zero means disable the payload_type check */
@@ -1314,6 +1760,33 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
 
   if (pkt) rte_pktmbuf_free(pkt);
   MT_USDT_ST40_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
+}
+
+int st40_rx_put_framebuff(st40_rx_handle handle, void* frame) {
+  struct st_rx_ancillary_session_handle_impl* s_impl = handle;
+  struct st_rx_ancillary_session_impl* s;
+
+  if (s_impl->type != MT_HANDLE_RX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  s = s_impl->impl;
+  if (!s->frame_slots) {
+    err("%s(%d), session is not in FRAME_LEVEL mode\n", __func__, s->idx);
+    return -EIO;
+  }
+
+  for (uint16_t i = 0; i < s->frame_slots_cnt; i++) {
+    struct st_rx_anc_frame_slot* slot = &s->frame_slots[i];
+    if (slot->udw_buf == frame) {
+      slot->state = ST_RX_ANC_SLOT_FREE;
+      return 0;
+    }
+  }
+
+  err("%s(%d), invalid frame %p\n", __func__, s->idx, frame);
+  return -EIO;
 }
 
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {

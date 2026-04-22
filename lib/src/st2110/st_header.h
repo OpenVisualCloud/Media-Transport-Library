@@ -1090,6 +1090,43 @@ struct st_tx_ancillary_sessions_mgr {
   int stat_trs_ret_code[MTL_PORT_MAX];
 };
 
+/* Frame slot state machine for ST40_TYPE_FRAME_LEVEL transport pool. */
+enum st_rx_anc_slot_state {
+  ST_RX_ANC_SLOT_FREE = 0,  /* available for next frame */
+  ST_RX_ANC_SLOT_RECEIVING, /* currently being assembled */
+  ST_RX_ANC_SLOT_PENDING,   /* waiting for late marker from redundant port */
+  ST_RX_ANC_SLOT_READY,     /* assembly complete, awaiting notify_frame_ready */
+  ST_RX_ANC_SLOT_IN_USER,   /* delivered to app via notify_frame_ready */
+};
+
+/* Transport-owned ANC frame buffer slot (mirrors st_frame_trans / st30_frames). */
+struct st_rx_anc_frame_slot {
+  uint8_t* udw_buf; /* size = ops.framebuff_size */
+  size_t udw_buf_size;
+  struct st40_meta meta[ST40_MAX_META];
+  struct st40_rx_frame_meta cur_meta; /* assembled meta delivered to app */
+  enum st_rx_anc_slot_state state;
+  uint16_t idx;
+  /* T4 assembly state (live during RECEIVING/PENDING) */
+  uint32_t rtp_timestamp;   /* RTP timestamp for this frame */
+  uint32_t udw_buffer_fill; /* bytes written so far into udw_buf */
+  uint16_t meta_num;        /* populated entries in meta[] */
+  uint16_t pkts_total;      /* RTP packets accepted into this frame */
+  uint16_t pkts_recv[MTL_SESSION_PORT_MAX];
+  uint64_t receive_timestamp; /* earliest hw rx ts seen */
+  bool interlaced;
+  bool second_field;
+  bool rtp_marker;
+  /* T5 per-frame seq tracking (session bitmap + per-port deltas) */
+  uint64_t seq_bitmap;     /* 1 bit per accepted seq offset (max 64 pkts) */
+  uint16_t seq_base;       /* offset 0 corresponds to this seq_id */
+  uint16_t seq_max_offset; /* highest offset set in bitmap (0 if empty) */
+  bool seq_base_valid;
+  int32_t port_last_seq[MTL_SESSION_PORT_MAX];  /* -1 = none seen yet */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX]; /* per-port intra-frame gaps */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];  /* per-port discont flag */
+};
+
 struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
   int socket_id;
@@ -1106,6 +1143,19 @@ struct st_rx_ancillary_session_impl {
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
+
+  /* Frame-mode (ST40_TYPE_FRAME_LEVEL) slot pool — owned by transport.
+   * Allocated only when ops.type == ST40_TYPE_FRAME_LEVEL.
+   * In RTP_LEVEL mode these stay NULL/0 and the packet_ring path is used. */
+  struct st_rx_anc_frame_slot* frame_slots;
+  uint16_t frame_slots_cnt;
+  /* T4: inflight/pending dance for cross-port redundancy assembly. */
+  struct st_rx_anc_frame_slot* anc_inflight_slot;
+  struct st_rx_anc_frame_slot* anc_pending_slot;
+  uint64_t stat_assemble_dispatched; /* T3: count of pkts routed to FRAME_LEVEL */
+  uint64_t stat_anc_frames_ready;    /* T4: frames handed to notify_frame_ready */
+  uint64_t stat_anc_frames_dropped;  /* T4: frame slot pool exhausted */
+  uint64_t stat_anc_pkt_parse_err;   /* T4: malformed UDW / parity / checksum */
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];

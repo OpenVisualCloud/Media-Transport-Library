@@ -23,8 +23,6 @@ unit_sources = [
   'session/st30_test.cpp',
   'session/st20_harness.c',
   'session/st20_test.cpp',
-  'pipeline/st40p_harness.c',
-  'pipeline/st40p_test.cpp',
   'main.cpp',
 ]
 

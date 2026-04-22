@@ -410,6 +410,56 @@ struct st40_tx_ops {
 };
 
 /**
+ * Frame meta data of st2110-40(ancillary) rx streaming.
+ *
+ * Mirrors `struct st30_rx_frame_meta` so a future merge of ST30/ST40 RX
+ * transport code is straightforward.  Filled by the transport assembler
+ * before invoking `notify_frame_ready`.
+ */
+struct st40_rx_frame_meta {
+  /** Frame timestamp format */
+  enum st10_timestamp_fmt tfmt;
+  /** Frame timestamp value (media clock) */
+  uint64_t timestamp;
+  /** TAI timestamp captured for the first received RTP packet of this frame */
+  uint64_t timestamp_first_pkt;
+  /** Timestamp value in the RTP header */
+  uint32_t rtp_timestamp;
+
+  /** Total RTP packets used to assemble this frame (excludes redundant duplicates) */
+  uint32_t pkts_total;
+  /** Per-session-port RTP packets received for this frame */
+  uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
+
+  /** Per-session-port intra-frame seq gaps (after the per-port redundancy filter) */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX];
+  /** Per-session-port intra-frame seq discontinuity flag */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];
+
+  /** Session-level intra-frame seq gaps after redundancy bitmap correction */
+  uint32_t seq_lost;
+  /** Session-level intra-frame seq discontinuity flag */
+  bool seq_discont;
+
+  /** True when an RTP marker bit was observed on any packet in this frame */
+  bool rtp_marker;
+  /** True if the RTP F bits identified this frame as interlaced */
+  bool interlaced;
+  /** True when the frame is the second field of an interlaced pair (F=0b11) */
+  bool second_field;
+
+  /** Number of `struct st40_meta` entries written into the meta array */
+  uint32_t meta_num;
+  /** Pointer to the meta array, sized ST40_MAX_META, owned by transport */
+  struct st40_meta* meta;
+  /** Bytes written into the UDW buffer */
+  size_t udw_buffer_fill;
+
+  /** Frame status (complete / corrupted) */
+  enum st_frame_status status;
+};
+
+/**
  * The structure describing how to create a rx st2110-40(ancillary) session.
  * Include the PCIE port and other required info
  */
@@ -427,6 +477,11 @@ struct st40_rx_ops {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
+
+  /** Mandatory. Session streaming type, frame or RTP.  Defaults to
+   * ST40_TYPE_RTP_LEVEL for backwards compatibility — existing apps that
+   * pull mbufs via `st40_rx_get_mbuf` keep working unchanged. */
+  enum st40_type type;
 
   /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
    * payload_type check on the RX pkt path */
@@ -448,13 +503,44 @@ struct st40_rx_ops {
   /** Optional. see ST40_RX_FLAG_* for possible flags */
   uint32_t flags;
 
-  /** Mandatory. rtp ring queue size, must be power of 2 */
+  /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional. the callback when lib finish the sending of one rtp packet. And only
-   * non-block method can be used in this callback as it run from lcore tasklet routine.
+   * Optional for ST40_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
    */
   int (*notify_rtp_ready)(void* priv);
+
+  /**
+   * Mandatory for ST40_TYPE_FRAME_LEVEL.  Number of frame buffers in the
+   * transport-owned pool.
+   */
+  uint16_t framebuff_cnt;
+  /**
+   * Mandatory for ST40_TYPE_FRAME_LEVEL.  Size in bytes of the User Data Word
+   * buffer attached to each frame slot.  Sized by the consumer to fit the
+   * largest expected ANC payload.
+   */
+  uint32_t framebuff_size;
+  /**
+   * Mandatory for ST40_TYPE_FRAME_LEVEL.  Callback when lib finishes assembling
+   * one full frame.  Frame ownership is transferred to the app; the app must
+   * call `st40_rx_put_framebuff` once it has consumed the frame.
+   * frame: pointer to the UDW buffer of the frame.
+   * meta:  transport-filled meta (timestamps, packet counts, seq stats, etc).
+   * return:
+   *   - 0:  app accepted the frame.
+   *   - <0: lib will call `st40_rx_put_framebuff` immediately.
+   * Must be non-blocking — runs on the lcore tasklet.
+   */
+  int (*notify_frame_ready)(void* priv, void* frame, struct st40_rx_frame_meta* meta);
+  /**
+   * Optional for ST40_TYPE_FRAME_LEVEL.  Allows the app to provide an external
+   * buffer for the next frame instead of using the transport pool slot.
+   * Mirrors `st20_rx_ops::query_ext_frame`.
+   */
+  int (*query_ext_frame)(void* priv, void** frame, struct st40_rx_frame_meta* meta);
 };
 
 /**
@@ -686,6 +772,20 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len);
  *   the dpdk mbuf pointer by st40_rx_get_mbuf.
  */
 void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf);
+
+/**
+ * Return a frame buffer obtained via the `notify_frame_ready` callback to the
+ * rx st2110-40(ancillary) session.  For ST40_TYPE_FRAME_LEVEL.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(ancillary) session.
+ * @param frame
+ *   The UDW buffer pointer that was passed to `notify_frame_ready`.
+ * @return
+ *   - 0:  Success.
+ *   - <0: Error code.
+ */
+int st40_rx_put_framebuff(st40_rx_handle handle, void* frame);
 
 /**
  * Get the queue meta attached to rx st2110-40(ancillary) session.
