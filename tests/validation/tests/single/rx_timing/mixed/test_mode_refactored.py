@@ -4,8 +4,6 @@
 
 Mirrors ``test_mode.py`` using the multi-session ``sessions=[...]`` API.
 """
-import os
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files, audio_files, yuv_files
@@ -46,8 +44,8 @@ def test_rx_timing_mode_refactored(
                 "framerate": f"p{video_file['fps']}",
                 "pixel_format": video_file["file_format"],
                 "transport_format": video_file["format"],
-                "input_file": os.path.join(media, video_file["filename"]),
-                "output_file": os.path.join(media, video_file["filename"]),
+                "input_file": str(host.connection.path(media, video_file["filename"])),
+                "output_file": str(host.connection.path(media, video_file["filename"])),
             },
             {
                 "session_type": "st30p",
@@ -55,15 +53,15 @@ def test_rx_timing_mode_refactored(
                 "audio_channels": ["U02"],
                 "audio_sampling": "48kHz",
                 "audio_ptime": "1",
-                "input_file": os.path.join(media, audio_file["filename"]),
-                "output_file": os.path.join(media, audio_file["filename"]),
+                "input_file": str(host.connection.path(media, audio_file["filename"])),
+                "output_file": str(host.connection.path(media, audio_file["filename"])),
             },
             {
                 "session_type": "ancillary",
                 "type_mode": "frame",
                 "ancillary_format": "closed_caption",
                 "ancillary_fps": ancillary_file["fps"],
-                "ancillary_url": os.path.join(media, ancillary_file["filename"]),
+                "ancillary_url": str(host.connection.path(media, ancillary_file["filename"])),
             },
         ],
     )

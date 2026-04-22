@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 """Refactored XDP standard mode tests (single session_type per parametrize variant)."""
-import os
-
 import pytest
 from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
 
@@ -39,7 +37,7 @@ def test_xdp_standard_refactored(
             framerate=f"p{video_file['fps']}",
             pixel_format=video_file["file_format"],
             transport_format=video_file["format"],
-            input_file=os.path.join(media, video_file["filename"]),
+            input_file=str(host.connection.path(media, video_file["filename"])),
             replicas=replicas,
             test_time=test_time,
         )
@@ -57,7 +55,7 @@ def test_xdp_standard_refactored(
             pack_type="codestream",
             pixel_format=st22p_file["file_format"],
             codec_threads=2,
-            input_file=os.path.join(media, st22p_file["filename"]),
+            input_file=str(host.connection.path(media, st22p_file["filename"])),
             replicas=replicas,
             test_time=test_time,
         )

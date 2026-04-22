@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files
@@ -47,7 +45,7 @@ def test_rx_timing_video_video_format_refactored(
         framerate=f"p{video_file['fps']}",
         pixel_format=video_file["file_format"],
         transport_format=video_file["format"],
-        input_file=os.path.join(media, video_file["filename"]),
+        input_file=str(host.connection.path(media, video_file["filename"])),
         rx_timing_parser=True,
         test_time=test_time,
     )

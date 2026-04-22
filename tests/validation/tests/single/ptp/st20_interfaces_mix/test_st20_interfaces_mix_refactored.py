@@ -7,7 +7,7 @@ an out-of-band ``FileVideoIntegrityRunner`` post-check (kept identical to the
 legacy test).
 """
 import logging
-import os
+from os import environ
 
 import pytest
 from common.integrity.integrity_runner import FileVideoIntegrityRunner
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _is_supported_runner() -> bool:
     """Skip on e810-dell where ptp4l sync is unstable."""
-    workflow = os.environ.get("MTL_GITHUB_WORKFLOW", "")
+    workflow = environ.get("MTL_GITHUB_WORKFLOW", "")
     if not workflow:
         return True
     return workflow.endswith(":e810") or workflow.endswith(":e830")
@@ -119,16 +119,19 @@ def test_st20_interfaces_mix_refactored(
     if test_config.get("integrity_check", True):
         logger.info("Running video integrity check...")
         resolution = f"{media_file_info['width']}x{media_file_info['height']}"
+        out_path = host.connection.path(video_out_url)
         video_integrity = FileVideoIntegrityRunner(
             host=host,
             test_repo_path=mtl_path,
             src_url=media_file_path,
-            out_name=os.path.basename(video_out_url),
+            out_name=out_path.name,
             resolution=resolution,
             file_format=media_file_info["file_format"],
-            out_path=os.path.dirname(video_out_url),
-            integrity_path=os.path.join(
-                mtl_path, "tests", "validation", "common", "integrity"
+            out_path=str(out_path.parent),
+            integrity_path=str(
+                host.connection.path(
+                    mtl_path, "tests", "validation", "common", "integrity"
+                )
             ),
         )
         if not video_integrity.run():

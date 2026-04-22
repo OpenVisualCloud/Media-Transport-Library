@@ -2,7 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
+from pathlib import Path
 
 import pytest
 from common.nicctl import InterfaceSetup
@@ -46,9 +46,9 @@ def test_integrity_refactored(
         test_config.get("interface_type", "VF")
     )
     # Ensure the output directory exists.
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.wav")
+    log_dir = Path.cwd() / LOG_FOLDER / "latest"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_file_url = str(log_dir / "out.wav")
     host = list(hosts.values())[0]
 
     rxtxapp.create_command(
