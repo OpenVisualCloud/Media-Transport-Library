@@ -70,6 +70,9 @@ def test_st20_interfaces_mix_refactored(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    # PTP sync (+10s in RxTxApp), pcap capture, and large RX file caps
+    # collectively need more headroom than the 60s default.
+    test_time = max(test_time, 90)
 
     if interface_profile["mode"] == "vf_only":
         interfaces_list = setup_interfaces.get_interfaces_list_single("VF")

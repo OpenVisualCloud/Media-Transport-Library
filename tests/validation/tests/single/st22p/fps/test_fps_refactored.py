@@ -40,7 +40,6 @@ def test_fps_refactored(
     codec,
     test_config,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -66,6 +65,4 @@ def test_fps_refactored(
         codec_threads=16,
         test_time=test_time,
     )
-    rxtxapp.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    rxtxapp.execute_test(build=mtl_path, test_time=test_time, host=host)

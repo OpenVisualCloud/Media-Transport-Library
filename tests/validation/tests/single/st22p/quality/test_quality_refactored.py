@@ -24,7 +24,6 @@ def test_quality_refactored(
     quality,
     test_config,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -52,9 +51,7 @@ def test_quality_refactored(
         codec_threads=2,
         test_time=test_time,
     )
-    result = rxtxapp.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    result = rxtxapp.execute_test(build=mtl_path, test_time=test_time, host=host)
     # Enforce result to avoid silent pass when validation fails
     assert (
         result
