@@ -67,6 +67,7 @@ int mt_txq_done_cleanup(struct mt_txq_entry* entry);
 int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec);
 
 uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                               uint64_t* launch_time_ns);
 
 #endif

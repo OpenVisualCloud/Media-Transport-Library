@@ -32,8 +32,23 @@
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
-#define ST_SESSION_MAX_BULK (4)
+#define ST_SESSION_MAX_BULK (32)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+#define ST_TSN_STARTUP_TRACE_FRAMES (40)
+#define ST_TSN_STABLE_TRACE_DELAY_NS (20ULL * NS_PER_S)
+#define ST_TSN_BOUNDARY_ANOMALY_MAX (16)
+#define ST_TSN_BOUNDARY_ANOMALY_NS (100000)
+#define ST_TSN_HEADROOM_ANOMALY_MAX (16)
+#define ST_TSN_HEADROOM_ANOMALY_NS (5000000)
+#define ST_TSN_MODE_DIAG_MAX (24)
+#define ST_TSN_MODE_ENTER_DEQ_HEADROOM_NS (500000)
+#define ST_TSN_MODE_EXIT_DEQ_HEADROOM_NS (1000000)
+#define ST_TSN_MODE_ENTER_SUBMIT_GAP_NS (250000)
+#define ST_TSN_MODE_EXIT_SUBMIT_GAP_NS (750000)
+#define ST_TSN_MODE_ENTER_LAST_LATE_NS (-1000000)
+#define ST_TSN_MODE_EXIT_LAST_LATE_NS (-250000)
+#define ST_TSN_TX_STALL_LOG_MAX (24)
+#define ST_TSN_TX_PASS_BUDGET_LOG_MAX (16)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
@@ -160,6 +175,18 @@ struct st_frame_trans {
     struct st40_tx_frame_meta tc_meta;
     struct st41_tx_frame_meta tf_meta;
   };
+
+  struct {
+    uint64_t sync_ptp;
+    uint64_t sync_tsc;
+    int64_t sync_time_to_tx_ns;
+    uint64_t first_enqueue_ptp[MTL_SESSION_PORT_MAX];
+    uint64_t first_enqueue_tsc[MTL_SESSION_PORT_MAX];
+    uint64_t first_dequeue_ptp[MTL_SESSION_PORT_MAX];
+    uint64_t first_dequeue_tsc[MTL_SESSION_PORT_MAX];
+    bool first_enqueue_valid[MTL_SESSION_PORT_MAX];
+    bool first_dequeue_valid[MTL_SESSION_PORT_MAX];
+  } tsn_debug;
 };
 
 /* timing for pacing */
@@ -184,6 +211,14 @@ struct st_tx_video_pacing {
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
+  /* E830 NIC quantizes LaunchTime to 128ns (>>7). Use integer-only Bresenham
+   * arithmetic to avoid double-precision loss at PTP magnitude ~1.77e18.
+   * At that scale, `uint64_t += double` has ULP=256ns, destroying 128ns alignment. */
+  bool ptp_cursor_128ns_align;
+  uint32_t trs_128ns_ticks_base;  /* floor(trs / 128) ticks per packet */
+  uint32_t trs_128ns_ticks_extra; /* extra ticks to distribute (Bresenham numerator) */
+  uint32_t trs_128ns_total_pkts;  /* total pkts per frame (Bresenham denominator) */
+  uint32_t trs_128ns_accum;       /* Bresenham accumulator, reset per frame */
 };
 
 enum st20_packet_type {
@@ -385,6 +420,100 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+  /* TSN LaunchTime direction counters (set in transmitter) */
+  uint32_t stat_lt_future_pkts; /* LaunchTime was in the future at submission */
+  uint32_t stat_lt_past_pkts;   /* LaunchTime was in the past at submission */
+  /* TSN pacing diagnostics: time_to_tx_ns at each tv_sync_pacing() call */
+  int64_t stat_time_to_tx_min;
+  int64_t stat_time_to_tx_max;
+  bool stat_time_to_tx_init; /* false until first sample recorded */
+  /* TSN drift diagnostics */
+  uint64_t stat_last_sync_ptp;
+  uint64_t stat_last_sync_tsc;
+  int64_t stat_ptp_elapsed_sum;
+  int64_t stat_tsc_elapsed_sum;
+  uint32_t stat_sync_count;
+  bool stat_tsn_startup_init_logged;
+  uint64_t stat_tsn_trace_anchor_ptp;
+  uint32_t stat_tsn_startup_sync_logs;
+  uint32_t stat_tsn_startup_rtp_logs;
+  uint32_t stat_tsn_startup_frame_logs;
+  uint32_t stat_tsn_frame_done_logs;
+  uint32_t stat_tsn_startup_tx_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_startup_enqueue_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_startup_dequeue_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_stable_sync_logs;
+  uint32_t stat_tsn_stable_frame_logs;
+  uint32_t stat_tsn_stable_frame_done_logs;
+  uint32_t stat_tsn_stable_tx_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_stable_enqueue_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_stable_dequeue_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_stable_last_pkt_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_last_pkt_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_boundary_anomaly_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_headroom_anomaly_logs[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_prev_last_target_ptp[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_prev_last_target_tsc[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_prev_last_submit_ptp[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_prev_last_submit_tsc[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_prev_last_frame_rtp[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_prev_last_frame_epoch[MTL_SESSION_PORT_MAX];
+  bool stat_tsn_prev_last_valid[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_prev_last_delta_ptp[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_prev_last_delta_tsc[MTL_SESSION_PORT_MAX];
+  bool stat_tsn_prev_last_delta_valid[MTL_SESSION_PORT_MAX];
+  bool stat_tsn_mode_lagging[MTL_SESSION_PORT_MAX];
+  bool stat_tsn_mode_diag_init[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_mode_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_mode_samples[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_mode_lag_samples[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_mode_entries[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_mode_recoveries[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_mode_min_deq_headroom_ns[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_mode_min_submit_headroom_ns[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_mode_min_submit_gap_ns[MTL_SESSION_PORT_MAX];
+  int64_t stat_tsn_mode_min_prev_last_delta_ns[MTL_SESSION_PORT_MAX];
+  uint64_t stat_epoch_drop_prev_epoch;
+  uint64_t stat_epoch_drop_new_epoch;
+  int64_t stat_epoch_drop_time_to_tx;
+  bool stat_epoch_drop_pending;
+  uint32_t stat_ttx_future;
+  uint32_t stat_ttx_borderline;
+  uint32_t stat_ttx_past;
+  uint64_t stat_frame_done_tsc;
+  uint64_t stat_overhead_total_ns;
+  uint64_t stat_overhead_notify_ns;
+  uint64_t stat_overhead_getframe_ns;
+  uint64_t stat_overhead_sync_ns;
+  uint64_t stat_overhead_sum_ns;
+  uint32_t stat_overhead_count;
+  uint32_t stat_tsn_build_calls;
+  uint64_t stat_tsn_build_bulks_sum;
+  uint32_t stat_tsn_build_bulks_max;
+  uint32_t stat_tsn_build_ring_peak;
+  uint32_t stat_tsn_build_ring_stop;
+  uint32_t stat_tsn_tx_calls;
+  uint64_t stat_tsn_tx_bulks_sum;
+  uint32_t stat_tsn_tx_bulks_max;
+  uint32_t stat_tsn_tx_ring_peak;
+  uint32_t stat_tsn_tx_partial;
+  uint32_t stat_tsn_tx_wait_target[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_retry_inflight[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_retry_inflight2[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_dequeue_empty[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_split_boundary[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_tx_saved_future_pkts[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_tx_saved_partial_pkts[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_inflight_peak[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_inflight2_peak[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_retry_cleanup[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_zero_progress[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_pass_calls[MTL_SESSION_PORT_MAX];
+  uint64_t stat_tsn_tx_pass_sum[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_pass_max[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_pass_budget_hits[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_stall_logs[MTL_SESSION_PORT_MAX];
+  uint32_t stat_tsn_tx_pass_budget_logs[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {

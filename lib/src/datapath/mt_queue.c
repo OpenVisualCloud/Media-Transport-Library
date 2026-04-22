@@ -351,18 +351,37 @@ int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
 }
 
 uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                               uint64_t* launch_time_ns) {
   struct mt_dp_impl* dp = impl->dp[port];
+
+  if (launch_time_ns) *launch_time_ns = 0;
 
   if (!dp->txq_sys_entry) {
     err("%s(%d), txq sys queue not active\n", __func__, port);
     return 0;
   }
 
+  /* On TXTIME-enabled queues the ice driver writes a TS descriptor for
+   * every packet unconditionally.  Packets with dynfield=0 get timestamp
+   * "0 ns within the current second" which is always in the past, so the
+   * NIC transmits immediately — exactly what we want for control traffic
+   * (PTP, multicast, ARP).  PTP delay_req relies on the PHY TSYN context
+   * descriptor (set via RTE_MBUF_F_TX_IEEE1588_TMST) to capture the
+   * actual wire TX time, which is then read back as t3. */
+
   uint16_t tx;
   rte_spinlock_lock(&dp->txq_sys_entry_lock);
   tx = mt_txq_burst(dp->txq_sys_entry, tx_pkts, nb_pkts);
   rte_spinlock_unlock(&dp->txq_sys_entry_lock);
+
+  if (tx == 0 && nb_pkts > 0) {
+    static int fail_cnt;
+    if (fail_cnt++ < 10) {
+      err("%s(%d), tx_burst returned 0, queue %u\n", __func__, port,
+          dp->txq_sys_entry->queue_id);
+    }
+  }
 
   return tx;
 }

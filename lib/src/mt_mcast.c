@@ -168,7 +168,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
-  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1, NULL);
   if (tx < 1) {
     err("%s(%d), send pkt fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
@@ -251,7 +251,7 @@ static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
   }
 #endif
 
-  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1, NULL);
   if (tx < 1) {
     err("%s(%d), send pkt fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
@@ -319,14 +319,14 @@ static int mcast_membership_report_on_action(struct mtl_main_impl* impl,
   /* send membership report twice */
   struct rte_mbuf* pkt_copy = rte_pktmbuf_copy(pkt, pkt->pool, 0, UINT32_MAX);
 
-  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1, NULL);
   if (tx < 1) {
     err("%s(%d), send pkt fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
     return -EIO;
   }
 
-  tx = mt_sys_queue_tx_burst(impl, port, &pkt_copy, 1);
+  tx = mt_sys_queue_tx_burst(impl, port, &pkt_copy, 1, NULL);
   if (tx < 1) {
     err("%s(%d), send pkt fail\n", __func__, port);
     rte_pktmbuf_free(pkt_copy);
