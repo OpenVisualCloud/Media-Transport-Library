@@ -29,7 +29,6 @@ def test_pacing_refactored(
     pacing,
     prepare_ramdisk,
     media_file,
-    pcap_capture,
     rxtxapp,
 ):
     """Test different pacing modes (narrow, wide, linear)"""
@@ -68,5 +67,5 @@ def test_pacing_refactored(
 
     rxtxapp.create_command(**config_params)
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )

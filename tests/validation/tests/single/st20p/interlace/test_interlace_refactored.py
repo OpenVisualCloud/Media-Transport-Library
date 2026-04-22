@@ -23,7 +23,6 @@ def test_interlace_refactored(
     test_time,
     prepare_ramdisk,
     media_file,
-    pcap_capture,
     rxtxapp,
 ):
     """Test interlaced video transmission"""
@@ -55,5 +54,5 @@ def test_interlace_refactored(
     rxtxapp.create_command(**config_params)
     actual_test_time = max(test_time, 10)
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )

@@ -23,7 +23,6 @@ def test_resolutions_refactored(
     test_time,
     prepare_ramdisk,
     media_file,
-    pcap_capture,
     rxtxapp,
 ):
     """Test different video resolutions"""
@@ -72,5 +71,5 @@ def test_resolutions_refactored(
         actual_test_time = max(test_time, 8)
 
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )

@@ -42,7 +42,6 @@ def test_integrity_refactored(
     test_time,
     prepare_ramdisk,
     media_file,
-    pcap_capture,
     rxtxapp,
 ):
     """Test video integrity by comparing input and output files"""
@@ -76,7 +75,7 @@ def test_integrity_refactored(
 
     actual_test_time = max(test_time, 8)
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )
 
     frame_size = calculate_yuv_frame_size(

@@ -12,6 +12,7 @@ import signal
 import time
 from typing import Any, Dict
 
+import paramiko
 import pytest
 from common.collect_platform_info import collect_platform_info
 from common.host_setup import ensure_hugepage_access, ensure_pf_up
@@ -77,6 +78,60 @@ class _SshPollingFilter(logging.Filter):
 
 logging.getLogger("mfd_connect.ssh").addFilter(_SshPollingFilter())
 logging.getLogger("mfd_connect.process.ss").addFilter(_SshPollingFilter())
+
+
+# ---------------------------------------------------------------------------
+# Monkey-patch: inject proxy_command support into mfd_connect.ssh.SSHConnection
+# ---------------------------------------------------------------------------
+_orig_ssh_init = None
+_orig_ssh_connect = None
+
+
+def _patch_ssh_connection_proxy_command():
+    """
+    mfd_connect.ssh.SSHConnection does not natively support proxy_command.
+    This patch intercepts the ``proxy_command`` key from *connection_options*
+    in ``topology_config.yaml`` and injects a paramiko ProxyCommand socket
+    into ``_connection_details`` so that the normal ``_connect()`` path
+    tunnels through the SOCKS/netcat proxy.
+    """
+    from mfd_connect.ssh import SSHConnection
+
+    global _orig_ssh_init, _orig_ssh_connect
+    if _orig_ssh_init is not None:  # already patched
+        return
+    _orig_ssh_init = SSHConnection.__init__
+    _orig_ssh_connect = SSHConnection._connect
+
+    def _patched_init(self, ip, *args, **kwargs):
+        proxy_cmd_str = kwargs.pop("proxy_command", None)
+        self._proxy_cfg = (
+            {"cmd": proxy_cmd_str, "ip": ip, "port": kwargs.get("port", 22)}
+            if proxy_cmd_str
+            else None
+        )
+        _orig_ssh_init(self, ip, *args, **kwargs)
+
+    def _patched_connect(self):
+        if self._connection_details.get("key_filename"):
+            self._connection_details["look_for_keys"] = False
+        pcfg = getattr(self, "_proxy_cfg", None)
+        if pcfg:
+            real_cmd = (
+                pcfg["cmd"]
+                .replace("%h", str(pcfg["ip"]))
+                .replace("%p", str(pcfg["port"]))
+            )
+            logger.info("Opening SSH via ProxyCommand: %s", real_cmd)
+            self._connection_details["sock"] = paramiko.ProxyCommand(real_cmd)
+        _orig_ssh_connect(self)
+
+    SSHConnection.__init__ = _patched_init
+    SSHConnection._connect = _patched_connect
+
+
+_patch_ssh_connection_proxy_command()
+
 
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
@@ -739,6 +794,15 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         # Per-host media_path from topology extra_info, fall back to test_config
         media_path = get_host_media_path(host, default=default_media_path)
         src_media_file_path = os.path.join(media_path, media_file_info["filename"])
+        # Probe source existence first so missing assets become SKIPPED rather
+        # than ERROR — they are environment/data issues, not test logic bugs.
+        probe = host.connection.execute_command(
+            f"test -f {src_media_file_path}", expected_return_codes=None
+        )
+        if probe.return_code != 0:
+            pytest.skip(
+                f"Media file not present on {host}: {src_media_file_path}"
+            )
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)

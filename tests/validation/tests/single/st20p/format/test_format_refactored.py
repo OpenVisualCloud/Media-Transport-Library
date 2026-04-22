@@ -90,7 +90,6 @@ def test_convert_on_rx_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
@@ -122,7 +121,6 @@ def test_convert_on_rx_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
 
 
@@ -163,7 +161,6 @@ def test_tx_rx_conversion_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
@@ -196,7 +193,6 @@ def test_tx_rx_conversion_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
 
 
@@ -217,7 +213,6 @@ def test_formats_refactored(
     format,
     test_config,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -247,5 +242,4 @@ def test_formats_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
