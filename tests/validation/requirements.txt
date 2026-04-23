@@ -1,103 +1,27 @@
-annotated-types==0.7.0
-ansi2html==1.9.2
-ansicolors==1.1.8
-bcrypt==4.3.0
-beautifulsoup4==4.13.4
-blinker==1.9.0
-certifi==2025.7.14
-cffi==2.0.0
-charset-normalizer==3.4.2
-click==8.3.2
-cryptography==46.0.7
-dlipower==1.0.176
-docutils==0.21.2
-exceptiongroup==1.3.0
-Flask==3.1.3
-funcy==1.18
-htmlmin2==0.1.13
-idna==3.11
-iniconfig==2.3.0
-itsdangerous==2.2.0
-Jinja2==3.1.6
-jinja2-workarounds==0.1.0
-markdown-it-py==3.0.0
-MarkupSafe==3.0.2
-mdurl==0.1.2
-mfd-base-tool==2.7.0
-mfd-cli-client==1.11.0
-mfd-common-libs==1.11.0
-mfd-connect==7.15.0
-mfd-const==0.23.0
-mfd-dcb==1.18.0
-mfd-devcon==2.0.0
-mfd-dmesg==1.20.0
-mfd-esxi==3.2.0
-mfd-ethtool==3.14.0
-mfd-event-log==0.9.0
-mfd-ftp==1.8.0
-mfd-host==2.0.0
-mfd-hyperv==2.1.0
-mfd-kernel-namespace==1.8.0
-mfd-kvm==3.12.0
-mfd-libibverbs-utils==1.7.0
-mfd-model==0.9.0
-mfd-mount==1.8.0
-mfd-network-adapter==14.0.0
-mfd-osd-control==0.9.0
-mfd-package-manager==3.0.0
-mfd-packet-capture==2.16.0
-mfd-ping==1.15.0
-mfd-powermanagement==1.12.2
-mfd-switchmanagement==2.18.0
-mfd-sysctl==1.6.0
-mfd-traffic-manager==1.18.0
-mfd-typing==1.23.0
-mfd-win-registry==1.17.0
-netaddr==0.8.0
-netmiko==4.6.0
-ntc_templates==7.9.0
-packaging==25.0
-paramiko==3.4.0
-pexpect==4.8.0
-pluggy==1.6.0
-plumbum==1.10.0
-psutil==5.9.8
-ptyprocess==0.7.0
-pyasn1==0.6.3
-pycparser==2.22
-pydantic==2.11.7
-pydantic_core==2.33.2
-pyftpdlib==1.5.10
-Pygments==2.20.0
-PyNaCl==1.6.2
-pyserial==3.5
-pysnmp==7.1.23
-pyspnego==0.11.2
+# MTL validation test suite — direct dependencies only.
+#
+# Only top-level packages that are actually `import`ed by the test code
+# are pinned here. All other packages (transport crypto, mfd-* sub-libs,
+# pytest internals, HTML report renderers, etc.) are pulled in transitively
+# by pip and resolved against these pins. See REQUIREMENTS_CLEANUP.md
+# for the full audit and rationale.
+#
+# If you need to lock the full transitive set for reproducible CI, run:
+#     pip install -r requirements.txt && pip freeze > constraints.txt
+# and install with `pip install -r requirements.txt -c constraints.txt`.
+
+# --- pytest core + plugins directly used by test code ---
 pytest==8.4.1
-pytest-check==2.5.3
-pytest-json-report==1.5.0
-pytest-metadata==3.1.1
-pytest-mfd-config==3.25.0
-pytest-mfd-logging==1.24.0
-pytest-reporter==0.5.3
-pytest-reporter-html1==0.9.3
-python-generate-mac==1.3.1
-pyvmomi==9.0.0.0
-pywinrm==0.4.3
-PyYAML==6.0.2
-requests==2.33.0
-requests_ntlm==1.3.0
-rich==14.0.0
-rpyc==6.0.2
-ruamel.yaml==0.18.14
-ruamel.yaml.clib==0.2.12
-scp==0.13.6
-six==1.17.0
-soupsieve==2.7
-textfsm==1.1.3
-tomli==2.2.1
-typing-inspection==0.4.1
-typing_extensions==4.14.1
-urllib3==2.6.3
-Werkzeug==3.1.6
-xmltodict==0.14.2
+pytest-check==2.8.0              # `from pytest_check import check`
+pytest-mfd-config==3.25.0        # TopologyModel + auto-loaded plugin
+pytest-mfd-logging==1.25.1       # AmberLogFormatter + auto-loaded plugin
+
+# --- mfd-* libraries directly imported by tests ---
+mfd-connect==7.18.0              # SSHConnection, ConnectionCalledProcessError
+mfd-common-libs==1.11.0          # custom_logger, log_levels
+mfd-network-adapter==14.5.0      # NetworkInterface (common/nicctl.py)
+
+# --- third-party libs directly imported ---
+requests==2.33.1                 # compliance/compliance_client.py
+paramiko==3.4.0                  # conftest.py SSH ProxyCommand tunneling
+PyYAML==6.0.3                    # configs/gen_config.py
