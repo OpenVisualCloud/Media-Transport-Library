@@ -375,6 +375,22 @@ Design notes:
     1. `tests/single/xdp/test_standard/test_standard_refactored.py`: import `parse_fps_to_pformat`; use it for both st20p and st22p framerates; drop `pack_type="codestream"` (engine handles internally).
     2. `tests/single/xdp/test_mode/test_xdp_mode_refactored.py`: import `parse_fps_to_pformat`; use it for the multi-session st20p framerate.
     3. `tests/single/st41/fps/test_fps_refactored.py`: trimmed `fps` parametrize to `{p25, p29, p50, p59}` (supported by ST41 JSON parser); added comment pointing at the C-side limitation.
+- 2026-04-23 (VF lifecycle optimisation — eliminate per-test create/disable):
+  - **Problem**: `setup_interfaces` (function-scoped) was calling `nicctl.create_vfs()` + registering a `disable_vf` cleanup on **every** test, even though `nic_port_list` (session-scoped) already pre-creates a 6-VF pool per PF and stores it on `host.vfs` / `host.vfs_r`. ~60 tests × (5–15 s nicctl wall time + one fresh chance to trip the VFIO refcount stall) = 5–15 min of pure waste per nightly + the single largest source of CI hangs (`vfio_unregister_group_dev` blocks indefinitely if a leftover RxTxApp still holds `/dev/vfio/<grp>`).
+  - **Fix** (`common/nicctl.py` only, no test-file changes): added `InterfaceSetup._reusable_vf_pool(host, pf_index)` that returns `host.vfs` / `host.vfs_r` minus any reserved device (`st2110_dev`). The three VF-allocation paths now reuse the pool when the requested count fits and skip both `create_vf` and `disable_vf`:
+    1. `get_test_interfaces(interface_type="vf", count=N)` — checks pool on PF index 0.
+    2. `get_test_interfaces(interface_type="<n>VFxPF", count=M)` — checks pool per PF index.
+    3. `_get_single_interface_by_type("vf", index=i)` — checks pool on PF index `i` (used by `get_mixed_interfaces_list_single`).
+  - When the pool is too small or unavailable (custom interface, prior crash wiped the pool, etc.) the code falls back to the legacy `create_vfs + register_cleanup` path — behaviour-preserving.
+  - **PF path unchanged** (`bind_pmd` / `bind_kernel` is destructive and must remain per-test) — only the VF path is optimised.
+  - **Verification**:
+    * `python -m pytest --collect-only tests/single` → still 764 tests, 0.30 s.
+    * `ast.parse` clean on `common/nicctl.py`.
+    * Default `nic_port_list` pool size is 6 VFs/PF; the largest VF request in the suite is `count=8` over 4 PFs (`2VFxPF`) — fits per-PF. Tests requesting more VFs than the pool transparently fall back to the legacy path.
+  - **Expected impact on next CI run**:
+    * Per-test setup latency on VF-using tests drops from ~5–15 s to ~0 s.
+    * Whole-suite `disable_vf` invocations drop from ~60 to 0 → eliminates the per-test exposure to the VFIO refcount stall that wedged CI for ~47 min in `report_custom_21_04_2026.html`.
+    * Nightly wall-clock saving: ~5–15 min plus the variance of recovering from a single wedged `disable_vf`.
 
 # Single Tests Refactoring Work Plan
 
