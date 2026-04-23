@@ -1705,7 +1705,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return -EIO;
     }
   }
-  slot->last_pkt_idx = pkt_idx;
+  /* only advance, never regress: a reorder must not move the high-water
+   * mark backward, otherwise the next forward jump re-counts already-lost
+   * packets as new losses */
+  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
 
   /* if enable_timing_parser */
   if (s->enable_timing_parser) rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
@@ -1893,7 +1896,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       return -EIO;
     }
   }
-  slot->last_pkt_idx = pkt_idx;
+  /* only advance high-water mark; see rv_handle_frame_pkt */
+  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void*)mbuf);
@@ -2097,7 +2101,8 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
         __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
         payload_length);
   }
-  slot->last_pkt_idx = pkt_idx;
+  /* only advance high-water mark; see rv_handle_frame_pkt */
+  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
 
   /* copy payload */
   uint32_t offset;
@@ -2259,7 +2264,8 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       return -EIO;
     }
   }
-  slot->last_pkt_idx = pkt_idx;
+  /* only advance high-water mark; see rv_handle_frame_pkt */
+  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
 
   /* calculate offset */
   uint32_t offset =
