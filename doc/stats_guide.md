@@ -1,185 +1,175 @@
 # Session Statistics Guide
 
-How to interpret the statistics counters exposed by MTL session APIs. For the full list of
-fields and their descriptions, see the doxygen comments in the header files (`st_api.h`,
-`st20_api.h`, `st30_api.h`, `st40_api.h`, `st41_api.h`).
+How to read MTL per-session counters. Field-level docs live in the headers
+(`st_api.h`, `st20_api.h`, `st30_api.h`, `st40_api.h`, `st41_api.h`).
 
-## Table of Contents
+## API
 
-- [Overview](#overview)
-- [RX Packet Processing Pipeline](#rx-packet-processing-pipeline)
-- [Understanding OOO and Loss Counters](#understanding-ooo-and-loss-counters)
-- [Cross-Session Differences](#cross-session-differences)
-- [Troubleshooting with Stats](#troubleshooting-with-stats)
-
-## Overview
-
-Each RX/TX session exposes statistics via a pair of functions:
-
-- `st*_get_session_stats()` — copies the current counters to a user-provided struct
-- `st*_reset_session_stats()` — zeros all counters
-
-All counters are `uint64_t` and monotonically increase until reset. The library never
-decreases a counter.
-
-### Thread Safety
-
-Both `get` and `reset` acquire the per-session spinlock internally, making them safe to
-call from any thread while the session is active.
-
-**Data-path impact**: the data-path tasklet holds the same spinlock during packet
-processing. A concurrent `get` or `reset` may cause the tasklet to skip one poll cycle
-(trylock failure). The lock is held only for a struct memcpy/memset (~200-400 bytes, tens
-of nanoseconds), which is negligible compared to the microsecond-scale poll interval.
-
-**Recommended pattern**: call `get` followed by `reset` for interval-based monitoring.
-
-| Session type | Get stats | Reset stats |
-|---|---|---|
-| Video TX (ST20) | `st20_tx_get_session_stats()` | `st20_tx_reset_session_stats()` |
-| Video RX (ST20) | `st20_rx_get_session_stats()` | `st20_rx_reset_session_stats()` |
-| Audio TX (ST30) | `st30_tx_get_session_stats()` | `st30_tx_reset_session_stats()` |
-| Audio RX (ST30) | `st30_rx_get_session_stats()` | `st30_rx_reset_session_stats()` |
-| Ancillary TX (ST40) | `st40_tx_get_session_stats()` | `st40_tx_reset_session_stats()` |
-| Ancillary RX (ST40) | `st40_rx_get_session_stats()` | `st40_rx_reset_session_stats()` |
-| Metadata TX (ST41) | `st41_tx_get_session_stats()` | `st41_tx_reset_session_stats()` |
-| Metadata RX (ST41) | `st41_rx_get_session_stats()` | `st41_rx_reset_session_stats()` |
-
-## RX Packet Processing Pipeline
-
-Every incoming packet goes through the following stages. Understanding this order is key to
-interpreting which counters are "pre-redundancy" (counted early) vs "post-redundancy"
-(counted after merging redundant streams).
-
-```text
-NIC queue
-  │
-  ├─1. Early validation (payload type, SSRC, packet length, interlace F-bits)
-  │     └── FAIL → err_packets++
-  │                 stat_pkts_wrong_pt_dropped++ or stat_pkts_wrong_ssrc_dropped++
-  │                 (packet discarded)
-  │
-  ├─2. Per-port sequence check
-  │     └── GAP  → port[].out_of_order_packets += gap_size
-  │                 stat_pkts_out_of_order += gap_size
-  │
-  ├─3. port[].packets++, port[].bytes++          ← "pre-redundancy" counters
-  │
-  ├─4. Redundancy filter (is this packet's timestamp already seen?)
-  │     └── STALE → stat_pkts_redundant++
-  │                  (packet discarded)
-  │
-  ├─5. Post-redundancy loss detection
-  │     Audio/anc/fmd: session_seq_id gap → stat_pkts_unrecovered += gap_size
-  │     Video: frame completion check     → stat_pkts_unrecovered += (total - received)
-  │
-  ├─6. stat_pkts_received++                      ← "post-redundancy" counter
-  │
-  └─7. Deliver to frame buffer / RTP ring
+```c
+st<NN>_<rx|tx>_get_session_stats(handle, &stats);   /* snapshot */
+st<NN>_<rx|tx>_reset_session_stats(handle);         /* zero    */
 ```
 
-**Key insight**: `port[].packets` counts everything that passes validation (step 3),
-including packets that the redundancy filter will later discard (step 4).
-`stat_pkts_received` counts only the packets that make it through all filters (step 6).
+`<NN>` ∈ `20` video, `30` audio, `40` ancillary, `41` fast metadata.
+All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
 
-**Video note**: Video (ST20) performs step 5 at frame completion time rather than per-packet.
-It compares expected total packets to received packets and adds the difference to
-`stat_pkts_unrecovered`. See [Video-Specific OOO Behavior](#video-specific-ooo-behavior).
-
-### `port[].frames` Semantics
-
-The `frames` counter means different things depending on the session type:
-
-| Session type | What `frames` counts | When it increments |
-|---|---|---|
-| Video (ST20) | Frame completions | When a frame is notified to app (complete or incomplete) |
-| Audio (ST30) | Frame completions | When a frame buffer is filled and delivered to app |
-| Ancillary (ST40) | New RTP timestamps | When a new timestamp is first seen (frame **start**, not completion) |
-| Metadata (ST41) | New RTP timestamps | When a new timestamp is first seen (frame **start**, not completion) |
-
-**Example**: If an ancillary stream sends 100 frames and you see `port[0].frames = 100`,
-that means 100 distinct timestamps were detected — but some of those frames could be
-incomplete if packets were lost.
-
-## Understanding OOO and Loss Counters
-
-The library provides three levels of out-of-order / loss tracking:
-
-### The Three Counters
-
-| Counter | Scope | Stage | What it detects |
-|---|---|---|---|
-| `port[i].out_of_order_packets` | Per-port | Pre-redundancy | Missing packets on a single port (gap size, not gap count) |
-| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of per-port missing packets |
-| `stat_pkts_unrecovered` | Session | Post-redundancy | Actual missing packets that redundancy could not cover |
-
-**Invariants** (always true):
+## RX packet processing pipeline
 
 ```text
-stat_pkts_out_of_order == port[0].out_of_order_packets + port[1].out_of_order_packets
-stat_pkts_unrecovered <= stat_pkts_out_of_order
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  NIC queue                                                                  │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  1. VALIDATE  (payload type, SSRC, packet length, interlace F-bits)         │
+ │                                                                             │
+ │     FAIL ──► port[i].err_packets++                                          │
+ │              stat_pkts_wrong_{pt,ssrc,len,interlace}_dropped++  (video)     │
+ │              stat_pkts_wrong_{pt,ssrc,interlace}_dropped++      (anc/fmd)   │
+ │              stat_pkts_{wrong_pt,wrong_ssrc,len_mismatch}_dropped++ (audio) │
+ │              packet DISCARDED                                               │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │ pass
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  2. PER-PORT SEQUENCE CHECK                                                 │
+ │                                                                             │
+ │     forward gap  ──► port[i].lost_packets += gap_size                       │
+ │                      stat_lost_packets    += gap_size                       │
+ │     backward seq ──► port[i].reordered_packets++                            │
+ │     same seq     ──► port[i].duplicates_same_port++  (audio/anc/fmd only)   │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  3. PRE-REDUNDANCY TOTALS                                                   │
+ │                                                                             │
+ │     port[i].packets++          ◄── "what arrived on this wire"              │
+ │     port[i].bytes += pkt_len                                                │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  4. REDUNDANCY FILTER  (timestamp/seq already seen on the other port?)      │
+ │                                                                             │
+ │     YES ──► stat_pkts_redundant++   (expected on 2-port sessions)           │
+ │             packet DISCARDED                                                │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │ unique
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  5. POST-REDUNDANCY LOSS DETECTION                                          │
+ │                                                                             │
+ │     Audio/Anc/FMD:  session_seq_id gap ──► stat_pkts_unrecovered += gap     │
+ │     Video:          frame completion   ──► stat_pkts_unrecovered += missing  │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  6. POST-REDUNDANCY TOTAL                                                   │
+ │                                                                             │
+ │     stat_pkts_received++       ◄── "what the app actually got"              │
+ └──────┬───────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  7. DELIVER to frame buffer / RTP ring                                      │
+ └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Interpreting OOO Scenarios
+`port[i].packets` = what arrived on wire `i`. `stat_pkts_received` = what the app got.
 
-| Scenario | `port[P].ooo` | `port[R].ooo` | `stat_pkts_out_of_order` | `stat_pkts_unrecovered` | Interpretation |
-|---|---:|---:|---:|---:|---|
-| Perfect stream | 0 | 0 | 0 | 0 | All good |
-| Port P lossy, R covers | 50 | 0 | 50 | 0 | Redundancy working |
-| Both ports lossy, some overlap | 50 | 30 | 80 | 5 | 5 packets unrecoverable — real data loss |
-| Single port, some loss | 10 | n/a | 10 | 10 | No redundancy to help |
-| Network reordering | 3 | 2 | 5 | 0 | Packets reordered but none lost |
+## The five counters you monitor
 
-Key takeaways:
-- `stat_pkts_out_of_order > 0` with `stat_pkts_unrecovered == 0` → redundancy is
-  covering the gaps, the stream is healthy at session level.
-- `stat_pkts_unrecovered > 0` → real data loss that redundancy could not cover. Check
-  network path diversity.
-- With a single port, `stat_pkts_unrecovered` equals `stat_pkts_out_of_order`
-  because there is no redundant port to fill gaps.
-- Redundancy recovery rate: `(ooo - unrecovered) / ooo`.
+| Counter | Meaning |
+|---|---|
+| `port[i].lost_packets` | Packets missing on **this** port (pre-redundancy) |
+| `port[i].reordered_packets` | Backward arrival on the same port |
+| `port[i].duplicates_same_port` | Same seq twice on the same port (audio/anc/fmd; always 0 for video) |
+| `stat_pkts_redundant` | Cross-port duplicate filtered — **expected** on 2-port sessions |
+| `stat_pkts_unrecovered` | Missing on **all** ports — real loss |
 
-### Video-Specific OOO Behavior
+```text
+stat_lost_packets     == Σ port[i].lost_packets
+stat_pkts_unrecovered <= stat_lost_packets
+save_rate (%)         == 100 * lost / (lost + unrecovered)
+```
 
-Video (ST20) works differently from audio/anc/fmd:
+`save_rate` answers: **"is redundancy covering the gaps?"** 100% = yes.
 
-- Video detects OOO using **frame-internal `pkt_idx`** (packet index within the current
-  frame), not RTP sequence numbers
-- When a packet arrives with `pkt_idx != last_pkt_idx + 1`, the gap size
-  (`pkt_idx - last_pkt_idx - 1`) is added to both `port[].out_of_order_packets`
-  and `stat_pkts_out_of_order`
-- Video has **no `session_seq_id`** — frames are identified by RTP timestamp, and each
-  frame resets the packet index tracking
-- `stat_pkts_unrecovered` for video counts missing packets in corrupted frames
-  (estimated from `(frame_size - recv_size) / avg_pkt_size`)
+### Reading table
 
-**Practical implication**: For video, `stat_pkts_unrecovered` and `stat_frames_dropped`
-are the primary loss indicators. `common.port[].incomplete_frames` shows per-port
-contribution.
+| `port[P].lost` | `port[R].lost` | `unrec` | `redundant` | Verdict |
+|---:|---:|---:|---:|---|
+| 0 | 0 | 0 | ≈ received | Healthy |
+| 50 | 0 | 0 | ≈ received | P degraded, R covers (`save_rate=100%`) |
+| 50 | 30 | 5 | < received | 5 pkts lost on both → real loss |
+| 10 | n/a | 10 | 0 | Single-port, no redundancy |
 
----
+## `port[i].frames` — two flavors
 
-## Cross-Session Differences
+| Sessions | `frames++` when… | `incomplete_frames` |
+|---|---|---|
+| Video (ST20/ST22) | This port delivered enough pkts to **complete** the frame | Bumped when this port was short |
+| Audio/Anc/FMD     | New frame's **first** packet arrived on this port (race winner) | Always 0 |
 
-### OOO Counters at a Glance
+`port[0].frames + port[1].frames` ≠ total frames. Use `stat_pkts_received` and the
+type-specific `stat_frames_dropped` / `incomplete_frames_cnt` for end-to-end totals.
 
-| Counter | Scope | Stage | Video (ST20) | Audio/Anc/FMD |
-|---|---|---|---|---|
-| `port[].out_of_order_packets` | Per-port | Pre-redundancy | Missing pkts from `pkt_idx` gaps | Missing pkts from RTP `seq_number` gaps |
-| `stat_pkts_out_of_order` | Session | Pre-redundancy | Sum of port missing pkts | Sum of port missing pkts |
-| `stat_pkts_unrecovered` | Session | Post-redundancy | Missing pkts in corrupted frames | Missing pkts from `session_seq_id` gaps |
+**Video invariant** (per port): `frames + incomplete_frames == total complete frames`.
 
-### How `stat_pkts_unrecovered` Is Computed
+> **Example.** TX=6766, RX `port[P].frames=6465`, `port[R].frames=300`,
+> `unrecovered=0`, `frames_dropped=0`. Then `port[P].incomplete_frames≈300` and
+> `port[R].incomplete_frames≈6465`: redundancy is healing every frame, but **R is
+> dropping ≥1 pkt per frame**. Check `mtl_get_port_stats(R).rx_hw_dropped_packets`,
+> switch port stats, MTU, SFP/cable on R.
 
-| Session type | Source | Computation | Exact? |
-|---|---|---|---|
-| Video (ST20) | Corrupted frame at slot completion | `(frame_size - recv_size) / avg_pkt_size` | Estimated |
-| Video (ST22) | Corrupted frame at slot completion | `(expect_size - recv_size) / avg_pkt_size` | Estimated |
-| Audio (ST30) | Post-redundancy `session_seq_id` gap | `(uint16_t)(seq_id - session_seq_id - 1)` per gap | Exact |
-| Ancillary (ST40) | Post-redundancy `session_seq_id` gap | `(uint16_t)(seq_id - session_seq_id - 1)` per gap | Exact |
-| Metadata (ST41) | Post-redundancy `session_seq_id` gap | `(uint16_t)(seq_id - session_seq_id - 1)` per gap | Exact |
+### `err_packets` — not data loss
 
----
+`port[i].err_packets` = packets that arrived but the session refused (wrong PT, wrong
+SSRC, length mismatch, etc.). Does **not** reduce `stat_pkts_received` or cause
+`stat_pkts_unrecovered`. Most common benign cause: another stream on the same multicast
+group leaks in — confirm via `stat_pkts_wrong_pt_dropped` / `stat_pkts_wrong_ssrc_dropped`.
+
+## Per-session quirks
+
+**Video (ST20/ST22).** Loss uses **frame-internal `pkt_idx`**.
+`stat_pkts_unrecovered` is **estimated** as `(frame_size − recv_size) / avg_pkt_size`.
+Cross-frame reorders are not tracked. Watch
+`stat_frames_dropped`, `incomplete_frames_cnt`, `stat_pkts_rtp_ring_full`,
+`stat_pkts_no_slot`, `stat_slot_get_frame_fail`.
+
+**Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
+`stat_pkts_unrecovered` is **exact**. ST30 adds `stat_pkts_dropped`,
+`stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`. ST40/41 add
+`stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`.
+
+**TX (any type).** `stat_epoch_drop` = app late, `stat_epoch_onward` = on time,
+`stat_epoch_mismatch` = pacing snapped to a different epoch,
+`stat_recoverable_error` / `stat_unrecoverable_error` = TX faults.
+
+## Periodic stat log lines
+
+Emitted every `stat_dump_period_s` (default 10s); zero-delta lines are suppressed.
+
+```text
+RX_<TYPE>_SESSION(idx): fps F.f frames N pkts M [(redundant R)]
+RX_<TYPE>_SESSION(idx): per-port arrivals P=<n> pkts (<f> frames <verb>), R=<n> pkts (<f> frames <verb>)
+RX_<TYPE>_SESSION(idx): per-port loss covered by redundancy: <L> of <T> pkts
+                        (P:<dp>=<%>, R:<dr>=<%>), unrecovered (lost on both) <U>, save_rate=<z>%
+RX_<TYPE>_SESSION(idx): unrecovered pkts <U>                  (single-port form, err)
+```
+
+`<verb>` = `complete` (video) or `first` (audio/anc/fmd).
+
+| Line | Level |
+|---|---|
+| `per-port arrivals` | `notice` |
+| `per-port loss … save_rate=100%` | `warn` |
+| `per-port loss … save_rate<100%` | `warn` + `err` |
+| `unrecovered pkts <U>` (single-port) | `err` |
+| `wrong PT/SSRC/len/interlace dropped` | `notice` |
 
 ## Troubleshooting with Stats
 
@@ -187,8 +177,10 @@ contribution.
 |---|---|---|
 | No packets at all | `port[0].packets == 0` | Wrong IP/port, multicast not joined, NIC link down |
 | Packets arrive but `stat_pkts_received` is 0 | `stat_pkts_wrong_pt_dropped`, `stat_pkts_wrong_ssrc_dropped`, `port[].err_packets` | PT or SSRC mismatch between sender and receiver |
-| `stat_pkts_out_of_order` increasing | `port[P].out_of_order_packets`, `port[R].out_of_order_packets` | Network congestion, packet loss, or RSS misconfiguration |
-| `stat_pkts_unrecovered` increasing | Compare with `stat_pkts_out_of_order` | Real data loss — redundancy could not cover; check path diversity |
+| `stat_lost_packets` increasing | `port[P].lost_packets`, `port[R].lost_packets` | Network congestion, packet loss, or RSS misconfiguration |
+| `stat_pkts_unrecovered` increasing | Compare with `stat_lost_packets` | Real data loss — redundancy could not cover; check path diversity |
+| `port[].duplicates_same_port > 0` (audio/anc/fmd) | Upstream switch / path | Switch loop, cable fault, LAG misconfig, or tcpreplay loop |
+| `port[].reordered_packets > 0` | Upstream switch / path | ECMP/QoS reorder; for ST20 limited to intra-frame reorders |
 | `stat_pkts_redundant` is 0 on 2-port session | `port[1].packets` | Redundant port not receiving data |
 | `stat_pkts_redundant ≈ stat_pkts_received` on 2-port session | — | Normal — each packet arrives on both ports, one copy filtered |
 | Video `stat_frames_dropped` increasing | `stat_pkts_unrecovered`, `stat_pkts_no_slot` | Incomplete frames due to packet loss or frame buffers exhausted |
