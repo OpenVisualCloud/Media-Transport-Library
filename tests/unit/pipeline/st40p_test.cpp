@@ -1,0 +1,812 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 Intel Corporation
+ *
+ * Unit tests for ST2110-40 (ancillary) RX pipeline — frame assembly layer.
+ * Tests rx_st40p_rtp_ready() which sits above the session-layer redundancy
+ * filter and assembles RTP packets into frames.
+ */
+
+#include <gtest/gtest.h>
+
+#include "pipeline/st40p_harness.h"
+
+/* ── fixture ───────────────────────────────────────────────────────── */
+
+class St40PipelineRxTest : public ::testing::Test {
+ protected:
+  ut40p_ctx* ctx_ = nullptr;
+
+  void SetUp() override {
+    ASSERT_EQ(ut40p_init(), 0) << "EAL init failed";
+    ctx_ = ut40p_ctx_create(2, 3); /* 2 ports, 3 frame buffers */
+    ASSERT_NE(ctx_, nullptr);
+  }
+
+  void TearDown() override {
+    ut40p_ctx_destroy(ctx_);
+    ctx_ = nullptr;
+  }
+
+  /* convenience wrappers */
+  int enqueue(uint16_t seq, uint32_t ts, bool marker, enum mtl_session_port port) {
+    return ut40p_enqueue_pkt(ctx_, seq, ts, marker ? 1 : 0, port);
+  }
+
+  void enqueue_burst(uint16_t seq_start, int count, uint32_t ts, bool last_marker,
+                     enum mtl_session_port port) {
+    ut40p_enqueue_burst(ctx_, seq_start, count, ts, last_marker ? 1 : 0, port);
+  }
+
+  int process() {
+    return ut40p_process(ctx_);
+  }
+
+  void process_all() {
+    ut40p_process_all(ctx_);
+  }
+
+  struct st40_frame_info* get_frame() {
+    return ut40p_get_frame(ctx_);
+  }
+
+  int put_frame(struct st40_frame_info* f) {
+    return ut40p_put_frame(ctx_, f);
+  }
+
+  uint32_t stat_busy() {
+    return ut40p_stat_busy(ctx_);
+  }
+  uint64_t stat_frames_received() {
+    return ut40p_stat_frames_received(ctx_);
+  }
+  uint64_t stat_frames_dropped() {
+    return ut40p_stat_frames_dropped(ctx_);
+  }
+  uint64_t stat_frames_corrupted() {
+    return ut40p_stat_frames_corrupted(ctx_);
+  }
+};
+
+/* ── Normal pipeline operation ────────────────────────────────────────── */
+
+/* Single complete frame: 6 packets with marker on last. */
+TEST_F(St40PipelineRxTest, SingleFrameCompletion) {
+  enqueue_burst(0, 6, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_EQ(frame->pkts_total, 6u);
+  EXPECT_TRUE(frame->rtp_marker);
+  EXPECT_EQ(frame->status, ST_FRAME_STATUS_COMPLETE);
+  put_frame(frame);
+}
+
+/* Timestamp change completes the previous frame without marker. */
+TEST_F(St40PipelineRxTest, TimestampChangeCompletesFrame) {
+  /* Single-port: ts change → immediate READY (no PENDING) */
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 3);
+
+  /* frame 1: 3 pkts, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* frame 2: 1 pkt with new ts → completes frame 1 */
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame1 = get_frame();
+  ASSERT_NE(frame1, nullptr);
+  EXPECT_EQ(frame1->rtp_timestamp, 1000u);
+  EXPECT_EQ(frame1->pkts_total, 3u);
+  EXPECT_FALSE(frame1->rtp_marker)
+      << "Frame completed by ts change should not have marker";
+  put_frame(frame1);
+}
+
+/* Fill all frame buffers — additional packets should increment stat_busy. */
+TEST_F(St40PipelineRxTest, FramebufferExhaustion) {
+  /* 3 framebuffs: fill all with inflight frames via ts changes.
+   * ts=1000 → ts=2000 (completes frame 1, starts frame 2)
+   * ts=2000 → ts=3000 (completes frame 2, starts frame 3)
+   * All 3 frames are READY or RECEIVING; no free buffers. */
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* completes ts=1000 */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P); /* completes ts=2000 */
+  process_all();
+
+  /* frames 1 and 2 are READY, frame 3 is RECEIVING (inflight).
+   * No free framebuffs. Next ts change will try to allocate but fail. */
+  enqueue(3, 4000, false, MTL_SESSION_PORT_P); /* completes ts=3000 → no free fb */
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u) << "Should hit framebuffer exhaustion";
+  /* Every stat_busy hit must also surface as stat_frames_dropped so the
+   * back-pressure is visible via session stats. */
+  EXPECT_EQ(stat_frames_dropped(), stat_busy());
+}
+
+/* Sequence discontinuity tracking: gap between seq 1 and 3. */
+TEST_F(St40PipelineRxTest, SequenceDiscontinuity) {
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 1000, false, MTL_SESSION_PORT_P);
+  /* skip seq 2 */
+  enqueue(3, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_TRUE(frame->seq_discont);
+  EXPECT_EQ(frame->seq_lost, 1u);
+  put_frame(frame);
+}
+
+/* Per-port sequence tracking: P has gap, R does not. */
+TEST_F(St40PipelineRxTest, PerPortSequenceTracking) {
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  /* P skips seq 1 */
+  enqueue(2, 1000, false, MTL_SESSION_PORT_P);
+  /* R fills in seq 1 */
+  enqueue(1, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(3, 1000, true, MTL_SESSION_PORT_R);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_TRUE(frame->port_seq_discont[MTL_SESSION_PORT_P]);
+  EXPECT_EQ(frame->port_seq_lost[MTL_SESSION_PORT_P], 1u);
+  /* R sees seq 1 then 3 — gap of 1 too (since per-port tracks independently) */
+  EXPECT_TRUE(frame->port_seq_discont[MTL_SESSION_PORT_R]);
+  EXPECT_EQ(frame->pkts_recv[MTL_SESSION_PORT_P], 2u);
+  EXPECT_EQ(frame->pkts_recv[MTL_SESSION_PORT_R], 2u);
+  put_frame(frame);
+}
+
+/* Multiple frames delivered in sequence. */
+TEST_F(St40PipelineRxTest, MultiFrameDelivery) {
+  for (uint32_t ts = 1000; ts <= 3000; ts += 1000) {
+    enqueue_burst(0 + (ts - 1000) / 1000 * 4, 4, ts, true, MTL_SESSION_PORT_P);
+  }
+  process_all();
+
+  for (uint32_t ts = 1000; ts <= 3000; ts += 1000) {
+    auto* frame = get_frame();
+    ASSERT_NE(frame, nullptr) << "Frame ts=" << ts << " should be available";
+    EXPECT_EQ(frame->rtp_timestamp, ts);
+    EXPECT_TRUE(frame->rtp_marker);
+    put_frame(frame);
+  }
+
+  /* no more frames */
+  EXPECT_EQ(get_frame(), nullptr);
+}
+
+/* Frame put recycles the buffer for reuse. */
+TEST_F(St40PipelineRxTest, FramePutRecyclesBuffer) {
+  /* fill and consume one frame */
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  put_frame(frame);
+
+  /* the returned slot should be reusable — send another frame */
+  enqueue_burst(4, 4, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+  frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 2000u);
+  put_frame(frame);
+}
+
+/* Packet from unmapped port is dropped. */
+TEST_F(St40PipelineRxTest, UnmappedPortDropped) {
+  /* Enqueue a packet with port_id=99 (not mapped to any session port) */
+  ASSERT_EQ(ut40p_enqueue_pkt_port_id(ctx_, 0, 1000, 1, 99), 0);
+  int rc = process();
+  EXPECT_EQ(rc, -EIO);
+  EXPECT_EQ(get_frame(), nullptr) << "Unmapped port packet should not produce a frame";
+}
+
+/* ── RTP marker bit tests ─────────────────────────────────────────────── */
+
+/* Redundant-path scenario: P sends body, R sends tail with marker, same timestamp.
+ *   P sends seq 0-4 (no marker), R sends seq 5-6 (marker on 6).
+ * At the pipeline layer, both ports' packets arrive via the same packet_ring
+ * (session layer already deduplicated). Marker must survive. */
+TEST_F(St40PipelineRxTest, MarkerPreservedMidFrameSwitchover) {
+  /* P sends body: seq 0-4, no marker */
+  for (int i = 0; i < 5; i++) enqueue(i, 1000, false, MTL_SESSION_PORT_P);
+  /* R sends tail: seq 5-6, marker on 6 */
+  enqueue(5, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(6, 1000, true, MTL_SESSION_PORT_R);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_EQ(frame->pkts_total, 7u);
+  EXPECT_TRUE(frame->rtp_marker)
+      << "Marker from R port must survive mid-frame switchover at pipeline layer";
+  put_frame(frame);
+}
+
+/* Marker preservation on framebuffer exhaustion.
+ *
+ * When all framebuffers are occupied and a new timestamp arrives, the pipeline
+ * must still process the marker correctly when framebuffers become available. */
+TEST_F(St40PipelineRxTest, MarkerPreservedOnFramebufferExhaustion) {
+  /* Use single-port ctx with only 2 framebuffs to make exhaustion easier */
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 2);
+  ASSERT_NE(ctx_, nullptr);
+
+  /* Frame 1: ts=1000, 3 pkts, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* Frame 2: ts=2000 → completes frame 1, starts frame 2 */
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* Now: frame 1 is READY (slot 0), frame 2 is RECEIVING (slot 1).
+   * Both framebuffers are occupied. */
+
+  /* Frame 3: ts=3000 → completes frame 2, but no free fb for frame 3 */
+  enqueue(4, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* Frame 2 is now READY (slot 1). Frame 3 hit stat_busy.
+   * The ts=3000 packet triggered a timestamp change, completing frame 2,
+   * but no framebuffer was available — the packet was dropped before
+   * marker processing. */
+
+  /* Now send a marker for ts=3000 — it also can't allocate a new fb */
+  enqueue(5, 3000, true, MTL_SESSION_PORT_P); /* MARKER */
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u);
+
+  /* Frame 1 does not have marker (completed by ts change — expected) */
+  auto* frame1 = get_frame();
+  ASSERT_NE(frame1, nullptr);
+  EXPECT_EQ(frame1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(frame1->rtp_marker); /* no marker in frame 1 — correct */
+  put_frame(frame1);
+
+  /* Frame 2 does not have marker either (completed by ts change — expected) */
+  auto* frame2 = get_frame();
+  ASSERT_NE(frame2, nullptr);
+  EXPECT_EQ(frame2->rtp_timestamp, 2000u);
+  EXPECT_FALSE(frame2->rtp_marker); /* no marker in frame 2 — correct */
+  put_frame(frame2);
+
+  /* Frame 3 was never assembled (all its packets hit stat_busy).
+   * Put frames 1 and 2 to free slots, then retry frame 3. */
+  enqueue(10, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(11, 3000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame3 = get_frame();
+  ASSERT_NE(frame3, nullptr);
+  EXPECT_EQ(frame3->rtp_timestamp, 3000u);
+  EXPECT_TRUE(frame3->rtp_marker) << "Frame 3 should have marker after retry";
+  put_frame(frame3);
+}
+
+/* Single-packet frame with marker. */
+TEST_F(St40PipelineRxTest, MarkerOnSinglePacketFrame) {
+  enqueue(0, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->pkts_total, 1u);
+  EXPECT_TRUE(frame->rtp_marker);
+  put_frame(frame);
+}
+
+/* Frame status is COMPLETE when no seq discontinuity, CORRUPTED when there
+ * is. Each delivery must bump stat_frames_received; only CORRUPTED deliveries
+ * must additionally bump stat_frames_corrupted. */
+TEST_F(St40PipelineRxTest, FrameStatusCompleteVsCorrupted) {
+  ASSERT_EQ(stat_frames_received(), 0u);
+  ASSERT_EQ(stat_frames_corrupted(), 0u);
+
+  /* Clean frame */
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* clean = get_frame();
+  ASSERT_NE(clean, nullptr);
+  EXPECT_EQ(clean->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 1u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u);
+  put_frame(clean);
+
+  /* Corrupted frame: seq gap between 4 and 6. */
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* corrupted = get_frame();
+  ASSERT_NE(corrupted, nullptr);
+  EXPECT_EQ(corrupted->status, ST_FRAME_STATUS_CORRUPTED);
+  EXPECT_EQ(stat_frames_received(), 2u);
+  EXPECT_EQ(stat_frames_corrupted(), 1u);
+  put_frame(corrupted);
+
+  /* Second corrupted frame: corrupted accumulates independently of received. */
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 3000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* corrupted2 = get_frame();
+  ASSERT_NE(corrupted2, nullptr);
+  EXPECT_EQ(corrupted2->status, ST_FRAME_STATUS_CORRUPTED);
+  EXPECT_EQ(stat_frames_received(), 3u);
+  EXPECT_EQ(stat_frames_corrupted(), 2u);
+  put_frame(corrupted2);
+
+  /* Final clean frame: received bumps, corrupted does not. */
+  enqueue_burst(10, 4, 4000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* clean2 = get_frame();
+  ASSERT_NE(clean2, nullptr);
+  EXPECT_EQ(clean2->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 4u);
+  EXPECT_EQ(stat_frames_corrupted(), 2u) << "corrupted must not bump on COMPLETE";
+  put_frame(clean2);
+}
+
+/* st40p_rx_get_session_stats() must surface every pipeline-owned frame
+ * counter exactly as the pipeline tracks it. Drives one clean frame, one
+ * corrupted frame and a framebuffer-exhaustion drop so all three counters
+ * are non-zero, then compares the API output to the raw context fields. */
+TEST_F(St40PipelineRxTest, GetSessionStatsOverlay) {
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f0 = get_frame();
+  ASSERT_NE(f0, nullptr);
+  put_frame(f0);
+
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P); /* seq gap */
+  process_all();
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  /* Hold f1 so the next ts changes have no free framebuff and bump dropped. */
+
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(8, 4000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 5000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  struct st40_rx_user_stats api_stats;
+  ASSERT_EQ(ut40p_get_session_stats(ctx_, &api_stats), 0);
+
+  EXPECT_EQ(api_stats.common.stat_frames_received, stat_frames_received());
+  EXPECT_EQ(api_stats.common.stat_frames_dropped, stat_frames_dropped());
+  EXPECT_EQ(api_stats.common.stat_frames_corrupted, stat_frames_corrupted());
+  /* Guard against a trivially-equal pass on all-zero counters. */
+  EXPECT_GT(api_stats.common.stat_frames_received, 0u);
+  EXPECT_GT(api_stats.common.stat_frames_dropped, 0u);
+  EXPECT_GT(api_stats.common.stat_frames_corrupted, 0u);
+  /* Corrupted is a subset of received. */
+  EXPECT_LE(api_stats.common.stat_frames_corrupted,
+            api_stats.common.stat_frames_received);
+
+  put_frame(f1);
+}
+
+/* st40p_rx_reset_session_stats() must zero all three pipeline-owned frame
+ * counters, and subsequent activity must resume counting from zero. */
+TEST_F(St40PipelineRxTest, ResetClearsFrameCounters) {
+  /* Make all three counters non-zero. */
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f0 = get_frame();
+  ASSERT_NE(f0, nullptr);
+  put_frame(f0);
+
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(6, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+
+  enqueue(7, 3000, false, MTL_SESSION_PORT_P);
+  enqueue(8, 4000, false, MTL_SESSION_PORT_P);
+  enqueue(9, 5000, false, MTL_SESSION_PORT_P);
+  process_all();
+  put_frame(f1);
+
+  ASSERT_GT(stat_frames_received(), 0u);
+  ASSERT_GT(stat_frames_dropped(), 0u);
+  ASSERT_GT(stat_frames_corrupted(), 0u);
+
+  ASSERT_EQ(ut40p_reset_session_stats(ctx_), 0);
+
+  EXPECT_EQ(stat_frames_received(), 0u);
+  EXPECT_EQ(stat_frames_dropped(), 0u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u);
+
+  /* Continue at seq=7 so the first post-reset frame is contiguous with the
+   * last accepted seq (6) and arrives clean; framebuff-exhaustion drops do
+   * not advance session_last_seq. */
+  enqueue_burst(7, 4, 6000, true, MTL_SESSION_PORT_P);
+  process_all();
+  auto* after = get_frame();
+  ASSERT_NE(after, nullptr);
+  EXPECT_EQ(after->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(stat_frames_received(), 1u);
+  EXPECT_EQ(stat_frames_corrupted(), 0u)
+      << "clean frame after reset must not bump corrupted";
+  put_frame(after);
+}
+
+/* ── PENDING state: late-marker resolution ───────────────────────────── */
+/*
+ * Marker-primary frame assembly with N-1 fallback:
+ *
+ *   - Marker received → frame immediately READY (zero added latency).
+ *   - Timestamp change without marker → old frame enters PENDING (not READY).
+ *     PENDING frame is not visible to consumer via get_frame().
+ *   - Late marker for PENDING frame → apply marker, promote to READY.
+ *   - Second timestamp change → force-deliver PENDING frame without marker.
+ *   - At most 2 frames buffered (inflight + pending), bounded memory cost.
+ */
+
+/* When P advances timestamp before R's marker, the old frame enters PENDING.
+ * It must NOT be visible via get_frame() until resolved. */
+TEST_F(St40PipelineRxTest, PendingFrameNotVisibleBeforeResolution) {
+  /* Frame body: 4 pkts for ts=1000, no marker */
+  enqueue_burst(0, 4, 1000, false, MTL_SESSION_PORT_P);
+  /* P starts next frame → ts=1000 enters PENDING */
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* PENDING frame should not be delivered yet */
+  EXPECT_EQ(get_frame(), nullptr)
+      << "PENDING frame must not be visible to consumer before resolution";
+
+  /* Resolve: send marker for ts=2000 to make it READY, which also
+   * force-delivers the PENDING ts=1000 frame. */
+  enqueue(5, 3000, false, MTL_SESSION_PORT_P); /* second ts change → force-deliver */
+  process_all();
+
+  auto* frame1 = get_frame();
+  ASSERT_NE(frame1, nullptr);
+  EXPECT_EQ(frame1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(frame1->rtp_marker) << "Force-delivered PENDING frame has no marker";
+  put_frame(frame1);
+}
+
+/* Late marker from R resolves a PENDING frame: the frame becomes READY
+ * with rtp_marker=true and the correct total packet count. */
+TEST_F(St40PipelineRxTest, PendingResolvedByLateMarker) {
+  /* P: 3 pkts for ts=1000, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances to ts=2000 → ts=1000 enters PENDING */
+  enqueue(5, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* Verify frame not yet visible */
+  EXPECT_EQ(get_frame(), nullptr);
+
+  /* R: late packets for ts=1000, marker on last */
+  enqueue(3, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(4, 1000, true, MTL_SESSION_PORT_R); /* MARKER */
+  process_all();
+
+  /* PENDING frame resolved by marker → now READY */
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_TRUE(frame->rtp_marker) << "Late marker must resolve PENDING frame";
+  EXPECT_EQ(frame->pkts_total, 5u) << "Late packets must be counted in frame";
+  put_frame(frame);
+}
+
+/* Second timestamp change force-delivers a PENDING frame without marker.
+ *
+ * Sequence: ts=1000 (no marker) → ts=2000 (ts=1000 PENDING) →
+ *           ts=3000 (ts=1000 force-READY, ts=2000 PENDING) */
+TEST_F(St40PipelineRxTest, PendingForcedBySecondTimestampChange) {
+  /* Frame 1: ts=1000, 3 pkts, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* ts change → ts=1000 PENDING */
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+  EXPECT_EQ(get_frame(), nullptr) << "ts=1000 should be PENDING, not READY";
+
+  /* Frame 2: ts=2000, 2 pkts, no marker */
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  /* Second ts change → ts=1000 force-delivered, ts=2000 PENDING */
+  enqueue(5, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  auto* frame1 = get_frame();
+  ASSERT_NE(frame1, nullptr);
+  EXPECT_EQ(frame1->rtp_timestamp, 1000u);
+  EXPECT_EQ(frame1->pkts_total, 3u);
+  EXPECT_FALSE(frame1->rtp_marker) << "Force-delivered frame should not have marker";
+  put_frame(frame1);
+
+  /* ts=2000 should still be PENDING */
+  EXPECT_EQ(get_frame(), nullptr) << "ts=2000 should be PENDING, not yet READY";
+}
+
+/* Normal marker path: frame with marker goes directly to READY — no PENDING.
+ * This must continue working unchanged with the PENDING state logic. */
+TEST_F(St40PipelineRxTest, NoPendingWhenMarkerPresent) {
+  /* Frame with marker on last packet */
+  enqueue_burst(0, 4, 1000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* Frame should be immediately available — no PENDING state */
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_TRUE(frame->rtp_marker);
+  EXPECT_EQ(frame->pkts_total, 4u);
+  put_frame(frame);
+
+  /* Second frame with marker — also immediate */
+  enqueue_burst(4, 3, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 2000u);
+  EXPECT_TRUE(frame->rtp_marker);
+  put_frame(frame);
+}
+
+/* A PENDING frame accumulates late packets from R, including their count.
+ * The marker resolves it and the total reflects all received packets. */
+TEST_F(St40PipelineRxTest, PendingLatePacketsAccumulate) {
+  /* P: 3 pkts for ts=1000, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances to ts=2000 → ts=1000 PENDING */
+  enqueue(6, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* R: 3 late pkts for ts=1000 (seq 3,4,5), marker on seq 5 */
+  enqueue(3, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(4, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(5, 1000, true, MTL_SESSION_PORT_R); /* MARKER */
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_TRUE(frame->rtp_marker);
+  EXPECT_EQ(frame->pkts_total, 6u) << "3 from P + 3 from R";
+  EXPECT_EQ(frame->pkts_recv[MTL_SESSION_PORT_P], 3u);
+  EXPECT_EQ(frame->pkts_recv[MTL_SESSION_PORT_R], 3u);
+  put_frame(frame);
+}
+
+/* Multiple successive frames cycling through PENDING → resolved.
+ * Each frame's marker arrives late from R after P has advanced. */
+TEST_F(St40PipelineRxTest, PendingMultiFrameCycle) {
+  /* Frame 1: P sends body, advances to ts=2000 */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → PENDING */
+  /* R sends late marker for ts=1000 → resolves PENDING */
+  enqueue(3, 1000, true, MTL_SESSION_PORT_R);
+
+  /* Frame 2: P sends body at ts=2000, advances to ts=3000 */
+  enqueue(4, 2000, false, MTL_SESSION_PORT_P);
+  enqueue(5, 3000, false, MTL_SESSION_PORT_P); /* ts=2000 → PENDING */
+  /* R sends late marker for ts=2000 */
+  enqueue(5, 2000, true, MTL_SESSION_PORT_R);
+
+  /* Frame 3: complete with marker */
+  enqueue(6, 3000, true, MTL_SESSION_PORT_P); /* ts=3000 → READY via marker */
+
+  process_all();
+
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  EXPECT_TRUE(f1->rtp_marker) << "Frame 1: late marker from R resolved PENDING";
+  put_frame(f1);
+
+  auto* f2 = get_frame();
+  ASSERT_NE(f2, nullptr);
+  EXPECT_EQ(f2->rtp_timestamp, 2000u);
+  EXPECT_TRUE(f2->rtp_marker) << "Frame 2: late marker from R resolved PENDING";
+  put_frame(f2);
+
+  auto* f3 = get_frame();
+  ASSERT_NE(f3, nullptr);
+  EXPECT_EQ(f3->rtp_timestamp, 3000u);
+  EXPECT_TRUE(f3->rtp_marker) << "Frame 3: marker on-time, no PENDING";
+  put_frame(f3);
+
+  EXPECT_EQ(get_frame(), nullptr);
+}
+
+/* ── Single-port vs multi-port PENDING behavior ──────────────────────── */
+/*
+ * These tests verify the behavioral split: single-port sessions never enter
+ * PENDING (timestamp change → immediate READY), while multi-port sessions
+ * defer delivery until a late marker or a second timestamp change.
+ */
+
+/* Single-port: timestamp change delivers frame immediately, no PENDING. */
+TEST_F(St40PipelineRxTest, SinglePortTsChangeImmediateReady) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 3);
+
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts change */
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr) << "Single-port: ts change must deliver frame immediately";
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_FALSE(frame->rtp_marker);
+  put_frame(frame);
+}
+
+/* Multi-port: same packet sequence as above → frame enters PENDING, not visible. */
+TEST_F(St40PipelineRxTest, MultiPortTsChangePending) {
+  /* Default fixture is 2-port */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P); /* ts change */
+  process_all();
+
+  EXPECT_EQ(get_frame(), nullptr)
+      << "Multi-port: ts change must enter PENDING, not deliver";
+}
+
+/* Single-port: three rapid ts changes → all three frames immediately READY.
+ * No PENDING, no force-delivery — each frame completes on ts change. */
+TEST_F(St40PipelineRxTest, SinglePortRapidTsChangesAllReady) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 4); /* 4 fbs to hold all frames */
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* completes ts=1000 */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P); /* completes ts=2000 */
+  enqueue(3, 4000, false, MTL_SESSION_PORT_P); /* completes ts=3000 */
+  process_all();
+
+  for (uint32_t ts = 1000; ts <= 3000; ts += 1000) {
+    auto* f = get_frame();
+    ASSERT_NE(f, nullptr) << "ts=" << ts << " must be immediately READY";
+    EXPECT_EQ(f->rtp_timestamp, ts);
+    EXPECT_FALSE(f->rtp_marker);
+    put_frame(f);
+  }
+}
+
+/* Multi-port: three rapid ts changes without markers.
+ * Frame 1 is force-delivered when frame 2 enters PENDING on the third change.
+ * Frame 2 stays PENDING. Frame 3 is inflight. */
+TEST_F(St40PipelineRxTest, MultiPortRapidTsChangesForceDelivery) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(2, 4);
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → PENDING */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P); /* ts=1000 force-READY, ts=2000 PENDING */
+  process_all();
+
+  /* Only ts=1000 should be visible (force-delivered) */
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(f1->rtp_marker) << "Force-delivered frame has no marker";
+  put_frame(f1);
+
+  /* ts=2000 is PENDING, ts=3000 is inflight — neither visible */
+  EXPECT_EQ(get_frame(), nullptr) << "ts=2000 PENDING, ts=3000 inflight";
+}
+
+/* Multi-port: PENDING frame occupies a framebuffer slot.
+ * With 2 fbs total: pending(1) + inflight(1) = 0 free → next ts change hits busy. */
+TEST_F(St40PipelineRxTest, MultiPortPendingReducesAvailableFramebuffers) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(2, 2);
+
+  /* ts=1000 fills fb 0 */
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  /* ts=2000: fb 0 → PENDING, fb 1 starts inflight */
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P);
+  /* ts=3000: fb 0 force-READY, fb 1 → PENDING, try alloc new fb → no free → busy */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u)
+      << "PENDING must occupy a framebuffer slot, causing exhaustion";
+
+  /* Force-delivered ts=1000 should still be retrievable */
+  auto* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->rtp_timestamp, 1000u);
+  put_frame(f);
+}
+
+/* Single-port: same 2-fb sequence — no PENDING means both frames are READY.
+ * The third ts change still hits busy (both fbs occupied), but both are consumable. */
+TEST_F(St40PipelineRxTest, SinglePortNoPendingAvoidsBusyWith2Fbs) {
+  ut40p_ctx_destroy(ctx_);
+  ctx_ = ut40p_ctx_create(1, 2);
+
+  enqueue(0, 1000, false, MTL_SESSION_PORT_P);
+  enqueue(1, 2000, false, MTL_SESSION_PORT_P); /* ts=1000 → READY */
+  /* ts=1000 READY (fb 0), ts=2000 inflight (fb 1). No free fb.
+   * ts=3000 completes ts=2000 → READY (fb 1), tries alloc → fb 0 still READY → busy. */
+  enqueue(2, 3000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  EXPECT_GE(stat_busy(), 1u) << "ts=3000 hit busy (both fbs occupied)";
+
+  /* Both frames are READY and consumable — single port doesn't block on PENDING */
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  put_frame(f1);
+
+  auto* f2 = get_frame();
+  ASSERT_NE(f2, nullptr);
+  EXPECT_EQ(f2->rtp_timestamp, 2000u);
+  put_frame(f2);
+}
+
+/* Multi-port: late non-marker packet routes to PENDING but does NOT resolve it.
+ * The frame stays PENDING until a marker or a second ts change. */
+TEST_F(St40PipelineRxTest, MultiPortLateNonMarkerKeepsPending) {
+  /* P: body for ts=1000 */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances → ts=1000 PENDING */
+  enqueue(5, 2000, false, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* R: late non-marker packets route to pending ts=1000 */
+  enqueue(3, 1000, false, MTL_SESSION_PORT_R);
+  enqueue(4, 1000, false, MTL_SESSION_PORT_R); /* no marker */
+  process_all();
+
+  /* Frame must still be invisible (PENDING, not resolved) */
+  EXPECT_EQ(get_frame(), nullptr)
+      << "Non-marker late packets must not resolve PENDING frame";
+}
+
+/* Multi-port: marker on the current inflight does not affect a pending frame.
+ * The inflight completes independently; pending stays PENDING. */
+TEST_F(St40PipelineRxTest, MultiPortMarkerOnInflightLeavesPendingAlone) {
+  /* P: body for ts=1000, no marker */
+  enqueue_burst(0, 3, 1000, false, MTL_SESSION_PORT_P);
+  /* P advances → ts=1000 enters PENDING */
+  enqueue(3, 2000, false, MTL_SESSION_PORT_P);
+  /* P completes ts=2000 with marker */
+  enqueue(4, 2000, true, MTL_SESSION_PORT_P);
+  process_all();
+
+  /* ts=2000 is READY (marker). ts=1000 is PENDING.
+   * get_frame scans from consumer_idx: fb 0 (PENDING, skip) → fb 1 (READY). */
+  auto* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->rtp_timestamp, 2000u) << "Inflight marker delivers independently";
+  EXPECT_TRUE(f->rtp_marker);
+  put_frame(f);
+
+  /* ts=1000 still PENDING — not visible */
+  EXPECT_EQ(get_frame(), nullptr) << "PENDING ts=1000 must remain invisible";
+
+  /* Force-deliver ts=1000 via ts change: start ts=3000 inflight, then ts=4000 */
+  enqueue(5, 3000, false, MTL_SESSION_PORT_P); /* new inflight, no ts change */
+  enqueue(6, 4000, false,
+          MTL_SESSION_PORT_P); /* ts change: ts=1000 force-READY, ts=3000 PENDING */
+  process_all();
+
+  auto* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->rtp_timestamp, 1000u);
+  EXPECT_FALSE(f1->rtp_marker) << "Force-delivered PENDING frame has no marker";
+  put_frame(f1);
+}
