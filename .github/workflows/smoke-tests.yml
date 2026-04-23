@@ -70,7 +70,7 @@ jobs:
           ref: '${{ github.ref }}'
       - name: Download build artifacts
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-${{ github.sha }}
       - name: Make build artifacts executable
