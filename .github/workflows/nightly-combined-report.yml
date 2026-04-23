@@ -245,7 +245,7 @@ jobs:
             console.log(`GTest Run #${run.data.run_number}, Branch: ${run.data.head_branch}, Date: ${run.data.created_at}`);
 
       - name: Download pytest artifacts
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: nightly-test-report-*
           path: pytest-reports
@@ -254,7 +254,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download gtest artifacts
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: nightly-gtest-report-*
           path: gtest-reports
@@ -285,7 +285,7 @@ jobs:
           ls -lh ./*.log || echo "No gtest logs found"
 
       - name: Download system info artifacts
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         continue-on-error: true
         with:
           pattern: system-info-*
@@ -295,7 +295,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Also download system info from gtest run
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         continue-on-error: true
         with:
           pattern: system-info-*
@@ -315,7 +315,7 @@ jobs:
 
       - name: Download baseline pytest artifacts
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         continue-on-error: true
         with:
           pattern: nightly-test-report-*
@@ -326,7 +326,7 @@ jobs:
 
       - name: Download baseline gtest artifacts
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         continue-on-error: true
         with:
           pattern: nightly-gtest-report-*
