@@ -56,3 +56,5 @@ runs:
           ./build/lib/libmtl.so
           ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
           ./tests/tools/RxTxApp/build/RxTxApp
+          ./ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so
+          ./tests/tools/gstreamer_tools/builddir/*.so
