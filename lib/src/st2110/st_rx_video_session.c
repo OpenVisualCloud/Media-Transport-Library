@@ -888,13 +888,13 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     if (slot->pkts_recv_per_port[MTL_SESSION_PORT_P] >= slot->pkts_received) {
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     } else {
-      s->port_user_stats.common.port[MTL_SESSION_PORT_P].incomplete_frames++;
+      s->port_user_stats.frames_partial[MTL_SESSION_PORT_P]++;
     }
 
     if (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] >= slot->pkts_received) {
       s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     } else {
-      s->port_user_stats.common.port[MTL_SESSION_PORT_R].incomplete_frames++;
+      s->port_user_stats.frames_partial[MTL_SESSION_PORT_R]++;
     }
 
     /* notify frame */
@@ -916,7 +916,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     MT_USDT_ST20_RX_FRAME_INCOMPLETE(s->parent->idx, s->idx, frame->idx, slot->tmstamp,
                                      meta->frame_recv_size, s->st20_frame_size);
     meta->status = ST_FRAME_STATUS_CORRUPTED;
-    s->port_user_stats.stat_frames_dropped++;
+    s->port_user_stats.stat_frames_incomplete++;
 
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
@@ -934,7 +934,6 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 #endif
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
-    s->port_user_stats.incomplete_frames_cnt++;
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
       rv_notify_frame_ready(s, frame->addr, meta);
@@ -989,16 +988,16 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   if (st_is_frame_complete(status)) {
     /* Per-port completeness accounting (mirrors ST20). With redundancy,
      * the frame may be complete overall while one port was missing pkts;
-     * surface that asymmetry via incomplete_frames. */
+     * surface that asymmetry via frames_partial. */
     if (ops->num_port > 1) {
       if (slot->pkts_recv_per_port[MTL_SESSION_PORT_P] >= slot->pkts_received)
         s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
       else
-        s->port_user_stats.common.port[MTL_SESSION_PORT_P].incomplete_frames++;
+        s->port_user_stats.frames_partial[MTL_SESSION_PORT_P]++;
       if (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] >= slot->pkts_received)
         s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
       else
-        s->port_user_stats.common.port[MTL_SESSION_PORT_R].incomplete_frames++;
+        s->port_user_stats.frames_partial[MTL_SESSION_PORT_R]++;
     } else {
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     }
@@ -1012,7 +1011,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     double reactive = 1080.0 / 1125.0;
     s->trs = s->frame_time * reactive / meta->pkts_total;
   } else {
-    s->port_user_stats.stat_frames_dropped++;
+    s->port_user_stats.stat_frames_incomplete++;
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)s->st22_expect_size_per_frame / slot->pkts_received;
     int miss_pkts =
@@ -1310,7 +1309,7 @@ static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
                                     struct st_rx_video_slot_impl* slot) {
   rv_put_frame(s, slot->frame);
   slot->frame = NULL;
-  s->port_user_stats.stat_frames_dropped++;
+  s->port_user_stats.stat_frames_incomplete++;
   rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
    rv_slot_init_frame_size(slot);
   slot->pkts_received = 0;
@@ -3554,7 +3553,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
          (double)bytes_received * 8 / time_sec / MTL_STAT_M_UNIT, s->stat_cpu_busy_score);
   s->stat_last_time = cur_time_ns;
 
-  d = us->stat_frames_dropped - snap->stat_frames_dropped;
+  d = us->stat_frames_incomplete - snap->stat_frames_incomplete;
   uint64_t pkts_idx_dropped = us->stat_pkts_idx_dropped - snap->stat_pkts_idx_dropped;
   uint64_t pkts_offset_dropped =
       us->stat_pkts_offset_dropped - snap->stat_pkts_offset_dropped;
@@ -3583,7 +3582,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   /* Per-port arrival line: port-balance visible at a glance.
    * port[].frames counts frames the port could have completed alone (got all
-   * pkts).  port[].incomplete_frames counts frames that needed the other port
+   * pkts).  frames_partial[] counts frames that needed the other port
    * to fill the gap.  Both incremented per side regardless of the other.
    */
   if (s->ops.num_port > 1) {
@@ -3595,10 +3594,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                              snap->common.port[MTL_SESSION_PORT_P].frames;
     uint64_t port_frames_r = us->common.port[MTL_SESSION_PORT_R].frames -
                              snap->common.port[MTL_SESSION_PORT_R].frames;
-    uint64_t port_incomp_p = us->common.port[MTL_SESSION_PORT_P].incomplete_frames -
-                             snap->common.port[MTL_SESSION_PORT_P].incomplete_frames;
-    uint64_t port_incomp_r = us->common.port[MTL_SESSION_PORT_R].incomplete_frames -
-                             snap->common.port[MTL_SESSION_PORT_R].incomplete_frames;
+    uint64_t port_incomp_p =
+        us->frames_partial[MTL_SESSION_PORT_P] - snap->frames_partial[MTL_SESSION_PORT_P];
+    uint64_t port_incomp_r =
+        us->frames_partial[MTL_SESSION_PORT_R] - snap->frames_partial[MTL_SESSION_PORT_R];
     notice("RX_VIDEO_SESSION(%d,%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
            " frames complete, %" PRIu64 " needed redundancy), R=%" PRIu64
            " pkts (%" PRIu64 " frames complete, %" PRIu64 " needed redundancy)\n",
