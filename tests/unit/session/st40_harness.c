@@ -1,0 +1,326 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 Intel Corporation
+ *
+ * C harness for ST40 RX redundancy unit tests (session layer).
+ * Wraps internal MTL functions that cannot be called directly from C++
+ * (internal headers use C keywords like "new" as identifiers).
+ */
+
+#include <stdlib.h>
+#include <string.h>
+
+/*
+ * Include the production .c directly so that all static functions
+ * (rx_ancillary_session_handle_pkt, rx_ancillary_session_reset, etc.)
+ * become visible in this translation unit.  Non-static symbols will
+ * duplicate those in libmtl; the linker flag --allow-multiple-definition
+ * is used to resolve this safely (identical code).
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "common/ut_common.h"
+#include "st2110/st_rx_ancillary_session.c"
+
+/* ── define the opaque context ────────────────────────────────────────── */
+
+struct ut_test_ctx {
+  struct mtl_main_impl impl;
+  struct st_rx_ancillary_sessions_mgr mgr;
+  struct st_rx_ancillary_session_impl session;
+};
+
+/* pull in the header after the struct definition so types resolve */
+#include "session/st40_harness.h"
+
+/* ── globals ──────────────────────────────────────────────────────────── */
+
+static struct rte_ring* g_ring;
+static bool g_skip_drain; /* when true, notify_rtp_ready does not drain the ring */
+
+/* ── RTP ready callback ──────────────────────────────────────────────── */
+
+static int ut_notify_rtp_ready(void* priv) {
+  (void)priv;
+  if (!g_skip_drain) ut_ring_drain(g_ring);
+  return 0;
+}
+
+/* ── init (delegates to common) ───────────────────────────────────────── */
+
+int ut40_init(void) {
+  if (ut_eal_init() < 0) return -1;
+
+  if (!g_ring) {
+    g_ring = ut_ring_create("st40_ring", UT_RING_SIZE);
+    if (!g_ring) return -1;
+  }
+  return 0;
+}
+
+/* ── context create / destroy ─────────────────────────────────────────── */
+
+ut_test_ctx* ut40_ctx_create(int num_port) {
+  ut_test_ctx* ctx = calloc(1, sizeof(*ctx));
+  if (!ctx) return NULL;
+
+  mt_stat_u64_init(&ctx->session.stat_time);
+
+  ctx->impl.type = MT_HANDLE_MAIN;
+  ctx->impl.tsc_hz = rte_get_tsc_hz();
+
+  ctx->mgr.parent = &ctx->impl;
+  ctx->mgr.idx = 0;
+
+  ctx->session.idx = 0;
+  ctx->session.socket_id = rte_socket_id();
+  ctx->session.mgr = &ctx->mgr;
+  ctx->session.packet_ring = g_ring;
+  ctx->session.attached = true;
+  ctx->session.ops.num_port = num_port;
+  ctx->session.ops.payload_type = 0;
+  ctx->session.ops.interlaced = false;
+  ctx->session.ops.rtp_ring_size = UT_RING_SIZE;
+  ctx->session.ops.notify_rtp_ready = ut_notify_rtp_ready;
+  ctx->session.ops.priv = &ctx->session;
+  ctx->session.ops.name = "unit_test";
+  ctx->session.interlace_auto = false;
+
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ctx->session.priv[i].session = &ctx->session;
+    ctx->session.priv[i].impl = &ctx->impl;
+    ctx->session.priv[i].s_port = (enum mtl_session_port)i;
+  }
+
+  rx_ancillary_session_reset(&ctx->session, false);
+  return ctx;
+}
+
+void ut40_ctx_destroy(ut_test_ctx* ctx) {
+  free(ctx);
+}
+
+void ut40_drain_ring(void) {
+  ut_ring_drain(g_ring);
+}
+
+/* ── mbuf builder (internal) ──────────────────────────────────────────── */
+
+static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker,
+                                           uint8_t pt, uint32_t ssrc, uint8_t f_bits) {
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  if (!m) return NULL;
+
+  size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
+  size_t total = hdr_offset + sizeof(struct st40_rfc8331_rtp_hdr);
+
+  if (rte_pktmbuf_tailroom(m) < total) {
+    rte_pktmbuf_free(m);
+    return NULL;
+  }
+
+  uint8_t* buf = rte_pktmbuf_mtod(m, uint8_t*);
+  memset(buf, 0, total);
+
+  struct st40_rfc8331_rtp_hdr* rtp = (struct st40_rfc8331_rtp_hdr*)(buf + hdr_offset);
+  rtp->base.version = 2;
+  rtp->base.seq_number = htons(seq);
+  rtp->base.tmstamp = htonl(ts);
+  rtp->base.ssrc = htonl(ssrc);
+  rtp->base.payload_type = pt;
+  rtp->base.marker = marker ? 1 : 0;
+
+  /* pack anc_count=1 and f_bits into the chunk that gets ntohl'd */
+  uint32_t chunk = ((uint32_t)1) << 24; /* anc_count = 1 */
+  chunk |= ((uint32_t)(f_bits & 0x3)) << 22;
+  rtp->swapped_first_hdr_chunk = htonl(chunk);
+
+  m->data_len = total;
+  m->pkt_len = total;
+  return m;
+}
+
+static struct rte_mbuf* make_anc_mbuf(uint16_t seq, uint32_t ts, int marker) {
+  return make_anc_mbuf_full(seq, ts, marker, 0, 0, 0);
+}
+
+/* ── feed functions ───────────────────────────────────────────────────── */
+
+int ut40_feed_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                  enum mtl_session_port port) {
+  struct rte_mbuf* m = make_anc_mbuf(seq, ts, marker);
+  if (!m) return -1;
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+void ut40_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
+                     int last_marker, enum mtl_session_port port) {
+  for (int i = 0; i < count; i++) {
+    int marker = last_marker && (i == count - 1);
+    ut40_feed_pkt(ctx, seq_start + i, ts, marker, port);
+  }
+}
+
+int ut40_feed_spec(ut_test_ctx* ctx, struct ut40_pkt_spec spec) {
+  struct rte_mbuf* m = make_anc_mbuf_full(spec.seq, spec.ts, spec.marker,
+                                          spec.payload_type, spec.ssrc, spec.f_bits);
+  if (!m) return -1;
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, spec.port);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+int ut40_feed_pkt_pt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                     enum mtl_session_port port, uint8_t payload_type) {
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .payload_type = payload_type};
+  return ut40_feed_spec(ctx, spec);
+}
+
+int ut40_feed_pkt_ssrc(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                       enum mtl_session_port port, uint32_t ssrc) {
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .ssrc = ssrc};
+  return ut40_feed_spec(ctx, spec);
+}
+
+int ut40_feed_pkt_fbits(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                        enum mtl_session_port port, uint8_t f_bits) {
+  struct ut40_pkt_spec spec = {
+      .seq = seq, .ts = ts, .marker = marker, .port = port, .f_bits = f_bits};
+  return ut40_feed_spec(ctx, spec);
+}
+
+int ut40_feed_spec_via_wrapper(ut_test_ctx* ctx, struct ut40_pkt_spec spec) {
+  struct rte_mbuf* m = make_anc_mbuf_full(spec.seq, spec.ts, spec.marker,
+                                          spec.payload_type, spec.ssrc, spec.f_bits);
+  if (!m) return -1;
+  struct rte_mbuf* mbufs[1] = {m};
+  int rc = rx_ancillary_session_handle_mbuf(&ctx->session.priv[spec.port], mbufs, 1);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+/* ── config setters ───────────────────────────────────────────────────── */
+
+void ut40_ctx_set_pt(ut_test_ctx* ctx, uint8_t pt) {
+  ctx->session.ops.payload_type = pt;
+}
+
+void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc) {
+  ctx->session.ops.ssrc = ssrc;
+}
+
+void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
+  ctx->session.interlace_auto = enable;
+}
+
+/* ── stat accessors ───────────────────────────────────────────────────── */
+
+uint64_t ut40_stat_unrecovered(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
+}
+
+uint64_t ut40_stat_redundant(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_redundant;
+}
+
+uint64_t ut40_stat_received(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_received;
+}
+
+uint64_t ut40_stat_lost_pkts(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_lost_packets;
+}
+
+int ut40_session_seq_id(const ut_test_ctx* ctx) {
+  return ctx->session.session_seq_id;
+}
+
+uint64_t ut40_stat_port_pkts(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].packets;
+}
+
+uint64_t ut40_stat_port_bytes(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].bytes;
+}
+
+uint64_t ut40_stat_port_lost(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].lost_packets;
+}
+
+uint64_t ut40_stat_port_frames(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].frames;
+}
+
+uint64_t ut40_stat_port_reordered(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].reordered_packets;
+}
+
+uint64_t ut40_stat_port_duplicates(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].duplicates_same_port;
+}
+
+uint64_t ut40_stat_port_err_packets(const ut_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].err_packets;
+}
+
+uint64_t ut40_stat_field_bit_mismatch(const ut_test_ctx* ctx) {
+  return ctx->session.stat_internal_field_bit_mismatch;
+}
+
+uint64_t ut40_stat_wrong_pt(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_wrong_pt_dropped;
+}
+
+uint64_t ut40_stat_wrong_ssrc(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_wrong_ssrc_dropped;
+}
+
+uint64_t ut40_stat_wrong_interlace(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_wrong_interlace_dropped;
+}
+
+uint64_t ut40_stat_interlace_first(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_interlace_first_field;
+}
+
+uint64_t ut40_stat_interlace_second(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_interlace_second_field;
+}
+
+uint64_t ut40_stat_enqueue_fail(const ut_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_enqueue_fail;
+}
+
+int ut40_frames_received(const ut_test_ctx* ctx) {
+  return rte_atomic32_read(&ctx->session.stat_frames_received);
+}
+
+/* ── ring marker inspection ───────────────────────────────────────────── */
+
+void ut40_set_skip_drain(bool skip) {
+  g_skip_drain = skip;
+}
+
+void ut40_session_reset(ut_test_ctx* ctx) {
+  rx_ancillary_session_reset(&ctx->session, false);
+}
+
+int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker) {
+  *out_count = 0;
+  *out_has_marker = false;
+  if (!g_ring) return -1;
+
+  struct rte_mbuf* pkt = NULL;
+  while (rte_ring_sc_dequeue(g_ring, (void**)&pkt) == 0) {
+    size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
+    struct st_rfc3550_rtp_hdr* rtp =
+        rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*, hdr_offset);
+    if (rtp->marker) *out_has_marker = true;
+    (*out_count)++;
+    rte_pktmbuf_free(pkt);
+  }
+  return 0;
+}
