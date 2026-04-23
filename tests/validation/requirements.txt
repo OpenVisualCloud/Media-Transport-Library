@@ -11,7 +11,7 @@
 # and install with `pip install -r requirements.txt -c constraints.txt`.
 
 # --- pytest core + plugins directly used by test code ---
-pytest==8.4.1
+pytest==9.0.3
 pytest-check==2.8.0              # `from pytest_check import check`
 pytest-mfd-config==3.25.0        # TopologyModel + auto-loaded plugin
 pytest-mfd-logging==1.25.1       # AmberLogFormatter + auto-loaded plugin
