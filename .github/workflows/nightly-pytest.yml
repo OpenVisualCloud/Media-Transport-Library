@@ -150,7 +150,7 @@ jobs:
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Download python report artifacts
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: nightly-test-report-*
           path: python-reports  # Downloads all artifacts into this directory
