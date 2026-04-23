@@ -115,7 +115,7 @@ jobs:
             --report=report.html \
             "./tests/single/${{ matrix.dir }}"
         env:
-          LD_LIBRARY_PATH: ./../../build/lib/libmtl.so
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
       - name: 'collect: System status report'
         if: always()
         run: |
