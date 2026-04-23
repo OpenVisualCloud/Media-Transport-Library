@@ -103,6 +103,9 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
       ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
 
   ctx->stat_drop_frame++;
+  /* relaxed atomic: written from both tasklet (late drop) and user thread
+   * (put_frame_abort), and read from any thread via st40p_tx_get_session_stats(). */
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame_info->rtp_timestamp;
   framebuff->stat = ST40P_TX_FRAME_DROPPED;
 
@@ -215,6 +218,7 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
     framebuff->frame_done_cb_called = true;
   }
+  if (ret == 0) __atomic_fetch_add(&ctx->stat_frames_sent, 1, __ATOMIC_RELAXED);
 
   /* notify app can get frame */
   tx_st40p_notify_frame_available(ctx);
@@ -554,6 +558,7 @@ int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* fra
 
   framebuff->stat = ST40P_TX_FRAME_FREE;
   ctx->stat_drop_frame++;
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   return 0;
 }
@@ -781,7 +786,14 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
     return -EINVAL;
   }
 
-  return st40_tx_get_session_stats(ctx->transport, stats);
+  int ret = st40_tx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_sent =
+      __atomic_load_n(&ctx->stat_frames_sent, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st40p_tx_reset_session_stats(st40p_tx_handle handle) {
@@ -799,5 +811,7 @@ int st40p_tx_reset_session_stats(st40p_tx_handle handle) {
     return 0;
   }
 
+  __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   return st40_tx_reset_session_stats(ctx->transport);
 }

@@ -163,6 +163,9 @@ static int rx_st40p_rtp_ready(void* priv) {
 
       if (!framebuff) {
         ctx->stat_busy++;
+        /* relaxed atomic: written under ctx->lock from tasklet, read from any
+         * thread via st40p_rx_get_session_stats() without locking. */
+        __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
         ret = -EBUSY;
         goto out;
       }
@@ -348,9 +351,13 @@ static int rx_st40p_rtp_ready(void* priv) {
    * after get_frame() returns, so the write must be visible before unlock. */
   for (int n = 0; n < done_count; n++) {
     struct st40_frame_info* done_info = done_infos[n];
-    if (done_info)
+    if (done_info) {
       done_info->status =
           done_info->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
+      __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+      if (done_info->seq_discont)
+        __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
+    }
   }
 
 out:
@@ -865,7 +872,16 @@ int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats
     return -EIO;
   }
 
-  return st40_rx_get_session_stats(ctx->transport, stats);
+  int ret = st40_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_received =
+      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  stats->common.stat_frames_corrupted =
+      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st40p_rx_reset_session_stats(st40p_rx_handle handle) {
@@ -883,6 +899,9 @@ int st40p_rx_reset_session_stats(st40p_rx_handle handle) {
     return -EIO;
   }
 
+  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
   return st40_rx_reset_session_stats(ctx->transport);
 }
 

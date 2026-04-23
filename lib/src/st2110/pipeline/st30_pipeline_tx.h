@@ -63,6 +63,9 @@ struct st30p_tx_ctx {
   uint32_t stat_get_frame_succ;
   uint32_t stat_put_frame;
   uint32_t stat_drop_frame;
+  /* cumulative user-facing counters; reset only by reset_session_stats */
+  uint64_t stat_frames_sent;
+  uint64_t stat_frames_dropped;
 };
 
 #endif

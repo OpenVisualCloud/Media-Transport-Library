@@ -56,6 +56,9 @@ struct st30p_rx_ctx {
   uint32_t stat_get_frame_succ;
   uint32_t stat_put_frame;
   uint32_t stat_busy;
+  /* cumulative user-facing counters; reset only by reset_session_stats */
+  uint64_t stat_frames_received;
+  uint64_t stat_frames_dropped;
 };
 
 #endif
