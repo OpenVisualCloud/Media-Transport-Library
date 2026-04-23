@@ -268,19 +268,74 @@ struct st_rx_port_stats {
   uint64_t packets;
   /** Total number of received bytes (pre-redundancy). */
   uint64_t bytes;
-  /** Total number of received frames / memory buffers. */
+  /**
+   * Per-port frame counter. Two flavors, picked by frame size:
+   *
+   *   - Many packets per frame  (Video ST20 / ST22):
+   *       Increments when a frame is **completed by this port**, i.e. this
+   *       port delivered enough packets to satisfy completion on its own.
+   *       Sister field: incomplete_frames (this port was short, but the
+   *       redundant port covered the gap).
+   *
+   *   - Few packets per frame   (Audio ST30, Ancillary ST40, Metadata ST41):
+   *       Increments when a new frame's **first** packet arrives on this
+   *       port — i.e. this port "won the race" for that frame.
+   *       Sister field: incomplete_frames is unused (always 0).
+   *
+   * port[0].frames + port[1].frames is NOT total frames delivered to the
+   * app; use stat_pkts_received plus the type-specific stat_frames_dropped
+   * / incomplete_frames_cnt for end-to-end accounting.
+   */
   uint64_t frames;
-  /** Total number of incomplete frames */
+  /**
+   * Per-port count of frames where this port could not complete the frame
+   * on its own (the other port's redundant copy filled the missing pkts).
+   * Video (ST20 / ST22) only; always 0 for ST30/ST40/ST41.
+   */
   uint64_t incomplete_frames;
   /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
   /**
-   * Total number of missing packets detected on this port (pre-redundancy).
+   * Per-port count of packets missing on this port (pre-redundancy).
    * Counts actual missing packets, not gap events.
    * For video: sum of pkt_idx gaps within frames.
    * For audio/anc/fmd: sum of RTP sequence number gaps.
+   * In a redundant session, these losses are typically recovered from the
+   * other port — see stat_pkts_unrecovered for true post-redundancy loss.
    */
-  uint64_t out_of_order_packets;
+  uint64_t lost_packets;
+  /**
+   * Per-port count of packets that arrived out of order on this port.
+   *
+   * For audio (ST30), ancillary (ST40), fast-metadata (ST41): incremented
+   * when an RTP packet arrives with seq strictly less than the highest seq
+   * previously seen on this port (intra-port reorder; same-port duplicates
+   * go to duplicates_same_port instead).
+   *
+   * For video (ST20/ST22): incremented when a packet arrives with frame
+   * pkt_idx strictly less than last_pkt_idx on this port (intra-frame
+   * reorder).  Cross-frame reorders are not tracked because video has no
+   * per-port latest_seq_id.
+   *
+   * A non-zero value typically points to ECMP, QoS reorder, or LAG hashing
+   * upstream of MTL.  The library still accepts the packet if it carries
+   * unique data; this counter is purely an observability signal.
+   */
+  uint64_t reordered_packets;
+  /**
+   * Per-port count of packets whose seq matched the highest seq already
+   * accepted on this port (genuine same-port duplicate, distinct from the
+   * normal cross-port redundant copy counted by stat_pkts_redundant).
+   *
+   * Tracked for audio (ST30), ancillary (ST40), fast-metadata (ST41).
+   * Always 0 for video (ST20/ST22): the slot+bitmap completion model
+   * cannot distinguish a same-port duplicate from a normal cross-port
+   * redundant copy, so both surface as stat_pkts_redundant.
+   *
+   * A non-zero value strongly suggests a switch loop, cable fault, LAG
+   * misconfiguration, or a tcpreplay loop upstream of MTL.
+   */
+  uint64_t duplicates_same_port;
 };
 
 /**
@@ -314,16 +369,19 @@ struct st_rx_user_stats {
   /** Total number of accepted packets (post-redundancy). */
   uint64_t stat_pkts_received;
   /**
-   * Total missing packets detected pre-redundancy: sum(port[].out_of_order_packets).
+   * Session-wide total of per-port packet loss (pre-redundancy).
+   * Equals sum(port[].lost_packets) across all ports of this session.
+   * In a redundant session this counts packets missed on individual ports;
+   * losses recovered from the other port are still counted here.
    * For video: sum of pkt_idx gaps within frames.
    * For audio/anc/fmd: sum of RTP sequence number gaps.
    */
-  uint64_t stat_pkts_out_of_order;
+  uint64_t stat_lost_packets;
   /**
    * Total packets lost post-redundancy (unrecoverable by redundancy).
    * For audio/anc/fmd: number of missing packets inferred from RTP sequence gaps.
    * For video: number of missing packets in corrupted/incomplete frames.
-   * Invariant: stat_pkts_unrecovered <= stat_pkts_out_of_order.
+   * Invariant: stat_pkts_unrecovered <= stat_lost_packets.
    */
   uint64_t stat_pkts_unrecovered;
   /** Total number of packets dropped due to wrong SSRC */
