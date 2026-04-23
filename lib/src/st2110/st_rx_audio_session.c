@@ -354,7 +354,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* The package is accepted and goes into the frame */
 
-  s->session_seq_id = seq_id;
+  /* only advance, never go backward */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
 
   if (!s->st30_cur_frame) {
     s->st30_cur_frame = rx_audio_session_get_frame(s);
@@ -537,7 +538,8 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
 
   /* The package is accepted and goes into the frame */
-  s->session_seq_id = seq_id;
+  /* only advance, never go backward */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
