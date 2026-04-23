@@ -90,9 +90,13 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  │                                                                             │
  │     Video: per-port frame accounting                                        │
  │       port P delivered enough pkts ──► port[P].frames++                     │
- │       port P was short             ──► port[P].incomplete_frames++          │
+ │       port P was short             ──► st20_rx_user_stats                   │
+ │                                          .frames_partial[P]++               │
  │       (same for port R)                                                     │
  │       gap → estimated missing pkts ──► stat_pkts_unrecovered += est         │
+ │                                                                             │
+ │     ST20 / ST22 (transport): intra-frame loss detected                       │
+ │                                    ──► stat_frames_incomplete++             │
  │                                                                             │
  │     ST20p / ST40p: frame delivered with intra-frame loss             │
  │                                    ──► stat_frames_corrupted++              │
@@ -161,37 +165,61 @@ RX and TX). For transport-only paths and types with no per-frame
 integrity concept (`stat_frames_corrupted` on `ST30p` audio, `ST41` RX),
 the relevant counters stay 0.
 
-> **ST20 only:** the transport-layer field `incomplete_frames_cnt` (in
-> `st20_rx_user_stats`) is **not** the same as `stat_frames_corrupted`.
-> `incomplete_frames_cnt` fires whenever the transport detects intra-frame
+> **ST20 / ST22 only:** the transport-layer field `stat_frames_incomplete`
+> (in `st20_rx_user_stats`) is **not** the same as `stat_frames_corrupted`.
+> `stat_frames_incomplete` fires whenever the transport detects intra-frame
 > loss, including when the frame is then silently discarded because
 > `RECEIVE_INCOMPLETE_FRAME` is not set; `stat_frames_corrupted` only
 > counts corrupted frames the app actually consumed via `get_frame()`.
-> `incomplete_frames_cnt - stat_frames_corrupted` = corrupted frames
+> `stat_frames_incomplete - stat_frames_corrupted` = corrupted frames
 > dropped before reaching the app.
 
 ## `port[i].frames` — two flavors (per-port, **not** a session total)
 
-| Sessions | `frames++` when… | `incomplete_frames` |
+| Sessions | `frames++` when… | Partial counter |
 |---|---|---|
-| Video (ST20/ST22) | This port delivered enough pkts to **complete** the frame | Bumped when this port was short |
-| Audio/Anc/FMD     | New frame's **first** packet arrived on this port (race winner) | Always 0 |
+| Video (ST20/ST22) | This port delivered enough pkts to **complete** the frame | `st20_rx_user_stats::frames_partial[i]` (this port was short) |
+| Audio/Anc/FMD     | New frame's **first** packet arrived on this port (race winner) | n/a |
 
 `port[i].frames` is per-port and the two flavors above do not compose: summing
 across ports does not yield total frames delivered to the app. For end-to-end
 frame accounting, use the session-wide common counters:
 `stat_frames_received`, `stat_frames_dropped`, `stat_frames_corrupted` (RX)
 and `stat_frames_sent`, `stat_frames_dropped` (TX) — see
-[Frame-level counters](#frame-level-counters) below. Use `port[i].frames` /
-`incomplete_frames` only for per-port redundancy debugging.
+[Frame-level counters](#frame-level-counters) above. Use `port[i].frames` /
+`st20_rx_user_stats::frames_partial[i]` only for per-port redundancy debugging.
 
-**Video invariant** (per port): `frames + incomplete_frames == total complete frames`.
+**Video frame-mode invariant** (ST20 RX with frame callbacks, per port):
+`port[i].frames + frames_partial[i] == stat_frames_received`.
+Each delivered frame (status `COMPLETE` or `RECONSTRUCTED`) bumps exactly one
+of the two counters per port. Frames that never complete on either port bump
+`stat_frames_incomplete` instead and leave both per-port counters untouched.
 
-> **Example.** TX=6766, RX `port[P].frames=6465`, `port[R].frames=300`,
-> `unrecovered=0`, `frames_dropped=0`. Then `port[P].incomplete_frames≈300` and
-> `port[R].incomplete_frames≈6465`: redundancy is healing every frame, but **R is
-> dropping ≥1 pkt per frame**. Check `mtl_get_port_stats(R).rx_hw_dropped_packets`,
-> switch port stats, MTU, SFP/cable on R.
+> **Does NOT hold for:** ST22 single-port (port R is left at zero, since
+> there is no port R to account for) or any RTP-mode session (only the
+> winning port's `frames` is bumped; `frames_partial` is unused).
+>
+> **Example.** A 2-port redundant RX session reports:
+>
+> ```text
+> stat_frames_received = 1000   (TX sent 1000, all delivered to app)
+> frames_dropped       = 0
+> unrecovered          = 0
+>
+> port[P].frames = 950          frames_partial[P] =  50
+> port[R].frames =  50          frames_partial[R] = 950
+> ```
+>
+> The invariant holds on both ports: 950 + 50 = 1000.
+>
+> **Reading it:** P completes 95% of frames on its own; R only 5%. Every
+> frame still reaches the app because whenever R is short, P fills the gap
+> (and vice versa) — that's redundancy doing its job. But **R is missing
+> packets on 950 of 1000 frames** (95%). R is one switch hiccup away from
+> real loss.
+>
+> Investigate R: `mtl_get_port_stats(R).rx_hw_dropped_packets`, switch port
+> stats, MTU, SFP/cable.
 
 ### `err_packets` — not data loss
 
@@ -282,7 +310,7 @@ to drops.
 **Video (ST20/ST22).** Loss uses **frame-internal `pkt_idx`**.
 `stat_pkts_unrecovered` is **estimated** as `(frame_size − recv_size) / avg_pkt_size`.
 Cross-frame reorders are not tracked. Watch
-`stat_frames_dropped`, `incomplete_frames_cnt`, `stat_pkts_rtp_ring_full`,
+`stat_frames_dropped`, `stat_frames_incomplete`, `stat_pkts_rtp_ring_full`,
 `stat_pkts_no_slot`, `stat_slot_get_frame_fail`.
 
 **Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
@@ -338,7 +366,7 @@ RX_<TYPE>_SESSION(idx): unrecovered pkts <U>                  (single-port form,
 | `stat_lost_packets ↑`, `unrecovered == 0` | — | Net blip; redundancy covering — investigate switch |
 | `stat_pkts_unrecovered ↑` | `save_rate`, both `port[].lost` | Real loss; both ports affected |
 | `port[i].err_packets > 0`, stream healthy | `wrong_pt/ssrc_dropped` | Other stream leaking into queue/mcast |
-| Asymmetric `port[P/R].frames` (video) | `port[i].incomplete_frames`, `rx_hw_dropped_packets` | One port chronically drops a few pkts/frame |
+| Asymmetric `port[P/R].frames` (video) | `st20_rx_user_stats::frames_partial[i]`, `rx_hw_dropped_packets` | One port chronically drops a few pkts/frame |
 | `port[i].duplicates_same_port > 0` (audio/anc/fmd) | Switch / LAG / cable | Loop, dup, or LAG misconfig |
 | `port[i].reordered_packets > 0` | ECMP / QoS | Fabric reorder (intra-frame only for video) |
 | `stat_pkts_redundant ≈ 0` on 2-port | `port[1].packets` | R port not receiving |
