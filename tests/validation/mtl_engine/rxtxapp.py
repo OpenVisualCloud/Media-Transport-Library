@@ -1289,7 +1289,7 @@ class RxTxApp(Application):
             f"--config_file {config_file_relative}", f"--config_file {config_file_path}"
         )
 
-    def validate_results(self) -> bool:  # type: ignore[override]
+    def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """
         Validate execution results exactly like original RxTxApp.execute_test().
 
@@ -1298,11 +1298,19 @@ class RxTxApp(Application):
         - For st22p: Check RX output only
         - For video/audio/etc: Check both TX and RX outputs
 
-        Returns True if validation passes. Raises AssertionError on failure.
+        When ``fail_on_error`` is False, validation problems return ``False``
+        without recording a pytest failure (used by performance binary-search
+        loops where intermediate iterations are expected to fail).
+
+        Returns True if validation passes. Raises AssertionError on failure
+        (only when ``fail_on_error`` is True).
         """
 
         def _fail(msg: str):
-            log_fail(msg)
+            if fail_on_error:
+                log_fail(msg)
+            else:
+                logger.info(f"validate_results soft-fail (fail_on_error=False): {msg}")
             raise AssertionError(msg)
 
         try:

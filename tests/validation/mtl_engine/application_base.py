@@ -87,11 +87,13 @@ class Application(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def validate_results(self) -> bool:  # type: ignore[override]
+    def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """Framework-specific validation implemented by subclasses.
 
         Subclasses should read: self.params, self.config, self.last_output, etc.
-        Must return True/False.
+        Must return True/False. When ``fail_on_error`` is False, subclasses
+        should suppress side effects such as ``log_fail`` and simply return
+        False / raise AssertionError so the caller can decide.
         """
         raise NotImplementedError
 
@@ -245,7 +247,7 @@ class Application(ABC):
             self.last_output = self.capture_stdout(proc, framework_name)
             self.last_return_code = proc.return_code
             try:
-                return self.validate_results()
+                return self.validate_results(fail_on_error=fail_on_error)
             except AssertionError:
                 if fail_on_error:
                     raise

@@ -2,7 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 """Refactored XDP standard mode tests (single session_type per parametrize variant)."""
 import pytest
-from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files, yuv_files_422rfc10
 
 
 @pytest.mark.refactored
@@ -34,7 +34,7 @@ def test_xdp_standard_refactored(
             test_mode=test_mode,
             width=video_file["width"],
             height=video_file["height"],
-            framerate=f"p{video_file['fps']}",
+            framerate=parse_fps_to_pformat(video_file["fps"]),
             pixel_format=video_file["file_format"],
             transport_format=video_file["format"],
             input_file=str(host.connection.path(media, video_file["filename"])),
@@ -49,10 +49,9 @@ def test_xdp_standard_refactored(
             test_mode=test_mode,
             width=st22p_file["width"],
             height=st22p_file["height"],
-            framerate=f"p{st22p_file['fps']}",
+            framerate=parse_fps_to_pformat(st22p_file["fps"]),
             codec="JPEG-XS",
             quality="speed",
-            pack_type="codestream",
             pixel_format=st22p_file["file_format"],
             codec_threads=2,
             input_file=str(host.connection.path(media, st22p_file["filename"])),

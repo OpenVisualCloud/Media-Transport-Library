@@ -5,7 +5,7 @@
 Mirrors ``test_xdp_mode.py`` using the multi-session ``sessions=[...]`` API.
 """
 import pytest
-from mtl_engine.media_files import anc_files, audio_files, yuv_files
+from mtl_engine.media_files import anc_files, audio_files, parse_fps_to_pformat, yuv_files
 
 
 @pytest.mark.refactored
@@ -41,7 +41,7 @@ def test_xdp_mode_refactored(
                 "session_type": "st20p",
                 "width": video_file["width"],
                 "height": video_file["height"],
-                "framerate": f"p{video_file['fps']}",
+                "framerate": parse_fps_to_pformat(video_file["fps"]),
                 "pixel_format": video_file["file_format"],
                 "transport_format": video_file["format"],
                 "input_file": str(host.connection.path(media, video_file["filename"])),
