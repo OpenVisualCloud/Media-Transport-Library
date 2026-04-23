@@ -434,7 +434,7 @@ struct st_rx_user_stats {
    * redundancy. The frame is still handed to the application; the
    * application should consult frame->status to decide what to do.
    * Populated by RX session types that classify per-frame integrity
-   * (ST40p today). Always 0 for types with no per-frame corruption
+   * (ST20p, ST40p). Always 0 for types with no per-frame corruption
    * concept (audio ST30, ST41).
    */
   uint64_t stat_frames_corrupted;
