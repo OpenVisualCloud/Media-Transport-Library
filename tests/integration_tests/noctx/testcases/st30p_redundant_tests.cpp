@@ -99,9 +99,9 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
       << "Comparison against primary stream (port 0)";
   ASSERT_NEAR(packetsSend, packetsRecievedPort1, packetsSend / 10)
       << "Comparison against primary stream (port 1)";
-  ASSERT_LE(stats.common.stat_pkts_out_of_order,
+  ASSERT_LE(stats.common.stat_lost_packets,
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
-      << "Out of order packets";
+      << "Lost packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
 }
@@ -204,9 +204,9 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   ASSERT_GT(packetsRecievedPort0, 0u) << "Primary port must have received packets";
   ASSERT_NEAR(packetsSend, stats.common.stat_pkts_received, packetsSend / 100)
       << "Accepted packets should match TX";
-  ASSERT_LE(stats.common.stat_pkts_out_of_order,
+  ASSERT_LE(stats.common.stat_lost_packets,
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
-      << "Out of order packets";
+      << "Lost packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
 }

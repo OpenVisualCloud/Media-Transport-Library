@@ -126,7 +126,6 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
 
     ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 10)
         << "Comparison against primary stream";
-    ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
-        << "Out of order packets";
+    ASSERT_LE(stats.common.stat_lost_packets, packetsRecieved / 1000) << "Lost packets";
   }
 }
