@@ -201,7 +201,6 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
 
-  /* count per-port stats before redundancy filtering for consistent reporting */
   s->port_user_stats.common.port[s_port].packets++;
   s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
@@ -261,7 +260,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
+        return -EAGAIN; /* filtered redundant, not an error */
       }
     }
     /* threshold exceeded on all ports — accept the packet and undo the redundant count
@@ -417,8 +416,8 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
   }
 
   for (uint16_t i = 0; i < nb; i++) {
-    if (rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port) < 0)
-      s->port_user_stats.common.port[s_port].err_packets++;
+    int rc = rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
+    if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
   }
 
   return 0;
