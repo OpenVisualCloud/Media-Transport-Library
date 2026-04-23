@@ -30,7 +30,7 @@ jobs:
     runs-on: dpdk
     steps:
       - name: Harden-Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: Checkout MTL
@@ -60,7 +60,7 @@ jobs:
     steps:
       - name: 'preparation: Harden Runner'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
