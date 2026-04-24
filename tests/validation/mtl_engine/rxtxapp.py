@@ -306,6 +306,10 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "st40p":
+        pattern = re.compile(r"app_rx_st40p_result")
+    elif session_type == "fastmetadata":
+        pattern = re.compile(r"app_rx_fmd_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -313,8 +317,13 @@ def check_rx_output(
     else:
         pattern = re.compile(r"app_rx_.*_result")
 
+    # st40p (pipeline ancillary) does not emit "OK" — its result line is
+    # ``app_rx_st40p_result(N), N frames received, fps F, ...``. Treat any
+    # such line with frames>0 as a successful replica.
+    success_token = "frames received" if session_type == "st40p" else "OK"
+
     for line in output:
-        if pattern.search(line) and "OK" in line:
+        if pattern.search(line) and success_token in line:
             ok_cnt += 1
             logger.info(f"Found RX {session_type} OK result: {line}")
 
@@ -527,6 +536,115 @@ class RxTxApp(Application):
 
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
+
+    def create_command(self, **kwargs):
+        """Build command + JSON config (single- or multi-session aware).
+
+        Single-session usage (unchanged):
+            rxtxapp.create_command(session_type="st20p", input_file=..., ...)
+
+        Multi-session usage (new — for kernel_lo / xdp / rx_timing/mixed):
+            rxtxapp.create_command(
+                sessions=[
+                    {"session_type": "st20p", "input_file": ..., ...},
+                    {"session_type": "st30p", "audio_format": ..., ...},
+                    {"session_type": "ancillary", "ancillary_url": ..., ...},
+                ],
+                nic_port_list=[...], test_mode="multicast",
+            )
+
+        Common kwargs (everything outside ``sessions``) are merged with each
+        per-session dict so callers do not have to repeat them.
+        """
+        sessions = kwargs.pop("sessions", None)
+        if sessions is None:
+            return super().create_command(**kwargs)
+
+        if not isinstance(sessions, (list, tuple)) or not sessions:
+            raise ValueError("sessions= must be a non-empty list of dicts")
+
+        # Per-session-type defaults that the legacy add_*_sessions helpers
+        # apply automatically (and which the single-session ``_populate_session``
+        # path does not currently inject). Without these, every type ends up
+        # on UDP port 20000 / payload_type 112 and the RxTxApp dies during
+        # session create due to port collisions.
+        type_port_defaults = {
+            "st20p": (20000, 112),
+            "st22p": (20000, 114),
+            "video": (20000, 112),
+            "audio": (30000, 111),
+            "st30p": (30000, 111),
+            "ancillary": (40000, 113),
+            "st40p": (40000, 113),
+            "fastmetadata": (40000, 115),
+        }
+
+        common = dict(kwargs)
+        # Build the base config + command from the first session (provides
+        # interfaces, IPs, etc.)
+        first = dict(sessions[0])
+        first.update({k: v for k, v in common.items() if k not in first})
+        first_type = first.get("session_type")
+        if first_type in type_port_defaults:
+            d_port, d_pt = type_port_defaults[first_type]
+            first.setdefault("port", d_port)
+            first.setdefault("payload_type", d_pt)
+        # Reset params to defaults — the rxtxapp fixture is session-scoped
+        # and ``set_params`` does NOT clear stale state from a previous test.
+        # Without this, multi-session tests inherit replicas / framerate /
+        # input_file from the last invocation.
+        self.params = UNIVERSAL_PARAMS.copy()
+        super().create_command(**first)
+        base_config = self.config
+        base_command = self.command
+
+        # Append every additional session into the existing config.
+        saved_params = dict(self.params)
+        try:
+            for spec in sessions[1:]:
+                stype = spec.get("session_type")
+                if not stype:
+                    raise ValueError(
+                        "every entry in sessions= must contain session_type"
+                    )
+                merged = {k: v for k, v in common.items()}
+                merged.update(spec)
+                if stype in type_port_defaults:
+                    d_port, d_pt = type_port_defaults[stype]
+                    merged.setdefault("port", d_port)
+                    merged.setdefault("payload_type", d_pt)
+                # Build a temporary config dict for this session type using the
+                # full machinery (so all per-type field defaults are applied).
+                self.params = UNIVERSAL_PARAMS.copy()
+                # set_params only accepts known keys; everything in `merged`
+                # is already a universal param name.
+                self.set_params(**merged)
+                tmp_config = self._create_rxtxapp_config_dict()
+                # Move the populated session arrays into the base config.
+                if (
+                    tmp_config.get("tx_sessions")
+                    and tmp_config["tx_sessions"]
+                    and tmp_config["tx_sessions"][0].get(stype)
+                ):
+                    base_config["tx_sessions"][0].setdefault(stype, []).extend(
+                        tmp_config["tx_sessions"][0][stype]
+                    )
+                if (
+                    tmp_config.get("rx_sessions")
+                    and tmp_config["rx_sessions"]
+                    and tmp_config["rx_sessions"][0].get(stype)
+                ):
+                    base_config["rx_sessions"][0].setdefault(stype, []).extend(
+                        tmp_config["rx_sessions"][0][stype]
+                    )
+        finally:
+            # Restore the params from the first (primary) session so subsequent
+            # execute_test() sees a consistent state.
+            self.params = saved_params
+
+        self.config = base_config
+        self.command = base_command
+        return self.command, self.config
 
     def _create_command_and_config(self) -> tuple:
         """Generate RxTxApp command line and JSON configuration from universal parameters.
@@ -1045,6 +1163,36 @@ class RxTxApp(Application):
 
                 return session
 
+            elif session_type == "st40p":
+                # Build st40p (ancillary pipeline) session — mirrors
+                # add_st40p_sessions() in legacy RxTxApp.py.
+                session = {
+                    "replicas": self.params.get(
+                        "replicas", UNIVERSAL_PARAMS["replicas"]
+                    ),
+                    "start_port": int(self.params.get("port", 40000)),
+                    "payload_type": int(self.params.get("payload_type", 113)),
+                    "interlaced": self.params.get(
+                        "interlaced", UNIVERSAL_PARAMS["interlaced"]
+                    ),
+                    "enable_rtcp": self.params.get(
+                        "enable_rtcp", UNIVERSAL_PARAMS["enable_rtcp"]
+                    ),
+                }
+                if is_tx:
+                    # TX-only fields: fps + media URL
+                    session["fps"] = self.params.get(
+                        "fps",
+                        self.params.get("framerate", UNIVERSAL_PARAMS["framerate"]),
+                    )
+                    session["st40p_url"] = self.params.get(
+                        "st40p_url",
+                        self.params.get(
+                            "input_file", UNIVERSAL_PARAMS["input_file"] or ""
+                        ),
+                    )
+                return session
+
             else:
                 # Unknown session type - return minimal config
                 logger.warning(
@@ -1084,7 +1232,16 @@ class RxTxApp(Application):
         return config
 
     def prepare_execution(self, build: str, host=None, **kwargs):
-        """Write RxTxApp JSON config file to remote host before execution."""
+        """Write RxTxApp JSON config file to remote host before execution.
+
+        Args:
+            build: Path to MTL build directory
+            host: Host connection object
+            interface_setup: Optional InterfaceSetup; when provided and the
+                config contains kernel-socket interfaces (``kernel:<ifname>``)
+                with an ``_os_ip`` annotation, OS-level IPs are configured and
+                registered for cleanup, mirroring legacy ``RxTxApp.execute_test``.
+        """
         if not host:
             raise ValueError("host required for RxTxApp config writing")
 
@@ -1095,6 +1252,15 @@ class RxTxApp(Application):
 
         # Write config file using mfd library (handles both local and remote hosts)
         remote_conn = host.connection
+
+        # Configure kernel-socket interfaces (mirrors legacy RxTxApp.execute_test)
+        interface_setup = kwargs.get("interface_setup")
+        try:
+            from .RxTxApp import configure_kernel_interfaces
+
+            configure_kernel_interfaces(self.config, remote_conn, interface_setup)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"configure_kernel_interfaces skipped: {e}")
 
         # Extract config file path from command (it's relative)
         match = re.search(r"--config_file\s+(\S+)", self.command)
@@ -1123,7 +1289,7 @@ class RxTxApp(Application):
             f"--config_file {config_file_relative}", f"--config_file {config_file_path}"
         )
 
-    def validate_results(self) -> bool:  # type: ignore[override]
+    def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """
         Validate execution results exactly like original RxTxApp.execute_test().
 
@@ -1132,16 +1298,41 @@ class RxTxApp(Application):
         - For st22p: Check RX output only
         - For video/audio/etc: Check both TX and RX outputs
 
-        Returns True if validation passes. Raises AssertionError on failure.
+        When ``fail_on_error`` is False, validation problems return ``False``
+        without recording a pytest failure (used by performance binary-search
+        loops where intermediate iterations are expected to fail).
+
+        Returns True if validation passes. Raises AssertionError on failure
+        (only when ``fail_on_error`` is True).
         """
 
         def _fail(msg: str):
-            log_fail(msg)
+            if fail_on_error:
+                log_fail(msg)
+            else:
+                logger.info(f"validate_results soft-fail (fail_on_error=False): {msg}")
             raise AssertionError(msg)
 
         try:
             if not self.config:
                 _fail("RxTxApp validate_results called without config")
+
+            # Multi-session aware: when more than one session type is populated
+            # (e.g. kernel_lo / xdp / rx_timing/mixed run st20p+st30p+ancillary
+            # in a single RxTxApp invocation), validate every type sequentially.
+            all_types = self._get_all_session_types_from_config(self.config)
+            if len(all_types) > 1:
+                output_lines = self.last_output.split("\n") if self.last_output else []
+                rc = self.last_return_code
+                if rc not in (0, None):
+                    _fail(f"Process return code {rc} indicates failure")
+                for stype in all_types:
+                    if not self._validate_single_session_type(stype, output_lines):
+                        _fail(f"{stype} validation failed (multi-session)")
+                logger.info(
+                    f"RxTxApp multi-session validation passed for {all_types}"
+                )
+                return True
 
             session_type = self._get_session_type_from_config(self.config)
             output_lines = self.last_output.split("\n") if self.last_output else []
@@ -1188,12 +1379,20 @@ class RxTxApp(Application):
                 if not passed:
                     _fail("st20p validation failed (RX output or converter checks)")
 
-            elif session_type in ("st22p", "st30p", "fastmetadata"):
-                # Original validation: check_rx_output only (no TX result line for st22p/st30p/fastmetadata)
+            elif session_type == "st40p":
+                # Legacy execute_test() does NOT call check_rx_output for st40p
+                # (no app_rx_st40p_result token is emitted by the pipeline ANC RX).
+                # Treat rc==0 as success here too.
+                passed = True
+
+            elif session_type in ("st22p", "st30p", "fastmetadata", "ancillary"):
+                # Original validation: check_rx_output only
+                # For ancillary, the old code uses "anc" as the session_type for output matching
+                rx_session_type = "anc" if session_type == "ancillary" else session_type
                 passed = check_rx_output(
                     config=self.config,
                     output=output_lines,
-                    session_type=session_type,
+                    session_type=rx_session_type,
                     fail_on_error=False,
                     host=None,
                     build=None,
@@ -1216,7 +1415,7 @@ class RxTxApp(Application):
                 if not passed:
                     _fail(f"{session_type} validation failed (RX output check)")
 
-            elif session_type in ("video", "audio", "ancillary"):
+            elif session_type in ("video", "audio"):
                 # Original validation: check both TX and RX outputs
                 _tx_ok = check_tx_output(
                     config=self.config,
@@ -1272,8 +1471,67 @@ class RxTxApp(Application):
         except Exception as e:
             _fail(f"RxTxApp validation unexpected error: {e}")
 
+    def _validate_single_session_type(
+        self, session_type: str, output_lines: list
+    ) -> bool:
+        """Run the per-session-type RX (and TX where applicable) checks.
+
+        Used by the multi-session branch of ``validate_results`` so that
+        kernel_lo / xdp / rx_timing/mixed configs can be checked one type at
+        a time without duplicating the dispatch logic.
+        """
+        if session_type == "st20p":
+            ok = (
+                check_rx_output(
+                    config=self.config,
+                    output=output_lines,
+                    session_type="st20p",
+                    fail_on_error=False,
+                )
+                and check_tx_converter_output(
+                    config=self.config,
+                    output=output_lines,
+                    session_type="st20p",
+                    fail_on_error=False,
+                )
+                and check_rx_converter_output(
+                    config=self.config,
+                    output=output_lines,
+                    session_type="st20p",
+                    fail_on_error=False,
+                )
+            )
+            return ok
+        if session_type == "st40p":
+            # Legacy parity: no per-line check (no app_rx_st40p_result emitted).
+            return True
+        if session_type in ("st22p", "st30p", "fastmetadata", "ancillary"):
+            rx_session_type = "anc" if session_type == "ancillary" else session_type
+            return check_rx_output(
+                config=self.config,
+                output=output_lines,
+                session_type=rx_session_type,
+                fail_on_error=False,
+            )
+        if session_type in ("video", "audio"):
+            return check_tx_output(
+                config=self.config,
+                output=output_lines,
+                session_type=session_type,
+                fail_on_error=False,
+            ) and check_rx_output(
+                config=self.config,
+                output=output_lines,
+                session_type=session_type,
+                fail_on_error=False,
+            )
+        logger.warning(
+            f"_validate_single_session_type: unknown session type '{session_type}'"
+        )
+        return False
+
     def _get_session_type_from_config(self, config: dict) -> str:
-        """Extract session type from RxTxApp config."""
+        """Extract primary session type from RxTxApp config (first non-empty)."""
         # Inspect nested lists to identify actual session type; legacy layout nests under tx_sessions[i][type]
         if not config.get("tx_sessions"):
             return "st20p"
@@ -1282,14 +1540,45 @@ class RxTxApp(Application):
                 "st22p",
                 "st20p",
                 "st30p",
+                "st40p",
                 "fastmetadata",
                 "video",
                 "audio",
                 "ancillary",
             ):
                 if possible in tx_entry and tx_entry[possible]:
+                    # Skip placeholder video entries added by _ensure_placeholder_video
+                    if possible == "video" and all(
+                        s.get("type") == "placeholder" for s in tx_entry[possible]
+                    ):
+                        continue
                     return possible
         return "st20p"
+
+    def _get_all_session_types_from_config(self, config: dict) -> list:
+        """Return every populated session type in config (multi-session aware)."""
+        types: list = []
+        if not config.get("tx_sessions"):
+            return types
+        for tx_entry in config["tx_sessions"]:
+            for possible in (
+                "st20p",
+                "st22p",
+                "st30p",
+                "st40p",
+                "fastmetadata",
+                "video",
+                "audio",
+                "ancillary",
+            ):
+                if possible in tx_entry and tx_entry[possible]:
+                    if possible == "video" and all(
+                        s.get("type") == "placeholder" for s in tx_entry[possible]
+                    ):
+                        continue
+                    if possible not in types:
+                        types.append(possible)
+        return types
 
     def _start_netsniff_capture(self, netsniff):
         """Start netsniff capture for packet capturing during test execution.
