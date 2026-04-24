@@ -126,7 +126,14 @@ UNIVERSAL_PARAMS = {
     # Execution control defaults
     "sleep_interval": 4,  # Delay between starting TX and RX
     "tx_first": True,  # Whether to start TX side before RX
-    "timeout_grace": 10,  # Extra seconds for process timeout
+    # Extra seconds added to the shell `timeout` wrapper around the app command.
+    # Must cover DPDK EAL init (~5-15s), the extra `sleep(1)` iteration the
+    # RxTxApp main loop performs after test_time elapses, and `mtl_stop()`
+    # cleanup. Matches the legacy RxTxApp.execute_test() behavior (90s) and
+    # `process_timeout_buffer` so the shell timeout never fires before the
+    # Python `proc.wait()` budget. A too-small value caused tests to be killed
+    # mid-shutdown with rc=124 and reported as failing/"never finishing".
+    "timeout_grace": 90,
     "process_timeout_buffer": 90,  # Buffer added to test_time for run() timeout
     "pattern_duration": 30,  # Duration for generated test patterns
     "default_framerate_numeric": 60,  # Fallback numeric framerate

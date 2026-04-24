@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 def create_empty_config() -> dict:
     """Create empty RxTxApp configuration structure.
 
-    This builds the base JSON structure expected by RxTxApp binary.
-    All fields will be populated from UNIVERSAL_PARAMS provided by the user.
+    Per-session-type lists (``st20p``, ``audio``, ...) are added on demand by
+    ``_populate_session``; the C parser (`parse_session_num` / RxTxApp
+    `parse_json.c`) treats missing keys and empty arrays identically.
     """
     return {
         "tx_no_chain": False,
@@ -37,30 +38,10 @@ def create_empty_config() -> dict:
             {"name": "", "ip": ""},
         ],
         "tx_sessions": [
-            {
-                "dip": [""],
-                "interface": [0],
-                "video": [],
-                "st20p": [],
-                "st22p": [],
-                "st30p": [],
-                "audio": [],
-                "ancillary": [],
-                "fastmetadata": [],
-            },
+            {"dip": [""], "interface": [0]},
         ],
         "rx_sessions": [
-            {
-                "ip": [""],
-                "interface": [1],
-                "video": [],
-                "st20p": [],
-                "st22p": [],
-                "st30p": [],
-                "audio": [],
-                "ancillary": [],
-                "fastmetadata": [],
-            },
+            {"ip": [""], "interface": [1]},
         ],
     }
 
@@ -118,8 +99,6 @@ def check_tx_output(
     output: list,
     session_type: str,
     fail_on_error: bool,
-    host=None,
-    build: str = "",
 ) -> bool:
     """Check TX output for successful session completion.
 
@@ -131,8 +110,6 @@ def check_tx_output(
         output: List of output lines from RxTxApp
         session_type: Session type (st20p, st22p, st30p, etc.)
         fail_on_error: Whether to call log_fail on validation failure
-        host: Host connection (unused, for compatibility)
-        build: Build directory (unused, for compatibility)
 
     Returns:
         True if validation passed, False otherwise
@@ -153,9 +130,7 @@ def check_tx_output(
         is_performance_st20p = True
 
     if is_performance_st20p:
-        return check_tx_fps_performance(
-            config, output, session_type, fail_on_error, host, build
-        )
+        return check_tx_fps_performance(config, output, session_type, fail_on_error)
 
     # Regular check for OK results
     ok_cnt = 0
@@ -168,9 +143,8 @@ def check_tx_output(
 
     replicas = 0
     for session in config["tx_sessions"]:
-        if session[session_type]:
-            for s in session[session_type]:
-                replicas += s["replicas"]
+        for s in session.get(session_type) or []:
+            replicas += s["replicas"]
 
     logger.info(f"TX {session_type} check: {ok_cnt}/{replicas} OK results found")
 
@@ -191,8 +165,6 @@ def check_tx_fps_performance(
     output: list,
     session_type: str,
     fail_on_error: bool,
-    host=None,
-    build: str = "",
 ) -> bool:
     """Check TX FPS performance for performance test configs.
 
@@ -203,8 +175,6 @@ def check_tx_fps_performance(
         output: List of output lines from RxTxApp
         session_type: Session type (st20p)
         fail_on_error: Whether to call log_fail on validation failure
-        host: Host connection (unused, for compatibility)
-        build: Build directory (unused, for compatibility)
 
     Returns:
         True if all sessions achieved target FPS, False otherwise
@@ -276,8 +246,6 @@ def check_rx_output(
     output: list,
     session_type: str,
     fail_on_error: bool,
-    host=None,
-    build: str = "",
 ) -> bool:
     """Check RX output for successful session completion.
 
@@ -286,8 +254,6 @@ def check_rx_output(
         output: List of output lines from RxTxApp
         session_type: Session type (st20p, st22p, st30p, video, audio, ancillary, etc.)
         fail_on_error: Whether to call log_fail on validation failure
-        host: Host connection (unused, for compatibility)
-        build: Build directory (unused, for compatibility)
 
     Returns:
         True if validation passed, False otherwise
@@ -306,6 +272,10 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "st40p":
+        pattern = re.compile(r"app_rx_st40p_result")
+    elif session_type == "fastmetadata":
+        pattern = re.compile(r"app_rx_fmd_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -313,8 +283,13 @@ def check_rx_output(
     else:
         pattern = re.compile(r"app_rx_.*_result")
 
+    # All RX session result lines emit `OK` (or `FAILED`) once the C-side
+    # framerate-tolerance gate passes (ST_APP_EXPECT_NEAR within 5%). The token
+    # appears between the parenthesized session index and `fps F`.
+    success_token = "OK"
+
     for line in output:
-        if pattern.search(line) and "OK" in line:
+        if pattern.search(line) and success_token in line:
             ok_cnt += 1
             logger.info(f"Found RX {session_type} OK result: {line}")
 
@@ -339,8 +314,6 @@ def check_tx_converter_output(
     output: list,
     session_type: str,
     fail_on_error: bool,
-    host=None,
-    build: str = "",
 ) -> bool:
     """Check TX converter creation in output for st20p sessions.
 
@@ -349,8 +322,6 @@ def check_tx_converter_output(
         output: List of output lines from RxTxApp
         session_type: Session type (st20p)
         fail_on_error: Whether to call log_fail on validation failure
-        host: Host connection (unused, for compatibility)
-        build: Build directory (unused, for compatibility)
 
     Returns:
         True if all converters were created, False otherwise
@@ -394,8 +365,6 @@ def check_rx_converter_output(
     output: list,
     session_type: str,
     fail_on_error: bool,
-    host=None,
-    build: str = "",
 ) -> bool:
     """Check RX converter creation in output for st20p sessions.
 
@@ -404,8 +373,6 @@ def check_rx_converter_output(
         output: List of output lines from RxTxApp
         session_type: Session type (st20p)
         fail_on_error: Whether to call log_fail on validation failure
-        host: Host connection (unused, for compatibility)
-        build: Build directory (unused, for compatibility)
 
     Returns:
         True if all converters were created, False otherwise
@@ -528,6 +495,97 @@ class RxTxApp(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
 
+    # Per-session-type (default UDP port, default payload type). Mirrors the
+    # legacy ``add_*_sessions`` helpers; without it every type ends up on
+    # 20000/112 and RxTxApp dies during session create due to port collisions.
+    _TYPE_PORT_DEFAULTS = {
+        "st20p": (20000, 112),
+        "st22p": (20000, 114),
+        "video": (20000, 112),
+        "audio": (30000, 111),
+        "st30p": (30000, 111),
+        "ancillary": (40000, 113),
+        "st40p": (40000, 113),
+        "fastmetadata": (40000, 115),
+    }
+
+    @classmethod
+    def _apply_type_defaults(cls, spec: dict) -> dict:
+        """Inject default port/payload_type for ``spec['session_type']`` in place."""
+        defaults = cls._TYPE_PORT_DEFAULTS.get(spec.get("session_type"))
+        if defaults:
+            d_port, d_pt = defaults
+            spec.setdefault("port", d_port)
+            spec.setdefault("payload_type", d_pt)
+        return spec
+
+    def create_command(self, **kwargs):
+        """Build command + JSON config (single- or multi-session aware).
+
+        Single-session usage (unchanged):
+            rxtxapp.create_command(session_type="st20p", input_file=..., ...)
+
+        Multi-session usage (for kernel_lo / xdp / rx_timing/mixed):
+            rxtxapp.create_command(
+                sessions=[
+                    {"session_type": "st20p", "input_file": ..., ...},
+                    {"session_type": "st30p", "audio_format": ..., ...},
+                    {"session_type": "ancillary", "ancillary_url": ..., ...},
+                ],
+                nic_port_list=[...], test_mode="multicast",
+            )
+
+        Common kwargs (everything outside ``sessions``) are merged with each
+        per-session dict so callers do not have to repeat them.
+        """
+        sessions = kwargs.pop("sessions", None)
+        if sessions is None:
+            return super().create_command(**kwargs)
+
+        if not isinstance(sessions, (list, tuple)) or not sessions:
+            raise ValueError("sessions= must be a non-empty list of dicts")
+
+        common = dict(kwargs)
+
+        # Build base config + command from the first session (provides
+        # interfaces, IPs, etc.). ``super().create_command`` already resets
+        # self.params from UNIVERSAL_PARAMS, so a stale rxtxapp fixture
+        # cannot leak state into a multi-session run.
+        first = self._apply_type_defaults({**common, **sessions[0]})
+        super().create_command(**first)
+        base_config = self.config
+
+        def _extend(direction: str, src: dict, stype: str) -> None:
+            sess = src.get(direction) or []
+            if sess and sess[0].get(stype):
+                base_config[direction][0].setdefault(stype, []).extend(sess[0][stype])
+
+        # Append every additional session into the existing config. Each
+        # extra session is built via a fresh _create_rxtxapp_config_dict()
+        # so per-type defaults (FPS, payload size, etc.) are applied; we
+        # then move the populated arrays into the base config.
+        saved_params = dict(self.params)
+        try:
+            for spec in sessions[1:]:
+                if not spec.get("session_type"):
+                    raise ValueError(
+                        "every entry in sessions= must contain session_type"
+                    )
+                merged = self._apply_type_defaults({**common, **spec})
+                stype = merged["session_type"]
+                self.params = UNIVERSAL_PARAMS.copy()
+                self.set_params(**merged)
+                tmp_config = self._create_rxtxapp_config_dict()
+                _extend("tx_sessions", tmp_config, stype)
+                _extend("rx_sessions", tmp_config, stype)
+        finally:
+            # Restore params from the primary session so subsequent
+            # execute_test() sees a consistent state.
+            self.params = saved_params
+
+        self.config = base_config
+        return self.command, self.config
+
     def _create_command_and_config(self) -> tuple:
         """Generate RxTxApp command line and JSON configuration from universal parameters.
 
@@ -568,6 +626,21 @@ class RxTxApp(Application):
                     cmd_parts.extend([rxtx_param, str(value)])
 
         return " ".join(cmd_parts), self._create_rxtxapp_config_dict()
+
+    # Sentinel for ``_p`` so callers can pass ``None`` as an explicit default.
+    _PARAM_UNSET = object()
+
+    def _p(self, key, default=_PARAM_UNSET, *, cast=None):
+        """Read ``self.params[key]`` falling back to UNIVERSAL_PARAMS[key].
+
+        ``default`` overrides the UNIVERSAL_PARAMS fallback when supplied
+        (used for type-specific defaults like audio's port=30000). ``cast``
+        applies a type conversion (typically ``int``) to the resolved value.
+        """
+        if default is RxTxApp._PARAM_UNSET:
+            default = UNIVERSAL_PARAMS[key]
+        val = self.params.get(key, default)
+        return cast(val) if cast is not None else val
 
     def _create_rxtxapp_config_dict(self) -> dict:
         """
@@ -736,328 +809,169 @@ class RxTxApp(Application):
 
         # Helper to populate a nested session list for a given type
         def _populate_session(is_tx: bool):
-            """Build session configuration from UNIVERSAL_PARAMS.
-
-            Creates session dict with all fields populated from user-provided
-            parameters and UNIVERSAL_PARAMS defaults. No template dependencies.
+            """Build a per-type session dict from ``self.params`` /
+            UNIVERSAL_PARAMS. The shape mirrors the legacy add_*_sessions
+            helpers exactly so the resulting JSON is accepted by RxTxApp.
             """
+            p = self._p
+
+            # Common header fields used by every type (defaults can still be
+            # overridden per-type via the ``port_default`` / ``pt_default`` args).
+            def _hdr(port_default=None, pt_default=None):
+                return {
+                    "replicas": p("replicas"),
+                    "start_port": p(
+                        "port",
+                        (
+                            UNIVERSAL_PARAMS["port"]
+                            if port_default is None
+                            else port_default
+                        ),
+                        cast=int,
+                    ),
+                    "payload_type": p(
+                        "payload_type",
+                        (
+                            UNIVERSAL_PARAMS["payload_type"]
+                            if pt_default is None
+                            else pt_default
+                        ),
+                        cast=int,
+                    ),
+                }
+
             if session_type == "st20p":
-                # Build st20p session from scratch using UNIVERSAL_PARAMS
-                # Includes ALL fields from config_tx_st20p_session and config_rx_st20p_session templates
                 session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "start_port": int(
-                        self.params.get("port", UNIVERSAL_PARAMS["port"])
-                    ),
-                    "payload_type": int(
-                        self.params.get(
-                            "payload_type", UNIVERSAL_PARAMS["payload_type"]
-                        )
-                    ),
-                    "width": int(self.params.get("width", UNIVERSAL_PARAMS["width"])),
-                    "height": int(
-                        self.params.get("height", UNIVERSAL_PARAMS["height"])
-                    ),
-                    "fps": self.params.get("framerate", UNIVERSAL_PARAMS["framerate"]),
-                    "interlaced": self.params.get(
-                        "interlaced", UNIVERSAL_PARAMS["interlaced"]
-                    ),
-                    "device": self.params.get("device", UNIVERSAL_PARAMS["device"]),
-                    "pacing": self.params.get("pacing", UNIVERSAL_PARAMS["pacing"]),
-                    "packing": self.params.get("packing", UNIVERSAL_PARAMS["packing"]),
-                    "transport_format": self.params.get(
-                        "transport_format", UNIVERSAL_PARAMS["transport_format"]
-                    ),
-                    "display": self.params.get("display", UNIVERSAL_PARAMS["display"]),
-                    "enable_rtcp": self.params.get(
-                        "enable_rtcp", UNIVERSAL_PARAMS["enable_rtcp"]
-                    ),
+                    **_hdr(),
+                    "width": p("width", cast=int),
+                    "height": p("height", cast=int),
+                    "fps": p("framerate"),
+                    "interlaced": p("interlaced"),
+                    "device": p("device"),
+                    "pacing": p("pacing"),
+                    "packing": p("packing"),
+                    "transport_format": p("transport_format"),
+                    "display": p("display"),
+                    "enable_rtcp": p("enable_rtcp"),
                 }
-
-                # TX-specific vs RX-specific fields
-                pixel_format = self.params.get(
-                    "pixel_format", UNIVERSAL_PARAMS["pixel_format"]
-                )
+                pixel_format = p("pixel_format")
                 if is_tx:
                     session["input_format"] = pixel_format
-                    session["st20p_url"] = self.params.get(
-                        "input_file", UNIVERSAL_PARAMS["input_file"] or ""
-                    )
+                    session["st20p_url"] = p("input_file")
                 else:
                     session["output_format"] = pixel_format
-                    session["measure_latency"] = self.params.get(
-                        "measure_latency", UNIVERSAL_PARAMS["measure_latency"]
-                    )
-                    session["st20p_url"] = self.params.get(
-                        "output_file", UNIVERSAL_PARAMS["output_file"] or ""
-                    )
-
+                    session["measure_latency"] = p("measure_latency")
+                    session["st20p_url"] = p("output_file")
                 return session
 
-            elif session_type == "st22p":
-                # Build st22p session from scratch using UNIVERSAL_PARAMS
-                # Includes ALL fields from config_tx_st22p_session and config_rx_st22p_session templates
+            if session_type == "st22p":
                 session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "start_port": int(
-                        self.params.get("port", UNIVERSAL_PARAMS["port"])
-                    ),
-                    "payload_type": int(
-                        self.params.get(
-                            "payload_type", UNIVERSAL_PARAMS["payload_type"]
-                        )
-                    ),
-                    "width": int(self.params.get("width", UNIVERSAL_PARAMS["width"])),
-                    "height": int(
-                        self.params.get("height", UNIVERSAL_PARAMS["height"])
-                    ),
-                    "fps": self.params.get("framerate", UNIVERSAL_PARAMS["framerate"]),
-                    "interlaced": self.params.get(
-                        "interlaced", UNIVERSAL_PARAMS["interlaced"]
-                    ),
-                    "pack_type": "codestream",  # Fixed value from template
-                    "codec": self.params.get("codec", UNIVERSAL_PARAMS["codec"]),
-                    "device": self.params.get("device", UNIVERSAL_PARAMS["device"]),
-                    "quality": self.params.get("quality", UNIVERSAL_PARAMS["quality"]),
-                    "codec_thread_count": self.params.get(
-                        "codec_threads", UNIVERSAL_PARAMS["codec_threads"]
-                    ),
-                    "enable_rtcp": self.params.get(
-                        "enable_rtcp", UNIVERSAL_PARAMS["enable_rtcp"]
-                    ),
+                    **_hdr(),
+                    "width": p("width", cast=int),
+                    "height": p("height", cast=int),
+                    "fps": p("framerate"),
+                    "interlaced": p("interlaced"),
+                    "pack_type": "codestream",  # fixed value (template default)
+                    "codec": p("codec"),
+                    "device": p("device"),
+                    "quality": p("quality"),
+                    "codec_thread_count": p("codec_threads"),
+                    "enable_rtcp": p("enable_rtcp"),
                 }
-
-                # TX-specific vs RX-specific fields
-                pixel_format = self.params.get(
-                    "pixel_format", UNIVERSAL_PARAMS["pixel_format"]
-                )
+                pixel_format = p("pixel_format")
                 if is_tx:
                     session["input_format"] = pixel_format
-                    session["st22p_url"] = self.params.get(
-                        "input_file", UNIVERSAL_PARAMS["input_file"] or ""
-                    )
+                    session["st22p_url"] = p("input_file")
                 else:
                     session["output_format"] = pixel_format
-                    session["display"] = self.params.get(
-                        "display", UNIVERSAL_PARAMS["display"]
-                    )
-                    session["measure_latency"] = self.params.get(
-                        "measure_latency", UNIVERSAL_PARAMS["measure_latency"]
-                    )
-                    session["st22p_url"] = self.params.get(
-                        "output_file", UNIVERSAL_PARAMS["output_file"] or ""
-                    )
-
+                    session["display"] = p("display")
+                    session["measure_latency"] = p("measure_latency")
+                    session["st22p_url"] = p("output_file")
                 return session
 
-            elif session_type == "video":
-                # Build legacy video session from scratch using UNIVERSAL_PARAMS
-                # Used by legacy performance tests
+            if session_type == "video":
+                # Legacy video session — used by upstream perf tests.
                 session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "type": self.params.get("type_mode", UNIVERSAL_PARAMS["type_mode"]),
-                    "pacing": self.params.get("pacing", UNIVERSAL_PARAMS["pacing"]),
-                    "packing": self.params.get("packing", UNIVERSAL_PARAMS["packing"]),
-                    "start_port": int(
-                        self.params.get("port", UNIVERSAL_PARAMS["port"])
-                    ),
-                    "payload_type": int(
-                        self.params.get(
-                            "payload_type", UNIVERSAL_PARAMS["payload_type"]
-                        )
-                    ),
-                    "tr_offset": self.params.get(
-                        "tr_offset", UNIVERSAL_PARAMS["tr_offset"]
-                    ),
-                    "video_format": self.params.get(
-                        "video_format", UNIVERSAL_PARAMS["video_format"]
-                    ),
-                    "pg_format": self.params.get(
-                        "pg_format", UNIVERSAL_PARAMS["pg_format"]
-                    ),
+                    **_hdr(),
+                    "type": p("type_mode"),
+                    "pacing": p("pacing"),
+                    "packing": p("packing"),
+                    "tr_offset": p("tr_offset"),
+                    "video_format": p("video_format"),
+                    "pg_format": p("pg_format"),
                 }
-
-                # TX-specific vs RX-specific fields
                 if is_tx:
-                    session["video_url"] = self.params.get(
-                        "video_url", UNIVERSAL_PARAMS["video_url"]
-                    )
+                    session["video_url"] = p("video_url")
                 else:
-                    session["display"] = self.params.get(
-                        "display", UNIVERSAL_PARAMS["display"]
-                    )
-
+                    session["display"] = p("display")
                 return session
 
-            elif session_type == "audio":
-                # Build legacy audio session from scratch using UNIVERSAL_PARAMS
-                # Used by legacy tests
-                session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "type": self.params.get("type_mode", UNIVERSAL_PARAMS["type_mode"]),
-                    "start_port": int(
-                        self.params.get("port", 30000)
-                    ),  # Default 30000 for audio
-                    "payload_type": int(
-                        self.params.get("payload_type", 111)
-                    ),  # Default 111 for audio
-                    "audio_format": self.params.get(
-                        "audio_format", UNIVERSAL_PARAMS["audio_format"]
-                    ),
-                    "audio_channel": self.params.get(
-                        "audio_channels", UNIVERSAL_PARAMS["audio_channels"]
-                    ),
-                    "audio_sampling": self.params.get(
-                        "audio_sampling", UNIVERSAL_PARAMS["audio_sampling"]
-                    ),
-                    "audio_ptime": self.params.get(
-                        "audio_ptime", UNIVERSAL_PARAMS["audio_ptime"]
-                    ),
-                    "audio_url": self.params.get(
-                        "audio_url", UNIVERSAL_PARAMS["audio_url"]
-                    ),
+            if session_type == "audio":
+                # Legacy audio session — port/pt default to 30000/111.
+                return {
+                    **_hdr(port_default=30000, pt_default=111),
+                    "type": p("type_mode"),
+                    "audio_format": p("audio_format"),
+                    "audio_channel": p("audio_channels"),
+                    "audio_sampling": p("audio_sampling"),
+                    "audio_ptime": p("audio_ptime"),
+                    "audio_url": p("audio_url"),
                 }
 
-                return session
-
-            elif session_type == "ancillary":
-                # Build legacy ancillary session from scratch using UNIVERSAL_PARAMS
-                # Used by legacy tests (kernel socket, xdp)
-                session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "start_port": int(
-                        self.params.get("port", 40000)
-                    ),  # Default 40000 for ancillary
-                    "payload_type": int(
-                        self.params.get("payload_type", 113)
-                    ),  # Default 113 for ancillary
-                }
-
-                # TX-specific fields only
+            if session_type == "ancillary":
+                # Legacy ancillary session — port/pt default to 40000/113.
+                session = _hdr(port_default=40000, pt_default=113)
                 if is_tx:
-                    session["type"] = self.params.get(
-                        "type_mode", UNIVERSAL_PARAMS["type_mode"]
-                    )
-                    session["ancillary_format"] = self.params.get(
-                        "ancillary_format", UNIVERSAL_PARAMS["ancillary_format"]
-                    )
-                    session["ancillary_url"] = self.params.get(
-                        "ancillary_url", UNIVERSAL_PARAMS["ancillary_url"]
-                    )
-                    session["ancillary_fps"] = self.params.get(
-                        "ancillary_fps", UNIVERSAL_PARAMS["ancillary_fps"]
-                    )
-
+                    session["type"] = p("type_mode")
+                    session["ancillary_format"] = p("ancillary_format")
+                    session["ancillary_url"] = p("ancillary_url")
+                    session["ancillary_fps"] = p("ancillary_fps")
                 return session
 
-            elif session_type == "st30p":
-                # Build st30p session from scratch using UNIVERSAL_PARAMS
+            if session_type == "st30p":
                 session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "start_port": int(
-                        self.params.get("port", UNIVERSAL_PARAMS["port"])
-                    ),
-                    "payload_type": int(
-                        self.params.get(
-                            "payload_type", UNIVERSAL_PARAMS["payload_type"]
-                        )
-                    ),
-                    "audio_format": self.params.get(
-                        "audio_format", UNIVERSAL_PARAMS["audio_format"]
-                    ),
-                    "audio_channel": self.params.get(
-                        "audio_channels", UNIVERSAL_PARAMS["audio_channels"]
-                    ),
-                    "audio_sampling": self.params.get(
-                        "audio_sampling", UNIVERSAL_PARAMS["audio_sampling"]
-                    ),
-                    "audio_ptime": self.params.get(
-                        "audio_ptime", UNIVERSAL_PARAMS["audio_ptime"]
-                    ),
+                    **_hdr(),
+                    "audio_format": p("audio_format"),
+                    "audio_channel": p("audio_channels"),
+                    "audio_sampling": p("audio_sampling"),
+                    "audio_ptime": p("audio_ptime"),
                 }
+                session["audio_url"] = p("input_file") if is_tx else p("output_file")
+                return session
 
-                # TX-specific vs RX-specific fields
+            if session_type == "fastmetadata":
+                session = {
+                    **_hdr(),
+                    "fastmetadata_data_item_type": p(
+                        "fastmetadata_data_item_type", cast=int
+                    ),
+                    "fastmetadata_k_bit": p("fastmetadata_k_bit", cast=int),
+                }
                 if is_tx:
-                    session["audio_url"] = self.params.get(
-                        "input_file", UNIVERSAL_PARAMS["input_file"] or ""
-                    )
+                    session["type"] = p("type_mode")
+                    session["fastmetadata_fps"] = p("fastmetadata_fps")
+                    session["fastmetadata_url"] = p("input_file")
                 else:
-                    session["audio_url"] = self.params.get(
-                        "output_file", UNIVERSAL_PARAMS["output_file"] or ""
-                    )
-
+                    session["fastmetadata_url"] = p("output_file")
                 return session
 
-            elif session_type == "fastmetadata":
-                # Build st41 (fast metadata) session from scratch using UNIVERSAL_PARAMS
+            if session_type == "st40p":
+                # st40p (ancillary pipeline) — port/pt default to 40000/113;
+                # mirrors add_st40p_sessions() in legacy RxTxApp.py.
                 session = {
-                    "replicas": self.params.get(
-                        "replicas", UNIVERSAL_PARAMS["replicas"]
-                    ),
-                    "start_port": int(
-                        self.params.get("port", UNIVERSAL_PARAMS["port"])
-                    ),
-                    "payload_type": int(
-                        self.params.get(
-                            "payload_type", UNIVERSAL_PARAMS["payload_type"]
-                        )
-                    ),
-                    "fastmetadata_data_item_type": int(
-                        self.params.get(
-                            "fastmetadata_data_item_type",
-                            UNIVERSAL_PARAMS["fastmetadata_data_item_type"],
-                        )
-                    ),
-                    "fastmetadata_k_bit": int(
-                        self.params.get(
-                            "fastmetadata_k_bit", UNIVERSAL_PARAMS["fastmetadata_k_bit"]
-                        )
-                    ),
+                    **_hdr(port_default=40000, pt_default=113),
+                    "interlaced": p("interlaced"),
+                    "enable_rtcp": p("enable_rtcp"),
                 }
-
-                # TX-specific vs RX-specific fields
                 if is_tx:
-                    session["type"] = self.params.get(
-                        "type_mode", UNIVERSAL_PARAMS["type_mode"]
-                    )
-                    session["fastmetadata_fps"] = self.params.get(
-                        "fastmetadata_fps", UNIVERSAL_PARAMS["fastmetadata_fps"]
-                    )
-                    session["fastmetadata_url"] = self.params.get(
-                        "input_file", UNIVERSAL_PARAMS["input_file"] or ""
-                    )
-                else:
-                    session["fastmetadata_url"] = self.params.get(
-                        "output_file", UNIVERSAL_PARAMS["output_file"] or ""
-                    )
-
+                    session["fps"] = self.params.get("fps", p("framerate"))
+                    session["st40p_url"] = self.params.get("st40p_url", p("input_file"))
                 return session
 
-            else:
-                # Unknown session type - return minimal config
-                logger.warning(
-                    f"Unknown session type '{session_type}', using minimal config"
-                )
-                return {"replicas": 1}
-
-        def _ensure_placeholder_video(session_group: dict) -> None:
-            """Ensure a non-empty video list to force functional validation."""
-            if not session_group.get("video"):
-                session_group["video"] = [
-                    {"type": "placeholder", "video_format": "", "pg_format": ""}
-                ]
+            logger.warning(
+                f"Unknown session type '{session_type}', using minimal config"
+            )
+            return {"replicas": 1}
 
         # Populate TX sessions
         if direction in (None, "tx"):
@@ -1065,7 +979,6 @@ class RxTxApp(Application):
             if st_entry:
                 config["tx_sessions"][0].setdefault(session_type, [])
                 config["tx_sessions"][0][session_type].append(st_entry)
-                _ensure_placeholder_video(config["tx_sessions"][0])
 
         # Populate RX sessions
         if direction in (None, "rx"):
@@ -1073,7 +986,6 @@ class RxTxApp(Application):
             if st_entry:
                 config["rx_sessions"][0].setdefault(session_type, [])
                 config["rx_sessions"][0][session_type].append(st_entry)
-                _ensure_placeholder_video(config["rx_sessions"][0])
 
         # If only TX or only RX requested, clear the other list
         if direction == "tx":
@@ -1084,7 +996,16 @@ class RxTxApp(Application):
         return config
 
     def prepare_execution(self, build: str, host=None, **kwargs):
-        """Write RxTxApp JSON config file to remote host before execution."""
+        """Write RxTxApp JSON config file to remote host before execution.
+
+        Args:
+            build: Path to MTL build directory
+            host: Host connection object
+            interface_setup: Optional InterfaceSetup; when provided and the
+                config contains kernel-socket interfaces (``kernel:<ifname>``)
+                with an ``_os_ip`` annotation, OS-level IPs are configured and
+                registered for cleanup, mirroring legacy ``RxTxApp.execute_test``.
+        """
         if not host:
             raise ValueError("host required for RxTxApp config writing")
 
@@ -1095,6 +1016,15 @@ class RxTxApp(Application):
 
         # Write config file using mfd library (handles both local and remote hosts)
         remote_conn = host.connection
+
+        # Configure kernel-socket interfaces (mirrors legacy RxTxApp.execute_test)
+        interface_setup = kwargs.get("interface_setup")
+        try:
+            from .RxTxApp import configure_kernel_interfaces
+
+            configure_kernel_interfaces(self.config, remote_conn, interface_setup)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"configure_kernel_interfaces skipped: {e}")
 
         # Extract config file path from command (it's relative)
         match = re.search(r"--config_file\s+(\S+)", self.command)
@@ -1123,7 +1053,7 @@ class RxTxApp(Application):
             f"--config_file {config_file_relative}", f"--config_file {config_file_path}"
         )
 
-    def validate_results(self) -> bool:  # type: ignore[override]
+    def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """
         Validate execution results exactly like original RxTxApp.execute_test().
 
@@ -1132,16 +1062,35 @@ class RxTxApp(Application):
         - For st22p: Check RX output only
         - For video/audio/etc: Check both TX and RX outputs
 
-        Returns True if validation passes. Raises AssertionError on failure.
+        When ``fail_on_error`` is False, validation problems return ``False``
+        without recording a pytest failure (used by performance binary-search
+        loops where intermediate iterations are expected to fail).
+
+        Returns True if validation passes. Raises AssertionError on failure
+        (only when ``fail_on_error`` is True).
         """
 
         def _fail(msg: str):
-            log_fail(msg)
-            raise AssertionError(msg)
+            self._fail_validation(msg, fail_on_error)
 
         try:
             if not self.config:
                 _fail("RxTxApp validate_results called without config")
+
+            # Multi-session aware: when more than one session type is populated
+            # (e.g. kernel_lo / xdp / rx_timing/mixed run st20p+st30p+ancillary
+            # in a single RxTxApp invocation), validate every type sequentially.
+            all_types = self._get_all_session_types_from_config(self.config)
+            if len(all_types) > 1:
+                output_lines = self.last_output.split("\n") if self.last_output else []
+                rc = self.last_return_code
+                if rc not in (0, None):
+                    _fail(f"Process return code {rc} indicates failure")
+                for stype in all_types:
+                    if not self._validate_single_session_type(stype, output_lines):
+                        _fail(f"{stype} validation failed (multi-session)")
+                logger.info(f"RxTxApp multi-session validation passed for {all_types}")
+                return True
 
             session_type = self._get_session_type_from_config(self.config)
             output_lines = self.last_output.split("\n") if self.last_output else []
@@ -1151,117 +1100,11 @@ class RxTxApp(Application):
             if rc not in (0, None):
                 _fail(f"Process return code {rc} indicates failure")
 
-            # 2. Validate based on session type - match original RxTxApp.execute_test() logic
-            passed = True
-
-            if session_type == "st20p":
-                # Original validation: check_rx_output + check_tx_converter_output + check_rx_converter_output
-                # Note: Original does NOT check check_tx_output for st20p!
-                passed = passed and check_rx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type="st20p",
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-
-                # Check converter outputs for st20p
-                passed = passed and check_tx_converter_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type="st20p",
-                    fail_on_error=False,
-                    host=None,
-                    build="",
-                )
-
-                passed = passed and check_rx_converter_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type="st20p",
-                    fail_on_error=False,
-                    host=None,
-                    build="",
-                )
-
-                if not passed:
-                    _fail("st20p validation failed (RX output or converter checks)")
-
-            elif session_type in ("st22p", "st30p", "fastmetadata"):
-                # Original validation: check_rx_output only (no TX result line for st22p/st30p/fastmetadata)
-                passed = check_rx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type=session_type,
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-
-                # For st22p, also check that codec/encoder/decoder was loaded
-                if session_type == "st22p":
-                    codec_ok = check_codec_loaded(
-                        output=output_lines,
-                        session_type=session_type,
-                        fail_on_error=False,
-                    )
-                    if not codec_ok:
-                        logger.warning(
-                            "ST22P codec loading check failed - encoder/decoder may not be registered"
-                        )
-                        # Don't fail the test, just warn - codec may load differently in some setups
-                        # The RX output check is the primary validation
-
-                if not passed:
-                    _fail(f"{session_type} validation failed (RX output check)")
-
-            elif session_type in ("video", "audio", "ancillary"):
-                # Original validation: check both TX and RX outputs
-                _tx_ok = check_tx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type=session_type,
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-                _rx_ok = check_rx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type=session_type,
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-
-                if not (_tx_ok and _rx_ok):
-                    _fail(f"{session_type} validation failed (TX or RX output check)")
-
-            else:
-                # Unknown session type - default to checking both
-                logger.warning(
-                    f"Unknown session type {session_type}, using default validation"
-                )
-                _tx_ok = check_tx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type=session_type,
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-                _rx_ok = check_rx_output(
-                    config=self.config,
-                    output=output_lines,
-                    session_type=session_type,
-                    fail_on_error=False,
-                    host=None,
-                    build=None,
-                )
-
-                if not (_tx_ok and _rx_ok):
-                    _fail(f"{session_type} validation failed")
+            # 2. Validate based on session type. Single- and multi-session
+            #    paths share the same per-type dispatch via
+            #    _validate_single_session_type.
+            if not self._validate_single_session_type(session_type, output_lines):
+                _fail(f"{session_type} validation failed")
 
             logger.info(f"RxTxApp validation passed for {session_type}")
             return True
@@ -1272,48 +1115,88 @@ class RxTxApp(Application):
         except Exception as e:
             _fail(f"RxTxApp validation unexpected error: {e}")
 
-    def _get_session_type_from_config(self, config: dict) -> str:
-        """Extract session type from RxTxApp config."""
-        # Inspect nested lists to identify actual session type; legacy layout nests under tx_sessions[i][type]
-        if not config.get("tx_sessions"):
-            return "st20p"
-        for tx_entry in config["tx_sessions"]:
-            for possible in (
-                "st22p",
-                "st20p",
-                "st30p",
-                "fastmetadata",
-                "video",
-                "audio",
-                "ancillary",
-            ):
-                if possible in tx_entry and tx_entry[possible]:
-                    return possible
-        return "st20p"
+    def _validate_single_session_type(
+        self, session_type: str, output_lines: list
+    ) -> bool:
+        """Run per-type validation (RX, plus TX where the legacy code did).
 
-    def _start_netsniff_capture(self, netsniff):
-        """Start netsniff capture for packet capturing during test execution.
+        Single dispatch shared by the single-session and multi-session
+        branches of ``validate_results``. Mirrors the per-type rules from the
+        legacy ``RxTxApp.execute_test()``:
 
-        This method is called by execute_test() when a netsniff object is provided.
-        It extracts the destination IP from the config and starts the capture.
+        - ``st20p``: RX output + TX/RX converter outputs (no plain TX check).
+        - ``st22p``/``st30p``/``st40p``/``fastmetadata``/``ancillary``: RX
+          output only. ST22P additionally logs a warning if
+          codec/encoder/decoder did not load, but does not fail on it (codecs
+          may register lazily).
+        - ``video``/``audio`` (and unknown types): TX + RX outputs.
         """
-        if not self.config:
-            logger.warning("No config available for netsniff capture")
-            return
-
-        try:
-            # Extract destination IP from TX sessions
-            if (
-                self.config.get("tx_sessions")
-                and len(self.config["tx_sessions"]) > 0
-                and self.config["tx_sessions"][0].get("dip")
+        if session_type == "st20p":
+            return (
+                check_rx_output(self.config, output_lines, "st20p", False)
+                and check_tx_converter_output(self.config, output_lines, "st20p", False)
+                and check_rx_converter_output(self.config, output_lines, "st20p", False)
+            )
+        if session_type in ("st22p", "st30p", "st40p", "fastmetadata", "ancillary"):
+            rx_session_type = "anc" if session_type == "ancillary" else session_type
+            ok = check_rx_output(self.config, output_lines, rx_session_type, False)
+            if session_type == "st22p" and not check_codec_loaded(
+                output_lines, session_type, False
             ):
-                dst_ip = self.config["tx_sessions"][0]["dip"][0]
-                netsniff.update_filter(dst_ip=dst_ip)
-                capture_time = self.params.get("test_time", 30)
-                netsniff.capture(capture_time=capture_time)
-                logger.info(f"Started netsniff-ng capture for destination IP {dst_ip}")
-            else:
-                logger.warning("Could not extract destination IP for netsniff capture")
-        except Exception as e:
-            logger.error(f"Failed to start netsniff capture: {e}")
+                logger.warning(
+                    "ST22P codec loading check failed - encoder/decoder may not be registered"
+                )
+            return ok
+        # video / audio / unknown -> TX + RX
+        if session_type not in ("video", "audio"):
+            logger.warning(
+                "Unknown session type %s, using default TX+RX validation",
+                session_type,
+            )
+        return check_tx_output(
+            self.config, output_lines, session_type, False
+        ) and check_rx_output(self.config, output_lines, session_type, False)
+
+    # Session types recognised in RxTxApp configs, in priority order. Used by
+    # both the single- and multi-session helpers below.
+    _SESSION_TYPES = (
+        "st22p",
+        "st20p",
+        "st30p",
+        "st40p",
+        "fastmetadata",
+        "video",
+        "audio",
+        "ancillary",
+    )
+
+    def _get_session_type_from_config(self, config: dict) -> str:
+        """Extract primary session type from RxTxApp config (first non-empty)."""
+        types = self._get_all_session_types_from_config(config)
+        return types[0] if types else "st20p"
+
+    def _get_all_session_types_from_config(self, config: dict) -> list:
+        """Return every populated session type in config (multi-session aware)."""
+        types: list = []
+        for tx_entry in config.get("tx_sessions") or []:
+            for stype in self._SESSION_TYPES:
+                sessions = tx_entry.get(stype)
+                if not sessions:
+                    continue
+                if stype not in types:
+                    types.append(stype)
+        return types
+
+    def _resolve_capture_dst_ip(self):
+        """Return the destination IP for netsniff capture, or ``None``.
+
+        RxTxApp stores TX destinations under ``config['tx_sessions'][i]['dip']``
+        (a list). We use the first TX session's first DIP as the capture filter
+        target; that matches the single-stream case the capture path is
+        designed for. Returns ``None`` if no TX session / DIP is configured,
+        which the base class treats as "skip capture".
+        """
+        tx_sessions = (self.config or {}).get("tx_sessions") or []
+        if tx_sessions and tx_sessions[0].get("dip"):
+            return tx_sessions[0]["dip"][0]
+        return None

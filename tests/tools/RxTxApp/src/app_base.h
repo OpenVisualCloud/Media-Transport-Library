@@ -536,6 +536,7 @@ struct st_app_rx_st40p_session {
   int stat_frame_seq_discont;
   int stat_frame_marker_missing;
   uint32_t stat_seq_lost_total;
+  double expect_fps;
 };
 
 struct st_app_rx_st22p_session {
