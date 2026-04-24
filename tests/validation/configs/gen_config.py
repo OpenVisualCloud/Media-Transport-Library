@@ -15,7 +15,7 @@ def gen_test_config(
     ebu_user: str = None,
     ebu_password: str = None,
     media_path: str = "/mnt/media",
-    test_time: int = 120,
+    test_time: int = 60,
     no_capture: bool = False,
 ) -> str:
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
@@ -175,7 +175,7 @@ def main() -> None:
     parser.add_argument("--ebu_user", type=str, default=None)
     parser.add_argument("--ebu_password", type=str, default=None)
     # Optional test settings
-    parser.add_argument("--test_time", type=int, default=120)
+    parser.add_argument("--test_time", type=int, default=60)
     parser.add_argument("--media_path", type=str, default="/mnt/media")
     parser.add_argument(
         "--no_capture",
