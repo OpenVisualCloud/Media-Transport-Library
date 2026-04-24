@@ -435,24 +435,97 @@ class Application(ABC):
         return proc
 
     def stop_process(self, host=None) -> None:
-        """Stop this application's tracked process and clean up stale processes.
+        """Stop this application's tracked process gracefully.
 
-        1. SIGKILL the tracked ``_process`` (if any).
-        2. Run :func:`kill_stale_processes` on *host* (falls back to ``_host``).
+        Sends SIGINT first so that DPDK applications run their atexit
+        handler and call ``rte_eal_cleanup()`` — which closes the VFIO
+        group fd and releases the kernel-side refcount on the VFs.
+        Skipping this step is the root cause of the long-standing
+        ``nicctl disable_vf`` hang in ``vfio_unregister_group_dev``.
+
+        Ladder:
+            1. SIGINT  → wait up to ``graceful_s`` (default 10s) for clean exit.
+            2. SIGTERM → wait up to additional ``term_s`` (default 5s).
+            3. SIGKILL → last resort.
+            4. :func:`kill_stale_processes` for any leftovers, then poll
+               ``/dev/vfio/*`` until no process holds it (max ``vfio_idle_s``).
 
         Safe to call multiple times or when no process was started.
         """
+        graceful_s = self.params.get("stop_graceful_s", 10)
+        term_s = self.params.get("stop_term_s", 5)
+        vfio_idle_s = self.params.get("stop_vfio_idle_s", 15)
+
         proc = self._process
         if proc is not None:
             try:
-                proc.kill(wait=None, with_signal=signal.SIGKILL)
-            except Exception:
-                pass
+                if not self._signal_and_wait(proc, signal.SIGINT, graceful_s):
+                    logger.info(
+                        "Process did not exit on SIGINT after %ds, sending SIGTERM",
+                        graceful_s,
+                    )
+                    if not self._signal_and_wait(proc, signal.SIGTERM, term_s):
+                        logger.warning(
+                            "Process did not exit on SIGTERM after %ds, sending SIGKILL "
+                            "— VFIO refcount may leak",
+                            term_s,
+                        )
+                        try:
+                            proc.kill(wait=None, with_signal=signal.SIGKILL)
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.warning("Error during graceful stop: %s", e)
             self._process = None
+
         target_host = host or self._host
         if target_host is not None:
-            time.sleep(2)
             kill_stale_processes(target_host)
+            self._wait_vfio_idle(target_host, vfio_idle_s)
+
+    def _signal_and_wait(self, proc, sig, timeout_s: float) -> bool:
+        """Send signal to *proc* and poll until exit or timeout. Returns True if exited."""
+        try:
+            proc.kill(wait=None, with_signal=sig)
+        except Exception as e:
+            logger.debug("Signal %s send failed: %s", sig, e)
+            return False
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                if not proc.running:
+                    return True
+            except Exception:
+                # If we can't query state, assume it's still running.
+                pass
+            time.sleep(0.25)
+        try:
+            return not proc.running
+        except Exception:
+            return False
+
+    @staticmethod
+    def _wait_vfio_idle(host, timeout_s: float) -> bool:
+        """Poll until no process holds /dev/vfio/<group> fds. Returns True if idle."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                res = host.connection.execute_command(
+                    "sudo lsof /dev/vfio/* 2>/dev/null | "
+                    "awk 'NR>1 && $1 != \"vfio-pci\" {print}' | wc -l",
+                    shell=True,
+                    timeout=5,
+                    expected_return_codes=None,
+                )
+                if (res.stdout or "0").strip() == "0":
+                    return True
+            except Exception:
+                return False
+            time.sleep(0.5)
+        logger.warning(
+            "VFIO still busy after %ds — disable_vf may block in kernel", timeout_s
+        )
+        return False
 
     def capture_stdout(self, process, process_name: str) -> str:
         """Capture stdout from mfd_connect process.
