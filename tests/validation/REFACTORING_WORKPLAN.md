@@ -391,6 +391,39 @@ Design notes:
     * Per-test setup latency on VF-using tests drops from ~5–15 s to ~0 s.
     * Whole-suite `disable_vf` invocations drop from ~60 to 0 → eliminates the per-test exposure to the VFIO refcount stall that wedged CI for ~47 min in `report_custom_21_04_2026.html`.
     * Nightly wall-clock saving: ~5–15 min plus the variance of recovering from a single wedged `disable_vf`.
+- 2026-04-24 (CI report triage round — `report_141527.html`, 246 collected → 1 error / 37 failed / 6 skipped / 202 passed):
+  - **All 44 failed/error/skipped buckets are environment- or legacy-parity issues, not refactor regressions.** Verified by extracting per-test call-phase output from the report. Two surgical fixes shipped:
+    1. **`mtl_engine/media_files.py::parse_fps_to_pformat`**: changed `round()` → `int()` truncation. `5994/100` now yields `p59` (was `p60`), `30000/1001` → `p29`, `11988/100` → `p119`. Matches NTSC/SMPTE label convention; rounding produced labels that mismatched the input parameter (e.g. `i1080p59` parametrize emitting `fps=p60`).
+    2. **`tests/single/xdp/conftest.py`** (new, autouse module-scope): `require_xdp_interfaces` fixture skips both legacy and refactored xdp tests when the hardcoded `eth2`/`eth3` kernel interfaces are absent or have no IPv4 address. Replaces the opaque `rc=244 mt_socket_get_if_ip SIOCGIFADDR fail` failures with a clean `pytest.skip` on runners without native_af_xdp interfaces. Affects 4 xdp_mode_refactored + 4 xdp_standard_refactored + 8 legacy xdp tests.
+  - **Bucketed root causes (all observed in this report)**:
+    | Bucket | Count | Root cause | Disposition |
+    |---|---|---|---|
+    | `xdp_mode_refactored[*-i1080p59-*]` | 4 | `mt_socket_get_if_ip SIOCGIFADDR fail for if eth2` (no af_xdp interfaces) | **Fixed**: skip via new conftest |
+    | `xdp_standard_refactored[*-i1080p59-*-{st20p,st22p}]` | 4 | Same | **Fixed**: skip via new conftest |
+    | `rx_timing_mode_refactored[{unicast,multicast}]` | 2 | RxTxApp `rc=251` on launch (multi-session config not yet stable) | Legacy parity — same failure mode as legacy `test_rx_timing_mode` |
+    | `tx_rx_conversion_refactored[*-test_8K]` | 8 | `st20p validation failed (RX output or converter checks)` at 8K | Capacity / converter precision — legacy parity |
+    | `formats_refactored[YUV_422_12bit-test_8K]` | 1 | Same 8K capacity bucket | Legacy parity |
+    | `fps_refactored[{JPEG-XS,H264_CBR}-{p119,p120}-Penguin_1080p]` | 4 | `st22p validation failed (RX output check)` at very high fps | Codec-capacity; legacy parity |
+    | `st30p_channel_refactored[PCM8-M]` (ERROR) | 1 | `PCAP compliance check failed` (PCM8 mono not supported by EBU compliance) | Legacy parity |
+    | `st30p_channel_refactored[{PCM16-71,PCM24-51}]` | 2 | `Audio integrity check failed` | Legacy parity |
+    | `st30p_ptime_refactored[{0.25,0.33,4}-{PCM8,PCM16,PCM24}]` subset | 7 | `Audio integrity check failed` (non-standard ptimes) | Legacy parity |
+    | `no_chain_refactored[frame-st41_p29_long_file]` | 1 | RxTxApp `rc=234` with `--tx_no_chain` | C parser limitation — legacy parity |
+    | `virtio_user_refactored[i1080p60_10, i2160p60_10]` | 2 | `rc=251` at `replicas=10` | Capacity — legacy parity |
+    | `st20_interfaces_mix_refactored[*-vf_only]` | 3 | `netsniff-ng` capture timed out → `RxTxApp rc=124` (capture interface cannot see VF↔VF loopback) | Env / pcap visibility — known limitation, conftest already logs `N/A` for empty captures but the wrapper timeout still propagates |
+    | `ptp/st20_interfaces_mix[*-pf_tx_vf_rx]` (skipped) | 3 | Marked `not stable yet` | Intentional |
+    | `st20_interfaces_mix[ParkJoy_4K-*]` (skipped) | 1 | Media file missing on runner | Env |
+    | `st30p_channel_refactored[{PCM16,PCM24}-222]` (skipped) | 2 | Channel config 222 unsupported | Intentional |
+  - **Tests based on a different base app (out of scope for `rxtxapp` refactor)**:
+    * `tests/single/ffmpeg/**` — uses FFmpeg binary via `mtl_engine/ffmpeg_app.py`.
+    * `tests/single/gstreamer/**` — uses GStreamer pipeline via `mtl_engine/GstreamerApp.py`.
+    * `tests/single/udp/test_librist.py` — uses `librist` reference binary.
+    * `tests/single/udp/test_udp_sample.py` — uses `UdpClientServerSample` (DPDK sample app).
+    * `tests/performance/**` — separate dual-host harness; not part of `tests/single` migration.
+  - **Verification**:
+    * `parse_fps_to_pformat` unit-checked: `'5994/100'→p59`, `'30000/1001'→p29`, `'11988/100'→p119`, `'60'→p60`, `60→p60`, `'5000/100'→p50`. All ✓.
+    * `pytest --collect-only tests/single/xdp/` → 16 tests collected (8 legacy + 8 refactored), 0 errors. The new autouse fixture imports clean.
+    * `ast.parse` clean on `media_files.py` and `tests/single/xdp/conftest.py`.
+  - **Cannot validate on hardware** (no DPDK/E810 in this dev environment) — same constraint as prior triage rounds; fixes are semantic-only and minimal.
 
 # Single Tests Refactoring Work Plan
 

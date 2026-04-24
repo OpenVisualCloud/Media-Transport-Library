@@ -21,9 +21,12 @@ def parse_fps_to_pformat(fps_field: Union[str, int]) -> str:
         return f"p{fps_field}"
 
     if "/" in fps_field:
-        # Handle fractional fps (e.g. '5994/100' -> 'p59')
+        # Handle fractional fps (e.g. '5994/100' -> 'p59').
+        # Use truncation, not rounding: 59.94 -> p59 (NTSC convention),
+        # 29.97 -> p29, 119.88 -> p119.  ``round`` would yield p60 / p30 / p120
+        # which the C parser may accept but mismatches the SMPTE label.
         numerator, denominator = fps_field.split("/", 1)
-        fps_val = round(int(numerator) / int(denominator))
+        fps_val = int(int(numerator) / int(denominator))
     else:
         # Handle integer fps string (e.g. '60' -> 'p60')
         fps_val = int(fps_field)
