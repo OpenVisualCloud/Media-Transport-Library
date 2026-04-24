@@ -19,6 +19,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
     indirect=["media_file"],
     ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
 )
+@pytest.mark.refactored
 def test_pacing_refactored(
     hosts,
     mtl_path,
@@ -28,7 +29,6 @@ def test_pacing_refactored(
     pacing,
     prepare_ramdisk,
     media_file,
-    pcap_capture,
     rxtxapp,
 ):
     """Test different pacing modes (narrow, wide, linear)"""
@@ -67,5 +67,5 @@ def test_pacing_refactored(
 
     rxtxapp.create_command(**config_params)
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )

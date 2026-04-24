@@ -12,6 +12,7 @@ from mtl_engine.media_files import yuv_files_422p10le
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("quality", ["quality", "speed"])
 @pytest.mark.nightly
 def test_quality_refactored(
@@ -23,7 +24,6 @@ def test_quality_refactored(
     quality,
     test_config,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -32,6 +32,8 @@ def test_quality_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # JPEG-XS plugin init adds 3-10s on top of MTL init.
+    test_time = max(test_time, 90)
 
     # Note: kahawai.json handling should be done via remote host connection if needed
     # For now, assume it's already available on the remote host or not required
@@ -49,9 +51,7 @@ def test_quality_refactored(
         codec_threads=2,
         test_time=test_time,
     )
-    result = rxtxapp.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    result = rxtxapp.execute_test(build=mtl_path, test_time=test_time, host=host)
     # Enforce result to avoid silent pass when validation fails
     assert (
         result
