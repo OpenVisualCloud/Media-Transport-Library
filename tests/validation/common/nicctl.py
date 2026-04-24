@@ -233,6 +233,12 @@ class InterfaceSetup:
         :param count: total number of VFs or PFs needed for test.
         :param host: You can specify host if you need to test only on this host
         :return: Returns dictionary with list of PCI addresses of VFs or PFs per host name.
+
+        VF reuse: ``nic_port_list`` (session-scoped) pre-creates a pool of VFs
+        on every PF and stores them on ``host.vfs`` / ``host.vfs_r``. When the
+        request fits inside that pool we reuse it and skip both ``create_vf``
+        and ``disable_vf``. This saves 5-15 s of nicctl work per test and
+        eliminates the per-test exposure to the VFIO refcount stall.
         """
         if host:
             hosts = [host]
@@ -251,15 +257,30 @@ class InterfaceSetup:
                     )
             else:
                 if interface_type.lower() == "vf":
-                    vfs = self.nicctl_objs[host.name].create_vfs(
-                        host.network_interfaces[0].pci_address.lspci, count
-                    )
-                    selected_interfaces[host.name] = vfs
-                    self.register_cleanup(
-                        self.nicctl_objs[host.name],
-                        host.network_interfaces[0].pci_address.lspci,
-                        interface_type,
-                    )
+                    pf_pci = host.network_interfaces[0].pci_address.lspci
+                    pool = self._reusable_vf_pool(host, pf_index=0)
+                    if len(pool) >= count:
+                        selected_interfaces[host.name] = pool[:count]
+                        logger.debug(
+                            "Reusing %d/%d session VFs on %s (no create/disable)",
+                            count,
+                            len(pool),
+                            pf_pci,
+                        )
+                    else:
+                        logger.info(
+                            "Session VF pool on %s has %d VFs but test needs %d; "
+                            "falling back to create_vf (per-test). Increase "
+                            "sriov_numvfs on this PF to enable pool reuse.",
+                            pf_pci,
+                            len(pool),
+                            count,
+                        )
+                        vfs = self.nicctl_objs[host.name].create_vfs(pf_pci, count)
+                        selected_interfaces[host.name] = vfs
+                        self.register_cleanup(
+                            self.nicctl_objs[host.name], pf_pci, interface_type
+                        )
                 elif interface_type.lower() == "pf":
                     try:
                         selected_interfaces[host.name] = []
@@ -284,15 +305,33 @@ class InterfaceSetup:
                     vfs_count = int(vfs_count) if vfs_count else 1
                     for i in range(count // vfs_count):
                         try:
-                            vfs = self.nicctl_objs[host.name].create_vfs(
-                                host.network_interfaces[i].pci_address.lspci, vfs_count
-                            )
-                            selected_interfaces[host.name].extend(vfs)
-                            self.register_cleanup(
-                                self.nicctl_objs[host.name],
-                                host.network_interfaces[i].pci_address.lspci,
-                                "VF",
-                            )
+                            pf_pci = host.network_interfaces[i].pci_address.lspci
+                            pool = self._reusable_vf_pool(host, pf_index=i)
+                            if len(pool) >= vfs_count:
+                                selected_interfaces[host.name].extend(
+                                    pool[:vfs_count]
+                                )
+                                logger.debug(
+                                    "Reusing %d/%d session VFs on %s (no create/disable)",
+                                    vfs_count,
+                                    len(pool),
+                                    pf_pci,
+                                )
+                            else:
+                                logger.info(
+                                    "Session VF pool on %s has %d VFs but test "
+                                    "needs %d; falling back to create_vf.",
+                                    pf_pci,
+                                    len(pool),
+                                    vfs_count,
+                                )
+                                vfs = self.nicctl_objs[host.name].create_vfs(
+                                    pf_pci, vfs_count
+                                )
+                                selected_interfaces[host.name].extend(vfs)
+                                self.register_cleanup(
+                                    self.nicctl_objs[host.name], pf_pci, "VF"
+                                )
                         except IndexError:
                             raise Exception(
                                 f"Not enough interfaces for test on host {host.name} in topology config. "
@@ -365,6 +404,15 @@ class InterfaceSetup:
             return str(pci_addr)
 
         if interface_type == "vf":
+            pf_index = max(0, index)
+            pool = self._reusable_vf_pool(host, pf_index=pf_index)
+            if pool:
+                logger.debug(
+                    "Reusing 1/%d session VFs on %s (no create/disable)",
+                    len(pool),
+                    pci_addr,
+                )
+                return pool[0]
             vfs = nicctl.create_vfs(pci_addr, 1)
             if not vfs:
                 raise Exception(
@@ -403,7 +451,43 @@ class InterfaceSetup:
         return [dpdk_interfaces[0], f"kernel:{kernel_interface}"]
 
     def register_cleanup(self, nicctl, interface, if_type):
+        # VFs are created destructively by ``nicctl.sh create_vf`` (it always
+        # zeroes ``sriov_numvfs`` before setting the new count), and the
+        # session-end ``_ensure_clean_hw_state`` hook in conftest also
+        # repopulates the pool on the next session. Per-test ``disable_vf``
+        # therefore adds no value and is the single biggest source of nightly
+        # stall risk (~2 s nicctl wall time + a fresh chance of the VFIO
+        # refcount stall on every call). We only register PF cleanups; VFs
+        # are torn down implicitly when the next ``create_vf`` runs or by
+        # the session-end hook.
+        if if_type and if_type.lower() == "vf":
+            return
         self.cleanups.append((nicctl, interface, if_type))
+
+    @staticmethod
+    def _reusable_vf_pool(host, pf_index: int) -> list:
+        """Return the session-scoped VF pool for ``pf_index`` on *host*.
+
+        ``nic_port_list`` (session fixture) populates ``host.vfs`` for the
+        primary PF and ``host.vfs_r`` for the optional redundant PF. Tests
+        whose request fits inside the corresponding pool can reuse those VFs
+        and skip the per-test ``create_vf``/``disable_vf`` round-trip — the
+        single largest source of nightly stall risk and wall-clock waste.
+
+        Returns an empty list when the pool is unavailable (custom interface,
+        crashed prior test that wiped the pool, etc.); callers must then fall
+        back to the legacy ``create_vfs`` path.
+        """
+        attr = "vfs" if pf_index == 0 else "vfs_r" if pf_index == 1 else None
+        if attr is None:
+            return []
+        pool = getattr(host, attr, None) or []
+        # Filter out any reserved devices (e.g. st2110_dev) so we never hand
+        # them to a test that expects unrestricted ownership.
+        reserved = getattr(host, "st2110_dev", None)
+        if reserved:
+            pool = [vf for vf in pool if vf != reserved]
+        return list(pool)
 
     def register_ip_cleanup(self, connection, interface_name: str, ip_address: str):
         """Register kernel interface IP for cleanup after test."""

@@ -541,6 +541,27 @@ def dma_port_list(request):
 
 @pytest.fixture(scope="session")
 def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
+    # Default session-pool size. Tests rarely need more than 6 VFs at once;
+    # we cap at the PF's ``sriov_totalvfs`` so a host that exposes only 2
+    # VFs per PF still gets a pool of 2 (instead of nicctl creating 2 and
+    # silently mismatching the requested 6, which forces every test back
+    # onto the legacy create_vf/disable_vf path).
+    DEFAULT_POOL_SIZE = 6
+
+    def _pool_size(host, pf_index: int) -> int:
+        try:
+            pci = host.network_interfaces[pf_index].pci_address.lspci
+            res = host.connection.execute_command(
+                f"cat /sys/bus/pci/devices/{pci}/sriov_totalvfs",
+                shell=True,
+                timeout=5,
+                expected_return_codes=None,
+            )
+            total = int((res.stdout or "0").strip() or 0)
+            return min(DEFAULT_POOL_SIZE, total) if total > 0 else DEFAULT_POOL_SIZE
+        except Exception:
+            return DEFAULT_POOL_SIZE
+
     for host in hosts.values():
         ensure_hugepage_access(host)
 
@@ -551,10 +572,14 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
 
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
+            nicctl.create_vfs(
+                host.network_interfaces[0].pci_address.lspci,
+                num_of_vfs=_pool_size(host, 0),
+            )
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+        logger.info(f"Host {host.name}: primary port VF pool ({len(vfs)}): {vfs}")
         ensure_pf_up(host, host.network_interfaces[0].pci_address.lspci)
 
         # Redundant port (interface_index 1) - optional, for redundant mode.
@@ -572,11 +597,16 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
                     int(host.network_interfaces[1].virtualization.get_current_vfs())
                     == 0
                 ):
-                    nicctl.create_vfs(host.network_interfaces[1].pci_address.lspci)
+                    nicctl.create_vfs(
+                        host.network_interfaces[1].pci_address.lspci,
+                        num_of_vfs=_pool_size(host, 1),
+                    )
                 vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
                 host.vfs_r = vfs_r
                 ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
-                logger.info(f"Host {host.name}: redundant port VFs: {vfs_r}")
+                logger.info(
+                    f"Host {host.name}: redundant port VF pool ({len(vfs_r)}): {vfs_r}"
+                )
             except Exception as e:
                 logger.warning(
                     f"Host {host.name}: could not setup redundant port VFs: {e}"
