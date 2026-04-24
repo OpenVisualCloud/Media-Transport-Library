@@ -9,7 +9,7 @@ import time
 from abc import ABC, abstractmethod
 
 from .config.universal_params import UNIVERSAL_PARAMS
-from .execute import kill_stale_processes, run
+from .execute import kill_stale_processes, log_fail, run
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,12 @@ class Application(ABC):
         Returns:
             Tuple of (command_string, config_dict_or_None) for backward compatibility
         """
+        # Reset params to defaults on every invocation. The application instances
+        # (e.g. the ``rxtxapp`` fixture) are session-scoped and reused across
+        # tests; without this reset, parameters set by an earlier test
+        # (rx_timing_parser, tx_no_chain, replicas, enable_ptp, framerate, …)
+        # silently leak into the next test and cause spurious failures.
+        self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
@@ -81,13 +87,63 @@ class Application(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def validate_results(self) -> bool:  # type: ignore[override]
+    def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """Framework-specific validation implemented by subclasses.
 
         Subclasses should read: self.params, self.config, self.last_output, etc.
-        Must return True/False.
+        Must return True/False. When ``fail_on_error`` is False, subclasses
+        should suppress side effects such as ``log_fail`` and simply return
+        False / raise AssertionError so the caller can decide.
         """
         raise NotImplementedError
+
+    def _fail_validation(self, msg: str, fail_on_error: bool) -> None:
+        """Uniform soft/hard failure path for ``validate_results`` subclasses.
+
+        - ``fail_on_error=True``: record a pytest failure via ``log_fail`` and
+          raise ``AssertionError`` so the test stops.
+        - ``fail_on_error=False``: log at INFO and raise ``AssertionError``
+          without recording a pytest failure. Callers (e.g. performance
+          binary-search loops) catch the exception and treat it as a soft
+          ``False`` without aborting the run.
+
+        Always raises; never returns.
+        """
+        if fail_on_error:
+            log_fail(msg)
+        else:
+            logger.info("validate_results soft-fail (fail_on_error=False): %s", msg)
+        raise AssertionError(msg)
+
+    def _resolve_capture_dst_ip(self):
+        """Return the destination IP that netsniff should filter on, or ``None``.
+
+        Subclasses override this when their config schema exposes the TX
+        destination(s). The default returns ``None``, which causes
+        ``_start_netsniff_capture`` to skip the capture with a warning rather
+        than raising.
+        """
+        return None
+
+    def _start_netsniff_capture(self, netsniff) -> None:
+        """Configure ``netsniff`` and start a bounded capture.
+
+        Generic across frameworks: the only app-specific bit is *where* the
+        destination IP comes from, which is delegated to
+        :meth:`_resolve_capture_dst_ip`. The capture window matches the
+        ``test_time`` param so capture and process lifetimes line up.
+        """
+        dst_ip = self._resolve_capture_dst_ip()
+        if not dst_ip:
+            logger.warning("No destination IP available for netsniff capture")
+            return
+        capture_time = self.params.get("test_time", 30)
+        try:
+            netsniff.update_filter(dst_ip=dst_ip)
+            netsniff.capture(capture_time=capture_time)
+            logger.info("Started netsniff-ng capture for destination IP %s", dst_ip)
+        except Exception as e:
+            logger.error("Failed to start netsniff capture: %s", e)
 
     def set_params(self, **kwargs):
         """Set parameters from user input and track which were provided."""
@@ -151,8 +207,9 @@ class Application(ABC):
         rx_app=None,
         sleep_interval: int = 4,
         tx_first: bool = True,
-        capture_cfg=None,
         netsniff=None,
+        interface_setup=None,
+        fail_on_error: bool = True,
     ) -> bool:
         """Execute a prepared command (or two for dual host).
 
@@ -165,6 +222,15 @@ class Application(ABC):
           tx_app.create_command(direction='tx', ...)
           rx_app.create_command(direction='rx', ...)
           tx_app.execute_test(build=..., tx_host=hostA, rx_host=hostB, rx_app=rx_app)
+
+        Args:
+            interface_setup: Optional InterfaceSetup helper. Forwarded to framework
+                ``prepare_execution`` so frameworks (e.g. RxTxApp) can configure
+                kernel-socket interfaces and register IPs for cleanup.
+            fail_on_error: When True (default) propagate validation failures
+                (AssertionError) to the caller. When False, swallow validation
+                failures and return ``False`` instead. Used by performance/binary
+                search tests that drive the call site based on the boolean.
         """
         is_dual = tx_host is not None and rx_host is not None
         if is_dual and not rx_app:
@@ -178,11 +244,16 @@ class Application(ABC):
 
         # Call framework-specific preparation hook
         if not is_dual:
-            self.prepare_execution(build=build, host=host)
+            self.prepare_execution(
+                build=build, host=host, interface_setup=interface_setup
+            )
         else:
-            self.prepare_execution(build=build, host=tx_host)
-            if rx_app:
-                rx_app.prepare_execution(build=build, host=rx_host)
+            self.prepare_execution(
+                build=build, host=tx_host, interface_setup=interface_setup
+            )
+            rx_app.prepare_execution(
+                build=build, host=rx_host, interface_setup=interface_setup
+            )
 
         # Adjust test_time for PTP synchronization
         effective_test_time = test_time
@@ -193,14 +264,19 @@ class Application(ABC):
                 f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
             )
 
+        wait_timeout = (effective_test_time or 0) + self.params.get(
+            "process_timeout_buffer", 90
+        )
+
         # Single-host execution
         if not is_dual:
             cmd = self.add_timeout(self.command, effective_test_time)
             logger.info(f"[single] Running {framework_name} command: {cmd}")
             proc = self.start_process(cmd, build, effective_test_time, host)
-            if netsniff and hasattr(self, "_start_netsniff_capture"):
+            if netsniff:
                 try:
-                    # Wait for PTP sync before starting capture
+                    # Wait for PTP sync before starting capture so the
+                    # capture window aligns with the steady-state stream.
                     if self.params.get("enable_ptp", False):
                         ptp_sync_time = self.params.get("ptp_sync_time", 50)
                         logger.info(
@@ -211,20 +287,24 @@ class Application(ABC):
                 except Exception as e:
                     logger.warning(f"netsniff capture setup failed: {e}")
             try:
-                proc.wait(
-                    timeout=(effective_test_time or 0)
-                    + self.params.get("process_timeout_buffer", 90)
-                )
+                proc.wait(timeout=wait_timeout)
             except Exception:
                 logger.warning(
                     f"{framework_name} process wait timed out (continuing to capture output)"
                 )
             self.last_output = self.capture_stdout(proc, framework_name)
             self.last_return_code = proc.return_code
-            return self.validate_results()
+            try:
+                return self.validate_results(fail_on_error=fail_on_error)
+            except AssertionError:
+                if fail_on_error:
+                    raise
+                logger.info(
+                    f"{framework_name} validation failed (fail_on_error=False); returning False"
+                )
+                return False
 
         # Dual-host execution (tx self, rx rx_app)
-        assert rx_app is not None
         if not rx_app.command:
             raise RuntimeError(
                 "rx_app has no prepared command (call create_command first)"
@@ -252,12 +332,9 @@ class Application(ABC):
             second_cmd, build, effective_test_time, second_host
         )
         # Wait processes
-        total_timeout = (effective_test_time or 0) + self.params.get(
-            "process_timeout_buffer", 90
-        )
         for p, label in [(first_proc, first_label), (second_proc, second_label)]:
             try:
-                p.wait(timeout=total_timeout)
+                p.wait(timeout=wait_timeout)
             except Exception:
                 logger.warning(
                     f"Process {label} wait timeout; capturing partial output"
@@ -271,8 +348,16 @@ class Application(ABC):
             self.last_output = self.capture_stdout(second_proc, second_label)
         self.last_return_code = first_proc.return_code
         rx_app.last_return_code = second_proc.return_code
-        tx_ok = self.validate_results()
-        rx_ok = rx_app.validate_results()
+        try:
+            tx_ok = self.validate_results()
+            rx_ok = rx_app.validate_results()
+        except AssertionError:
+            if fail_on_error:
+                raise
+            logger.info(
+                f"{framework_name} validation failed (fail_on_error=False); returning False"
+            )
+            return False
         return tx_ok and rx_ok
 
     def add_timeout(self, command: str, test_time: int, grace: int = None) -> str:

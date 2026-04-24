@@ -129,6 +129,7 @@ static int app_rx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   ops.port.payload_type =
       st40p ? st40p->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.interlaced = st40p ? st40p->info.interlaced : false;
+  s->expect_fps = st_frame_rate(st40p ? st40p->info.fps : ST_FPS_P59_94);
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.max_udw_buff_size = ST40P_APP_RX_MAX_UDW_SIZE;
   ops.rtp_ring_size = ST40P_APP_RX_RTP_RING_SIZE;
@@ -171,9 +172,12 @@ static int app_rx_st40p_result(struct st_app_rx_st40p_session* s) {
   if (!s->stat_frame_total_received) return -EINVAL;
 
   notce(
-      "%s(%d), %d frames received, fps %f, seq_discont %d, marker_missing %d, "
+      "%s(%d), %s, fps %f, %d frames received, seq_discont %d, marker_missing %d, "
       "seq_lost %u\n",
-      __func__, idx, s->stat_frame_total_received, framerate, s->stat_frame_seq_discont,
+      __func__, idx,
+      ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                         : "FAILED",
+      framerate, s->stat_frame_total_received, s->stat_frame_seq_discont,
       s->stat_frame_marker_missing, s->stat_seq_lost_total);
   return 0;
 }
