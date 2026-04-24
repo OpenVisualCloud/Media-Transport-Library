@@ -100,6 +100,9 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
       ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
 
   ctx->stat_drop_frame++;
+  /* relaxed atomic: written from both tasklet (late drop) and user thread
+   * (put_frame_abort), and read from any thread via st30p_tx_get_session_stats(). */
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame->rtp_timestamp;
   framebuff->stat = ST30P_TX_FRAME_DROPPED;
 
@@ -209,6 +212,7 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
+  if (ret == 0) __atomic_fetch_add(&ctx->stat_frames_sent, 1, __ATOMIC_RELAXED);
 
   /* notify app can get frame */
   tx_st30p_notify_frame_available(ctx);
@@ -358,7 +362,7 @@ static int tx_st30p_stat(void* priv) {
                          st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st30p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
@@ -559,6 +563,7 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
 
   framebuff->stat = ST30P_TX_FRAME_FREE;
   ctx->stat_drop_frame++;
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   mt_pthread_mutex_unlock(&ctx->lock);
   return 0;
@@ -792,9 +797,16 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
                          st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
-  return st30_tx_get_session_stats(ctx->transport, stats);
+  int ret = st30_tx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_sent =
+      __atomic_load_n(&ctx->stat_frames_sent, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st30p_tx_reset_session_stats(st30p_tx_handle handle) {
@@ -812,5 +824,7 @@ int st30p_tx_reset_session_stats(st30p_tx_handle handle) {
     return 0;
   }
 
+  __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   return st30_tx_reset_session_stats(ctx->transport);
 }

@@ -124,6 +124,9 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
       ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
 
   ctx->stat_drop_frame++;
+  /* relaxed atomic: written from both tasklet (late drop) and user thread
+   * (put_frame_abort), and read from any thread via st20p_tx_get_session_stats(). */
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame->rtp_timestamp;
   framebuff->stat = ST20P_TX_FRAME_DROPPED;
 
@@ -250,6 +253,7 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
+  if (ret == 0) __atomic_fetch_add(&ctx->stat_frames_sent, 1, __ATOMIC_RELAXED);
 
   if (!need_in_user) {
     /* notify app can get frame */
@@ -625,7 +629,7 @@ static int tx_st20p_stat(void* priv) {
                          st20p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st20p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
@@ -843,6 +847,7 @@ int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame) {
 
   framebuff->stat = ST20P_TX_FRAME_FREE;
   ctx->stat_drop_frame++;
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   return 0;
 }
@@ -1207,7 +1212,14 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
     return 0;
   }
 
-  return st20_tx_get_session_stats(ctx->transport, stats);
+  int ret = st20_tx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_sent =
+      __atomic_load_n(&ctx->stat_frames_sent, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
@@ -1225,6 +1237,8 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
     return 0;
   }
 
+  __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   return st20_tx_reset_session_stats(ctx->transport);
 }
 

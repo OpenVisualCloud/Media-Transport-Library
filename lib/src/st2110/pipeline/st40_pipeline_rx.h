@@ -15,6 +15,7 @@ extern "C" {
 enum st40p_rx_frame_status {
   ST40P_RX_FRAME_FREE = 0,
   ST40P_RX_FRAME_RECEIVING,
+  ST40P_RX_FRAME_PENDING,
   ST40P_RX_FRAME_READY,
   ST40P_RX_FRAME_IN_USER,
   ST40P_RX_FRAME_STATUS_MAX,
@@ -40,6 +41,8 @@ struct st40p_rx_ctx {
   struct st40p_rx_frame* framebuffs;
   struct st40p_rx_frame* inflight_frame;
   uint32_t inflight_rtp_timestamp;
+  struct st40p_rx_frame* pending_frame;
+  uint32_t pending_rtp_timestamp;
   /* session-level continuity (post-dedup) */
   bool session_last_seq_valid;
   uint16_t session_last_seq;
@@ -64,6 +67,10 @@ struct st40p_rx_ctx {
   uint32_t stat_put_frame;
   uint32_t stat_busy;
   uint32_t stat_drop_frame;
+  /* cumulative user-facing counters; reset only by reset_session_stats */
+  uint64_t stat_frames_received;
+  uint64_t stat_frames_dropped;
+  uint64_t stat_frames_corrupted;
 };
 
 struct st40p_rx_frame {

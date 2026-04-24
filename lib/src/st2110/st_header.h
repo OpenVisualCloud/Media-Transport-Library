@@ -1118,9 +1118,35 @@ struct st_rx_ancillary_session_impl {
    * and 2^15 seq_id wraparound (unlikely). */
   int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
+  /* Lightweight per-frame bitmap for cross-port late arrival detection.
+   * Ancillary frames are small (typically 1-10 pkts), so a uint64_t covers
+   * up to ST_RX_ANC_BITMAP_BITS packets per frame. Packets beyond that
+   * fall back to watermark-only filtering.
+   * `cur` tracks the current frame; `prev` is moved aside when the timestamp
+   * advances so late packets from the redundant port can still be deduped. */
+#define ST_RX_ANC_BITMAP_BITS (sizeof(uint64_t) * 8)
+  struct anc_window {
+    uint64_t bitmap;   /* 1 bit per seq offset within the frame */
+    uint32_t tmstamp;  /* timestamp this bitmap belongs to */
+    uint16_t base_seq; /* first seq_id of this frame */
+    bool valid;        /* false until first frame is established */
+  } anc_window_cur, anc_window_prev;
+
+  /* Per-port last accepted F bits and matching timestamp, used to detect
+   * cross-port F-bit divergence (SMPTE 2110-40 producer violation).
+   * last_f_bits[] uses 0xff as sentinel meaning "unset". */
+  uint8_t last_f_bits[MTL_SESSION_PORT_MAX];
+  uint32_t last_f_tmstamp[MTL_SESSION_PORT_MAX];
+  uint64_t f_mismatch_warn_last_ns; /* rate-limit warn emission */
+  /* internal-only debug counter for F-bit mismatches (not exposed in public API,
+   * surfaced only in periodic err() log). */
+  uint64_t stat_internal_field_bit_mismatch;
+  uint64_t stat_internal_field_bit_mismatch_snap;
+
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   int64_t tmstamp;
+  int64_t prev_tmstamp; /* immediately previous frame timestamp */
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st40_rx_user_stats port_user_stats;
   struct st40_rx_user_stats stat_snapshot; /* for delta computation in stat dump */

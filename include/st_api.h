@@ -268,19 +268,69 @@ struct st_rx_port_stats {
   uint64_t packets;
   /** Total number of received bytes (pre-redundancy). */
   uint64_t bytes;
-  /** Total number of received frames / memory buffers. */
+  /**
+   * Per-port frame counter. Two flavors, picked by frame size:
+   *
+   *   - Many packets per frame  (Video ST20 / ST22):
+   *       Increments when a frame is **completed by this port**, i.e. this
+   *       port delivered enough packets to satisfy completion on its own.
+   *       Sister field (video-only): `st20_rx_user_stats::frames_partial[i]`
+   *       (this port was short, but the redundant port covered the gap).
+   *
+   *   - Few packets per frame   (Audio ST30, Ancillary ST40, Metadata ST41):
+   *       Increments when a new frame's **first** packet arrives on this
+   *       port — i.e. this port "won the race" for that frame.
+   *
+   * port[i].frames is per-port, not session-wide. The two semantics above
+   * do not compose: summing across ports does not yield total frames
+   * delivered to the app. For end-to-end frame accounting use the common
+   * counters in st_rx_user_stats: stat_frames_received,
+   * stat_frames_dropped, stat_frames_corrupted.
+   */
   uint64_t frames;
-  /** Total number of incomplete frames */
-  uint64_t incomplete_frames;
   /** Total number of received packets rejected by handler. */
   uint64_t err_packets;
   /**
-   * Total number of missing packets detected on this port (pre-redundancy).
+   * Per-port count of packets missing on this port (pre-redundancy).
    * Counts actual missing packets, not gap events.
    * For video: sum of pkt_idx gaps within frames.
    * For audio/anc/fmd: sum of RTP sequence number gaps.
+   * In a redundant session, these losses are typically recovered from the
+   * other port — see stat_pkts_unrecovered for true post-redundancy loss.
    */
-  uint64_t out_of_order_packets;
+  uint64_t lost_packets;
+  /**
+   * Per-port count of packets that arrived out of order on this port.
+   *
+   * For audio (ST30), ancillary (ST40), fast-metadata (ST41): incremented
+   * when an RTP packet arrives with seq strictly less than the highest seq
+   * previously seen on this port (intra-port reorder; same-port duplicates
+   * go to duplicates_same_port instead).
+   *
+   * For video (ST20/ST22): incremented when a packet arrives with frame
+   * pkt_idx strictly less than last_pkt_idx on this port (intra-frame
+   * reorder).  Cross-frame reorders are not tracked because video has no
+   * per-port latest_seq_id.
+   *
+   * A non-zero value typically points to ECMP, QoS reorder, or LAG hashing
+   * upstream of MTL.  The library still accepts the packet if it carries
+   * unique data; this counter is purely an observability signal.
+   */
+  uint64_t reordered_packets;
+  /**
+   * Per-port count of packets whose seq matched the highest seq already
+   * accepted on this port (genuine same-port duplicate, distinct from the
+   * normal cross-port redundant copy counted by stat_pkts_redundant).
+   *
+   * Tracked for audio (ST30), ancillary (ST40), fast-metadata (ST41).
+   * Always 0 for video (ST20/ST22): the slot+bitmap completion model
+   * cannot distinguish a same-port duplicate from a normal cross-port
+   * redundant copy, so both surface as stat_pkts_redundant.
+   *
+   * A non-zero value strongly suggests a switch loop, cable fault, LAG
+   * misconfiguration, or a tcpreplay loop upstream of MTL.
+   */
+  uint64_t duplicates_same_port;
 };
 
 /**
@@ -303,6 +353,23 @@ struct st_tx_user_stats {
   uint64_t stat_recoverable_error;
   /** Total number of unrecoverable transmission errors (session needed restart) */
   uint64_t stat_unrecoverable_error;
+  /**
+   * Total frames whose final packet was committed to the wire, equivalent
+   * to the count of notify_frame_done(status=ST_FRAME_STATUS_COMPLETE)
+   * callbacks. Populated by pipeline TX session types
+   * (ST20p / ST22p / ST30p / ST40p); 0 for transport-only TX where the
+   * caller drives packet emission directly.
+   */
+  uint64_t stat_frames_sent;
+  /**
+   * Total frames the TX pipeline dropped because the application handed
+   * them over too late for their target wire time. Equivalent to the count
+   * of notify_frame_done(status=ST_FRAME_STATUS_DROPPED) callbacks.
+   * Distinct from stat_error_user_timestamp, which counts user RTP
+   * timestamp validation failures during pacing setup. Populated by
+   * pipeline TX session types only.
+   */
+  uint64_t stat_frames_dropped;
 };
 
 /**
@@ -314,16 +381,19 @@ struct st_rx_user_stats {
   /** Total number of accepted packets (post-redundancy). */
   uint64_t stat_pkts_received;
   /**
-   * Total missing packets detected pre-redundancy: sum(port[].out_of_order_packets).
+   * Session-wide total of per-port packet loss (pre-redundancy).
+   * Equals sum(port[].lost_packets) across all ports of this session.
+   * In a redundant session this counts packets missed on individual ports;
+   * losses recovered from the other port are still counted here.
    * For video: sum of pkt_idx gaps within frames.
    * For audio/anc/fmd: sum of RTP sequence number gaps.
    */
-  uint64_t stat_pkts_out_of_order;
+  uint64_t stat_lost_packets;
   /**
    * Total packets lost post-redundancy (unrecoverable by redundancy).
    * For audio/anc/fmd: number of missing packets inferred from RTP sequence gaps.
    * For video: number of missing packets in corrupted/incomplete frames.
-   * Invariant: stat_pkts_unrecovered <= stat_pkts_out_of_order.
+   * Invariant: stat_pkts_unrecovered <= stat_lost_packets.
    */
   uint64_t stat_pkts_unrecovered;
   /** Total number of packets dropped due to wrong SSRC */
@@ -332,6 +402,34 @@ struct st_rx_user_stats {
   uint64_t stat_pkts_wrong_pt_dropped;
   /** Total number of redundant packets filtered (post-redundancy duplicates). */
   uint64_t stat_pkts_redundant;
+  /**
+   * Total frames delivered to the application via the get-frame /
+   * notify-frame-available path, regardless of frame status. This is the
+   * canonical session-wide "frames received" counter — independent of
+   * port[i].frames, whose semantics differ between video and
+   * audio/anc/fmd. Populated by pipeline RX session types
+   * (ST20p / ST22p / ST30p / ST40p); 0 for transport-only RX paths that
+   * deliver RTP packets rather than frames (e.g. ST41).
+   */
+  uint64_t stat_frames_received;
+  /**
+   * Total frames the RX pipeline could not deliver because no free user
+   * slot was available (back-pressure / app not draining fast enough).
+   * The frame's pre-staged data is discarded; the application never sees
+   * a notify-frame-available for it. Populated by pipeline RX session
+   * types only.
+   */
+  uint64_t stat_frames_dropped;
+  /**
+   * Total frames delivered with status ST_FRAME_STATUS_CORRUPTED, i.e.
+   * frames whose constituent packets had unrecoverable gaps after
+   * redundancy. The frame is still handed to the application; the
+   * application should consult frame->status to decide what to do.
+   * Populated by RX session types that classify per-frame integrity
+   * (ST20p, ST40p). Always 0 for types with no per-frame corruption
+   * concept (audio ST30, ST41).
+   */
+  uint64_t stat_frames_corrupted;
 };
 
 /**

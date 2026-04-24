@@ -80,6 +80,9 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   /* not any free frame */
   if (!framebuff) {
     ctx->stat_busy++;
+    /* relaxed atomic: written from tasklet, read from any thread via
+     * st30p_rx_get_session_stats(); no ordering vs other state required. */
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -332,6 +335,7 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
 
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
+  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
   MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
   /* check if dump USDT enabled */
@@ -557,7 +561,14 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
     return 0;
   }
 
-  return st30_rx_get_session_stats(ctx->transport, stats);
+  int ret = st30_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) return ret;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_received =
+      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  return 0;
 }
 
 int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
@@ -575,6 +586,8 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
     return 0;
   }
 
+  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   return st30_rx_reset_session_stats(ctx->transport);
 }
 
