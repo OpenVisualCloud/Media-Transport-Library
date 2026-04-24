@@ -1,342 +1,203 @@
 # MTL Unit Tests
 
-> **In-process tests for the Media Transport Library that find real bugs without requiring a NIC, hugepages, root, or PTP hardware.**
-
-[![ASan](https://img.shields.io/badge/ASan-required-blue)](#quick-start)
-[![No hardware](https://img.shields.io/badge/hardware-not%20required-success)](#what-makes-this-different)
+> **Per-function unit tests for the Media Transport Library — no libmtl link, no DPDK runtime, no hardware.**
 
 ---
 
 ## What this is
 
-A `gtest` binary (`UnitTest`) that drives MTL's RX session and pipeline code paths
-**directly** — using real DPDK mbufs from a no-hugepage EAL — and asserts on
-production behaviour. Tests run on any developer laptop in a fraction of a
-second.
+A collection of tiny `gtest` binaries — one per function (or small cluster
+of related functions) — that exercise individual `static` / `static inline`
+helpers from the st2110 stack in isolation.
 
-The suite covers ST 2110-20 (video), ST 2110-30 (audio), ST 2110-40 (ancillary),
-and the ST 2110-40 pipeline. Every media follows the same per-feature layout
-under `session/<media>/` (see [Test layout](#test-layout)).
+Each module:
 
-## What makes this different
+1. has a thin **wrapper TU** (`wrap_*.c`) that `#include`s the production
+   `.c` file directly and exposes the function under test through an
+   `extern "C"` bridge with primitive-typed arguments,
+2. has a **`*_test.cpp`** that links against gtest and calls the bridge,
+3. is linked with `-ffunction-sections -fdata-sections -Wl,--gc-sections`
+   so every production function and global the bridge does not transitively
+   reach is dropped at link time.
 
-| Property | Value |
-|---|---|
-| Hardware required | **None** — no NIC, no PTP clock, no hugepages |
-| Privileges required | **None** — runs as a regular user |
-| Memory checking | **AddressSanitizer** preloaded on every run |
-| Code under test | The **production `.c` files** (not a separate test build) |
-| Determinism | **Single-threaded**, no timers, no I/O |
-| Isolation | One `mtl_init` per process; per-test ring/state reset |
+The result: a 5000-line production TU compiles into a binary of a few
+hundred KB, with no `libmtl.so` and no DPDK runtime calls — even though
+the production source `#include`s DPDK headers freely.
 
-If a test fails it's a real defect — there are no flaky network-timing tests in
-this binary.
+### Why a separate tier (vs. component tests)
+
+| | `tests/unit/` | [`tests/component/`](../component/) |
+|---|---|---|
+| Links libmtl + DPDK | no | yes |
+| Brings up EAL / hugepages | no | yes |
+| Build/relink time | sub-second | many seconds |
+| Failure points at | one function | "something in the pipeline" |
+| Good for | pure helpers, table lookups, branch coverage | session state machines, end-to-end behaviour |
+
+Use unit tests when the behaviour you want to lock in is a property of
+*one* function and can be expressed in plain values. Use component tests
+when the bug only appears after a sequence of session events.
+
+## Layout
+
+```
+tests/unit/
+├── meson.build              # central registry: every module is one entry
+├── README.md                # this file
+├── fff.h                    # vendored at configure (gitignored)
+├── common/
+│   ├── shim_mt_log.h        # turns dbg/info/err/warn into no-ops + neutralises USDT
+│   └── fff_globals.cpp      # DEFINE_FFF_GLOBALS (kept around for future fakes)
+└── <module>/
+    ├── wrap_<file>.c        # #include "../../../lib/src/.../<file>.c" + bridge
+    └── <module>_test.cpp    # gtest cases calling the bridge
+```
+
+There are **no per-subdir `meson.build` files**. To add a module, drop two
+files under `tests/unit/<name>/` and add one entry to the `unit_modules`
+dict in [`meson.build`](meson.build).
+
+## Modules at a glance
+
+| Module | Production fn(s) under test | What it pins |
+|---|---|---|
+| `tp_stat_aggregate` | `rv_tp_slot_parse_result` | running min/max aggregation invariants (currently pins two known A1 bugs) |
+| `tp_calc_avg` | `rv_tp_calculate_avg` | float widening of large int sums |
+| `detector_fps` | `rv_detector_calculate_fps` | cadence table + ±1-tick jitter tolerance + dual-delta cases (P59_94, P23_98) |
+| `detector_dimension` | `rv_detector_calculate_dimension` | progressive vs. interlaced resolution tables |
+| `detector_n_packet` | `rv_detector_calculate_n_packet` | success/mismatch branches |
+| `detector_packing` | `rv_detector_calculate_packing` | priority order: BPM > single-line > GPM |
+| `rfc4175_rtp_seq_id` | `rfc4175_rtp_seq_id` | 16-bit base/ext bit-pack, no-bleed on wrap |
+| `tai_from_frame_count` | `tai_from_frame_count`, `transmission_start_time`, `tv_rl_bps` | nextafter precision near 2^53; rate-limit feed properties (linearity, ratio-equivalence, SD-only reactive correction) |
+| `anc_pacing_time` | `tx_ancillary_pacing_time(_stamp)`, `tx_fastmetadata_pacing_time(_stamp)` | nextafter parity between ancillary and fast-metadata sessions |
+| `transmitter_burst_fail` | `video_trs_burst_fail` | hang-detection escalation state machine (off-by-one threshold, observation-window reset) |
+| `frame_payload_cross_page` | `tv_frame_payload_cross_page` | DMA page-crossing detection across IOVA-discontiguous page tables |
 
 ## Quick start
 
 ```bash
-# 1. configure (one-time)
-meson setup build_unit -Denable_unit_tests=true
+# Configure (downloads tests/unit/fff.h on first run via curl)
+meson setup build_unit -Denable_unit_tests=true -Denable_component_tests=false
 
-# 2. build
-ninja -C build_unit
+# Build + run everything
+meson test -C build_unit
 
-# 3. run
-LD_PRELOAD=/lib/x86_64-linux-gnu/libasan.so.6 \
-    ./build_unit/tests/unit/UnitTest
+# Run a single module
+meson test -C build_unit unit/detector_fps -v
+
+# Or invoke the binary directly with gtest filters
+./build_unit/tests/unit/unit_detector_fps --gtest_filter='DetectorFps.*'
 ```
 
-Filter to a single suite or test:
+> **Offline?** The configure step shells out to `curl` to fetch `fff.h`.
+> Drop a copy at `tests/unit/fff.h` before configuring and the download
+> is skipped. (FFF is not actually used by any current module — it is
+> linked as a placeholder for future fake-needing modules.)
 
-```bash
-# one suite
-./build_unit/tests/unit/UnitTest --gtest_filter='St40RxRedundancyTest.*'
-
-# one test
-./build_unit/tests/unit/UnitTest \
-    --gtest_filter='St20RxErrPacketsTest.WrongPtCountedAsErr'
-
-# everything related to err_packets across all media
-./build_unit/tests/unit/UnitTest --gtest_filter='*ErrPackets*'
-
-# list everything without running
-./build_unit/tests/unit/UnitTest --gtest_list_tests
-```
-
-> **Why `LD_PRELOAD=libasan.so`?** `libmtl.so` is built with AddressSanitizer
-> when `enable_unit_tests=true`. Preloading the runtime first prevents
-> init-order interposition issues between gtest, libstdc++, and libasan.
-
-## Test philosophy
-
-The tests are written to **find bugs**, not to mirror current behaviour:
-
-1. **Assertions describe the contract**, not the implementation. Each
-   `EXPECT`/`ASSERT` carries a `<<` message explaining which user-visible
-   property would break if the assertion did not hold.
-2. **Invariants over magic numbers.** Prefer `corrupted ≤ received` and
-   `feeds == accepted + rejected` over `EXPECT_EQ(x, 7)`.
-3. **Sanity asserts** (`EXPECT_GT(x, 0)`) accompany equality checks where the
-   equality could be trivially satisfied by both sides being zero.
-4. **A failing test means the library is wrong.** When the lib does something
-   illogical, fix the lib — never weaken the assertion. All tests in this
-   suite must pass; a red test in CI is the signal to fix the lib.
-5. **No special naming for bug-exposing tests.** Every test asserts the contract
-   the library should satisfy. We do not tag tests as "known bugs" — a red
-   test in CI is the signal, and the fix goes into the lib, not into the
-   test. No test is silently allowed to fail.
-
-## Architecture
-
-### High-level view
+## How it works
 
 ```mermaid
 flowchart LR
-    subgraph "C++ test"
-        T["*_test.cpp<br>(gtest fixtures)"]
+    subgraph "build-time TU"
+      W["wrap_*.c<br>(C, extern \"C\" bridge)"] -->|#include| P["lib/src/.../prod.c<br>(unmodified)"]
     end
-    subgraph "C harness"
-        H[("*_harness.h<br>opaque API")]
-        C["*_harness.c<br>#include &quot;production.c&quot;"]
-    end
-    subgraph "Production code"
-        P["lib/src/.../st_rx_*.c"]
-        L["libmtl.so"]
-    end
-    T -->|"ut*_feed_pkt(...)<br>ut*_stat_*()"| H
-    H --> C
-    C -->|"copies static fns<br>via #include"| P
-    C -.->|"calls into"| L
+    T["module_test.cpp<br>(gtest, primitive args)"] --> W
+    L["-Wl,--gc-sections"] -.->|"drops everything<br>not reached from bridge"| W
 ```
 
-Each harness `.c` **`#include`s the production `.c` it tests**. This makes every
-`static` function in the production unit reachable from the harness without
-patching the production source. Non-static collisions with `libmtl.so` are
-resolved by `-Wl,--allow-multiple-definition`, which the Meson recipe declares.
+Three pieces collaborate:
 
-### The C++/C split
+1. **`-include shim_mt_log.h`** is forced on every C source. The shim
+   defines the include-guards of `mt_log.h` and `mt_usdt.h` and provides
+   no-op `dbg/info/warn/err/...` and `MT_USDT_*` macros, so the production
+   `.c` compiles without trying to format log lines or fire USDT probes.
+2. **`#include "<prod.c>"` from `wrap_*.c`** brings the production code
+   into the test TU verbatim. All `static` helpers become reachable from
+   the bridge functions defined right after the include.
+3. **`-ffunction-sections -fdata-sections -Wl,--gc-sections`** tells the
+   linker to discard every function and global not transitively referenced
+   from `main()` (which gtest provides). Result: unreached helpers,
+   stat structs, and the externs they would have called against libmtl
+   are all dropped — the binary links without `libmtl.so`.
 
-Internal MTL headers use C identifiers like `new` that are reserved in C++.
-The split is:
+When this isn't enough (e.g. you need to intercept a function the bridge
+*does* reach), use `#define foo my_foo` before the production `#include`,
+or drop in an FFF fake — both `fff.h` and `DEFINE_FFF_GLOBALS` are wired
+in already.
 
-- `*_harness.c` — pure C, includes internal MTL headers, owns the session
-  struct, builds real mbufs, calls the production handler.
-- `*_harness.h` — pure C API. Exposes an **opaque** `ut_test_ctx*` and only
-  primitive types in signatures. **Each harness function is documented in
-  this header** — start there when you don't know which feeder to use.
-- `*_test.cpp` — gtest. Includes only the harness `.h`. Never sees an MTL
-  internal type.
+## How to add a module
 
-### How DPDK is initialised
+1. Pick a target function. Anything reachable from one production `.c`,
+   ideally with branches or arithmetic worth pinning. If a function is a
+   pure 2-line wrapper, prefer testing its caller instead.
+2. Create `tests/unit/<name>/wrap_<file>.c`:
+   ```c
+   #include <stdint.h>
+   #include "../../../lib/src/<path>/<file>.c"
 
-[`common/ut_common.c`](common/ut_common.c)::`ut_eal_init()` runs `rte_eal_init()`
-once per process with `--no-huge --no-shconf --no-pci --vdev=net_null0`.
+   /* Bridge: take primitive args, build the struct internally,
+    * call the static helper, return primitives. */
+   uint64_t test_<thing>(...) { ... }
+   ```
+3. Create `tests/unit/<name>/<name>_test.cpp` with gtest cases that call
+   the bridge through an `extern "C"` block.
+4. Add an entry to the `unit_modules` dict in
+   [`meson.build`](meson.build):
+   ```meson
+   '<name>' : [
+     '<name>/wrap_<file>.c',
+     '<name>/<name>_test.cpp',
+   ],
+   ```
+5. `meson compile -C build_unit && meson test -C build_unit unit/<name>`.
 
-A single shared `rte_pktmbuf_pool` backs all allocations and a small ring
-factory hands out named SP/SC rings. Test fixtures drain rings in `TearDown()`,
-so suites are mutually independent.
-
-## Test layout
-
-Tests are organised along **one axis: per-media**. Each session type has its
-own subdirectory under `session/`:
-
-- `session/st20/` — ST 2110-20 (video)
-- `session/st30/` — ST 2110-30 (audio)
-- `session/st40/` — ST 2110-40 (ancillary)
-- `pipeline/`     — pipeline layer (frame assembly above the session filter)
-
-Within each media subdirectory, tests are split into per-feature files. The
-filename maps directly to a concern:
-
-| Filename (where applicable) | What it covers |
-|------------------------------|----------------|
-| `redundancy_test.cpp`        | Cross-port dispatch, switchover, threshold bypass |
-| `header_validation_test.cpp` | RFC PT/SSRC/length/F-bit checks, `ReturnValue*` contract |
-| `stats_test.cpp`             | Per-port counters and global ↔ per-port invariants |
-| `reorder_test.cpp`           | Per-port reordered/duplicate counters |
-| `timestamp_test.cpp`         | 16-bit seq wrap, 32-bit ts wrap, backward ts |
-| `err_packets_test.cpp`       | Per-port `err_packets` accounting via `_handle_mbuf` wrapper |
-| `bitmap_test.cpp`            | Per-frame bitmap edge cases |
-| `slot_test.cpp` (ST20)       | Slot allocation/reuse, frame-gone path |
-| `marker_test.cpp` (ST40)     | RTP marker bit preservation |
-| `f_bits_test.cpp` (ST40)     | Progressive vs interlaced field bits |
-| `prev_window_test.cpp` (ST40)| Previous-timestamp acceptance window |
-
-The shared per-media gtest fixture lives in `<media>/<media>_rx_test_base.h`;
-each per-feature file derives a thin subclass so `--gtest_filter` selects only
-that feature's tests.
-
-A complete and always-current list of suites and tests is one command away:
-
-```bash
-./build_unit/tests/unit/UnitTest --gtest_list_tests
-```
+If the link fails with `undefined reference to <symbol>` it means the
+bridge transitively reaches code that calls `<symbol>` and `--gc-sections`
+could not drop it. Either narrow the bridge so the unreachable path is
+gone, or `#define <symbol>` to a stub before the production `#include`.
 
 ## Conventions
 
-### Naming
+- **Tests describe invariants, not bug IDs.** Name a test by the property
+  it locks in (`Height576UsesPalRatioNotNtscRatio`), not by the ticket
+  number.
+- **Avoid magic-number oracles.** Prefer property tests
+  (linearity, monotonicity, ratio-equivalence, branch selection) over
+  hand-computed exact answers. See `tai_from_frame_count/` for an
+  example: `tv_rl_bps` is covered by linearity + ratio-equivalence
+  + branch-coverage tests, not by a single "expected = 331_776_000" line.
+- **Keep the bridge dumb.** It should construct the production struct
+  from primitives, call the helper, return primitives. No gtest, no
+  C++ in the wrapper TU.
+- **One `EXPECT_*` per behavioural claim** — when one fails, the name
+  alone tells you which property regressed.
+- **Tests intentionally pinned to known bugs are KEEP, not BROKEN.** When
+  a test exists to fail until a fix lands, label it in a comment so the
+  next reader doesn't "fix" the test instead of the production code
+  (e.g. `tp_stat_aggregate`).
 
-| Element | Convention | Example |
-|---------|-----------|---------|
-| Suite class | `<Media>Rx<Concern>Test` | `St20RxBitmapTest`, `St40RxFBitsTest` |
-| Test name | Scenario in PascalCase, no numbers | `WrongPtCountedAsErr`, not `Test1` |
-| Harness function | `ut<media>_<verb>_<noun>` | `ut40_feed_pkt`, `ut30_stat_received` |
+## What is *not* covered here
 
-### File structure inside a `*_test.cpp`
-
-```cpp
-/* SPDX-License-Identifier: BSD-3-Clause
- * Copyright header
- *
- * File-level docblock: which production code path this file targets,
- * which invariants it asserts, and links to relevant issues.
- */
-
-#include <gtest/gtest.h>
-#include "session/<media>/<media>_rx_test_base.h"
-
-class <Suite> : public <Media>RxBaseTest {};
-
-TEST_F(<Suite>, GoodPacketAccepted) { /* ... */ }
-TEST_F(<Suite>, WrongPtRejected)    { /* ... */ }
-```
-
-### Direct vs wrapper feeders
-
-Each harness exposes two families of feeders:
-
-- `ut<media>_feed_*()` — call the per-packet handler **directly**. Use for
-  filter/state assertions; bypasses the wrapper accounting layer.
-- `ut<media>_feed_*_via_wrapper()` — call the public `_handle_mbuf` wrapper
-  the production tasklet uses. Use whenever the test asserts on
-  `port[].err_packets` or on `port[].packets` accounting.
-
-When in doubt, read the function's doc comment in the harness `.h`.
-
-### Assertion style
-
-```cpp
-/* good */
-EXPECT_EQ(err_packets(), redundant_packets())
-    << "every redundant filter rejection must explain one err_packets bump";
-
-/* avoid */
-EXPECT_EQ(err_packets(), 5);  // why 5? what does it prove?
-```
-
-## How to add a test
-
-1. **Choose the file.** Find the per-media subdirectory (`session/st20/`,
-   `session/st30/`, or `session/st40/`) and pick the per-feature file that
-   matches the concern (`stats_test.cpp`, `redundancy_test.cpp`, etc.). If no
-   existing file fits, add a new per-feature file rather than overloading an
-   existing one.
-2. **Use existing accessors** in the harness `.h`. If the stat or state you
-   need is not exposed, extend the harness rather than reaching into structs.
-3. **Pick the right feeder family** — direct for filter/state, `_via_wrapper`
-   for `err_packets` / per-port `packets` accounting.
-4. **Write the assertion as an invariant** with a `<<` failure message that
-   explains the user-visible impact.
-5. **Build and run with ASan.** The Meson recipe enables ASan automatically;
-   `LD_PRELOAD=libasan.so` is mandatory at runtime.
-6. **No magic constants** — derive expected counts from the inputs you fed.
-
-### Worked example
-
-```cpp
-TEST_F(St40RxErrPacketsTest, WrongPtCountedAsErr) {
-  /* feed one packet with the wrong RTP payload type */
-  feed_via(/*seq=*/0, /*ts=*/1000, /*marker=*/1,
-           MTL_SESSION_PORT_P, /*pt=*/77);  /* session pt is 113 */
-
-  /* contract: each rejection bumps both the per-reason counter and err_packets */
-  EXPECT_EQ(ut40_stat_wrong_pt(ctx_), 1u);
-  EXPECT_EQ(err_p(), 1u);
-  /* contract: rejected packets must NOT show up as good packets */
-  EXPECT_EQ(pkts_p(), 0u);
-}
-```
-
-## How to add a harness
-
-You need a new harness when you want to test a different production `.c`
-(e.g. a new pipeline file or a new RX session type). For most additions, an
-existing harness is enough.
-
-1. Create `tests/unit/<layer>/<suite>_harness.{h,c}` and a matching
-   `*_test.cpp`.
-2. In the harness `.c`:
-
-   ```c
-   #undef MTL_HAS_USDT
-   #include "common/ut_common.h"
-   #include "<path/to/production>.c"   /* the unit under test */
-
-   struct <suite>_ctx { /* session struct + storage */ };
-   #include "<layer>/<suite>_harness.h"
-   ```
-
-3. Initialise the session struct with the *minimum* fields the production
-   handler reads. Reuse `mt_main_impl` and `..._sessions_mgr` patterns from
-   existing harnesses.
-4. Stub only the libmtl symbols that would otherwise crash (NULL deref,
-   missing PTP clock, USDT probe semaphores). Document why above each stub.
-5. Add the new sources to `unit_sources` in
-   [`tests/unit/meson.build`](meson.build).
-6. Run with ASan; fix any leak ASan reports on test allocations.
-7. **Document every public function in the harness `.h`** — that header is the
-   contract callers see.
-
-### Stubs
-
-A stub is a non-static function with a libmtl-matching signature defined in
-the harness `.c`. Because of `-Wl,--allow-multiple-definition`, the harness
-copy wins on the link line.
-
-Stubs exist for three reasons only:
-
-| Reason | Example |
-|--------|---------|
-| Hardware path | `mt_mbuf_time_stamp()` — no NIC RX timestamp available |
-| USDT/DTrace | `MTL_HAS_USDT` is `#undef`'d, so probe semaphores are not referenced |
-| Missing global init | `mt_get_log_global_level()` — pulled unchanged from libmtl |
-
-The harness `.c` provides a real `rte_spinlock_t` inside its mock
-`*_sessions_mgr` so the libmtl stat-overlay path runs end-to-end. Avoid
-stubbing anything that would short-circuit the code path you are trying to
-test.
+- Anything that needs real DPDK mbufs, rings, or the EAL → use
+  [`tests/component/`](../component/).
+- Session-accumulated state (slot machines, bitmap reconstruction,
+  redundancy filter) → ditto.
+- TX-side pacing accuracy, real-time behaviour, multi-process semantics
+  → [`tests/validation/`](../validation/).
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `AddressSanitizer:DEADLYSIGNAL` at startup | `LD_PRELOAD=libasan.so.6` not set | Use the launch command shown above |
-| `libasan: failed to find runtime library` | Wrong libasan major (e.g. .so.5 vs .so.6) | `dpkg -L libasan6 \| grep libasan.so` to locate the right path |
-| Linker: multiple definition of `<symbol>` | New `.c` file in `unit_sources` is missing the `#undef MTL_HAS_USDT` or wrong `#include` order | Match an existing harness `.c` exactly |
-| Test passes alone, fails in suite | Shared ring or session state not drained | Add cleanup to fixture `TearDown()`; never rely on test order |
-| `EAL: cannot init memory` on second run | Stale shared-memory file under `/var/run/dpdk` | `--no-shconf --in-memory` are already set; delete `/dev/hugepages/rtemap_*` if any leaked |
-| New test green but suite total didn't grow | The `.cpp` was not added to `unit_sources` | Add to [`tests/unit/meson.build`](meson.build) |
-
-## What is *not* covered
-
-These tests target RX session and pipeline layers. They intentionally do **not**
-cover:
-
-- TX paths (builder, transmitter, pacing) — see integration tests
-- DMA copy engine (DMA is disabled in the test EAL)
-- Kernel socket / AF\_XDP backends — exercised by validation tests
-- Multi-process MTL — single-process by construction
-
-For end-to-end coverage with real NICs see [`tests/integration_tests/`](../integration_tests/)
-and [`tests/validation/`](../validation/).
+| Symptom | Cause | Fix |
+|---|---|---|
+| `fatal error: fff.h: No such file` | Configure was offline and `curl` failed | Drop `fff.h` into `tests/unit/` and `meson setup --reconfigure build_unit` |
+| `undefined reference to <symbol>` at link | Bridge transitively reaches code that calls `<symbol>`; `--gc-sections` could not drop it | Narrow the bridge, or `#define <symbol> my_stub` before the production `#include` |
+| Test passes alone, fails in suite | A static global in the production TU carries state between tests | Reset the relevant struct in the bridge or in `SetUp()` |
+| Configure re-downloads `fff.h` every time | Empty file from a failed download | `rm tests/unit/fff.h && meson setup --reconfigure build_unit` |
+| `redefinition of 'foo'` when `#define`-stubbing | The production header was included before your `#define` | Move the `#define` after `mt_main.h` (or whichever header originally declared `foo`) and before the production `#include` |
 
 ## Contributing
 
-- Run [`format-coding.sh`](../../format-coding.sh) before submitting; CI rejects
-  unformatted code.
-- New tests must pass under ASan with no leak reports on test allocations.
-- Every test must pass. A test that exposes a library bug is a valid
-  contribution — fix the lib, not the test. Do not weaken
-  the assertion to make it pass.
-- Match commit message format: `Test: <imperative description>`.
+- Run [`format-coding.sh`](../../format-coding.sh) before submitting.
+- Commit messages follow the project standard: `Test: <imperative description>`.
+- A new module should build and run in well under a second; if it
+  doesn't, the bridge is reaching too much production code.
