@@ -301,6 +301,12 @@ MTL_APP_NAMES = [
 def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     """Kill leftover MTL-related processes on the given hosts.
 
+    Uses a graceful signal ladder (SIGINT → SIGTERM → SIGKILL) so DPDK
+    applications get a chance to run ``rte_eal_cleanup()`` and release
+    their VFIO group fd. Going straight to SIGKILL leaves the kernel-side
+    VFIO refcount non-zero and causes the next ``nicctl disable_vf`` call
+    to block forever in ``vfio_unregister_group_dev``.
+
     Args:
         *hosts: One or more host objects with ``connection.execute_command``.
         names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
@@ -309,11 +315,22 @@ def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     """
     targets = names or MTL_APP_NAMES
     pattern = "|".join(f"[{n[0]}]{n[1:]}" for n in targets if n)
+    # SIGINT -> 3s; SIGTERM -> 2s; final SIGKILL.
+    cmd = (
+        f"sudo pkill -INT -f '{pattern}' 2>/dev/null; "
+        "for i in 1 2 3 4 5 6; do "
+        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
+        "done; "
+        f"sudo pkill -TERM -f '{pattern}' 2>/dev/null; "
+        "for i in 1 2 3 4; do "
+        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
+        "done; "
+        f"sudo pkill -KILL -f '{pattern}' 2>/dev/null; "
+        "true"
+    )
     for host in hosts:
         try:
-            host.connection.execute_command(
-                f"sudo pkill -9 -f '{pattern}' || true", shell=True, timeout=15
-            )
+            host.connection.execute_command(cmd, shell=True, timeout=20)
         except Exception:
             pass
 
