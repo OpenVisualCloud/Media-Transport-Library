@@ -57,27 +57,19 @@ class MtlManager:
         First attempts to gracefully stop the process if it's tracked,
         then falls back to pkill if needed.
         """
+        # Skip the slow ``process.stop()`` graceful path entirely. It calls
+        # the underlying mfd_connect process .wait() which can block on the
+        # default 60 s timeout when MtlManager doesn't exit on its own. The
+        # pkill path below is reliable and finishes in <100 ms; for an MtlManager
+        # that holds no NIC/VFIO state, SIGKILL is safe at session teardown.
         if self.mtl_manager_process and self.mtl_manager_process.running:
             try:
-                logger.info("Stopping MtlManager using process object methods...")
-                # Try graceful termination first
-                self.mtl_manager_process.stop()
-
-                # Check if the process stopped gracefully
-                if self.mtl_manager_process.running:
-                    logger.info("MtlManager still running, trying kill...")
-                    self.mtl_manager_process.kill()
-
-                # Check logs for errors
-                log_output = self.mtl_manager_process.stdout_text
-                if log_output:
-                    if "error" in log_output.lower() or "fail" in log_output.lower():
-                        logger.error(f"Errors found in MtlManager logs: {log_output}")
-
+                logger.info("Stopping MtlManager via direct kill (fast path)...")
+                self.mtl_manager_process.kill(wait=2)
                 logger.info("MtlManager stopped successfully.")
                 return
             except Exception as e:
-                logger.error(f"Error while stopping MtlManager process: {e}")
+                logger.warning(f"MtlManager direct kill failed ({e}); falling back to pkill")
 
         # Fallback to pkill if the process object is not available or the above failed
         connection = self.host.connection

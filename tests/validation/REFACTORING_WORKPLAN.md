@@ -424,6 +424,40 @@ Design notes:
     * `pytest --collect-only tests/single/xdp/` → 16 tests collected (8 legacy + 8 refactored), 0 errors. The new autouse fixture imports clean.
     * `ast.parse` clean on `media_files.py` and `tests/single/xdp/conftest.py`.
   - **Cannot validate on hardware** (no DPDK/E810 in this dev environment) — same constraint as prior triage rounds; fixes are semantic-only and minimal.
+- 2026-04-24 (test runtime optimisation — Tier A + replicas multiplier removal):
+  - **Goal**: nightly was taking 10+ h. Audit of [`mtl_engine/RxTxApp.py`](mtl_engine/RxTxApp.py) and [`conftest.py`](conftest.py) identified five overhead categories that scale with test count, all addressable without touching test files.
+  - **Background analysis** documented in [`docs/test_result_validation_analysis.md`](docs/test_result_validation_analysis.md): test PASS today is "exit 0 + `app_*_result OK` line present"; OK is an FPS-tolerance check (a *rate*). Longer runtime adds zero pass/fail signal once steady state is reached.
+  - **Change 1 — drop `test_time` multipliers in `execute_test`** (commit `e9df788c`).
+    The block that did `test_time *= 2` for 4K/8K, again for high-fps, and again by `replicas` was conflating three unrelated things into one number:
+      1. observation window (what `test_time` is meant to represent),
+      2. steady-state warm-up headroom (a small fixed cost), and
+      3. parallel session count (`replicas` run concurrently in the same RxTxApp process; longer runtime adds no coverage).
+    Replaced both single-host and multi-host paths with `max(test_time, 20)` for 4K/8K only. Removes the per-test wall-clock inflation (e.g. 4K@p60 with replicas=4 was 240 s, now 20 s). Per-test FPS-tolerance pass criterion is unchanged (still computed by the C app over actual frames).
+  - **Change 2 — `MtlManager.stop()` fast-path** ([`common/mtl_manager/mtlManager.py`](common/mtl_manager/mtlManager.py)).
+    `process.stop()` was blocking on the default 60 s wait inside `mfd_connect` whenever MtlManager didn't exit on its own. Replaced with `process.kill(wait=2)` (MtlManager holds no NIC/VFIO state; SIGKILL is safe at session teardown). pkill stays as a fallback.
+    **Eliminates a 60 s session-teardown hang.**
+  - **Change 3 — active-poll `delay_between_tests`** ([`conftest.py`](conftest.py)).
+    Was a fixed `time.sleep(test_config.delay_between_tests)` (default 3 s) to let DPDK release `/dev/vfio/<group>` after SIGTERM. Replaced with a poll: probes `fuser /dev/vfio/<group>` every 100 ms, exits as soon as all groups are idle, capped by the configured value. Typical idle is <500 ms so the wait collapses from 3 s to near-zero on every test boundary; falls back to the original sleep semantics if the probe fails or `delay_between_tests <= 0`.
+  - **Change 4 — drop session-end `_ensure_clean_hw_state`** ([`conftest.py`](conftest.py)).
+    The fixture used to run cleanup at session start *and* end. The next session's start hook does the same work, so the end pass is redundant — kept the start pass only.
+  - **Local measurement on 8 small refactored tests** (st41/dit + k_bit + payload_type, all `--collect-only`-equivalent SKIPs because `st41_long_test.txt` is missing on this dev box; the run still exercises the per-test fixture overhead end-to-end):
+
+    | Run | Wall time | Per-test overhead |
+    |---|---|---|
+    | Before | **85.8 s** (1m25.8s) | ~10.7 s |
+    | After Tier A | **25.8 s** | ~3.2 s |
+    | **Speedup** | **3.3×** on fixture-only path | |
+
+    Breakdown of the saved 60 s: ~60 s from the MtlManager stop hang, ~22 s from `delay_between_tests` polling (8 × ~2.7 s), partially offset by the ~22 s of fixture work that still has to happen.
+  - **Cumulative expected nightly impact** (combined with change 1):
+    * change 1: removes 2-4 h wall-clock from high-res / multi-replica tests.
+    * changes 2-4: remove ~60 s + 2-3 s × N tests of pure fixture overhead.
+    * Estimated 10 h → 3-5 h on a typical mixed nightly.
+  - **Tier A items intentionally deferred**:
+    * PTP fixture (session-scoped daemon + poll-for-sync) — needs careful design so the daemon survives across tests but doesn't leak; saves ~30-50 min on nightly. Will be a separate PR.
+    * Default `test_time` 15 → 5 — depends on first tightening the C-side FPS tolerance (`expect_fps_tolerance` 5 % → 1-2 %) so the shorter window keeps the same regression sensitivity. Also a separate PR.
+    * Suppress full RxTxApp stdout on success — orthogonal log-volume win, not in scope for this round.
+  - **Verification**: 8 SKIPPED tests reproduced identically in both runs; no behaviour change observed. Static checks clean on all three modified files. Real-test wall-clock validation deferred to next CI nightly (fixes are semantic-preserving).
 
 # Single Tests Refactoring Work Plan
 
