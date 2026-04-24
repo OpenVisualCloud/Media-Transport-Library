@@ -36,7 +36,7 @@ from mtl_engine.csv_report import (
     get_compliance_result,
     update_compliance_result,
 )
-from mtl_engine.execute import log_fail
+from mtl_engine.execute import kill_stale_processes, log_fail
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -77,6 +77,7 @@ class _SshPollingFilter(logging.Filter):
 
 logging.getLogger("mfd_connect.ssh").addFilter(_SshPollingFilter())
 logging.getLogger("mfd_connect.process.ss").addFilter(_SshPollingFilter())
+
 
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
@@ -739,6 +740,15 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         # Per-host media_path from topology extra_info, fall back to test_config
         media_path = get_host_media_path(host, default=default_media_path)
         src_media_file_path = os.path.join(media_path, media_file_info["filename"])
+        # Probe source existence first so missing assets become SKIPPED rather
+        # than ERROR — they are environment/data issues, not test logic bugs.
+        probe = host.connection.execute_command(
+            f"test -f {src_media_file_path}", expected_return_codes=None
+        )
+        if probe.return_code != 0:
+            pytest.skip(
+                f"Media file not present on {host}: {src_media_file_path}"
+            )
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
@@ -1066,3 +1076,49 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if "1080p" in item.nodeid and "59fps" in item.nodeid:
             item.add_marker(mark)
+
+
+# ---------------------------------------------------------------------------
+# Session-level hardware state guardrails
+# ---------------------------------------------------------------------------
+# Rationale: even with graceful stop_process + nicctl timeouts + PCI reset
+# escape hatch, a previous pytest session that died abnormally (CI runner
+# killed, kernel panic, operator Ctrl-C) can leave leftover RxTxApp processes
+# holding VFIO fds and/or stale hugepage mappings. A new session that inherits
+# that state will hang on its very first setup. This fixture wipes known
+# leftovers before any test runs and again after the last test, keeping runs
+# hermetic without killing any test on timeout.
+
+
+def _reset_host_state(host) -> None:
+    """Best-effort cleanup of MTL leftovers on a single host. Never raises."""
+    try:
+        kill_stale_processes(host)
+    except Exception as e:  # pragma: no cover — best-effort
+        logger.debug("kill_stale_processes failed: %s", e)
+    try:
+        host.connection.execute_command(
+            "sudo rm -f /dev/hugepages/rtemap_* 2>/dev/null; true",
+            shell=True,
+            timeout=10,
+            expected_return_codes=None,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.debug("hugepage cleanup failed: %s", e)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_clean_hw_state(hosts):
+    """Guarantee a clean hardware state at session start and end.
+
+    Runs before any test: kills stray RxTxApp/gtest processes that may
+    still hold /dev/vfio/<group> open from a previous aborted run, and
+    wipes stale DPDK hugepage mappings. Runs again after the last test
+    so the host is ready for the next session. Errors are logged but
+    never propagated — this fixture must not fail tests.
+    """
+    for host in hosts.values():
+        _reset_host_state(host)
+    yield
+    for host in hosts.values():
+        _reset_host_state(host)
