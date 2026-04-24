@@ -1,24 +1,32 @@
 # SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_interlace
+from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_interlace.values()),
+    [
+        yuv_files["i1080p60"],
+        yuv_files["i2160p60"],
+    ],
     indirect=["media_file"],
-    ids=list(yuv_files_interlace.keys()),
+    ids=[
+        "i1080p60",
+        "i2160p60",
+    ],
 )
 @pytest.mark.refactored
-def test_interlace_refactored(
+@pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
+def test_rss_mode_video_refactored(
     hosts,
     mtl_path,
-    media,
     setup_interfaces: InterfaceSetup,
     test_time,
+    rss_mode,
     test_config,
     prepare_ramdisk,
     media_file,
@@ -29,22 +37,23 @@ def test_interlace_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    # JPEG-XS plugin init adds 3-10s on top of MTL init.
-    test_time = max(test_time, 90)
 
     rxtxapp.create_command(
-        session_type="st22p",
-        test_mode="multicast",
+        session_type="st20p",
         nic_port_list=interfaces_list,
+        test_mode="unicast",
         width=media_file_info["width"],
         height=media_file_info["height"],
         framerate=f"p{media_file_info['fps']}",
-        codec="JPEG-XS",
-        quality="speed",
         pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
         input_file=media_file_path,
-        codec_threads=2,
-        interlaced=True,
+        rss_mode=rss_mode,
         test_time=test_time,
     )
-    rxtxapp.execute_test(build=mtl_path, test_time=test_time, host=host)
+
+    rxtxapp.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+    )

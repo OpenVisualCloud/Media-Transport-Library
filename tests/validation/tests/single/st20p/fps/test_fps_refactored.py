@@ -30,6 +30,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
         "p120",
     ],
 )
+@pytest.mark.refactored
 def test_fps_refactored(
     hosts,
     mtl_path,
@@ -38,7 +39,6 @@ def test_fps_refactored(
     test_config,
     fps,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -78,5 +78,5 @@ def test_fps_refactored(
         actual_test_time = max(test_time, 10)
 
     rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host
     )

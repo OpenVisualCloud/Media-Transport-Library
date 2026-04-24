@@ -13,6 +13,7 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
     indirect=["media_file"],
     ids=list(yuv_files_422p10le.keys()),
 )
+@pytest.mark.refactored
 def test_422p10le_refactored(
     hosts,
     mtl_path,
@@ -83,12 +84,12 @@ convert1_formats = dict(
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
@@ -120,7 +121,6 @@ def test_convert_on_rx_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
 
 
@@ -155,12 +155,12 @@ convert2_formats = dict(
     indirect=["media_file"],
     ids=["test_8K"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", convert2_formats.keys())
 def test_tx_rx_conversion_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
@@ -193,7 +193,6 @@ def test_tx_rx_conversion_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
 
 
@@ -204,6 +203,7 @@ def test_tx_rx_conversion_refactored(
     indirect=["media_file"],
     ids=["test_8K"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", pixel_formats.keys())
 def test_formats_refactored(
     hosts,
@@ -213,7 +213,6 @@ def test_formats_refactored(
     format,
     test_config,
     prepare_ramdisk,
-    pcap_capture,
     media_file,
     rxtxapp,
 ):
@@ -243,5 +242,4 @@ def test_formats_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )
