@@ -336,8 +336,16 @@ struct st_rx_port_stats {
 /**
  * A structure used to retrieve general statistics for a tx session.
  * Contains per-port statistics and additional counters for transmission events.
+ *
+ * Fields are visually grouped by which layer fills them. Callers can
+ * ignore the grouping — every field is always present and zero-
+ * initialized when the corresponding layer is inactive.
  */
 struct st_tx_user_stats {
+  /* ------------------------------------------------------------------ */
+  /*  Transport layer — filled by the TX session tasklet, all types.    */
+  /* ------------------------------------------------------------------ */
+
   struct st_tx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Per-port TX statistics */
   /** Total number of epoch mismatch events */
   uint64_t stat_epoch_drop;
@@ -353,6 +361,12 @@ struct st_tx_user_stats {
   uint64_t stat_recoverable_error;
   /** Total number of unrecoverable transmission errors (session needed restart) */
   uint64_t stat_unrecoverable_error;
+
+  /* ------------------------------------------------------------------ */
+  /*  Pipeline layer — filled by ST20p / ST22p / ST30p / ST40p only.    */
+  /*  Always 0 for transport-only TX paths.                             */
+  /* ------------------------------------------------------------------ */
+
   /**
    * Total frames whose final packet was committed to the wire, equivalent
    * to the count of notify_frame_done(status=ST_FRAME_STATUS_COMPLETE)
@@ -375,8 +389,16 @@ struct st_tx_user_stats {
 /**
  * A structure used to retrieve general statistics for a rx session.
  * Contains per-port statistics and additional counters for reception events.
+ *
+ * Fields are visually grouped by which layer fills them. Callers can
+ * ignore the grouping — every field is always present and zero-
+ * initialized when the corresponding layer is inactive.
  */
 struct st_rx_user_stats {
+  /* ------------------------------------------------------------------ */
+  /*  Transport layer — filled by the RX session tasklet, all types.    */
+  /* ------------------------------------------------------------------ */
+
   struct st_rx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Per-port RX statistics */
   /** Total number of accepted packets (post-redundancy). */
   uint64_t stat_pkts_received;
@@ -402,6 +424,12 @@ struct st_rx_user_stats {
   uint64_t stat_pkts_wrong_pt_dropped;
   /** Total number of redundant packets filtered (post-redundancy duplicates). */
   uint64_t stat_pkts_redundant;
+
+  /* ------------------------------------------------------------------ */
+  /*  Pipeline layer — filled by ST20p / ST22p / ST30p / ST40p only.    */
+  /*  Always 0 for transport-only RX paths (e.g. raw RTP, ST41).        */
+  /* ------------------------------------------------------------------ */
+
   /**
    * Total frames delivered to the application via the get-frame /
    * notify-frame-available path, regardless of frame status. This is the
