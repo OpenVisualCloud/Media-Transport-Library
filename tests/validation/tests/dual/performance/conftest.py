@@ -9,7 +9,11 @@ depends on ``nic_port_list``.
 """
 
 import pytest
-from common.host_setup import check_cpu_isolation, ensure_cpu_performance_governor
+from common.host_setup import (
+    check_cpu_isolation,
+    ensure_cpu_performance_governor,
+    ensure_turbo_boost_enabled,
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -17,4 +21,5 @@ def performance_host_setup(hosts: dict) -> None:
     """One-time host tuning for performance tests only."""
     for host in hosts.values():
         ensure_cpu_performance_governor(host)
+        ensure_turbo_boost_enabled(host)
         check_cpu_isolation(host)

@@ -47,3 +47,14 @@ runs:
           } | ssh -o StrictHostKeyChecking=no "${{ inputs.remote_host }}" \
               bash -s -- "${{ inputs.remote_mtl_path }}" "${BRANCH}"
         fi
+    - name: Upload build artifacts
+      if: ${{ always() && inputs.remote_host == '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: build-${{ github.sha }}
+        path: |
+          ./build/lib/libmtl.so
+          ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
+          ./tests/tools/RxTxApp/build/RxTxApp
+          ./ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so
+          ./tests/tools/gstreamer_tools/builddir/*.so

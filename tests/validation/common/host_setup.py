@@ -78,6 +78,41 @@ def ensure_hugepage_access(host) -> None:
         logger.warning(f"Host {host.name}: could not ensure hugepage access: {e}")
 
 
+def ensure_turbo_boost_enabled(host) -> None:
+    """Enable turbo boost if it is currently disabled."""
+    try:
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null",
+            shell=True,
+        )
+        val = (result.stdout or "").strip()
+        if val == "1":
+            host.connection.execute_command(
+                "echo 0 | sudo tee"
+                " /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null",
+                shell=True,
+            )
+            logger.info(f"Host {host.name}: turbo boost enabled (intel_pstate)")
+            return
+        if val == "0":
+            return
+
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null",
+            shell=True,
+        )
+        val = (result.stdout or "").strip()
+        if val == "0":
+            host.connection.execute_command(
+                "echo 1 | sudo tee" " /sys/devices/system/cpu/cpufreq/boost >/dev/null",
+                shell=True,
+            )
+            logger.info(f"Host {host.name}: turbo boost enabled (cpufreq)")
+            return
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not enable turbo boost: {e}")
+
+
 def ensure_cpu_performance_governor(host) -> None:
     """Set the CPU frequency scaling governor to 'performance' on all cores."""
     try:
@@ -127,6 +162,100 @@ def check_cpu_isolation(host) -> None:
         )
     except Exception as e:
         logger.warning(f"Host {host.name}: could not check CPU isolation: {e}")
+
+
+def optimize_cpu_cores_for_turbo(host, isolcpus: str | None = None) -> str | None:
+    """Offline unused CPU cores to maximize turbo frequency on active cores.
+
+    On high-core-count servers (e.g. 256 logical CPUs), all cores staying
+    in C0 limits turbo boost to the all-core frequency (~3600 MHz on GNR).
+    By offlining unused cores, the remaining cores can reach higher turbo
+    bins (e.g. 3800-3900 MHz with ~21 active cores).
+
+    Keeps CPUs 0 through max(isolcpus) online and offlines the rest.
+    Returns the original online CPU range string for later restoration,
+    or None if no changes were made.
+    """
+    try:
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/online", shell=True
+        )
+        original_online = (result.stdout or "").strip()
+
+        # Determine max CPU to keep online from isolcpus range
+        max_cpu = 20  # default fallback
+        if isolcpus:
+            for part in isolcpus.replace(",", "-").split("-"):
+                try:
+                    max_cpu = max(max_cpu, int(part))
+                except ValueError:
+                    pass
+
+        result = host.connection.execute_command("nproc --all", shell=True)
+        total_cpus = int((result.stdout or "1").strip())
+        if total_cpus <= max_cpu + 1:
+            return None  # already few enough cores
+
+        # Offline CPUs beyond the needed range
+        host.connection.execute_command(
+            f"for c in $(seq {max_cpu + 1} {total_cpus - 1}); do "
+            f"echo 0 > /sys/devices/system/cpu/cpu$c/online 2>/dev/null; done",
+            shell=True,
+        )
+        # Ensure performance governor on remaining cores
+        host.connection.execute_command(
+            f"for c in $(seq 0 {max_cpu}); do "
+            "echo performance > /sys/devices/system/cpu/cpu$c/cpufreq/"
+            "scaling_governor 2>/dev/null; done",
+            shell=True,
+        )
+
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/online", shell=True
+        )
+        new_online = (result.stdout or "").strip()
+        logger.info(
+            f"Host {host.name}: optimized turbo — "
+            f"online CPUs: {new_online} (was {original_online})"
+        )
+        return original_online
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not optimize cores for turbo: {e}")
+        return None
+
+
+def restore_cpu_cores(host, original_online: str) -> None:
+    """Bring all CPU cores back online after turbo optimization."""
+    try:
+        # Extract max CPU from original range (e.g. "0-255" -> 255)
+        max_cpu = 0
+        for part in original_online.replace(",", "-").split("-"):
+            try:
+                max_cpu = max(max_cpu, int(part))
+            except ValueError:
+                pass
+
+        host.connection.execute_command(
+            f"for c in $(seq 0 {max_cpu}); do "
+            f"echo 1 > /sys/devices/system/cpu/cpu$c/online 2>/dev/null; done",
+            shell=True,
+        )
+        # Restore performance governor on all cores
+        host.connection.execute_command(
+            f"for c in $(seq 0 {max_cpu}); do "
+            "echo performance > /sys/devices/system/cpu/cpu$c/cpufreq/"
+            "scaling_governor 2>/dev/null; done",
+            shell=True,
+        )
+        result = host.connection.execute_command(
+            "cat /sys/devices/system/cpu/online", shell=True
+        )
+        logger.info(
+            f"Host {host.name}: restored CPU cores — "
+            f"online: {(result.stdout or '').strip()}"
+        )
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not restore CPU cores: {e}")
 
 
 def ensure_pf_up(host, pf_pci: str) -> None:

@@ -23,6 +23,7 @@
 #include "rx_st20p_app.h"
 #include "rx_st22p_app.h"
 #include "rx_st30p_app.h"
+#include "rx_st40p_app.h"
 #include "tx_ancillary_app.h"
 #include "tx_fastmetadata_app.h"
 #include "tx_st20p_app.h"
@@ -205,6 +206,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->rx_st22p_session_cnt = 0;
   ctx->rx_st20p_session_cnt = 0;
   ctx->rx_st20r_session_cnt = 0;
+  ctx->rx_st40p_session_cnt = 0;
 
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
@@ -289,6 +291,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_rx_st20p_sessions_uinit(ctx);
   st_app_rx_st30p_sessions_uinit(ctx);
   st_app_rx_st20r_sessions_uinit(ctx);
+  st_app_rx_st40p_sessions_uinit(ctx);
   st22_app_rx_sessions_uinit(ctx);
 
   if (ctx->runtime_session) {
@@ -332,6 +335,7 @@ static int st_app_result(struct st_app_context* ctx) {
   result += st_app_rx_st20p_sessions_result(ctx);
   result += st_app_rx_st30p_sessions_result(ctx);
   result += st_app_rx_st20r_sessions_result(ctx);
+  result += st_app_rx_st40p_sessions_result(ctx);
   return result;
 }
 
@@ -391,6 +395,7 @@ int main(int argc, char** argv) {
       ctx->rx_st20p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_audio_session_cnt > ST_APP_MAX_RX_AUDIO_SESSIONS ||
       ctx->rx_anc_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS ||
+      ctx->rx_st40p_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS ||
       ctx->rx_fmd_session_cnt > ST_APP_MAX_RX_FMD_SESSIONS) {
     err("%s, session cnt invalid, pass the restriction\n", __func__);
     return -EINVAL;
@@ -599,6 +604,13 @@ int main(int argc, char** argv) {
   ret = st_app_rx_st30p_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_rx_st30p_sessions_init fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
+  ret = st_app_rx_st40p_sessions_init(ctx);
+  if (ret < 0) {
+    err("%s, st_app_rx_st40p_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
   }
