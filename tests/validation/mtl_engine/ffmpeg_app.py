@@ -235,11 +235,26 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
+    pix_fmt: str = "yuv422p10le",
+    keep_output: bool = False,
 ):
+    """Execute FFmpeg loopback (or FFmpeg<->RxTxApp) ST2110-20 test.
+
+    When ``keep_output=True`` the output file(s) are NOT deleted after
+    validation and the function returns ``(passed, output_files[0])`` instead
+    of ``passed``. Use this when a follow-up integrity check needs the file.
+
+    ``pix_fmt`` controls FFmpeg input/output pixel format on both sides; the
+    ``video_url`` source must already be in that pix_fmt and ``-filter:v fps=``
+    is dropped to preserve byte-exact frame parity.
+    """
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
     video_size, fps = decode_video_format_16_9(video_format)
+    # When caller pre-converted the source to a non-default pix_fmt (typical
+    # for integrity tests), skip the fps filter so frames stay byte-identical.
+    tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
     match output_format:
         case "yuv":
             ffmpeg_rx_f_flag = "-f rawvideo"
@@ -251,7 +266,7 @@ def execute_test(
             f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i k "
             f"-init_retry 20 "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
@@ -259,8 +274,8 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = (
                 f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -276,11 +291,11 @@ def execute_test(
             f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
             f"-map 1:0 {ffmpeg_rx_f_flag} {output_files[1]} -y"
@@ -288,8 +303,8 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = (
                 f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -371,14 +386,18 @@ def execute_test(
             passed = check_output_video_h264(
                 output_files[0], video_size, host, build, video_url
             )
-    # Clean up output files after validation
-    try:
-        for output_file in output_files:
-            run(f"rm -f {output_file}", host=host)
-    except Exception as e:
-        logger.info(f"Could not remove output files: {e}")
+    # Clean up output files after validation (unless caller wants to keep them
+    # for follow-up checks like integrity validation).
+    if not keep_output:
+        try:
+            for output_file in output_files:
+                run(f"rm -f {output_file}", host=host)
+        except Exception as e:
+            logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
+    if keep_output:
+        return passed, output_files[0]
     return passed
 
 
@@ -743,6 +762,33 @@ def decode_video_format_16_9(video_format: str) -> tuple:
     else:
         log_fail("Invalid video format")
         return None
+
+
+def generate_reference_file(
+    host,
+    build: str,
+    src_url: str,
+    video_size: str,
+    src_pix_fmt: str,
+    dst_pix_fmt: str,
+) -> str:
+    """Transcode a raw YUV source into a reference file in ``dst_pix_fmt``.
+
+    Used by integrity tests to obtain a byte-exact reference matching the
+    pix_fmt that the FFmpeg MTL plugin will both send and receive.
+    Returns the path of the generated reference file on ``host``.
+    """
+    test_name = sanitize_filename(get_case_id())
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    ref_file = f"{build}/tests/{test_name}_{timestamp}_ref_{dst_pix_fmt}.yuv"
+    cmd = (
+        f"{FFMPEG_EXE} -y -f rawvideo -pix_fmt {src_pix_fmt} "
+        f"-video_size {video_size} -i {src_url} "
+        f"-pix_fmt {dst_pix_fmt} -f rawvideo {ref_file}"
+    )
+    logger.info(f"Generating reference file: {ref_file}")
+    run(cmd, cwd=build, timeout=300, testcmd=False, host=host)
+    return ref_file
 
 
 def generate_rxtxapp_rx_config(
