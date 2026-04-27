@@ -17,8 +17,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <mtl/st_convert_api.h>
-
 #include "mtl_common.h"
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
@@ -122,15 +120,30 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
       break;
-    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
-                               This is workaround
-                               for Intel(R) Tiber(TM) Broadcast Suite */
+    case AV_PIX_FMT_Y210LE:
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_Y210;
       break;
     case AV_PIX_FMT_RGB24:
       ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
+      break;
+    case AV_PIX_FMT_YUV444P10LE:
+      ops_rx.transport_fmt = ST20_FMT_YUV_444_10BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
+      break;
+    case AV_PIX_FMT_GBRP10LE:
+      ops_rx.transport_fmt = ST20_FMT_RGB_10BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+      break;
+    case AV_PIX_FMT_YUV420P:
+      /* MTL-to-MTL passthrough only: YUV420CUSTOM8 receives the raw
+       * ST20_FMT_YUV_420_8BIT payload straight as planar I420 with no RFC4175
+       * conversion. The wire bytes are NOT a SMPTE ST 2110-20:2022 §6.2.5
+       * Table 3 pgroup, so this only round-trips correctly when both peers
+       * are MTL endpoints using YUV420CUSTOM8. */
+      ops_rx.transport_fmt = ST20_FMT_YUV_420_8BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_YUV420CUSTOM8;
       break;
     default:
       err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
@@ -263,17 +276,6 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
     st20p_rx_put_frame(s->rx_handle, frame);
     return ret;
-  }
-
-  /* This format is not supported by MTL plugin.
-     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
-  if (s->pixel_format == AV_PIX_FMT_Y210LE) {
-    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
-                                       (uint16_t*)pkt->data, s->width, s->height);
-    if (ret != 0) {
-      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
-      return ret;
-    }
   }
 
   /* todo: zero copy with external frame mode */
