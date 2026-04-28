@@ -2026,3 +2026,107 @@ TEST(St20p, redundant_stats) {
   delete test_ctx_tx;
   delete test_ctx_rx;
 }
+
+/*
+ * Concurrency reproducer: get/reset_session_stats racing with _free().
+ *
+ * Pre-fix: handle has no refcount/destroying flag, so a reader thread that
+ * has already entered st20p_rx_get_session_stats can be left holding a
+ * pointer to a session struct (and an embedded spinlock) that the main
+ * thread freed via st20p_rx_free(). The crash observed in the field was:
+ *   rte_spinlock_unlock+0x16 <- st20_rx_get_session_stats+0x318
+ *   <- st20p_rx_get_session_stats+0x2d3
+ * (lock acquired on freed memory; unlock dereferenced reused/unmapped page.)
+ *
+ * Under ASAN this UAF aborts the test process deterministically once the
+ * race window is hit. The test does many create/free iterations with several
+ * persistent reader threads to widen the window.
+ *
+ * Post-fix (handle refcount): readers either complete safely or get -EIO
+ * from the API and stop touching the handle; the test passes.
+ */
+static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads = 8,
+                                                int iterations = 100) {
+  auto ctx = st_test_ctx();
+  auto m_handle = ctx->handle;
+  struct st20p_rx_ops ops;
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 2;
+  test_ctx->fb_idx = 0;
+  st20p_rx_ops_init(test_ctx, &ops);
+
+  std::atomic<st20p_rx_handle> live{nullptr};
+  std::atomic<bool> stop{false};
+  std::atomic<uint64_t> calls{0};
+
+  /* Reader caches the handle locally and runs a short burst of API calls
+   * without re-checking `live` between them. This is what dramatically
+   * widens the UAF window: by the time a burst's later calls execute, the
+   * main thread may already have run st20p_rx_free() on that very pointer.
+   * A burst length of 16 reliably reproduced the field crash under ASAN
+   * pre-fix on this machine. */
+  auto reader = [&]() {
+    struct st20_rx_user_stats stats;
+    while (!stop.load(std::memory_order_acquire)) {
+      auto h = live.load(std::memory_order_acquire);
+      if (!h) {
+        std::this_thread::yield();
+        continue;
+      }
+      for (int i = 0; i < 16; i++) {
+        int ret = reset ? st20p_rx_reset_session_stats(h)
+                        : st20p_rx_get_session_stats(h, &stats);
+        calls.fetch_add(1, std::memory_order_relaxed);
+        if (ret < 0) {
+          /* Session is being torn down; release our cached handle so we
+           * don't keep racing on the same iteration. */
+          live.compare_exchange_strong(h, nullptr);
+          break;
+        }
+      }
+    }
+  };
+
+  std::vector<std::thread> threads;
+  threads.reserve(reader_threads);
+  for (int i = 0; i < reader_threads; i++) threads.emplace_back(reader);
+
+  for (int it = 0; it < iterations; it++) {
+    auto handle = st20p_rx_create(m_handle, &ops);
+    ASSERT_TRUE(handle != NULL) << "iter " << it;
+    live.store(handle, std::memory_order_release);
+
+    /* Let readers spin on the live handle. 500us is enough for several
+     * bursts to start across all reader threads but short enough to keep
+     * the test runtime reasonable. */
+    std::this_thread::sleep_for(std::chrono::microseconds(500));
+
+    /* Race window: clear `live` first so future loads stop using the
+     * handle, but in-flight readers (loaded h before this store) can still
+     * be mid-burst when _free() runs. That is exactly the UAF the field
+     * crash hit. */
+    live.store(nullptr, std::memory_order_release);
+    int ret = st20p_rx_free(handle);
+    EXPECT_GE(ret, 0) << "iter " << it;
+  }
+
+  stop.store(true, std::memory_order_release);
+  for (auto& t : threads) t.join();
+
+  info("%s, total %s calls %" PRIu64 " over %d iters / %d threads\n", __func__,
+       reset ? "reset_stats" : "get_stats", calls.load(), iterations, reader_threads);
+
+  delete test_ctx;
+}
+
+TEST(St20p, rx_get_stats_concurrent_free_no_uaf) {
+  st20p_rx_stats_concurrent_free_test(false);
+}
+
+TEST(St20p, rx_reset_stats_concurrent_free_no_uaf) {
+  st20p_rx_stats_concurrent_free_test(true);
+}
