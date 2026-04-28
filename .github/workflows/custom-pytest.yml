@@ -20,6 +20,16 @@ on:
         required: true
         type: string
         default: tests
+      force_install_dpdk:
+        description: 'Force DPDK rebuild/install on bare-metal runners'
+        required: false
+        type: boolean
+        default: false
+      force_install_ice:
+        description: 'Force ICE driver rebuild/install on bare-metal runners'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,6 +48,9 @@ jobs:
           ref: ${{ github.ref }}
       - name: Build artifacts
         uses: ./.github/actions/build
+        with:
+          force_install_dpdk: ${{ inputs.force_install_dpdk == true && 'true' || 'false' }}
+          force_install_ice: ${{ inputs.force_install_ice == true && 'true' || 'false' }}
   run-pytest:
     needs: build-artifacts
     runs-on: "${{ inputs.nic }}"

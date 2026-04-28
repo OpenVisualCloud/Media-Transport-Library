@@ -28,6 +28,16 @@ on:
         required: false
         type: string
         default: '120'
+      force_install_dpdk:
+        description: 'Force DPDK rebuild/install on bare-metal runners'
+        required: false
+        type: boolean
+        default: false
+      force_install_ice:
+        description: 'Force ICE driver rebuild/install on bare-metal runners'
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: '0 22 * * *'
 
@@ -61,6 +71,8 @@ jobs:
           remote_host: '${{ secrets.RUNNER_USERNAME }}@${{ secrets.PERF_CLIENT_IP }}'
           remote_mtl_path: '${{ secrets.PERF_CLIENT_MTL_PATH }}'
           remote_branch: '${{ inputs.branch || github.ref_name }}'
+          force_install_dpdk: ${{ inputs.force_install_dpdk == true && 'true' || 'false' }}
+          force_install_ice: ${{ inputs.force_install_ice == true && 'true' || 'false' }}
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |

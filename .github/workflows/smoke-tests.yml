@@ -1,6 +1,17 @@
 name: smoke-tests-bare-metal
 on:
   workflow_dispatch:
+    inputs:
+      force_install_dpdk:
+        type: boolean
+        default: false
+        required: false
+        description: 'Force DPDK rebuild/install on bare-metal runners'
+      force_install_ice:
+        type: boolean
+        default: false
+        required: false
+        description: 'Force ICE driver rebuild/install on bare-metal runners'
   push:
     branches:
       - main
@@ -18,6 +29,8 @@ jobs:
       pull-requests: read
     outputs:
       changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
+      dpdk_patches: ${{ steps.filter.outputs.dpdk_patches == 'true' }}
+      ice_patches: ${{ steps.filter.outputs.ice_patches == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -40,6 +53,9 @@ jobs:
           ref: ${{ github.ref }}
       - name: Build artifacts
         uses: ./.github/actions/build
+        with:
+          force_install_dpdk: ${{ (inputs.force_install_dpdk || needs.smoke-check-for-changes.outputs.dpdk_patches == 'true') && 'true' || 'false' }}
+          force_install_ice: ${{ (inputs.force_install_ice || needs.smoke-check-for-changes.outputs.ice_patches == 'true') && 'true' || 'false' }}
   run-smoke-tests:
     needs:
       - smoke-check-for-changes

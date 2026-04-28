@@ -2,6 +2,17 @@ name: nightly-pytest
 on:
   # allow manually trigger
   workflow_dispatch:
+    inputs:
+      force_install_dpdk:
+        type: boolean
+        default: false
+        required: false
+        description: 'Force DPDK rebuild/install on bare-metal runners'
+      force_install_ice:
+        type: boolean
+        default: false
+        required: false
+        description: 'Force ICE driver rebuild/install on bare-metal runners'
   schedule:
   - cron: '0 20 * * *' # Every day at 8 PM UTC
 permissions:
@@ -20,6 +31,9 @@ jobs:
           ref: ${{ github.ref }}
       - name: Build artifacts
         uses: ./.github/actions/build
+        with:
+          force_install_dpdk: ${{ inputs.force_install_dpdk == true && 'true' || 'false' }}
+          force_install_ice: ${{ inputs.force_install_ice == true && 'true' || 'false' }}
   run-pytest:
     needs: build-artifacts
     strategy:
