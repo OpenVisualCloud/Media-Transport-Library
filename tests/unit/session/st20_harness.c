@@ -23,12 +23,19 @@
 /* ── geometry constants ───────────────────────────────────────────────── */
 
 #define UT20_WIDTH 16
-#define UT20_HEIGHT 2
-#define UT20_LINESIZE 40   /* 16/2 * 5 */
-#define UT20_FRAME_SIZE 80 /* UT20_LINESIZE * UT20_HEIGHT */
+#define UT20_HEIGHT 2    /* default packets-per-frame */
+#define UT20_LINESIZE 40 /* 16/2 * 5 */
 #define UT20_PAYLOAD_PER_PKT UT20_LINESIZE
-#define UT20_PKTS_PER_FRAME 2
-#define UT20_BITMAP_SIZE 1 /* 8 bits >= UT20_PKTS_PER_FRAME */
+#define UT20_PKTS_PER_FRAME 2 /* default; kept as a back-compat constant */
+#define UT20_FRAME_SIZE 80    /* UT20_LINESIZE * UT20_HEIGHT */
+#define UT20_BITMAP_SIZE 1    /* 8 bits >= UT20_PKTS_PER_FRAME */
+
+/* Upper bounds — used to size in-context storage at compile time. The
+ * actual height/frame_size/bitmap_size used by a given context are set in
+ * ut20_ctx_create_geom() and live in `s->ops.height` / `s->st20_*`. */
+#define UT20_MAX_HEIGHT 32 /* max pkts/frame */
+#define UT20_MAX_FRAME_SIZE (UT20_LINESIZE * UT20_MAX_HEIGHT)
+#define UT20_MAX_BITMAP_SIZE ((UT20_MAX_HEIGHT + 7) / 8)
 
 #define UT20_FRAME_COUNT 2
 
@@ -40,8 +47,8 @@ struct ut20_test_ctx {
   struct st_rx_video_session_impl session;
 
   struct st_frame_trans frames[UT20_FRAME_COUNT];
-  uint8_t frame_storage[UT20_FRAME_COUNT][UT20_FRAME_SIZE];
-  uint8_t bitmaps[ST_VIDEO_RX_REC_NUM_OFO][UT20_BITMAP_SIZE];
+  uint8_t frame_storage[UT20_FRAME_COUNT][UT20_MAX_FRAME_SIZE];
+  uint8_t bitmaps[ST_VIDEO_RX_REC_NUM_OFO][UT20_MAX_BITMAP_SIZE];
 };
 
 #include "session/st20_harness.h"
@@ -81,8 +88,17 @@ int ut20_init(void) {
 /* ── context create / destroy ─────────────────────────────────────────── */
 
 ut20_test_ctx* ut20_ctx_create(int num_port) {
+  return ut20_ctx_create_geom(num_port, UT20_HEIGHT);
+}
+
+ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
+  if (pkts_per_frame < 1 || pkts_per_frame > UT20_MAX_HEIGHT) return NULL;
   ut20_test_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
+
+  const int height = pkts_per_frame;
+  const size_t frame_size = (size_t)UT20_LINESIZE * (size_t)height;
+  const size_t bitmap_size = (size_t)((height + 7) / 8);
 
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
@@ -114,7 +130,7 @@ ut20_test_ctx* ut20_ctx_create(int num_port) {
   s->ops.type = ST20_TYPE_FRAME_LEVEL;
   s->ops.num_port = num_port;
   s->ops.width = UT20_WIDTH;
-  s->ops.height = UT20_HEIGHT;
+  s->ops.height = (uint32_t)height;
   s->ops.fps = ST_FPS_P30;
   s->ops.fmt = ST20_FMT_YUV_422_10BIT;
   s->ops.interlaced = false;
@@ -132,9 +148,9 @@ ut20_test_ctx* ut20_ctx_create(int num_port) {
 
   s->st20_linesize = UT20_LINESIZE;
   s->st20_bytes_in_line = UT20_LINESIZE;
-  s->st20_frame_size = UT20_FRAME_SIZE;
-  s->st20_fb_size = UT20_FRAME_SIZE;
-  s->st20_frame_bitmap_size = UT20_BITMAP_SIZE;
+  s->st20_frame_size = frame_size;
+  s->st20_fb_size = frame_size;
+  s->st20_frame_bitmap_size = bitmap_size;
   s->st20_uframe_size = 0;
 
   s->st20_frames = ctx->frames;
@@ -238,7 +254,7 @@ int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_n
 
 int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                         enum mtl_session_port port) {
-  uint32_t seq = ts * UT20_PKTS_PER_FRAME + (uint32_t)pkt_idx;
+  uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
   return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
@@ -252,7 +268,8 @@ int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint3
 }
 
 void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port port) {
-  for (int i = 0; i < UT20_PKTS_PER_FRAME; i++) {
+  const int n = (int)ctx->session.ops.height;
+  for (int i = 0; i < n; i++) {
     ut20_feed_frame_pkt(ctx, i, ts, port);
   }
 }
@@ -294,7 +311,7 @@ int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
 
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port) {
-  uint32_t seq = ts * UT20_PKTS_PER_FRAME + (uint32_t)pkt_idx;
+  uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
   return ut20_feed_pkt_via_wrapper(ctx, seq, ts, ln, lo, ll, port,
@@ -353,6 +370,10 @@ int ut20_total_frame_pkts(void) {
   return UT20_PKTS_PER_FRAME;
 }
 
+int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
+  return (int)ctx->session.ops.height;
+}
+
 uint64_t ut20_stat_wrong_pt(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_wrong_pt_dropped;
 }
@@ -380,4 +401,16 @@ uint64_t ut20_stat_port_err_packets(const ut20_test_ctx* ctx,
 
 uint64_t ut20_stat_port_packets(const ut20_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].packets;
+}
+
+uint64_t ut20_stat_port_frames(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].frames;
+}
+
+uint64_t ut20_stat_frames_partial(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.frames_partial[port];
+}
+
+uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
 }

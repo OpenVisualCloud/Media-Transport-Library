@@ -403,3 +403,79 @@ TEST_F(St40RxRedundancyTest, HighPerLegLossRedundancySaves) {
   /* The merged stream must be intact — every seq delivered once. */
   EXPECT_EQ(unrecovered(), 0u) << "complementary per-port loss must be fully recovered";
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Per-port frame accounting (ancillary).
+ *
+ * ST40 credits exactly one port per frame: the port whose accepted packet
+ * first observed the new RTP timestamp (see `rx_ancillary_session_handle_pkt`
+ * in `lib/src/st2110/st_rx_ancillary_session.c`). Subsequent packets on the
+ * same timestamp — same or other port — never bump `port[i].frames`.
+ * Same-timestamp redundant copies on the other port are filtered before the
+ * credit branch.
+ *
+ * Invariant per session: port[P].frames + port[R].frames == frames_received
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* All frames arrive on P; R is silent. P is credited once per frame. */
+TEST_F(St40RxRedundancyTest, PerPortFramesPrimaryOnly) {
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+  feed(1, 2000, true, MTL_SESSION_PORT_P);
+  feed(2, 3000, true, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 3);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 3u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u);
+}
+
+/* All frames arrive on R; P is silent. R is credited once per frame. */
+TEST_F(St40RxRedundancyTest, PerPortFramesSecondaryOnly) {
+  feed(0, 1000, true, MTL_SESSION_PORT_R);
+  feed(1, 2000, true, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(frames_received(), 2);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 2u);
+}
+
+/* Frame N from P, then R wins frame N+1 by sending its first packet first
+ * (with strictly newer ts). P keeps the credit for frame N; R gets credit
+ * for frame N+1. */
+TEST_F(St40RxRedundancyTest, PerPortFramesAlternatingWinner) {
+  /* frame 1: P */
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+  /* frame 2: R sends its (only) packet first with new ts → wins credit */
+  feed(1, 2000, true, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(frames_received(), 2);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 1u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P) + port_frames(MTL_SESSION_PORT_R),
+            static_cast<uint64_t>(frames_received()))
+      << "ANC invariant: per-port frames sum equals frames_received";
+}
+
+/* Same timestamp repeated on the same port. Only the first packet of the
+ * new ts may bump the frame counter; later same-ts packets must not. */
+TEST_F(St40RxRedundancyTest, PerPortFramesNoCreditOnSameTimestamp) {
+  feed(0, 1000, false, MTL_SESSION_PORT_P);
+  feed(1, 1000, false, MTL_SESSION_PORT_P);
+  feed(2, 1000, true, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 1) << "single ts == single frame";
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u);
+}
+
+/* Same-timestamp redundant copy on R after P's first packet must NOT credit
+ * R: R's packet is filtered as redundant by the timestamp-equality guard
+ * before reaching the credit branch. */
+TEST_F(St40RxRedundancyTest, PerPortFramesSameTsOnSecondaryFiltered) {
+  feed(0, 1000, true, MTL_SESSION_PORT_P);
+  int rc = feed(0, 1000, true, MTL_SESSION_PORT_R);
+
+  EXPECT_LT(rc, 0) << "same ts on R is filtered (redundant)";
+  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u);
+}

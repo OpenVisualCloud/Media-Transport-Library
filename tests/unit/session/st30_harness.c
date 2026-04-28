@@ -278,6 +278,10 @@ uint64_t ut30_stat_port_pkts(const ut30_test_ctx* ctx, enum mtl_session_port por
   return ctx->session.port_user_stats.common.port[port].packets;
 }
 
+uint64_t ut30_stat_port_frames(const ut30_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port].frames;
+}
+
 uint64_t ut30_stat_port_bytes(const ut30_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].bytes;
 }

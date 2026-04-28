@@ -45,6 +45,8 @@ unit_sources = [
   'session/st20/err_packets_test.cpp',
   'pipeline/st40p_harness.c',
   'pipeline/st40p_test.cpp',
+  'pipeline/st20p_harness.c',
+  'pipeline/st20p_test.cpp',
   'main.cpp',
 ]
 

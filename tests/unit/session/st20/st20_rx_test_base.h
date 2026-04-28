@@ -52,6 +52,15 @@ class St20RxBaseTest : public ::testing::Test {
   uint64_t port_pkts(enum mtl_session_port p) {
     return ut20_stat_port_packets(ctx_, p);
   }
+  uint64_t port_frames(enum mtl_session_port p) {
+    return ut20_stat_port_frames(ctx_, p);
+  }
+  uint64_t frames_partial(enum mtl_session_port p) {
+    return ut20_stat_frames_partial(ctx_, p);
+  }
+  uint64_t pkts_unrecovered() {
+    return ut20_stat_pkts_unrecovered(ctx_);
+  }
   uint64_t no_slot() {
     return ut20_stat_no_slot(ctx_);
   }

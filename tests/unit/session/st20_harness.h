@@ -39,6 +39,18 @@ int ut20_init(void);
  * Caller owns the returned pointer and must free it with ut20_ctx_destroy().
  * Returns NULL on allocation failure. */
 ut20_test_ctx* ut20_ctx_create(int num_port);
+
+/* Same as ut20_ctx_create() but lets the test pick how many packets make
+ * up one full frame. The harness keeps width=16 fixed and varies height to
+ * yield `pkts_per_frame` packets/frame (one packet covers exactly one row).
+ * Valid range: 1..32. Returns NULL on out-of-range or allocation failure.
+ *
+ * Default `ut20_ctx_create(num_port)` == `ut20_ctx_create_geom(num_port, 2)`.
+ * Use a larger value when the test needs to exercise gap detection,
+ * intra-frame reorder, or any code path conditioned on more than 2 packets
+ * per frame (e.g. `pkt_idx > slot->last_pkt_idx + 1`). */
+ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame);
+
 void ut20_ctx_destroy(ut20_test_ctx* ctx);
 
 /* Build and feed one RFC 4175 video packet directly to the per-packet
@@ -100,6 +112,23 @@ uint64_t ut20_stat_port_packets(const ut20_test_ctx* ctx, enum mtl_session_port 
 uint64_t ut20_stat_port_reordered(const ut20_test_ctx* ctx, enum mtl_session_port port);
 uint64_t ut20_stat_port_lost(const ut20_test_ctx* ctx, enum mtl_session_port port);
 
+/* Per-port frame accounting (frame-mode ST20 only).
+ *
+ *   port[i].frames        — incremented per-port iff that port delivered every
+ *                           packet of the completed frame on its own (i.e.
+ *                           `pkts_recv_per_port[i] >= pkts_received`). With
+ *                           cross-port reconstruction NEITHER port is
+ *                           credited; the session-wide `stat_frames_received`
+ *                           still bumps. See `rv_frame_notify` in
+ *                           `lib/src/st2110/st_rx_video_session.c`.
+ *   frames_partial[i]     — incremented per-port iff the completed frame
+ *                           needed packets from the OTHER port to fill in.
+ *                           Together with `port[i].frames` it sums to
+ *                           `stat_frames_received` per redundant session.
+ */
+uint64_t ut20_stat_port_frames(const ut20_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut20_stat_frames_partial(const ut20_test_ctx* ctx, enum mtl_session_port port);
+
 /* Session-wide counters. */
 uint64_t ut20_stat_received(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_redundant(const ut20_test_ctx* ctx);
@@ -107,6 +136,7 @@ uint64_t ut20_stat_lost_pkts(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx);
 
 /* Number of frames the production handler has marked completed/delivered
  * since session reset. Returns the live value of `stat_frames_received`. */
@@ -123,6 +153,10 @@ uint64_t ut20_stat_wrong_len(const ut20_test_ctx* ctx);
  * in the harness's synthetic 16x2 YUV422-10bit configuration. Tests use it
  * to derive expected counts without hard-coding the value. */
 int ut20_total_frame_pkts(void);
+
+/* Live geometry: number of packets per frame for THIS context. Returns
+ * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
+int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
 
 #ifdef __cplusplus
 }

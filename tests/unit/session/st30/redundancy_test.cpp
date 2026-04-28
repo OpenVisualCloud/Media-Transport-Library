@@ -144,3 +144,73 @@ TEST_F(St30RxRedundancyTest, InterleavedPortsIncreasingTs) {
   EXPECT_EQ(redundant(), 0u);
   EXPECT_EQ(received(), 6u);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Per-port frame accounting (audio).
+ *
+ * ST30 credits exactly one port per completed frame: the port whose first
+ * accepted packet of the new RTP timestamp allocated the frame buffer (see
+ * `rx_audio_session_handle_frame_pkt` in
+ * `lib/src/st2110/st_rx_audio_session.c`). Subsequent packets of the same
+ * frame — whether on the same port or the other — never bump
+ * `port[i].frames`. Redundant packets filtered by the timestamp check do
+ * not even reach the credit branch.
+ *
+ * Invariant per session: port[P].frames + port[R].frames == frames_received
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* P delivers all frames; R is silent. P is credited once per frame. */
+TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryOnly) {
+  feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
+  feed_burst(ppf(), ppf(), 2000, MTL_SESSION_PORT_P);
+  feed_burst(2 * ppf(), ppf(), 3000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_done(), 3);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 3u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u);
+}
+
+/* All frames originate on R; P is silent. R is credited once per frame. */
+TEST_F(St30RxRedundancyTest, PerPortFramesSecondaryOnly) {
+  feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_R);
+  feed_burst(ppf(), ppf(), 2000, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(frames_done(), 2);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 2u);
+}
+
+/* P delivers a full frame, R delivers the same frame's pkts after. R's pkts
+ * have stale timestamps and are filtered by the timestamp guard before the
+ * frame-credit branch — R must NOT be credited. */
+TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryFirstSecondaryFiltered) {
+  feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
+  feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_R); /* all stale → redundant */
+
+  EXPECT_EQ(frames_done(), 1);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u)
+      << "R's pkts were filtered before reaching the credit branch";
+  EXPECT_EQ(redundant(), static_cast<uint64_t>(ppf()));
+}
+
+/* Frame N arrives on P; the first packet of frame N+1 arrives on R first
+ * (with a strictly newer ts). R wins the credit for frame N+1; P keeps the
+ * credit for frame N. */
+TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
+  /* frame 1: P starts and finishes */
+  feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
+  /* frame 2: R sends the first pkt (new ts) — wins the credit */
+  feed(ppf(), 2000, MTL_SESSION_PORT_R);
+  /* finish frame 2 from R (or P, same outcome — credit already assigned) */
+  for (int i = 1; i < ppf(); i++) {
+    feed(ppf() + i, 2000 + i, MTL_SESSION_PORT_R);
+  }
+
+  EXPECT_EQ(frames_done(), 2);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u) << "frame 1";
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 1u) << "frame 2";
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P) + port_frames(MTL_SESSION_PORT_R),
+            static_cast<uint64_t>(frames_done()))
+      << "audio invariant: per-port frames sum equals frames_received";
+}
