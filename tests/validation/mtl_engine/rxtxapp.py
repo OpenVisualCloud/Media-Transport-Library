@@ -859,7 +859,7 @@ class RxTxApp(Application):
                     session["input_format"] = pixel_format
                     session["st20p_url"] = p("input_file")
                 else:
-                    session["output_format"] = pixel_format
+                    session["output_format"] = p("output_pixel_format") or pixel_format
                     session["measure_latency"] = p("measure_latency")
                     session["st20p_url"] = p("output_file")
                 return session
@@ -883,7 +883,7 @@ class RxTxApp(Application):
                     session["input_format"] = pixel_format
                     session["st22p_url"] = p("input_file")
                 else:
-                    session["output_format"] = pixel_format
+                    session["output_format"] = p("output_pixel_format") or pixel_format
                     session["display"] = p("display")
                     session["measure_latency"] = p("measure_latency")
                     session["st22p_url"] = p("output_file")

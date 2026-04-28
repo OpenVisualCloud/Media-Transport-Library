@@ -1,74 +1,74 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
+from pathlib import Path
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_422p10le
+from mtl_engine.execute import LOG_FOLDER
+from mtl_engine.media_files import audio_files
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422p10le["Penguin_1080p"]],
+    [
+        audio_files["PCM8"],
+        audio_files["PCM16"],
+        audio_files["PCM24"],
+    ],
     indirect=["media_file"],
-    ids=["Penguin_1080p"],
+    ids=[
+        "PCM8",
+        "PCM16",
+        "PCM24",
+    ],
 )
 @pytest.mark.refactored
-@pytest.mark.parametrize("quality", ["quality", "speed"])
-@pytest.mark.nightly
-def test_quality_refactored(
+def test_multicast_refactored(
     hosts,
     mtl_path,
-    media,
     setup_interfaces: InterfaceSetup,
     test_time,
-    quality,
     test_config,
-    pcap_capture,
     media_file,
+    pcap_capture,
     application,
 ):
-    """Refactored test for quality.
+    """Refactored test for multicast.
 
     :param hosts: Mapping of host objects from the topology configuration.
     :param mtl_path: Path to the MTL build directory on the remote host.
-    :param media: Path to the media files directory on the remote host.
     :param setup_interfaces: Interface setup helper for NIC / VF configuration.
     :param test_time: Duration to run the streaming pipeline, in seconds.
-    :param quality: Parametrized JPEG-XS encoder quality (``quality`` or ``speed``).
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    # JPEG-XS plugin init adds 3-10s on top of MTL init.
-    test_time = max(test_time, 90)
 
-    # Note: kahawai.json handling should be done via remote host connection if needed
-    # For now, assume it's already available on the remote host or not required
+    # Ensure the output directory exists.
+    log_dir = Path.cwd() / LOG_FOLDER / "latest"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_file_url = str(log_dir / "out.wav")
+
     application.create_command(
-        session_type="st22p",
-        test_mode="multicast",
+        session_type="st30p",
         nic_port_list=interfaces_list,
-        width=media_file_info["width"],
-        height=media_file_info["height"],
-        framerate=f"p{media_file_info['fps']}",
-        codec="JPEG-XS",
-        quality=quality,
-        pixel_format=media_file_info["file_format"],
+        test_mode="multicast",
+        audio_format=media_file_info["format"],
+        audio_channels=["U02"],
+        audio_sampling="48kHz",
+        audio_ptime="1",
         input_file=media_file_path,
-        codec_threads=2,
+        output_file=out_file_url,
         test_time=test_time,
     )
-    result = application.execute_test(
+
+    application.execute_test(
         build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
     )
-    # Enforce result to avoid silent pass when validation fails
-    assert (
-        result
-    ), "Refactored st22p quality test failed validation (TX/RX outputs or return code)."

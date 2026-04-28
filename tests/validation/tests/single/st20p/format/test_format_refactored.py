@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 import pytest
 from common.nicctl import InterfaceSetup
@@ -13,25 +13,35 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
     indirect=["media_file"],
     ids=list(yuv_files_422p10le.keys()),
 )
+@pytest.mark.refactored
 def test_422p10le_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
-    prepare_ramdisk,
     pcap_capture,
     media_file,
-    rxtxapp,
+    application,
 ):
-    """Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit"""
+    """Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -44,7 +54,7 @@ def test_422p10le_refactored(
         test_time=test_time,
     )
 
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -83,26 +93,38 @@ convert1_formats = dict(
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
+    pcap_capture,
     media_file,
-    rxtxapp,
+    application,
 ):
-    """Send file in YUV_422_10bit pixel formats with supported conversion on RX side"""
+    """Send file in YUV_422_10bit pixel formats with supported conversion on RX side.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param format: Parametrized pixel / transport format.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -112,11 +134,12 @@ def test_convert_on_rx_refactored(
         framerate="p30",
         pixel_format="YUV422RFC4175PG2BE10",
         transport_format="YUV_422_10bit",
+        output_pixel_format=convert1_formats[format],
         input_file=media_file_path,
         test_time=test_time,
     )
 
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -155,19 +178,31 @@ convert2_formats = dict(
     indirect=["media_file"],
     ids=["test_8K"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", convert2_formats.keys())
 def test_tx_rx_conversion_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
-    pcap_capture,
     test_time,
     test_config,
     format,
+    pcap_capture,
     media_file,
-    rxtxapp,
+    application,
 ):
-    """Send file in different pixel formats with supported two-way conversion on TX and RX"""
+    """Send file in different pixel formats with supported two-way conversion on TX and RX.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param format: Parametrized pixel / transport format.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     _, transport_format, _ = convert2_formats[format]
     host = list(hosts.values())[0]
@@ -175,7 +210,7 @@ def test_tx_rx_conversion_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -189,7 +224,7 @@ def test_tx_rx_conversion_refactored(
         test_time=test_time,
     )
 
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -204,6 +239,7 @@ def test_tx_rx_conversion_refactored(
     indirect=["media_file"],
     ids=["test_8K"],
 )
+@pytest.mark.refactored
 @pytest.mark.parametrize("format", pixel_formats.keys())
 def test_formats_refactored(
     hosts,
@@ -212,12 +248,22 @@ def test_formats_refactored(
     test_time,
     format,
     test_config,
-    prepare_ramdisk,
     pcap_capture,
     media_file,
-    rxtxapp,
+    application,
 ):
-    """Send file in different supported pixel formats without conversion during transport"""
+    """Send file in different supported pixel formats without conversion during transport.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param format: Parametrized pixel / transport format.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     _, file_format = pixel_formats[format]
     host = list(hosts.values())[0]
@@ -225,7 +271,7 @@ def test_formats_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -239,7 +285,7 @@ def test_formats_refactored(
         test_time=test_time,
     )
 
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
