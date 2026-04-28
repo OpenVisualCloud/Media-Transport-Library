@@ -17,6 +17,14 @@ inputs:
     description: 'Build env file on the runner to forward to remote host'
     required: false
     default: '~/.mtl_build_env'
+  force_install_dpdk:
+    description: 'Force DPDK rebuild/install even if the correct version is already present.'
+    required: false
+    default: 'false'
+  force_install_ice:
+    description: 'Force ICE driver rebuild/install even if the correct Kahawai version is already loaded.'
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -24,8 +32,10 @@ runs:
     - name: Setup environment and build
       shell: bash
       env:
-        SETUP_BUILD_AND_INSTALL_DPDK: '0'
-        SETUP_BUILD_AND_INSTALL_ICE_DRIVER: '0'
+        SETUP_BUILD_AND_INSTALL_DPDK: '1'
+        SETUP_BUILD_AND_INSTALL_ICE_DRIVER: '1'
+        SETUP_FORCE_INSTALL_DPDK: ${{ inputs.force_install_dpdk == 'true' && '1' || '0' }}
+        SETUP_FORCE_INSTALL_ICE_DRIVER: ${{ inputs.force_install_ice == 'true' && '1' || '0' }}
         SETUP_BUILD_AND_INSTALL_EBPF_XDP: '0'
         SETUP_BUILD_AND_INSTALL_GPU_DIRECT: '0'
         MTL_BUILD_AND_INSTALL: '1'

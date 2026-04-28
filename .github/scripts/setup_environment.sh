@@ -17,6 +17,8 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 : "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=1}"
 : "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=1}"
 : "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=1}"
+: "${SETUP_FORCE_INSTALL_DPDK:=0}"
+: "${SETUP_FORCE_INSTALL_ICE_DRIVER:=0}"
 
 # MTL build and install
 : "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
@@ -294,7 +296,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${root_folder}/script/build_dpdk.sh" -f
+		if [ "${SETUP_FORCE_INSTALL_DPDK}" == "1" ]; then
+			bash "${root_folder}/script/build_dpdk.sh" -f
+		else
+			bash "${root_folder}/script/build_dpdk.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -328,7 +334,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build and install"
-		bash "${root_folder}/script/build_ice_driver.sh"
+		if [ "${SETUP_FORCE_INSTALL_ICE_DRIVER}" == "1" ]; then
+			FORCE_ICE_REBUILD=1 bash "${root_folder}/script/build_ice_driver.sh"
+		else
+			bash "${root_folder}/script/build_ice_driver.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 

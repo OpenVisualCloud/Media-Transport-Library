@@ -106,8 +106,6 @@ on:
 
 env:
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.11'
-  DPDK_REBUILD: 'false'
 
 permissions:
   contents: read
@@ -135,53 +133,8 @@ jobs:
         with:
           ref: '${{ inputs.branch-to-checkout }}'
 
-      - name: 'preparation: Checkout DPDK'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        if: env.DPDK_REBUILD == 'true'
-        with:
-          repository: 'DPDK/dpdk'
-          ref: 'v${{  env.DPDK_VERSION  }}'
-          path: 'dpdk'
-
-      - name: 'configuration: Install the build dependency'
-        run: |
-          sudo apt update
-          sudo apt-get remove -y pipenv || true
-          sudo apt-get install -y \
-              git gcc meson tar zip \
-              pkg-config \
-              python3 \
-              python3-pyelftools \
-              python3-virtualenv \
-              python3-pip \
-              libnuma-dev \
-              libjson-c-dev \
-              libpcap-dev \
-              libgtest-dev \
-              libsdl2-dev \
-              libsdl2-ttf-dev \
-              libssl-dev \
-              systemtap-sdt-dev \
-              libbpf-dev \
-              libelf1
-
-      - name: 'configuration: Apply dpdk patches'
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
-
-      - name: 'installation: Build dpdk'
-        working-directory: dpdk
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          meson build
-          ninja -C build
-          sudo ninja -C build install
-
-      - name: 'installation: Build mtl'
-        run: |
-          ./build.sh
-          sudo ldconfig
+      - name: 'installation: Build MTL and ecosystem'
+        uses: ./.github/actions/build
 
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation

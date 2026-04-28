@@ -57,7 +57,15 @@ dpdk_folder="dpdk-${DPDK_VER}"
 
 if [ "$sourced" -eq 0 ]; then
 	echo "DPDK version: $DPDK_VER"
-
+	# Skip rebuild if the correct DPDK version is already installed.
+	# Use -f (force) to override.
+	if [ $FORCE -eq 0 ]; then
+		installed_ver=$(pkg-config --modversion libdpdk 2>/dev/null || true)
+		if [ "$installed_ver" = "$DPDK_VER" ]; then
+			echo "DPDK ${DPDK_VER} is already installed (pkg-config reports ${installed_ver}). Skipping rebuild."
+			exit 0
+		fi
+	fi
 	if [ $FORCE -eq 1 ] && [ -d "$dpdk_folder" ]; then
 		echo "Force rebuild enabled. Removing existing '$dpdk_folder' directory."
 		rm -rf "$dpdk_folder"

@@ -64,29 +64,9 @@ jobs:
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
-      - name: Install the build dependency
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        run: |
-          sudo apt-get update -y && \
-          sudo apt-get install -y \
-              git gcc meson \
-              python3-dev \
-              python3-pyelftools \
-              libjson-c-dev libpcap-dev libgtest-dev \
-              libsdl2-dev libsdl2-ttf-dev libssl-dev \
-              pkg-config libnuma-dev \
-              systemtap-sdt-dev && \
-          sudo apt-get autoremove -y
-
       - name: Build
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        run: |
-          sudo su && ./build.sh
-          sudo ldconfig
-
-      - name: Check and build ice driver if needed
-        run: |
-          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
+        uses: ./.github/actions/build
 
       - name: run gtest bare metal
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
