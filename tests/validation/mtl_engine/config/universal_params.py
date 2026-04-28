@@ -27,6 +27,7 @@ UNIVERSAL_PARAMS = {
     "framerate": "p60",  # Frame rate (p25, p30, p50, p60, etc.)
     "interlaced": False,  # Progressive (False) or Interlaced (True)
     "pixel_format": "YUV422PLANAR10LE",  # Pixel format for TX input and RX output
+    "output_pixel_format": None,  # Optional override for RX output pixel format (st20p conversion)
     "transport_format": "YUV_422_10bit",  # Transport format for streaming
     # Audio parameters
     "audio_format": "PCM24",  # Audio format

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 import logging
 from pathlib import Path
@@ -33,18 +33,28 @@ logger = logging.getLogger(__name__)
         "Penguin_1080p_422p10le",
     ],
 )
+@pytest.mark.refactored
 def test_integrity_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
     test_config,
     test_time,
-    prepare_ramdisk,
-    media_file,
     pcap_capture,
-    rxtxapp,
+    media_file,
+    application,
 ):
-    """Test video integrity by comparing input and output files"""
+    """Test video integrity by comparing input and output files.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
 
     log_dir = Path.cwd() / LOG_FOLDER / "latest"
@@ -55,7 +65,7 @@ def test_integrity_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         source_ip=ip_pools.tx[0],
@@ -74,7 +84,7 @@ def test_integrity_refactored(
     )
 
     actual_test_time = max(test_time, 8)
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
     )
 

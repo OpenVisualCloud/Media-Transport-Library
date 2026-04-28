@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
 
 import pytest
 from common.nicctl import InterfaceSetup
@@ -18,18 +18,28 @@ from mtl_engine.media_files import yuv_files_422rfc10
     indirect=["media_file"],
     ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
 )
+@pytest.mark.refactored
 def test_multicast_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
     test_config,
     test_time,
-    prepare_ramdisk,
-    media_file,
     pcap_capture,
-    rxtxapp,
+    media_file,
+    application,
 ):
-    """Test multicast transmission mode"""
+    """Test multicast transmission mode.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -66,7 +76,10 @@ def test_multicast_refactored(
         )
         actual_test_time = max(test_time, 8)
 
-    rxtxapp.create_command(**config_params)
-    rxtxapp.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+    application.create_command(**config_params)
+    application.execute_test(
+        build=mtl_path,
+        test_time=actual_test_time,
+        host=host,
+        netsniff=pcap_capture,
     )

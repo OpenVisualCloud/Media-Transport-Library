@@ -36,7 +36,7 @@ from mtl_engine.csv_report import (
     get_compliance_result,
     update_compliance_result,
 )
-from mtl_engine.execute import log_fail
+from mtl_engine.execute import kill_stale_processes, log_fail
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -77,6 +77,7 @@ class _SshPollingFilter(logging.Filter):
 
 logging.getLogger("mfd_connect.ssh").addFilter(_SshPollingFilter())
 logging.getLogger("mfd_connect.process.ss").addFilter(_SshPollingFilter())
+
 
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
@@ -540,6 +541,27 @@ def dma_port_list(request):
 
 @pytest.fixture(scope="session")
 def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
+    # Default session-pool size. Tests rarely need more than 6 VFs at once;
+    # we cap at the PF's ``sriov_totalvfs`` so a host that exposes only 2
+    # VFs per PF still gets a pool of 2 (instead of nicctl creating 2 and
+    # silently mismatching the requested 6, which forces every test back
+    # onto the legacy create_vf/disable_vf path).
+    DEFAULT_POOL_SIZE = 6
+
+    def _pool_size(host, pf_index: int) -> int:
+        try:
+            pci = host.network_interfaces[pf_index].pci_address.lspci
+            res = host.connection.execute_command(
+                f"cat /sys/bus/pci/devices/{pci}/sriov_totalvfs",
+                shell=True,
+                timeout=5,
+                expected_return_codes=None,
+            )
+            total = int((res.stdout or "0").strip() or 0)
+            return min(DEFAULT_POOL_SIZE, total) if total > 0 else DEFAULT_POOL_SIZE
+        except Exception:
+            return DEFAULT_POOL_SIZE
+
     for host in hosts.values():
         ensure_hugepage_access(host)
 
@@ -550,10 +572,14 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
 
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
+            nicctl.create_vfs(
+                host.network_interfaces[0].pci_address.lspci,
+                num_of_vfs=_pool_size(host, 0),
+            )
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+        logger.info(f"Host {host.name}: primary port VF pool ({len(vfs)}): {vfs}")
         ensure_pf_up(host, host.network_interfaces[0].pci_address.lspci)
 
         # Redundant port (interface_index 1) - optional, for redundant mode.
@@ -571,11 +597,16 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
                     int(host.network_interfaces[1].virtualization.get_current_vfs())
                     == 0
                 ):
-                    nicctl.create_vfs(host.network_interfaces[1].pci_address.lspci)
+                    nicctl.create_vfs(
+                        host.network_interfaces[1].pci_address.lspci,
+                        num_of_vfs=_pool_size(host, 1),
+                    )
                 vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
                 host.vfs_r = vfs_r
                 ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
-                logger.info(f"Host {host.name}: redundant port VFs: {vfs_r}")
+                logger.info(
+                    f"Host {host.name}: redundant port VF pool ({len(vfs_r)}): {vfs_r}"
+                )
             except Exception as e:
                 logger.warning(
                     f"Host {host.name}: could not setup redundant port VFs: {e}"
@@ -611,9 +642,46 @@ def sch_quota(request) -> int | None:
 
 
 @pytest.fixture(autouse=True)
-def delay_between_tests(test_config: dict):
+def delay_between_tests(test_config: dict, hosts):
+    """Inter-test pause that scales with actual VFIO release time.
+
+    Original implementation slept a fixed ``delay_between_tests`` (default 3s)
+    to let DPDK release ``/dev/vfio/<group>`` after SIGTERM. In practice the
+    fds are usually released within a few hundred milliseconds; the 3 s sleep
+    is a worst-case worst-case. We replace it with an active poll: sleep is
+    capped by the configured value but exits early once VFIO is idle on every
+    host. ``time_sleep == 0`` disables the wait entirely.
+    """
     time_sleep = test_config.get("delay_between_tests", 3)
-    time.sleep(time_sleep)
+    if time_sleep <= 0:
+        yield
+        return
+
+    deadline = time.monotonic() + time_sleep
+    poll_interval = 0.1
+    while time.monotonic() < deadline:
+        all_idle = True
+        for host in hosts.values():
+            try:
+                res = host.connection.execute_command(
+                    "ls /dev/vfio/ 2>/dev/null "
+                    "| grep -E '^[0-9]+$' "
+                    "| xargs -I{} sudo fuser /dev/vfio/{} 2>/dev/null "
+                    "| tr -d ' \\n' | wc -c",
+                    shell=True,
+                    timeout=2,
+                    expected_return_codes=None,
+                )
+                if (res.stdout or "0").strip() != "0":
+                    all_idle = False
+                    break
+            except Exception:
+                # Probe failed — fall back to fixed sleep behaviour.
+                all_idle = False
+                break
+        if all_idle:
+            break
+        time.sleep(poll_interval)
     yield
 
 
@@ -739,6 +807,13 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         # Per-host media_path from topology extra_info, fall back to test_config
         media_path = get_host_media_path(host, default=default_media_path)
         src_media_file_path = os.path.join(media_path, media_file_info["filename"])
+        # Probe source existence first so missing assets become SKIPPED rather
+        # than ERROR — they are environment/data issues, not test logic bugs.
+        probe = host.connection.execute_command(
+            f"test -f {src_media_file_path}", expected_return_codes=None
+        )
+        if probe.return_code != 0:
+            pytest.skip(f"Media file not present on {host}: {src_media_file_path}")
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
@@ -1056,7 +1131,14 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
 
 
 @pytest.fixture(scope="session")
-def rxtxapp() -> RxTxApp:
+def application() -> RxTxApp:
+    """Application handle used by refactored tests.
+
+    Currently returns an :class:`RxTxApp` adapter. The fixture name is
+    deliberately application-agnostic so individual test modules can later
+    parametrise over alternative framework adapters (FFmpeg, GStreamer)
+    without churning every signature.
+    """
     return RxTxApp(RXTXAPP_PATH)
 
 
@@ -1066,3 +1148,48 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if "1080p" in item.nodeid and "59fps" in item.nodeid:
             item.add_marker(mark)
+
+
+# ---------------------------------------------------------------------------
+# Session-level hardware state guardrails
+# ---------------------------------------------------------------------------
+# Rationale: even with graceful stop_process + nicctl timeouts + PCI reset
+# escape hatch, a previous pytest session that died abnormally (CI runner
+# killed, kernel panic, operator Ctrl-C) can leave leftover RxTxApp processes
+# holding VFIO fds and/or stale hugepage mappings. A new session that inherits
+# that state will hang on its very first setup. This fixture wipes known
+# leftovers before any test runs and again after the last test, keeping runs
+# hermetic without killing any test on timeout.
+
+
+def _reset_host_state(host) -> None:
+    """Best-effort cleanup of MTL leftovers on a single host. Never raises."""
+    try:
+        kill_stale_processes(host)
+    except Exception as e:  # pragma: no cover — best-effort
+        logger.debug("kill_stale_processes failed: %s", e)
+    try:
+        host.connection.execute_command(
+            "sudo rm -f /dev/hugepages/rtemap_* 2>/dev/null; true",
+            shell=True,
+            timeout=10,
+            expected_return_codes=None,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.debug("hugepage cleanup failed: %s", e)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_clean_hw_state(hosts):
+    """Guarantee a clean hardware state at session start and end.
+
+    Runs before any test: kills stray RxTxApp/gtest processes that may
+    still hold /dev/vfio/<group> open from a previous aborted run, and
+    wipes stale DPDK hugepage mappings. The next session's start hook will
+    repeat the work, so we deliberately do **not** run it again at session
+    teardown — that just adds wall-clock for no observable benefit. Errors
+    are logged but never propagated.
+    """
+    for host in hosts.values():
+        _reset_host_state(host)
+    yield

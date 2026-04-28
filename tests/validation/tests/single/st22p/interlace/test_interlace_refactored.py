@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 
 import pytest
 from common.nicctl import InterfaceSetup
@@ -12,6 +13,7 @@ from mtl_engine.media_files import yuv_files_interlace
     indirect=["media_file"],
     ids=list(yuv_files_interlace.keys()),
 )
+@pytest.mark.refactored
 def test_interlace_refactored(
     hosts,
     mtl_path,
@@ -19,18 +21,31 @@ def test_interlace_refactored(
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
-    prepare_ramdisk,
     pcap_capture,
     media_file,
-    rxtxapp,
+    application,
 ):
+    """Refactored test for interlace.
+
+    :param hosts: Mapping of host objects from the topology configuration.
+    :param mtl_path: Path to the MTL build directory on the remote host.
+    :param media: Path to the media files directory on the remote host.
+    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
+    :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param media_file: Parametrized media file fixture (info dict, file path).
+    :param application: Media application driver fixture (currently ``RxTxApp``).
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+    # JPEG-XS plugin init adds 3-10s on top of MTL init.
+    test_time = max(test_time, 90)
 
-    rxtxapp.create_command(
+    application.create_command(
         session_type="st22p",
         test_mode="multicast",
         nic_port_list=interfaces_list,
@@ -45,6 +60,6 @@ def test_interlace_refactored(
         interlaced=True,
         test_time=test_time,
     )
-    rxtxapp.execute_test(
+    application.execute_test(
         build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
     )

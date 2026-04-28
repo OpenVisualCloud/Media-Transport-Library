@@ -3,58 +3,61 @@
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_422p10le
+from mtl_engine.media_files import st41_files
+from tests.single.st41 import dit_mapping, k_bit_mapping, payload_type_mapping
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_422p10le.values()),
+    [st41_files["st41_p29_long_file"]],
     indirect=["media_file"],
-    ids=list(yuv_files_422p10le.keys()),
+    ids=["st41_p29_long_file"],
 )
 @pytest.mark.refactored
-def test_format_refactored(
+@pytest.mark.parametrize("k_bit", ["k0", "k1"])
+def test_k_bit_refactored(
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
+    k_bit,
     test_config,
-    pcap_capture,
     media_file,
+    pcap_capture,
     application,
 ):
-    """Refactored test for format.
+    """This test function verifies that the fastmetadata_k_bit value is correctly transmitted.
 
     :param hosts: Mapping of host objects from the topology configuration.
     :param mtl_path: Path to the MTL build directory on the remote host.
     :param setup_interfaces: Interface setup helper for NIC / VF configuration.
     :param test_time: Duration to run the streaming pipeline, in seconds.
+    :param k_bit: Parametrized k-bit value for ST 2110-41 fast metadata.
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
+    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
-    media_file_info, media_file_path = media_file
+    _, media_file_path = media_file
+    payload_type = payload_type_mapping["pt115"]
+    dit = dit_mapping["dit0"]
+
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    # JPEG-XS plugin init adds 3-10s on top of MTL init.
-    test_time = max(test_time, 90)
 
     application.create_command(
-        session_type="st22p",
-        test_mode="multicast",
+        session_type="fastmetadata",
         nic_port_list=interfaces_list,
-        width=media_file_info["width"],
-        height=media_file_info["height"],
-        framerate=f"p{media_file_info['fps']}",
-        codec="JPEG-XS",
-        quality="speed",
-        pixel_format=media_file_info["file_format"],
+        test_mode="unicast",
+        type_mode="rtp",
+        payload_type=payload_type,
+        fastmetadata_data_item_type=dit,
+        fastmetadata_k_bit=k_bit_mapping[k_bit],
+        fastmetadata_fps="p59",
         input_file=media_file_path,
-        codec_threads=2,
         test_time=test_time,
     )
 
