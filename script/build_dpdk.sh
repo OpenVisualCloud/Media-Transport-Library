@@ -59,11 +59,34 @@ if [ "$sourced" -eq 0 ]; then
 	echo "DPDK version: $DPDK_VER"
 	# Skip rebuild if the correct DPDK version is already installed.
 	# Use -f (force) to override.
+	#
+	# Starting with DPDK_MTL_TAG_SINCE_VER, MTL-patched DPDK advertises an
+	# "_mtl_" suffix via RTE_VER_SUFFIX (see the config patch). For those
+	# versions pkg-config must report e.g. "26.03.1_mtl_"; older versions
+	# keep the plain version-string match for backward compatibility.
+	DPDK_MTL_TAG_SINCE_VER="26.03"
+	expected_mtl_ver="${DPDK_VER}.${DPDK_MTL_PATCH_VER}_mtl_"
 	if [ $FORCE -eq 0 ]; then
 		installed_ver=$(pkg-config --modversion libdpdk 2>/dev/null || true)
-		if [ "$installed_ver" = "$DPDK_VER" ]; then
-			echo "DPDK ${DPDK_VER} is already installed (pkg-config reports ${installed_ver}). Skipping rebuild."
-			exit 0
+		# Lexical comparison works for "MAJOR.MINOR" DPDK version strings.
+		if [ "$(printf '%s\n%s\n' "$DPDK_MTL_TAG_SINCE_VER" "$DPDK_VER" | sort -V | head -n1)" = "$DPDK_MTL_TAG_SINCE_VER" ]; then
+			# DPDK_VER >= DPDK_MTL_TAG_SINCE_VER → require the _mtl_ tag and exact patch version.
+			case "$installed_ver" in
+			"${expected_mtl_ver}"*)
+				echo "DPDK ${expected_mtl_ver} is already installed (pkg-config reports ${installed_ver}). Skipping rebuild."
+				exit 0
+				;;
+			"") ;;
+			*)
+				echo "Installed DPDK ${installed_ver} does not match expected ${expected_mtl_ver}; rebuilding."
+				;;
+			esac
+		else
+			# Backward compatibility: pre-tag versions only check the version string.
+			if [ "$installed_ver" = "$DPDK_VER" ]; then
+				echo "DPDK ${DPDK_VER} is already installed (pkg-config reports ${installed_ver}). Skipping rebuild."
+				exit 0
+			fi
 		fi
 	fi
 	if [ $FORCE -eq 1 ] && [ -d "$dpdk_folder" ]; then
