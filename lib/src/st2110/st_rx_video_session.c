@@ -1671,13 +1671,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx + 1)) {
-      int gap = pkt_idx - slot->last_pkt_idx - 1;
+    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
+      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
       s->port_user_stats.common.stat_lost_packets += gap;
       s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx) {
+    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
-       * behind the highest accepted index in the current frame */
+       * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
@@ -1708,7 +1708,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   /* only advance, never regress: a reorder must not move the high-water
    * mark backward, otherwise the next forward jump re-counts already-lost
    * packets as new losses */
-  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
+  if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* if enable_timing_parser */
   if (s->enable_timing_parser) rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
@@ -1869,13 +1869,13 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->port_user_stats.common.stat_pkts_redundant++;
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx + 1)) {
-      int gap = pkt_idx - slot->last_pkt_idx - 1;
+    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
+      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
       s->port_user_stats.common.stat_lost_packets += gap;
       s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx) {
+    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
-       * behind the highest accepted index in the current frame */
+       * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
@@ -1897,7 +1897,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     }
   }
   /* only advance high-water mark; see rv_handle_frame_pkt */
-  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
+  if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void*)mbuf);
@@ -2069,13 +2069,13 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx + 1)) {
-      int gap = pkt_idx - slot->last_pkt_idx - 1;
+    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
+      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
       s->port_user_stats.common.stat_lost_packets += gap;
       s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx) {
+    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
-       * behind the highest accepted index in the current frame */
+       * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
@@ -2102,7 +2102,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
         payload_length);
   }
   /* only advance high-water mark; see rv_handle_frame_pkt */
-  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
+  if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* copy payload */
   uint32_t offset;
@@ -2240,13 +2240,13 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx + 1)) {
-      int gap = pkt_idx - slot->last_pkt_idx - 1;
+    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
+      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
       s->port_user_stats.common.stat_lost_packets += gap;
       s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx) {
+    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
-       * behind the highest accepted index in the current frame */
+       * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
     }
   } else {
@@ -2265,7 +2265,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     }
   }
   /* only advance high-water mark; see rv_handle_frame_pkt */
-  if (pkt_idx > slot->last_pkt_idx) slot->last_pkt_idx = pkt_idx;
+  if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* calculate offset */
   uint32_t offset =
@@ -3155,7 +3155,8 @@ static void rv_reset_slot(struct st_rx_video_session_impl* s,
   slot->second_field = false;
   slot->st22_payload_length = 0;
   slot->st22_box_hdr_length = 0;
-  slot->last_pkt_idx = -1;
+  slot->last_pkt_idx[MTL_SESSION_PORT_P] = -1;
+  slot->last_pkt_idx[MTL_SESSION_PORT_R] = -1;
   memset(&slot->meta, 0, sizeof(slot->meta));
   memset(&slot->st22_meta, 0, sizeof(slot->st22_meta));
   if (slot->frame_bitmap && s->st20_frame_bitmap_size)
