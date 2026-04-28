@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Secure the runner
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
@@ -48,7 +48,7 @@ jobs:
         run:  make -C doc/sphinx html
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4.0.0
+        uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: ./doc/_build/html
 

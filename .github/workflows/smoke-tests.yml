@@ -30,7 +30,7 @@ jobs:
     runs-on: dpdk
     steps:
       - name: Harden-Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: Checkout MTL
@@ -60,7 +60,7 @@ jobs:
     steps:
       - name: 'preparation: Harden Runner'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
@@ -70,7 +70,7 @@ jobs:
           ref: '${{ github.ref }}'
       - name: Download build artifacts
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: build-${{ github.sha }}
       - name: Make build artifacts executable
@@ -134,7 +134,7 @@ jobs:
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: smoke-test-report-${{ matrix.nic }}
           path: |
