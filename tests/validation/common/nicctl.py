@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # wait into a logged warning + escape-hatch (PCI remove/rescan).
 _NICCTL_TIMEOUT = 30
 _NICCTL_LONG_TIMEOUT = 60  # create_vf binds N VFs, allow more headroom
-_VFIO_IDLE_TIMEOUT = 20    # how long to wait for VFIO group to be released
+_VFIO_IDLE_TIMEOUT = 20  # how long to wait for VFIO group to be released
 
 
 class Nicctl:
@@ -56,11 +56,28 @@ class Nicctl:
         return self._parse_vf_list(resp.stdout)
 
     def create_vfs(self, pci_id: str, num_of_vfs: int = 6) -> list:
-        """Create VFs on NIC.
+        """Create VFs on NIC, idempotently.
+
+        If the PF already has at least ``num_of_vfs`` VFs bound to vfio-pci,
+        return them without touching sysfs. This is the primary defence
+        against the ``vfio_unregister_group_dev`` hang: a session that
+        creates VFs once and reuses them across tests never triggers the
+        kernel refcount race that the implicit ``echo 0 > sriov_numvfs``
+        on re-creation would.
+
         :param pci_id: pci_id of the nic adapter
-        :param num_of_vfs: number of VFs to create
-        :return: returns list of created vfs
+        :param num_of_vfs: minimum number of VFs required
+        :return: list of VF PCI addresses (existing or freshly created)
         """
+        existing = self.vfio_list(pci_id)
+        if len(existing) >= num_of_vfs:
+            logger.debug(
+                "Reusing %d existing VFs on %s (requested %d)",
+                len(existing),
+                pci_id,
+                num_of_vfs,
+            )
+            return existing
         self.connection.execute_command(
             f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}",
             shell=True,
@@ -421,22 +438,21 @@ class InterfaceSetup:
 
     def cleanup(self):
         self.cleanup_kernel_ips()
-        # Each interface cleanup is wrapped: a single VFIO-stuck device must
-        # never abort the rest of the teardown loop, otherwise subsequent
-        # tests inherit a broken state and the failure cascades.
+        # Per-test interface cleanup intentionally does NOT call disable_vf:
+        # VFs created at session start by the ``nic_port_list`` fixture are
+        # reused across all tests (see Nicctl.create_vfs idempotency), which
+        # eliminates the kernel ``vfio_unregister_group_dev`` hang window
+        # entirely. We still rebind PFs back to the kernel driver because PF
+        # driver state is not session-scoped — different tests need PF in
+        # different drivers (ice vs vfio-pci). Each rebind is wrapped so a
+        # single stuck device cannot cascade into the rest of the teardown.
         for nicctl, interface, if_type in self.cleanups:
+            if if_type.lower() != "pf":
+                continue
             try:
-                if if_type.lower() == "vf":
-                    nicctl.disable_vf(interface)
-                elif if_type.lower() == "pf":
-                    nicctl.bind_kernel(interface)
+                nicctl.bind_kernel(interface)
             except Exception as e:
-                logger.warning(
-                    "Cleanup of %s (%s) failed: %s — continuing",
-                    interface,
-                    if_type,
-                    e,
-                )
+                logger.warning("PF rebind of %s failed: %s — continuing", interface, e)
 
 
 def _cleanup_hugepages(host, host_name: str) -> None:

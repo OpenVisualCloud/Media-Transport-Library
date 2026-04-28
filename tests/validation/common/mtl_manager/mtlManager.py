@@ -69,7 +69,9 @@ class MtlManager:
                 logger.info("MtlManager stopped successfully.")
                 return
             except Exception as e:
-                logger.warning(f"MtlManager direct kill failed ({e}); falling back to pkill")
+                logger.warning(
+                    f"MtlManager direct kill failed ({e}); falling back to pkill"
+                )
 
         # Fallback to pkill if the process object is not available or the above failed
         connection = self.host.connection
