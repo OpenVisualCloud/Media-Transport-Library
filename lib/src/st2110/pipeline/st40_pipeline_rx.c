@@ -4,6 +4,7 @@
 
 #include "st40_pipeline_rx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
@@ -536,20 +537,7 @@ static int rx_st40p_stat(void* priv) {
   return 0;
 }
 
-static int rx_st40p_get_block_wait(struct st40p_rx_ctx* ctx) {
-  dbg("%s(%d), start\n", __func__, ctx->idx);
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  while (!ctx->block_wake_pending) {
-    int ret = mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                                           ctx->block_timeout_ns);
-    if (ret) break;
-  }
-  ctx->block_wake_pending = false;
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  dbg("%s(%d), end\n", __func__, ctx->idx);
-  return 0;
-}
+/* rx_st40p_get_block_wait inlined into st40p_rx_get_frame; see mt_handle_guard.h */
 
 static int rx_st40p_usdt_dump_frame(struct st40p_rx_ctx* ctx,
                                     struct st40_frame_info* frame_info) {
@@ -585,14 +573,11 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st40p_rx_frame* framebuff;
-  struct st40_frame_info* frame_info;
+  struct st40_frame_info* frame_info = NULL;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -602,7 +587,16 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
       rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
-    rx_st40p_get_block_wait(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    while (!ctx->block_wake_pending &&
+           !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+      int _ret = mt_pthread_cond_timedwait_ns(
+          &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+      if (_ret) break;
+    }
+    ctx->block_wake_pending = false;
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -612,7 +606,7 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST40P_RX_FRAME_IN_USER;
@@ -631,6 +625,8 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
     rx_st40p_usdt_dump_frame(ctx, frame_info);
   }
 
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame_info;
 }
 
@@ -640,16 +636,15 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
   uint16_t meta_num_before_reset = frame_info->meta_num;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   /* reset frame for reuse */
@@ -673,7 +668,10 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
 
   MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx, meta_num_before_reset);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* frame_info) {
@@ -681,16 +679,15 @@ int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* fra
   int idx = ctx->idx;
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   /* reset frame for reuse without processing */
@@ -698,7 +695,10 @@ int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* fra
   frame_info->udw_buffer_fill = 0;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_free(st40p_rx_handle handle) {
@@ -710,12 +710,16 @@ int st40p_rx_free(st40p_rx_handle handle) {
     return -EINVAL;
   }
 
-  impl = ctx->impl;
-
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST40_HANDLE_PIPELINE_RX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
+
+  impl = ctx->impl;
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
@@ -781,6 +785,7 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
+  ctx->wake_on_destroy = (void (*)(void*))rx_st40p_block_wake;
   ctx->session_last_seq_valid = false;
   ctx->session_last_seq = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
@@ -835,45 +840,39 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
 
 size_t st40p_rx_max_udw_buff_size(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, 0);
 
-  return ctx->ops.max_udw_buff_size;
+  ret = ctx->ops.max_udw_buff_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_get_queue_meta(st40p_rx_handle handle, struct st_queue_meta* meta) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_get_queue_meta(ctx->transport, meta);
+  ret = st40_rx_get_queue_meta(ctx->transport, meta);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats* stats) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  int ret = st40_rx_get_session_stats(ctx->transport, stats);
-  if (ret < 0) return ret;
+  ret = st40_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) goto out;
   /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
   stats->common.stat_frames_received =
       __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
@@ -881,83 +880,78 @@ int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats
       __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
   stats->common.stat_frames_corrupted =
       __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_reset_session_stats(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
-  return st40_rx_reset_session_stats(ctx->transport);
+  ret = st40_rx_reset_session_stats(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_update_source(st40p_rx_handle handle, struct st_rx_source_info* src) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_update_source(ctx->transport, src);
+  ret = st40_rx_update_source(ctx->transport, src);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_wake_block(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   if (ctx->block_get) rx_st40p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st40p_rx_set_block_timeout(st40p_rx_handle handle, uint64_t timedwait_ns) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 void* st40p_rx_get_udw_buff_addr(st40p_rx_handle handle, uint16_t idx) {
   struct st40p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %u]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
 
-  return ctx->framebuffs[idx].frame_info.udw_buff_addr;
+  ret_addr = ctx->framebuffs[idx].frame_info.udw_buff_addr;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }

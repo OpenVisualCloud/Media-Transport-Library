@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
@@ -4301,15 +4302,14 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
   int s_idx;
+  int ret;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
 
   if (!ext_frame) {
     err("%s, NULL ext frame\n", __func__);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   s = s_impl->impl;
@@ -4318,17 +4318,20 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   if (ext_frame->buf_len < s->st20_fb_size) {
     err("%s(%d), ext framebuffer size %" PRIu64 " can not hold frame, need %" PRIu64 "\n",
         __func__, s_idx, ext_frame->buf_len, s->st20_fb_size);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
   void* addr = ext_frame->buf_addr;
   if (!addr) {
     err("%s(%d), invalid ext frame address\n", __func__, s_idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
   rte_iova_t iova_addr = ext_frame->buf_iova;
   if (iova_addr == MTL_BAD_IOVA || iova_addr == 0) {
     err("%s(%d), invalid ext frame iova 0x%" PRIx64 "\n", __func__, s_idx, iova_addr);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
@@ -4340,101 +4343,106 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   if (idx >= s->st20_frames_cnt) {
     err("%s(%d), invalid idx %d, should be in range [0, %d]\n", __func__, s_idx, idx,
         s->st20_frames_cnt);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
   if (!s->st20_frames) {
     err("%s(%d), st20_frames not valid\n", __func__, s_idx);
-    return -EINVAL;
+    ret = -EINVAL;
+    goto out;
   }
   struct st_frame_trans* frame = &s->st20_frames[idx];
   int refcnt = rte_atomic32_read(&frame->refcnt);
   if (refcnt) {
     err("%s(%d), frame %d are not free, refcnt %d\n", __func__, s_idx, idx, refcnt);
-    return -EINVAL;
+    ret = -EINVAL;
+    goto out;
   }
   if (!(frame->flags & ST_FT_FLAG_EXT)) {
     err("%s(%d), frame %d are not ext enabled\n", __func__, s_idx, idx);
-    return -EINVAL;
+    ret = -EINVAL;
+    goto out;
   }
 
   frame->addr = addr;
   frame->iova = iova_addr;
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 void* st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
+  void* ret_addr = NULL;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, NULL);
 
   s = s_impl->impl;
 
   if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
-    return NULL;
+    goto out;
   }
   if (!s->st20_frames || !s->st20_frames[idx].addr) {
     err("%s, st20_frames not allocated\n", __func__);
-    return NULL;
+    goto out;
   }
 
-  return s->st20_frames[idx].addr;
+  ret_addr = s->st20_frames[idx].addr;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_addr;
 }
 
 size_t st20_tx_get_framebuffer_size(st20_tx_handle handle) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
+  size_t ret;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, 0);
 
   s = s_impl->impl;
-  return s->st20_fb_size;
+  ret = s->st20_fb_size;
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st20_tx_get_framebuffer_count(st20_tx_handle handle) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
+  int ret;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
 
   s = s_impl->impl;
-  return s->st20_frames_cnt;
+  ret = s->st20_frames_cnt;
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
-  struct rte_mbuf* pkt;
+  struct rte_mbuf* pkt = NULL;
   struct st_tx_video_session_impl* s;
   int idx;
   struct rte_ring* packet_ring;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   if (rte_ring_full(packet_ring)) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   struct rte_mempool* mp =
@@ -4442,11 +4450,13 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
   pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
+out:
+  MT_HANDLE_RELEASE(s_impl);
   return pkt;
 }
 
@@ -4463,8 +4473,9 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
+  /* Acquire ref; on failure free the caller's mbuf and return -EIO. */
+  if (mt_handle_acquire(&s_impl->lc_destroying, &s_impl->lc_refcnt, &s_impl->type,
+                        MT_HANDLE_TX_VIDEO) < 0) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -4475,13 +4486,15 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (len > s->rtp_pkt_max_size) {
     err("%s(%d), invalid len %u, allowed %u\n", __func__, idx, len, s->rtp_pkt_max_size);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
@@ -4491,21 +4504,25 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EBUSY;
+    ret = -EBUSY;
+    goto out;
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st20_tx_get_sch_idx(st20_tx_handle handle) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
 
-  return s_impl->sch->idx;
+  ret = s_impl->sch->idx;
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, double* trs_ns,
@@ -4517,15 +4534,13 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
 
   struct st_tx_video_session_impl* s = s_impl->impl;
   if (tr_offset_ns) *tr_offset_ns = s->pacing.tr_offset;
   if (trs_ns) *trs_ns = s->pacing.trs;
   if (vrx_pkts) *vrx_pkts = s->pacing.vrx;
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -4537,15 +4552,13 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -4557,16 +4570,14 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -4577,10 +4588,13 @@ int st20_tx_free(st20_tx_handle handle) {
   struct st_tx_video_session_impl* s;
   int ret, sch_idx, idx;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_TX_VIDEO);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   sch = s_impl->sch;
@@ -4614,26 +4628,26 @@ int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* ds
   struct st_tx_video_session_impl* s;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = s_impl->sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
@@ -4801,10 +4815,13 @@ int st22_tx_free(st22_tx_handle handle) {
   struct st_tx_video_session_impl* s;
   int ret, sch_idx, idx;
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type,
+                                    MT_ST22_HANDLE_TX_VIDEO);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   sch = s_impl->sch;
@@ -4838,51 +4855,48 @@ int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* ds
   struct st_tx_video_session_impl* s;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = s_impl->sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
-  struct rte_mbuf* pkt;
+  struct rte_mbuf* pkt = NULL;
   struct st_tx_video_session_impl* s;
   int idx;
   struct rte_ring* packet_ring;
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   if (rte_ring_full(packet_ring)) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   struct rte_mempool* mp =
@@ -4890,11 +4904,13 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
   pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
+out:
+  MT_HANDLE_RELEASE(s_impl);
   return pkt;
 }
 
@@ -4911,8 +4927,9 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
+  /* Acquire ref; on failure free the caller's mbuf and return -EIO. */
+  if (mt_handle_acquire(&s_impl->lc_destroying, &s_impl->lc_refcnt, &s_impl->type,
+                        MT_ST22_HANDLE_TX_VIDEO) < 0) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -4923,13 +4940,15 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (len > s->rtp_pkt_max_size) {
     err("%s(%d), invalid len %u, allowed %u\n", __func__, idx, len, s->rtp_pkt_max_size);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
@@ -4939,47 +4958,52 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EBUSY;
+    ret = -EBUSY;
+    goto out;
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st22_tx_get_sch_idx(st22_tx_handle handle) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EINVAL);
 
-  return s_impl->sch->idx;
+  ret = s_impl->sch->idx;
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
+  void* ret_addr = NULL;
 
-  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, NULL);
 
   s = s_impl->impl;
 
   if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
-    return NULL;
+    goto out;
   }
   if (!s->st20_frames || !s->st20_frames[idx].addr) {
     err("%s, st22_frames not allocated\n", __func__);
-    return NULL;
+    goto out;
   }
 
   if (s->st22_info) {
-    return s->st20_frames[idx].addr + s->st22_box_hdr_length;
+    ret_addr = s->st20_frames[idx].addr + s->st22_box_hdr_length;
   } else {
-    return s->st20_frames[idx].addr;
+    ret_addr = s->st20_frames[idx].addr;
   }
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_addr;
 }

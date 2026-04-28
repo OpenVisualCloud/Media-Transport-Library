@@ -4,6 +4,7 @@
 
 #include "st30_pipeline_tx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
@@ -375,16 +376,7 @@ static int tx_st30p_stat(void* priv) {
   return 0;
 }
 
-static int tx_st30p_get_block_wait(struct st30p_tx_ctx* ctx) {
-  dbg("%s(%d), start\n", __func__, ctx->idx);
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                               ctx->block_timeout_ns);
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  dbg("%s(%d), end\n", __func__, ctx->idx);
-  return 0;
-}
+/* tx_st30p_get_block_wait inlined into st30p_tx_get_frame; see mt_handle_guard.h */
 
 static int tx_st30p_usdt_dump_close(struct st30p_tx_ctx* ctx) {
   int idx = ctx->idx;
@@ -472,13 +464,11 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st30p_tx_frame* framebuff;
+  struct st30_frame* frame = NULL;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -486,7 +476,12 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
-    tx_st30p_get_block_wait(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+      mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                   ctx->block_timeout_ns);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
@@ -494,7 +489,7 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST30P_TX_FRAME_IN_USER;
@@ -502,7 +497,7 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   framebuff->seq_number = ctx->framebuff_seq_number++;
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  struct st30_frame* frame = &framebuff->frame;
+  frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
   MT_USDT_ST30P_TX_FRAME_GET(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
@@ -512,6 +507,8 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   } else {
     tx_st30p_usdt_dump_close(ctx);
   }
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame;
 }
 
@@ -520,18 +517,17 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
   int idx = ctx->idx;
   struct st30p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
     mt_pthread_mutex_unlock(&ctx->lock);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   framebuff->stat = ST30P_TX_FRAME_READY;
@@ -539,7 +535,10 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
   MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->addr);
   mt_pthread_mutex_unlock(&ctx->lock);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
@@ -547,18 +546,17 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
   int idx = ctx->idx;
   struct st30p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
     mt_pthread_mutex_unlock(&ctx->lock);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   framebuff->stat = ST30P_TX_FRAME_FREE;
@@ -566,17 +564,24 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
   mt_pthread_mutex_unlock(&ctx->lock);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st30p_tx_free(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST30_HANDLE_PIPELINE_TX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
@@ -645,6 +650,7 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST30_HANDLE_PIPELINE_TX;
+  ctx->wake_on_destroy = (void (*)(void*))tx_st30p_block_wake;
   ctx->usdt_dump_fd = -1;
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
@@ -695,78 +701,71 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
 
 int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st30p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
 
-  return st30_tx_update_destination(ctx->transport, dst);
+  ret = st30_tx_update_destination(ctx->transport, dst);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st30p_tx_wake_block(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
 
   if (ctx->block_get) tx_st30p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st30p_tx_set_block_timeout(st30p_tx_handle handle, uint64_t timedwait_ns) {
   struct st30p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 size_t st30p_tx_frame_size(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
 
-  return ctx->ops.framebuff_size;
+  ret = ctx->ops.framebuff_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
   struct st30p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %u]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
 
-  return ctx->framebuffs[idx].frame.addr;
+  ret_addr = ctx->framebuffs[idx].frame.addr;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }
 
 int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
   struct st30p_tx_ctx* ctx;
-  int cidx;
   struct st30p_tx_frame* framebuff;
   uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
+  int ret;
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
@@ -774,13 +773,9 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
   }
 
   ctx = handle;
-  cidx = ctx->idx;
   framebuff = ctx->framebuffs;
 
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EINVAL);
 
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
     enum st30p_tx_frame_status stat = framebuff[j].stat;
@@ -799,32 +794,33 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
   }
   dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
-  int ret = st30_tx_get_session_stats(ctx->transport, stats);
-  if (ret < 0) return ret;
+  ret = st30_tx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) goto out;
   /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
   stats->common.stat_frames_sent =
       __atomic_load_n(&ctx->stat_frames_sent, __ATOMIC_RELAXED);
   stats->common.stat_frames_dropped =
       __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st30p_tx_reset_session_stats(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
 
   __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
-  return st30_tx_reset_session_stats(ctx->transport);
+  ret = st30_tx_reset_session_stats(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
