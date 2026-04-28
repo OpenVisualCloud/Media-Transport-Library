@@ -3,41 +3,41 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
   - package-ecosystem: pip
     directory: /tests
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
   - package-ecosystem: pip
     directory: /python
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
   - package-ecosystem: cargo
     directory: /rust
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
   - package-ecosystem: docker
     directory: /manager
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
   - package-ecosystem: docker
     directory: /docker
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     commit-message:
       prefix: "Ci: "
