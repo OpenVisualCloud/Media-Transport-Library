@@ -11,6 +11,10 @@ from typing import Any, List
 
 import pytest
 from mfd_common_libs.log_levels import TEST_FAIL
+from mfd_connect.exceptions import (
+    ConnectionCalledProcessError,
+    RemoteProcessInvalidState,
+)
 from pytest_check import check
 
 from .const import LOG_FOLDER, TESTCMD_LVL
@@ -342,3 +346,127 @@ def read_remote_log(host, log_path: str) -> list:
         return result.stdout.splitlines() if result.stdout else []
     except Exception:
         return []
+
+
+# --- SSH-backed remote process termination -----------------------------------
+#
+# Helpers for tearing down processes started by :func:`run` (background=True).
+# Teardown contract:
+#   * Idempotent  — calling on a process that already exited is a no-op.
+#   * Bounded     — must not hang the test if the SSH transport is unresponsive.
+#   * Non-raising — a teardown failure must never mask the real test verdict.
+#
+# Do NOT discover the PID with ``pgrep -n <name>``: it returns the most recently
+# started matching process system-wide, so on a shared CI runner it can pick up
+# unrelated leftovers and SIGKILL them. Always use the PID the connection
+# abstraction already owns for *our* process.
+#
+# ``mfd_connect.process.ssh.base.SSHRemoteProcess.pid`` is a property that
+# issues a remote ``ps`` and raises :class:`RemoteProcessInvalidState` once the
+# process has exited; that is the *normal* termination signal during teardown.
+# ``proc.running`` swallows the same exception and returns ``False``, so it's
+# safe to call without a guard.
+
+_GRACEFUL_STOP_WAIT_S = 2
+_FORCE_KILL_WAIT_S = 1
+
+
+def _safe_pid(proc) -> int | None:
+    """Return the remote PID of *proc*, or ``None`` if it's already finished."""
+    if proc is None:
+        return None
+    try:
+        return proc.pid
+    except RemoteProcessInvalidState:
+        return None
+    except Exception as exc:  # noqa: BLE001 - non-fatal, never mask test result
+        logger.warning("Unexpected error reading PID: %s", exc)
+        return None
+
+
+def _terminate(proc, proc_name: str, host) -> None:
+    """Single graceful → forceful termination pass. Caller bounds the wallclock.
+
+    Order:
+      1. ``proc.stop(wait=2)`` — SIGTERM via the connection's own primitive,
+         honoring its bounded wait.
+      2. ``proc.kill(with_signal="SIGKILL")`` — SIGKILL via the connection.
+         Note: the abstraction's default signal is SIGTERM despite the method
+         name, hence the explicit ``with_signal``.
+      3. Belt-and-braces remote ``kill -9 <pid>`` — only if the abstraction
+         ran out of room to retry and only against the PID we actually own.
+         Never ``pgrep`` for it (that races with other processes on the host).
+    """
+    if proc is None:
+        return
+
+    pid = _safe_pid(proc)
+
+    try:
+        proc.stop(wait=_GRACEFUL_STOP_WAIT_S)
+    except RemoteProcessInvalidState:
+        return  # exited mid-stop
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("%s: graceful stop raised (%s); escalating", proc_name, exc)
+
+    if not proc.running:
+        return
+
+    try:
+        proc.kill(wait=_FORCE_KILL_WAIT_S, with_signal="SIGKILL")
+    except RemoteProcessInvalidState:
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "%s: kill() raised (%s); falling back to remote shell", proc_name, exc
+        )
+
+    if not proc.running or pid is None or host is None:
+        return
+
+    # Last resort: shell-level kill of the PID the abstraction handed us.
+    try:
+        host.connection.execute_command(
+            f"kill -9 {pid} 2>/dev/null || true", shell=True
+        )
+    except ConnectionCalledProcessError as exc:
+        logger.warning(
+            "%s: remote `kill -9 %d` returned non-zero: %s", proc_name, pid, exc
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("%s: remote `kill -9 %d` raised: %s", proc_name, pid, exc)
+
+
+def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None) -> None:
+    """Best-effort termination of an mfd_connect background process.
+
+    Idempotent and never raises. The bounded waits inside
+    ``proc.stop`` / ``proc.kill`` are honored by the abstraction itself; the
+    daemon thread here only guards against the rare case where the underlying
+    SSH transport hangs and ignores those bounds. On timeout we log and move
+    on — abandoning the daemon thread is acceptable in the short-lived test
+    runner context, and the surrounding orphan sweep will reap any survivors.
+    """
+    if proc is None:
+        logger.debug("%s: no process to stop", proc_name)
+        return
+
+    if not proc.running:
+        logger.debug("%s: already finished, skipping stop", proc_name)
+        return
+
+    logger.debug("%s: stopping (PID %s)", proc_name, _safe_pid(proc))
+
+    worker = threading.Thread(
+        target=_terminate, args=(proc, proc_name, host), daemon=True
+    )
+    worker.start()
+    worker.join(timeout=timeout)
+
+    if worker.is_alive():
+        logger.error(
+            "%s: termination thread still alive after %ds; abandoning "
+            "(orphan sweep will reap any survivors)",
+            proc_name,
+            timeout,
+        )

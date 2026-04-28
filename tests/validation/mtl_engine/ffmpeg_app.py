@@ -10,12 +10,12 @@ import threading
 import time
 
 from mfd_connect import SSHConnection
-from mfd_connect.exceptions import ConnectionCalledProcessError
+from mfd_connect.exceptions import RemoteProcessInvalidState
 from mtl_engine import ip_pools
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 
 from . import rxtxapp_config
-from .execute import log_fail, run
+from .execute import log_fail, run, stop_process
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ def capture_stdout(proc, proc_name: str):
             output = proc.stdout_text
         except AttributeError:
             logger.debug(f"No stdout_text attribute for {proc_name}")
-            output = ""
-        except Exception as e:
-            logger.warning(f"Error capturing stdout from {proc_name}: {e}")
-            output = ""
+        except RemoteProcessInvalidState:
+            logger.debug(f"{proc_name}: process state invalid; no stdout to capture")
+        except Exception as exc:  # noqa: BLE001 - never mask test result
+            logger.warning(f"Error capturing stdout from {proc_name}: {exc}")
 
     # Run in thread with timeout to avoid blocking
     capture_thread = threading.Thread(target=_get_output, daemon=True)
@@ -75,96 +75,6 @@ def init_test_logging():
 def sanitize_filename(name: str) -> str:
     """Sanitize filename by replacing unsafe characters."""
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
-
-
-def get_process_pid(proc, proc_name: str, host) -> int:
-    """Extract actual process PID using pgrep (not shell PID)."""
-    if not host:
-        return getattr(proc, "pid", None)
-
-    search_term = "ffmpeg" if "ffmpeg" in proc_name.lower() else "RxTxApp"
-    try:
-        result = host.connection.execute_command(f"pgrep -n {search_term}")
-        if result.return_code == 0 and result.stdout.strip():
-            return int(result.stdout.strip())
-    except (ValueError, AttributeError, ConnectionCalledProcessError):
-        pass
-    return getattr(proc, "pid", None)
-
-
-def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
-    """Stop process with hard timeout to prevent hanging.
-
-    Uses threading to ensure we never hang forever. Forcefully kills if needed.
-
-    Args:
-        proc: Process object
-        proc_name: Name for logging
-        timeout: Maximum seconds before force kill
-        host: Host connection object
-    """
-    if not proc:
-        logger.debug(f"{proc_name}: No process to stop")
-        return
-
-    proc_pid = get_process_pid(proc, proc_name, host)
-    logger.debug(f"{proc_name}: Stopping (PID: {proc_pid})")
-
-    def _do_stop():
-        # Step 1: Try graceful stop (max 2 seconds)
-        try:
-            if hasattr(proc, "running") and proc.running:
-                logger.debug(f"{proc_name}: Attempting graceful stop")
-                proc.stop(wait=2)
-                if not proc.running:
-                    logger.debug(f"{proc_name}: Stopped gracefully")
-                    return
-        except Exception as e:
-            logger.debug(f"{proc_name}: Graceful stop failed: {e}")
-
-        # Step 2: SIGTERM by PID
-        if proc_pid and host:
-            try:
-                logger.debug(f"{proc_name}: Sending SIGTERM to PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -15 {proc_pid} || true", shell=True
-                )
-                time.sleep(1)
-            except Exception:
-                pass
-
-        # Step 3: Force SIGKILL
-        try:
-            if hasattr(proc, "kill"):
-                proc.kill()
-        except Exception:
-            pass
-
-        if proc_pid and host:
-            try:
-                logger.warning(f"{proc_name}: Force killing PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} || true", shell=True
-                )
-            except Exception:
-                pass
-
-    # Run with hard timeout
-    stop_thread = threading.Thread(target=_do_stop, daemon=True)
-    stop_thread.start()
-    stop_thread.join(timeout=timeout)
-
-    if stop_thread.is_alive():
-        logger.error(f"{proc_name}: Stop timeout after {timeout}s, forcing SIGKILL")
-        if proc_pid and host:
-            try:
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} 2>/dev/null || true"
-                )
-            except Exception:
-                pass
-
-    logger.debug(f"{proc_name}: Stop completed")
 
 
 def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=None):
@@ -360,24 +270,38 @@ def execute_test(
     finally:
         logger.info("Stopping processes...")
 
-        # Stop TX first
+        # Each cleanup step is independently guarded so a single failure (e.g.
+        # `RemoteProcessInvalidState` raised by `proc.pid` on an already-exited
+        # SSH process) cannot mask the captured TX/RX logs that follow, which
+        # are often the only diagnostic for an early ffmpeg exit.
         if tx_proc:
-            stop_process(tx_proc, "TX", timeout=5, host=host)
+            try:
+                stop_process(tx_proc, "TX", timeout=5, host=host)
+            except Exception as e:
+                logger.warning(f"TX: stop_process raised, continuing: {e}")
 
-        # Stop RX second
         if rx_proc:
-            stop_process(rx_proc, "RX", timeout=5, host=host)
+            try:
+                stop_process(rx_proc, "RX", timeout=5, host=host)
+            except Exception as e:
+                logger.warning(f"RX: stop_process raised, continuing: {e}")
 
-        # Wait for processes to fully terminate
         time.sleep(1)
 
-        # Clean up any remaining orphaned processes
-        kill_orphaned_processes(host, "ffmpeg")
-        kill_orphaned_processes(host, "RxTxApp")
+        for pattern in ("ffmpeg", "RxTxApp"):
+            try:
+                kill_orphaned_processes(host, pattern)
+            except Exception as e:
+                logger.warning(f"orphan cleanup ({pattern}) failed: {e}")
 
-        # Capture output after processes stopped
-        capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
+        try:
+            capture_stdout(rx_proc, "RX")
+        except Exception as e:
+            logger.warning(f"RX: capture_stdout failed: {e}")
+        try:
+            capture_stdout(tx_proc, "TX")
+        except Exception as e:
+            logger.warning(f"TX: capture_stdout failed: {e}")
     passed = False
     match output_format:
         case "yuv":
