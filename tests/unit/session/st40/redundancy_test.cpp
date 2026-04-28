@@ -479,3 +479,62 @@ TEST_F(St40RxRedundancyTest, PerPortFramesSameTsOnSecondaryFiltered) {
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 1u);
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_R), 0u);
 }
+
+/* Mid-frame cable disconnect: P delivers the first 4 packets of a 6-pkt
+ * frame at ts=1000, then goes silent. R, which has been duplicating P,
+ * keeps sending the same frame. The bitmap must accept R's missing tail
+ * (pkts 4 and 5) and reject pkts 0..3 as cross-port duplicates. The frame
+ * is reconstructed exactly once with no unrecovered packets. */
+TEST_F(St40RxRedundancyTest, MidFrameDisconnectPeerCompletesFrame) {
+  constexpr uint32_t ts = 1000;
+  feed(0, ts, false, MTL_SESSION_PORT_P);
+  feed(1, ts, false, MTL_SESSION_PORT_P);
+  feed(2, ts, false, MTL_SESSION_PORT_P);
+  feed(3, ts, false, MTL_SESSION_PORT_P);
+  /* P dies mid-frame; R sends the full frame. */
+  for (int i = 0; i < 6; i++) feed(i, ts, i == 5, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(unrecovered(), 0u) << "frame reconstructed via cross-port fill";
+  EXPECT_EQ(redundant(), 4u) << "R's pkts 0..3 duplicate P's";
+}
+
+/* Wild within-frame seq on P, full frame on R, then a clean frame on P.
+ * A corrupt seq is indistinguishable from real loss, so unrecovered may
+ * rise; the contract is that the session keeps producing frames and the
+ * loss counter stays bounded by the apparent jump. */
+TEST_F(St40RxRedundancyTest, WireCorruptedSeqDoesNotStallSession) {
+  constexpr uint32_t ts1 = 1000;
+  feed(0, ts1, false, MTL_SESSION_PORT_P);
+  feed(1, ts1, false, MTL_SESSION_PORT_P);
+  feed(50, ts1, false, MTL_SESSION_PORT_P); /* corrupted/wild seq */
+  feed(0, ts1, false, MTL_SESSION_PORT_R);
+  feed(1, ts1, false, MTL_SESSION_PORT_R);
+  feed(2, ts1, false, MTL_SESSION_PORT_R);
+  feed(3, ts1, true, MTL_SESSION_PORT_R);
+  /* A subsequent clean frame must still complete - the wild seq watermark
+   * must not block forward progress. */
+  for (int i = 0; i < 4; i++) feed(60 + i, 2000, i == 3, MTL_SESSION_PORT_P);
+
+  EXPECT_GE(frames_received(), 1) << "session must keep producing frames";
+  EXPECT_LE(unrecovered(), 64u)
+      << "unrecovered must be bounded by the apparent seq jump, not unbounded";
+}
+
+/* Non-conformant TX uses different timestamps on P and R for the same
+ * logical frame. ST 2022-7 requires identical RTP fields, so behaviour
+ * is undefined; the contract is liveness only — no deadlock, frames
+ * keep flowing, loss counter stays bounded. */
+TEST_F(St40RxRedundancyTest, MismatchedTimestampsSessionStaysProductive) {
+  feed(0, 1000, false, MTL_SESSION_PORT_P);
+  feed(1, 1000, true, MTL_SESSION_PORT_P);
+  feed(0, 1001, false, MTL_SESSION_PORT_R);
+  feed(1, 1001, true, MTL_SESSION_PORT_R);
+  /* A subsequent in-spec frame from P must still complete. */
+  feed(2, 2000, false, MTL_SESSION_PORT_P);
+  feed(3, 2000, true, MTL_SESSION_PORT_P);
+
+  EXPECT_GE(frames_received(), 1)
+      << "session must keep delivering frames despite non-conformant TX";
+  EXPECT_LE(unrecovered(), 64u)
+      << "loss counter must stay bounded under non-conformant TX";
+}

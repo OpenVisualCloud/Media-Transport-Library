@@ -130,3 +130,52 @@ TEST_F(St30RxStatsTest, PortLostNotInflatedAtSeqWrap) {
   EXPECT_EQ(unrecovered() - unrec_before, 2u)
       << "session-seq gap across wrap must equal the true forward gap (2)";
 }
+
+/* Disjoint per-wire losses whose union covers the full stream: P drops
+ * seqs 0..2 but delivers 3..5; R drops 3..5 but delivers 0..2. Each pkt
+ * has its own monotonic timestamp. Reconstruction must succeed — every
+ * packet accepted exactly once, no unrecovered, no redundant. */
+TEST_F(St30RxStatsTest, DisjointPortLossesUnionRecovers) {
+  feed(0, 1000, MTL_SESSION_PORT_R);
+  feed(1, 1001, MTL_SESSION_PORT_R);
+  feed(2, 1002, MTL_SESSION_PORT_R);
+  feed(3, 1003, MTL_SESSION_PORT_P);
+  feed(4, 1004, MTL_SESSION_PORT_P);
+  feed(5, 1005, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(received(), 6u);
+  EXPECT_EQ(redundant(), 0u);
+  EXPECT_EQ(unrecovered(), 0u) << "every gap on one wire was filled by the other wire";
+}
+
+/* Documented invariant stat_pkts_unrecovered <= sum(port[].lost_packets):
+ * both wires drop the same seq, so the hole is unrecoverable. Per-port
+ * accounting bumps lost on each wire (it runs before the redundancy filter),
+ * while the session-wide unrecovered counter records the unfilled hole.
+ * The invariant must hold strictly. */
+TEST_F(St30RxStatsTest, UnrecoveredNotGreaterThanSummedPortLost) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(0, 1000, MTL_SESSION_PORT_R); /* filtered as redundant by ts */
+  /* Both wires skip seq 1. */
+  feed(2, 1002, MTL_SESSION_PORT_P); /* P jumped 0 -> 2: own gap of 1 */
+  feed(2, 1002, MTL_SESSION_PORT_R); /* R also jumped 0 -> 2 (then filtered) */
+
+  EXPECT_GE(unrecovered(), 1u) << "the missing seq is post-redundancy loss";
+  EXPECT_LE(unrecovered(), port_ooo(MTL_SESSION_PORT_P) + port_ooo(MTL_SESSION_PORT_R))
+      << "documented invariant: stat_pkts_unrecovered <= sum(port[].lost)";
+}
+
+/* Documented invariant: every accepted packet is counted as exactly one of
+ * {received, redundant} — never both, never neither. Mixed-traffic scenario
+ * with own-stream forward delivery plus cross-port duplicates pins the
+ * partition. */
+TEST_F(St30RxStatsTest, ReceivedPlusRedundantEqualsAcceptedPackets) {
+  feed_burst(0, 4, 1000, MTL_SESSION_PORT_P); /* 4 accepted as received */
+  feed_burst(0, 4, 1000, MTL_SESSION_PORT_R); /* 4 accepted as redundant */
+  feed_burst(4, 4, 2000, MTL_SESSION_PORT_P); /* 4 more received */
+
+  EXPECT_EQ(received(), 8u);
+  EXPECT_EQ(redundant(), 4u);
+  EXPECT_EQ(received() + redundant(), 12u)
+      << "every accepted packet is counted in exactly one bucket";
+}

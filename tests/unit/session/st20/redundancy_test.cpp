@@ -439,3 +439,38 @@ TEST_F(St20RxRedundancyWideTest, InterleavedDuplicatesAccounted) {
   EXPECT_EQ(frames_received(), 1);
   EXPECT_EQ(redundant(), static_cast<uint64_t>(kPktsPerFrame));
 }
+
+/* Mirror of OnePortDiesAfterOnePacketReconstructs with the roles swapped:
+ * R delivers a single packet then goes silent; P delivers the rest of the
+ * frame. Pins that loss-fill works symmetrically — neither port is
+ * privileged in the reconstruction path. */
+TEST_F(St20RxRedundancyWideTest, OtherPortDiesAfterOnePacketReconstructs) {
+  feed(0, 1000, MTL_SESSION_PORT_R); /* R then dies */
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1000, MTL_SESSION_PORT_P);
+  feed(3, 1000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(redundant(), 1u) << "P's pkt 0 is the duplicate of R's pkt 0";
+  EXPECT_EQ(pkts_unrecovered(), 0u);
+}
+
+/* Sustained single-port operation: R is silent for many consecutive frames
+ * while P delivers each one alone. Counters must scale linearly with no
+ * pollution from the missing wire — no phantom losses, no phantom
+ * duplicates, and per-port frame credit attributed entirely to P. */
+TEST_F(St20RxRedundancyTest, SustainedSinglePortAcrossManyFrames) {
+  constexpr int N = 16;
+  for (int i = 0; i < N; i++) feed_full(1000u + 1000u * i, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), N);
+  EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), static_cast<uint64_t>(N));
+  EXPECT_EQ(frames_partial(MTL_SESSION_PORT_R), static_cast<uint64_t>(N))
+      << "R never contributed a packet to any frame";
+  EXPECT_EQ(redundant(), 0u);
+  EXPECT_EQ(pkts_unrecovered(), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u)
+      << "a silent wire must not be charged with phantom losses";
+}

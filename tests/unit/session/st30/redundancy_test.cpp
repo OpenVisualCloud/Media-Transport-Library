@@ -214,3 +214,37 @@ TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
             static_cast<uint64_t>(frames_done()))
       << "audio invariant: per-port frames sum equals frames_received";
 }
+
+/* Mid-stream cable disconnect: P delivers the first half of the stream while
+ * R sends same-ts duplicates (filtered). P then dies; R continues alone with
+ * fresh timestamps. The handover must be seamless — every unique packet
+ * accepted exactly once, no phantom unrecovered. */
+TEST_F(St30RxRedundancyTest, PortGoesSilentMidStreamPeerContinues) {
+  for (int i = 0; i < 4; i++) feed(i, 1000 + i, MTL_SESSION_PORT_P);
+  for (int i = 0; i < 4; i++) feed(i, 1000 + i, MTL_SESSION_PORT_R);
+  /* P dies. R takes over with strictly newer timestamps. */
+  for (int i = 4; i < 8; i++) feed(i, 1000 + i, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(received(), 8u);
+  EXPECT_EQ(redundant(), 4u) << "R's first 4 pkts duplicated P's";
+  EXPECT_EQ(unrecovered(), 0u);
+}
+
+/* Sustained alternating burst-switchover: 8 successive bursts alternate
+ * between P and R, each burst using strictly newer timestamps. Pins that
+ * recurring source switches do not leak phantom unrecovered, do not
+ * accumulate redundant, and do not corrupt session_seq tracking. */
+TEST_F(St30RxRedundancyTest, SustainedAlternatingBurstSwitchover) {
+  uint32_t ts = 1000;
+  uint16_t seq = 0;
+  for (int g = 0; g < 8; g++) {
+    enum mtl_session_port p = (g % 2 == 0) ? MTL_SESSION_PORT_P : MTL_SESSION_PORT_R;
+    for (int i = 0; i < 4; i++) feed(seq + i, ts + i, p);
+    seq += 4;
+    ts += 4;
+  }
+
+  EXPECT_EQ(received(), 32u);
+  EXPECT_EQ(redundant(), 0u);
+  EXPECT_EQ(unrecovered(), 0u);
+}
