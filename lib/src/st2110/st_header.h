@@ -1450,84 +1450,117 @@ struct st_plugin_mgr {
   int plugins_nb;
 };
 
+/* IMPORTANT: After *_free returns this->impl is dangling memory.
+ * Access it ONLY through MT_HANDLE_GUARD which atomically rejects
+ * post-destroy callers via the destroying gate. */
 struct st_tx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_tx_video_session_impl* impl;
+  /* Lifecycle gate (mt_handle_guard.h). Wrapper is intentionally never freed. */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st22_tx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_tx_video_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_tx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_tx_audio_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_tx_ancillary_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_tx_ancillary_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_tx_fastmetadata_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_tx_fastmetadata_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_rx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_video_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st22_rx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_video_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_rx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_audio_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_rx_ancillary_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_ancillary_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
+/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_rx_fastmetadata_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_fastmetadata_session_impl* impl;
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
 };
 
 static inline bool st20_is_frame_type(enum st20_type type) {

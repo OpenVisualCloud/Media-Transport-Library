@@ -25,11 +25,15 @@ struct st22p_rx_frame {
   uint16_t idx;
 };
 
+/* See st20p_rx_ctx note re: ->transport lifetime; access via MT_HANDLE_GUARD. */
 struct st22p_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
+  void (*wake_on_destroy)(void* self);
   enum st_frame_fmt codestream_fmt;
 
   char ops_name[ST_MAX_NAME_LEN];

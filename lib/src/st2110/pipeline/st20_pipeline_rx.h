@@ -29,11 +29,21 @@ struct st20p_rx_frame {
   struct st20_rx_tp_meta tp[MTL_SESSION_PORT_MAX];
 };
 
+/* IMPORTANT: After st20p_rx_free() returns, this->transport (and other
+ * inner pointers) are dangling. Access through MT_HANDLE_GUARD only,
+ * which atomically rejects post-destroy callers via the destroying gate. */
 struct st20p_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
+  /* Lifecycle gate (mt_handle_guard.h). Wrapper is intentionally never freed. */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
+  /* Set in *_create for blocking-capable handles; called from *_free under
+   * the destroying gate to wake any pthread_cond_timedwait sleeper.
+   * NOT used for plugin-internal sync (e.g. encode_block_wake). */
+  void (*wake_on_destroy)(void* self);
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st20p_rx_ops ops;

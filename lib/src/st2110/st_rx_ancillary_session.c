@@ -5,6 +5,7 @@
 #include "st_rx_ancillary_session.h"
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
@@ -1203,10 +1204,7 @@ int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) 
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -1214,16 +1212,19 @@ int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) 
   sch_idx = sch->idx;
 
   ret = st_rx_source_info_check(src, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = rx_ancillary_sessions_mgr_update_src(&sch->rx_anc_mgr, s, src);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st40_rx_free(st40_rx_handle handle) {
@@ -1234,10 +1235,13 @@ int st40_rx_free(st40_rx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_RX_ANC);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -1271,19 +1275,17 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
   struct rte_mbuf* pkt;
   struct st_rx_ancillary_session_impl* s;
   struct rte_ring* packet_ring;
+  void* ret_pkt = NULL;
   int idx, ret;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
@@ -1292,10 +1294,12 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
                      sizeof(struct rte_udp_hdr);
     *len = pkt->data_len - header_len;
     *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
-    return (void*)pkt;
+    ret_pkt = (void*)pkt;
   }
 
-  return NULL;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_pkt;
 }
 
 void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
@@ -1303,26 +1307,21 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_rx_ancillary_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return;
-  }
+  MT_HANDLE_GUARD_VOID(s_impl, MT_HANDLE_RX_ANC);
 
   s = s_impl->impl;
   MTL_MAY_UNUSED(s);
 
   if (pkt) rte_pktmbuf_free(pkt);
   MT_USDT_ST40_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
+  MT_HANDLE_RELEASE(s_impl);
 }
 
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct st_rx_ancillary_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EIO);
 
   s = s_impl->impl;
 
@@ -1332,6 +1331,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_ancillary_queue_id(s, i);
   }
 
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1343,15 +1343,13 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EINVAL);
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1363,10 +1361,7 @@ int st40_rx_reset_session_stats(st40_rx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EINVAL);
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
@@ -1374,5 +1369,6 @@ int st40_rx_reset_session_stats(st40_rx_handle handle) {
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   rte_atomic32_set(&s->stat_frames_received, 0);
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }

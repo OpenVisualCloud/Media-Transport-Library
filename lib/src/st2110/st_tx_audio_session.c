@@ -5,6 +5,7 @@
 #include "st_tx_audio_session.h"
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_audio_transmitter.h"
@@ -2839,10 +2840,7 @@ int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* ds
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_AUDIO, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -2850,16 +2848,19 @@ int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* ds
   sch_idx = sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = tx_audio_sessions_mgr_update_dst(&sch->tx_a_mgr, s, dst);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st30_tx_free(st30_tx_handle handle) {
@@ -2870,10 +2871,13 @@ int st30_tx_free(st30_tx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_TX_AUDIO);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -2905,52 +2909,49 @@ int st30_tx_free(st30_tx_handle handle) {
 void* st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx) {
   struct st_tx_audio_session_handle_impl* s_impl = handle;
   struct st_tx_audio_session_impl* s;
+  void* ret_addr = NULL;
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_AUDIO, NULL);
 
   s = s_impl->impl;
 
   if (idx >= s->ops.framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->ops.framebuff_cnt);
-    return NULL;
+    goto out;
   }
   if (!s->st30_frames) {
     err("%s, st30_frames not allocated\n", __func__);
-    return NULL;
+    goto out;
   }
 
   struct st_frame_trans* frame_info = &s->st30_frames[idx];
-
-  return frame_info->addr;
+  ret_addr = frame_info->addr;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_addr;
 }
 
 void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr) {
   struct st_tx_audio_session_handle_impl* s_impl = handle;
-  struct rte_mbuf* pkt;
+  struct rte_mbuf* pkt = NULL;
   struct st_tx_audio_session_impl* s;
   int idx;
   struct rte_ring* packet_ring;
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_AUDIO, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   if (rte_ring_full(packet_ring)) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   struct rte_mempool* mp =
@@ -2958,11 +2959,13 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr) {
   pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
+out:
+  MT_HANDLE_RELEASE(s_impl);
   return pkt;
 }
 
@@ -2973,8 +2976,9 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
   int idx, ret;
   struct rte_ring* packet_ring;
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
+  /* Acquire ref; on failure free the caller's mbuf and return -EIO. */
+  if (mt_handle_acquire(&s_impl->lc_destroying, &s_impl->lc_refcnt, &s_impl->type,
+                        MT_HANDLE_TX_AUDIO) < 0) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -2982,7 +2986,8 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
   if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   s = s_impl->impl;
@@ -2991,7 +2996,8 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
@@ -3001,10 +3007,14 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EBUSY;
+    ret = -EBUSY;
+    goto out;
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* stats) {
@@ -3015,15 +3025,13 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_AUDIO, -EINVAL);
   struct st_tx_audio_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -3035,15 +3043,13 @@ int st30_tx_reset_session_stats(st30_tx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_AUDIO, -EINVAL);
   struct st_tx_audio_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
