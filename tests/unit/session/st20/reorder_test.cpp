@@ -66,26 +66,31 @@ TEST_F(St20RxReorderTest, ReorderDoesNotRegressLastPktIdx) {
          "6-3-1=2 instead of 0, inflating port_lost from 4 to 6";
 }
 
-/* Cross-port variant: slot->last_pkt_idx is per-slot (shared across P+R for
- * the same RTP timestamp). A reorder arriving on one port must not poison
- * the gap arithmetic for the next forward packet on the OTHER port.
- *   1. P sends pkt 0 (last_pkt_idx = 0)
- *   2. R sends pkt 5 (gap = 4 → port_lost(R) += 4, last_pkt_idx = 5)
- *   3. P sends pkt 3 (reorder; last_pkt_idx must STAY 5, not regress)
- *   4. R sends pkt 6 (in-order continuation: gap = 0)
- * Without the high-water-mark guard, step 3 regresses last_pkt_idx to 3,
- * and step 4 computes gap = 6 - 3 - 1 = 2, falsely inflating port_lost(R) to 6. */
+/* Cross-port: each port's `last_pkt_idx` is tracked separately, so a
+ * packet arriving on one port can never poison the gap or reorder
+ * arithmetic for the next packet on the OTHER port. Every port's
+ * loss/reorder counter reflects only events on its own stream.
+ *
+ *   1. P sends pkt 0 (P_last = 0)
+ *   2. R sends pkt 5 (first pkt on R; no gap counted, R_last = 5)
+ *   3. P sends pkt 3 (P_last = 0 → forward jump on P: gap = 2 lost on P)
+ *   4. R sends pkt 6 (R_last = 5 → in-order on R: no gap, no reorder)
+ *
+ * P's forward jump must NOT register as reorder (it's a gap on P), and R's
+ * counters must be untouched by anything happening on P. */
 TEST_F(St20RxReorderTest, ReorderOnOnePortDoesNotPoisonOtherPort) {
   ut20_feed_pkt(ctx_, 1000, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1005, 1000, 0, 0, 10, MTL_SESSION_PORT_R);
   ut20_feed_pkt(ctx_, 1003, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1006, 1000, 0, 0, 10, MTL_SESSION_PORT_R);
 
-  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u)
+      << "P sent pkts 0 then 3: forward gap on P, not reorder";
   EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 0u);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 4u)
-      << "Reorder on P must not inflate lost count for the next forward pkt on R";
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u)
+      << "P's forward jump from pkt 0 to pkt 3 implies 2 missing on P's stream";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u)
+      << "R sent pkt 5 then pkt 6: first-pkt establishes R_last, then in-order";
 }
 
 /* Multi-step reorder: large initial gap, then several reorders fill it in
@@ -106,4 +111,69 @@ TEST_F(St20RxReorderTest, MultipleReordersDoNotInflateLost) {
       << "Lost must be counted exactly once when pkt 6 arrived; the three "
          "subsequent reorders must not inflate it, and pkt 7 must compute "
          "gap from the high-water mark (6), not the last reordered idx";
+}
+
+/* Sustained cross-wire interleaving across many frames: every frame is
+ * supplied by both wires with the secondary arriving first, but each
+ * wire delivers its own single packet in order. Verifies that neither
+ * reorder counter accumulates spurious increments under prolonged
+ * cross-wire late arrivals — i.e. cross-port arrival order is never
+ * classified as own-stream reorder. */
+TEST_F(St20RxReorderTest, RepeatedCrossPortTransitionsDoNotInflateReorder) {
+  constexpr int N = 8;
+  for (int i = 0; i < N; i++) {
+    uint32_t ts = 1000 + 1000u * static_cast<uint32_t>(i);
+    feed(1, ts, MTL_SESSION_PORT_R);
+    feed(0, ts, MTL_SESSION_PORT_P);
+  }
+  EXPECT_EQ(frames_received(), N);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 0u);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Wide-frame own-port reorder.
+ *
+ * Default 2-pkt geometry cannot express an intra-frame own-stream reorder
+ * that does not collide with the first-pkt branch. This test uses a
+ * 4-pkt geometry to send pkt 2 then pkt 1 on the same wire while the
+ * other wire delivers in order.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+class St20RxReorderWideTest : public ::testing::Test {
+ protected:
+  static constexpr int kPktsPerFrame = 4;
+  ut20_test_ctx* ctx_ = nullptr;
+  void SetUp() override {
+    ASSERT_EQ(ut20_init(), 0);
+    ctx_ = ut20_ctx_create_geom(2, kPktsPerFrame);
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    if (ctx_) ut20_ctx_destroy(ctx_);
+  }
+  void feed(int pkt_idx, uint32_t ts, enum mtl_session_port port) {
+    ut20_feed_frame_pkt(ctx_, pkt_idx, ts, port);
+  }
+  int frames_received() {
+    return ut20_frames_received(ctx_);
+  }
+  uint64_t port_reordered(enum mtl_session_port p) {
+    return ut20_stat_port_reordered(ctx_, p);
+  }
+};
+
+/* R delivers pkt 2 then pkt 1 within the same frame on the same wire.
+ * This is a true own-stream reorder on R and must be counted exactly
+ * once on R, with P's reorder counter untouched. */
+TEST_F(St20RxReorderWideTest, OwnPortReorderCountedOnThatPortOnly) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1000, MTL_SESSION_PORT_R); /* R first; R_last = 2 */
+  feed(1, 1000, MTL_SESSION_PORT_R); /* R own-stream reorder: 1 < 2 */
+  feed(3, 1000, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 1u)
+      << "R received pkt_idx 1 after pkt_idx 2 on its own wire";
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u);
 }

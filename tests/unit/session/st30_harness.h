@@ -81,6 +81,16 @@ uint64_t ut30_stat_port_lost(const ut30_test_ctx* ctx, enum mtl_session_port por
 uint64_t ut30_stat_port_reordered(const ut30_test_ctx* ctx, enum mtl_session_port port);
 uint64_t ut30_stat_port_duplicates(const ut30_test_ctx* ctx, enum mtl_session_port port);
 
+/* Per-port frame credit (audio first-pkt-wins).
+ *
+ * ST30 increments `port[i].frames` exactly once per frame, on the port
+ * whose packet allocated the new frame buffer (i.e. the first pkt of the
+ * new RTP timestamp to be accepted post-redundancy). The other port is
+ * not credited even if it later contributes packets to the same frame.
+ * See `rx_audio_session_handle_frame_pkt` in
+ * `lib/src/st2110/st_rx_audio_session.c`. */
+uint64_t ut30_stat_port_frames(const ut30_test_ctx* ctx, enum mtl_session_port port);
+
 /* Session-wide counters. `unrecovered` counts gaps the redundancy filter
  * could not heal; `redundant` counts cross-port duplicates dropped by the
  * filter; `received` counts accepted packets after filtering. */

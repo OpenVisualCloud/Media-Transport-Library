@@ -68,6 +68,9 @@ class St30RxBaseTest : public ::testing::Test {
   uint64_t port_pkts(enum mtl_session_port p) {
     return ut30_stat_port_pkts(ctx_, p);
   }
+  uint64_t port_frames(enum mtl_session_port p) {
+    return ut30_stat_port_frames(ctx_, p);
+  }
   uint64_t port_bytes(enum mtl_session_port p) {
     return ut30_stat_port_bytes(ctx_, p);
   }
