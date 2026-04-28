@@ -111,11 +111,11 @@ build_ffmpeg() {
 		# Ensure FFmpeg can find libraries installed in its own prefix (e.g. openh264)
 		export PKG_CONFIG_PATH="${MTL_INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 		export LD_LIBRARY_PATH="${MTL_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
+		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
 		make -j "$(nproc)"
 		make install
 	else
-		./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
+		./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
 		make -j "$(nproc)"
 		sudo make install
 		sudo ldconfig
