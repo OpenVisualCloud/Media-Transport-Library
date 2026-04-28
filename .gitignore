@@ -110,3 +110,6 @@ openh264*
 level-zero-*
 
 venv*
+
+# Local-only Copilot instructions (keep personal workflow guidance untracked)
+.github/instructions/local/*.instructions.md
