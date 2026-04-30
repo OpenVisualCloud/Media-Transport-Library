@@ -81,7 +81,8 @@ function setup_ubuntu_install_dependencies() {
 		cmake \
 		linuxptp \
 		ethtool \
-		netsniff-ng
+		netsniff-ng \
+		unzip
 
 	# CiCd only
 	if [ "${CICD_BUILD}" == "1" ]; then
