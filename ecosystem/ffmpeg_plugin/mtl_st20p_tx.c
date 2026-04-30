@@ -106,6 +106,18 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
       ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
       break;
+    case AV_PIX_FMT_YUV444P10LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
+      ops_tx.transport_fmt = ST20_FMT_YUV_444_10BIT;
+      break;
+    case AV_PIX_FMT_GBRP10LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+      ops_tx.transport_fmt = ST20_FMT_RGB_10BIT;
+      break;
+    case AV_PIX_FMT_YUV420P:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV420CUSTOM8;
+      ops_tx.transport_fmt = ST20_FMT_YUV_420_8BIT;
+      break;
     default:
       err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
       return AVERROR(EINVAL);
