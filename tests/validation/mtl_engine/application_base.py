@@ -263,6 +263,19 @@ class Application(ABC):
             logger.info(
                 f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
             )
+            # Mirror legacy RxTxApp.execute_test: also extend the in-process
+            # ``--test_time`` argument so the application's data window
+            # survives PTP startup. Without this RxTxApp may still be in
+            # PTP sync when the wrapper timeout fires (return code 124).
+            if self.command:
+                new_cmd, n_subs = re.subn(
+                    r"(--test_time\s+)\d+",
+                    rf"\g<1>{effective_test_time}",
+                    self.command,
+                    count=1,
+                )
+                if n_subs:
+                    self.command = new_cmd
 
         wait_timeout = (effective_test_time or 0) + self.params.get(
             "process_timeout_buffer", 90

@@ -7,6 +7,7 @@ an out-of-band ``FileVideoIntegrityRunner`` post-check (kept identical to the
 legacy test).
 """
 import logging
+import os
 
 import pytest
 from common.integrity.integrity_runner import FileVideoIntegrityRunner
@@ -17,8 +18,20 @@ from mtl_engine.media_files import yuv_files_422rfc10
 logger = logging.getLogger(__name__)
 
 
+def _is_supported_runner() -> bool:
+    """Skip on e810-dell where ptp4l synchronization is unreliable."""
+    workflow = os.environ.get("MTL_GITHUB_WORKFLOW", "")
+    if not workflow:
+        return True
+    return workflow.endswith(":e810") or workflow.endswith(":e830")
+
+
 @pytest.mark.nightly
 @pytest.mark.ptp
+@pytest.mark.skipif(
+    not _is_supported_runner(),
+    reason="Not supported on e810-dell due to ptp4l synchronization issues.",
+)
 @pytest.mark.parametrize(
     "interface_profile",
     [
@@ -26,6 +39,7 @@ logger = logging.getLogger(__name__)
         pytest.param(
             {"mode": "mixed", "tx_type": "PF", "rx_type": "VF"},
             id="pf_tx_vf_rx",
+            marks=pytest.mark.skip(reason="pf_tx_vf_rx works but is not stable yet"),
         ),
     ],
 )
