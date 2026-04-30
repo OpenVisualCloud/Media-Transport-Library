@@ -801,11 +801,19 @@ E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.
 
 Config: `topology_config.yaml` (hosts, PCI BDFs) + `test_config.yaml` (session_id, paths)
 
+Setup: `.github/scripts/setup_validation.sh` stage functions must run in the parent shell; `stage_ssh` exports `SSH_KEY` for `stage_configs`.
+
+Setup gotcha: `pkg-config --exists libdpdk` is not enough; warm DPDK setup must also refresh/verify `ldconfig` or RxTxApp can fail with exit 127 and missing `librte_*.so.26`.
+
+Shell gotcha: in `setup_validation.sh` (`set -o pipefail`), avoid `producer | grep -q pattern` readiness probes; early `grep -q` exit can SIGPIPE the producer and make a true match look false. Capture output once or use non-early-exit matching.
+
 Validation methods: log parsing, FPS check, MD5 per-frame integrity, EBU LIST compliance (optional)
 
 Markers: `@pytest.mark.smoke`, `@pytest.mark.nightly`, `@pytest.mark.dual`, `@pytest.mark.ptp`
 
 Root required. Depends on `mfd-*` Intel-internal packages for SSH/NIC automation.
+
+For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, configs), delegate to the `MTL Validation Setup` subagent (`.github/agents/mtl-validation-setup.agent.md`). For invoking pytest itself and triaging failures, use `.github/instructions/mtl-validation-tests.instructions.md` — it auto-attaches when working under `tests/validation/`.
 
 ### RxTxApp (`tests/tools/RxTxApp/`)
 Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary, 180 fast-metadata (each direction).

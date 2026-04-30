@@ -45,18 +45,3 @@ MTL implements SMPTE ST 2110 for media transport over IP. DPDK-based with HW pac
 ```
 
 **Always** run `./build.sh` to verify compilation and `./format-coding.sh` to fix formatting before committing. CI rejects improperly formatted code.
-
-## Commit Messages
-Format: `<Type>: <description>` — Type is **capitalized**. See `doc/coding_standard.md`.
-
-| Type | Use |
-|------|-----|
-| `Feat` / `Add` | New feature |
-| `Fix` | Bugfix |
-| `Refactor` | Code change (no bugfix/feature) |
-| `Docs` | Documentation only |
-| `Test` | Tests |
-| `Perf` | Performance improvement |
-| `Build` | Build system/dependencies |
-| `Ci` | CI configuration |
-| `Style` | Formatting (no code change) |
