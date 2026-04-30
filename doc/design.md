@@ -112,11 +112,15 @@ For instructions on how to isolate CPU cores using the `isolcpus` kernel boot pa
 
 For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
 
-> **Warning:** On newer Intel platforms with Xeon 6 CPU, the `isolcpus` kernel parameter may not be fully respected due to a kernel bug in CPU topology handling. Isolated cores can still receive work from the scheduler, undermining latency-sensitive workloads.
->
-> This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix,
-> upgrading your kernel, or working with taskset.
->
+### 2.8. CPU Core Isolation
+
+For timing-sensitive workloads and improved performance predictability, isolating CPU cores from the general scheduler can significantly reduce context switches and jitter. This is particularly beneficial when running MTL with dedicated cores.
+
+To isolate CPU cores at boot time, use the `isolcpus` kernel boot parameter. For detailed instructions covering static isolation, dynamic cpuset-based isolation, kernel prerequisites, and verification steps, refer to the [CPU Isolation Guide](isolation.md). For additional background, see also the [DPDK Linux Getting Started Guide - Using Linux Core Isolation to Reduce Context Switches](https://doc.dpdk.org/guides/linux_gsg/enable_func.html#using-linux-core-isolation-to-reduce-context-switches).
+
+Once cores are isolated, you can manually assign them to MTL instances using the `lcores` parameter in `struct mtl_init_params` (see §2.7), or via the RxTxApp `--lcores` command-line option. This ensures MTL tasks run with minimal interference from other system processes.
+
+
 ## 3. Memory management
 
 ### 3.1. Huge Page
@@ -224,6 +228,8 @@ MTL addresses this challenge by leveraging the NIC's rate-limiting features alon
 The default NIC queue depth is set to 512 in MTL, and MTL will always ensure the queue is fully utilized by the tasklet engine. In the case of 1080p at 50fps, one packet time in ST2110-21 is approximately ~5us.
 With a queue depth of 512, the MTL can tolerate a kernel scheduler jitter of up to ~2.5ms. If you observe any packet timing jitter, consider increasing the queue depth. MTL provides the `nb_tx_desc` option for this adjustment.
 However, for a 4K 50fps session, the time for one packet is approximately ~1us, indicating that the duration for 512 packets is around ~500us. With a queue depth of 512, MTL can only tolerate a scheduler jitter of about ~500us. However, by adjusting the depth to the maximum hardware-permitted value of 4096, MTL should be capable of handling a maximum scheduler jitter of 4ms.
+
+> **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](isolation.md) for setup instructions.
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
@@ -541,8 +547,8 @@ For applications requiring access to the timing parser results for each frame, t
 
 It also features a sample timing parser UI constructed using the MTL Python bindings, which can be found in [rx_timing_parser.py](../python/example/rx_timing_parser.py).
 
-To increase the reliability of parsed results, it is recommended to use the `isocpus` kernel boot parameter to isolate a subset of dedicated CPUs specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure that these tasks are not preempted by other processes, thus maintaining a high level of reliability.
-After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section `#### 2.7 Manual Assigned lcores` in this documentation.
+To increase the reliability of parsed results, it is recommended to use the `isolcpus` kernel boot parameter to isolate a subset of dedicated CPUs specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure that these tasks are not preempted by other processes, thus maintaining a high level of reliability. For comprehensive isolation instructions — including static (`isolcpus`), dynamic (cpusets), kernel config verification, and validation steps — see the [CPU Isolation Guide](isolation.md).
+After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section [§2.7 Manual Assigned lcores](#27-manual-assigned-lcores) and [§2.8 CPU Core Isolation](#28-cpu-core-isolation) in this documentation.
 
 ### 6.17. ST40(ancillary) Interlaced support
 
