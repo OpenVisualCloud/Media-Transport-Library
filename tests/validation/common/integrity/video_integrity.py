@@ -48,6 +48,15 @@ def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
             pixel_size = 2.5
         case "YUV422PLANAR10LE" | "yuv422p10le":
             pixel_size = 4
+        case "yuv444p10le" | "gbrp10le":
+            # 3 planes (Y/U/V or G/B/R), 10-bit samples padded to 2 bytes each
+            pixel_size = 6
+        case "yuv420p":
+            # I420: full Y plane + quarter-size U + quarter-size V
+            pixel_size = 1.5
+        case "y210le":
+            # Packed 4:2:2 10-bit, 2 samples per pixel × 2 bytes per sample
+            pixel_size = 4
         case _:
             logging.error(f"Size of {file_format} pixel is not known")
             raise ValueError(f"Size of {file_format} pixel is not known")

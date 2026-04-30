@@ -10,12 +10,12 @@ import threading
 import time
 
 from mfd_connect import SSHConnection
-from mfd_connect.exceptions import ConnectionCalledProcessError
+from mfd_connect.exceptions import RemoteProcessInvalidState
 from mtl_engine import ip_pools
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 
 from . import rxtxapp_config
-from .execute import log_fail, run
+from .execute import log_fail, run, stop_process
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ def capture_stdout(proc, proc_name: str):
             output = proc.stdout_text
         except AttributeError:
             logger.debug(f"No stdout_text attribute for {proc_name}")
-            output = ""
-        except Exception as e:
-            logger.warning(f"Error capturing stdout from {proc_name}: {e}")
-            output = ""
+        except RemoteProcessInvalidState:
+            logger.debug(f"{proc_name}: process state invalid; no stdout to capture")
+        except Exception as exc:  # noqa: BLE001 - never mask test result
+            logger.warning(f"Error capturing stdout from {proc_name}: {exc}")
 
     # Run in thread with timeout to avoid blocking
     capture_thread = threading.Thread(target=_get_output, daemon=True)
@@ -75,96 +75,6 @@ def init_test_logging():
 def sanitize_filename(name: str) -> str:
     """Sanitize filename by replacing unsafe characters."""
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
-
-
-def get_process_pid(proc, proc_name: str, host) -> int:
-    """Extract actual process PID using pgrep (not shell PID)."""
-    if not host:
-        return getattr(proc, "pid", None)
-
-    search_term = "ffmpeg" if "ffmpeg" in proc_name.lower() else "RxTxApp"
-    try:
-        result = host.connection.execute_command(f"pgrep -n {search_term}")
-        if result.return_code == 0 and result.stdout.strip():
-            return int(result.stdout.strip())
-    except (ValueError, AttributeError, ConnectionCalledProcessError):
-        pass
-    return getattr(proc, "pid", None)
-
-
-def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
-    """Stop process with hard timeout to prevent hanging.
-
-    Uses threading to ensure we never hang forever. Forcefully kills if needed.
-
-    Args:
-        proc: Process object
-        proc_name: Name for logging
-        timeout: Maximum seconds before force kill
-        host: Host connection object
-    """
-    if not proc:
-        logger.debug(f"{proc_name}: No process to stop")
-        return
-
-    proc_pid = get_process_pid(proc, proc_name, host)
-    logger.debug(f"{proc_name}: Stopping (PID: {proc_pid})")
-
-    def _do_stop():
-        # Step 1: Try graceful stop (max 2 seconds)
-        try:
-            if hasattr(proc, "running") and proc.running:
-                logger.debug(f"{proc_name}: Attempting graceful stop")
-                proc.stop(wait=2)
-                if not proc.running:
-                    logger.debug(f"{proc_name}: Stopped gracefully")
-                    return
-        except Exception as e:
-            logger.debug(f"{proc_name}: Graceful stop failed: {e}")
-
-        # Step 2: SIGTERM by PID
-        if proc_pid and host:
-            try:
-                logger.debug(f"{proc_name}: Sending SIGTERM to PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -15 {proc_pid} || true", shell=True
-                )
-                time.sleep(1)
-            except Exception:
-                pass
-
-        # Step 3: Force SIGKILL
-        try:
-            if hasattr(proc, "kill"):
-                proc.kill()
-        except Exception:
-            pass
-
-        if proc_pid and host:
-            try:
-                logger.warning(f"{proc_name}: Force killing PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} || true", shell=True
-                )
-            except Exception:
-                pass
-
-    # Run with hard timeout
-    stop_thread = threading.Thread(target=_do_stop, daemon=True)
-    stop_thread.start()
-    stop_thread.join(timeout=timeout)
-
-    if stop_thread.is_alive():
-        logger.error(f"{proc_name}: Stop timeout after {timeout}s, forcing SIGKILL")
-        if proc_pid and host:
-            try:
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} 2>/dev/null || true"
-                )
-            except Exception:
-                pass
-
-    logger.debug(f"{proc_name}: Stop completed")
 
 
 def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=None):
@@ -235,11 +145,26 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
+    pix_fmt: str = "yuv422p10le",
+    keep_output: bool = False,
 ):
+    """Execute FFmpeg loopback (or FFmpeg<->RxTxApp) ST2110-20 test.
+
+    When ``keep_output=True`` the output file(s) are NOT deleted after
+    validation and the function returns ``(passed, output_files[0])`` instead
+    of ``passed``. Use this when a follow-up integrity check needs the file.
+
+    ``pix_fmt`` controls FFmpeg input/output pixel format on both sides; the
+    ``video_url`` source must already be in that pix_fmt and ``-filter:v fps=``
+    is dropped to preserve byte-exact frame parity.
+    """
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
     video_size, fps = decode_video_format_16_9(video_format)
+    # When caller pre-converted the source to a non-default pix_fmt (typical
+    # for integrity tests), skip the fps filter so frames stay byte-identical.
+    tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
     match output_format:
         case "yuv":
             ffmpeg_rx_f_flag = "-f rawvideo"
@@ -251,7 +176,7 @@ def execute_test(
             f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i k "
             f"-init_retry 20 "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
@@ -259,8 +184,8 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = (
                 f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -276,11 +201,11 @@ def execute_test(
             f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
             f"-map 1:0 {ffmpeg_rx_f_flag} {output_files[1]} -y"
@@ -288,8 +213,8 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = (
                 f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -345,24 +270,38 @@ def execute_test(
     finally:
         logger.info("Stopping processes...")
 
-        # Stop TX first
+        # Each cleanup step is independently guarded so a single failure (e.g.
+        # `RemoteProcessInvalidState` raised by `proc.pid` on an already-exited
+        # SSH process) cannot mask the captured TX/RX logs that follow, which
+        # are often the only diagnostic for an early ffmpeg exit.
         if tx_proc:
-            stop_process(tx_proc, "TX", timeout=5, host=host)
+            try:
+                stop_process(tx_proc, "TX", timeout=5, host=host)
+            except Exception as e:
+                logger.warning(f"TX: stop_process raised, continuing: {e}")
 
-        # Stop RX second
         if rx_proc:
-            stop_process(rx_proc, "RX", timeout=5, host=host)
+            try:
+                stop_process(rx_proc, "RX", timeout=5, host=host)
+            except Exception as e:
+                logger.warning(f"RX: stop_process raised, continuing: {e}")
 
-        # Wait for processes to fully terminate
         time.sleep(1)
 
-        # Clean up any remaining orphaned processes
-        kill_orphaned_processes(host, "ffmpeg")
-        kill_orphaned_processes(host, "RxTxApp")
+        for pattern in ("ffmpeg", "RxTxApp"):
+            try:
+                kill_orphaned_processes(host, pattern)
+            except Exception as e:
+                logger.warning(f"orphan cleanup ({pattern}) failed: {e}")
 
-        # Capture output after processes stopped
-        capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
+        try:
+            capture_stdout(rx_proc, "RX")
+        except Exception as e:
+            logger.warning(f"RX: capture_stdout failed: {e}")
+        try:
+            capture_stdout(tx_proc, "TX")
+        except Exception as e:
+            logger.warning(f"TX: capture_stdout failed: {e}")
     passed = False
     match output_format:
         case "yuv":
@@ -371,14 +310,18 @@ def execute_test(
             passed = check_output_video_h264(
                 output_files[0], video_size, host, build, video_url
             )
-    # Clean up output files after validation
-    try:
-        for output_file in output_files:
-            run(f"rm -f {output_file}", host=host)
-    except Exception as e:
-        logger.info(f"Could not remove output files: {e}")
+    # Clean up output files after validation (unless caller wants to keep them
+    # for follow-up checks like integrity validation).
+    if not keep_output:
+        try:
+            for output_file in output_files:
+                run(f"rm -f {output_file}", host=host)
+        except Exception as e:
+            logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
+    if keep_output:
+        return passed, output_files[0]
     return passed
 
 
@@ -743,6 +686,33 @@ def decode_video_format_16_9(video_format: str) -> tuple:
     else:
         log_fail("Invalid video format")
         return None
+
+
+def generate_reference_file(
+    host,
+    build: str,
+    src_url: str,
+    video_size: str,
+    src_pix_fmt: str,
+    dst_pix_fmt: str,
+) -> str:
+    """Transcode a raw YUV source into a reference file in ``dst_pix_fmt``.
+
+    Used by integrity tests to obtain a byte-exact reference matching the
+    pix_fmt that the FFmpeg MTL plugin will both send and receive.
+    Returns the path of the generated reference file on ``host``.
+    """
+    test_name = sanitize_filename(get_case_id())
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    ref_file = f"{build}/tests/{test_name}_{timestamp}_ref_{dst_pix_fmt}.yuv"
+    cmd = (
+        f"{FFMPEG_EXE} -y -f rawvideo -pix_fmt {src_pix_fmt} "
+        f"-video_size {video_size} -i {src_url} "
+        f"-pix_fmt {dst_pix_fmt} -f rawvideo {ref_file}"
+    )
+    logger.info(f"Generating reference file: {ref_file}")
+    run(cmd, cwd=build, timeout=300, testcmd=False, host=host)
+    return ref_file
 
 
 def generate_rxtxapp_rx_config(
