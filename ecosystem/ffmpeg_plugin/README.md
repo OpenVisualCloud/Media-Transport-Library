@@ -53,7 +53,7 @@ git am $mtl_source_code/ecosystem/ffmpeg_plugin/${FFMPEG_VERSION}/*.patch
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
 # build with --enable-mtl, customize the option as your setup
-./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
 make -j
 sudo make install
 sudo ldconfig
@@ -213,7 +213,7 @@ The MTL_GPU_DIRECT experimental feature aims at enhancing FFmpeg's performance b
 To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this option enabled. Here’s how to do it:
 
 ```bash
-./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
+./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
 ```
 
 or use
