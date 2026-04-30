@@ -13,23 +13,8 @@ from mtl_engine.media_files import yuv_files_422rfc10
 logger = logging.getLogger(__name__)
 
 
-def _is_supported_runner() -> bool:
-    """Check if the test is running on a supported runner (e810 or e830)."""
-    workflow = os.environ.get("MTL_GITHUB_WORKFLOW", "")
-    # MTL_GITHUB_WORKFLOW format is "nightly-pytest:e810" or "nightly-pytest:e810-dell" etc.
-    # Return True if not in CI (no workflow set) or if running on e810 or e830 (not e810-dell)
-    if not workflow:
-        return True  # Not in CI, allow test to run
-    return workflow.endswith(":e810") or workflow.endswith(":e830")
-
-
 @pytest.mark.nightly
 @pytest.mark.ptp
-@pytest.mark.skipif(
-    not _is_supported_runner(),
-    reason="This test is not supported on e810-dell, "
-    "because of problems with ptp4l synchronization.",
-)
 @pytest.mark.parametrize(
     "interface_profile",
     [
