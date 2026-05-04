@@ -26,7 +26,6 @@ jobs:
       matrix:
         nic:
           - e810
-          - e810-dell
           - e830
         dir:
           - dma
@@ -78,8 +77,6 @@ jobs:
       - name: Set PCI device env variable
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
