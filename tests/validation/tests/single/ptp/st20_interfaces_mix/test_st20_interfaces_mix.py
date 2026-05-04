@@ -23,7 +23,6 @@ def _is_supported_runner() -> bool:
     return workflow.endswith(":e810") or workflow.endswith(":e830")
 
 
-@pytest.mark.nightly
 @pytest.mark.ptp
 @pytest.mark.skipif(
     not _is_supported_runner(),

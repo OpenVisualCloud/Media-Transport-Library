@@ -7,7 +7,6 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 
-@pytest.mark.nightly
 @pytest.mark.verified
 @pytest.mark.parametrize(
     "media_file",
@@ -96,7 +95,6 @@ convert1_formats = dict(
 )
 
 
-@pytest.mark.nightly
 @pytest.mark.verified
 @pytest.mark.parametrize(
     "media_file",
@@ -244,7 +242,6 @@ def test_tx_rx_conversion(
     )
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422rfc10["test_8K"]],

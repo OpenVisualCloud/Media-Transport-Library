@@ -14,7 +14,6 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [

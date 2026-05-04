@@ -27,7 +27,6 @@ import pytest
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize(
     "media_file",

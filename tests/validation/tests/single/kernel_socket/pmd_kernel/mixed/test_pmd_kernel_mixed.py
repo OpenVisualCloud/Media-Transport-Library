@@ -60,7 +60,6 @@ from mtl_engine.media_files import (
 )
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize(
     "media_file",
