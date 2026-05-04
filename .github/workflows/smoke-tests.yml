@@ -52,7 +52,6 @@ jobs:
       matrix:
         nic:
           - e810
-          - e810-dell
           - e830
       fail-fast: false
     runs-on: ${{ matrix.nic }}
@@ -95,8 +94,6 @@ jobs:
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"

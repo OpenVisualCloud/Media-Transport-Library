@@ -8,7 +8,6 @@ on:
         type: choice
         options:
           - e810
-          - e810-dell
           - e830
           - gnrd
       marker:
@@ -74,8 +73,6 @@ jobs:
       - name: Set PCI device
         run: |
           if [ "${{ inputs.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "e810-dell" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ inputs.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
