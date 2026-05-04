@@ -18,7 +18,6 @@ _AUDIO_CHANNELS = ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
 _SMOKE_CASE = ("PCM16", "M")
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     ("media_file", "audio_channel"),
     [

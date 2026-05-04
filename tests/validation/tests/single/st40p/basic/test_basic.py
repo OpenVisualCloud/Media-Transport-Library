@@ -12,7 +12,6 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [
@@ -60,7 +59,6 @@ def test_st40p_basic(
     )
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [anc_files["text_p59"]],

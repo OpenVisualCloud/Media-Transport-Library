@@ -31,7 +31,6 @@ from mtl_engine.media_files import (
 )
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize(
     "media_file",

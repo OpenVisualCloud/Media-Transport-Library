@@ -8,7 +8,6 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files, audio_files, yuv_files
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 def test_rx_timing_mode(
     hosts,

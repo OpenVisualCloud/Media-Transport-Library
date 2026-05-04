@@ -6,14 +6,13 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files
 
 
-@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file, replicas",
     [
-        pytest.param(yuv_files["i1080p60"], 1, marks=pytest.mark.nightly),
+        pytest.param(yuv_files["i1080p60"], 1),
         (yuv_files["i1080p60"], 3),
         (yuv_files["i1080p60"], 30),
-        pytest.param(yuv_files["i2160p60"], 1, marks=pytest.mark.nightly),
+        pytest.param(yuv_files["i2160p60"], 1),
         (yuv_files["i2160p60"], 3),
         (yuv_files["i2160p60"], 9),
     ],
