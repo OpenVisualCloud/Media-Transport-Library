@@ -24,10 +24,12 @@ jobs:
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
+      - run: sudo rm -rf tests/validation/logs || true
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ github.ref }}'
+          clean: false
       - uses: ./.github/actions/build
       - name: 'preparation: Start MtlManager at background'
         run: |
@@ -38,7 +40,7 @@ jobs:
         env:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
-          LOG_FILE: "${{ github.workspace }}/gtest.log"
+          LOG_FILE: "${{ runner.temp }}/gtest.log"
           TEST_CASE_TIMEOUT: 1800
         run: |
           sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
@@ -66,7 +68,7 @@ jobs:
         with:
           name: nightly-gtest-report-${{ matrix.nic }}
           path: |
-            gtest.log
+            ${{ runner.temp }}/gtest.log
       
       - name: "upload system info"
         if: always()

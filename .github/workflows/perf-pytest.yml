@@ -45,11 +45,13 @@ jobs:
           egress-policy: audit
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - run: sudo rm -rf tests/validation/logs || true
       - name: Checkout MTL
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ inputs.branch || github.ref }}'
           fetch-depth: 0
+          clean: false
       - name: Overlay test framework from workflow branch
         if: inputs.branch != ''
         run: |
