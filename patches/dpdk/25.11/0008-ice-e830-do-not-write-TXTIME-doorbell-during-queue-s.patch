@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Wed, 9 Apr 2026 07:33:00 +0000
+Subject: [PATCH] ice: e830: do not write TXTIME doorbell during queue start
+
+Writing zero to the TXTIME doorbell register (E830_GLQTX_TXTIME_DBELL_LSB)
+during ice_tx_queue_start() triggers a PQM MDD (Malicious Driver Detection)
+event 29 on E830 NICs. The TXTIME engine interprets any doorbell write as a
+packet submission signal, but at queue-start time no TXTIME descriptors are
+posted yet, causing the hardware to flag the event and silently discard all
+subsequent TXTIME transmissions (opackets stays at 0).
+
+The regular TX tail register (QTX_COMM_DBELL) needs to be initialized to 0
+so the hardware knows the queue is empty, but the TXTIME doorbell serves a
+different purpose — it is only meant to be rung when actually submitting
+packets with launch timestamps.
+
+The kernel ice driver (ice-2.5.4) does not write to the TXTIME doorbell
+during queue setup either — it only assigns the register address for later
+use by the TX path.
+
+Remove the ICE_PCI_REG_WRITE(txq->qtx_tail, 0) call from the TXTIME branch
+of ice_tx_queue_start(). The pointer assignment is kept so the TX datapath
+can ring the doorbell during normal TXTIME packet submission.
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/ice_rxtx.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index 1234567890..abcdef1234 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -898,9 +898,6 @@
+ 
+ 		txq->qtx_tail = hw->hw_addr + E830_GLQTX_TXTIME_DBELL_LSB(txq->reg_idx);
+ 
+-		/* Init the Tx time tail register*/
+-		ICE_PCI_REG_WRITE(txq->qtx_tail, 0);
+-
+ 		err = ice_aq_set_txtimeq(hw, txq->reg_idx, 1, ts_elem, ts_buf_len, NULL);
+ 		rte_free(ts_elem);
+ 		if (err) {

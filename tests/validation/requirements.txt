@@ -25,3 +25,5 @@ mfd-network-adapter==14.5.0      # NetworkInterface (common/nicctl.py)
 requests==2.33.1                 # compliance/compliance_client.py
 paramiko==3.4.0                  # conftest.py SSH ProxyCommand tunneling
 PyYAML==6.0.3                    # configs/gen_config.py
+dpkt>=1.9.8                      # tests/single/st20p/tsn/ pcap parsing
+numpy>=1.24.0                    # tests/single/st20p/tsn/ R² / jitter stats
