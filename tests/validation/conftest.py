@@ -24,8 +24,12 @@ from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
 from mtl_engine.const import (
+    DPDK_LIB_PATH,
+    FFMPEG_LIB_PATH,
+    FFMPEG_PATH,
     FRAMES_CAPTURE,
     LOG_FOLDER,
+    MTL_LIB_PATH,
     PERF_LOG_FOLDER,
     RXTXAPP_PATH,
     TESTCMD_LVL,
@@ -853,7 +857,8 @@ def mtl_manager(hosts):
     """
     managers = {}
     for host in hosts.values():
-        mgr = MtlManager(host)
+        host_mtl_path = get_host_mtl_path(host)
+        mgr = MtlManager(host, mtl_path=host_mtl_path)
         if not mgr.start():
             raise RuntimeError(f"Failed to start MtlManager on host {host.name}")
         managers[host.name] = mgr
@@ -1209,4 +1214,28 @@ def _ensure_clean_hw_state(hosts):
     """
     for host in hosts.values():
         _reset_host_state(host)
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _register_local_libs(hosts, mtl_path):
+    """Register .local_install libraries via ldconfig so LD_LIBRARY_PATH is unnecessary."""
+    lib_dirs = [
+        os.path.join(mtl_path, MTL_LIB_PATH.removeprefix("./")),
+        os.path.join(mtl_path, DPDK_LIB_PATH.removeprefix("./")),
+        os.path.join(mtl_path, FFMPEG_LIB_PATH.removeprefix("./")),
+    ]
+    conf = "\\n".join(lib_dirs)
+    ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
+    for host in hosts.values():
+        try:
+            host.connection.execute_command(
+                f"printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
+                f" && ln -sf {ffmpeg_bin}/ffprobe /usr/local/bin/ffprobe"
+                f" && ln -sf {ffmpeg_bin}/ffmpeg /usr/local/bin/ffmpeg",
+                shell=True,
+                timeout=15,
+            )
+        except Exception as e:
+            logger.warning("ldconfig registration failed on %s: %s", host.name, e)
     yield

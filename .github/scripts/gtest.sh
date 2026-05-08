@@ -4,18 +4,35 @@
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
-mtl_folder="${script_folder}/../../"
+mtl_folder=$(cd "${script_folder}/../.." && pwd)
 declare -A test_cases
 
-: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
-: "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUfdTest"}"
-: "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUplTest"}"
+# Detect whether to use .local_install (CI) or local build/system paths
+if [ -d "${mtl_folder}/.local_install" ]; then
+	# CI mode: use .local_install prefix tree
+	export PATH="${mtl_folder}/.local_install/dpdk/bin:${mtl_folder}/.local_install/mtl/bin:${PATH}"
+	export LD_LIBRARY_PATH="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu:${mtl_folder}/.local_install/dpdk/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"}"
+	: "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiUfdTest"}"
+	: "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiUplTest"}"
+	: "${MTL_LD_PRELOAD:="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu/libmtl_udp_preload.so"}"
+else
+	# Local mode: use build directory and system-installed libraries
+	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
+	: "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUfdTest"}"
+	: "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUplTest"}"
+	: "${MTL_LD_PRELOAD:=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so}"
+fi
+
+# sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env
+SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH} PATH=${PATH}"
+
 : "${MAX_RETRIES:=2}"
 : "${RETRY_DELAY:=20}"
 : "${TMP_FOLDER:=/tmp/mtl_gtest_$(date +%Y%m%d_%H%M%S)_$$}"
 : "${LOG_FILE:=${TMP_FOLDER}/gtest.log}"
 : "${EXIT_ON_FAILURE:=1}"
-: "${MTL_LD_PRELOAD:=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so}"
 : "${MUFD_CFG:="${mtl_folder}/.github/workflows/upl_gtest.json"}"
 : "${NIGHTLY:=1}"                                                                    # Set to 1 to run full test suite, 0 for quick tests
 : "${TEST_CASE_TIMEOUT:=1800}"                                                       # 30 minutes per test case
@@ -55,6 +72,7 @@ export FAIL_FAST
 
 # Signal trap for cleanup on termination
 cleanup() {
+	trap - SIGINT SIGTERM SIGHUP
 	echo "Caught signal, cleaning up..."
 	kill_test_processes
 	kill -- -$$ 2>/dev/null || true
@@ -81,39 +99,40 @@ generate_test_cases() {
 	test_cases=()
 
 	# Baseline suite (always run). NIGHTLY=0 must be a strict subset of NIGHTLY=1.
-	test_cases["st2110_20_rx_shard0"]="sudo -E env GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard0.xml --gtest_filter=St20_rx*"
-	test_cases["st2110_20_rx_shard1"]="sudo -E env GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard1.xml --gtest_filter=St20_rx*"
-	test_cases["st2110_20_tx_shard0"]="sudo -E env GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard0.xml --gtest_filter=St20_tx*"
-	test_cases["st2110_20_tx_shard1"]="sudo -E env GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard1.xml --gtest_filter=St20_tx*"
-	test_cases["st2110_20p"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20p.xml --gtest_filter=St20p*"
-	test_cases["st2110_22_rx"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_rx.xml --gtest_filter=St22_rx*"
-	test_cases["st2110_22_tx"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_tx.xml --gtest_filter=St22_tx*"
-	test_cases["st2110_22p"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22p.xml --gtest_filter=St22p*"
-	test_cases["st2110_3x"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_3x.xml --gtest_filter=St3*"
-	test_cases["st2110_4x"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_4x.xml --gtest_filter=St4*"
+	test_cases["st2110_20_rx_shard0"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard0.xml --gtest_filter=St20_rx*"
+	test_cases["st2110_20_rx_shard1"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard1.xml --gtest_filter=St20_rx*"
+	test_cases["st2110_20_tx_shard0"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard0.xml --gtest_filter=St20_tx*"
+	test_cases["st2110_20_tx_shard1"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard1.xml --gtest_filter=St20_tx*"
+	test_cases["st2110_20p"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20p.xml --gtest_filter=St20p*"
+	test_cases["st2110_22_rx"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_rx.xml --gtest_filter=St22_rx*"
+	test_cases["st2110_22_tx"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_tx.xml --gtest_filter=St22_tx*"
+	test_cases["st2110_22p"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22p.xml --gtest_filter=St22p*"
+	test_cases["st2110_3x"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_3x.xml --gtest_filter=St3*"
+	test_cases["st2110_4x"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_4x.xml --gtest_filter=St4*"
 
 	if [ "${NIGHTLY}" -ne 1 ]; then
 		return
 	fi
 
 	# Nightly additions
-	test_cases["digest_1080p_timeout_interval"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_digest_1080p_timeout_interval.xml --gtest_filter=*digest_1080p_timeout_interval*"
+	test_cases["digest_1080p_timeout_interval"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_digest_1080p_timeout_interval.xml --gtest_filter=*digest_1080p_timeout_interval*"
 	test_cases["ufd_basic"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_basic.xml"
 	test_cases["ufd_shared"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --queue_mode shared --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_shared.xml"
 	test_cases["ufd_shared_lcore"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --queue_mode shared --udp_lcore --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_shared_lcore.xml"
 	test_cases["ufd_rss"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --rss_mode l3_l4 --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_rss.xml"
 	test_cases["udp_ld_preload"]="LD_PRELOAD=\"${MTL_LD_PRELOAD}\" ${KAHAWAI_UPL_TEST_BINARY} --p_sip ${TEST_P_SIP} --r_sip ${TEST_R_SIP} --gtest_output=xml:${TMP_FOLDER}/gtest_udp_ld_preload.xml"
-	test_cases["Misc"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Misc.xml --gtest_filter=Misc*"
-	test_cases["Main"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Main.xml --gtest_filter=Main*"
-	test_cases["Sch"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Sch.xml --gtest_filter=Sch*"
-	test_cases["Dma_va"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode va ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_va.xml --gtest_filter=Dma*"
-	test_cases["Dma_pa"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode pa ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_pa.xml --gtest_filter=Dma*"
-	test_cases["Cvt"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Cvt.xml --gtest_filter=Cvt*"
-	test_cases["st20p_auto_pacing_pa"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_pa.xml --gtest_filter=Main*:St20p*:-*ext*"
-	test_cases["st20p_auto_pacing_va"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_va.xml --gtest_filter=Main*:St20p*:-*ext*"
-	test_cases["st20p_tsc_pacing"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_tsc_pacing.xml --gtest_filter=Main*:St20p*:-*ext*"
+	test_cases["Misc"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Misc.xml --gtest_filter=Misc*"
+	test_cases["Main"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Main.xml --gtest_filter=Main*"
+	test_cases["Sch"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Sch.xml --gtest_filter=Sch*"
+	test_cases["Dma_va"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode va ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_va.xml --gtest_filter=Dma*"
+	test_cases["Dma_pa"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode pa ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_pa.xml --gtest_filter=Dma*"
+	test_cases["Cvt"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Cvt.xml --gtest_filter=Cvt*"
+	test_cases["st20p_auto_pacing_pa"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_pa.xml --gtest_filter=Main*:St20p*:-*ext*"
+	test_cases["st20p_auto_pacing_va"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_va.xml --gtest_filter=Main*:St20p*:-*ext*"
+	test_cases["st20p_tsc_pacing"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_tsc_pacing.xml --gtest_filter=Main*:St20p*:-*ext*"
 	test_cases["st20p_kernel_loopback"]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
-	test_cases["redundant_stats"]="sudo -E \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
+	test_cases["st20s"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20s.xml --gtest_filter=St20s*"
+	test_cases["redundant_stats"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
 	test_cases["noctx"]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
 }
 

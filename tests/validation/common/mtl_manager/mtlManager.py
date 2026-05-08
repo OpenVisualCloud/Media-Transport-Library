@@ -1,6 +1,8 @@
 import logging
+import os
 
 from mfd_connect.exceptions import ConnectionCalledProcessError
+from mtl_engine.const import MTL_MANAGER_EXE
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +16,18 @@ class MtlManager:
         mtl_manager_process: The running MtlManager process object (if started).
     """
 
-    def __init__(self, host):
+    def __init__(self, host, mtl_path=""):
         """
         Initialize the MtlManager with a host object.
         :param host: Host object with a .connection attribute.
+        :param mtl_path: Root path of MTL repo (used to resolve binary path).
         """
         self.host = host
-        self.cmd = "sudo MtlManager"
+        if mtl_path:
+            exe = os.path.join(mtl_path, MTL_MANAGER_EXE)
+        else:
+            exe = MTL_MANAGER_EXE
+        self.cmd = f"sudo {exe}"
         self.mtl_manager_process = None
 
     def start(self):

@@ -141,8 +141,9 @@ def add_redundant_params(
 
 def setup_gstreamer_plugins_paths(build):
     plugin_paths = [
-        f"{build}/ecosystem/gstreamer_plugin/builddir",
-        f"{build}/tests/tools/gstreamer_tools/builddir",
+        os.environ.get(
+            "GST_PLUGIN_PATH", f"{build}/.local_install/gstreamer/gstreamer-1.0"
+        ),
     ]
     logging.info(f"Setting up GStreamer plugin paths: {plugin_paths}")
 
