@@ -35,8 +35,11 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.ref }}
-      - name: Build artifacts
-        uses: ./.github/actions/build
+      - name: Validate host and download artifacts
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '${{ secrets.SHADOW_HOST }}'
   run-pytest:
     needs: build-artifacts
     runs-on: "${{ inputs.nic }}"
