@@ -1,0 +1,123 @@
+name: Wait for Workflow
+description: >
+  Wait for a GitHub Actions check run to complete on the current commit.
+  Optionally resolves the artifact name from the completed workflow run.
+
+inputs:
+  check_name:
+    description: 'The check run name to wait for (e.g. "build", "Lint Code Base")'
+    required: true
+  workflow_name:
+    description: 'The workflow name to look up artifacts from (e.g. "Build"). Leave empty to skip artifact resolution.'
+    required: false
+    default: ''
+  artifact_prefix:
+    description: 'Artifact name prefix to match (e.g. "build-"). Leave empty to skip artifact lookup.'
+    required: false
+    default: ''
+  timeout:
+    description: 'Maximum wait time in seconds'
+    required: false
+    default: '900'
+  interval:
+    description: 'Polling interval in seconds'
+    required: false
+    default: '30'
+
+outputs:
+  artifact_name:
+    description: 'Name of the resolved artifact (empty if workflow_name not provided)'
+    value: ${{ steps.wait.outputs.artifact_name }}
+  run_id:
+    description: 'The workflow run ID that produced the artifact'
+    value: ${{ steps.wait.outputs.run_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for workflow check
+      id: wait
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      with:
+        script: |
+          const sha = context.payload.pull_request?.head?.sha || context.sha;
+          const checkName = '${{ inputs.check_name }}';
+          const workflowName = '${{ inputs.workflow_name }}';
+          const artifactPrefix = '${{ inputs.artifact_prefix }}';
+          const maxWait = parseInt('${{ inputs.timeout }}', 10);
+          const interval = parseInt('${{ inputs.interval }}', 10);
+
+          core.info(`Waiting for "${checkName}" on SHA: ${sha}`);
+          let elapsed = 0;
+
+          // ── Poll until the check run completes ──
+          while (elapsed < maxWait) {
+            const { data } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+              check_name: checkName,
+            });
+
+            const run = data.check_runs.find(r => r.app?.slug === 'github-actions');
+            if (run && run.status === 'completed') {
+              if (run.conclusion !== 'success') {
+                core.setFailed(`"${checkName}" finished with: ${run.conclusion}`);
+                return;
+              }
+              core.info(`"${checkName}" passed ✓`);
+              break;
+            }
+
+            const status = run ? run.status : 'not found';
+            core.info(`${checkName}: ${status} — waiting… (${elapsed}s / ${maxWait}s)`);
+            await new Promise(r => setTimeout(r, interval * 1000));
+            elapsed += interval;
+          }
+
+          if (elapsed >= maxWait) {
+            core.setFailed(`Timed out waiting for "${checkName}"`);
+            return;
+          }
+
+          // ── Optionally resolve artifact from the workflow run ──
+          if (!workflowName) {
+            core.info('No workflow_name specified — skipping artifact resolution');
+            return;
+          }
+
+          const runs = await github.rest.actions.listWorkflowRunsForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            head_sha: sha,
+            status: 'completed',
+          });
+
+          const wfRun = runs.data.workflow_runs.find(r => r.name === workflowName);
+          if (!wfRun) {
+            core.setFailed(`Could not find completed "${workflowName}" workflow run`);
+            return;
+          }
+
+          core.info(`Found "${workflowName}" run: ${wfRun.id}`);
+          core.setOutput('run_id', String(wfRun.id));
+
+          if (!artifactPrefix) {
+            core.info('No artifact_prefix specified — skipping artifact lookup');
+            return;
+          }
+
+          const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: wfRun.id,
+          });
+
+          const artifact = artifacts.data.artifacts.find(a => a.name.startsWith(artifactPrefix));
+          if (!artifact) {
+            core.setFailed(`No artifact matching "${artifactPrefix}*" in "${workflowName}" run`);
+            return;
+          }
+
+          core.info(`Resolved artifact: ${artifact.name}`);
+          core.setOutput('artifact_name', artifact.name);
