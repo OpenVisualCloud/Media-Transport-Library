@@ -682,6 +682,23 @@ def delay_between_tests(test_config: dict, hosts):
         if all_idle:
             break
         time.sleep(poll_interval)
+
+    # Clean up lingering virtio_user kernel interfaces left by the previous
+    # RxTxApp process. The VFIO fd check above confirms DPDK released its
+    # device, but the kernel vhost-net/virtio_user interface can linger ~1-2s
+    # longer, causing the next process's rte_eal_hotplug_add to race/fail.
+    for host in hosts.values():
+        try:
+            host.connection.execute_command(
+                "ip link show virtio_user0 &>/dev/null && sudo ip link delete virtio_user0; "
+                "ip link show virtio_user1 &>/dev/null && sudo ip link delete virtio_user1; "
+                "true",
+                shell=True,
+                timeout=5,
+                expected_return_codes=None,
+            )
+        except Exception:
+            pass
     yield
 
 
