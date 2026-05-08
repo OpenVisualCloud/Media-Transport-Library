@@ -1,0 +1,24 @@
+# Paths that affect the MTL (libmtl) build artifact.
+# One path per line (glob-free). Relative to repository root.
+
+# Sanity check
+script/hash_sources_mtl.rc
+
+meson.build
+meson_options.txt
+lib/
+include/
+versions.env
+
+# manager
+manager/
+VERSION
+
+# RxTxApp
+tests/tools/RxTxApp/
+app/
+
+# gtest section
+tests/integration_tests/
+tests/meson.build
+tests/meson_options.txt

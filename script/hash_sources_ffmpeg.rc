@@ -1,0 +1,8 @@
+# Paths that affect the FFmpeg plugin build artifact.
+# One path per line (glob-free). Relative to repository root.
+
+# Sanity check
+script/hash_sources_ffmpeg.rc
+
+ecosystem/ffmpeg_plugin/
+versions.env
