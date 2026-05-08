@@ -65,7 +65,7 @@
 #endif
 
 #include <gst/gst.h>
-#include <st40_api.h>
+#include <mtl/st40_api.h>
 #include <unistd.h>
 
 #include "gst_mtl_st40p_tx.h"
