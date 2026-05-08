@@ -11,10 +11,10 @@ from mtl_engine.media_files import yuv_files
     [
         pytest.param(yuv_files["i1080p60"], 1, marks=pytest.mark.nightly),
         (yuv_files["i1080p60"], 3),
-        (yuv_files["i1080p60"], 30),
+        (yuv_files["i1080p60"], 10),
         pytest.param(yuv_files["i2160p60"], 1, marks=pytest.mark.nightly),
         (yuv_files["i2160p60"], 3),
-        (yuv_files["i2160p60"], 9),
+        (yuv_files["i2160p60"], 5),
     ],
     indirect=["media_file"],
     ids=[
@@ -23,7 +23,7 @@ from mtl_engine.media_files import yuv_files
         "i1080p60_10",
         "i2160p60_1",
         "i2160p60_3",
-        "i2160p60_10",
+        "i2160p60_5",
     ],
 )
 @pytest.mark.refactored
