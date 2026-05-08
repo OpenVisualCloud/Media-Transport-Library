@@ -1,0 +1,8 @@
+# Paths that affect the GStreamer plugin build artifact.
+# One path per line (glob-free). Relative to repository root.
+
+# Sanity check
+script/hash_sources_gstreamer.rc
+
+ecosystem/gstreamer_plugin/
+tests/tools/gstreamer_tools/
