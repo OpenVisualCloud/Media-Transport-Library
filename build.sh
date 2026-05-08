@@ -104,6 +104,15 @@ ninja
 do_install
 popd
 
+# When using a custom install prefix, ensure downstream builds find the
+# freshly installed mtl.pc rather than a stale system copy.
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	_pkgdir=$(find "${MTL_INSTALL_PREFIX}" -name "mtl.pc" -exec dirname {} \; 2>/dev/null | head -1)
+	if [ -n "${_pkgdir}" ]; then
+		export PKG_CONFIG_PATH="${_pkgdir}:${PKG_CONFIG_PATH:-}"
+	fi
+fi
+
 # build app
 pushd app/
 meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
@@ -114,10 +123,11 @@ popd
 
 # build tests
 pushd tests/
-meson setup "${TEST_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${TEST_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${TEST_BUILD_DIR}"
 ninja
+do_install
 popd
 
 # build plugins
@@ -153,8 +163,9 @@ fi
 
 # build RxTxApp
 pushd tests/tools/RxTxApp/
-meson setup "${RXTXAPP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${RXTXAPP_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${RXTXAPP_BUILD_DIR}"
 ninja
+do_install
 popd

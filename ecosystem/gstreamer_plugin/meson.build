@@ -41,7 +41,6 @@ else
 endif
 
 inc_dirs = include_directories(
-    '/usr/local/include/mtl',
     glib_2_0_inc_dir,
     gstreamer_inc_dir
 )
