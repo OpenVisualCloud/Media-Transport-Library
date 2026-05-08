@@ -298,6 +298,22 @@ MTL_APP_NAMES = [
 ]
 
 
+def _signal_ladder(flag: str, pattern: str) -> str:
+    """Build a SIGINT -> SIGTERM -> SIGKILL command string for pkill/pgrep."""
+    return (
+        f"sudo pkill -INT {flag} '{pattern}' 2>/dev/null; "
+        "for i in 1 2 3 4 5 6; do "
+        f"  pgrep {flag} '{pattern}' >/dev/null || break; sleep 0.5; "
+        "done; "
+        f"sudo pkill -TERM {flag} '{pattern}' 2>/dev/null; "
+        "for i in 1 2 3 4; do "
+        f"  pgrep {flag} '{pattern}' >/dev/null || break; sleep 0.5; "
+        "done; "
+        f"sudo pkill -KILL {flag} '{pattern}' 2>/dev/null; "
+        "true"
+    )
+
+
 def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     """Kill leftover MTL-related processes on the given hosts.
 
@@ -307,27 +323,29 @@ def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     VFIO refcount non-zero and causes the next ``nicctl disable_vf`` call
     to block forever in ``vfio_unregister_group_dev``.
 
+    Binary names are matched by process name only (``pkill`` without
+    ``-f``).  Script names (containing ``'.'``) use full command line
+    match (``pkill -f``).  This prevents killing processes that merely
+    have a target name in their arguments (e.g. ``pytest
+    ./tests/single/ffmpeg`` was killed by ``pkill -f '[f]fmpeg'``).
+
     Args:
         *hosts: One or more host objects with ``connection.execute_command``.
         names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
-                Each name is turned into a ``pkill`` regex that avoids
-                matching the grep/pkill process itself (``[R]xTxApp``).
     """
     targets = names or MTL_APP_NAMES
-    pattern = "|".join(f"[{n[0]}]{n[1:]}" for n in targets if n)
-    # SIGINT -> 3s; SIGTERM -> 2s; final SIGKILL.
-    cmd = (
-        f"sudo pkill -INT -f '{pattern}' 2>/dev/null; "
-        "for i in 1 2 3 4 5 6; do "
-        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
-        "done; "
-        f"sudo pkill -TERM -f '{pattern}' 2>/dev/null; "
-        "for i in 1 2 3 4; do "
-        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
-        "done; "
-        f"sudo pkill -KILL -f '{pattern}' 2>/dev/null; "
-        "true"
-    )
+    bins = [n for n in targets if "." not in n and n]
+    scripts = [n for n in targets if "." in n and n]
+
+    parts = []
+    if bins:
+        bp = "|".join(f"[{n[0]}]{n[1:]}" for n in bins)
+        parts.append(_signal_ladder("", bp))
+    if scripts:
+        sp = "|".join(f"[{n[0]}]{n[1:]}" for n in scripts)
+        parts.append(_signal_ladder("-f", sp))
+
+    cmd = " ".join(parts) if parts else "true"
     for host in hosts:
         try:
             host.connection.execute_command(cmd, shell=True, timeout=20)
