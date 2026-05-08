@@ -12,7 +12,7 @@ import time
 from mfd_connect import SSHConnection
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
-from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
+from mtl_engine.const import FFMPEG_EXE, FFPROBE_EXE, RXTXAPP_EXE
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -258,7 +258,7 @@ def execute_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
@@ -287,7 +287,7 @@ def execute_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
@@ -330,14 +330,8 @@ def execute_test(
 
         # Wait for test duration with proper timeout handling
         logger.info(f"Running test for {test_time} seconds with timeout {timeout}...")
-        if tx_is_ffmpeg:
-            # FFmpeg TX will complete after test_time, give it a 10s buffer
-            tx_proc.wait(timeout=test_time + 10)
-            logger.info("TX process completed")
-        else:
-            # RxTxApp runs indefinitely, just wait for test duration
-            time.sleep(test_time)
-            logger.info(f"Test duration {test_time}s completed")
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
 
     except Exception as e:
         logger.error(f"Error during test execution: {e}")
@@ -678,7 +672,9 @@ def check_output_video_h264(
     height_pattern = r"height=(\d+)"
 
     ffprobe_proc = run(
-        f"ffprobe -v error -show_format -show_streams {output_file}", host=host
+        f"{FFPROBE_EXE} -v error -show_format -show_streams {output_file}",
+        host=host,
+        cwd=build,
     )
 
     codec_name_match = re.search(code_name_pattern, ffprobe_proc.stdout_text)
@@ -987,7 +983,7 @@ def execute_dual_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1012,7 +1008,7 @@ def execute_dual_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"{FFMPEG_EXE} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
