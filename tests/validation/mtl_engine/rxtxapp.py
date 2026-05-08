@@ -67,24 +67,32 @@ def add_interfaces(
     if len(nic_port_list) > 1:
         config["interfaces"][1]["name"] = nic_port_list[1]
 
+    is_kernel = [
+        nic_port_list[0].startswith("kernel:"),
+        nic_port_list[1].startswith("kernel:") if len(nic_port_list) > 1 else False,
+    ]
+
+    def _ip_key(idx: int) -> str:
+        return "_os_ip" if is_kernel[idx] else "ip"
+
     if test_mode == "unicast":
         if direction == "rx":
-            config["interfaces"][0]["ip"] = ip_pools.rx[0]
+            config["interfaces"][0][_ip_key(0)] = ip_pools.rx[0]
             config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
         else:
-            config["interfaces"][0]["ip"] = ip_pools.tx[0]
+            config["interfaces"][0][_ip_key(0)] = ip_pools.tx[0]
             config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
             config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
 
         if len(nic_port_list) > 1:
-            config["interfaces"][1]["ip"] = ip_pools.rx[0]
+            config["interfaces"][1][_ip_key(1)] = ip_pools.rx[0]
     elif test_mode == "multicast":
-        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["interfaces"][0][_ip_key(0)] = ip_pools.tx[0]
         config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
         config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
         if len(nic_port_list) > 1:
-            config["interfaces"][1]["ip"] = ip_pools.rx[0]
+            config["interfaces"][1][_ip_key(1)] = ip_pools.rx[0]
     elif test_mode == "kernel":
         config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
         config["rx_sessions"][0]["ip"][0] = "127.0.0.1"

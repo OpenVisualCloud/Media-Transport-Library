@@ -14,6 +14,12 @@ from .execute import kill_stale_processes, log_fail, run
 logger = logging.getLogger(__name__)
 
 
+# Maximum time (seconds) MTL's mt_ptp_wait_stable() may block before
+# --test_time starts counting.  Shell timeout and Python wait must account
+# for this worst-case delay when PTP is enabled.
+MTL_PTP_INTERNAL_TIMEOUT = 180
+
+
 class Application(ABC):
     """Abstract base class shared by all framework adapters (RxTxApp / FFmpeg / GStreamer).
 
@@ -263,14 +269,33 @@ class Application(ABC):
             logger.info(
                 f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
             )
+            # Mirror legacy RxTxApp.execute_test: also extend the in-process
+            # ``--test_time`` argument so the application's data window
+            # survives PTP startup. Without this RxTxApp may still be in
+            # PTP sync when the wrapper timeout fires (return code 124).
+            new_cmd, n_subs = re.subn(
+                r"(--test_time\s+)\d+",
+                rf"\g<1>{effective_test_time}",
+                self.command,
+                count=1,
+            )
+            if n_subs:
+                self.command = new_cmd
 
         wait_timeout = (effective_test_time or 0) + self.params.get(
             "process_timeout_buffer", 90
         )
 
+        ptp_timeout_budget = (
+            MTL_PTP_INTERNAL_TIMEOUT if self.params.get("enable_ptp", False) else 0
+        )
+        wait_timeout += ptp_timeout_budget
+
         # Single-host execution
         if not is_dual:
-            cmd = self.add_timeout(self.command, effective_test_time)
+            cmd = self.add_timeout(
+                self.command, effective_test_time + ptp_timeout_budget
+            )
             logger.info(f"[single] Running {framework_name} command: {cmd}")
             proc = self.start_process(cmd, build, effective_test_time, host)
             if netsniff:
@@ -309,8 +334,12 @@ class Application(ABC):
             raise RuntimeError(
                 "rx_app has no prepared command (call create_command first)"
             )
-        tx_cmd = self.add_timeout(self.command, effective_test_time)
-        rx_cmd = rx_app.add_timeout(rx_app.command, effective_test_time)
+        tx_cmd = self.add_timeout(
+            self.command, effective_test_time + ptp_timeout_budget
+        )
+        rx_cmd = rx_app.add_timeout(
+            rx_app.command, effective_test_time + ptp_timeout_budget
+        )
         primary_first = tx_first
         first_cmd, first_host, first_label = (
             (tx_cmd, tx_host, f"{framework_name}-TX")
