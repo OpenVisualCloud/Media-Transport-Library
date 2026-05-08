@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000003 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Thu, 8 May 2025 06:30:00 +0000
+Subject: [PATCH 10/10] ice: e830: TXTIME engine init and recovery in
+ dev_start
+
+TXTIME engine initialization in ice_dev_start():
+- Clear stale per-queue TXTIME contexts from a previous driver
+- Clear MDD event registers (GL_MDET_TX_PQM, GL_MDET_TX_PQM_FIFO)
+- Setup global TXTIME registers (TS_CFG, FETCH_PROFILE, OUTST_REQ_CNTL)
+- Enable timesync (PTP) before TX queue start
+
+This fixes the E830 TXTIME engine stall that occurs when a previous
+driver (e.g. kernel ice) leaves stale TXTIME contexts in FW state
+that survive CORER reset.
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c | 46 ++++++++++++++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -4412,6 +4412,52 @@
+ 	/* choose vector Tx function before starting queues */
+ 	ice_set_tx_function(dev);
+ 
++	/* E830 TXTIME init: clear stale state, setup global regs, enable PTP
++	 * BEFORE starting TX queues so contexts are programmed correctly.
++	 */
++	if (dev->data->dev_conf.txmode.offloads & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
++		/* Clear stale per-queue TXTIME contexts from previous driver */
++		for (i = 0; i < data->nb_tx_queues; i++) {
++			struct ci_tx_queue *tq = dev->data->tx_queues[i];
++			if (tq) {
++				struct ice_aqc_ena_dis_txtime_qgrp dis_buf = { 0 };
++				ice_aq_ena_dis_txtimeq(hw, tq->reg_idx, 1,
++						       false, &dis_buf, NULL);
++			}
++		}
++
++		/* Clear MDD event registers */
++		{
++			uint32_t reg;
++			reg = ICE_READ_REG(hw, 0x002D2E00); /* GL_MDET_TX_PQM */
++			if (reg & (1u << 31))
++				ICE_WRITE_REG(hw, 0x002D2E00, reg);
++			reg = ICE_READ_REG(hw, 0x002D4B00); /* GL_MDET_TX_PQM_FIFO */
++			if (reg & (1u << 21))
++				ICE_WRITE_REG(hw, 0x002D4B00, reg);
++		}
++
++		/* Setup global TXTIME registers */
++		{
++			uint32_t reg;
++			/* TS_CFG: enable=1 */
++			reg = ICE_READ_REG(hw, 0x002D3100);
++			if (!(reg & 1)) {
++				reg |= 1;
++				ICE_WRITE_REG(hw, 0x002D3100, reg);
++			}
++			/* FETCH_PROFILE_0_0: fetch_ts_desc=1, fifo_thresh=1 */
++			ICE_WRITE_REG(hw, 0x002D3500, (1u << 9) | 1u);
++			/* OUTST_REQ_CNTL: threshold=64 */
++			reg = ICE_READ_REG(hw, 0x002D3214);
++			reg = (reg & ~0x3FFu) | 64u;
++			ICE_WRITE_REG(hw, 0x002D3214, reg);
++		}
++
++		/* Enable timesync before TX queue start so PHC is valid */
++		ice_timesync_enable(dev);
++	}
++
+ 	/* program Tx queues' context in hardware */
+ 	for (nb_txq = 0; nb_txq < data->nb_tx_queues; nb_txq++) {
+ 		ret = ice_tx_queue_start(dev, nb_txq);
+-- 
+2.43.0

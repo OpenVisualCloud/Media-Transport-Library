@@ -1,44 +1,59 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
 From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
-Date: Wed, 9 Apr 2026 07:33:00 +0000
-Subject: [PATCH] ice: e830: do not write TXTIME doorbell during queue start
+Date: Thu, 8 May 2025 06:30:00 +0000
+Subject: [PATCH 08/10] ice: e830: do not write TXTIME doorbell during queue
+ start
 
-Writing zero to the TXTIME doorbell register (E830_GLQTX_TXTIME_DBELL_LSB)
-during ice_tx_queue_start() triggers a PQM MDD (Malicious Driver Detection)
-event 29 on E830 NICs. The TXTIME engine interprets any doorbell write as a
-packet submission signal, but at queue-start time no TXTIME descriptors are
-posted yet, causing the hardware to flag the event and silently discard all
-subsequent TXTIME transmissions (opackets stays at 0).
-
-The regular TX tail register (QTX_COMM_DBELL) needs to be initialized to 0
-so the hardware knows the queue is empty, but the TXTIME doorbell serves a
-different purpose — it is only meant to be rung when actually submitting
-packets with launch timestamps.
-
-The kernel ice driver (ice-2.5.4) does not write to the TXTIME doorbell
-during queue setup either — it only assigns the register address for later
-use by the TX path.
-
-Remove the ICE_PCI_REG_WRITE(txq->qtx_tail, 0) call from the TXTIME branch
-of ice_tx_queue_start(). The pointer assignment is kept so the TX datapath
-can ring the doorbell during normal TXTIME packet submission.
+Disable any stale TXTIME queue context from a previous driver (e.g.
+kernel ice) BEFORE programming a new one. Move TXTIME doorbell
+register assignment to after successful AQ call, and do not write 0
+to the doorbell — this avoids MDD event 29.
 
 Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
 ---
- drivers/net/intel/ice/ice_rxtx.c | 3 ---
- 1 file changed, 3 deletions(-)
+ drivers/net/intel/ice/ice_rxtx.c | 21 ++++++++++++++-------
+ 1 file changed, 14 insertions(+), 7 deletions(-)
 
 diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
-index 1234567890..abcdef1234 100644
 --- a/drivers/net/intel/ice/ice_rxtx.c
 +++ b/drivers/net/intel/ice/ice_rxtx.c
-@@ -898,9 +898,6 @@
+@@ -890,17 +890,21 @@
+ 		struct ice_txtime_ctx txtime_ctx = { 0 };
+ 		u8 ts_buf_len = ice_struct_size(ts_elem, txtimeqs, 1);
  
- 		txq->qtx_tail = hw->hw_addr + E830_GLQTX_TXTIME_DBELL_LSB(txq->reg_idx);
++		/* Disable any stale TXTIME queue context from a previous
++		 * driver (e.g. kernel ice) BEFORE programming a new one.
++		 */
++		{
++			struct ice_aqc_ena_dis_txtime_qgrp dis_buf = { 0 };
++			ice_aq_ena_dis_txtimeq(hw, txq->reg_idx, 1, false,
++					       &dis_buf, NULL);
++		}
++
+ 		ts_elem = ice_malloc(hw, ts_buf_len);
+ 		ice_setup_txtime_ctx(txq, &txtime_ctx, true);
+ 		ice_set_ctx(hw, (u8 *)&txtime_ctx,
+ 				ts_elem->txtimeqs[0].txtime_ctx,
+ 				ice_txtime_ctx_info);
  
+-		txq->qtx_tail = hw->hw_addr + E830_GLQTX_TXTIME_DBELL_LSB(txq->reg_idx);
+-
 -		/* Init the Tx time tail register*/
 -		ICE_PCI_REG_WRITE(txq->qtx_tail, 0);
 -
  		err = ice_aq_set_txtimeq(hw, txq->reg_idx, 1, ts_elem, ts_buf_len, NULL);
  		rte_free(ts_elem);
  		if (err) {
+@@ -908,6 +912,9 @@
+ 			rte_free(txq_elem);
+ 			return err;
+ 		}
++
++		txq->qtx_tail = hw->hw_addr + E830_GLQTX_TXTIME_DBELL_LSB(txq->reg_idx);
++		/* Do NOT write 0 to the TXTIME doorbell during init. */
+ 	} else {
+ 		txq->qtx_tail = hw->hw_addr + QTX_COMM_DBELL(txq->reg_idx);
+ 
+--
+2.43.0
+
