@@ -24,6 +24,8 @@ concurrency:
 
 permissions:
   contents: read
+  checks: read
+  actions: read
 
 jobs:
   gtest-check-for-changes:
@@ -33,6 +35,8 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
     steps:
+      - name: Clean workspace (handle root-owned files)
+        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
@@ -40,9 +44,23 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  run-gtest-tests:
+  build:
     needs: gtest-check-for-changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Wait for Build workflow
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: build
+
+  run-gtest-tests:
+    needs:
+      - gtest-check-for-changes
+      - build
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
     strategy:
       matrix:
         nic:
@@ -52,43 +70,23 @@ jobs:
     runs-on: ${{ matrix.nic }}
     steps:
       - name: Harden Runner
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
-      - name: Install the build dependency
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        run: |
-          sudo apt-get update -y && \
-          sudo apt-get install -y \
-              git gcc meson \
-              python3-dev \
-              python3-pyelftools \
-              libjson-c-dev libpcap-dev libgtest-dev \
-              libsdl2-dev libsdl2-ttf-dev libssl-dev \
-              pkg-config libnuma-dev \
-              systemtap-sdt-dev && \
-          sudo apt-get autoremove -y
-
-      - name: Build
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        run: |
-          sudo su && ./build.sh
-          sudo ldconfig
+      - name: Validate host and download artifacts
+        uses: ./.github/actions/validate-host
 
       - name: Check and build ice driver if needed
         run: |
           if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
 
-      - name: run gtest bare metal
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
+      - name: Run gtest bare metal
         env:
           NIGHTLY: 0
           EXIT_ON_FAILURE: 1
