@@ -1,0 +1,9 @@
+# Paths that affect the DPDK build artifact.
+# One path per line (glob-free). Relative to repository root.
+
+# sanity check
+script/hash_sources_dpdk.rc
+
+patches/dpdk/
+versions.env
+script/build_dpdk.sh
