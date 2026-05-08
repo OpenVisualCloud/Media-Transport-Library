@@ -692,7 +692,7 @@ int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info* 
   struct st40p_tx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st40_tx_update_destination(ctx->transport, dst);
   MT_HANDLE_RELEASE(ctx);
@@ -702,7 +702,7 @@ int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info* 
 int st40p_tx_wake_block(st40p_tx_handle handle) {
   struct st40p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
   if (ctx->block_get) tx_st40p_block_wake(ctx);
 
@@ -713,7 +713,7 @@ int st40p_tx_wake_block(st40p_tx_handle handle) {
 int st40p_tx_set_block_timeout(st40p_tx_handle handle, uint64_t timedwait_ns) {
   struct st40p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);
@@ -802,7 +802,7 @@ int st40p_tx_reset_session_stats(st40p_tx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
   __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);

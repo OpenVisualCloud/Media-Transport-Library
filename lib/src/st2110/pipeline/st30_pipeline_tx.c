@@ -703,7 +703,7 @@ int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* 
   struct st30p_tx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st30_tx_update_destination(ctx->transport, dst);
   MT_HANDLE_RELEASE(ctx);
@@ -713,7 +713,7 @@ int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* 
 int st30p_tx_wake_block(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   if (ctx->block_get) tx_st30p_block_wake(ctx);
 
@@ -724,7 +724,7 @@ int st30p_tx_wake_block(st30p_tx_handle handle) {
 int st30p_tx_set_block_timeout(st30p_tx_handle handle, uint64_t timedwait_ns) {
   struct st30p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);
@@ -816,7 +816,7 @@ int st30p_tx_reset_session_stats(st30p_tx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
   __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
