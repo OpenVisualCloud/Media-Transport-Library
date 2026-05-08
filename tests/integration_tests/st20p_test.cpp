@@ -2123,10 +2123,10 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
   delete test_ctx;
 }
 
-TEST(St20p, rx_get_stats_concurrent_free_no_uaf) {
+TEST(St20s, rx_get_stats_concurrent_free_no_uaf) {
   st20p_rx_stats_concurrent_free_test(false);
 }
 
-TEST(St20p, rx_reset_stats_concurrent_free_no_uaf) {
+TEST(St20s, rx_reset_stats_concurrent_free_no_uaf) {
   st20p_rx_stats_concurrent_free_test(true);
 }
