@@ -561,7 +561,7 @@ int st30p_rx_get_queue_meta(st30p_rx_handle handle, struct st_queue_meta* meta) 
   struct st30p_rx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   ret = st30_rx_get_queue_meta(ctx->transport, meta);
   MT_HANDLE_RELEASE(ctx);
@@ -577,7 +577,7 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   ret = st30_rx_get_session_stats(ctx->transport, stats);
   if (ret < 0) goto out;
@@ -603,7 +603,7 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
   atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
@@ -617,7 +617,7 @@ int st30p_rx_update_source(st30p_rx_handle handle, struct st_rx_source_info* src
   struct st30p_rx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   ret = st30_rx_update_source(ctx->transport, src);
   MT_HANDLE_RELEASE(ctx);
@@ -627,7 +627,7 @@ int st30p_rx_update_source(st30p_rx_handle handle, struct st_rx_source_info* src
 int st30p_rx_wake_block(st30p_rx_handle handle) {
   struct st30p_rx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   if (ctx->block_get) rx_st30p_block_wake(ctx);
 
@@ -638,7 +638,7 @@ int st30p_rx_wake_block(st30p_rx_handle handle) {
 int st30p_rx_set_block_timeout(st30p_rx_handle handle, uint64_t timedwait_ns) {
   struct st30p_rx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);
