@@ -6,3 +6,4 @@ self-hosted-runner:
     - gnrd
     - perf
     - sut
+    - sobie_testuje_prosze_nie_ruszac

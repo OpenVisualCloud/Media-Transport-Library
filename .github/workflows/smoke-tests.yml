@@ -11,6 +11,8 @@ on:
       - 'maint-**'
 permissions:
   contents: read
+  checks: read
+  actions: read
 jobs:
   smoke-check-for-changes:
     runs-on: ubuntu-22.04
@@ -27,19 +29,15 @@ jobs:
           filters: .github/path_filters.yml
   build:
     needs: smoke-check-for-changes
-    runs-on: dpdk
+    if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Harden-Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Wait for Build workflow
+        uses: ./.github/actions/wait-for-workflow
         with:
-          egress-policy: audit
-      - name: Checkout MTL
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ github.ref }}
-      - name: Build artifacts
-        uses: ./.github/actions/build
+          check_name: build
   run-smoke-tests:
     needs:
       - smoke-check-for-changes
@@ -51,8 +49,7 @@ jobs:
     strategy:
       matrix:
         nic:
-          - e810
-          - e830
+          - sobie_testuje_prosze_nie_ruszac
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 90
@@ -67,16 +64,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ github.ref }}'
-      - name: Download build artifacts
+      - name: 'preparation: Validate host and download artifacts'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: build-${{ github.sha }}
-      - name: Make build artifacts executable
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          chmod +x ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
-          chmod +x ./tests/tools/RxTxApp/build/RxTxApp
+        uses: ./.github/actions/validate-host
       - name: 'installation: Install pipenv environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         working-directory: tests/validation
@@ -93,10 +83,8 @@ jobs:
       - name: Set PCI device env variable
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
-          if [ "${{ matrix.nic }}" = "e810" ]; then
+          if [ "${{ matrix.nic }}" = "sobie_testuje_prosze_nie_ruszac" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
@@ -120,14 +108,12 @@ jobs:
       - name: 'preparation: Start MtlManager at background'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
-          sudo MtlManager &
+          sudo -E MtlManager &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         timeout-minutes: 60
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report

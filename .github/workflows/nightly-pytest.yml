@@ -6,27 +6,21 @@ on:
   - cron: '0 20 * * *' # Every day at 8 PM UTC
 permissions:
   contents: read
+  checks: read
 jobs:
-  build-artifacts:
-    runs-on: dpdk
-    steps:
-      - name: Harden-Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: audit
-      - name: Checkout MTL
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ github.ref }}
-      - name: Build artifacts
-        uses: ./.github/actions/build
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+    permissions:
+      contents: read
+      checks: read
   run-pytest:
-    needs: build-artifacts
+    needs: build
     strategy:
       matrix:
         nic:
-          - e810
-          - e830
+          - sobie_testuje_prosze_nie_ruszac
         dir:
           - dma
           - ffmpeg
@@ -55,14 +49,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: '${{ github.ref }}'
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: build-${{ github.sha }}
-      - name: Make build artifacts executable
-        run: |
-          chmod +x ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
-          chmod +x ./tests/tools/RxTxApp/build/RxTxApp
+      - name: 'preparation: Validate host and download artifacts'
+        uses: ./.github/actions/validate-host
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install
@@ -76,10 +64,8 @@ jobs:
           echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
       - name: Set PCI device env variable
         run: |
-          if [ "${{ matrix.nic }}" = "e810" ]; then
+          if [ "${{ matrix.nic }}" = "sobie_testuje_prosze_nie_ruszac" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         working-directory: tests/validation/configs
@@ -100,7 +86,7 @@ jobs:
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'preparation: Start MtlManager at background'
         run: |
-          sudo MtlManager &
+          sudo -E MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         working-directory: ./tests/validation
         run: |
@@ -111,8 +97,6 @@ jobs:
             --template=html/index.html \
             --report=report.html \
             "./tests/single/${{ matrix.dir }}"
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
       - name: 'collect: System status report'
         if: always()
         run: |
