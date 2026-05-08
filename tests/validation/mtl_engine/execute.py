@@ -310,24 +310,16 @@ def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
     Args:
         *hosts: One or more host objects with ``connection.execute_command``.
         names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
-                Each name is turned into a ``pkill`` regex that avoids
-                matching the grep/pkill process itself (``[R]xTxApp``).
     """
     targets = names or MTL_APP_NAMES
-    pattern = "|".join(f"[{n[0]}]{n[1:]}" for n in targets if n)
-    # SIGINT -> 3s; SIGTERM -> 2s; final SIGKILL.
-    cmd = (
-        f"sudo pkill -INT -f '{pattern}' 2>/dev/null; "
-        "for i in 1 2 3 4 5 6; do "
-        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
-        "done; "
-        f"sudo pkill -TERM -f '{pattern}' 2>/dev/null; "
-        "for i in 1 2 3 4; do "
-        f"  pgrep -f '{pattern}' >/dev/null || break; sleep 0.5; "
-        "done; "
-        f"sudo pkill -KILL -f '{pattern}' 2>/dev/null; "
-        "true"
-    )
+    # Use exact process name matching (-x) to avoid killing unrelated
+    # processes (e.g., pytest whose test path contains "ffmpeg").
+    kill_cmds = []
+    for sig in ("INT", "TERM", "KILL"):
+        for name in targets:
+            kill_cmds.append(f"sudo pkill -{sig} -x {name} 2>/dev/null")
+        kill_cmds.append("sleep 1")
+    cmd = "; ".join(kill_cmds) + "; true"
     for host in hosts:
         try:
             host.connection.execute_command(cmd, shell=True, timeout=20)
