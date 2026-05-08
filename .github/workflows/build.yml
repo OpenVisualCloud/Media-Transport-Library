@@ -1,0 +1,133 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  workflow_call:
+    inputs:
+      skip_linter_check:
+        type: boolean
+        default: false
+        description: 'Skip waiting for the Linter workflow (use for schedule/nightly triggers)'
+    outputs:
+      mtl_hash:
+        description: 'MTL source checksum'
+        value: ${{ jobs.checksums.outputs.mtl }}
+      ffmpeg_hash:
+        description: 'ffmpeg source checksum'
+        value: ${{ jobs.checksums.outputs.ffmpeg }}
+      gstreamer_hash:
+        description: 'gstreamer source checksum'
+        value: ${{ jobs.checksums.outputs.gstreamer }}
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  # ── Gate: wait for Linter workflow on this commit ──
+  wait-for-linter:
+    if: ${{ !inputs.skip_linter_check }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Wait for Linter
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: 'Lint Code Base'
+          timeout: '600'
+
+  # ── Compute source checksums ──
+  checksums:
+    runs-on: ubuntu-22.04
+    outputs:
+      dpdk: ${{ steps.sums.outputs.dpdk }}
+      mtl: ${{ steps.sums.outputs.mtl }}
+      ffmpeg: ${{ steps.sums.outputs.ffmpeg }}
+      gstreamer: ${{ steps.sums.outputs.gstreamer }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: sums
+        uses: ./.github/actions/source-checksums
+
+  build:
+    needs: [wait-for-linter, checksums]
+    if: ${{ !cancelled() && needs.checksums.result == 'success' && (needs.wait-for-linter.result == 'success' || needs.wait-for-linter.result == 'skipped') }}
+    runs-on: sobie_testuje_prosze_nie_ruszac
+    timeout-minutes: 60
+    steps:
+      - name: Clean workspace (handle root-owned files)
+        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: 'stash: Restore DPDK cache'
+        id: dpdk-cache
+        uses: actions/cache@v4
+        with:
+          key: stash-dpdk-${{ needs.checksums.outputs.dpdk }}
+          path: .local_install/dpdk
+
+      - name: 'stash: Restore MTL cache'
+        id: mtl-cache
+        uses: actions/cache@v4
+        with:
+          key: stash-mtl-${{ needs.checksums.outputs.mtl }}
+          path: .local_install/mtl
+
+      - name: 'stash: Restore FFmpeg cache'
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          key: stash-ffmpeg-${{ needs.checksums.outputs.ffmpeg }}
+          path: .local_install/ffmpeg
+
+      - name: 'stash: Restore GStreamer cache'
+        id: gstreamer-cache
+        uses: actions/cache@v4
+        with:
+          key: stash-gstreamer-${{ needs.checksums.outputs.gstreamer }}
+          path: .local_install/gstreamer
+
+      - name: Evaluate cache results
+        id: needs-build
+        shell: bash
+        run: |
+          dpdk_miss=${{ steps.dpdk-cache.outputs.cache-hit != 'true' && '1' || '0' }}
+          mtl_miss=${{ steps.mtl-cache.outputs.cache-hit != 'true' && '1' || '0' }}
+          ffmpeg_miss=${{ steps.ffmpeg-cache.outputs.cache-hit != 'true' && '1' || '0' }}
+          gstreamer_miss=${{ steps.gstreamer-cache.outputs.cache-hit != 'true' && '1' || '0' }}
+
+          {
+            echo "SETUP_BUILD_AND_INSTALL_DPDK=${dpdk_miss}"
+            echo "MTL_BUILD_AND_INSTALL=${mtl_miss}"
+            echo "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${ffmpeg_miss}"
+            echo "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${gstreamer_miss}"
+          } >> "$GITHUB_ENV"
+
+          any_miss=0
+          [[ "$dpdk_miss" == "1" || "$mtl_miss" == "1" || "$ffmpeg_miss" == "1" || "$gstreamer_miss" == "1" ]] && any_miss=1
+          echo "any_miss=${any_miss}" >> "$GITHUB_OUTPUT"
+
+          echo "::notice::DPDK=$( [ "$dpdk_miss" = 1 ] && echo MISS || echo HIT )  MTL=$( [ "$mtl_miss" = 1 ] && echo MISS || echo HIT )  FFmpeg=$( [ "$ffmpeg_miss" = 1 ] && echo MISS || echo HIT )  GStreamer=$( [ "$gstreamer_miss" = 1 ] && echo MISS || echo HIT )"
+
+      # Build what is missing
+      - name: Setup environment and build
+        if: steps.needs-build.outputs.any_miss == '1'
+        shell: bash
+        env:
+          MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+          PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu/pkgconfig
+          LD_LIBRARY_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu
+          TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: '1'
+          TOOLS_RUN_SET_TAI_OFFSET: '1'
+        run: |
+          bash .github/scripts/setup_environment.sh
