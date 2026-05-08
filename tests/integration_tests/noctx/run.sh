@@ -12,7 +12,14 @@ script_folder=${script_path/$script_name/}
 . "${script_folder}/../../../script/common.sh"
 cd "${script_folder}" || exit 1
 
-BUILD_PATH="${script_folder}/../../../build/tests/KahawaiTest"
+mtl_folder="${script_folder}/../../.."
+
+# Detect whether to use .local_install (CI) or local build paths
+if [ -d "${mtl_folder}/.local_install" ]; then
+	BUILD_PATH="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"
+else
+	BUILD_PATH="${mtl_folder}/build/tests/KahawaiTest"
+fi
 ENV_FILE="${script_folder}/noctx.env"
 
 if [ -f "$ENV_FILE" ]; then
