@@ -312,19 +312,12 @@ def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
         names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
     """
     targets = names or MTL_APP_NAMES
-    # Use exact process name matching (-x) for each target to avoid killing
-    # unrelated processes (e.g., pytest whose test path contains "ffmpeg").
-    # For "gtest.sh" which is a script, fall back to -f with tighter matching.
+    # Use exact process name matching (-x) to avoid killing unrelated
+    # processes (e.g., pytest whose test path contains "ffmpeg").
     kill_cmds = []
     for sig in ("INT", "TERM", "KILL"):
         for name in targets:
-            if name == "ffmpeg":
-                # Match only the ffmpeg binary, not paths containing "ffmpeg"
-                kill_cmds.append(f"sudo pkill -{sig} -x {name} 2>/dev/null")
-            else:
-                kill_cmds.append(
-                    f"sudo pkill -{sig} -f '[{name[0]}]{name[1:]}' 2>/dev/null"
-                )
+            kill_cmds.append(f"sudo pkill -{sig} -x {name} 2>/dev/null")
         kill_cmds.append("sleep 1")
     cmd = "; ".join(kill_cmds) + "; true"
     for host in hosts:
