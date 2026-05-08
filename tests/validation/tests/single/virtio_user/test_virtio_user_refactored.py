@@ -35,7 +35,6 @@ def test_virtio_user_refactored(
     replicas,
     test_config,
     media_file,
-    pcap_capture,
     application,
 ):
     """Refactored test for virtio user.
@@ -48,7 +47,6 @@ def test_virtio_user_refactored(
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -71,6 +69,4 @@ def test_virtio_user_refactored(
         test_time=test_time,
     )
 
-    application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    application.execute_test(build=mtl_path, test_time=test_time, host=host)
