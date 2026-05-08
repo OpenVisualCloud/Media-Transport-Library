@@ -74,7 +74,8 @@ executable('KahawaiTest', sources,
   link_args: test_ld_args,
   include_directories: [test_inc],
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep]
+  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep],
+  install: true,
 )
 endif
 
@@ -85,7 +86,8 @@ executable('KahawaiUfdTest', ufd_sources,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, gtest, libopenssl]
+  dependencies: [asan_dep, mtl, gtest, libopenssl],
+  install: true,
 )
 
 # build upl test executable
@@ -94,6 +96,7 @@ executable('KahawaiUplTest', upl_sources,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, gtest, libopenssl]
+  dependencies: [asan_dep, gtest, libopenssl],
+  install: true,
 )
 endif
