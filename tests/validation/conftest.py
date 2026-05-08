@@ -342,6 +342,11 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
 def _select_sniff_interface_name(
     host, capture_cfg: dict, *, single_host: bool = True
 ) -> str:
+    # Allow direct interface name override (e.g. for a capture NIC
+    # that is not listed in topology_config network_interfaces).
+    name_override = capture_cfg.get("sniff_interface_name")
+    if name_override:
+        return str(name_override)
     return _select_sniff_interface(host, capture_cfg, single_host=single_host).name
 
 
@@ -370,12 +375,22 @@ def ptp_sync(request, test_config: dict, hosts):
         host, capture_cfg, single_host=is_single_host
     )
 
+    capture_iface_ip = capture_cfg.get("sniff_interface_ip")
+    if capture_iface_ip:
+        host.connection.execute_command(
+            f"sudo ip addr add '{capture_iface_ip}' dev '{capture_iface}' 2>/dev/null || true; "
+            f"sudo ip link set '{capture_iface}' up"
+        )
+
     # For tests marked with @pytest.mark.ptp, start ptp4l instead of phc2sys
     if request.node.get_closest_marker("ptp"):
         logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
 
         log_path = f"/tmp/ptp4l-{capture_iface}.log"
-        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
+        # Run ptp4l in BMCA mode. On the lab setup eth0 (E810) has a PHC
+        # and syncs to the network grandmaster using default L4/UDP PTP.
+        # MTL with --ptp is also a PTP slave and needs that grandmaster.
+        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -m"
         ptp4l_process = host.connection.start_process(
             ptp4l_cmd,
             stderr_to_stdout=True,
@@ -396,10 +411,11 @@ def ptp_sync(request, test_config: dict, hosts):
                 return
 
             if not ptp4l_process.running:
-                raise RuntimeError(
+                logger.warning(
                     f"ptp4l process (iface={capture_iface}) "
-                    f"stopped unexpectedly. See log: {log_path}"
+                    f"stopped before teardown. See log: {log_path}"
                 )
+                return
 
             ptp4l_process.kill(wait=None, with_signal=signal.SIGTERM)
         return

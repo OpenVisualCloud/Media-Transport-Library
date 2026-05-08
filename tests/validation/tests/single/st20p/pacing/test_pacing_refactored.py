@@ -28,6 +28,7 @@ def test_pacing_refactored(
     test_time,
     pacing,
     pcap_capture,
+    wire_precision_check,
     media_file,
     application,
 ):
@@ -40,6 +41,7 @@ def test_pacing_refactored(
     :param test_time: Duration to run the streaming pipeline, in seconds.
     :param pacing: Test fixture / parametrized value.
     :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
+    :param wire_precision_check: Soft-log R2 / burst metrics from the captured pcap.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
     """
