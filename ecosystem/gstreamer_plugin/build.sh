@@ -23,6 +23,12 @@ for arg in "$@"; do
 	esac
 done
 
+# Build prefix args when MTL_INSTALL_PREFIX is set (local install)
+MTL_PREFIX_ARGS=""
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX --libdir=."
+fi
+
 if [ -d "$BUILD_DIR" ]; then
 	echo "Removing existing build directory..."
 	rm -rf "$BUILD_DIR" || {
@@ -32,9 +38,16 @@ if [ -d "$BUILD_DIR" ]; then
 fi
 
 if [ "$DEBUG" = true ]; then
-	meson setup --buildtype=debug "$BUILD_DIR"
+	meson setup --buildtype=debug ${MTL_PREFIX_ARGS:+$MTL_PREFIX_ARGS} "$BUILD_DIR"
 else
-	meson setup "$BUILD_DIR"
+	meson setup ${MTL_PREFIX_ARGS:+$MTL_PREFIX_ARGS} "$BUILD_DIR"
 fi
 
 meson compile -C "$BUILD_DIR"
+
+# Install plugins
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	meson install -C "$BUILD_DIR"
+else
+	sudo meson install -C "$BUILD_DIR"
+fi

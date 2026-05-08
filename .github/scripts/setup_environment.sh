@@ -11,12 +11,17 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 
 # SET DEFAULT ARGUMENTS
 
+# When set, all build scripts install to this prefix instead of system-wide.
+# This replaces the old SKIP_INSTALL logic with a unified local-install approach.
+: "${MTL_INSTALL_PREFIX:=}"
+export MTL_INSTALL_PREFIX
+
 # Before MTL build install
-: "${SETUP_ENVIRONMENT:=1}"
-: "${SETUP_BUILD_AND_INSTALL_DPDK:=1}"
-: "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=1}"
-: "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=1}"
-: "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=1}"
+: "${SETUP_ENVIRONMENT:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DPDK:=0}"
+: "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=0}"
+: "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
+: "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
 
 # MTL build and install
 : "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
@@ -294,7 +299,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${root_folder}/script/build_dpdk.sh" -f
+		# DPDK installs to a sibling directory for independent caching
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/dpdk" bash "${root_folder}/script/build_dpdk.sh" -f
+		else
+			bash "${root_folder}/script/build_dpdk.sh" -f
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -366,14 +377,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
-	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-		echo "$STEP MTL debug build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh debug "${mtl_build_options}"
-		popd >/dev/null
-		STEP=$((STEP + 1))
-	fi
-
 	# If both are enabled we build debug but overwrite with release
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
 		echo "$STEP MTL build and install"
@@ -424,20 +427,38 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 			echo "Building FFMPEG plugin without GPU Direct support"
 		fi
 
-		bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		# FFmpeg installs to a sibling directory for independent caching
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/ffmpeg" bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		else
+			bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem GStreamer plugin build and install"
 
-		pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
-		bash build.sh
-		popd >/dev/null
+		# GStreamer plugins go to a sibling directory
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/gstreamer" bash "${root_folder}/ecosystem/gstreamer_plugin/build.sh"
+		else
+			pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
+			bash build.sh
+			popd >/dev/null
+		fi
 
 		pushd "${root_folder}/tests/tools/gstreamer_tools/" >/dev/null || exit 1
 		meson setup builddir
 		ninja -C builddir/
+		# Copy test tool .so files alongside gstreamer plugins
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			mkdir -p "${local_base}/gstreamer"
+			cp builddir/*.so "${local_base}/gstreamer/"
+		fi
 		cp builddir/*.so "${root_folder}/ecosystem/gstreamer_plugin/builddir/"
 		popd >/dev/null
 		STEP=$((STEP + 1))
