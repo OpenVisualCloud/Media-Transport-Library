@@ -5,6 +5,13 @@
 
 set -e
 
+# Add .local_install/dpdk/bin to PATH if present (for dpdk-devbind.py)
+_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_local_dpdk_bin="${_script_dir}/../.local_install/dpdk/bin"
+if [ -d "$_local_dpdk_bin" ]; then
+	export PATH="${_local_dpdk_bin}:${PATH}"
+fi
+
 if [ $# -lt 2 ]; then
 	echo "Usage: "
 	echo "    $0 <command> <bb:dd:ff.x> [args]"
