@@ -875,13 +875,6 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   m->data_len = m->pkt_len;
 
   // mt_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
-  /* On TXTIME-enabled queues, set a valid near-future launch time so the HW
-   * actually transmits the packet.  dynfield=0 may cause the HW to drop it. */
-  if (mt_if(ptp->impl, port)->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
-    struct mt_interface* inf = mt_if(ptp->impl, port);
-    uint64_t launch = ptp_get_raw_time(ptp) + 1000000; /* PHC + 1ms */
-    *RTE_MBUF_DYNFIELD(m, inf->tx_dynfield_offset, uint64_t*) = launch;
-  }
   uint16_t tx = mt_sys_queue_tx_burst(ptp->impl, port, &m, 1, &tx_ns);
   if (tx < 1) {
     rte_pktmbuf_free(m);
@@ -889,13 +882,9 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     return;
   }
 #if MT_PTP_USE_TX_TIME_STAMP
-  /* On TXTIME queues the PHY TSYN timestamp capture does not work because
-   * the TXTIME doorbell path bypasses the normal TX descriptor processing.
-   * Fall back to reading the PHC clock immediately after tx_burst — the
-   * packet goes out with dynfield=0 (always-past → immediate TX) so the
-   * PHC read is a close approximation of the actual wire time. */
+  /* On TXTIME queues use the launch time requested for this Delay_Req as t3. */
   if (mt_if(ptp->impl, port)->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
-    ptp->t3 = ptp_get_raw_time(ptp);
+    ptp->t3 = tx_ns ? tx_ns : ptp_get_raw_time(ptp);
     info("%s(%d), TXTIME t3 %" PRIu64 ", seq %d\n", __func__, port, ptp->t3,
          ptp->t3_sequence_id);
   } else if (ptp->qbv_enabled) {
@@ -1023,6 +1012,8 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
                               enum mt_ptp_l_mode mode, struct mt_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
+  ptp->stat_announce_cnt++;
+
   /* reject our own announce messages */
   if (ptp_port_id_equal(&msg->hdr.source_port_identity, &ptp->our_port_id)) {
     dbg("%s(%d), skip announce from ourselves\n", __func__, port);
@@ -1068,19 +1059,28 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
 
 static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
                                 struct mt_ptp_delay_resp_msg* msg) {
+  uint16_t sequence_id = ntohs(msg->hdr.sequence_id);
+
+  ptp->stat_delay_resp_cnt++;
+
   if (!ptp_port_id_equal(&msg->requesting_port_identity, &ptp->our_port_id)) {
     /* not our request resp */
+    ptp->stat_delay_resp_not_ours++;
+    if (ptp->stat_delay_resp_not_ours <= 3)
+      info("%s(%d), delay_resp seq %u not for our port id\n", __func__, ptp->port,
+           sequence_id);
     return 0;
   }
 
   if (ptp->t4) {
+    ptp->stat_delay_resp_t4_already++;
     dbg("%s(%d), t4 already get\n", __func__, ptp->port);
     return -EIO;
   }
 
-  if (ptp->t3_sequence_id != ntohs(msg->hdr.sequence_id)) {
-    err("%s(%d), mismatch sequence_id get %d expect %d\n", __func__, ptp->port,
-        msg->hdr.sequence_id, ptp->t3_sequence_id);
+  if (ptp->t3_sequence_id != sequence_id) {
+    err("%s(%d), mismatch sequence_id get %u expect %u\n", __func__, ptp->port,
+        sequence_id, ptp->t3_sequence_id);
     ptp->stat_t3_sequence_id_mismatch++;
     return -EIO;
   }
@@ -1116,6 +1116,12 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   ptp->stat_result_err = 0;
   ptp->stat_sync_timeout_err = 0;
   ptp->stat_sync_cnt = 0;
+  ptp->stat_follow_up_cnt = 0;
+  ptp->stat_announce_cnt = 0;
+  ptp->stat_delay_resp_cnt = 0;
+  ptp->stat_source_mismatch_cnt = 0;
+  ptp->stat_delay_resp_not_ours = 0;
+  ptp->stat_delay_resp_t4_already = 0;
   if (ptp->phc2sys_active) ptp->phc2sys.stat_delta_max = 0;
 }
 
@@ -1452,6 +1458,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
     if (!ptp_port_id_equal(&hdr->source_port_identity, &ptp->master_port_id)) {
       dbg("%s(%d), source_port_identity not our master, message_type %d, mode %s\n",
           __func__, port, hdr->message_type, ptp_mode_str(mode));
+      ptp->stat_source_mismatch_cnt++;
 #ifdef DEBUG
       ptp_print_port_id(port, &hdr->source_port_identity);
 #endif
@@ -1464,6 +1471,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
       ptp_parse_sync(ptp, (struct mt_ptp_sync_msg*)hdr, vlan, mode, timesync);
       break;
     case PTP_FOLLOW_UP:
+      ptp->stat_follow_up_cnt++;
       ptp_parse_follow_up(ptp, (struct mt_ptp_follow_up_msg*)hdr);
       break;
     case PTP_DELAY_RESP:
@@ -1532,6 +1540,12 @@ static int ptp_stat(void* priv) {
       port, ptp_mode_str(ptp->t2_mode), ptp->stat_sync_cnt, ptp->expect_result_avg,
       ptp->expect_correct_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S,
       ptp->expect_t2_t1_delta_avg, ptp->expect_t4_t3_delta_avg);
+  notice(
+      "PTP(%d): msg cnt announce %d sync %d follow_up %d delay_resp %d "
+      "src_mismatch %d resp_not_ours %d resp_t4_already %d\n",
+      port, ptp->stat_announce_cnt, ptp->stat_sync_cnt, ptp->stat_follow_up_cnt,
+      ptp->stat_delay_resp_cnt, ptp->stat_source_mismatch_cnt,
+      ptp->stat_delay_resp_not_ours, ptp->stat_delay_resp_t4_already);
   if (ptp->stat_rx_sync_err || ptp->stat_result_err || ptp->stat_tx_sync_err)
     notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", port,
            ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);

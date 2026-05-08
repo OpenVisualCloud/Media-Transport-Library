@@ -301,6 +301,12 @@ struct mt_ptp_impl {
   int32_t stat_sync_timeout_err;
   int32_t stat_t3_sequence_id_mismatch;
   int32_t stat_sync_cnt;
+  int32_t stat_follow_up_cnt;
+  int32_t stat_announce_cnt;
+  int32_t stat_delay_resp_cnt;
+  int32_t stat_source_mismatch_cnt;
+  int32_t stat_delay_resp_not_ours;
+  int32_t stat_delay_resp_t4_already;
   int32_t stat_t2_t1_delta_calibrate;
   int32_t stat_t4_t3_delta_calibrate;
   uint16_t stat_sync_keep;

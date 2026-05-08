@@ -354,6 +354,7 @@ uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
                                struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
                                uint64_t* launch_time_ns) {
   struct mt_dp_impl* dp = impl->dp[port];
+  struct mt_interface* inf = mt_if(impl, port);
 
   if (launch_time_ns) *launch_time_ns = 0;
 
@@ -362,13 +363,26 @@ uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
     return 0;
   }
 
-  /* On TXTIME-enabled queues the ice driver writes a TS descriptor for
-   * every packet unconditionally.  Packets with dynfield=0 get timestamp
-   * "0 ns within the current second" which is always in the past, so the
-   * NIC transmits immediately — exactly what we want for control traffic
-   * (PTP, multicast, ARP).  PTP delay_req relies on the PHY TSYN context
-   * descriptor (set via RTE_MBUF_F_TX_IEEE1588_TMST) to capture the
-   * actual wire TX time, which is then read back as t3. */
+  if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+    struct timespec spec;
+
+    if (rte_eth_timesync_read_time(inf->port_id, &spec) == 0) {
+      uint64_t launch = mt_timespec_to_ns(&spec) + MT_SYS_QUEUE_TXTIME_DELAY_NS;
+
+      for (uint16_t i = 0; i < nb_pkts; i++) {
+        struct rte_mbuf* pkt = tx_pkts[i];
+
+        if (!(pkt->ol_flags & inf->tx_launch_time_flag)) {
+          *RTE_MBUF_DYNFIELD(pkt, inf->tx_dynfield_offset, uint64_t*) = launch;
+          pkt->ol_flags |= inf->tx_launch_time_flag;
+        }
+      }
+    }
+  }
+
+  if ((inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) && launch_time_ns &&
+      nb_pkts)
+    *launch_time_ns = *RTE_MBUF_DYNFIELD(tx_pkts[0], inf->tx_dynfield_offset, uint64_t*);
 
   uint16_t tx;
   rte_spinlock_lock(&dp->txq_sys_entry_lock);

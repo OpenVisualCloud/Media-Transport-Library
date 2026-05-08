@@ -7,6 +7,8 @@
 #ifndef _MT_LIB_DP_QUEUE_HEAD_H_
 #define _MT_LIB_DP_QUEUE_HEAD_H_
 
+#define MT_SYS_QUEUE_TXTIME_DELAY_NS (10 * NS_PER_MS)
+
 int mt_dp_queue_init(struct mtl_main_impl* impl);
 int mt_dp_queue_uinit(struct mtl_main_impl* impl);
 
