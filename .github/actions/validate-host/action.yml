@@ -4,6 +4,16 @@ description: >
   restore build components from cache into .local_install/,
   untar them, make binaries executable, and configure environment
   so that subsequent steps can run MTL tests without system-wide installation.
+  Optionally sync .local_install/ to a shadow host via SSH.
+
+inputs:
+  shadow_host_path:
+    description: >
+      Path to the shadow host credentials directory containing
+      credentials, id_ed25519, and id_ed25519.pub.
+      If empty or the files are missing, shadow sync is skipped.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -78,3 +88,45 @@ runs:
         sudo ldconfig 2>/dev/null || true
 
         echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer}"
+
+    - name: Sync .local_install to shadow host
+      if: inputs.shadow_host_path != ''
+      shell: bash
+      run: |
+        CRED_DIR="${{ inputs.shadow_host_path }}"
+
+        # Verify all 3 credential files exist
+        for f in credentials id_ed25519 id_ed25519.pub; do
+          if [[ ! -f "${CRED_DIR}/${f}" ]]; then
+            echo "::warning::Shadow host credentials missing: ${CRED_DIR}/${f} — skipping sync"
+            exit 0
+          fi
+        done
+
+        # Parse credentials
+        source "${CRED_DIR}/credentials"
+        : "${IP:?credentials file must define IP}"
+        : "${USER:?credentials file must define USER}"
+
+        KEY="${CRED_DIR}/id_ed25519"
+
+        SSH_OPTS=(
+          -o "StrictHostKeyChecking=accept-new"
+          -o "BatchMode=yes"
+          -o "ConnectTimeout=30"
+          -i "${KEY}"
+        )
+
+        echo "::group::Syncing .local_install/ to ${USER}@${IP}"
+
+        # Ensure target directory exists on shadow host
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "mkdir -p ${{ github.workspace }}/.local_install"
+
+        # rsync artifacts to shadow host
+        rsync -az --delete \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${{ github.workspace }}/.local_install/" \
+          "${USER}@${IP}:${{ github.workspace }}/.local_install/"
+
+        echo "::endgroup::"
+        echo "::notice::Synced .local_install/ to shadow host ${IP}"
