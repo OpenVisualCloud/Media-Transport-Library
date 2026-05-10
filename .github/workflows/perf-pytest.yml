@@ -45,6 +45,8 @@ jobs:
           egress-policy: audit
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: 'preparation: Clean workspace'
+        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
       - name: Checkout MTL
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -56,11 +58,11 @@ jobs:
           echo "MTL source: ${{ inputs.branch }}"
           echo "Test framework: ${{ github.sha }} (${{ github.ref_name }})"
           git checkout ${{ github.sha }} -- tests/validation/ .github/
-      - uses: ./.github/actions/build
+      - name: 'preparation: Validate host and download artifacts'
+        id: validate
+        uses: ./.github/actions/validate-host
         with:
-          remote_host: '${{ secrets.RUNNER_USERNAME }}@${{ secrets.PERF_CLIENT_IP }}'
-          remote_mtl_path: '${{ secrets.PERF_CLIENT_MTL_PATH }}'
-          remote_branch: '${{ inputs.branch || github.ref_name }}'
+          shadow_host_path: '${{ secrets.SHADOW_HOST }}'
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |
@@ -77,13 +79,16 @@ jobs:
         working-directory: ./tests/validation/configs
         run: |
           source ../.venv/bin/activate
+          SHADOW_IP="${{ steps.validate.outputs.shadow_host_ip }}"
+          SHADOW_USER="${{ steps.validate.outputs.shadow_host_user }}"
+          SHADOW_KEY="${{ steps.validate.outputs.shadow_host_key }}"
           python3 gen_config.py \
             --session_id "${{ env.SESSION_ID }}" \
-            --mtl_path "${{ secrets.PERF_CLIENT_MTL_PATH }}" "${{ secrets.RUNNER_MTL_PATH }}" \
+            --mtl_path "${{ github.workspace }}" "${{ github.workspace }}" \
             --pci_device "${{ env.PCI_DEVICE }}" "${{ env.PCI_DEVICE }}" \
-            --ip_address "${{ secrets.PERF_CLIENT_IP }}" "${{ secrets.PERF_SUT_IP }}" \
-            --username "${{ secrets.RUNNER_USERNAME }}" \
-            --key_path "/home/$USER/.ssh/id_ed25519" \
+            --ip_address "${SHADOW_IP}" "${{ secrets.PERF_SUT_IP }}" \
+            --username "${SHADOW_USER}" \
+            --key_path "${SHADOW_KEY}" \
             --test_time "${{ inputs.test_time || '120' }}" \
             --no_capture
       - name: Export workflow tag for PCAP naming
@@ -124,6 +129,4 @@ jobs:
             ./tests/validation/performance_report.html
       - name: Clean up
         if: always()
-        run: |
-          sudo pkill -f MtlManager || true
-          sudo rm -rf tests/validation/logs
+        uses: ./.github/actions/cleanup
