@@ -15,6 +15,17 @@ inputs:
     required: false
     default: ''
 
+outputs:
+  shadow_host_ip:
+    description: IP address from the shadow host credentials file
+    value: ${{ steps.shadow-creds.outputs.ip }}
+  shadow_host_user:
+    description: Username from the shadow host credentials file
+    value: ${{ steps.shadow-creds.outputs.user }}
+  shadow_host_key:
+    description: Path to the SSH private key for the shadow host
+    value: ${{ steps.shadow-creds.outputs.key }}
+
 runs:
   using: composite
   steps:
@@ -89,7 +100,8 @@ runs:
 
         echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer}"
 
-    - name: Sync .local_install to shadow host
+    - name: Read shadow host credentials
+      id: shadow-creds
       if: inputs.shadow_host_path != ''
       shell: bash
       run: |
@@ -103,12 +115,21 @@ runs:
           fi
         done
 
-        # Parse credentials
+        # Parse and export credentials
         source "${CRED_DIR}/credentials"
         : "${IP:?credentials file must define IP}"
         : "${USER:?credentials file must define USER}"
+        echo "ip=${IP}" >> "$GITHUB_OUTPUT"
+        echo "user=${USER}" >> "$GITHUB_OUTPUT"
+        echo "key=${CRED_DIR}/id_ed25519" >> "$GITHUB_OUTPUT"
 
-        KEY="${CRED_DIR}/id_ed25519"
+    - name: Sync .local_install to shadow host
+      if: inputs.shadow_host_path != '' && steps.shadow-creds.outputs.ip != ''
+      shell: bash
+      run: |
+        IP="${{ steps.shadow-creds.outputs.ip }}"
+        USER="${{ steps.shadow-creds.outputs.user }}"
+        KEY="${{ steps.shadow-creds.outputs.key }}"
 
         SSH_OPTS=(
           -o "StrictHostKeyChecking=accept-new"
