@@ -571,12 +571,14 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         nicctl = Nicctl(host_path, host)
 
         # Primary port (interface_index 0) - always required
-        if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            nicctl.create_vfs(
-                host.network_interfaces[0].pci_address.lspci,
-                num_of_vfs=_pool_size(host, 0),
-            )
-        vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
+        # Always destroy and recreate VFs to clear any stuck IAVF state
+        # left by a previous SIGKILL'd DPDK process. Simply reusing
+        # existing VFs fails because the PF keeps them in a perpetual
+        # "resetting" state after an unclean shutdown.
+        pci_primary = host.network_interfaces[0].pci_address.lspci
+        nicctl.disable_vf(pci_primary)
+        nicctl.create_vfs(pci_primary, num_of_vfs=_pool_size(host, 0))
+        vfs = nicctl.vfio_list(pci_primary)
         # Store VFs on the host object for later use
         host.vfs = vfs
         logger.info(f"Host {host.name}: primary port VF pool ({len(vfs)}): {vfs}")
@@ -593,15 +595,10 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         skip_redundant = capture_enabled and is_multi_host
         if len(host.network_interfaces) > 1 and not skip_redundant:
             try:
-                if (
-                    int(host.network_interfaces[1].virtualization.get_current_vfs())
-                    == 0
-                ):
-                    nicctl.create_vfs(
-                        host.network_interfaces[1].pci_address.lspci,
-                        num_of_vfs=_pool_size(host, 1),
-                    )
-                vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
+                pci_redundant = host.network_interfaces[1].pci_address.lspci
+                nicctl.disable_vf(pci_redundant)
+                nicctl.create_vfs(pci_redundant, num_of_vfs=_pool_size(host, 1))
+                vfs_r = nicctl.vfio_list(pci_redundant)
                 host.vfs_r = vfs_r
                 ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
                 logger.info(
@@ -1306,12 +1303,31 @@ def pytest_collection_modifyitems(items):
 # hermetic without killing any test on timeout.
 
 
-def _reset_host_state(host) -> None:
+def _reset_host_state(host, mtl_path: str) -> None:
     """Best-effort cleanup of MTL leftovers on a single host. Never raises."""
     try:
         kill_stale_processes(host)
     except Exception as e:  # pragma: no cover — best-effort
         logger.debug("kill_stale_processes failed: %s", e)
+
+    # Destroy any VFs that may be stuck in a perpetual "resetting" state
+    # after a previous DPDK process was SIGKILL'd.  The PF keeps those VFs
+    # alive but broken; IAVF cannot reconfigure their IRQ mapping, so every
+    # subsequent test fails with
+    #   iavf_config_irq_map_lv(): Failed to configure irq map chunk
+    # Writing sriov_numvfs=0 tears them down.  The per-test create_vfs()
+    # call will then create fresh, healthy VFs instead of reusing the
+    # broken ones.
+    host_path = get_host_mtl_path(host, default=mtl_path)
+    nicctl = Nicctl(host_path, host)
+    for nic in getattr(host, "network_interfaces", []):
+        try:
+            pci = nic.pci_address.lspci
+            nicctl.disable_vf(pci)
+            logger.info("Destroyed VFs on %s for clean session start", pci)
+        except Exception as e:  # pragma: no cover — best-effort
+            logger.debug("VF cleanup on %s failed: %s", pci, e)
+
     try:
         host.connection.execute_command(
             "sudo rm -f /dev/hugepages/rtemap_* 2>/dev/null; true",
@@ -1324,16 +1340,15 @@ def _reset_host_state(host) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_clean_hw_state(hosts):
+def _ensure_clean_hw_state(hosts, mtl_path):
     """Guarantee a clean hardware state at session start and end.
 
     Runs before any test: kills stray RxTxApp/gtest processes that may
-    still hold /dev/vfio/<group> open from a previous aborted run, and
-    wipes stale DPDK hugepage mappings. The next session's start hook will
-    repeat the work, so we deliberately do **not** run it again at session
-    teardown — that just adds wall-clock for no observable benefit. Errors
+    still hold /dev/vfio/<group> open from a previous aborted run,
+    destroys stuck VFs (from unclean DPDK shutdowns) so they get
+    recreated fresh, and wipes stale DPDK hugepage mappings.  Errors
     are logged but never propagated.
     """
     for host in hosts.values():
-        _reset_host_state(host)
+        _reset_host_state(host, mtl_path)
     yield
