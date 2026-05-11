@@ -250,6 +250,7 @@ def execute_test(
         rx_cmd = (
             f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
+            f"-tx_queues 8 -rx_queues 8 "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i k "
@@ -262,6 +263,7 @@ def execute_test(
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
+                f"-tx_queues 8 -rx_queues 8 "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )
@@ -275,10 +277,12 @@ def execute_test(
         rx_cmd = (
             f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
+            f"-tx_queues 8 -rx_queues 8 "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
+            f"-tx_queues 8 -rx_queues 8 "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
@@ -291,6 +295,7 @@ def execute_test(
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
+                f"-tx_queues 8 -rx_queues 8 "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )

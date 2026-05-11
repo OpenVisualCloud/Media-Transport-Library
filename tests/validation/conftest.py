@@ -967,6 +967,77 @@ def collect_platform_config(hosts, log_session):
             logger.warning(f"Failed to collect platform info from {host.name}: {e}")
 
 
+# ---------------------------------------------------------------------------
+#  PTP clock-offset detection for PCAP compliance
+# ---------------------------------------------------------------------------
+# Error IDs that the EBU LIST analyzer reports when the PTP HW clock on the
+# NIC is not synchronised with the system clock used for pcap capture
+# timestamps.  In that situation `packet_ts_vs_rtp_ts` shows a delta of many
+# seconds (typically 30-40 s) and derived analyses such as VRX also report
+# garbage values.  None of these are real MTL issues — they are a limitation
+# of single-host / loopback setups without phc2sys.
+_PTP_OFFSET_ERROR_IDS = {
+    "errors.invalid_delta_packet_ts_vs_rtp_ts",
+    "errors.audio_rtp_ts_not_compliant",
+    "errors.vrx_above_maximum",
+}
+
+# If the |delta| between packet timestamps and RTP timestamps is larger than
+# this (in ns for video, μs for audio) then we are looking at a clock-sync
+# problem, not a real compliance issue.
+_PTP_OFFSET_THRESHOLD_NS = 1_000_000_000  # 1 second
+
+
+def _is_ptp_offset_only_failure(report, streams):
+    """Return True when every non-compliant stream failed *only* because of a
+    PTP clock offset (packet_ts_vs_rtp_ts is wildly off).
+
+    The check has two parts:
+    1. Every error_id in every non-compliant stream must be in
+       ``_PTP_OFFSET_ERROR_IDS``.
+    2. At least one stream's ``packet_ts_vs_rtp_ts`` analysis must show a
+       delta whose absolute value exceeds ``_PTP_OFFSET_THRESHOLD_NS`` —
+       proving it really is a clock-sync issue, not a marginal timing
+       violation.
+    """
+    has_huge_offset = False
+
+    for stream in streams:
+        error_list = stream.get("error_list") or []
+        if not error_list:
+            # Compliant stream — nothing to check.
+            continue
+        # All errors in this stream must be PTP-related.
+        for err in error_list:
+            err_id = err.get("id", "")
+            if err_id not in _PTP_OFFSET_ERROR_IDS:
+                return False
+
+        # Check the actual delta magnitude in this stream.
+        analyses = stream.get("analyses") or {}
+        pkt_rtp = analyses.get("packet_ts_vs_rtp_ts") or {}
+        details = pkt_rtp.get("details") or {}
+        rng = details.get("range") or {}
+        unit = details.get("unit", "ns")
+
+        for key in ("min", "max", "avg"):
+            val = rng.get(key)
+            if val is None:
+                continue
+            try:
+                val_ns = abs(float(val))
+                # EBU LIST reports audio deltas in μs, video in ns.
+                if unit == "μs" or unit == "us":
+                    val_ns *= 1_000
+                if val_ns > _PTP_OFFSET_THRESHOLD_NS:
+                    has_huge_offset = True
+            except (ValueError, TypeError):
+                pass
+
+    # Only suppress when we actually proved a large offset exists.
+    return has_huge_offset
+
+
 @pytest.fixture(scope="function")
 def pcap_capture(
     request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
@@ -1086,6 +1157,15 @@ def pcap_capture(
                                 "PCAP compliance check skipped: capture "
                                 "contains no streams (capture interface may "
                                 "not see VF-to-VF loopback traffic)"
+                            )
+                        elif _is_ptp_offset_only_failure(report, streams):
+                            update_compliance_result(request.node.nodeid, "N/A")
+                            logger.warning(
+                                "PCAP compliance: non-compliance caused "
+                                "solely by PTP clock offset (system clock "
+                                "not synced to NIC PTP HW clock); marking "
+                                "N/A. Run phc2sys to enable full compliance "
+                                "checking."
                             )
                         else:
                             # Detect analyzer limitation: when every stream is

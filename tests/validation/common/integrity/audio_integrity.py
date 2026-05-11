@@ -67,9 +67,7 @@ class AudioFileIntegritor(AudioIntegritor):
             )
             return False
 
-        self.logger.info(
-            f"All {out_frames} checked frames in {out_url} are correct."
-        )
+        self.logger.info(f"All {out_frames} checked frames in {out_url} are correct.")
         return True
 
 
