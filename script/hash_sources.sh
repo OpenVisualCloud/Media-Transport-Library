@@ -21,7 +21,7 @@ show_help() {
 Usage: $script_name [OPTIONS]
 
 Compute deterministic SHA-256 source checksums for CI cache keys.
-Paths for each component are defined in script/hash_sources_*.rc files.
+Paths for each component are defined in script/hash_sources_*.env files.
 
 OPTIONS:
 	-o FILE		Write KEY=VALUE lines to FILE (for GITHUB_OUTPUT)
@@ -52,10 +52,10 @@ done
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-# Read paths from an .rc file (skip comments and blank lines).
-read_rc() {
-	local rc_file="$1"
-	grep -v '^\s*#' "$rc_file" | grep -v '^\s*$'
+# Read paths from an .env file (skip comments and blank lines).
+read_env() {
+	local env_file="$1"
+	grep -v '^\s*#' "$env_file" | grep -v '^\s*$'
 }
 
 # Hash all regular files under the given paths, sorted for determinism.
@@ -77,19 +77,19 @@ hash_string() {
 # ─── Compute checksums ──────────────────────────────────────────────────────
 
 # shellcheck disable=SC2046
-dpdk_paths_hash="$(hash_paths $(read_rc "${script_folder}/hash_sources_dpdk.rc"))"
+dpdk_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_dpdk.env"))"
 dpdk="$(hash_string "$dpdk_paths_hash")"
 
 # shellcheck disable=SC2046
-mtl_paths_hash="$(hash_paths $(read_rc "${script_folder}/hash_sources_mtl.rc"))"
+mtl_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_mtl.env"))"
 mtl="$(hash_string "${dpdk} ${mtl_paths_hash}")"
 
 # shellcheck disable=SC2046
-ffmpeg_paths_hash="$(hash_paths $(read_rc "${script_folder}/hash_sources_ffmpeg.rc"))"
+ffmpeg_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_ffmpeg.env"))"
 ffmpeg="$(hash_string "${mtl} ${ffmpeg_paths_hash}")"
 
 # shellcheck disable=SC2046
-gstreamer_paths_hash="$(hash_paths $(read_rc "${script_folder}/hash_sources_gstreamer.rc"))"
+gstreamer_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_gstreamer.env"))"
 gstreamer="$(hash_string "${mtl} ${gstreamer_paths_hash}")"
 
 # ─── Output ─────────────────────────────────────────────────────────────────

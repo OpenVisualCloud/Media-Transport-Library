@@ -39,7 +39,7 @@ jobs:
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host_path: '${{ secrets.SHADOW_HOST }}'
+          shadow_host: '${{ secrets.SHADOW_HOST }}'
   run-pytest:
     needs: build-artifacts
     runs-on: "${{ inputs.nic }}"
