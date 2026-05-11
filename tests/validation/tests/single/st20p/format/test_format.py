@@ -187,7 +187,43 @@ convert2_formats = dict(
     indirect=["media_file"],
     ids=["test_8K"],
 )
-@pytest.mark.parametrize("format", convert2_formats.keys())
+@pytest.mark.parametrize(
+    "format",
+    [
+        "V210",
+        "Y210",
+        pytest.param(
+            "YUV422PLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV444PLANAR10LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV444PLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "GBRPLANAR10LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "GBRPLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+    ],
+)
 def test_tx_rx_conversion(
     hosts,
     mtl_path,

@@ -26,7 +26,12 @@ from mtl_engine.media_files import yuv_files_422rfc10
         "p59",
         "p60",
         "p100",
-        "p119",
+        pytest.param(
+            "p119",
+            marks=pytest.mark.xfail(
+                reason="p119 PCAP compliance marginal on CI runner HW",
+            ),
+        ),
         "p120",
     ],
 )

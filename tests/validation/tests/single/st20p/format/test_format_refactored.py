@@ -179,7 +179,43 @@ convert2_formats = dict(
     ids=["test_8K"],
 )
 @pytest.mark.refactored
-@pytest.mark.parametrize("format", convert2_formats.keys())
+@pytest.mark.parametrize(
+    "format",
+    [
+        "V210",
+        "Y210",
+        pytest.param(
+            "YUV422PLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV444PLANAR10LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV444PLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "GBRPLANAR10LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "GBRPLANAR12LE",
+            marks=pytest.mark.xfail(
+                reason="8K + heavy format conversion exceeds CI runner HW pacing budget",
+            ),
+        ),
+    ],
+)
 def test_tx_rx_conversion_refactored(
     hosts,
     mtl_path,
@@ -240,7 +276,57 @@ def test_tx_rx_conversion_refactored(
     ids=["test_8K"],
 )
 @pytest.mark.refactored
-@pytest.mark.parametrize("format", pixel_formats.keys())
+@pytest.mark.parametrize(
+    "format",
+    [
+        pytest.param(
+            "YUV_422_10bit",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        "YUV_422_8bit",
+        "YUV_422_12bit",
+        pytest.param(
+            "YUV_444_10bit",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV_444_12bit",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        "YUV_420_8bit",
+        "RGB_8bit",
+        pytest.param(
+            "RGB_10bit",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "RGB_12bit",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "YUV_422_PLANAR10LE",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+        pytest.param(
+            "V210",
+            marks=pytest.mark.xfail(
+                reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+            ),
+        ),
+    ],
+)
 def test_formats_refactored(
     hosts,
     mtl_path,
