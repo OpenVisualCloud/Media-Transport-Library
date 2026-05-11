@@ -43,12 +43,12 @@ PATTERN FILES (RC files):
   its "comm" name (the 16-char Linux task name) against regex patterns
   loaded from two RC files next to this script:
 
-    isolation_expected.rc   EXPECTED — threads that SHOULD be on these cores.
+    isolation_expected.env  EXPECTED — threads that SHOULD be on these cores.
                             Your DPDK lcores, MTL sessions, your application
                             workers, idle threads, etc.  These are the
                             workload you intentionally pinned there.
 
-    isolation_allowed.rc    ALLOWED — kernel housekeeping threads that MAY
+    isolation_allowed.env   ALLOWED — kernel housekeeping threads that MAY
                             briefly appear even on well-isolated cores
                             (migration, watchdog, ksoftirqd, kworker, ...).
                             Reported but not flagged as violations.
@@ -145,8 +145,8 @@ load_patterns() {
 
 EXPECTED_PATTERNS=()
 ALLOWED_PATTERNS=()
-load_patterns "${SCRIPT_DIR}/isolation_expected.rc" EXPECTED_PATTERNS
-load_patterns "${SCRIPT_DIR}/isolation_allowed.rc" ALLOWED_PATTERNS
+load_patterns "${SCRIPT_DIR}/isolation_expected.env" EXPECTED_PATTERNS
+load_patterns "${SCRIPT_DIR}/isolation_allowed.env" ALLOWED_PATTERNS
 
 if ((${#EXPECTED_PATTERNS[@]} == 0)); then
 	echo "⚠  No EXPECTED patterns loaded — all threads will be INTRUDER or ALLOWED" >&2

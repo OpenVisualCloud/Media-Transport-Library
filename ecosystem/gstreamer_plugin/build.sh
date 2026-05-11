@@ -48,3 +48,4 @@ meson compile -C "$BUILD_DIR"
 # Install plugins
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 	meson install -C "$BUILD_DIR"
+fi

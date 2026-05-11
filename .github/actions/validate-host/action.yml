@@ -7,24 +7,18 @@ description: >
   Optionally sync .local_install/ to a shadow host via SSH.
 
 inputs:
-  shadow_host_path:
-    description: >
-      Path to the shadow host credentials directory containing
-      credentials, id_ed25519, and id_ed25519.pub.
-      If empty or the files are missing, shadow sync is skipped.
+  shadow_host:
+    description: Path to a file defining IP and USER for the shadow host. If empty, shadow sync is skipped.
     required: false
     default: ''
 
 outputs:
   shadow_host_ip:
-    description: IP address from the shadow host credentials file
+    description: IP address of the shadow host
     value: ${{ steps.shadow-creds.outputs.ip }}
   shadow_host_user:
-    description: Username from the shadow host credentials file
+    description: Username for the shadow host
     value: ${{ steps.shadow-creds.outputs.user }}
-  shadow_host_key:
-    description: Path to the SSH private key for the shadow host
-    value: ${{ steps.shadow-creds.outputs.key }}
 
 runs:
   using: composite
@@ -102,52 +96,25 @@ runs:
 
     - name: Read shadow host credentials
       id: shadow-creds
-      if: inputs.shadow_host_path != ''
+      if: inputs.shadow_host != ''
       shell: bash
       run: |
-        CRED_DIR="${{ inputs.shadow_host_path }}"
-
-        # Verify all 3 credential files exist
-        for f in credentials id_ed25519 id_ed25519.pub; do
-          if [[ ! -f "${CRED_DIR}/${f}" ]]; then
-            echo "::warning::Shadow host credentials missing: ${CRED_DIR}/${f} — skipping sync"
-            exit 0
-          fi
-        done
-
-        # Parse and export credentials
-        source "${CRED_DIR}/credentials"
-        : "${IP:?credentials file must define IP}"
-        : "${USER:?credentials file must define USER}"
+        source "${{ inputs.shadow_host }}"
         echo "ip=${IP}" >> "$GITHUB_OUTPUT"
         echo "user=${USER}" >> "$GITHUB_OUTPUT"
-        echo "key=${CRED_DIR}/id_ed25519" >> "$GITHUB_OUTPUT"
 
     - name: Sync .local_install to shadow host
-      if: inputs.shadow_host_path != '' && steps.shadow-creds.outputs.ip != ''
+      if: steps.shadow-creds.outputs.ip != ''
       shell: bash
       run: |
         IP="${{ steps.shadow-creds.outputs.ip }}"
         USER="${{ steps.shadow-creds.outputs.user }}"
-        KEY="${{ steps.shadow-creds.outputs.key }}"
-
-        SSH_OPTS=(
-          -o "StrictHostKeyChecking=accept-new"
-          -o "BatchMode=yes"
-          -o "ConnectTimeout=30"
-          -i "${KEY}"
-        )
-
+        SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
         echo "::group::Syncing .local_install/ to ${USER}@${IP}"
-
-        # Ensure target directory exists on shadow host
         ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "mkdir -p ${{ github.workspace }}/.local_install"
-
-        # rsync artifacts to shadow host
         rsync -az --delete \
           -e "ssh ${SSH_OPTS[*]}" \
           "${{ github.workspace }}/.local_install/" \
           "${USER}@${IP}:${{ github.workspace }}/.local_install/"
-
         echo "::endgroup::"
         echo "::notice::Synced .local_install/ to shadow host ${IP}"
