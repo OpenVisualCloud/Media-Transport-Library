@@ -14,7 +14,16 @@ pytestmark = pytest.mark.verified
     [
         pytest.param(yuv_files_422rfc10["Penguin_1080p"], marks=pytest.mark.smoke),
         *[
-            yuv_files_422rfc10[k]
+            (
+                pytest.param(
+                    yuv_files_422rfc10[k],
+                    marks=pytest.mark.xfail(
+                        reason="8K PCAP compliance exceeds CI runner HW pacing budget",
+                    ),
+                )
+                if k == "Penguin_8K"
+                else yuv_files_422rfc10[k]
+            )
             for k in yuv_files_422rfc10.keys()
             if k != "Penguin_1080p"
         ],

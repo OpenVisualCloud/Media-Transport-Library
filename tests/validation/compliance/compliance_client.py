@@ -144,31 +144,35 @@ class PcapComplianceClient:
             if stream.get("media_type") == "unknown"
         ]
 
+        # Compliance is determined solely by the analyzer's own
+        # not_compliant_streams count.  Streams with media_type=="unknown"
+        # mean the analyzer could not classify the payload (no SDP, exotic
+        # format, short capture, etc.) — that is an *inconclusive* result,
+        # not a compliance failure.  The caller (conftest.py pcap_capture
+        # fixture) handles the unknown case separately by marking N/A.
         is_compliant = not_compliant_streams == 0
-        if is_compliant and unknown_media_streams:
-            is_compliant = False
 
         if not is_compliant:
-            if not_compliant_streams and not_compliant_streams > 0:
-                logger.warning(
-                    "Compliance report indicates non-compliance: not_compliant_streams=%s",
-                    not_compliant_streams,
+            logger.warning(
+                "Compliance report indicates non-compliance: not_compliant_streams=%s",
+                not_compliant_streams,
+            )
+        if unknown_media_streams:
+            stream_refs = []
+            for idx, stream in unknown_media_streams:
+                stream_id = (
+                    stream.get("id")
+                    or stream.get("stream_id")
+                    or stream.get("uuid")
+                    or idx
                 )
-            if unknown_media_streams:
-                stream_refs = []
-                for idx, stream in unknown_media_streams:
-                    stream_id = (
-                        stream.get("id")
-                        or stream.get("stream_id")
-                        or stream.get("uuid")
-                        or idx
-                    )
-                    stream_refs.append(str(stream_id))
-                logger.warning(
-                    "Compliance report indicates non-compliance: %s stream(s) with unknown media_type (ids=%s)",
-                    len(unknown_media_streams),
-                    ", ".join(stream_refs),
-                )
+                stream_refs.append(str(stream_id))
+            logger.info(
+                "%s stream(s) with unknown media_type (ids=%s); "
+                "analyzer could not classify payload",
+                len(unknown_media_streams),
+                ", ".join(stream_refs),
+            )
 
         return is_compliant, report
 

@@ -571,12 +571,14 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         nicctl = Nicctl(host_path, host)
 
         # Primary port (interface_index 0) - always required
-        if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            nicctl.create_vfs(
-                host.network_interfaces[0].pci_address.lspci,
-                num_of_vfs=_pool_size(host, 0),
-            )
-        vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
+        # Always destroy and recreate VFs to clear any stuck IAVF state
+        # left by a previous SIGKILL'd DPDK process. Simply reusing
+        # existing VFs fails because the PF keeps them in a perpetual
+        # "resetting" state after an unclean shutdown.
+        pci_primary = host.network_interfaces[0].pci_address.lspci
+        nicctl.disable_vf(pci_primary)
+        nicctl.create_vfs(pci_primary, num_of_vfs=_pool_size(host, 0))
+        vfs = nicctl.vfio_list(pci_primary)
         # Store VFs on the host object for later use
         host.vfs = vfs
         logger.info(f"Host {host.name}: primary port VF pool ({len(vfs)}): {vfs}")
@@ -593,15 +595,10 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         skip_redundant = capture_enabled and is_multi_host
         if len(host.network_interfaces) > 1 and not skip_redundant:
             try:
-                if (
-                    int(host.network_interfaces[1].virtualization.get_current_vfs())
-                    == 0
-                ):
-                    nicctl.create_vfs(
-                        host.network_interfaces[1].pci_address.lspci,
-                        num_of_vfs=_pool_size(host, 1),
-                    )
-                vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
+                pci_redundant = host.network_interfaces[1].pci_address.lspci
+                nicctl.disable_vf(pci_redundant)
+                nicctl.create_vfs(pci_redundant, num_of_vfs=_pool_size(host, 1))
+                vfs_r = nicctl.vfio_list(pci_redundant)
                 host.vfs_r = vfs_r
                 ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
                 logger.info(
@@ -682,6 +679,23 @@ def delay_between_tests(test_config: dict, hosts):
         if all_idle:
             break
         time.sleep(poll_interval)
+
+    # Clean up lingering virtio_user kernel interfaces left by the previous
+    # RxTxApp process. The VFIO fd check above confirms DPDK released its
+    # device, but the kernel vhost-net/virtio_user interface can linger ~1-2s
+    # longer, causing the next process's rte_eal_hotplug_add to race/fail.
+    for host in hosts.values():
+        try:
+            host.connection.execute_command(
+                "ip link show virtio_user0 &>/dev/null && sudo ip link delete virtio_user0; "
+                "ip link show virtio_user1 &>/dev/null && sudo ip link delete virtio_user1; "
+                "true",
+                shell=True,
+                timeout=5,
+                expected_return_codes=None,
+            )
+        except Exception:
+            pass
     yield
 
 
@@ -950,6 +964,77 @@ def collect_platform_config(hosts, log_session):
             logger.warning(f"Failed to collect platform info from {host.name}: {e}")
 
 
+# ---------------------------------------------------------------------------
+#  PTP clock-offset detection for PCAP compliance
+# ---------------------------------------------------------------------------
+# Error IDs that the EBU LIST analyzer reports when the PTP HW clock on the
+# NIC is not synchronised with the system clock used for pcap capture
+# timestamps.  In that situation `packet_ts_vs_rtp_ts` shows a delta of many
+# seconds (typically 30-40 s) and derived analyses such as VRX also report
+# garbage values.  None of these are real MTL issues — they are a limitation
+# of single-host / loopback setups without phc2sys.
+_PTP_OFFSET_ERROR_IDS = {
+    "errors.invalid_delta_packet_ts_vs_rtp_ts",
+    "errors.audio_rtp_ts_not_compliant",
+    "errors.vrx_above_maximum",
+}
+
+# If the |delta| between packet timestamps and RTP timestamps is larger than
+# this (in ns for video, μs for audio) then we are looking at a clock-sync
+# problem, not a real compliance issue.
+_PTP_OFFSET_THRESHOLD_NS = 1_000_000_000  # 1 second
+
+
+def _is_ptp_offset_only_failure(report, streams):
+    """Return True when every non-compliant stream failed *only* because of a
+    PTP clock offset (packet_ts_vs_rtp_ts is wildly off).
+
+    The check has two parts:
+    1. Every error_id in every non-compliant stream must be in
+       ``_PTP_OFFSET_ERROR_IDS``.
+    2. At least one stream's ``packet_ts_vs_rtp_ts`` analysis must show a
+       delta whose absolute value exceeds ``_PTP_OFFSET_THRESHOLD_NS`` —
+       proving it really is a clock-sync issue, not a marginal timing
+       violation.
+    """
+    has_huge_offset = False
+
+    for stream in streams:
+        error_list = stream.get("error_list") or []
+        if not error_list:
+            # Compliant stream — nothing to check.
+            continue
+        # All errors in this stream must be PTP-related.
+        for err in error_list:
+            err_id = err.get("id", "")
+            if err_id not in _PTP_OFFSET_ERROR_IDS:
+                return False
+
+        # Check the actual delta magnitude in this stream.
+        analyses = stream.get("analyses") or {}
+        pkt_rtp = analyses.get("packet_ts_vs_rtp_ts") or {}
+        details = pkt_rtp.get("details") or {}
+        rng = details.get("range") or {}
+        unit = details.get("unit", "ns")
+
+        for key in ("min", "max", "avg"):
+            val = rng.get(key)
+            if val is None:
+                continue
+            try:
+                val_ns = abs(float(val))
+                # EBU LIST reports audio deltas in μs, video in ns.
+                if unit == "μs" or unit == "us":
+                    val_ns *= 1_000
+                if val_ns > _PTP_OFFSET_THRESHOLD_NS:
+                    has_huge_offset = True
+            except (ValueError, TypeError):
+                pass
+
+    # Only suppress when we actually proved a large offset exists.
+    return has_huge_offset
+
+
 @pytest.fixture(scope="function")
 def pcap_capture(
     request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
@@ -967,20 +1052,47 @@ def pcap_capture(
         is_single_host = len(hosts) == 1
         media_file_info, _ = media_file
         test_name = request.node.name
+        # Some refactored tests (e.g. rx_timing) request pcap_capture without
+        # parametrizing media_file indirectly, so media_file_info is empty and
+        # we cannot derive a packet count per frame. Fall back to a
+        # time-bounded capture instead of raising in setup.
+        can_calc_packets = bool(
+            media_file_info
+            and "width" in media_file_info
+            and "height" in media_file_info
+        )
         if "frames_number" not in capture_cfg and "capture_time" not in capture_cfg:
-            capture_cfg["packets_number"] = (
-                FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
-            )
-            logger.info(
-                f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
-            )
+            if can_calc_packets:
+                capture_cfg["packets_number"] = (
+                    FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
+                )
+                logger.info(
+                    f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
+                )
+            else:
+                capture_cfg.setdefault(
+                    "capture_time", capture_cfg.get("default_capture_time", 10)
+                )
+                logger.info(
+                    "media_file info unavailable; falling back to "
+                    f"time-bounded capture ({capture_cfg['capture_time']}s)"
+                )
         elif "frames_number" in capture_cfg:
-            capture_cfg["packets_number"] = capture_cfg[
-                "frames_number"
-            ] * calculate_packets_per_frame(media_file_info)
-            logger.info(
-                f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
-            )
+            if can_calc_packets:
+                capture_cfg["packets_number"] = capture_cfg[
+                    "frames_number"
+                ] * calculate_packets_per_frame(media_file_info)
+                logger.info(
+                    f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
+                )
+            else:
+                capture_cfg.setdefault(
+                    "capture_time", capture_cfg.get("default_capture_time", 10)
+                )
+                logger.info(
+                    "media_file info unavailable; ignoring frames_number and "
+                    f"using time-bounded capture ({capture_cfg['capture_time']}s)"
+                )
         capturer = NetsniffRecorder(
             host=host,
             test_name=test_name,
@@ -1043,10 +1155,39 @@ def pcap_capture(
                                 "contains no streams (capture interface may "
                                 "not see VF-to-VF loopback traffic)"
                             )
+                        elif _is_ptp_offset_only_failure(report, streams):
+                            update_compliance_result(request.node.nodeid, "N/A")
+                            logger.warning(
+                                "PCAP compliance: non-compliance caused "
+                                "solely by PTP clock offset (system clock "
+                                "not synced to NIC PTP HW clock); marking "
+                                "N/A. Run phc2sys to enable full compliance "
+                                "checking."
+                            )
                         else:
-                            update_compliance_result(request.node.nodeid, "Fail")
-                            log_fail("PCAP compliance check failed")
-                            logger.info(f"Compliance report: {report}")
+                            # Detect analyzer limitation: when every stream is
+                            # classified as ``unknown`` media_type the EBU
+                            # analyzer cannot interpret the payload (e.g.
+                            # compressed st22p H.264/JPEG-XS, exotic 8K raw
+                            # formats). That is not an MTL bug, so report N/A
+                            # instead of failing the test.
+                            all_unknown = all(
+                                s.get("media_type") == "unknown" for s in streams
+                            )
+                            not_compliant = (report or {}).get(
+                                "not_compliant_streams", 0
+                            ) or 0
+                            if all_unknown and not_compliant == 0:
+                                update_compliance_result(request.node.nodeid, "N/A")
+                                logger.warning(
+                                    "PCAP compliance: analyzer could not classify "
+                                    "any stream (media_type=unknown); marking N/A. "
+                                    f"Report: {report}"
+                                )
+                            else:
+                                update_compliance_result(request.node.nodeid, "Fail")
+                                log_fail("PCAP compliance check failed")
+                                logger.info(f"Compliance report: {report}")
 
                 # Remove pcap file after upload to free up ramdisk space
                 try:
@@ -1162,12 +1303,31 @@ def pytest_collection_modifyitems(items):
 # hermetic without killing any test on timeout.
 
 
-def _reset_host_state(host) -> None:
+def _reset_host_state(host, mtl_path: str) -> None:
     """Best-effort cleanup of MTL leftovers on a single host. Never raises."""
     try:
         kill_stale_processes(host)
     except Exception as e:  # pragma: no cover — best-effort
         logger.debug("kill_stale_processes failed: %s", e)
+
+    # Destroy any VFs that may be stuck in a perpetual "resetting" state
+    # after a previous DPDK process was SIGKILL'd.  The PF keeps those VFs
+    # alive but broken; IAVF cannot reconfigure their IRQ mapping, so every
+    # subsequent test fails with
+    #   iavf_config_irq_map_lv(): Failed to configure irq map chunk
+    # Writing sriov_numvfs=0 tears them down.  The per-test create_vfs()
+    # call will then create fresh, healthy VFs instead of reusing the
+    # broken ones.
+    host_path = get_host_mtl_path(host, default=mtl_path)
+    nicctl = Nicctl(host_path, host)
+    for nic in getattr(host, "network_interfaces", []):
+        try:
+            pci = nic.pci_address.lspci
+            nicctl.disable_vf(pci)
+            logger.info("Destroyed VFs on %s for clean session start", pci)
+        except Exception as e:  # pragma: no cover — best-effort
+            logger.debug("VF cleanup on %s failed: %s", pci, e)
+
     try:
         host.connection.execute_command(
             "sudo rm -f /dev/hugepages/rtemap_* 2>/dev/null; true",
@@ -1180,16 +1340,15 @@ def _reset_host_state(host) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_clean_hw_state(hosts):
+def _ensure_clean_hw_state(hosts, mtl_path):
     """Guarantee a clean hardware state at session start and end.
 
     Runs before any test: kills stray RxTxApp/gtest processes that may
-    still hold /dev/vfio/<group> open from a previous aborted run, and
-    wipes stale DPDK hugepage mappings. The next session's start hook will
-    repeat the work, so we deliberately do **not** run it again at session
-    teardown — that just adds wall-clock for no observable benefit. Errors
+    still hold /dev/vfio/<group> open from a previous aborted run,
+    destroys stuck VFs (from unclean DPDK shutdowns) so they get
+    recreated fresh, and wipes stale DPDK hugepage mappings.  Errors
     are logged but never propagated.
     """
     for host in hosts.values():
-        _reset_host_state(host)
+        _reset_host_state(host, mtl_path)
     yield

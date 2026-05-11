@@ -124,6 +124,8 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     f"'{self.pcap_file}'",
+                    "--ring-size",
+                    "512MiB",
                     (
                         f"--num {self.packets_capture}"
                         if self.packets_capture is not None
