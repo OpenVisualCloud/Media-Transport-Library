@@ -71,6 +71,8 @@ class Nicctl:
         """
         existing = self.vfio_list(pci_id)
         if len(existing) >= num_of_vfs:
+            # FLR clears stuck admin queue state from prior DPDK crashes.
+            self._reset_existing_vfs(existing)
             logger.debug(
                 "Reusing %d existing VFs on %s (requested %d)",
                 len(existing),
@@ -154,6 +156,28 @@ class Nicctl:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _reset_existing_vfs(self, vfs: list) -> None:
+        """Issue FLR on each VF to clear stale PF-VF admin queue state.
+
+        After a DPDK process is SIGKILL'd, the PF may keep the VF in
+        perpetual "resetting" state.  A PCIe Function Level Reset clears
+        the PF's queue context so the next DPDK process can initialize
+        the admin queue cleanly.  Safe to call while vfio-pci is bound
+        and no userspace process holds the device open.
+        """
+        for vf in vfs:
+            try:
+                self.connection.execute_command(
+                    f'sudo sh -c "echo 1 > /sys/bus/pci/devices/{vf}/reset"',
+                    shell=True,
+                    timeout=10,
+                    expected_return_codes=None,
+                )
+            except Exception as e:
+                logger.warning("FLR on %s failed: %s", vf, e)
+        if vfs:
+            time.sleep(1)  # Allow PF to process resets
+
     def _wait_vfio_idle(self, pci_id: str, timeout_s: int) -> bool:
         """Poll until no userspace process holds /dev/vfio/<group> for *pci_id*.
 
