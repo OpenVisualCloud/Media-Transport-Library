@@ -91,8 +91,6 @@ jobs:
             --no_capture
       - name: Export workflow tag for PCAP naming
         run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
-      - name: Start MtlManager
-        run: sudo MtlManager &
       - name: Run performance tests
         working-directory: ./tests/validation
         run: |

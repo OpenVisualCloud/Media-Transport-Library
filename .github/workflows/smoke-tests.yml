@@ -68,6 +68,11 @@ jobs:
       - name: 'preparation: Validate host and download artifacts'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         uses: ./.github/actions/validate-host
+
+      - name: 'cleanup: Kill stale processes before test'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        uses: ./.github/actions/cleanup
+
       - name: 'installation: Install pipenv environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         working-directory: tests/validation
@@ -108,15 +113,11 @@ jobs:
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
-      - name: 'preparation: Start MtlManager at background'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          sudo -E MtlManager &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         timeout-minutes: 60
         run: |
-          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report
@@ -162,3 +163,7 @@ jobs:
               echo "❌ No report.json file was generated"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup

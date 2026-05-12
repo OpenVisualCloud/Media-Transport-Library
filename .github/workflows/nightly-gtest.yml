@@ -47,6 +47,10 @@ jobs:
           ref: '${{ inputs.commit_sha || github.sha }}'
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
+
+      - name: 'cleanup: Kill stale processes before test'
+        uses: ./.github/actions/cleanup
+
       - name: run gtest bare metal
         env:
           NIGHTLY: 1
