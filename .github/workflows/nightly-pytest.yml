@@ -52,6 +52,10 @@ jobs:
           ref: '${{ github.ref }}'
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
+
+      - name: 'cleanup: Kill stale processes before test'
+        uses: ./.github/actions/cleanup
+
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install
@@ -87,9 +91,6 @@ jobs:
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
-      - name: 'preparation: Start MtlManager at background'
-        run: |
-          sudo -E MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         working-directory: ./tests/validation
         run: |
@@ -118,6 +119,10 @@ jobs:
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup
 
       - name: "upload system info"
         if: always()

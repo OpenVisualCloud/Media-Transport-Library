@@ -229,10 +229,6 @@ jobs:
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
 
-      - name: 'preparation: Start MtlManager at background'
-        run: |
-          sudo MtlManager &
-
       - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/validation
         run: |

@@ -99,9 +99,10 @@ jobs:
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ inputs.nic }}" >> "$GITHUB_ENV"
-      - name: Start MtlManager
-        run: |
-          sudo MtlManager &
+
+      - name: 'cleanup: Kill stale processes before test'
+        uses: ./.github/actions/cleanup
+
       - name: Run tests
         working-directory: ./tests/validation
         run: |
@@ -120,3 +121,7 @@ jobs:
         with:
           name: "custom-test-report-${{ env.CURRENT_DATE }}"
           path: ./tests/validation/report.html
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup

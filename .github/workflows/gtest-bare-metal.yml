@@ -86,8 +86,15 @@ jobs:
         run: |
           if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
 
+      - name: 'cleanup: Kill stale processes before test'
+        uses: ./.github/actions/cleanup
+
       - name: Run gtest bare metal
         env:
           NIGHTLY: 0
           EXIT_ON_FAILURE: 1
         run: sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup

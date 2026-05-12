@@ -31,6 +31,15 @@ fi
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 
 if [ "$sourced" -eq 0 ]; then
+	# Skip rebuild if the correct Kahawai ICE version is already loaded.
+	# Set FORCE_ICE_REBUILD=1 to override.
+	if [ "${FORCE_ICE_REBUILD:-0}" != "1" ]; then
+		if sudo modinfo ice 2>/dev/null | grep -qEi "^version:[[:space:]]*Kahawai_${ICE_VER}"; then
+			echo "ICE driver version ${ICE_VER} (Kahawai) is already installed. Skipping rebuild."
+			exit 0
+		fi
+	fi
+
 	archive_name="ice-${ICE_VER}.tar.gz"
 	echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
 

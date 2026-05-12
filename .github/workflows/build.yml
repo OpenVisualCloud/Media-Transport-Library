@@ -2,6 +2,11 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_linter_check:
+        type: boolean
+        default: true
+        description: 'Skip waiting for the Linter workflow (default true for manual runs)'
   push:
     branches:
       - main
