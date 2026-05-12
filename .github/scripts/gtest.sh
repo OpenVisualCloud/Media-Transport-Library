@@ -4,7 +4,7 @@
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
-mtl_folder=$(cd "${script_folder}/../.." && pwd)
+mtl_folder=$(realpath "${script_folder}/../..")
 declare -A test_cases
 
 # Detect whether to use .local_install (CI) or local build/system paths
