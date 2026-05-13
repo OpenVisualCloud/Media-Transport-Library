@@ -107,9 +107,18 @@ Reading from a yuv stream from a local file and sending a ST 2110-20 10-bit YUV4
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -f mtl_st20p -
 ```
 
-### 2.3. y210 format
+### 2.3. Supported pixel formats
 
-The y210 format is not supported by the MTL Plugin for FFmpeg.
+The `mtl_st20p` plugin maps the following FFmpeg `pix_fmt` values to MTL frame
+formats. The same `-pix_fmt` must be used on TX and RX.
+
+| `-pix_fmt`    | Wire format                   | ST 2110-20:2022 §6.2 compliant |
+| ------------- | ----------------------------- | ------------------------------ |
+| `yuv422p10le` | YUV 4:2:2 10-bit RFC 4175 PG2BE10 | yes (Table 2)              |
+| `y210le`      | YUV 4:2:2 10-bit RFC 4175 PG2BE10 | yes (Table 2)              |
+| `yuv444p10le` | YUV 4:4:4 10-bit RFC 4175 PG4BE10 | yes (Table 1)              |
+| `gbrp10le`    | RGB 10-bit RFC 4175 PG4BE10       | yes (Table 1)              |
+| `yuv420p`     | Planar I420 passthrough (`ST_FRAME_FMT_YUV420CUSTOM8`) | **no** — MTL-to-MTL only, not interoperable with third-party receivers |
 
 ## 3. ST22 compressed video run guide
 
