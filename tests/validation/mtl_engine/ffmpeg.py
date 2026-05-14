@@ -52,25 +52,13 @@ class FFmpeg(Application):
         "video_format_list",  # list[str]  — rgb24_multiple only
         "video_url_list",  # list[str]   — rgb24_multiple only
         "pix_fmt",  # str — yuv_h264 only; default "yuv422p10le"
-        "keep_output",  # bool — yuv_h264 only; preserve RX output for integrity checks
     )
 
     def __init__(self, app_path, config_file_path=None):
         super().__init__(app_path, config_file_path)
         self._ff_params: dict = {}
         self._tx_commands: list[str] = []
-        self._output_files: list[str] = []
         self._build: str | None = None
-
-    @property
-    def output_files(self) -> list[str]:
-        """RX-side output file paths produced by the most recent run.
-
-        Populated in :meth:`prepare_execution` for ``yuv_h264`` mode. Tests
-        that pass ``keep_output=True`` can read the path(s) here to feed a
-        follow-up integrity check before cleanup.
-        """
-        return list(self._output_files)
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -410,9 +398,9 @@ class FFmpeg(Application):
                         self._output_files[0], video_size, host, build, video_url
                     )
                 # Best-effort cleanup of generated output files (unless caller
-                # asked to keep them for a follow-up integrity check).
-                if not bool(self._ff_params.get("keep_output", False)):
-                    self._cleanup_output_files(host)
+                # asked to keep them via ``keep_output=True`` for a follow-up
+                # integrity check).
+                self._cleanup_output_files(host)
             elif mode == _MODE_RGB24:
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 1)
             elif mode == _MODE_RGB24_MULTI:
@@ -430,13 +418,3 @@ class FFmpeg(Application):
             self._fail_validation("FFmpeg test failed", fail_on_error)
             return False
         return True
-
-    # ----------------------------------------------------- helpers
-    def _cleanup_output_files(self, host) -> None:
-        if not self._output_files or host is None:
-            return
-        try:
-            for f in self._output_files:
-                run(f"rm -f {f}", host=host)
-        except Exception as e:  # pragma: no cover — best-effort
-            logger.info("[FFmpeg] Could not remove output files: %s", e)

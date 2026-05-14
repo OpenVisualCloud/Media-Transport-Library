@@ -64,6 +64,7 @@ UNIVERSAL_PARAMS = {
     # File I/O parameters
     "input_file": None,  # Input file path
     "output_file": None,  # Output file path
+    "keep_output": False,  # Preserve RX output files after the test (skip cleanup)
     # Test configuration
     "test_mode": "multicast",  # Test mode (unicast, multicast, kernel)
     "test_time": 30,  # Test duration in seconds
