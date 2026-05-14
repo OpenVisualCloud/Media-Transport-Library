@@ -19,12 +19,22 @@ on:
         required: true
         type: string
         default: tests
+      shadow_host:
+        description: 'Path to shadow host credentials file (IP/USER). Leave empty to use secret.'
+        required: false
+        type: string
+        default: ''
+      enable_shadow_host:
+        description: 'Enable shadow host sync'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  build-artifacts:
+  build:
     runs-on: dpdk
     steps:
       - name: Harden-Runner
@@ -39,9 +49,9 @@ jobs:
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host: '${{ secrets.SHADOW_HOST }}'
+          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || secrets.SHADOW_HOST) || '' }}
   run-pytest:
-    needs: build-artifacts
+    needs: build
     runs-on: "${{ inputs.nic }}"
     timeout-minutes: 720
     steps:
