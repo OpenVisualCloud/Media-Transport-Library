@@ -102,37 +102,44 @@ class VideoIntegritor:
         self.bad_frames_total = 0
         self.delete_file = delete_file
 
+    def _align_by_first_frame_hash(self, out_file) -> None:
+        """Align source chunks by hashing the first received frame.
+
+        Used when OCR-based alignment is unavailable (cv2/pytesseract not
+        installed) or unsuccessful (source has no frame-counter burn-in).
+        """
+        try:
+            with open(out_file, "rb") as handle:
+                first_chunk = handle.read(self.frame_size)
+            if len(first_chunk) != self.frame_size:
+                raise ValueError(
+                    f"Output file {out_file} is smaller than one frame"
+                )
+            first_sum = hashlib.md5(first_chunk).hexdigest()
+            if first_sum not in self.src_chunk_sums:
+                self.logger.warning(
+                    f"First frame hash not found in {self.src_url}; "
+                    f"proceeding without shift."
+                )
+                return
+            shift_index = self.src_chunk_sums.index(first_sum)
+            self.shift = shift_index + STARTING_FRAME
+            for _ in range(shift_index):
+                self.src_chunk_sums.append(self.src_chunk_sums.pop(0))
+            self.logger.info(
+                f"Aligned source chunks by hash: first frame index {shift_index}"
+            )
+        except (OSError, ValueError) as exc:
+            self.logger.warning(
+                f"Hash-based alignment failed ({exc}); proceeding without shift."
+            )
+
     def shift_src_chunk_by_first_frame_no(self, out_file):
         if "cv2" not in sys.modules or "pytesseract" not in sys.modules:
             self.logger.warning(
                 "cv2/pytesseract not available; falling back to hash-based alignment."
             )
-            try:
-                with open(out_file, "rb") as handle:
-                    first_chunk = handle.read(self.frame_size)
-                if len(first_chunk) != self.frame_size:
-                    raise ValueError(
-                        f"Output file {out_file} is smaller than one frame"
-                    )
-                first_sum = hashlib.md5(first_chunk).hexdigest()
-                if first_sum in self.src_chunk_sums:
-                    shift_index = self.src_chunk_sums.index(first_sum)
-                    self.shift = shift_index + STARTING_FRAME
-                    for _ in range(shift_index):
-                        self.src_chunk_sums.append(self.src_chunk_sums.pop(0))
-                    self.logger.info(
-                        "Aligned source chunks by hash using first frame index %s",
-                        shift_index,
-                    )
-                else:
-                    self.logger.warning(
-                        "First frame hash not found in source; proceeding without shift."
-                    )
-            except Exception as exc:
-                self.logger.warning(
-                    "Hash-based alignment failed (%s); proceeding without shift.",
-                    exc,
-                )
+            self._align_by_first_frame_hash(out_file)
             return
         font_size = self.height // TEXT_FONT_SCALE
         custom_config = r"--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789"
@@ -167,10 +174,14 @@ class VideoIntegritor:
             self.logger.info(f"Extracted first captured frame number: {self.shift}")
             for _ in range(self.shift - STARTING_FRAME):
                 self.src_chunk_sums.append(self.src_chunk_sums.pop(0))
-        else:
-            raise ValueError(
-                f"No match found in the extracted text from first frame of {self.src_url}"
-            )
+            return
+        # OCR found no frame-counter overlay (e.g. natural content without a
+        # timecode burn-in). Fall back to hashing the first received frame.
+        self.logger.warning(
+            f"OCR found no frame-number overlay in first frame of {self.src_url}; "
+            f"falling back to hash-based alignment."
+        )
+        self._align_by_first_frame_hash(out_file)
 
     def check_integrity_file(self, out_url) -> bool:
         out_chunk_sums = calculate_chunk_hashes(out_url, self.frame_size)
