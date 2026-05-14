@@ -51,6 +51,8 @@ class FFmpeg(Application):
         "mode",  # "yuv_h264" | "rgb24" | "rgb24_multiple"
         "video_format_list",  # list[str]  — rgb24_multiple only
         "video_url_list",  # list[str]   — rgb24_multiple only
+        "pix_fmt",  # str — yuv_h264 only; default "yuv422p10le"
+        "keep_output",  # bool — yuv_h264 only; preserve RX output for integrity checks
     )
 
     def __init__(self, app_path, config_file_path=None):
@@ -59,6 +61,16 @@ class FFmpeg(Application):
         self._tx_commands: list[str] = []
         self._output_files: list[str] = []
         self._build: str | None = None
+
+    @property
+    def output_files(self) -> list[str]:
+        """RX-side output file paths produced by the most recent run.
+
+        Populated in :meth:`prepare_execution` for ``yuv_h264`` mode. Tests
+        that pass ``keep_output=True`` can read the path(s) here to feed a
+        follow-up integrity check before cleanup.
+        """
+        return list(self._output_files)
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -110,16 +122,20 @@ class FFmpeg(Application):
         output_format = self._ff_params.get("output_format", "yuv")
         multiple = bool(self._ff_params.get("multiple_sessions", False))
         tx_is_ffmpeg = bool(self._ff_params.get("tx_is_ffmpeg", True))
+        pix_fmt = self._ff_params.get("pix_fmt", "yuv422p10le")
 
         video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
+        # When caller pre-converted the source to a non-default pix_fmt (typical
+        # for integrity tests), drop the fps filter so frames stay byte-identical.
+        tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
 
         if not multiple:
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
                 f"-p_sip {ip_pools.rx[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-                f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+                f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -f mtl_st20p -i k "
                 f"-init_retry 20 "
                 f"{rx_f_flag} {{out0}} -y"
@@ -129,11 +145,11 @@ class FFmpeg(Application):
                 f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
                 f"-p_port {nic_port_list[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-                f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+                f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -f mtl_st20p -i 1 "
                 f"-p_port {nic_port_list[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
-                f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
+                f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -f mtl_st20p -i 2 "
                 f"-map 0:0 {rx_f_flag} {{out0}} -y "
                 f"-map 1:0 {rx_f_flag} {{out1}} -y"
@@ -146,8 +162,8 @@ class FFmpeg(Application):
         if tx_is_ffmpeg:
             tx_cmd = (
                 f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} "
-                f"-f rawvideo -pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"-f rawvideo -pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -393,8 +409,10 @@ class FFmpeg(Application):
                     passed = ffmpeg_app.check_output_video_h264(
                         self._output_files[0], video_size, host, build, video_url
                     )
-                # Best-effort cleanup of generated output files.
-                self._cleanup_output_files(host)
+                # Best-effort cleanup of generated output files (unless caller
+                # asked to keep them for a follow-up integrity check).
+                if not bool(self._ff_params.get("keep_output", False)):
+                    self._cleanup_output_files(host)
             elif mode == _MODE_RGB24:
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 1)
             elif mode == _MODE_RGB24_MULTI:
