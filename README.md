@@ -82,11 +82,15 @@ Please refer to [Build Guide](doc/build.md) for instructions on how to build DPD
 
 For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
 
+For FreeBSD, please refer to the [FreeBSD Build Guide](doc/build_FREEBSD.md) for instructions on how to build.
+
 ## 3. Run ST2110
 
 Please refer to [Run Guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
 
 For Windows, please refer to [Run Guide on Windows](doc/run_WIN.md).
+
+For FreeBSD, please refer to [Run Guide on FreeBSD](doc/run_FREEBSD.md).
 
 Additionally, please refer to the [VM Guide](doc/vm.md) and [Windows VM Guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 
