@@ -30,15 +30,25 @@ FIRST_FRAME_NAME = "output1.png"
 def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
     chunk_sums = []
     with open(file_url, "rb") as f:
-        chunk_index = 0  # Initialize a counter for the chunk index
+        chunk_index = 0
         while chunk := f.read(chunk_size):
             if len(chunk) != chunk_size:
+                # Partial trailing chunk -- the final frame of an RX capture
+                # truncated mid-write when the receiver was stopped. Hashing
+                # it would guarantee a spurious "bad frame" mismatch, so skip
+                # it and stop. A file with zero full frames is a real error.
+                if chunk_index == 0:
+                    raise ValueError(
+                        f"{file_url} does not contain a single full frame "
+                        f"({len(chunk)} < {chunk_size} bytes)"
+                    )
                 logging.debug(
-                    f"CHUNK SIZE MISMATCH at index {chunk_index}: {len(chunk)} != {chunk_size}"
+                    f"Skipping partial trailing chunk at index {chunk_index}: "
+                    f"{len(chunk)} < {chunk_size} bytes"
                 )
-            chunk_sum = hashlib.md5(chunk).hexdigest()
-            chunk_sums.append(chunk_sum)
-            chunk_index += 1  # Increment the chunk index
+                break
+            chunk_sums.append(hashlib.md5(chunk).hexdigest())
+            chunk_index += 1
     return chunk_sums
 
 
