@@ -55,6 +55,30 @@ nproc=$(nproc 2>/dev/null || echo 50)
 # shellcheck disable=SC1091
 . "${root_folder}/script/common.sh"
 
+# Discover and export pkg-config / library paths from a local install prefix
+# so that downstream builds (MTL → FFmpeg → GStreamer) can find each other's
+# headers and libraries without hardcoding directory layouts.
+_export_local_paths() {
+	local prefix="$1"
+	[ -d "$prefix" ] || return 0
+
+	# pkg-config (.pc files)
+	while IFS= read -r -d '' pcdir; do
+		case ":${PKG_CONFIG_PATH:-}:" in
+		*":${pcdir}:"*) ;;
+		*) export PKG_CONFIG_PATH="${pcdir}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ;;
+		esac
+	done < <(find "$prefix" -name '*.pc' -exec dirname {} \; | sort -u | tr '\n' '\0')
+
+	# shared libraries
+	while IFS= read -r -d '' libdir; do
+		case ":${LD_LIBRARY_PATH:-}:" in
+		*":${libdir}:"*) ;;
+		*) export LD_LIBRARY_PATH="${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+		esac
+	done < <(find "$prefix" -name '*.so' -exec dirname {} \; | sort -u | tr '\n' '\0')
+}
+
 # Before MTL build install
 function setup_ubuntu_install_dependencies() {
 	echo "1.1. Install the build dependency from OS software store"
@@ -225,6 +249,16 @@ function setup_ubuntu_install_dependencies() {
 # Allow sourcing of the script.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
+	# Bootstrap: discover paths from any pre-existing local installs (e.g.
+	# restored from CI cache) so downstream builds can find their deps.
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+		for _comp in dpdk mtl ffmpeg gstreamer; do
+			_export_local_paths "${local_base}/${_comp}"
+		done
+		unset _comp
+	fi
+
 	if [ "$SETUP_ENVIRONMENT" == "1" ]; then
 		echo "$STEP Environment setup."
 
@@ -295,7 +329,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${root_folder}/script/build_dpdk.sh" -f
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/dpdk" bash "${root_folder}/script/build_dpdk.sh" -f
+			_export_local_paths "${local_base}/dpdk"
+		else
+			bash "${root_folder}/script/build_dpdk.sh" -f
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -381,6 +421,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		pushd "${root_folder}" >/dev/null || exit 1
 		./build.sh "${mtl_build_options}"
 		popd >/dev/null
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			_export_local_paths "${MTL_INSTALL_PREFIX}"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -426,11 +469,21 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		fi
 
 		bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			_export_local_paths "${local_base}/ffmpeg"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem GStreamer plugin build and install"
+
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			_export_local_paths "${local_base}/dpdk"
+			_export_local_paths "${MTL_INSTALL_PREFIX}"
+		fi
 
 		pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
 		bash build.sh
