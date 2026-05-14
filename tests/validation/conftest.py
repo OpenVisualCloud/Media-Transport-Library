@@ -42,6 +42,7 @@ from mtl_engine.csv_report import (
     update_compliance_result,
 )
 from mtl_engine.execute import kill_stale_processes, log_fail
+from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -1163,6 +1164,12 @@ def application() -> RxTxApp:
     without churning every signature.
     """
     return RxTxApp(RXTXAPP_PATH)
+
+
+@pytest.fixture(scope="session")
+def ffmpeg_app() -> FFmpeg:
+    """FFmpeg adapter used by refactored ``tests/single/ffmpeg/`` tests."""
+    return FFmpeg(FFMPEG_PATH)
 
 
 def pytest_collection_modifyitems(items):
