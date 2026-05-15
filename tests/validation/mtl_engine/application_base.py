@@ -330,7 +330,7 @@ class Application(ABC):
                 after_first_start=after_first_start,
             )
             self.last_output = specs[0].captured_output
-            self.last_return_code = getattr(specs[0].proc, "return_code", None)
+            self.last_return_code = self._safe_return_code(specs[0].proc)
             return self._dispatch_validate(fail_on_error)
 
         # Dual-host: 2 bounded procs across 2 hosts.
@@ -359,9 +359,9 @@ class Application(ABC):
             sleep_interval=sleep_interval,
         )
         self.last_output = tx_spec.captured_output
-        self.last_return_code = getattr(tx_spec.proc, "return_code", None)
+        self.last_return_code = self._safe_return_code(tx_spec.proc)
         rx_app.last_output = rx_spec.captured_output
-        rx_app.last_return_code = getattr(rx_spec.proc, "return_code", None)
+        rx_app.last_return_code = self._safe_return_code(rx_spec.proc)
         try:
             tx_ok = self.validate_results()
             rx_ok = rx_app.validate_results()
@@ -526,6 +526,11 @@ class Application(ABC):
         Reuses :meth:`_signal_and_wait` so DPDK applications get a chance to
         run ``rte_eal_cleanup()`` before being force-killed (otherwise the
         VFIO group fd leaks and ``nicctl disable_vf`` blocks).
+
+        After SIGKILL, the kernel takes a moment to reap the process and the
+        SSH-side ``proc.running`` poll may still return True briefly; we wait
+        a few seconds so subsequent ``return_code`` reads do not raise
+        :class:`mfd_connect.exceptions.RemoteProcessInvalidState`.
         """
         if proc is None:
             return
@@ -538,10 +543,16 @@ class Application(ABC):
             label,
             graceful_s,
         )
-        try:
-            proc.kill(wait=None, with_signal=signal.SIGKILL)
-        except Exception as exc:  # pragma: no cover -- best-effort
-            logger.debug("SIGKILL for %s failed: %s", label, exc)
+        # _signal_and_wait already polls until the process exits, so use it
+        # for SIGKILL as well rather than fire-and-forget kill().
+        if not self._signal_and_wait(
+            proc, signal.SIGKILL, self.params.get("stop_term_s", 5)
+        ):
+            logger.warning(
+                "[%s] %s still running after SIGKILL; return_code may be unavailable",
+                self.get_app_name(),
+                label,
+            )
 
     def _cleanup_output_files(self, host) -> None:
         """Delete tracked per-test output files unless ``keep_output=True``.
@@ -681,6 +692,21 @@ class Application(ABC):
         if target_host is not None:
             kill_stale_processes(target_host)
             self._wait_vfio_idle(target_host, vfio_idle_s)
+
+    @staticmethod
+    def _safe_return_code(proc) -> int | None:
+        """Return ``proc.return_code`` or ``None`` if it is not yet available.
+
+        ``mfd_connect``'s ``return_code`` property raises
+        :class:`RemoteProcessInvalidState` while the process is still running,
+        and ``getattr(proc, 'return_code', None)`` does *not* swallow it.
+        """
+        if proc is None:
+            return None
+        try:
+            return proc.return_code
+        except Exception:  # incl. RemoteProcessInvalidState
+            return None
 
     def _signal_and_wait(self, proc, sig, timeout_s: float) -> bool:
         """Send signal to *proc* and poll until exit or timeout. Returns True if exited."""

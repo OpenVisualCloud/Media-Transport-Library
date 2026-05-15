@@ -372,7 +372,7 @@ class FFmpeg(Application):
         # RX is always specs[0] (started first); validation reads its output.
         self._rx_output = specs[0].captured_output
         self.last_output = self._rx_output
-        self.last_return_code = getattr(specs[0].proc, "return_code", None)
+        self.last_return_code = self._safe_return_code(specs[0].proc)
 
         return self._dispatch_validate(fail_on_error)
 
