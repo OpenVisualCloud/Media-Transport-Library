@@ -288,11 +288,22 @@ def log_result_note(note: str):
 
 # Canonical list of MTL-related process names that may be left over
 # after a crash or timeout.  Mirrors .github/actions/cleanup/action.yml.
+#
+# DPDK's rte_eal_init renames the process main thread to "<argv0>_main"
+# via pthread_setname_np, truncated to TASK_COMM_LEN-1 = 15 chars. That
+# rename becomes /proc/PID/comm, so `pkill -x RxTxApp` (used below)
+# never matches a running RxTxApp. List every comm alias the runtime
+# may rename to here, otherwise stale DPDK apps survive cleanup and
+# subsequent `capture_stdout` reads block on still-open stdout pipes.
 MTL_APP_NAMES = [
     "RxTxApp",
+    "RxTxApp_main",
     "KahawaiTest",
+    "KahawaiTest_mai",  # truncated at 15 chars
     "KahawaiUfdTest",
+    "KahawaiUfdTest_",
     "KahawaiUplTest",
+    "KahawaiUplTest_",
     "ffmpeg",
     "gtest.sh",
 ]

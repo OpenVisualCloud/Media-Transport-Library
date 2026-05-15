@@ -47,35 +47,6 @@ class Application(ABC):
         # Process lifecycle tracking (set by start_process / stop_process)
         self._process = None
         self._host = None
-        # RX-side output file paths produced by the most recent run.
-        # Subclasses populate this in ``prepare_execution`` (or equivalent)
-        # so :meth:`_cleanup_output_files` can remove them after validation.
-        self._output_files: list[str] = []
-
-    @property
-    def output_files(self) -> list[str]:
-        """RX-side output file paths produced by the most recent run.
-
-        Tests that pass ``keep_output=True`` can read the path(s) here to
-        feed a follow-up integrity check before cleanup.
-        """
-        return list(self._output_files)
-
-    @staticmethod
-    def _remove_remote_files(host, paths) -> None:
-        """Best-effort ``rm -f`` for *paths* on *host*. Never raises."""
-        if not paths or host is None:
-            return
-        try:
-            run(f"rm -f {' '.join(paths)}", host=host)
-        except Exception as exc:  # pragma: no cover -- best-effort
-            logger.info("Could not remove remote files %s: %s", paths, exc)
-
-    def _cleanup_output_files(self, host) -> None:
-        """Remove tracked output files on *host* unless ``keep_output`` is set."""
-        if self.params.get("keep_output"):
-            return
-        self._remove_remote_files(host, self._output_files)
 
     @abstractmethod
     def get_app_name(self) -> str:

@@ -33,7 +33,7 @@ PIX_FMTS = [
 ]
 
 
-@pytest.mark.nightly
+@pytest.mark.original
 @pytest.mark.parametrize("pix_fmt", PIX_FMTS)
 @pytest.mark.parametrize(
     "video_format, media_file",

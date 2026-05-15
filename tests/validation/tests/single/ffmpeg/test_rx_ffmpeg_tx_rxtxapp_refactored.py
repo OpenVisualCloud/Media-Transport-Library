@@ -12,6 +12,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "video_format, multiple_sessions, test_time_multipler, media_file",
     [
