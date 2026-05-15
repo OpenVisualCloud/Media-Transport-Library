@@ -177,6 +177,12 @@ class FFmpeg(Application):
             )
 
         if tx_is_ffmpeg:
+            # Default source pix_fmt (yuv422p10le) needs an explicit fps filter
+            # to lock the rate; pre-converted sources already carry the right
+            # framerate, so adding the filter would re-time the frames.
+            tx_filter = (
+                f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else ""
+            )
             self._tx_commands = [
                 self._ffmpeg_st20p_tx_cmd(
                     video_size=video_size,
@@ -185,7 +191,7 @@ class FFmpeg(Application):
                     port=nic_port_list[1],
                     sip=ip_pools.tx[0],
                     mcast=ip_pools.rx_multicast[0],
-                    filter_v=f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else "",
+                    filter_v=tx_filter,
                 )
             ]
         else:
@@ -288,7 +294,6 @@ class FFmpeg(Application):
             self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
                 "{test_time}", str(test_time)
             )
-            self._output_files = []
 
         elif mode == _MODE_RGB24_MULTI:
             nic_port_list = self.params["nic_port_list"]
@@ -303,7 +308,6 @@ class FFmpeg(Application):
             self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
                 "{test_time}", str(test_time)
             )
-            self._output_files = []
 
     # ----------------------------------------------------- execute_test
     def execute_test(  # type: ignore[override]
@@ -314,7 +318,7 @@ class FFmpeg(Application):
         sleep_interval: int = 5,
         interface_setup=None,
         fail_on_error: bool = True,
-        **_unused,
+        **extra,
     ) -> bool:
         """Single-host RX-then-TX orchestrator.
 
@@ -322,11 +326,23 @@ class FFmpeg(Application):
         DPDK init latency). All processes are unbounded (``-stream_loop -1``
         on the FFmpeg side; RxTxApp TX has no ``--test_time``), so the
         wall-clock ``test_time`` drives the duration and the base helper
-        applies the SIGINT \u2192 SIGKILL stop ladder. Extra base-class
-        kwargs (``tx_host`` / ``rx_app`` / ``netsniff`` / ``tx_first``)
-        are absorbed by ``**_unused`` \u2014 dual-host orchestration is not
-        applicable to the FFmpeg loopback adapter.
+        applies the SIGINT \u2192 SIGKILL stop ladder.
+
+        Dual-host orchestration (``tx_host`` / ``rx_host`` / ``rx_app``) is
+        not supported here \u2014 FFmpeg + mtl_st20p loops back through one
+        DPDK process group on a single host. Passing those keys is a
+        caller bug; fail loudly rather than silently degrade.
         """
+        unsupported = sorted(
+            k
+            for k in ("tx_host", "rx_host", "rx_app", "netsniff", "tx_first")
+            if extra.get(k) is not None
+        )
+        if unsupported:
+            raise ValueError(
+                f"FFmpeg adapter does not support {unsupported}; "
+                f"use a single ``host=`` argument."
+            )
         if not host:
             raise ValueError("host required for single-host execution")
         if not self.command:
