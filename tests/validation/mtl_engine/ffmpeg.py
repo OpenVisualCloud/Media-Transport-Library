@@ -19,14 +19,11 @@ Lifecycle (single host only — these tests never split TX/RX across hosts):
 from __future__ import annotations
 
 import logging
-import signal
-import time
 
 from mtl_engine import ffmpeg_app, ip_pools
-from mtl_engine.application_base import Application
+from mtl_engine.application_base import Application, ProcSpec
 from mtl_engine.config.mappings import APP_NAME_MAP
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
-from mtl_engine.execute import kill_stale_processes, run
 
 logger = logging.getLogger(__name__)
 
@@ -53,29 +50,14 @@ class FFmpeg(Application):
         "video_format_list",  # list[str]  — rgb24_multiple only
         "video_url_list",  # list[str]   — rgb24_multiple only
         "pix_fmt",  # str — yuv_h264 only; default "yuv422p10le"
-        "keep_output",  # bool — skip RX output cleanup (integrity follow-up)
     )
-
-    # Per-process stop ladder timing (seconds): wait this long for SIGINT
-    # before escalating to SIGKILL. Matches the legacy ffmpeg_app value.
-    _STOP_GRACE_S = 5
 
     def __init__(self, app_path, config_file_path=None):
         super().__init__(app_path, config_file_path)
         self._ff_params: dict = {}
         self._tx_commands: list[str] = []
         self._build: str | None = None
-        self._output_files: list[str] = []
         self._rx_output: str | None = None
-
-    @property
-    def output_files(self) -> list[str]:
-        """RX-side output file paths produced by the most recent run.
-
-        Tests that pass ``keep_output=True`` can read the path(s) here to
-        feed a follow-up integrity check before cleanup.
-        """
-        return list(self._output_files)
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -306,9 +288,12 @@ class FFmpeg(Application):
         """Single-host RX-then-TX orchestrator.
 
         FFmpeg tests always run RX and TX on the same host (RX first, due to
-        DPDK init latency). Extra base-class kwargs (``tx_host`` / ``rx_app``
-        / ``netsniff`` / ``tx_first``) are intentionally absorbed by
-        ``**_unused`` and ignored \u2014 dual-host orchestration is not
+        DPDK init latency). All processes are unbounded (``-stream_loop -1``
+        on the FFmpeg side; RxTxApp TX has no ``--test_time``), so the
+        wall-clock ``test_time`` drives the duration and the base helper
+        applies the SIGINT \u2192 SIGKILL stop ladder. Extra base-class
+        kwargs (``tx_host`` / ``rx_app`` / ``netsniff`` / ``tx_first``)
+        are absorbed by ``**_unused`` \u2014 dual-host orchestration is not
         applicable to the FFmpeg loopback adapter.
         """
         if not host:
@@ -323,104 +308,26 @@ class FFmpeg(Application):
         if not self._tx_commands:
             raise RuntimeError("FFmpeg TX command(s) missing after prepare_execution")
 
-        timeout = test_time + self.params.get("process_timeout_buffer", 90)
-        rx_proc = None
-        tx_procs: list = []
-        try:
-            logger.info("[FFmpeg] Starting RX: %s", self.command)
-            rx_proc = run(
-                self.command,
-                cwd=build,
-                timeout=timeout,
-                testcmd=True,
-                host=host,
-                background=True,
+        specs = [ProcSpec(cmd=self.command, host=host, label="RX", bounded=False)]
+        for idx, tx_cmd in enumerate(self._tx_commands, start=1):
+            specs.append(
+                ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False)
             )
-            # Track RX as the primary process for any base-class introspection.
-            self._process = rx_proc
-            self._host = host
-            time.sleep(sleep_interval)
 
-            for idx, tx_cmd in enumerate(self._tx_commands):
-                logger.info("[FFmpeg] Starting TX%d: %s", idx + 1, tx_cmd)
-                tx_procs.append(
-                    run(
-                        tx_cmd,
-                        cwd=build,
-                        timeout=timeout,
-                        testcmd=True,
-                        host=host,
-                        background=True,
-                    )
-                )
-
-            logger.info(
-                "[FFmpeg] Running test for %ds (timeout %ds)", test_time, timeout
-            )
-            # All TX paths stream indefinitely (FFmpeg ``-stream_loop -1`` or
-            # RxTxApp without ``--test_time``); RX is the time-bounded side.
-            # Match legacy semantics: wall-clock sleep then tear down. Validation
-            # runs against captured RX state in the finally block.
-            time.sleep(test_time)
-        finally:
-            logger.info("[FFmpeg] Stopping processes")
-            for idx, p in enumerate(tx_procs):
-                self._stop_proc(p, f"TX{idx + 1}")
-            self._stop_proc(rx_proc, "RX")
-            time.sleep(1)
-            # ``kill_stale_processes`` walks ``MTL_APP_NAMES`` (which now
-            # includes ``ffmpeg`` and every DPDK-renamed comm alias such as
-            # ``RxTxApp_main``), so a single call covers both ffmpeg and
-            # RxTxApp orphans \u2014 no per-pattern follow-up needed.
-            kill_stale_processes(host)
-            self._rx_output = self.capture_stdout(rx_proc, "RX")
-            for idx, p in enumerate(tx_procs):
-                self.capture_stdout(p, f"TX{idx + 1}")
-            self.last_output = self._rx_output
-            self.last_return_code = getattr(rx_proc, "return_code", None)
-            self._process = None
-
-        try:
-            return self.validate_results(fail_on_error=fail_on_error)
-        except AssertionError:
-            if fail_on_error:
-                raise
-            logger.info(
-                "[FFmpeg] validation failed (fail_on_error=False); returning False"
-            )
-            return False
-
-    # --------------------------------------------------------- internals
-    def _stop_proc(self, proc, label: str) -> None:
-        """Stop a single process via SIGINT \u2192 SIGKILL ladder.
-
-        Reuses :meth:`Application._signal_and_wait` so DPDK applications get
-        a chance to run ``rte_eal_cleanup()`` before being force-killed.
-        """
-        if proc is None:
-            return
-        if self._signal_and_wait(proc, signal.SIGINT, self._STOP_GRACE_S):
-            return
-        logger.info(
-            "[FFmpeg] %s did not exit on SIGINT after %ds; sending SIGKILL",
-            label,
-            self._STOP_GRACE_S,
+        self._run_proc_group(
+            specs,
+            build=build,
+            test_time=test_time,
+            sleep_interval=sleep_interval,
+            wall_clock_seconds=test_time,
+            cleanup_host=host,
         )
-        try:
-            proc.kill(wait=None, with_signal=signal.SIGKILL)
-        except Exception as exc:  # pragma: no cover -- best-effort
-            logger.debug("[FFmpeg] SIGKILL for %s failed: %s", label, exc)
+        # RX is always specs[0] (started first); validation reads its output.
+        self._rx_output = specs[0].captured_output
+        self.last_output = self._rx_output
+        self.last_return_code = getattr(specs[0].proc, "return_code", None)
 
-    def _cleanup_output_files(self, host) -> None:
-        """Delete tracked RX output files unless ``keep_output=True``."""
-        if self._ff_params.get("keep_output"):
-            return
-        if not self._output_files or host is None:
-            return
-        try:
-            run(f"rm -f {' '.join(self._output_files)}", host=host)
-        except Exception as exc:  # pragma: no cover -- best-effort
-            logger.info("Could not remove RX output files: %s", exc)
+        return self._dispatch_validate(fail_on_error)
 
     # ----------------------------------------------------- validate
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]

@@ -13,8 +13,8 @@ import os
 import pytest
 from common.integrity.integrity_runner import FileVideoIntegrityRunner
 from common.nicctl import InterfaceSetup
-from mtl_engine.ffmpeg_app import decode_video_format_16_9, generate_reference_file
 from mtl_engine.execute import log_fail, run
+from mtl_engine.ffmpeg_app import decode_video_format_16_9, generate_reference_file
 from mtl_engine.media_files import yuv_files_422p10le
 
 logger = logging.getLogger(__name__)

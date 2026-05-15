@@ -112,9 +112,7 @@ class VideoIntegritor:
             with open(out_file, "rb") as handle:
                 first_chunk = handle.read(self.frame_size)
             if len(first_chunk) != self.frame_size:
-                raise ValueError(
-                    f"Output file {out_file} is smaller than one frame"
-                )
+                raise ValueError(f"Output file {out_file} is smaller than one frame")
             first_sum = hashlib.md5(first_chunk).hexdigest()
             if first_sum not in self.src_chunk_sums:
                 self.logger.warning(
