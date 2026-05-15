@@ -81,6 +81,43 @@ class FFmpeg(Application):
         super().set_params(**kwargs)
 
     # ----------------------------------------------------- command build
+    # Shared template for an RxTxApp-driven RX side. ``rx_cfg`` is filled in
+    # by ``prepare_execution`` once the live host is known.
+    _RXTXAPP_RX_TMPL = (
+        f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
+    )
+
+    @staticmethod
+    def _ffmpeg_st20p_tx_cmd(
+        *,
+        video_size: str,
+        pix_fmt: str,
+        video_url: str,
+        port: str,
+        sip: str,
+        mcast: str,
+        framerate=None,
+        filter_v: str = "",
+        udp_port: int = 20000,
+    ) -> str:
+        """Build an FFmpeg → mtl_st20p TX command line.
+
+        Used by every mode: yuv|h264 (raw 422p10le), rgb24 (yuv422p10be →
+        rgb24 filter, single stream), rgb24_multiple (same, two streams).
+        ``framerate`` only emitted for the rgb24 family — yuv_h264 omits
+        ``-framerate`` because the source already carries the canonical fps.
+        ``filter_v`` is the full ``-filter:v <chain>`` token (empty by default).
+        """
+        framerate_token = f"-framerate {framerate} " if framerate is not None else ""
+        filter_token = f"{filter_v} " if filter_v else ""
+        return (
+            f"{FFMPEG_EXE} -stream_loop -1 {framerate_token}"
+            f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
+            f"-i {video_url} {filter_token}"
+            f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
+            f"-udp_port {udp_port} -payload_type 112 -f mtl_st20p -"
+        )
+
     def _create_command_and_config(self) -> tuple:
         """Build RX + TX command strings for the requested mode.
 
@@ -113,9 +150,6 @@ class FFmpeg(Application):
 
         video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
-        # When caller pre-converted the source to a non-default pix_fmt (typical
-        # for integrity tests), drop the fps filter so frames stay byte-identical.
-        tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
 
         if not multiple:
             rx_cmd = (
@@ -142,20 +176,18 @@ class FFmpeg(Application):
                 f"-map 1:0 {rx_f_flag} {{out1}} -y"
             )
 
-        # TX command (single — both single- and multi-session use one TX).
-        # ``-stream_loop -1`` matches the legacy ``ffmpeg_app.execute_test``
-        # behaviour: TX must keep streaming for the entire ``test_time`` even
-        # when the source YUV file is shorter than the test duration.
         if tx_is_ffmpeg:
-            tx_cmd = (
-                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} "
-                f"-f rawvideo -pix_fmt {pix_fmt} -i {video_url} "
-                f"{tx_filter}-p_port {nic_port_list[1]} "
-                f"-p_sip {ip_pools.tx[0]} "
-                f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-                f"-payload_type 112 -f mtl_st20p -"
-            )
-            self._tx_commands = [tx_cmd]
+            self._tx_commands = [
+                self._ffmpeg_st20p_tx_cmd(
+                    video_size=video_size,
+                    pix_fmt=pix_fmt,
+                    video_url=video_url,
+                    port=nic_port_list[1],
+                    sip=ip_pools.tx[0],
+                    mcast=ip_pools.rx_multicast[0],
+                    filter_v=f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else "",
+                )
+            ]
         else:
             # RxTxApp TX — config file generated lazily in prepare_execution()
             # because ffmpeg_app.generate_rxtxapp_tx_config needs the host.
@@ -167,19 +199,19 @@ class FFmpeg(Application):
         video_format = self.params["video_format"]
         video_url = self.params["video_url"]
         video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
-
-        # RX (RxTxApp) cmd has its config_file path filled in prepare_execution.
-        rx_cmd = f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
-        tx_cmd = (
-            f"{FFMPEG_EXE} -stream_loop -1 -framerate {fps} -video_size "
-            f"{video_size} -f rawvideo -pix_fmt yuv422p10be "
-            f"-i {video_url} -filter:v format=rgb24 "
-            f"-p_port {nic_port_list[1]} "
-            f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
-            f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
-        )
-        self._tx_commands = [tx_cmd]
-        return rx_cmd, None
+        self._tx_commands = [
+            self._ffmpeg_st20p_tx_cmd(
+                video_size=video_size,
+                pix_fmt="yuv422p10be",
+                video_url=video_url,
+                port=nic_port_list[1],
+                sip=ip_pools.tx[0],
+                mcast=ip_pools.rx_multicast[0],
+                framerate=fps,
+                filter_v="-filter:v format=rgb24",
+            )
+        ]
+        return self._RXTXAPP_RX_TMPL, None
 
     # -- mode: rgb24_multiple (FFmpeg TX×2, RxTxApp RX, two streams) -----
     def _build_rgb24_multiple_cmds(self, nic_port_list):
@@ -190,25 +222,24 @@ class FFmpeg(Application):
                 "rgb24_multiple requires 4 NIC ports (2 RX + 2 TX), "
                 f"got {len(nic_port_list)}"
             )
-        v1, f1 = ffmpeg_app.decode_video_format_16_9(video_format_list[0])
-        v2, f2 = ffmpeg_app.decode_video_format_16_9(video_format_list[1])
-        rx_cmd = f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
-        tx1 = (
-            f"{FFMPEG_EXE} -stream_loop -1 -framerate {f1} -video_size {v1} "
-            f"-f rawvideo -pix_fmt yuv422p10be -i {video_url_list[0]} "
-            f"-filter:v format=rgb24 -p_port {nic_port_list[2]} "
-            f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
-            f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
-        )
-        tx2 = (
-            f"{FFMPEG_EXE} -stream_loop -1 -framerate {f2} -video_size {v2} "
-            f"-f rawvideo -pix_fmt yuv422p10be -i {video_url_list[1]} "
-            f"-filter:v format=rgb24 -p_port {nic_port_list[3]} "
-            f"-p_sip {ip_pools.tx[1]} -p_tx_ip {ip_pools.rx_multicast[1]} "
-            f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
-        )
-        self._tx_commands = [tx1, tx2]
-        return rx_cmd, None
+        # Two parallel streams: stream i uses TX port [2+i], src ip pool [i],
+        # multicast pool [i]. Ports [0]/[1] are the RX side (RxTxApp).
+        self._tx_commands = []
+        for i in range(2):
+            v, f = ffmpeg_app.decode_video_format_16_9(video_format_list[i])
+            self._tx_commands.append(
+                self._ffmpeg_st20p_tx_cmd(
+                    video_size=v,
+                    pix_fmt="yuv422p10be",
+                    video_url=video_url_list[i],
+                    port=nic_port_list[2 + i],
+                    sip=ip_pools.tx[i],
+                    mcast=ip_pools.rx_multicast[i],
+                    framerate=f,
+                    filter_v="-filter:v format=rgb24",
+                )
+            )
+        return self._RXTXAPP_RX_TMPL, None
 
     # --------------------------------------------------- prepare_execution
     def prepare_execution(self, build: str, host=None, **kwargs):
