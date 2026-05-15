@@ -35,6 +35,11 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - name: Clean workspace (handle root-owned files)
         run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -50,6 +55,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Wait for Build workflow
         uses: ./.github/actions/wait-for-workflow
