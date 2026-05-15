@@ -167,21 +167,6 @@ def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
     logger.debug(f"{proc_name}: Stop completed")
 
 
-# DPDK's rte_eal_init renames the process main thread via pthread_setname_np
-# to "<argv0>_main", truncated to TASK_COMM_LEN-1 = 15 chars. The rename
-# becomes /proc/PID/comm, so plain `pgrep -x RxTxApp` never matches a running
-# RxTxApp and orphans survive cleanup forever (which then blocks subsequent
-# `capture_stdout` reads on the still-open stdout pipe). Map the user-visible
-# pattern to every comm it might appear under at runtime.
-_COMM_ALIASES = {
-    "RxTxApp": ["RxTxApp", "RxTxApp_main"],
-    "KahawaiTest": ["KahawaiTest", "KahawaiTest_mai"],
-    "KahawaiUfdTest": ["KahawaiUfdTest", "KahawaiUfdTest_"],
-    "KahawaiUplTest": ["KahawaiUplTest", "KahawaiUplTest_"],
-    "ffmpeg": ["ffmpeg"],
-}
-
-
 def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=None):
     """Kill orphaned processes matching pattern."""
     if not host:
@@ -189,21 +174,15 @@ def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=N
 
     exclude_pids = exclude_pids or []
     exclude_pids_set = {str(pid).strip() for pid in exclude_pids if pid}
-    patterns = _COMM_ALIASES.get(process_pattern, [process_pattern])
 
     logger.debug(f"Checking for orphaned {process_pattern} processes...")
     try:
-        # Collect PIDs across every comm alias the runtime may have renamed to.
-        all_pids: list[str] = []
-        for pat in patterns:
-            result = host.connection.execute_command(f"pgrep -x '{pat}'")
-            if result.return_code == 0 and result.stdout.strip():
-                all_pids.extend(
-                    pid.strip()
-                    for pid in result.stdout.strip().split("\n")
-                    if pid.strip()
-                )
-        if all_pids:
+        # Find all processes matching the pattern
+        result = host.connection.execute_command(f"pgrep -x '{process_pattern}'")
+        if result.return_code == 0 and result.stdout.strip():
+            all_pids = [
+                pid.strip() for pid in result.stdout.strip().split("\n") if pid.strip()
+            ]
             orphaned_pids = [pid for pid in all_pids if pid not in exclude_pids_set]
 
             if orphaned_pids:
