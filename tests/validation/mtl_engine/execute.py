@@ -291,22 +291,37 @@ def log_result_note(note: str):
 #
 # DPDK's rte_eal_init renames the process main thread to "<argv0>_main"
 # via pthread_setname_np, truncated to TASK_COMM_LEN-1 = 15 chars. That
-# rename becomes /proc/PID/comm, so `pkill -x RxTxApp` (used below)
-# never matches a running RxTxApp. List every comm alias the runtime
-# may rename to here, otherwise stale DPDK apps survive cleanup and
+# rename becomes /proc/PID/comm, so `pkill -x RxTxApp` never matches a
+# running RxTxApp. We expand each base name to also include the truncated
+# DPDK comm alias; otherwise stale DPDK apps survive cleanup and
 # subsequent `capture_stdout` reads block on still-open stdout pipes.
-MTL_APP_NAMES = [
+_MTL_APP_BASE_NAMES = [
     "RxTxApp",
-    "RxTxApp_main",
     "KahawaiTest",
-    "KahawaiTest_mai",  # truncated at 15 chars
     "KahawaiUfdTest",
-    "KahawaiUfdTest_",
     "KahawaiUplTest",
-    "KahawaiUplTest_",
     "ffmpeg",
     "gtest.sh",
 ]
+
+# Linux TASK_COMM_LEN is 16; usable comm length is 15 chars.
+_TASK_COMM_LEN = 15
+
+
+def _dpdk_comm_alias(name: str) -> str:
+    """Return the comm name DPDK applies after ``rte_eal_init``."""
+    return (name + "_main")[:_TASK_COMM_LEN]
+
+
+# Flat list: each base name plus its DPDK-renamed alias (deduplicated for
+# names like "ffmpeg" / "gtest.sh" that don't go through rte_eal_init).
+MTL_APP_NAMES = list(
+    dict.fromkeys(
+        n
+        for base in _MTL_APP_BASE_NAMES
+        for n in (base, _dpdk_comm_alias(base))
+    )
+)
 
 
 def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
