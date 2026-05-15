@@ -8,6 +8,7 @@ from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.nightly
+@pytest.mark.original
 @pytest.mark.parametrize(
     "video_format, test_time_multipler, media_file",
     [
