@@ -1236,10 +1236,18 @@ def _register_local_libs(hosts, mtl_path):
     ]
     conf = "\\n".join(lib_dirs)
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
+    # /usr/local/lib precedes /etc/ld.so.conf.d/* in /etc/ld.so.conf, so any
+    # stale libav*/libsw*/libpostproc* there shadows the .local_install build.
+    purge = (
+        "mkdir -p /var/backups/mtl_libav_shadow && "
+        "mv -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so* "
+        "/usr/local/lib/libpostproc*.so* /var/backups/mtl_libav_shadow/ "
+        "2>/dev/null; true"
+    )
     for host in hosts.values():
         try:
             host.connection.execute_command(
-                f"printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
+                f"{purge} && printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
                 f" && ln -sf {ffmpeg_bin}/ffprobe /usr/local/bin/ffprobe"
                 f" && ln -sf {ffmpeg_bin}/ffmpeg /usr/local/bin/ffmpeg",
                 shell=True,
