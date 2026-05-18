@@ -151,14 +151,21 @@ class FFmpeg(Application):
         video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
 
+        # IMPORTANT: -init_retry is an AVOption on the mtl_st20p *demuxer*, so
+        # it MUST appear BEFORE the corresponding -i. If placed after -i, the
+        # ffmpeg CLI binds it to the next output (e.g. rawvideo muxer), which
+        # does not recognise it, libavutil silently drops it, and the demuxer
+        # falls back to its default value of 5. With only 5 non-blocking
+        # retries the RX tears down before TX finishes tv_train_pacing (~8s)
+        # and the test fails with EIO + 0-byte output for every pix_fmt.
         if not multiple:
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
                 f"-p_sip {ip_pools.rx[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-                f"-video_size {video_size} -f mtl_st20p -i k "
-                f"-init_retry 20 "
+                f"-video_size {video_size} -init_retry 20 "
+                f"-f mtl_st20p -i k "
                 f"{rx_f_flag} {{out0}} -y"
             )
         else:
@@ -167,11 +174,13 @@ class FFmpeg(Application):
                 f"-p_port {nic_port_list[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-                f"-video_size {video_size} -f mtl_st20p -i 1 "
+                f"-video_size {video_size} -init_retry 20 "
+                f"-f mtl_st20p -i 1 "
                 f"-p_port {nic_port_list[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-                f"-video_size {video_size} -f mtl_st20p -i 2 "
+                f"-video_size {video_size} -init_retry 20 "
+                f"-f mtl_st20p -i 2 "
                 f"-map 0:0 {rx_f_flag} {{out0}} -y "
                 f"-map 1:0 {rx_f_flag} {{out1}} -y"
             )
