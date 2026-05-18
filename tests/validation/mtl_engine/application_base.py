@@ -768,7 +768,9 @@ class Application(ABC):
         try:
             output = process.stdout_text or ""
             if output:
-                logger.debug(f"{process_name} output: {output[:200]}...")
+                logger.debug(
+                    f"{process_name} output (full, {len(output)} chars):\n{output}"
+                )
             return output
         except AttributeError:
             logger.error(
