@@ -15,7 +15,7 @@ MTL_MANAGER_EXE = f"{RXTXAPP_PATH}/MtlManager"
 MTL_LIB_PATH = f"{PREFIX}/mtl/lib/x86_64-linux-gnu"
 DPDK_LIB_PATH = f"{PREFIX}/dpdk/lib/x86_64-linux-gnu"
 FFMPEG_LIB_PATH = f"{PREFIX}/ffmpeg/lib"
-GSTREAMER_LIB_PATH = f"{PREFIX}/gstreamer"
+GSTREAMER_LIB_PATH = f"{PREFIX}/gstreamer/gstreamer-1.0"
 
 
 LD_LIB_PATH_REL = (

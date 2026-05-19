@@ -454,6 +454,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		pushd "${root_folder}/tests/tools/gstreamer_tools/" >/dev/null || exit 1
 		meson setup builddir
 		ninja -C builddir/
+
 		# Copy test tool .so files alongside gstreamer plugins
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
