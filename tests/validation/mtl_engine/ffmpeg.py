@@ -189,9 +189,7 @@ class FFmpeg(Application):
             # Default source pix_fmt (yuv422p10le) needs an explicit fps filter
             # to lock the rate; pre-converted sources already carry the right
             # framerate, so adding the filter would re-time the frames.
-            tx_filter = (
-                f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else ""
-            )
+            tx_filter = f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else ""
             self._tx_commands = [
                 self._ffmpeg_st20p_tx_cmd(
                     video_size=video_size,

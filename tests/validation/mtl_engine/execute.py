@@ -317,9 +317,7 @@ def _dpdk_comm_alias(name: str) -> str:
 # names like "ffmpeg" / "gtest.sh" that don't go through rte_eal_init).
 MTL_APP_NAMES = list(
     dict.fromkeys(
-        n
-        for base in _MTL_APP_BASE_NAMES
-        for n in (base, _dpdk_comm_alias(base))
+        n for base in _MTL_APP_BASE_NAMES for n in (base, _dpdk_comm_alias(base))
     )
 )
 
