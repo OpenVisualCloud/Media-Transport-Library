@@ -144,6 +144,7 @@ def setup_gstreamer_plugins_paths(build):
         os.environ.get(
             "GST_PLUGIN_PATH", f"{build}/.local_install/gstreamer/gstreamer-1.0"
         ),
+        f"{build}/.local_install/gstreamer",
         f"{build}/ecosystem/gstreamer_plugin/builddir",
         f"{build}/tests/tools/gstreamer_tools/builddir",
     ]

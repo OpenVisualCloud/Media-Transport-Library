@@ -28,6 +28,7 @@ from mtl_engine.const import (
     FFMPEG_LIB_PATH,
     FFMPEG_PATH,
     FRAMES_CAPTURE,
+    GSTREAMER_LIB_PATH,
     LOG_FOLDER,
     MTL_LIB_PATH,
     PERF_LOG_FOLDER,
@@ -1224,6 +1225,7 @@ def _register_local_libs(hosts, mtl_path):
         os.path.join(mtl_path, MTL_LIB_PATH.removeprefix("./")),
         os.path.join(mtl_path, DPDK_LIB_PATH.removeprefix("./")),
         os.path.join(mtl_path, FFMPEG_LIB_PATH.removeprefix("./")),
+        os.path.join(mtl_path, GSTREAMER_LIB_PATH.removeprefix("./")),
     ]
     conf = "\\n".join(lib_dirs)
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
