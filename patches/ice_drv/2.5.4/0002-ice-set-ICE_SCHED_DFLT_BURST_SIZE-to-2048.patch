@@ -1,0 +1,25 @@
+From a1fe56b5452ad72e9afc34915c55db98e628b5d3 Mon Sep 17 00:00:00 2001
+From: Szumski Tomasz <tomasz.szumski@intel.com>
+Date: Fri, 11 Jul 2025 13:34:04 +0200
+Subject: [PATCH 2/4] ice: set ICE_SCHED_DFLT_BURST_SIZE to 2048
+
+---
+ src/ice_type.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ice_type.h b/src/ice_type.h
+index cf44975..dec67e2 100644
+--- a/src/ice_type.h
++++ b/src/ice_type.h
+@@ -1122,7 +1122,7 @@ enum ice_rl_type {
+ #define ICE_SCHED_DFLT_RL_PROF_ID	0
+ #define ICE_SCHED_NO_SHARED_RL_PROF_ID	0xFFFF
+ #define ICE_SCHED_INVAL_PROF_ID		0xFFFF
+-#define ICE_SCHED_DFLT_BURST_SIZE	(15 * 1024)	/* in bytes (15k) */
++#define ICE_SCHED_DFLT_BURST_SIZE	(2 * 1024)	/* in bytes (15k) */
+ 
+ /* Access Macros for Tx Sched RL Profile data */
+ #define ICE_TXSCHED_GET_RL_PROF_ID(p) le16_to_cpu((p)->info.profile_id)
+-- 
+2.34.1
+
