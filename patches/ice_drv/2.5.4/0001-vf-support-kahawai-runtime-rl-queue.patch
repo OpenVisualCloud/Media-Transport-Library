@@ -1,0 +1,55 @@
+From cca447de21727b653dd5251ceb960aa0a8d9a447 Mon Sep 17 00:00:00 2001
+From: Szumski Tomasz <tomasz.szumski@intel.com>
+Date: Fri, 11 Jul 2025 13:32:58 +0200
+Subject: [PATCH 1/4] vf: support kahawai runtime rl queue
+
+---
+ src/ice_virtchnl.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index 0eb4250..040a1b4 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3657,6 +3657,11 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 
+ 	memcpy(vf->qs_bw, qs_bw, len);
+ 
++	/* for kahawai runtime rl */
++	if (vf->qs_bw)
++		if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
++			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++
+ err_bw:
+ 	kfree(qs_bw);
+ 
+@@ -3835,12 +3840,12 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
+ 		if (qpi->txq.ring_len > 0) {
+ 			vsi->tx_rings[q_idx]->dma = qpi->txq.dma_ring_addr;
+ 			vsi->tx_rings[q_idx]->count = qpi->txq.ring_len;
+-
++#if 0 /* for kahawai runtime rl */
+ 			/* Disable any existing queue first */
+ 			if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx,
+ 						      qpi->txq.queue_id))
+ 				goto error_param;
+-
++#endif
+ 			/* Configure a queue with the requested settings */
+ 			if (ice_vsi_cfg_single_txq(vsi, vsi->tx_rings, q_idx)) {
+ 				dev_warn(ice_pf_to_dev(pf), "VF-%d failed to configure TX queue %d\n",
+@@ -3929,9 +3934,10 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
+ 			}
+ 		}
+ 	}
+-
++#if 0 /* for kahawai runtime rl */
+ 	if (ice_vf_cfg_qs_bw(vf, qci->num_queue_pairs))
+ 		goto error_param;
++#endif
+ #ifdef HAVE_NETDEV_UPPER_INFO
+ 
+ 	if (lag && lag->bonded && lag->primary &&
+-- 
+2.34.1
+

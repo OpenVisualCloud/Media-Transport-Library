@@ -1,0 +1,46 @@
+From 4e71c19df2c34303214660ea7ff73da9674ba405 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Wed, 29 Apr 2026 03:15:36 -0400
+Subject: [PATCH] config: add mtl version to version string
+
+Embed the '_mtl_' tag in the DPDK version string so that
+pkg-config --modversion libdpdk reports e.g. 26.03.0_mtl_ instead of
+plain 26.03.0. This allows the MTL build script to detect whether the
+installed DPDK already has the expected patch set applied.
+
+The VERSION file is updated to 26.03.0_mtl_ and config/meson.build
+gains an elif branch (similar to the existing -rc handling) that parses
+the suffix and sets RTE_VER_SUFFIX / RTE_VER_RELEASE accordingly.
+
+Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+---
+ VERSION            | 2 +-
+ config/meson.build | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/VERSION b/VERSION
+index 98035c1..7527942 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-26.03.0
++26.03.9_mtl_
+diff --git a/config/meson.build b/config/meson.build
+index 9ba7b9a..0d59d76 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -77,6 +77,11 @@ if pver.get(2).contains('-rc')
+     dpdk_conf.set('RTE_VER_MINOR', rc_ver.get(0).to_int())
+     dpdk_conf.set_quoted('RTE_VER_SUFFIX', '-rc')
+     dpdk_conf.set('RTE_VER_RELEASE', rc_ver.get(1).to_int())
++elif pver.get(2).contains('_mtl_')
++    mtl_ver = pver.get(2).split('_mtl_')
++    dpdk_conf.set('RTE_VER_MINOR', mtl_ver.get(0).to_int())
++    dpdk_conf.set_quoted('RTE_VER_SUFFIX', '_mtl_')
++    dpdk_conf.set('RTE_VER_RELEASE', 0)
+ else
+     dpdk_conf.set('RTE_VER_MINOR', pver.get(2).to_int())
+     dpdk_conf.set_quoted('RTE_VER_SUFFIX', '')
+-- 
+2.47.3
+

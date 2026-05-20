@@ -1,0 +1,26 @@
+From 6cf1fc58a610b68f39e199f0cea3f9103e8fb3f4 Mon Sep 17 00:00:00 2001
+From: Szumski Tomasz <tomasz.szumski@intel.com>
+Date: Fri, 11 Jul 2025 13:35:35 +0200
+Subject: [PATCH 3/4] allow VIRTCHNL_VF_LARGE_NUM_QPAIRS for ICE_LUT_VSI
+
+---
+ src/ice_virtchnl.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index 040a1b4..832f13d 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -760,8 +760,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
+ 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_USO)
+ 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_USO;
+ 
+-	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
+-	    vsi->rss_lut_type != ICE_LUT_VSI)
++	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)
+ 		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
+ 
+ 	/* Negotiate DCF capability. */
+-- 
+2.34.1
+
