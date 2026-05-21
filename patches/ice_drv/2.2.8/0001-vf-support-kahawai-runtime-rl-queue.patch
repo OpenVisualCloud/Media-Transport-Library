@@ -15,10 +15,10 @@ index 0eb4250..040a1b4 100644
  
  	memcpy(vf->qs_bw, qs_bw, len);
  
++
 +	/* for kahawai runtime rl */
-+	if (vf->qs_bw)
-+		if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
-+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++	if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
++		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 +
  err_bw:
  	kfree(qs_bw);
