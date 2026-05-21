@@ -67,6 +67,7 @@ tests/validation/logs
 !ecosystem/**/*.patch
 *.diff
 *.yuv
+*.h264
 *.pcapng
 *.pcap
 *.raw
@@ -113,3 +114,6 @@ openh264*
 level-zero-*
 
 venv*
+
+# AI
+.github/*.md
