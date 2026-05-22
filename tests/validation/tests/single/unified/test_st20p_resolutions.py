@@ -17,7 +17,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
 )
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_422rfc10.values()),
+    [pytest.param(v, marks=pytest.mark.smoke) if k == "Penguin_1080p" else v for k, v in yuv_files_422rfc10.items()],
     indirect=["media_file"],
     ids=list(yuv_files_422rfc10.keys()),
 )
@@ -35,9 +35,7 @@ def test_st20p_resolutions(
     """Test different video resolutions."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     config_params = {
         "session_type": "st20p",
@@ -57,15 +55,11 @@ def test_st20p_resolutions(
     height = media_file_info.get("height", 0)
 
     if height >= 2160:
-        config_params.update(
-            {"pacing": "linear", "packing": "GPM_SL", "tx_no_chain": True}
-        )
+        config_params.update({"pacing": "linear", "packing": "GPM_SL", "tx_no_chain": True})
     elif height >= 1080:
         config_params.update({"pacing": "wide", "packing": "GPM", "tx_no_chain": False})
     else:
-        config_params.update(
-            {"pacing": "narrow", "packing": "GPM", "tx_no_chain": False}
-        )
+        config_params.update({"pacing": "narrow", "packing": "GPM", "tx_no_chain": False})
 
     app = app_factory(application)
     app.create_command(**config_params)

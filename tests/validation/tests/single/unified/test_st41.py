@@ -29,9 +29,7 @@ k_bit_mapping = {
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -60,9 +58,7 @@ def test_st41_dit(
     k_bit = k_bit_mapping["k0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -78,9 +74,7 @@ def test_st41_dit(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
 
 @pytest.mark.nightly
@@ -90,9 +84,7 @@ def test_st41_dit(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -104,7 +96,7 @@ def test_st41_dit(
 )
 @pytest.mark.parametrize(
     "fps",
-    ["p25", "p29", "p50", "p59"],
+    ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
 def test_st41_fps(
     application,
@@ -125,9 +117,7 @@ def test_st41_fps(
     k_bit = k_bit_mapping["k0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -143,9 +133,7 @@ def test_st41_fps(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
 
 @pytest.mark.nightly
@@ -155,9 +143,7 @@ def test_st41_fps(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -186,9 +172,7 @@ def test_st41_k_bit(
     dit = dit_mapping["dit0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -204,9 +188,7 @@ def test_st41_k_bit(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
 
 @pytest.mark.nightly
@@ -216,9 +198,7 @@ def test_st41_k_bit(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -248,9 +228,7 @@ def test_st41_no_chain(
     dit = dit_mapping["dit0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -267,9 +245,7 @@ def test_st41_no_chain(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
 
 @pytest.mark.nightly
@@ -279,9 +255,7 @@ def test_st41_no_chain(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -312,9 +286,7 @@ def test_st41_payload_type(
     k_bit = k_bit_mapping["k0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -330,9 +302,7 @@ def test_st41_payload_type(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
 
 @pytest.mark.nightly
@@ -342,9 +312,7 @@ def test_st41_payload_type(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support st41 fast metadata pipeline"),
         ),
     ],
 )
@@ -376,9 +344,7 @@ def test_st41_type_mode(
     dit = dit_mapping["dit0"]
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     app = app_factory(application)
     app.create_command(
@@ -394,6 +360,4 @@ def test_st41_type_mode(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
