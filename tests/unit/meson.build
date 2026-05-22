@@ -14,6 +14,7 @@ unit_include_dirs = [
 
 gtest_dep = dependency('gtest', required : true)
 libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true)
+gpu_direct_dep = dependency('mtl_gpu_direct', required : false)
 
 unit_sources = [
   'common/ut_common.c',
@@ -56,5 +57,5 @@ executable('UnitTest', unit_sources,
   link_args : unit_link_args,
   include_directories : unit_include_dirs,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
-                  usdt_provider_header_dep],
+                  usdt_provider_header_dep, gpu_direct_dep],
   install : false)

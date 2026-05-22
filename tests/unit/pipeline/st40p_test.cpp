@@ -37,6 +37,13 @@ class St40PipelineRxTest : public ::testing::Test {
     ut40p_enqueue_burst(ctx_, seq_start, count, ts, last_marker ? 1 : 0, port);
   }
 
+  int enqueue_multi_anc(uint16_t seq, uint32_t ts, bool marker,
+                        enum mtl_session_port port, const uint16_t* udw_sizes,
+                        uint8_t anc_count) {
+    return ut40p_enqueue_multi_anc_pkt(ctx_, seq, ts, marker ? 1 : 0, port, udw_sizes,
+                                       anc_count);
+  }
+
   int process() {
     return ut40p_process(ctx_);
   }
@@ -80,6 +87,47 @@ TEST_F(St40PipelineRxTest, SingleFrameCompletion) {
   EXPECT_EQ(frame->pkts_total, 6u);
   EXPECT_TRUE(frame->rtp_marker);
   EXPECT_EQ(frame->status, ST_FRAME_STATUS_COMPLETE);
+  put_frame(frame);
+}
+
+/* One non-split ST40 RTP packet may carry multiple ANC data packets. */
+TEST_F(St40PipelineRxTest, MultiAncInSingleRtpPacket) {
+  const uint16_t udw_sizes[] = {8, 6, 4};
+  const uint8_t anc_count = 3;
+
+  ASSERT_EQ(enqueue_multi_anc(0, 1000, true, MTL_SESSION_PORT_P, udw_sizes, anc_count),
+            0);
+  process_all();
+
+  auto* frame = get_frame();
+  ASSERT_NE(frame, nullptr);
+  EXPECT_EQ(frame->rtp_timestamp, 1000u);
+  EXPECT_EQ(frame->pkts_total, 1u);
+  EXPECT_TRUE(frame->rtp_marker);
+  EXPECT_EQ(frame->status, ST_FRAME_STATUS_COMPLETE);
+  ASSERT_EQ(frame->meta_num, anc_count);
+
+  uint16_t expected_offset = 0;
+  for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
+    const auto& meta = frame->meta[anc_idx];
+    EXPECT_EQ(meta.c, 0u);
+    EXPECT_EQ(meta.line_number, 10u + anc_idx);
+    EXPECT_EQ(meta.hori_offset, 0u);
+    EXPECT_EQ(meta.s, 0u);
+    EXPECT_EQ(meta.stream_num, 0u);
+    EXPECT_EQ(meta.did, 0x45u);
+    EXPECT_EQ(meta.sdid, 0x01u);
+    EXPECT_EQ(meta.udw_size, udw_sizes[anc_idx]);
+    EXPECT_EQ(meta.udw_offset, expected_offset);
+
+    for (uint16_t udw_idx = 0; udw_idx < udw_sizes[anc_idx]; udw_idx++) {
+      uint8_t expected = static_cast<uint8_t>(((anc_idx + 1) * 17 + udw_idx) & 0xff);
+      EXPECT_EQ(frame->udw_buff_addr[expected_offset + udw_idx], expected);
+    }
+
+    expected_offset += udw_sizes[anc_idx];
+  }
+  EXPECT_EQ(frame->udw_buffer_fill, expected_offset);
   put_frame(frame);
 }
 

@@ -228,6 +228,87 @@ static struct rte_mbuf* make_pipeline_mbuf(uint16_t seq, uint32_t ts, int marker
   return m;
 }
 
+static uint8_t ut40p_udw_value(uint8_t anc_idx, uint16_t udw_idx) {
+  return (uint8_t)(((uint16_t)(anc_idx + 1) * 17 + udw_idx) & 0xff);
+}
+
+static uint32_t ut40p_anc_payload_bytes(uint16_t udw_size) {
+  uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
+  uint32_t total_size = (total_bits + 7) / 8;
+  total_size = (total_size + 3) & ~0x3U;
+  return sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;
+}
+
+static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marker,
+                                            uint16_t dpdk_port_id,
+                                            const uint16_t* udw_sizes,
+                                            uint8_t anc_count) {
+  if (!udw_sizes || !anc_count || anc_count > ST40_MAX_META) return NULL;
+
+  size_t payload_len = 0;
+  for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++)
+    payload_len += ut40p_anc_payload_bytes(udw_sizes[anc_idx]);
+
+  size_t rtp_len = sizeof(struct st40_rfc8331_rtp_hdr) + payload_len;
+  size_t total = UT40P_L234_HDR_LEN + rtp_len;
+
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  if (!m) return NULL;
+
+  if (rte_pktmbuf_tailroom(m) < total) {
+    rte_pktmbuf_free(m);
+    return NULL;
+  }
+
+  uint8_t* buf = rte_pktmbuf_mtod(m, uint8_t*);
+  memset(buf, 0, total);
+
+  struct st40_rfc8331_rtp_hdr* rtp =
+      (struct st40_rfc8331_rtp_hdr*)(buf + UT40P_L234_HDR_LEN);
+  rtp->base.version = 2;
+  rtp->base.seq_number = htons(seq);
+  rtp->base.tmstamp = htonl(ts);
+  rtp->base.marker = marker ? 1 : 0;
+  rtp->length = htons(payload_len);
+  rtp->first_hdr_chunk.anc_count = anc_count;
+  rtp->first_hdr_chunk.f = 0b00;
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
+
+  uint8_t* payload = (uint8_t*)(rtp + 1);
+  for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
+    uint16_t udw_size = udw_sizes[anc_idx];
+    struct st40_rfc8331_payload_hdr* payload_hdr =
+        (struct st40_rfc8331_payload_hdr*)payload;
+
+    payload_hdr->first_hdr_chunk.c = 0;
+    payload_hdr->first_hdr_chunk.line_number = 10 + anc_idx;
+    payload_hdr->first_hdr_chunk.horizontal_offset = 0;
+    payload_hdr->first_hdr_chunk.s = 0;
+    payload_hdr->first_hdr_chunk.stream_num = 0;
+    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x45);
+    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
+    payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+
+    payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
+    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+
+    uint8_t* udw_dst = (uint8_t*)&payload_hdr->second_hdr_chunk;
+    for (uint16_t udw_idx = 0; udw_idx < udw_size; udw_idx++) {
+      st40_set_udw(udw_idx + 3, st40_add_parity_bits(ut40p_udw_value(anc_idx, udw_idx)),
+                   udw_dst);
+    }
+    uint16_t checksum = st40_calc_checksum(3 + udw_size, udw_dst);
+    st40_set_udw(udw_size + 3, checksum, udw_dst);
+
+    payload += ut40p_anc_payload_bytes(udw_size);
+  }
+
+  m->data_len = total;
+  m->pkt_len = total;
+  m->port = dpdk_port_id;
+  return m;
+}
+
 /* ── enqueue functions ────────────────────────────────────────────────── */
 
 int ut40p_enqueue_pkt(ut40p_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
@@ -255,6 +336,22 @@ void ut40p_enqueue_burst(ut40p_ctx* ctx, uint16_t seq_start, int count, uint32_t
     int marker = last_marker && (i == count - 1);
     ut40p_enqueue_pkt(ctx, seq_start + i, ts, marker, port);
   }
+}
+
+int ut40p_enqueue_multi_anc_pkt(ut40p_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                                enum mtl_session_port port, const uint16_t* udw_sizes,
+                                uint8_t anc_count) {
+  (void)ctx;
+  uint16_t dpdk_port_id = (port == MTL_SESSION_PORT_R) ? 1 : 0;
+  struct rte_mbuf* m =
+      make_multi_anc_mbuf(seq, ts, marker, dpdk_port_id, udw_sizes, anc_count);
+  if (!m) return -1;
+
+  if (rte_ring_sp_enqueue(g_mock_ring, m) != 0) {
+    rte_pktmbuf_free(m);
+    return -1;
+  }
+  return 0;
 }
 
 /* ── process functions ────────────────────────────────────────────────── */
