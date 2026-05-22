@@ -24,7 +24,7 @@ jobs:
           - e830
         dir:
           - dma
-          - ffmpeg
+          - st40p
           - gstreamer
           - kernel_socket
           - performance
