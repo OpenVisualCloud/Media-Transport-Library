@@ -51,10 +51,8 @@ if [ "$sourced" -eq 0 ]; then
 	sudo make install
 	popd >/dev/null
 	popd >/dev/null
-
 	echo "Removing downloaded XDP sources"
 	rm -rf "${repo_dir}"
 	rm -f "${script_folder}/${archive_name}"
-
 	popd >/dev/null
 fi

@@ -1,24 +1,75 @@
-version: '3'
+# Copyright (c) 2025 Intel Corporation.
+# SPDX-License-Identifier: BSD-3-Clause
 
 services:
-  imtl:
-    image: mtl:latest
+  # Ubuntu 22.04 (no eBPF) — default
+  imtl-ubuntu22:
+    build:
+      context: ..
+      dockerfile: docker/ubuntu22.dockerfile
+      target: final
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-${http_proxy:-}}
+        - HTTPS_PROXY=${HTTPS_PROXY:-${https_proxy:-}}
+    image: mtl:ubuntu22
     ulimits:
       memlock:
         soft: -1
         hard: -1
     devices:
-      - "/dev/vfio:/dev/vfio" # or add /dev/vfio/vfio and /dev/vfio/<specific_device>
+      - "/dev/vfio:/dev/vfio"
     volumes:
-      - "/var/run/imtl:/var/run/imtl" # For connection with MTL Manager
-    # For kernel / AF_XDP backend
-    # network_mode: host
+      - "/var/run/imtl:/var/run/imtl"
     cap_add:
       - SYS_NICE
       - IPC_LOCK
-      # For kernel / AF_XDP backend
-      # - NET_RAW
-      # - CAP_BPF
-      
-      # For Adjtime
-      # - SYS_TIME
+
+  # Ubuntu 24.04 (with eBPF/XDP)
+  imtl-ubuntu24:
+    build:
+      context: ..
+      dockerfile: docker/ubuntu24.dockerfile
+      target: final
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-${http_proxy:-}}
+        - HTTPS_PROXY=${HTTPS_PROXY:-${https_proxy:-}}
+    image: mtl:ubuntu24
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    devices:
+      - "/dev/vfio:/dev/vfio"
+    volumes:
+      - "/var/run/imtl:/var/run/imtl"
+    # network_mode: host  # For AF_XDP backend
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+      - NET_RAW
+      - CAP_BPF
+
+  # Rocky Linux 9 (with eBPF/XDP)
+  imtl-rocky:
+    build:
+      context: ..
+      dockerfile: docker/rocky9.dockerfile
+      target: final
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-${http_proxy:-}}
+        - HTTPS_PROXY=${HTTPS_PROXY:-${https_proxy:-}}
+    image: mtl:rocky9
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    devices:
+      - "/dev/vfio:/dev/vfio"
+    volumes:
+      - "/var/run/imtl:/var/run/imtl"
+    # network_mode: host  # For AF_XDP backend
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+      - NET_RAW
+      - CAP_BPF

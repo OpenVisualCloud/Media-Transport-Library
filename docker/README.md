@@ -19,7 +19,10 @@ Refer to below build command if you are in a proxy env.
 ```bash
 http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
-docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+sudo docker build -t mtl_ubuntu22:latest -f ubuntu22.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+sudo docker build -t mtl_ubuntu24:latest -f ubuntu24.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+sudo docker build -t mtl_rocky9:latest -f rocky9.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+
 ```
 
 ## 3. Run and login into the docker container
@@ -104,7 +107,7 @@ docker run -it \
   --cap-add IPC_LOCK \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
-  mtl:latest
+  mtl_ubuntu22:latest
 ```
 
 #### 3.2.3. Run with docker-compose
