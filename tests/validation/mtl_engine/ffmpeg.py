@@ -162,7 +162,16 @@ class FFmpeg(Application):
     # -- mode: yuv|h264 (FFmpeg RX, FFmpeg-or-RxTxApp TX) ----------------
     def _build_yuv_h264_cmds(self, nic_port_list):
         video_format = self.params["video_format"]
-        video_url = self.params["video_url"]
+        video_url = self.params["video_url"] or self.params.get("input_file", "")
+        # Synthesize legacy video_format from modern params when not provided.
+        if not video_format:
+            h = self.params.get("height", 1080)
+            fr = self.params.get("framerate", "p60")
+            fps_num = fr.lstrip("pi")
+            video_format = f"i{h}p{fps_num}"
+        # Persist resolved values so validate_results() can use them later.
+        self.params["video_format"] = video_format
+        self.params["video_url"] = video_url
         output_format = self._ff_params.get("output_format", "yuv")
         multiple = bool(self._ff_params.get("multiple_sessions", False))
         tx_is_ffmpeg = bool(self._ff_params.get("tx_is_ffmpeg", True))
