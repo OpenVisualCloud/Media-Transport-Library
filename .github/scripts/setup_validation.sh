@@ -2,26 +2,23 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# One-shot host preparation for tests/validation/ pytest.
+# One-shot pytest-specific preparation for tests/validation/.
 #
+# Broad host setup (apt, DPDK, ICE, MTL build, hugepages, CPU governor,
+# optional plugins) is handled by MCP tool setup_validation_base.
+#
+# This script intentionally keeps only pytest-custom responsibilities.
 # Idempotent. Each stage is independent: probe -> install if missing -> verify.
 # Stage failures print stage name, last command, last 20 lines of stderr, and a
 # pointer to the failure-table row in
 # .github/instructions/mtl-validation-tests.instructions.md.
 #
 # == Stages (default = ON unless noted) ===========================================
-#   STAGE_PREFLIGHT=1   sanity checks (NIC, disk, nproc); never installs anything
-#   STAGE_APT=1         apt build dependencies (delegates to setup_environment.sh)
-#   STAGE_DPDK=1        DPDK build+install if pkg-config libdpdk missing
-#   STAGE_ICE=1         ICE driver build+install if /lib/modules/*/updates/drivers/net/ethernet/intel/ice/ice.ko missing
-#   STAGE_MTL=1         libmtl + RxTxApp + MtlManager (./build.sh)
-#   STAGE_HUGEPAGES=1   allocate 2 MiB hugepages if free < 1 GiB (4 GiB total)
+#   STAGE_PREFLIGHT=1   sanity checks and broad-prereq verification (no installs)
 #   STAGE_NFS=1         MANDATORY when /mnt/media empty -> needs NFS_SOURCE
 #   STAGE_SSH=1         passwordless ssh-to-root from invoking user
 #   STAGE_VENV=1        tests/validation/venv + pip install requirements
 #   STAGE_CONFIGS=1     tests/validation/configs/{topology,test}_config.yaml
-#   STAGE_FFMPEG_PLUGIN=0   opt-in: ecosystem/ffmpeg_plugin/build.sh
-#   STAGE_GST_PLUGIN=0      opt-in: ecosystem/gstreamer_plugin/build.sh
 #
 # == Inputs (env vars) ============================================================
 #   NFS_SOURCE       host:/export, e.g. 10.123.232.121:/mnt/NFS/mtl_assets/media
@@ -40,9 +37,8 @@
 #                    pass | would install | missing; never modifies the host
 #
 # == Expected wall time ===========================================================
-#   Cold install (no DPDK/ICE/MTL/venv on host) : ~7-10 min total
-#       APT 30-60s | DPDK 2-4 min | ICE 30-90s | MTL 1-3 min | VENV 20-40s | rest <5s
-#   Warm re-run (everything probed satisfied)   : <5s
+#   Cold run (venv + configs + NFS + SSH)       : ~1-3 min total
+#   Warm re-run (everything probed satisfied)    : <5s
 #   NFS mount alone                             : <2s on LAN
 #   Agents: stream output, do NOT time out at 60s.
 # =================================================================================
@@ -51,17 +47,10 @@ set -uo pipefail # NOTE: no -e; we manage errors per stage
 
 # -------------------- defaults --------------------
 : "${STAGE_PREFLIGHT:=1}"
-: "${STAGE_APT:=1}"
-: "${STAGE_DPDK:=1}"
-: "${STAGE_ICE:=1}"
-: "${STAGE_MTL:=1}"
-: "${STAGE_HUGEPAGES:=1}"
 : "${STAGE_NFS:=1}"
 : "${STAGE_SSH:=1}"
 : "${STAGE_VENV:=1}"
 : "${STAGE_CONFIGS:=1}"
-: "${STAGE_FFMPEG_PLUGIN:=0}"
-: "${STAGE_GST_PLUGIN:=0}"
 
 : "${TEST_TIME:=30}"
 : "${NFS_SOURCE:=}"
@@ -185,7 +174,11 @@ print_summary() {
 	log ""
 	log " RxTxApp        : $([[ -x tests/tools/RxTxApp/build/RxTxApp ]] && echo OK || echo MISSING)"
 	log " MtlManager     : $([[ -x build/manager/MtlManager ]] && echo OK || echo MISSING)"
-	log " libmtl.so      : $(ldconfig -p 2>/dev/null | grep -q libmtl.so && echo OK || echo MISSING)"
+	if ldconfig -p 2>/dev/null | grep -Eq 'libmtl\.so(\s|$)' || [[ -f /usr/local/lib/x86_64-linux-gnu/libmtl.so || -f /usr/local/lib64/libmtl.so || -f /usr/local/lib/libmtl.so ]]; then
+		log " libmtl.so      : OK"
+	else
+		log " libmtl.so      : MISSING"
+	fi
 	log " libdpdk        : $(pkg-config --modversion libdpdk 2>/dev/null || echo MISSING)"
 	log " ice driver     : $(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo MISSING) @ $(modinfo -n ice 2>/dev/null || echo '<none>')"
 	log " hugepages free : $(awk '/HugePages_Free/ {print $2*2 " MiB"}' /proc/meminfo)"
@@ -208,11 +201,11 @@ print_summary() {
 
 stage_preflight() {
 	local nic_count free_g cpus
-	nic_count=$(lspci -d 8086:1592 2>/dev/null | wc -l)
+	nic_count=$(lspci -nn 2>/dev/null | grep -Ei '8086:(1592|12d2)' | wc -l)
 	if [[ "$nic_count" -eq 0 ]]; then
-		warn "preflight: no Intel E810 NIC (8086:1592) detected; pytest will fail"
+		warn "preflight: no Intel E810/E830 NIC detected; pytest will fail"
 	else
-		log "preflight: NIC E810 PF count = $nic_count"
+		log "preflight: NIC E810/E830 PF count = $nic_count"
 	fi
 	free_g=$(df -BG --output=avail / | tail -1 | tr -dc 0-9)
 	if [[ "$free_g" -lt 10 ]]; then
@@ -239,7 +232,9 @@ stage_preflight() {
 	fi
 	# Selected PF status (informational)
 	local bdf="$PCI_DEVICE_BDF"
-	[[ -z "$bdf" && "$nic_count" -gt 0 ]] && bdf="0000:$(lspci -d 8086:1592 | head -1 | awk '{print $1}')"
+	if [[ -z "$bdf" && "$nic_count" -gt 0 ]]; then
+		bdf="0000:$(lspci -nn | grep -Ei '8086:(1592|12d2)' | head -1 | awk '{print $1}')"
+	fi
 	if [[ -n "$bdf" ]]; then
 		local drv numa
 		drv=$(basename "$(readlink -f "/sys/bus/pci/devices/$bdf/driver" 2>/dev/null)" 2>/dev/null)
@@ -249,200 +244,50 @@ stage_preflight() {
 			warn "preflight: PF numa_node=-1 (BIOS may need NUMA enabled)"
 		fi
 	fi
-	return 0
-}
 
-stage_apt() {
-	if dpkg -l meson libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev \
-		systemtap-sdt-dev clang netsniff-ng unzip ethtool 2>/dev/null |
-		awk '/^ii/{n++} END{exit !(n>=11)}'; then
-		log "apt: required packages already installed"
-		return 0
+	# Broad setup must be done via MCP tool setup_validation_base.
+	local missing=0 free_mb governor ice_path mtl_found=0
+	if ! pkg-config --exists libdpdk 2>/dev/null; then
+		warn "preflight: libdpdk missing"
+		missing=1
 	fi
-	check_only_or_install "apt" || return $?
-	log "apt: invoking setup_environment.sh (apt deps only)"
-	SETUP_ENVIRONMENT=1 \
-		SETUP_BUILD_AND_INSTALL_DPDK=0 \
-		SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 \
-		SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
-		SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
-		MTL_BUILD_AND_INSTALL=0 \
-		bash .github/scripts/setup_environment.sh
-}
-
-dpdk_ldcache_ready() {
-	local cache lib
-	cache=$(ldconfig -p 2>/dev/null)
-	for lib in librte_eal.so librte_ethdev.so librte_pcapng.so; do
-		[[ "$cache" == *"$lib"* ]] || return 1
-	done
-}
-
-stage_dpdk() {
-	if pkg-config --exists libdpdk 2>/dev/null; then
-		log "dpdk: pkg-config libdpdk = $(pkg-config --modversion libdpdk) — present"
-		if ! dpdk_ldcache_ready; then
-			check_only_or_install "dpdk ldconfig" || return $?
-			warn "dpdk: pkg-config present but DPDK libs are missing from ld cache — running ldconfig"
-			sudo ldconfig
-		fi
-		dpdk_ldcache_ready || {
-			err "dpdk: DPDK shared libs still missing from ldconfig cache"
-			return 1
-		}
-		return 0
+	if ldconfig -p 2>/dev/null | grep -Eq 'libmtl\.so(\s|$)'; then
+		mtl_found=1
+	elif [[ -f /usr/local/lib/x86_64-linux-gnu/libmtl.so || -f /usr/local/lib64/libmtl.so || -f /usr/local/lib/libmtl.so ]]; then
+		mtl_found=1
 	fi
-	check_only_or_install "dpdk" || return $?
-	log "dpdk: building & installing (script/build_dpdk.sh via setup_environment.sh)"
-	SETUP_ENVIRONMENT=0 \
-		SETUP_BUILD_AND_INSTALL_DPDK=1 \
-		SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 \
-		SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
-		SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
-		MTL_BUILD_AND_INSTALL=0 \
-		bash .github/scripts/setup_environment.sh
-	sudo ldconfig
-	pkg-config --exists libdpdk || {
-		err "dpdk: pkg-config still missing libdpdk after install"
-		return 1
-	}
-	dpdk_ldcache_ready || {
-		err "dpdk: DPDK shared libs missing from ldconfig cache after install"
-		return 1
-	}
-}
-
-stage_ice() {
-	# MTL needs the patched OUT-OF-TREE Intel ice driver (versions.env::ICE_VER).
-	# The stock kernel ice does not support the iavf TM virtchnl messages MTL's
-	# rate-limit pacing path uses; auto-pacing then segfaults inside the DPDK
-	# iavf PMD. Detect by version AND module path; reload if wrong one is live.
-	local want="${ICE_VER:-}"
-	if [[ -z "$want" && -f versions.env ]]; then
-		# shellcheck disable=SC1091
-		want=$(. ./versions.env && echo "$ICE_VER")
+	if (( ! mtl_found )); then
+		warn "preflight: libmtl.so missing in ld cache"
+		missing=1
 	fi
-	local ko
-	ko="/lib/modules/$(uname -r)/updates/drivers/net/ethernet/intel/ice/ice.ko"
-	local installed_ver=""
-	if [[ -f "$ko" ]]; then
-		installed_ver=$(modinfo "$ko" 2>/dev/null | awk '/^version:/ {print $2; exit}')
+	if [[ ! -x build/manager/MtlManager || ! -x tests/tools/RxTxApp/build/RxTxApp ]]; then
+		warn "preflight: MtlManager or RxTxApp missing"
+		missing=1
 	fi
-	local live_path live_ver
-	live_path=$(modinfo -n ice 2>/dev/null)
-	live_ver=$(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}')
-	log "ice: want=${want:-?}  installed=${installed_ver:-<none>}@${ko}  live=${live_ver:-<none>}@${live_path:-<none>}"
-
-	# If the patched module is already installed AND already live, nothing to do.
-	if [[ -n "$installed_ver" && -n "$want" && "$installed_ver" == *"$want"* &&
-		"$live_path" == "$ko" && "$live_ver" == "$installed_ver" ]]; then
-		log "ice: out-of-tree driver $live_ver already installed and loaded"
-		return 0
+	ice_path=$(modinfo -n ice 2>/dev/null || true)
+	if [[ "$ice_path" != *"/updates/"* ]]; then
+		warn "preflight: out-of-tree ice driver not loaded (path=$ice_path)"
+		missing=1
 	fi
-
-	# If the patched module is installed but the live one is the stock/wrong one,
-	# reload it without rebuilding.
-	if [[ -f "$ko" && "$live_path" != "$ko" ]]; then
-		log "ice: patched driver present but stock module is loaded — reloading"
-		check_only_or_install "ice (reload)" || return $?
-		ice_reload "$ko" || return 1
-		return 0
-	fi
-
-	# Otherwise build & install via setup_environment.sh, then reload.
-	if [[ "$live_path" == */kernel/* ]]; then
-		warn "ice: stock kernel ice ($live_ver) is loaded; MTL needs out-of-tree ${want:-MTL-patched} driver"
-		warn "ice: with stock ice, RL pacing will SEGFAULT inside iavf_tm_node_add (DPDK iavf PMD)"
-	fi
-	check_only_or_install "ice (build)" || return $?
-	log "ice: building & installing patched out-of-tree driver via setup_environment.sh"
-	SETUP_ENVIRONMENT=0 \
-		SETUP_BUILD_AND_INSTALL_DPDK=0 \
-		SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 \
-		SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
-		SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
-		MTL_BUILD_AND_INSTALL=0 \
-		bash .github/scripts/setup_environment.sh
-
-	[[ -f "$ko" ]] || {
-		err "ice: install finished but $ko is missing"
-		return 1
-	}
-	ice_reload "$ko" || return 1
-}
-
-# Reload ice from the given .ko path. Refuses if PFs have active VFs in use
-# (the operator must stop pytest / unbind VFs first).
-ice_reload() {
-	local ko="$1"
-	# Detect VFs currently bound to vfio-pci or held open
-	local busy=0 vfio_dev
-	for vfio_dev in /dev/vfio/[0-9]*; do
-		[[ -e "$vfio_dev" ]] || continue
-		if sudo fuser "$vfio_dev" >/dev/null 2>&1; then
-			busy=1
-			break
-		fi
-	done
-	if ((busy)); then
-		err "ice: VFIO devices are in use (RxTxApp/MtlManager running?). Stop them first."
-		err "     try: sudo pkill -9 RxTxApp MtlManager"
-		return 1
-	fi
-	log "ice: depmod -a && rmmod irdma ice && modprobe ice"
-	sudo depmod -a
-	sudo rmmod irdma 2>/dev/null || true
-	if ! sudo rmmod ice 2>/dev/null; then
-		err "ice: rmmod ice failed (module busy). Free VFs/PFs and retry."
-		return 1
-	fi
-	sudo modprobe ice || {
-		err "ice: modprobe ice failed; check dmesg"
-		return 1
-	}
-	local now_ver now_path
-	now_ver=$(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}')
-	now_path=$(modinfo -n ice 2>/dev/null)
-	if [[ "$now_path" != "$ko" ]]; then
-		err "ice: reload picked $now_path, not $ko"
-		return 1
-	fi
-	log "ice: reloaded — live=$now_ver@$now_path"
-}
-
-stage_mtl() {
-	if [[ -x build/manager/MtlManager && -x tests/tools/RxTxApp/build/RxTxApp ]] &&
-		ldconfig -p 2>/dev/null | grep -q libmtl.so; then
-		log "mtl: build/ populated and libmtl.so installed — skipping rebuild"
-		return 0
-	fi
-	check_only_or_install "mtl" || return $?
-	log "mtl: ./build.sh"
-	./build.sh
-	[[ -x tests/tools/RxTxApp/build/RxTxApp ]] || {
-		log "mtl: RxTxApp not produced by build.sh — building separately"
-		(cd tests/tools/RxTxApp && meson setup build && meson compile -C build)
-	}
-	[[ -x build/manager/MtlManager ]] || {
-		err "mtl: build/manager/MtlManager missing"
-		return 1
-	}
-	[[ -x tests/tools/RxTxApp/build/RxTxApp ]] || {
-		err "mtl: RxTxApp missing"
-		return 1
-	}
-}
-
-stage_hugepages() {
-	local free_mb
 	free_mb=$(awk '/HugePages_Free/ {print $2*2}' /proc/meminfo)
 	if ((free_mb < 1024)); then
-		check_only_or_install "hugepages" || return $?
-		log "hugepages: only ${free_mb} MiB free — allocating 2048 × 2 MiB"
-		echo 2048 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages >/dev/null
-		free_mb=$(awk '/HugePages_Free/ {print $2*2}' /proc/meminfo)
+		warn "preflight: hugepages free is ${free_mb} MiB (<1024 MiB)"
+		missing=1
 	fi
-	log "hugepages: ${free_mb} MiB free"
+	governor=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || true)
+	if [[ "$governor" != "performance" ]]; then
+		warn "preflight: CPU governor is '$governor' (expected performance)"
+		missing=1
+	fi
+
+	if ((missing)); then
+		err "preflight: broad host prerequisites are missing"
+		err "run MCP tool setup_validation_base first, then rerun this script"
+		return 1
+	fi
+
+	log "preflight: broad prerequisites look ready (managed by MCP)"
+	return 0
 }
 
 # Verify NFS export contains at least one canonical media file the framework references.
@@ -590,22 +435,31 @@ stage_venv() {
 }
 
 stage_configs() {
+	local detected_bdf detected_vendor_device cur_vd need_regen=0
+	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2)' | head -1 | awk '{print "0000:"$1}')
+	if [[ -n "$detected_bdf" ]]; then
+		detected_vendor_device=$(lspci -s "${detected_bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
+	fi
+
 	if [[ -f tests/validation/configs/topology_config.yaml &&
 		-f tests/validation/configs/test_config.yaml ]]; then
-		local detected_vd cur_vd
-		detected_vd=$(lspci -d 8086:1592 2>/dev/null | head -1 | awk '{print "0000:"$1}')
-		if [[ -n "$detected_vd" ]]; then
-			cur_vd=$(grep -m1 'pci_device:' tests/validation/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
+		cur_vd=$(grep -m1 'pci_device:' tests/validation/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
+		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
+			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
+			need_regen=1
+		elif [[ -n "$detected_vendor_device" ]]; then
 			log "configs: kept (already present, NIC=$cur_vd)"
 		else
 			log "configs: kept (already present)"
 		fi
-		return 0
+		if (( ! need_regen )); then
+			return 0
+		fi
 	fi
 	check_only_or_install "configs" || return $?
-	[[ -n "$PCI_DEVICE_BDF" ]] || PCI_DEVICE_BDF=$(lspci -d 8086:1592 2>/dev/null | head -1 | awk '{print "0000:"$1}')
+	[[ -n "$PCI_DEVICE_BDF" ]] || PCI_DEVICE_BDF="$detected_bdf"
 	[[ -n "$PCI_DEVICE_BDF" ]] || {
-		err "configs: no 8086:1592 PF found and PCI_DEVICE_BDF unset"
+		err "configs: no E810/E830 PF found and PCI_DEVICE_BDF unset"
 		return 1
 	}
 	[[ -n "$SSH_KEY" ]] || {
@@ -627,26 +481,6 @@ stage_configs() {
 	fi
 }
 
-stage_ffmpeg_plugin() {
-	if compgen -G "ecosystem/ffmpeg_plugin/FFmpeg-release-*/ffmpeg" >/dev/null; then
-		log "ffmpeg-plugin: already built"
-		return 0
-	fi
-	check_only_or_install "ffmpeg-plugin" || return $?
-	log "ffmpeg-plugin: ecosystem/ffmpeg_plugin/build.sh"
-	(cd ecosystem/ffmpeg_plugin && ./build.sh)
-}
-
-stage_gst_plugin() {
-	if compgen -G "ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so" >/dev/null; then
-		log "gst-plugin: already built"
-		return 0
-	fi
-	check_only_or_install "gst-plugin" || return $?
-	log "gst-plugin: ecosystem/gstreamer_plugin/build.sh"
-	(cd ecosystem/gstreamer_plugin && ./build.sh)
-}
-
 # ============================================================================
 # BANNER
 # ============================================================================
@@ -654,7 +488,7 @@ log "═════════════════════════
 log " MTL validation host preparation"
 log "════════════════════════════════════════════════════════════════════"
 log " stages enabled :"
-for v in PREFLIGHT NFS APT DPDK ICE MTL HUGEPAGES SSH VENV CONFIGS; do
+for v in PREFLIGHT NFS SSH VENV CONFIGS; do
 	stage_var="STAGE_$v"
 	if [[ "${!stage_var}" == "1" ]]; then
 		log "   ✓ $v"
@@ -662,18 +496,11 @@ for v in PREFLIGHT NFS APT DPDK ICE MTL HUGEPAGES SSH VENV CONFIGS; do
 		log "   · $v (STAGE_$v=0)"
 	fi
 done
-for v in FFMPEG_PLUGIN GST_PLUGIN; do
-	stage_var="STAGE_$v"
-	if [[ "${!stage_var}" == "1" ]]; then
-		log "   ✓ $v (opt-in)"
-	else
-		log "   · $v (opt-in via STAGE_$v=1)"
-	fi
-done
 log " inputs         : NFS_SOURCE='${NFS_SOURCE:-<unset>}' PCI=${PCI_DEVICE_BDF:-<auto>} TEST_TIME=$TEST_TIME"
 log " mode           : $([[ "$CHECK_ONLY" == "1" ]] && echo 'CHECK_ONLY=1 (probe only, no install)' || echo install)"
 log " run log        : $RUN_LOG"
-log " expected time  : cold ~7-10 min ; warm <5s ; CHECK_ONLY <2s — agents must NOT time out"
+log " expected time  : cold ~1-3 min ; warm <5s ; CHECK_ONLY <2s — agents must NOT time out"
+log " note           : broad host setup is done by MCP tool setup_validation_base"
 log "════════════════════════════════════════════════════════════════════"
 
 # Warn about NFS upfront, before slow stages run.
@@ -685,21 +512,13 @@ fi
 
 # ============================================================================
 # RUN STAGES
-#   Order: cheap fast-fails first (preflight, NFS) so a missing NFS_SOURCE
-#   surfaces in <2s instead of after 7 min of DPDK/ICE/MTL builds.
+#   Order: cheap fast-fails first (preflight, NFS).
 # ============================================================================
 if [[ "$STAGE_PREFLIGHT" == "1" ]]; then run_stage preflight preflight stage_preflight; else skip_stage preflight "STAGE_PREFLIGHT=0"; fi
 if [[ "$STAGE_NFS" == "1" ]]; then run_stage nfs "Media file not present" stage_nfs; else skip_stage nfs "STAGE_NFS=0"; fi
-if [[ "$STAGE_APT" == "1" ]]; then run_stage apt "apt deps" stage_apt; else skip_stage apt "STAGE_APT=0"; fi
-if [[ "$STAGE_DPDK" == "1" ]]; then run_stage dpdk "DPDK build" stage_dpdk; else skip_stage dpdk "STAGE_DPDK=0"; fi
-if [[ "$STAGE_ICE" == "1" ]]; then run_stage ice "ICE driver" stage_ice; else skip_stage ice "STAGE_ICE=0"; fi
-if [[ "$STAGE_MTL" == "1" ]]; then run_stage mtl "MTL build" stage_mtl; else skip_stage mtl "STAGE_MTL=0"; fi
-if [[ "$STAGE_HUGEPAGES" == "1" ]]; then run_stage hugepages hugepages stage_hugepages; else skip_stage hugepages "STAGE_HUGEPAGES=0"; fi
 if [[ "$STAGE_SSH" == "1" ]]; then run_stage ssh "ssh to root" stage_ssh; else skip_stage ssh "STAGE_SSH=0"; fi
 if [[ "$STAGE_VENV" == "1" ]]; then run_stage venv "venv" stage_venv; else skip_stage venv "STAGE_VENV=0"; fi
 if [[ "$STAGE_CONFIGS" == "1" ]]; then run_stage configs "configs" stage_configs; else skip_stage configs "STAGE_CONFIGS=0"; fi
-if [[ "$STAGE_FFMPEG_PLUGIN" == "1" ]]; then run_stage ffmpeg_plugin "ffmpeg plugin" stage_ffmpeg_plugin; else skip_stage ffmpeg_plugin "STAGE_FFMPEG_PLUGIN=0"; fi
-if [[ "$STAGE_GST_PLUGIN" == "1" ]]; then run_stage gst_plugin "gst plugin" stage_gst_plugin; else skip_stage gst_plugin "STAGE_GST_PLUGIN=0"; fi
 
 print_summary
 
