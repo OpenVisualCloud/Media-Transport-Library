@@ -583,8 +583,10 @@ class FFmpeg(Application):
                         f"{mode}: no output file recorded", fail_on_error
                     )
                     return False
-                result = host.run(f"stat -c %s {out_file}", hide=True, warn=True)
-                file_size = int(result.stdout.strip()) if result.ok else 0
+                result = host.connection.execute_command(
+                    f"stat -c %s {out_file}", expected_return_codes=None
+                )
+                file_size = int(result.stdout.strip()) if result.return_code == 0 else 0
                 passed = file_size > 0
                 if not passed:
                     logger.error(f"{mode}: output file is empty: {out_file}")
