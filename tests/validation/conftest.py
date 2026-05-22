@@ -1264,11 +1264,17 @@ def app_factory(mtl_path):
 
     Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
     """
+
     def factory(application: str):
         if application == "rxtxapp":
-            return RxTxApp(app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./")))
+            return RxTxApp(
+                app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
+            )
         elif application == "ffmpeg":
-            return FFmpeg(app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./")))
+            return FFmpeg(
+                app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
+            )
         else:
             raise ValueError(f"Unknown application: {application}")
+
     return factory

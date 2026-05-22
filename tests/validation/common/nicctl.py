@@ -311,9 +311,7 @@ class InterfaceSetup:
                         if vfs_count <= 0:
                             continue
                         pf_pci = pfs[i].pci_address.lspci
-                        vfs = self.nicctl_objs[host.name].create_vfs(
-                            pf_pci, vfs_count
-                        )
+                        vfs = self.nicctl_objs[host.name].create_vfs(pf_pci, vfs_count)
                         selected_interfaces[host.name].extend(vfs[:vfs_count])
                         self.register_cleanup(
                             self.nicctl_objs[host.name],

@@ -16,9 +16,7 @@ pytestmark = pytest.mark.verified
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support interlaced mode"
-            ),
+            marks=pytest.mark.skip(reason="FFmpeg does not support interlaced mode"),
         ),
     ],
 )

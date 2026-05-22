@@ -1,6 +1,10 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import pytest
 from mtl_engine.media_files import yuv_files
 
+pytestmark = pytest.mark.verified
 
 RGB24_MEDIA = [
     ("i1080p25", yuv_files["i1080p25"]),
@@ -10,10 +14,17 @@ RGB24_MEDIA = [
     ("i2160p60", yuv_files["i2160p60"]),
 ]
 
-@pytest.mark.parametrize("application", [
-    "ffmpeg",
-    pytest.param("rxtxapp", marks=pytest.mark.skip(reason="RGB24 mode requires FFmpeg TX plugin")),
-])
+
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(reason="RGB24 mode requires FFmpeg TX plugin"),
+        ),
+    ],
+)
 @pytest.mark.parametrize(
     "video_format, media_file",
     RGB24_MEDIA,

@@ -1,10 +1,16 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import os
+
 import pytest
 from common.integrity.integrity_runner import FileVideoIntegrityRunner
+from mtl_engine.execute import log_fail, run
 from mtl_engine.ffmpeg_app import decode_video_format_16_9, generate_reference_file
 from mtl_engine.media_files import yuv_files_422p10le
-from mtl_engine.execute import log_fail, run
+
+pytestmark = pytest.mark.verified
 
 PIX_FMTS = [
     "yuv422p10le",
@@ -16,10 +22,19 @@ PIX_FMTS = [
 
 logger = logging.getLogger(__name__)
 
-@pytest.mark.parametrize("application", [
-    "ffmpeg",
-    pytest.param("rxtxapp", marks=pytest.mark.skip(reason="RxTxApp does not support pix_fmt conversion")),
-])
+
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(
+                reason="RxTxApp does not support pix_fmt conversion"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("pix_fmt", PIX_FMTS)
 @pytest.mark.parametrize(
     "video_format, media_file",

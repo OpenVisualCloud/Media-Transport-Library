@@ -1,6 +1,10 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import pytest
 from mtl_engine.media_files import yuv_files
 
+pytestmark = pytest.mark.verified
 
 MULTISESSION_MEDIA = [
     ("i1080p25", yuv_files["i1080p25"]),
@@ -9,10 +13,15 @@ MULTISESSION_MEDIA = [
 
 
 @pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
-@pytest.mark.parametrize("output_format", [
-    "yuv",
-    pytest.param("h264", marks=pytest.mark.skip(reason="h264 multi-session not validated")),
-])
+@pytest.mark.parametrize(
+    "output_format",
+    [
+        "yuv",
+        pytest.param(
+            "h264", marks=pytest.mark.skip(reason="h264 multi-session not validated")
+        ),
+    ],
+)
 @pytest.mark.parametrize(
     "video_format, media_file",
     MULTISESSION_MEDIA,

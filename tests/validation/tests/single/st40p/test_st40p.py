@@ -13,7 +13,9 @@ from mtl_engine.media_files import anc_files
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st40p ancillary data pipeline"),
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support st40p ancillary data pipeline"
+            ),
         ),
     ],
 )
@@ -41,7 +43,9 @@ def test_st40p_basic(
     """Smoke test: TX st40p -> RX st40p over the pipeline ancillary API (unicast)."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = app_factory(application)
     app.create_command(
@@ -53,7 +57,9 @@ def test_st40p_basic(
         test_time=test_time,
     )
 
-    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+    )
 
 
 @pytest.mark.nightly
@@ -63,7 +69,9 @@ def test_st40p_basic(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st40p ancillary data pipeline"),
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support st40p ancillary data pipeline"
+            ),
         ),
     ],
 )
@@ -91,7 +99,9 @@ def test_st40p_multicast_with_compliance(
     """Test st40p multicast with EBU compliance check."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     # EBU compliance verdict needs many ancillary packets to classify.
     test_time = max(test_time, 90)
 
@@ -120,7 +130,9 @@ def test_st40p_multicast_with_compliance(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st40p ancillary data pipeline"),
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support st40p ancillary data pipeline"
+            ),
         ),
     ],
 )
@@ -144,7 +156,9 @@ def test_st40p_rtcp(
     """Verify st40p path accepts the RTCP feedback flag (pipeline-API extra)."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = app_factory(application)
     app.create_command(

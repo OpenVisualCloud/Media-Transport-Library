@@ -10,6 +10,7 @@ Validates ST2110-20 transport where TX and RX use different frameworks
 import pytest
 from mtl_engine.media_files import yuv_files
 
+pytestmark = pytest.mark.verified
 
 CROSS_APP_MEDIA = [
     ("i1080p25", 1, yuv_files["i1080p25"]),
@@ -21,12 +22,18 @@ CROSS_APP_MEDIA = [
 ]
 
 
-@pytest.mark.parametrize("application", [
-    "ffmpeg",
-    pytest.param("rxtxapp", marks=pytest.mark.skip(
-        reason="Cross-app test uses RxTxApp TX + FFmpeg RX; only FFmpeg adapter supports this mode"
-    )),
-])
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(
+                reason="Cross-app test uses RxTxApp TX + FFmpeg RX; only FFmpeg adapter supports this mode"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
 @pytest.mark.parametrize(
     "video_format, test_time_multiplier, media_file",
@@ -83,12 +90,18 @@ CROSS_APP_MULTI_MEDIA = [
 ]
 
 
-@pytest.mark.parametrize("application", [
-    "ffmpeg",
-    pytest.param("rxtxapp", marks=pytest.mark.skip(
-        reason="Cross-app multi-session uses FFmpeg adapter with tx_is_ffmpeg=False"
-    )),
-])
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(
+                reason="Cross-app multi-session uses FFmpeg adapter with tx_is_ffmpeg=False"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
 @pytest.mark.parametrize(
     "video_format, test_time_multiplier, media_file",
@@ -133,4 +146,6 @@ def test_cross_app_multisession(
         test_time=test_time * test_time_multiplier,
         host=host,
     )
-    assert result, f"Cross-app multi-session test failed for {video_format} ({output_format})"
+    assert (
+        result
+    ), f"Cross-app multi-session test failed for {video_format} ({output_format})"

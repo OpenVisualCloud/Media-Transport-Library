@@ -1,15 +1,23 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import pytest
+from mtl_engine.media_files import yuv_files_422p10le
+
+pytestmark = pytest.mark.verified
 
 YUV_H264_MEDIA = [
-    ("Penguin_1080p", "H264_CBR"),
-    ("Penguin_1080p", "JPEG-XS"),
+    ("Penguin_1080p", "H264_CBR", yuv_files_422p10le["Penguin_1080p"]),
+    ("Penguin_1080p", "JPEG-XS", yuv_files_422p10le["Penguin_1080p"]),
 ]
+
 
 @pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
 @pytest.mark.parametrize(
-    "media_key, codec",
+    "media_key, codec, media_file",
     YUV_H264_MEDIA,
-    ids=[f"{k}_{c}" for k, c in YUV_H264_MEDIA],
+    ids=[f"{k}_{c}" for k, c in [m[:2] for m in YUV_H264_MEDIA]],
+    indirect=["media_file"],
 )
 def test_yuv_h264(
     application,

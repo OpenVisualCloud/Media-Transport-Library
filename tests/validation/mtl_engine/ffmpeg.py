@@ -93,7 +93,9 @@ class FFmpeg(Application):
     # ----------------------------------------------------- command build
     # Shared template for an RxTxApp-driven RX side. ``rx_cfg`` is filled in
     # by ``prepare_execution`` once the live host is known.
-    _RXTXAPP_RX_TMPL = f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
+    _RXTXAPP_RX_TMPL = (
+        f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
+    )
 
     @staticmethod
     def _ffmpeg_st20p_tx_cmd(
@@ -249,7 +251,10 @@ class FFmpeg(Application):
         video_format_list = self._ff_params["video_format_list"]
         video_url_list = self._ff_params["video_url_list"]
         if len(nic_port_list) < 4:
-            raise ValueError("rgb24_multiple requires 4 NIC ports (2 RX + 2 TX), " f"got {len(nic_port_list)}")
+            raise ValueError(
+                "rgb24_multiple requires 4 NIC ports (2 RX + 2 TX), "
+                f"got {len(nic_port_list)}"
+            )
         # Two parallel streams: stream i uses TX port [2+i], src ip pool [i],
         # multicast pool [i]. Ports [0]/[1] are the RX side (RxTxApp).
         self._tx_commands = []
@@ -405,7 +410,9 @@ class FFmpeg(Application):
             output_format = self._ff_params.get("output_format", "yuv")
             multiple = bool(self._ff_params.get("multiple_sessions", False))
             n = 2 if multiple else 1
-            self._output_files = ffmpeg_app.create_empty_output_files(output_format, n, host, build)
+            self._output_files = ffmpeg_app.create_empty_output_files(
+                output_format, n, host, build
+            )
             self.command = self.command.replace("{out0}", self._output_files[0])
             if multiple:
                 self.command = self.command.replace("{out1}", self._output_files[1])
@@ -427,9 +434,13 @@ class FFmpeg(Application):
 
         elif mode == _MODE_RGB24:
             nic_port_list = self.params["nic_port_list"]
-            rx_cfg = ffmpeg_app.generate_rxtxapp_rx_config(nic_port_list[0], self.params["video_format"], host, build)
+            rx_cfg = ffmpeg_app.generate_rxtxapp_rx_config(
+                nic_port_list[0], self.params["video_format"], host, build
+            )
             test_time = self.params.get("test_time") or 30
-            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace("{test_time}", str(test_time))
+            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
+                "{test_time}", str(test_time)
+            )
 
         elif mode == _MODE_RGB24_MULTI:
             nic_port_list = self.params["nic_port_list"]
@@ -441,7 +452,9 @@ class FFmpeg(Application):
                 True,
             )
             test_time = self.params.get("test_time") or 30
-            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace("{test_time}", str(test_time))
+            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
+                "{test_time}", str(test_time)
+            )
 
         elif mode in (_MODE_ST22P, _MODE_ST30P):
             # Use output_file from params if provided, else create a temp file.
@@ -480,9 +493,16 @@ class FFmpeg(Application):
         DPDK process group on a single host. Passing those keys is a
         caller bug; fail loudly rather than silently degrade.
         """
-        unsupported = sorted(k for k in ("tx_host", "rx_host", "rx_app", "tx_first") if extra.get(k) is not None)
+        unsupported = sorted(
+            k
+            for k in ("tx_host", "rx_host", "rx_app", "tx_first")
+            if extra.get(k) is not None
+        )
         if unsupported:
-            raise ValueError(f"FFmpeg adapter does not support {unsupported}; " f"use a single ``host=`` argument.")
+            raise ValueError(
+                f"FFmpeg adapter does not support {unsupported}; "
+                f"use a single ``host=`` argument."
+            )
         if not host:
             raise ValueError("host required for single-host execution")
         if not self.command:
@@ -497,7 +517,9 @@ class FFmpeg(Application):
 
         specs = [ProcSpec(cmd=self.command, host=host, label="RX", bounded=False)]
         for idx, tx_cmd in enumerate(self._tx_commands, start=1):
-            specs.append(ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False))
+            specs.append(
+                ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False)
+            )
 
         self._run_proc_group(
             specs,
@@ -529,7 +551,9 @@ class FFmpeg(Application):
                 video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
-                    passed = ffmpeg_app.check_output_video_yuv(self._output_files[0], host, build, video_url)
+                    passed = ffmpeg_app.check_output_video_yuv(
+                        self._output_files[0], host, build, video_url
+                    )
                 else:
                     passed = ffmpeg_app.check_output_video_h264(
                         self._output_files[0], video_size, host, build, video_url
@@ -546,7 +570,9 @@ class FFmpeg(Application):
                 # Basic validation: output file exists and is non-empty.
                 out_file = self._output_files[0] if self._output_files else None
                 if not out_file:
-                    self._fail_validation(f"{mode}: no output file recorded", fail_on_error)
+                    self._fail_validation(
+                        f"{mode}: no output file recorded", fail_on_error
+                    )
                     return False
                 result = host.run(f"stat -c %s {out_file}", hide=True, warn=True)
                 file_size = int(result.stdout.strip()) if result.ok else 0

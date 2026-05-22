@@ -1,11 +1,15 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import os
 from pathlib import Path
+
 import pytest
-from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
+from mtl_engine import media_files as mf
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
-from mtl_engine import media_files as mf
+from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 
 pytestmark = pytest.mark.verified
 
@@ -17,6 +21,7 @@ INTEGRITY_MEDIA = [
 ]
 
 logger = logging.getLogger(__name__)
+
 
 @pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
 @pytest.mark.parametrize(
@@ -65,9 +70,7 @@ def test_integrity(
         test_time=test_time,
     )
     actual_test_time = max(test_time, 8)
-    app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host
-    )
+    app.execute_test(build=mtl_path, test_time=actual_test_time, host=host)
     frame_size = calculate_yuv_frame_size(
         media_file_info["width"],
         media_file_info["height"],
@@ -80,4 +83,6 @@ def test_integrity(
         logger.info("INTEGRITY PASS")
     else:
         log_fail("INTEGRITY FAIL")
-        raise AssertionError("st20p integrity test failed content integrity comparison.")
+        raise AssertionError(
+            "st20p integrity test failed content integrity comparison."
+        )
