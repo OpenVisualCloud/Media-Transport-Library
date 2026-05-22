@@ -1256,3 +1256,19 @@ def _register_local_libs(hosts, mtl_path):
         except Exception as e:
             logger.warning("ldconfig registration failed on %s: %s", host.name, e)
     yield
+
+
+@pytest.fixture(scope="session")
+def app_factory(mtl_path):
+    """Return a factory that creates framework adapter instances.
+
+    Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
+    """
+    def factory(application: str):
+        if application == "rxtxapp":
+            return RxTxApp(app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./")))
+        elif application == "ffmpeg":
+            return FFmpeg(app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./")))
+        else:
+            raise ValueError(f"Unknown application: {application}")
+    return factory
