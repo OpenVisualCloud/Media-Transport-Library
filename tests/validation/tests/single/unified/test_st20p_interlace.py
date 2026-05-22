@@ -6,6 +6,8 @@ from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
 from mtl_engine.media_files import yuv_files_interlace
 
+pytestmark = pytest.mark.verified
+
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(

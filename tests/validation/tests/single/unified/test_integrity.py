@@ -7,6 +7,8 @@ from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine import media_files as mf
 
+pytestmark = pytest.mark.verified
+
 INTEGRITY_MEDIA = [
     ("Penguin_720p_422rfc10", "yuv_files_422rfc10", "Penguin_720p"),
     ("Penguin_1080p_422rfc10", "yuv_files_422rfc10", "Penguin_1080p"),

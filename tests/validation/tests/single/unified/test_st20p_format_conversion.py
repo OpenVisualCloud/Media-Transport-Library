@@ -5,6 +5,8 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
+pytestmark = pytest.mark.verified
+
 
 # List of supported formats based on st_frame_fmt_from_transport()
 pixel_formats = dict(

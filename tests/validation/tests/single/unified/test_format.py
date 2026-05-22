@@ -1,5 +1,7 @@
 import pytest
 
+pytestmark = pytest.mark.verified
+
 
 # Map each test case to its media file and properties
 MEDIA_FILES = [
