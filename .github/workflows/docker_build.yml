@@ -34,9 +34,7 @@ jobs:
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
@@ -44,11 +42,25 @@ jobs:
 
   ubuntu-docker-build:
     needs: changes
+    if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu22
+            dockerfile: docker/ubuntu22.dockerfile
+            image_suffix: ""
+          - name: ubuntu24
+            dockerfile: docker/ubuntu24.dockerfile
+            image_suffix: "-ubuntu24"
+          - name: rocky9
+            dockerfile: docker/rocky9.dockerfile
+            image_suffix: "-rocky9"
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -74,16 +86,15 @@ jobs:
           username: "${{ github.repository_owner }}"
           password: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Build image
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
+      - name: Build image (${{ matrix.name }})
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
           context: "${{ github.workspace }}"
-          file: "${{ github.workspace }}/docker/ubuntu.dockerfile"
-          tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
-          cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
-          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
+          file: "${{ github.workspace }}/${{ matrix.dockerfile }}"
+          tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}${{ matrix.image_suffix }}:${{ env.DOCKER_IMAGE_TAG }}"
+          cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ matrix.name }}"
+          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ matrix.name }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
 
   manager-docker-build:
     needs: changes

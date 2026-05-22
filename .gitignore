@@ -53,6 +53,7 @@ dkms.conf
 
 # Ours
 .*
+*.json
 !.github/
 !.github/**
 !.vscode/
@@ -72,7 +73,6 @@ tests/validation/logs
 *.pcap
 *.raw
 *.dat
-*.json
 html/
 test.*
 build/
@@ -114,6 +114,3 @@ openh264*
 level-zero-*
 
 venv*
-
-# AI
-.github/*.md

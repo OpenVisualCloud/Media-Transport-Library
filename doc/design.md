@@ -617,3 +617,18 @@ Because the RTP timestamp embedded in frame packets reflects the actual wire tim
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.
 
+### 8.3. eBPF/XDP and DPDK Version Compatibility
+
+MTL there are known build compatibility constraints between AF_XDP - DPDK versions and OS releases:
+
+**Ubuntu 22.04:**
+- The last DPDK version that successfully builds with eBPF/XDP on Ubuntu 22.04 is **25.11**.
+- DPDK 26.03 and newer introduce build failures when compiling xdp-tools/libbpf on Ubuntu 22.04 due to toolchain and kernel header incompatibilities.
+- The `docker/ubuntu.dockerfile` (Ubuntu 22.04) therefore ships **without** eBPF/XDP support.
+**Ubuntu 24.04 / Rocky Linux 9:** have no such limitation. eBPF/XDP builds cleanly with DPDK 26.03+.
+Use `docker/ubuntu24.dockerfile` or `docker/rocky.dockerfile` for AF_XDP support.
+
+**Workaround for Ubuntu 22.04 users who need AF_XDP:**
+- Pin DPDK to version 25.11 (set `DPDK_VER=25.11` in `versions.env`) and use the matching patch set under `patches/dpdk/25.11/`.
+- Alternatively, upgrade to Ubuntu 24.04 or Rocky Linux 9.
+

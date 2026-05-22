@@ -1228,12 +1228,13 @@ def _ensure_clean_hw_state(hosts):
 @pytest.fixture(scope="session", autouse=True)
 def _register_local_libs(hosts, mtl_path):
     """Register .local_install libraries via ldconfig so LD_LIBRARY_PATH is unnecessary."""
-    lib_dirs = [
-        os.path.join(mtl_path, MTL_LIB_PATH.removeprefix("./")),
-        os.path.join(mtl_path, DPDK_LIB_PATH.removeprefix("./")),
-        os.path.join(mtl_path, FFMPEG_LIB_PATH.removeprefix("./")),
-        os.path.join(mtl_path, GSTREAMER_LIB_PATH.removeprefix("./")),
-    ]
+    # Some *_LIB_PATH constants are colon-separated (LD_LIBRARY_PATH style).
+    # ld.so.conf requires one directory per line, so split on ':' first.
+    raw_paths = [MTL_LIB_PATH, DPDK_LIB_PATH, FFMPEG_LIB_PATH, GSTREAMER_LIB_PATH]
+    lib_dirs = []
+    for p in raw_paths:
+        for part in p.split(":"):
+            lib_dirs.append(os.path.join(mtl_path, part.removeprefix("./")))
     conf = "\\n".join(lib_dirs)
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
     # /usr/local/lib precedes /etc/ld.so.conf.d/* in /etc/ld.so.conf, so any
