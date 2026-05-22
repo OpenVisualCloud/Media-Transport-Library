@@ -58,9 +58,7 @@ def test_st30p_integrity(
 ):
     """Test st30p audio integrity (bit-exact comparison)."""
     media_file_info, media_file_path = media_file
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     log_dir = Path.cwd() / LOG_FOLDER / "latest"
     log_dir.mkdir(parents=True, exist_ok=True)
     out_file_url = str(log_dir / "out.wav")
@@ -80,16 +78,10 @@ def test_st30p_integrity(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
-    size = calculate_st30p_framebuff_size(
-        format=media_file_info["format"], ptime="1", sampling="48kHz", channel="U02"
-    )
-    result = check_st30p_integrity(
-        src_url=media_file_path, out_url=out_file_url, size=size
-    )
+    size = calculate_st30p_framebuff_size(format=media_file_info["format"], ptime="1", sampling="48kHz", channel="U02")
+    result = check_st30p_integrity(src_url=media_file_path, out_url=out_file_url, size=size)
     if result:
         logger.info("INTEGRITY PASS")
     else:
@@ -101,10 +93,7 @@ def test_st30p_integrity(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st30p audio pipeline"),
-        ),
+        "ffmpeg",
     ],
 )
 @pytest.mark.parametrize(
@@ -140,9 +129,7 @@ def test_st30p_channel(
         pytest.skip("Unsupported parameter combination")
 
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     app = app_factory(application)
@@ -189,10 +176,7 @@ def test_st30p_channel(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st30p audio pipeline"),
-        ),
+        "ffmpeg",
     ],
 )
 @pytest.mark.parametrize(
@@ -219,9 +203,7 @@ def test_st30p_format(
     """Test st30p with different audio formats (PCM8, PCM16, PCM24)."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     app = app_factory(application)
@@ -238,9 +220,7 @@ def test_st30p_format(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
@@ -261,10 +241,7 @@ def test_st30p_format(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st30p audio pipeline"),
-        ),
+        "ffmpeg",
     ],
 )
 @pytest.mark.parametrize(
@@ -291,11 +268,13 @@ def test_st30p_ptime(
     pcap_capture,
 ):
     """Test st30p with different ptime values."""
+    # FFmpeg mtl_st30p plugin only supports ptime "1ms" and "125us".
+    if application == "ffmpeg" and audio_ptime not in ("1", "0.12"):
+        pytest.skip(f"FFmpeg st30p plugin does not support ptime={audio_ptime}")
+
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     app = app_factory(application)
@@ -312,9 +291,7 @@ def test_st30p_ptime(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
@@ -336,10 +313,7 @@ def test_st30p_ptime(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st30p audio pipeline"),
-        ),
+        "ffmpeg",
     ],
 )
 @pytest.mark.parametrize(
@@ -368,9 +342,7 @@ def test_st30p_sampling(
     """Test st30p with different sampling rates."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     app = app_factory(application)
@@ -387,9 +359,7 @@ def test_st30p_sampling(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)
 
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
@@ -412,10 +382,7 @@ def test_st30p_sampling(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(reason="FFmpeg does not support st30p audio pipeline"),
-        ),
+        "ffmpeg",
     ],
 )
 @pytest.mark.parametrize(
@@ -442,9 +409,7 @@ def test_st30p_multicast(
     """Test st30p multicast transmission mode."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
     log_dir = Path.cwd() / LOG_FOLDER / "latest"
     log_dir.mkdir(parents=True, exist_ok=True)
     out_file_url = str(log_dir / "out.wav")
@@ -463,6 +428,4 @@ def test_st30p_multicast(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture)

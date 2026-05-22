@@ -33,6 +33,14 @@ logger = logging.getLogger(__name__)
 _MODE_YUV_H264 = "yuv_h264"  # FFmpeg RX + (FFmpeg or RxTxApp) TX, yuv|h264 output
 _MODE_RGB24 = "rgb24"  # FFmpeg TX (rgb24) + RxTxApp RX, single stream
 _MODE_RGB24_MULTI = "rgb24_multiple"  # FFmpeg TX×2 (rgb24) + RxTxApp RX, two streams
+_MODE_ST22P = "st22p"  # FFmpeg RX + FFmpeg TX via mtl_st22p (compressed video)
+_MODE_ST30P = "st30p"  # FFmpeg RX + FFmpeg TX via mtl_st30p (audio)
+
+# Map session_type → FFmpeg mode (used when no explicit ``mode`` kwarg given).
+_SESSION_TYPE_TO_MODE = {
+    "st22p": _MODE_ST22P,
+    "st30p": _MODE_ST30P,
+}
 
 
 class FFmpeg(Application):
@@ -46,10 +54,12 @@ class FFmpeg(Application):
         "output_format",  # "yuv" | "h264"
         "multiple_sessions",  # bool
         "tx_is_ffmpeg",  # bool — False: TX is RxTxApp instead of FFmpeg
-        "mode",  # "yuv_h264" | "rgb24" | "rgb24_multiple"
+        "mode",  # "yuv_h264" | "rgb24" | "rgb24_multiple" | "st22p" | "st30p"
         "video_format_list",  # list[str]  — rgb24_multiple only
         "video_url_list",  # list[str]   — rgb24_multiple only
         "pix_fmt",  # str — yuv_h264 only; default "yuv422p10le"
+        "st22_codec",  # str — st22p only; default "jpegxs"
+        "bpp",  # float — st22p only; bits per pixel, default 3.0
     )
 
     def __init__(self, app_path, config_file_path=None):
@@ -83,9 +93,7 @@ class FFmpeg(Application):
     # ----------------------------------------------------- command build
     # Shared template for an RxTxApp-driven RX side. ``rx_cfg`` is filled in
     # by ``prepare_execution`` once the live host is known.
-    _RXTXAPP_RX_TMPL = (
-        f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
-    )
+    _RXTXAPP_RX_TMPL = f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
 
     @staticmethod
     def _ffmpeg_st20p_tx_cmd(
@@ -126,7 +134,13 @@ class FFmpeg(Application):
         populated lazily in :meth:`prepare_execution` because file creation
         needs the live ``host`` connection.
         """
-        mode = self._ff_params.get("mode", _MODE_YUV_H264)
+        # Resolve mode: explicit ``mode`` kwarg takes precedence; otherwise
+        # infer from ``session_type`` (allows unified tests to pass
+        # session_type="st22p" without also specifying mode="st22p").
+        mode = self._ff_params.get("mode")
+        if mode is None:
+            session_type = self.params.get("session_type", "st20p")
+            mode = _SESSION_TYPE_TO_MODE.get(session_type, _MODE_YUV_H264)
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list:
             raise ValueError("nic_port_list is required")
@@ -137,6 +151,10 @@ class FFmpeg(Application):
             return self._build_rgb24_cmds(nic_port_list)
         if mode == _MODE_RGB24_MULTI:
             return self._build_rgb24_multiple_cmds(nic_port_list)
+        if mode == _MODE_ST22P:
+            return self._build_st22p_cmds(nic_port_list)
+        if mode == _MODE_ST30P:
+            return self._build_st30p_cmds(nic_port_list)
         raise ValueError(f"Unknown FFmpeg mode: {mode}")
 
     # -- mode: yuv|h264 (FFmpeg RX, FFmpeg-or-RxTxApp TX) ----------------
@@ -231,10 +249,7 @@ class FFmpeg(Application):
         video_format_list = self._ff_params["video_format_list"]
         video_url_list = self._ff_params["video_url_list"]
         if len(nic_port_list) < 4:
-            raise ValueError(
-                "rgb24_multiple requires 4 NIC ports (2 RX + 2 TX), "
-                f"got {len(nic_port_list)}"
-            )
+            raise ValueError("rgb24_multiple requires 4 NIC ports (2 RX + 2 TX), " f"got {len(nic_port_list)}")
         # Two parallel streams: stream i uses TX port [2+i], src ip pool [i],
         # multicast pool [i]. Ports [0]/[1] are the RX side (RxTxApp).
         self._tx_commands = []
@@ -254,6 +269,122 @@ class FFmpeg(Application):
             )
         return self._RXTXAPP_RX_TMPL, None
 
+    # -- mode: st22p (FFmpeg TX via mtl_st22p, FFmpeg RX via mtl_st22p) --
+    def _build_st22p_cmds(self, nic_port_list):
+        width = int(self.params["width"])
+        height = int(self.params["height"])
+        video_size = f"{width}x{height}"
+        framerate = self.params.get("framerate", "p60")
+        # Convert "pXX" string to numeric fps for FFmpeg -framerate flag.
+        fps_num = framerate.lstrip("p") if isinstance(framerate, str) else framerate
+        pix_fmt = self._ff_params.get("pix_fmt", "yuv422p10le")
+        st22_codec = self._ff_params.get("st22_codec", "jpegxs")
+        bpp = self._ff_params.get("bpp", 3.0)
+        input_file = self.params.get("input_file") or self.params.get("video_url")
+        udp_port = 20000
+
+        # Map UNIVERSAL_PARAMS codec names to FFmpeg st22_codec string.
+        codec_name = self.params.get("codec", "JPEG-XS")
+        codec_map = {"JPEG-XS": "jpegxs", "H264_CBR": "h264", "H265": "h265"}
+        st22_codec = codec_map.get(codec_name, st22_codec)
+
+        # TX: raw video → mtl_st22p muxer (encode + transmit)
+        self._tx_commands = [
+            f"{FFMPEG_EXE} -stream_loop -1 "
+            f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
+            f"-i {input_file} "
+            f"-filter:v fps={fps_num} "
+            f"-p_port {nic_port_list[1]} -p_sip {ip_pools.tx[0]} "
+            f"-p_tx_ip {ip_pools.rx_multicast[0]} "
+            f"-udp_port {udp_port} -payload_type 112 "
+            f"-st22_codec {st22_codec} -bpp {bpp} "
+            f"-f mtl_st22p -"
+        ]
+
+        # RX: mtl_st22p demuxer (receive + decode) → raw video output
+        rx_cmd = (
+            f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
+            f"-p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port {udp_port} "
+            f"-payload_type 112 -fps {fps_num} -pix_fmt {pix_fmt} "
+            f"-video_size {video_size} "
+            f"-st22_codec {st22_codec} "
+            f"-init_retry 20 "
+            f"-f mtl_st22p -i k "
+            f"-f rawvideo {{out0}} -y"
+        )
+        return rx_cmd, None
+
+    # -- mode: st30p (FFmpeg TX via mtl_st30p, FFmpeg RX via mtl_st30p) --
+    def _build_st30p_cmds(self, nic_port_list):
+        audio_format = self.params.get("audio_format", "PCM24")
+        audio_sampling = self.params.get("audio_sampling", "48kHz")
+        audio_ptime = self.params.get("audio_ptime", "1")
+        audio_channels = self.params.get("audio_channels", ["U02"])
+        input_file = self.params.get("input_file") or self.params.get("audio_url")
+        udp_port = 30000
+
+        # Map RxTxApp format names → FFmpeg pcm codec / format strings.
+        fmt_map = {
+            "PCM24": ("s24be", "pcm24"),
+            "PCM16": ("s16be", "pcm16"),
+            "PCM8": ("s8", "pcm8"),
+        }
+        ff_fmt, pcm_fmt = fmt_map.get(audio_format, ("s24be", "pcm24"))
+
+        # Map sampling rate string → numeric Hz.
+        sr_map = {"48kHz": 48000, "96kHz": 96000, "44.1kHz": 44100}
+        sample_rate = sr_map.get(audio_sampling, 48000)
+
+        # Determine channel count from the channel list.
+        ch_count_map = {
+            "M": 1,
+            "DM": 2,
+            "ST": 2,
+            "LtRt": 2,
+            "51": 6,
+            "71": 8,
+            "222": 24,
+            "SGRP": 4,
+            "U01": 1,
+            "U02": 2,
+        }
+        if isinstance(audio_channels, list):
+            ch_label = audio_channels[0] if audio_channels else "U02"
+        else:
+            ch_label = audio_channels
+        channels = ch_count_map.get(ch_label, 2)
+
+        # Map ptime to FFmpeg option string.
+        ptime_map = {"1": "1ms", "0.12": "125us", "0.125": "125us", "125us": "125us"}
+        ptime_str = ptime_map.get(str(audio_ptime), "1ms")
+
+        # TX: raw audio → mtl_st30p muxer
+        self._tx_commands = [
+            f"{FFMPEG_EXE} -stream_loop -1 "
+            f"-f {ff_fmt} -ar {sample_rate} -ac {channels} "
+            f"-i {input_file} "
+            f"-p_port {nic_port_list[1]} -p_sip {ip_pools.tx[0]} "
+            f"-p_tx_ip {ip_pools.rx_multicast[0]} "
+            f"-udp_port {udp_port} -payload_type 111 "
+            f"-ptime {ptime_str} "
+            f"-f mtl_st30p -"
+        ]
+
+        # RX: mtl_st30p demuxer → raw audio output
+        rx_cmd = (
+            f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
+            f"-p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port {udp_port} "
+            f"-payload_type 111 -sample_rate {sample_rate} "
+            f"-channels {channels} -pcm_fmt {pcm_fmt} "
+            f"-ptime {ptime_str} "
+            f"-init_retry 20 "
+            f"-f mtl_st30p -i k "
+            f"-f {ff_fmt} {{out0}} -y"
+        )
+        return rx_cmd, None
+
     # --------------------------------------------------- prepare_execution
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Create per-host artifacts (output files, RxTxApp configs).
@@ -264,15 +395,17 @@ class FFmpeg(Application):
         if not host:
             raise ValueError("host required for FFmpeg execution")
         self._build = build
-        mode = self._ff_params.get("mode", _MODE_YUV_H264)
+        # Resolve mode the same way as _create_command_and_config.
+        mode = self._ff_params.get("mode")
+        if mode is None:
+            session_type = self.params.get("session_type", "st20p")
+            mode = _SESSION_TYPE_TO_MODE.get(session_type, _MODE_YUV_H264)
 
         if mode == _MODE_YUV_H264:
             output_format = self._ff_params.get("output_format", "yuv")
             multiple = bool(self._ff_params.get("multiple_sessions", False))
             n = 2 if multiple else 1
-            self._output_files = ffmpeg_app.create_empty_output_files(
-                output_format, n, host, build
-            )
+            self._output_files = ffmpeg_app.create_empty_output_files(output_format, n, host, build)
             self.command = self.command.replace("{out0}", self._output_files[0])
             if multiple:
                 self.command = self.command.replace("{out1}", self._output_files[1])
@@ -294,13 +427,9 @@ class FFmpeg(Application):
 
         elif mode == _MODE_RGB24:
             nic_port_list = self.params["nic_port_list"]
-            rx_cfg = ffmpeg_app.generate_rxtxapp_rx_config(
-                nic_port_list[0], self.params["video_format"], host, build
-            )
+            rx_cfg = ffmpeg_app.generate_rxtxapp_rx_config(nic_port_list[0], self.params["video_format"], host, build)
             test_time = self.params.get("test_time") or 30
-            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
-                "{test_time}", str(test_time)
-            )
+            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace("{test_time}", str(test_time))
 
         elif mode == _MODE_RGB24_MULTI:
             nic_port_list = self.params["nic_port_list"]
@@ -312,9 +441,20 @@ class FFmpeg(Application):
                 True,
             )
             test_time = self.params.get("test_time") or 30
-            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace(
-                "{test_time}", str(test_time)
-            )
+            self.command = self.command.replace("{rx_cfg}", rx_cfg).replace("{test_time}", str(test_time))
+
+        elif mode in (_MODE_ST22P, _MODE_ST30P):
+            # Use output_file from params if provided, else create a temp file.
+            out_path_param = self.params.get("output_file")
+            if out_path_param:
+                self._output_files = [out_path_param]
+                # Touch the file so FFmpeg can write to it.
+                host.connection.path(out_path_param).touch()
+            else:
+                ext = "yuv" if mode == _MODE_ST22P else "raw"
+                out_path = ffmpeg_app.create_empty_output_files(ext, 1, host, build)
+                self._output_files = out_path
+            self.command = self.command.replace("{out0}", self._output_files[0])
 
     # ----------------------------------------------------- execute_test
     def execute_test(  # type: ignore[override]
@@ -340,16 +480,9 @@ class FFmpeg(Application):
         DPDK process group on a single host. Passing those keys is a
         caller bug; fail loudly rather than silently degrade.
         """
-        unsupported = sorted(
-            k
-            for k in ("tx_host", "rx_host", "rx_app", "netsniff", "tx_first")
-            if extra.get(k) is not None
-        )
+        unsupported = sorted(k for k in ("tx_host", "rx_host", "rx_app", "tx_first") if extra.get(k) is not None)
         if unsupported:
-            raise ValueError(
-                f"FFmpeg adapter does not support {unsupported}; "
-                f"use a single ``host=`` argument."
-            )
+            raise ValueError(f"FFmpeg adapter does not support {unsupported}; " f"use a single ``host=`` argument.")
         if not host:
             raise ValueError("host required for single-host execution")
         if not self.command:
@@ -364,9 +497,7 @@ class FFmpeg(Application):
 
         specs = [ProcSpec(cmd=self.command, host=host, label="RX", bounded=False)]
         for idx, tx_cmd in enumerate(self._tx_commands, start=1):
-            specs.append(
-                ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False)
-            )
+            specs.append(ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False))
 
         self._run_proc_group(
             specs,
@@ -385,7 +516,10 @@ class FFmpeg(Application):
 
     # ----------------------------------------------------- validate
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
-        mode = self._ff_params.get("mode", _MODE_YUV_H264)
+        mode = self._ff_params.get("mode")
+        if mode is None:
+            session_type = self.params.get("session_type", "st20p")
+            mode = _SESSION_TYPE_TO_MODE.get(session_type, _MODE_YUV_H264)
         host = self._host
         build = self._build
         try:
@@ -395,9 +529,7 @@ class FFmpeg(Application):
                 video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
-                    passed = ffmpeg_app.check_output_video_yuv(
-                        self._output_files[0], host, build, video_url
-                    )
+                    passed = ffmpeg_app.check_output_video_yuv(self._output_files[0], host, build, video_url)
                 else:
                     passed = ffmpeg_app.check_output_video_h264(
                         self._output_files[0], video_size, host, build, video_url
@@ -410,6 +542,18 @@ class FFmpeg(Application):
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 1)
             elif mode == _MODE_RGB24_MULTI:
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 2)
+            elif mode in (_MODE_ST22P, _MODE_ST30P):
+                # Basic validation: output file exists and is non-empty.
+                out_file = self._output_files[0] if self._output_files else None
+                if not out_file:
+                    self._fail_validation(f"{mode}: no output file recorded", fail_on_error)
+                    return False
+                result = host.run(f"stat -c %s {out_file}", hide=True, warn=True)
+                file_size = int(result.stdout.strip()) if result.ok else 0
+                passed = file_size > 0
+                if not passed:
+                    logger.error(f"{mode}: output file is empty: {out_file}")
+                self._cleanup_output_files(host)
             else:
                 self._fail_validation(f"Unknown mode {mode}", fail_on_error)
                 return False
