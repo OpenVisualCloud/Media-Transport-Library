@@ -227,7 +227,7 @@ def setup_paths(media_file):
     return input_file_path, output_file_path
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])
@@ -332,7 +332,7 @@ def test_st40p_fps_size(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_redundant_progressive(
     hosts,
     build,
@@ -453,7 +453,7 @@ def test_st40p_redundant_progressive(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_redundant_progressive_gap(
     hosts,
     build,
@@ -577,7 +577,7 @@ def test_st40p_redundant_progressive_gap(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_redundant_progressive_split(
     hosts,
     build,
@@ -699,7 +699,7 @@ def test_st40p_redundant_progressive_split(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_redundant_progressive_split_gap(
     hosts,
     build,
@@ -822,7 +822,7 @@ def test_st40p_redundant_progressive_split_gap(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40i_redundant_split(
     hosts,
     build,
@@ -948,7 +948,7 @@ def test_st40i_redundant_split(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40i_redundant_split_gap(
     hosts,
     build,
@@ -1075,7 +1075,7 @@ def test_st40i_redundant_split_gap(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [60])
 @pytest.mark.parametrize("file_size_kb", [100])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
@@ -1188,7 +1188,7 @@ def test_st40p_framebuff(
     """
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
 def test_st40p_format_8331(
@@ -1288,7 +1288,7 @@ def test_st40p_format_8331(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [25, 50, 60])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3, 6])
@@ -1391,7 +1391,7 @@ def test_st40i_basic(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [50])
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40i_rfc8331(
@@ -1493,7 +1493,7 @@ def test_st40i_rfc8331(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [50])
 @pytest.mark.parametrize("file_size_kb", [10])
 @pytest.mark.parametrize("framebuff", [3])
@@ -1595,7 +1595,7 @@ def test_st40i_interlace_flag_mismatch(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_interlace_auto_detect_reset(
     hosts,
     build,
@@ -1738,7 +1738,7 @@ def test_st40p_interlace_auto_detect_reset(
             media_create.remove_file(gap_frame_info_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_rx_timeout(
     hosts,
     mtl_path,
@@ -1826,7 +1826,7 @@ def test_st40p_rx_timeout(
         media_create.remove_file(output_file_path, host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_split_mode_frame_info_logging(
     hosts,
     mtl_path,
@@ -1926,7 +1926,7 @@ def test_st40p_split_mode_frame_info_logging(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_split_mode_invalid_rtp_ring_rejected(
     hosts,
     mtl_path,
@@ -1998,7 +1998,7 @@ def test_st40p_split_mode_invalid_rtp_ring_rejected(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_split_mode_pacing_respected(
     hosts,
     mtl_path,
@@ -2125,7 +2125,7 @@ def test_st40p_split_mode_pacing_respected(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_rx_missing_marker_no_ready(
     hosts,
     mtl_path,
@@ -2225,7 +2225,7 @@ def test_st40p_rx_missing_marker_no_ready(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_rx_seq_loss_logged(
     hosts,
     mtl_path,
@@ -2353,7 +2353,7 @@ def test_st40p_rx_seq_loss_logged(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_rx_bad_parity_drops_payload(
     hosts,
     mtl_path,
@@ -2462,7 +2462,7 @@ def test_st40p_rx_bad_parity_drops_payload(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_rx_multi_packet_field_accumulates(
     hosts,
     mtl_path,
@@ -2566,7 +2566,7 @@ def test_st40p_rx_multi_packet_field_accumulates(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_split_padding_alignment_boundary(
     hosts,
     mtl_path,
@@ -2663,7 +2663,7 @@ def test_st40p_split_padding_alignment_boundary(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40p_split_tx_mtu_guard_no_stall(
     hosts,
     mtl_path,
@@ -2752,7 +2752,7 @@ def test_st40p_split_tx_mtu_guard_no_stall(
         run(f"rm -f {frame_info_path}", host=host)
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 def test_st40i_split_mode_frame_info_logging(
     hosts,
     mtl_path,

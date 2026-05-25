@@ -18,7 +18,7 @@ from mtl_engine.media_files import yuv_files
 from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     list(yuv_files.values()),

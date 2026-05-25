@@ -15,7 +15,7 @@ from mtl_engine import GstreamerApp
 from mtl_engine.media_files import gstreamer_formats
 
 
-# @pytest.mark.nightly
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     list(gstreamer_formats.values()),
