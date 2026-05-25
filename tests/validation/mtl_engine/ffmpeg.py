@@ -340,13 +340,15 @@ class FFmpeg(Application):
 
         # Map RxTxApp format names → FFmpeg pcm codec / format strings / muxer.
         # The mtl_st30p muxer is PCM24-only; for PCM16 use mtl_st30p_pcm16.
+        # For PCM8 there is no dedicated muxer, but the mtl_st30p write_header
+        # supports AV_CODEC_ID_PCM_S8 — we force it with an explicit -c:a.
         fmt_map = {
-            "PCM24": ("s24be", "pcm24", "mtl_st30p"),
-            "PCM16": ("s16be", "pcm16", "mtl_st30p_pcm16"),
-            "PCM8": ("s8", "pcm8", "mtl_st30p"),
+            "PCM24": ("s24be", "pcm24", "mtl_st30p", ""),
+            "PCM16": ("s16be", "pcm16", "mtl_st30p_pcm16", ""),
+            "PCM8": ("s8", "pcm8", "mtl_st30p", "-c:a pcm_s8 "),
         }
-        ff_fmt, pcm_fmt, tx_muxer = fmt_map.get(
-            audio_format, ("s24be", "pcm24", "mtl_st30p")
+        ff_fmt, pcm_fmt, tx_muxer, tx_codec = fmt_map.get(
+            audio_format, ("s24be", "pcm24", "mtl_st30p", "")
         )
 
         # Map sampling rate string → numeric Hz.
@@ -381,6 +383,7 @@ class FFmpeg(Application):
             f"{FFMPEG_EXE} -stream_loop -1 "
             f"-f {ff_fmt} -ar {sample_rate} -ac {channels} "
             f"-i {input_file} "
+            f"{tx_codec}"
             f"-p_port {nic_port_list[1]} -p_sip {ip_pools.tx[0]} "
             f"-p_tx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port {udp_port} -payload_type 111 "
