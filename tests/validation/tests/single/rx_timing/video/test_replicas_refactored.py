@@ -5,6 +5,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.nightly
 @pytest.mark.refactored
 def test_rx_timing_video_replicas_refactored(
     hosts,

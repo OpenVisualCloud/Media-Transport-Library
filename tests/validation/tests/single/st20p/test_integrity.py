@@ -11,7 +11,7 @@ from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 INTEGRITY_MEDIA = [
     ("Penguin_720p_422rfc10", "yuv_files_422rfc10", "Penguin_720p"),

@@ -10,7 +10,7 @@ Validates ST2110-20 transport where TX and RX use different frameworks
 import pytest
 from mtl_engine.media_files import yuv_files
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 CROSS_APP_MEDIA = [
     ("i1080p25", 1, yuv_files["i1080p25"]),

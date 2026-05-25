@@ -13,6 +13,7 @@ from mtl_engine.media_files import (
 )
 
 
+@pytest.mark.nightly
 @pytest.mark.refactored
 @pytest.mark.parametrize("test_mode", ["multicast", "unicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])

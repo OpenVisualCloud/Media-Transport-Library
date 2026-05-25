@@ -4,7 +4,7 @@
 import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 
 FORMAT_CASES = [

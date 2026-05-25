@@ -4,7 +4,7 @@
 import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 YUV_H264_MEDIA = [
     ("Penguin_1080p", "H264_CBR", yuv_files_422p10le["Penguin_1080p"]),

@@ -5,6 +5,7 @@ import pytest
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files, yuv_files_422rfc10
 
 
+@pytest.mark.nightly
 @pytest.mark.refactored
 @pytest.mark.parametrize("standard_mode", ["st20p", "st22p"])
 @pytest.mark.parametrize("test_mode", ["multicast"])

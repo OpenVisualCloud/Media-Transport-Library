@@ -9,7 +9,7 @@ Requires 4 VFs (2VFxPF configuration): 2 for TX, 2 for RX.
 import pytest
 from mtl_engine.media_files import yuv_files
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 RGB24_MULTI_CASES = [
     ("i1080p25", "i1080p25", 4, yuv_files["i1080p25"], yuv_files["i1080p25"]),

@@ -12,6 +12,8 @@ from mtl_engine.media_files import yuv_files
 
 logger = logging.getLogger(__name__)
 
+pytestmark = pytest.mark.nightly
+
 
 @pytest.mark.parametrize(
     "video_format",

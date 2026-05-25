@@ -2,6 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
+
+pytestmark = pytest.mark.nightly
 from common.nicctl import InterfaceSetup
 from mtl_engine import udp_app
 

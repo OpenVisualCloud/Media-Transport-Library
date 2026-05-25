@@ -23,7 +23,7 @@ jobs:
           - e810
           - e830
         dir:
-          - dma
+          - cross_app
           - st40p
           - gstreamer
           - kernel_socket

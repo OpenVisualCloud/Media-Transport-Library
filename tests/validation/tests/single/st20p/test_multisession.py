@@ -4,7 +4,7 @@
 import pytest
 from mtl_engine.media_files import yuv_files
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 MULTISESSION_MEDIA = [
     ("i1080p25", yuv_files["i1080p25"]),
