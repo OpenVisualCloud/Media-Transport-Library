@@ -5,6 +5,8 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import udp_app
 
+pytestmark = pytest.mark.nightly
+
 
 @pytest.mark.parametrize(
     "sleep_us, sleep_step, sessions_cnt",

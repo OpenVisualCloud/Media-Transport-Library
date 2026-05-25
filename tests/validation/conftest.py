@@ -42,6 +42,7 @@ from mtl_engine.csv_report import (
     update_compliance_result,
 )
 from mtl_engine.execute import kill_stale_processes, log_fail
+from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -1165,6 +1166,12 @@ def application() -> RxTxApp:
     return RxTxApp(RXTXAPP_PATH)
 
 
+@pytest.fixture(scope="session")
+def ffmpeg_app() -> FFmpeg:
+    """FFmpeg adapter used by refactored ``tests/single/ffmpeg/`` tests."""
+    return FFmpeg(FFMPEG_PATH)
+
+
 def pytest_collection_modifyitems(items):
     """Add ``base_performance`` marker to 1080p / 59fps combinations."""
     mark = pytest.mark.base_performance
@@ -1229,10 +1236,18 @@ def _register_local_libs(hosts, mtl_path):
     ]
     conf = "\\n".join(lib_dirs)
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
+    # /usr/local/lib precedes /etc/ld.so.conf.d/* in /etc/ld.so.conf, so any
+    # stale libav*/libsw*/libpostproc* there shadows the .local_install build.
+    purge = (
+        "mkdir -p /var/backups/mtl_libav_shadow && "
+        "mv -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so* "
+        "/usr/local/lib/libpostproc*.so* /var/backups/mtl_libav_shadow/ "
+        "2>/dev/null; true"
+    )
     for host in hosts.values():
         try:
             host.connection.execute_command(
-                f"printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
+                f"{purge} && printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
                 f" && ln -sf {ffmpeg_bin}/ffprobe /usr/local/bin/ffprobe"
                 f" && ln -sf {ffmpeg_bin}/ffmpeg /usr/local/bin/ffmpeg",
                 shell=True,
@@ -1241,3 +1256,25 @@ def _register_local_libs(hosts, mtl_path):
         except Exception as e:
             logger.warning("ldconfig registration failed on %s: %s", host.name, e)
     yield
+
+
+@pytest.fixture(scope="session")
+def app_factory(mtl_path):
+    """Return a factory that creates framework adapter instances.
+
+    Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
+    """
+
+    def factory(application: str):
+        if application == "rxtxapp":
+            return RxTxApp(
+                app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
+            )
+        elif application == "ffmpeg":
+            return FFmpeg(
+                app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
+            )
+        else:
+            raise ValueError(f"Unknown application: {application}")
+
+    return factory

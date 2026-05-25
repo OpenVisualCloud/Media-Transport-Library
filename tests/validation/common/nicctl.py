@@ -154,6 +154,7 @@ class Nicctl:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
     def _wait_vfio_idle(self, pci_id: str, timeout_s: int) -> bool:
         """Poll until no userspace process holds /dev/vfio/<group> for *pci_id*.
 
@@ -268,15 +269,32 @@ class InterfaceSetup:
                     )
             else:
                 if interface_type.lower() == "vf":
-                    vfs = self.nicctl_objs[host.name].create_vfs(
-                        host.network_interfaces[0].pci_address.lspci, count
-                    )
-                    selected_interfaces[host.name] = vfs
-                    self.register_cleanup(
-                        self.nicctl_objs[host.name],
-                        host.network_interfaces[0].pci_address.lspci,
-                        interface_type,
-                    )
+                    # Spread VFs across all declared PFs (round-robin) so that
+                    # sibling test endpoints do not share a single PF's IAVF
+                    # mailbox. With one PF declared, behaviour is unchanged
+                    # (all VFs created on that PF). With N PFs declared, the
+                    # `count` VFs are distributed N-way; remainder lands on
+                    # earlier PFs.
+                    pfs = host.network_interfaces
+                    n_pfs = len(pfs)
+                    selected_interfaces[host.name] = []
+                    if n_pfs <= 1:
+                        per_pf = [count]
+                    else:
+                        per_pf = [count // n_pfs] * n_pfs
+                        for i in range(count % n_pfs):
+                            per_pf[i] += 1
+                    for i, vfs_count in enumerate(per_pf):
+                        if vfs_count <= 0:
+                            continue
+                        pf_pci = pfs[i].pci_address.lspci
+                        vfs = self.nicctl_objs[host.name].create_vfs(pf_pci, vfs_count)
+                        selected_interfaces[host.name].extend(vfs[:vfs_count])
+                        self.register_cleanup(
+                            self.nicctl_objs[host.name],
+                            pf_pci,
+                            interface_type,
+                        )
                 elif interface_type.lower() == "pf":
                     try:
                         selected_interfaces[host.name] = []

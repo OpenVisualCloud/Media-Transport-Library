@@ -36,6 +36,7 @@ def _try_replicas(
     indirect=["media_file"],
     ids=["i1080p60", "i2160p60"],
 )
+@pytest.mark.nightly
 @pytest.mark.refactored
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_video_performance_refactored(

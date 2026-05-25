@@ -7,6 +7,8 @@ import re
 import signal
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
@@ -18,6 +20,32 @@ logger = logging.getLogger(__name__)
 # --test_time starts counting.  Shell timeout and Python wait must account
 # for this worst-case delay when PTP is enabled.
 MTL_PTP_INTERNAL_TIMEOUT = 180
+
+
+@dataclass
+class ProcSpec:
+    """Specification for one process inside a :meth:`Application._run_proc_group` call.
+
+    Attributes:
+        cmd: Shell command to run (already wrapped with ``timeout`` if
+            ``bounded`` is True; ``_run_proc_group`` does NOT wrap).
+        host: Target host connection.
+        label: Human-readable name used in log lines and as a stdout key.
+        bounded: True if the command self-terminates (e.g. wrapped in
+            ``timeout N`` or has its own ``--test_time``). False for
+            indefinitely-running streams that the orchestrator must stop.
+        captured_output: Filled in by :meth:`Application._run_proc_group`
+            after stdout has been read.
+        proc: Filled in by :meth:`Application._run_proc_group` with the
+            live process handle (mfd-connect ``Process``).
+    """
+
+    cmd: str
+    host: object
+    label: str
+    bounded: bool = True
+    captured_output: str = ""
+    proc: object = field(default=None, repr=False)
 
 
 class Application(ABC):
@@ -47,6 +75,19 @@ class Application(ABC):
         # Process lifecycle tracking (set by start_process / stop_process)
         self._process = None
         self._host = None
+        # Per-test output artifacts on the remote host. Subclasses populate
+        # this in ``prepare_execution``; the base class deletes the files
+        # after ``validate_results`` unless ``params['keep_output']`` is True.
+        self._output_files: list[str] = []
+
+    @property
+    def output_files(self) -> list[str]:
+        """Per-test output artifacts produced by the most recent run.
+
+        Tests that pass ``keep_output=True`` can read the path(s) here to
+        feed a follow-up integrity check before cleanup.
+        """
+        return list(self._output_files)
 
     @abstractmethod
     def get_app_name(self) -> str:
@@ -248,7 +289,7 @@ class Application(ABC):
             raise RuntimeError("create_command() must be called before execute_test()")
         framework_name = self.get_app_name()
 
-        # Call framework-specific preparation hook
+        # Framework-specific preparation
         if not is_dual:
             self.prepare_execution(
                 build=build, host=host, interface_setup=interface_setup
@@ -261,122 +302,66 @@ class Application(ABC):
                 build=build, host=rx_host, interface_setup=interface_setup
             )
 
-        # Adjust test_time for PTP synchronization
-        effective_test_time = test_time
-        if self.params.get("enable_ptp", False):
-            ptp_sync_time = self.params.get("ptp_sync_time", 50)
-            effective_test_time += ptp_sync_time
-            logger.info(
-                f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
-            )
-            # Mirror legacy RxTxApp.execute_test: also extend the in-process
-            # ``--test_time`` argument so the application's data window
-            # survives PTP startup. Without this RxTxApp may still be in
-            # PTP sync when the wrapper timeout fires (return code 124).
-            new_cmd, n_subs = re.subn(
-                r"(--test_time\s+)\d+",
-                rf"\g<1>{effective_test_time}",
-                self.command,
-                count=1,
-            )
-            if n_subs:
-                self.command = new_cmd
-
+        effective_test_time, ptp_timeout_budget = self._apply_ptp_extension(test_time)
         wait_timeout = (effective_test_time or 0) + self.params.get(
             "process_timeout_buffer", 90
         )
-
-        ptp_timeout_budget = (
-            MTL_PTP_INTERNAL_TIMEOUT if self.params.get("enable_ptp", False) else 0
-        )
         wait_timeout += ptp_timeout_budget
+        cmd_test_time = effective_test_time + ptp_timeout_budget
 
-        # Single-host execution
+        # Build the netsniff hook (single-host only, fired once after the
+        # primary process starts) so the helper stays oblivious to capture.
+        after_first_start = self._make_netsniff_hook(netsniff) if netsniff else None
+
         if not is_dual:
-            cmd = self.add_timeout(
-                self.command, effective_test_time + ptp_timeout_budget
+            specs = [
+                ProcSpec(
+                    cmd=self.add_timeout(self.command, cmd_test_time),
+                    host=host,
+                    label=framework_name,
+                    bounded=True,
+                )
+            ]
+            self._run_proc_group(
+                specs,
+                build=build,
+                test_time=effective_test_time,
+                proc_wait_timeout=wait_timeout,
+                after_first_start=after_first_start,
             )
-            logger.info(f"[single] Running {framework_name} command: {cmd}")
-            proc = self.start_process(cmd, build, effective_test_time, host)
-            if netsniff:
-                try:
-                    # Wait for PTP sync before starting capture so the
-                    # capture window aligns with the steady-state stream.
-                    if self.params.get("enable_ptp", False):
-                        ptp_sync_time = self.params.get("ptp_sync_time", 50)
-                        logger.info(
-                            f"Waiting {ptp_sync_time}s for PTP sync before netsniff capture"
-                        )
-                        time.sleep(ptp_sync_time)
-                    self._start_netsniff_capture(netsniff)
-                except Exception as e:
-                    logger.warning(f"netsniff capture setup failed: {e}")
-            try:
-                proc.wait(timeout=wait_timeout)
-            except Exception:
-                logger.warning(
-                    f"{framework_name} process wait timed out (continuing to capture output)"
-                )
-            self.last_output = self.capture_stdout(proc, framework_name)
-            self.last_return_code = proc.return_code
-            try:
-                return self.validate_results(fail_on_error=fail_on_error)
-            except AssertionError:
-                if fail_on_error:
-                    raise
-                logger.info(
-                    f"{framework_name} validation failed (fail_on_error=False); returning False"
-                )
-                return False
+            self.last_output = specs[0].captured_output
+            self.last_return_code = self._safe_return_code(specs[0].proc)
+            return self._dispatch_validate(fail_on_error)
 
-        # Dual-host execution (tx self, rx rx_app)
+        # Dual-host: 2 bounded procs across 2 hosts.
         if not rx_app.command:
             raise RuntimeError(
                 "rx_app has no prepared command (call create_command first)"
             )
-        tx_cmd = self.add_timeout(
-            self.command, effective_test_time + ptp_timeout_budget
+        tx_spec = ProcSpec(
+            cmd=self.add_timeout(self.command, cmd_test_time),
+            host=tx_host,
+            label=f"{framework_name}-TX",
+            bounded=True,
         )
-        rx_cmd = rx_app.add_timeout(
-            rx_app.command, effective_test_time + ptp_timeout_budget
+        rx_spec = ProcSpec(
+            cmd=rx_app.add_timeout(rx_app.command, cmd_test_time),
+            host=rx_host,
+            label=f"{rx_app.get_app_name()}-RX",
+            bounded=True,
         )
-        primary_first = tx_first
-        first_cmd, first_host, first_label = (
-            (tx_cmd, tx_host, f"{framework_name}-TX")
-            if primary_first
-            else (rx_cmd, rx_host, f"{rx_app.get_app_name()}-RX")
+        ordered = [tx_spec, rx_spec] if tx_first else [rx_spec, tx_spec]
+        self._run_proc_group(
+            specs=ordered,
+            build=build,
+            test_time=effective_test_time,
+            proc_wait_timeout=wait_timeout,
+            sleep_interval=sleep_interval,
         )
-        second_cmd, second_host, second_label = (
-            (rx_cmd, rx_host, f"{rx_app.get_app_name()}-RX")
-            if primary_first
-            else (tx_cmd, tx_host, f"{framework_name}-TX")
-        )
-        logger.info(f"[dual] Starting first: {first_label} -> {first_cmd}")
-        first_proc = self.start_process(
-            first_cmd, build, effective_test_time, first_host
-        )
-        time.sleep(sleep_interval)
-        logger.info(f"[dual] Starting second: {second_label} -> {second_cmd}")
-        second_proc = self.start_process(
-            second_cmd, build, effective_test_time, second_host
-        )
-        # Wait processes
-        for p, label in [(first_proc, first_label), (second_proc, second_label)]:
-            try:
-                p.wait(timeout=wait_timeout)
-            except Exception:
-                logger.warning(
-                    f"Process {label} wait timeout; capturing partial output"
-                )
-        # Capture outputs
-        if primary_first:
-            self.last_output = self.capture_stdout(first_proc, first_label)
-            rx_app.last_output = rx_app.capture_stdout(second_proc, second_label)
-        else:
-            rx_app.last_output = rx_app.capture_stdout(first_proc, first_label)
-            self.last_output = self.capture_stdout(second_proc, second_label)
-        self.last_return_code = first_proc.return_code
-        rx_app.last_return_code = second_proc.return_code
+        self.last_output = tx_spec.captured_output
+        self.last_return_code = self._safe_return_code(tx_spec.proc)
+        rx_app.last_output = rx_spec.captured_output
+        rx_app.last_return_code = self._safe_return_code(rx_spec.proc)
         try:
             tx_ok = self.validate_results()
             rx_ok = rx_app.validate_results()
@@ -388,6 +373,202 @@ class Application(ABC):
             )
             return False
         return tx_ok and rx_ok
+
+    # ------------------------------------------------- shared orchestration
+    def _apply_ptp_extension(self, test_time: int) -> tuple[int, int]:
+        """Extend ``test_time`` and ``self.command`` for PTP sync overhead.
+
+        Returns ``(effective_test_time, ptp_timeout_budget)``. When PTP is
+        disabled both pass-through; when enabled, ``test_time`` is bumped by
+        ``ptp_sync_time`` and the in-process ``--test_time N`` (if any) is
+        rewritten so the application's data window survives PTP startup
+        (otherwise the wrapper kills it with rc=124 mid-sync).
+        """
+        if not self.params.get("enable_ptp", False):
+            return test_time, 0
+        ptp_sync_time = self.params.get("ptp_sync_time", 50)
+        effective = test_time + ptp_sync_time
+        logger.info(
+            "PTP enabled: added %ds for sync (total: %ds)", ptp_sync_time, effective
+        )
+        new_cmd, n_subs = re.subn(
+            r"(--test_time\s+)\d+",
+            rf"\g<1>{effective}",
+            self.command,
+            count=1,
+        )
+        if n_subs:
+            self.command = new_cmd
+        return effective, MTL_PTP_INTERNAL_TIMEOUT
+
+    def _make_netsniff_hook(self, netsniff) -> Callable:
+        """Return a ``after_first_start`` callback that arms netsniff capture.
+
+        Waits for PTP sync (when enabled) before starting capture so the
+        capture window aligns with the steady-state stream.
+        """
+
+        def _hook(_first_proc) -> None:
+            try:
+                if self.params.get("enable_ptp", False):
+                    ptp_sync_time = self.params.get("ptp_sync_time", 50)
+                    logger.info(
+                        "Waiting %ds for PTP sync before netsniff capture",
+                        ptp_sync_time,
+                    )
+                    time.sleep(ptp_sync_time)
+                self._start_netsniff_capture(netsniff)
+            except Exception as e:
+                logger.warning("netsniff capture setup failed: %s", e)
+
+        return _hook
+
+    def _dispatch_validate(self, fail_on_error: bool) -> bool:
+        """Run :meth:`validate_results` with consistent soft-fail semantics."""
+        try:
+            return self.validate_results(fail_on_error=fail_on_error)
+        except AssertionError:
+            if fail_on_error:
+                raise
+            logger.info(
+                "%s validation failed (fail_on_error=False); returning False",
+                self.get_app_name(),
+            )
+            return False
+
+    def _run_proc_group(
+        self,
+        specs: list[ProcSpec],
+        *,
+        build: str,
+        test_time: int,
+        sleep_interval: float = 0,
+        wall_clock_seconds: Optional[float] = None,
+        proc_wait_timeout: Optional[float] = None,
+        cleanup_host=None,
+        after_first_start: Optional[Callable] = None,
+    ) -> list[ProcSpec]:
+        """Start a group of processes, wait, stop, capture stdout. Generic.
+
+        Two waiting strategies, picked by the caller:
+
+        * ``wall_clock_seconds`` set: the orchestrator sleeps that long, then
+          tears every spec down (used by FFmpeg whose RX/TX streams never
+          self-terminate).
+        * ``proc_wait_timeout`` set: each ``bounded=True`` spec is awaited
+          with that timeout (used by RxTxApp/Gstreamer whose commands carry
+          their own ``timeout N`` shell wrapper).
+
+        For each spec, ``cmd`` must already be timeout-wrapped if ``bounded``.
+        Stdout is read inside ``finally`` and assigned to ``spec.captured_output``;
+        the live process handle is left on ``spec.proc``.
+
+        ``after_first_start(first_proc)`` runs once after the first spec
+        starts — used to arm netsniff capture without the helper having to
+        know about it.
+
+        Side effects on ``self``: ``self._process`` is set to the first
+        spec's process while the group runs (so legacy hooks that introspect
+        it still work) and cleared in the finally block.
+        """
+        framework_name = self.get_app_name()
+        try:
+            for idx, spec in enumerate(specs):
+                if idx and sleep_interval:
+                    time.sleep(sleep_interval)
+                logger.info(
+                    "[%s] Starting %s: %s", framework_name, spec.label, spec.cmd
+                )
+                spec.proc = self.start_process(spec.cmd, build, test_time, spec.host)
+                if idx == 0:
+                    self._process = spec.proc
+                    self._host = spec.host
+                    if after_first_start is not None:
+                        after_first_start(spec.proc)
+
+            if wall_clock_seconds is not None:
+                logger.info(
+                    "[%s] Running for %ds (wall clock)",
+                    framework_name,
+                    wall_clock_seconds,
+                )
+                time.sleep(wall_clock_seconds)
+            else:
+                for spec in specs:
+                    if not spec.bounded:
+                        continue
+                    try:
+                        spec.proc.wait(timeout=proc_wait_timeout)
+                    except Exception:
+                        logger.warning(
+                            "[%s] %s wait timed out; capturing partial output",
+                            framework_name,
+                            spec.label,
+                        )
+        finally:
+            # Unbounded specs need an explicit stop ladder; bounded specs
+            # already exited (timeout wrapper or proc.wait above).
+            for spec in specs:
+                if not spec.bounded and spec.proc is not None:
+                    self._stop_unbounded_proc(spec.proc, spec.label)
+            if cleanup_host is not None:
+                # Drains every comm alias in MTL_APP_NAMES (incl. DPDK-renamed
+                # RxTxApp_main). Single call covers ffmpeg + RxTxApp orphans.
+                kill_stale_processes(cleanup_host)
+            for spec in specs:
+                spec.captured_output = self.capture_stdout(spec.proc, spec.label)
+            self._process = None
+        return specs
+
+    def _stop_unbounded_proc(self, proc, label: str) -> None:
+        """SIGINT → SIGKILL ladder for indefinitely-running processes.
+
+        Reuses :meth:`_signal_and_wait` so DPDK applications get a chance to
+        run ``rte_eal_cleanup()`` before being force-killed (otherwise the
+        VFIO group fd leaks and ``nicctl disable_vf`` blocks).
+
+        After SIGKILL, the kernel takes a moment to reap the process and the
+        SSH-side ``proc.running`` poll may still return True briefly; we wait
+        a few seconds so subsequent ``return_code`` reads do not raise
+        :class:`mfd_connect.exceptions.RemoteProcessInvalidState`.
+        """
+        if proc is None:
+            return
+        graceful_s = self.params.get("stop_graceful_s", 10)
+        if self._signal_and_wait(proc, signal.SIGINT, graceful_s):
+            return
+        logger.info(
+            "[%s] %s did not exit on SIGINT after %ds; sending SIGKILL",
+            self.get_app_name(),
+            label,
+            graceful_s,
+        )
+        # _signal_and_wait already polls until the process exits, so use it
+        # for SIGKILL as well rather than fire-and-forget kill().
+        if not self._signal_and_wait(
+            proc, signal.SIGKILL, self.params.get("stop_term_s", 5)
+        ):
+            logger.warning(
+                "[%s] %s still running after SIGKILL; return_code may be unavailable",
+                self.get_app_name(),
+                label,
+            )
+
+    def _cleanup_output_files(self, host) -> None:
+        """Delete tracked per-test output files unless ``keep_output=True``.
+
+        Subclasses populate ``self._output_files`` (e.g. in
+        ``prepare_execution``) and call this from ``validate_results`` when
+        the artifacts are no longer needed for downstream checks.
+        """
+        if self.params.get("keep_output"):
+            return
+        if not self._output_files or host is None:
+            return
+        try:
+            run(f"rm -f {' '.join(self._output_files)}", host=host)
+        except Exception as exc:  # pragma: no cover -- best-effort
+            logger.info("Could not remove RX output files: %s", exc)
 
     def add_timeout(self, command: str, test_time: int, grace: int = None) -> str:
         """Wrap command with timeout if test_time provided.
@@ -512,6 +693,21 @@ class Application(ABC):
             kill_stale_processes(target_host)
             self._wait_vfio_idle(target_host, vfio_idle_s)
 
+    @staticmethod
+    def _safe_return_code(proc) -> int | None:
+        """Return ``proc.return_code`` or ``None`` if it is not yet available.
+
+        ``mfd_connect``'s ``return_code`` property raises
+        :class:`RemoteProcessInvalidState` while the process is still running,
+        and ``getattr(proc, 'return_code', None)`` does *not* swallow it.
+        """
+        if proc is None:
+            return None
+        try:
+            return proc.return_code
+        except Exception:  # incl. RemoteProcessInvalidState
+            return None
+
     def _signal_and_wait(self, proc, sig, timeout_s: float) -> bool:
         """Send signal to *proc* and poll until exit or timeout. Returns True if exited."""
         try:
@@ -572,7 +768,9 @@ class Application(ABC):
         try:
             output = process.stdout_text or ""
             if output:
-                logger.debug(f"{process_name} output: {output[:200]}...")
+                logger.debug(
+                    f"{process_name} output (full, {len(output)} chars):\n{output}"
+                )
             return output
         except AttributeError:
             logger.error(

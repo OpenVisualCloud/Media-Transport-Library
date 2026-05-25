@@ -255,6 +255,9 @@ def execute_test(
     # When caller pre-converted the source to a non-default pix_fmt (typical
     # for integrity tests), skip the fps filter so frames stay byte-identical.
     tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
+    # Non-default pix_fmts have a slower TX warmup; bump RX init_retry so the
+    # receiver does not give up before TX starts pacing. Capped at 60 by plugin.
+    init_retry = 20 if pix_fmt == "yuv422p10le" else 60
     match output_format:
         case "yuv":
             ffmpeg_rx_f_flag = "-f rawvideo"
@@ -267,8 +270,8 @@ def execute_test(
             f"-p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-            f"-video_size {video_size} -f mtl_st20p -i k "
-            f"-init_retry 20 "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i k "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
         if tx_is_ffmpeg:
@@ -292,11 +295,13 @@ def execute_test(
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-            f"-video_size {video_size} -f mtl_st20p -i 1 "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
             f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
-            f"-video_size {video_size} -f mtl_st20p -i 2 "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
             f"-map 1:0 {ffmpeg_rx_f_flag} {output_files[1]} -y"
         )

@@ -633,6 +633,19 @@ stage_ffmpeg_plugin() {
 		return 0
 	fi
 	check_only_or_install "ffmpeg-plugin" || return $?
+	# Remove any system-wide FFmpeg / libav* before building our own. A stale
+	# /usr/local install (or distro ffmpeg pulled in by apt deps) will shadow
+	# our .local_install/ffmpeg libs via ld.so.cache, producing "library
+	# configuration mismatch" warnings and AVPixelFormat enum mismatches that
+	# make the mtl_st20p plugin reject most pix_fmts at runtime.
+	log "ffmpeg-plugin: purging any pre-existing system ffmpeg / libav*"
+	apt-get remove -y --purge 'ffmpeg' 'libav*-dev' 'libsw*-dev' 2>/dev/null || true
+	rm -f /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/ffplay
+	rm -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so*
+	rm -f /usr/local/lib/x86_64-linux-gnu/libav*.so* /usr/local/lib/x86_64-linux-gnu/libsw*.so*
+	rm -rf /usr/local/include/libav* /usr/local/include/libsw*
+	rm -f /usr/local/lib/pkgconfig/libav*.pc /usr/local/lib/pkgconfig/libsw*.pc
+	ldconfig
 	log "ffmpeg-plugin: ecosystem/ffmpeg_plugin/build.sh"
 	(cd ecosystem/ffmpeg_plugin && ./build.sh)
 }

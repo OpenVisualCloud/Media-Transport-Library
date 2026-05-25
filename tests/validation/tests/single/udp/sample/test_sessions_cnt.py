@@ -5,6 +5,8 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import udp_app
 
+pytestmark = pytest.mark.nightly
+
 
 @pytest.mark.parametrize("sessions_cnt", [1, 2, 5, 7])
 def test_udp_sessions_cnt(

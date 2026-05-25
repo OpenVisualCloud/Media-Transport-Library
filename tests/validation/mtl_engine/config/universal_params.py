@@ -139,4 +139,15 @@ UNIVERSAL_PARAMS = {
     "pattern_duration": 30,  # Duration for generated test patterns
     "default_framerate_numeric": 60,  # Fallback numeric framerate
     "ptp_sync_time": 50,  # Seconds to wait for PTP synchronization
+    # Process-stop ladder for unbounded processes (FFmpeg / RxTxApp without
+    # --test_time). Bounded processes use the shell `timeout N cmd` wrapper
+    # and don't consult these.
+    "stop_graceful_s": 10,  # SIGINT grace before SIGTERM
+    "stop_term_s": 5,  # SIGTERM grace before SIGKILL
+    "stop_vfio_idle_s": 15,  # Max wait for /dev/vfio/* refcount to drop
+    # Output file lifecycle. Subclasses that produce per-test artifacts on the
+    # remote host (e.g. FFmpeg RX yuv/h264 dumps) populate ``self._output_files``
+    # in ``prepare_execution``; the base class deletes them after validation
+    # unless ``keep_output=True``.
+    "keep_output": False,
 }
