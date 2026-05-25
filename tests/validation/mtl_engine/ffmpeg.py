@@ -580,6 +580,8 @@ class FFmpeg(Application):
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 2)
             elif mode in (_MODE_ST22P, _MODE_ST30P):
                 # Basic validation: output file exists and is non-empty.
+                # Do NOT clean up here — the caller's integrity runner owns
+                # the file lifetime (delete_file=True in the runner).
                 out_file = self._output_files[0] if self._output_files else None
                 if not out_file:
                     self._fail_validation(
@@ -593,7 +595,6 @@ class FFmpeg(Application):
                 passed = file_size > 0
                 if not passed:
                     logger.error(f"{mode}: output file is empty: {out_file}")
-                self._cleanup_output_files(host)
             else:
                 self._fail_validation(f"Unknown mode {mode}", fail_on_error)
                 return False
