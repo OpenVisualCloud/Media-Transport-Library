@@ -338,13 +338,16 @@ class FFmpeg(Application):
         input_file = self.params.get("input_file") or self.params.get("audio_url")
         udp_port = 30000
 
-        # Map RxTxApp format names → FFmpeg pcm codec / format strings.
+        # Map RxTxApp format names → FFmpeg pcm codec / format strings / muxer.
+        # The mtl_st30p muxer is PCM24-only; for PCM16 use mtl_st30p_pcm16.
         fmt_map = {
-            "PCM24": ("s24be", "pcm24"),
-            "PCM16": ("s16be", "pcm16"),
-            "PCM8": ("s8", "pcm8"),
+            "PCM24": ("s24be", "pcm24", "mtl_st30p"),
+            "PCM16": ("s16be", "pcm16", "mtl_st30p_pcm16"),
+            "PCM8": ("s8", "pcm8", "mtl_st30p"),
         }
-        ff_fmt, pcm_fmt = fmt_map.get(audio_format, ("s24be", "pcm24"))
+        ff_fmt, pcm_fmt, tx_muxer = fmt_map.get(
+            audio_format, ("s24be", "pcm24", "mtl_st30p")
+        )
 
         # Map sampling rate string → numeric Hz.
         sr_map = {"48kHz": 48000, "96kHz": 96000, "44.1kHz": 44100}
@@ -373,7 +376,7 @@ class FFmpeg(Application):
         ptime_map = {"1": "1ms", "0.12": "125us", "0.125": "125us", "125us": "125us"}
         ptime_str = ptime_map.get(str(audio_ptime), "1ms")
 
-        # TX: raw audio → mtl_st30p muxer
+        # TX: raw audio → mtl_st30p muxer (format-specific)
         self._tx_commands = [
             f"{FFMPEG_EXE} -stream_loop -1 "
             f"-f {ff_fmt} -ar {sample_rate} -ac {channels} "
@@ -382,7 +385,7 @@ class FFmpeg(Application):
             f"-p_tx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port {udp_port} -payload_type 111 "
             f"-ptime {ptime_str} "
-            f"-f mtl_st30p -"
+            f"-f {tx_muxer} -"
         ]
 
         # RX: mtl_st30p demuxer → raw audio output
