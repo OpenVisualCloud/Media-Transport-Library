@@ -166,8 +166,11 @@ static struct upl_ctx* upl_create_ctx(bool child) {
   if (child) {
     struct upl_ctx* parent = upl_get_ctx();
     /* copy the fd from master, todo: copy the only reuse fd */
+    uint32_t copy_nb = parent->upl_entires_nb < ctx->upl_entires_nb
+                           ? parent->upl_entires_nb
+                           : ctx->upl_entires_nb;
     memcpy(ctx->upl_entires, parent->upl_entires,
-           sizeof(*ctx->upl_entires) * ctx->upl_entires_nb);
+           sizeof(*ctx->upl_entires) * copy_nb);
   }
   info("%s, succ %s pid %u ctx %p\n", __func__, child ? "child" : "parent", ctx->pid,
        ctx);
