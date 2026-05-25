@@ -55,6 +55,9 @@ dkms.conf
 .*
 !.github/
 !.github/**
+!.vscode/
+.vscode/*
+!.vscode/mcp.json
 *.log
 *.log_*
 logs_*
