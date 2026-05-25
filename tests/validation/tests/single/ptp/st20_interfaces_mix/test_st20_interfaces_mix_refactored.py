@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-"""Refactored PTP + interface-mix ST20P test (new RxTxApp API).
-
-Single-session ST2110-20 video with PTP enabled, optional pcap capture, and
-an out-of-band ``FileVideoIntegrityRunner`` post-check (kept identical to the
-legacy test).
-"""
+"""PTP + interface-mix ST20P test using unified app_factory pattern."""
 import logging
 
 import pytest
@@ -50,21 +45,9 @@ def test_st20_interfaces_mix_refactored(
     pcap_capture,
     media_file,
     output_files,
-    application,
+    app_factory,
 ):
-    """Refactored test for st20 interfaces mix.
-
-    :param hosts: Mapping of host objects from the topology configuration.
-    :param mtl_path: Path to the MTL build directory on the remote host.
-    :param setup_interfaces: Interface setup helper for NIC / VF configuration.
-    :param test_time: Duration to run the streaming pipeline, in seconds.
-    :param interface_profile: Parametrized NIC profile (``vf_only`` or ``pf_tx_vf_rx``).
-    :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
-    :param media_file: Parametrized media file fixture (info dict, file path).
-    :param output_files: Helper that registers RX-output files for cleanup.
-    :param application: Media application driver fixture (currently ``RxTxApp``).
-    """
+    """Test st20p streaming with PTP across different interface profiles."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     # PTP sync (+10s in RxTxApp), pcap capture, and large RX file caps
@@ -90,7 +73,8 @@ def test_st20_interfaces_mix_refactored(
         )
     )
 
-    application.create_command(
+    app = app_factory("rxtxapp")
+    app.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -106,7 +90,7 @@ def test_st20_interfaces_mix_refactored(
         test_time=test_time,
     )
 
-    application.execute_test(
+    app.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
