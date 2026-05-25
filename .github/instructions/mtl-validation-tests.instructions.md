@@ -18,11 +18,15 @@ findmnt -no SOURCE /mnt/media 2>/dev/null || echo NFS_MISSING
 modinfo -n ice    # must be /lib/modules/<kver>/updates/... not /kernel/...
 ```
 
-A full probe of every setup stage without modifying the host:
+A probe of pytest-specific setup stages without modifying the host:
 
 ```bash
 CHECK_ONLY=1 bash .github/scripts/setup_validation.sh
 ```
+
+Broad host setup is now handled by MCP tool `setup_validation_base`
+(apt/DPDK/ICE/MTL/hugepages/CPU governor/plugins). The script keeps only
+pytest-custom stages (NFS, localhost SSH to root, validation venv, configs).
 
 Anything missing or wrong → delegate to the `MTL Validation Setup` subagent. Same for runtime
 failures that the table below tags as **(setup)**.
