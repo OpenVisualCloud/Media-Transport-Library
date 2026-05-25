@@ -1,7 +1,7 @@
 ---
 description: "Use to one-shot prepare a single Linux host to run the MTL Python pytest framework under tests/validation/. Runs .github/scripts/setup_validation.sh which handles apt + DPDK + ICE + MTL + RxTxApp builds, hugepages, NFS at /mnt/media, passwordless SSH to root@127.0.0.1, venv, and configs/{topology,test}_config.yaml. Optionally builds the in-repo FFmpeg/GStreamer plugins. Always idempotent. DOES NOT run pytest — returns the configs and a recommended selector so the parent agent (.github/instructions/mtl-validation-tests.instructions.md) can run the tests."
 name: "MTL Validation Setup"
-tools: [execute, read, search, edit, todo]
+tools: [execute, read, search, edit, todo, mtl-system-setup/*]
 user-invocable: true
 ---
 

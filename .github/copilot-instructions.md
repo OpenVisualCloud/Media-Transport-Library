@@ -36,6 +36,23 @@ All knowledge lives in: `.github/copilot-docs/mtl-knowledge-base.md`
 
 MTL implements SMPTE ST 2110 for media transport over IP. DPDK-based with HW pacing (Intel E810). Supports ST2110-20 (video), ST2110-22 (compressed video), ST2110-30 (audio), ST2110-40 (ancillary), ST2110-41 (fast metadata).
 
+## MCP Tools
+
+The `mtl-system-setup` MCP server (`.github/mcp/mtl_mcp_server.py`) provides 35+ tools for host management. Tools are prefixed `mcp_mtl-system-se_`. Key workflows:
+
+- **After reboot:** `setup_after_reboot_auto` → handles hugepages + VFs + MtlManager in one step
+- **Run tests:** `run_gtest(gtest_filter="St20p*")` — auto-discovers ports
+- **ICE driver fix:** `ice_driver_rebuild` → `setup_after_reboot_auto` (VFs destroyed!)
+- **Clean rebuild:** `mtl_clean_rebuild`
+- **Diagnose crash:** `dmesg_tail` → `ice_driver_status` → `dpdk_status` → `log_tail`
+
+See `.github/instructions/mtl-system-setup.instructions.md` for full tool inventory and decision trees.
+
+## Agents
+
+- **@MTL System Admin** — Host setup, driver management, test execution (MCP tools only)
+- **@MTL Validation Setup** — Prepare host for pytest validation framework
+
 ## Build & Format
 ```bash
 ./build.sh              # Release build
