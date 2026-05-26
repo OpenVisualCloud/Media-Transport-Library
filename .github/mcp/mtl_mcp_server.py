@@ -19,6 +19,7 @@ import re
 import subprocess
 import textwrap
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -88,12 +89,30 @@ def _run(
 
 
 def _run_output(cmd: list[str] | str, **kw: Any) -> str:
-    """Run and return combined stdout+stderr, never raising on non-zero rc."""
-    r = _run(cmd, check=False, **kw)
-    out = r.stdout
-    if r.stderr:
-        out += "\n" + r.stderr
-    return out.strip()
+    """Run and return combined stdout+stderr, never raising on non-zero rc.
+
+    On timeout, returns whatever output was captured plus a timeout marker.
+    """
+    try:
+        r = _run(cmd, check=False, **kw)
+        out = r.stdout
+        if r.stderr:
+            out += "\n" + r.stderr
+        return out.strip()
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or "") + "\n" + (e.stderr or "")
+        out += f"\n\n*** TIMEOUT after {e.timeout}s ***"
+        return out.strip()
+
+
+def _save_test_log(name: str, content: str) -> Path:
+    """Save test output to a timestamped log file under build/logs/."""
+    log_dir = REPO_ROOT / "build" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"{name}_{ts}.log"
+    log_path.write_text(content)
+    return log_path
 
 
 def _load_versions() -> dict[str, str]:
@@ -460,6 +479,54 @@ def nic_bind_kernel(bdf: str) -> str:
     return f"## Bind to Kernel Driver\n{out}"
 
 
+def _ensure_vfio_permissions() -> str:
+    """Ensure udev rule + group exist and fix /dev/vfio/* permissions."""
+    user = os.environ.get("SUDO_USER", os.environ.get("USER", "root"))
+    notes: list[str] = []
+
+    # Ensure 'vfio' group exists
+    r = _run("getent group 2110", check=False)
+    if r.returncode != 0:
+        _run(["sudo", "groupadd", "-g", "2110", "vfio"])
+        notes.append("Created group 'vfio'")
+
+    # Add user to group
+    _run(["sudo", "usermod", "-aG", "vfio", user], check=False)
+
+    # Ensure udev rule for future devices
+    udev_rule = 'SUBSYSTEM=="vfio", GROUP="vfio", MODE="0660"'
+    udev_path = Path("/etc/udev/rules.d/10-vfio.rules")
+    if not udev_path.is_file() or udev_rule not in udev_path.read_text():
+        _run(f"echo '{udev_rule}' | sudo tee {udev_path}", sudo=False)
+        _run(["sudo", "udevadm", "control", "--reload-rules"])
+        _run(["sudo", "udevadm", "trigger"])
+        notes.append("Installed udev rule")
+
+    # Fix permissions on already-existing /dev/vfio/* devices
+    _run(
+        "sudo chgrp vfio /dev/vfio/* 2>/dev/null;"
+        " sudo chmod 0660 /dev/vfio/* 2>/dev/null",
+        sudo=False,
+        check=False,
+    )
+
+    # Check if current process has vfio group active
+    active_gids = os.getgroups()
+    r = _run("getent group vfio", check=False)
+    if r.returncode == 0:
+        vfio_gid = int(r.stdout.strip().split(":")[2])
+        if vfio_gid not in active_gids:
+            notes.append(
+                "ACTION REQUIRED: Re-login to activate the 'vfio' group. "
+                "1) Run `pkill -f vscode-server` from an external SSH session. "
+                "2) Reconnect VS Code Remote-SSH. "
+                "This is needed because VS Code's remote server inherits "
+                "group membership at startup — 'Reload Window' is not enough"
+            )
+
+    return "; ".join(notes) if notes else ""
+
+
 @mcp.tool()
 def nic_create_vf(bdf: str, trusted: bool = False, vf_count: int = 6) -> str:
     """
@@ -485,14 +552,18 @@ def nic_create_vf(bdf: str, trusted: bool = False, vf_count: int = 6) -> str:
     # List resulting VFs
     vf_list = _run_output(f"sudo bash {NICCTL} list {bdf}")
 
-    # Check VFIO permissions
+    # Ensure VFIO devices are accessible to the current user
+    perm_notes = _ensure_vfio_permissions()
+
+    # Verify permissions
     vfio_perms = _run_output("ls -l /dev/vfio/ 2>/dev/null | head -10")
 
     return (
         f"## Create {'Trusted ' if trusted else ''}VFs on {bdf}\n{out}\n\n"
         f"## VF BDFs\n```\n{vf_list}\n```\n\n"
         f"## VFIO Devices\n```\n{vfio_perms}\n```\n\n"
-        f"**Remember these VF BDFs** — use them as interface names in JSON configs."
+        + (f"## VFIO Permissions\n{perm_notes}\n\n" if perm_notes else "")
+        + "**Remember these VF BDFs** — use them as interface names in JSON configs."
     )
 
 
@@ -613,42 +684,23 @@ def vfio_setup() -> str:
     """
     Set up VFIO permissions for non-root DPDK usage.
 
-    Creates the 'vfio' group (GID 2110), adds current user, and
-    installs udev rules so /dev/vfio/* devices are group-accessible.
-    Requires re-login after first run.
+    Creates the 'vfio' group (GID 2110), adds current user,
+    installs udev rules, and fixes existing /dev/vfio/* permissions.
+    Also called automatically by nic_create_vf.
     """
-    steps: list[str] = []
+    notes = _ensure_vfio_permissions()
     user = os.environ.get("SUDO_USER", os.environ.get("USER", "root"))
-
-    # Check if group exists
-    r = _run("getent group 2110", check=False)
-    if r.returncode != 0:
-        _run(["sudo", "groupadd", "-g", "2110", "vfio"])
-        steps.append("Created group 'vfio' (GID 2110)")
-    else:
-        steps.append("Group 'vfio' (GID 2110) already exists")
-
-    # Add user to group
-    _run(["sudo", "usermod", "-aG", "vfio", user])
-    steps.append(f"Added user '{user}' to group 'vfio'")
-
-    # udev rule
-    udev_rule = 'SUBSYSTEM=="vfio", GROUP="vfio", MODE="0660"\n'
-    udev_path = Path("/etc/udev/rules.d/10-vfio.rules")
-    if udev_path.is_file() and udev_rule.strip() in udev_path.read_text():
-        steps.append("udev rule already in place")
-    else:
-        _run(f"echo '{udev_rule.strip()}' | sudo tee {udev_path}", sudo=False)
-        _run(["sudo", "udevadm", "control", "--reload-rules"])
-        _run(["sudo", "udevadm", "trigger"])
-        steps.append(f"Installed udev rule at {udev_path} and reloaded")
-
-    # Check current groups
     groups = _run_output(f"groups {user}")
-    steps.append(f"Current groups for {user}: {groups}")
 
+    steps: list[str] = []
+    if notes:
+        steps.append(notes)
+    steps.append(f"Current groups for {user}: {groups}")
     if "vfio" not in groups:
         steps.append("⚠ Re-login required for group membership to take effect")
+
+    vfio_perms = _run_output("ls -l /dev/vfio/ 2>/dev/null | head -10")
+    steps.append(f"VFIO devices:\n```\n{vfio_perms}\n```")
 
     return "## VFIO Setup\n" + "\n".join(f"- {s}" for s in steps)
 
@@ -1376,7 +1428,7 @@ def run_gtest(
     if gtest_filter:
         cmd_parts.append(f"--gtest_filter={gtest_filter}")
 
-    out = _run_output(cmd_parts, sudo=True, timeout=timeout_seconds)
+    out = _run_output(cmd_parts, timeout=timeout_seconds)
 
     # Parse results
     passed = 0
@@ -1404,11 +1456,15 @@ def run_gtest(
     cmd_display = " ".join(cmd_parts)
     summary = (
         f"## GTest Results\n"
-        f"- Command: `sudo {cmd_display}`\n"
+        f"- Command: `{cmd_display}`\n"
         f"- Total: {total}, Passed: {passed}, Failed: {failed}\n"
     )
     if failures:
         summary += "\n### Failed Tests\n" + "\n".join(f"- {f}" for f in failures)
+
+    # Save full log
+    log_path = _save_test_log("gtest", out)
+    summary += f"\n- Full log: `{log_path}`"
 
     # Include last 40 lines for context
     tail = "\n".join(out.splitlines()[-40:])
@@ -1421,23 +1477,26 @@ def run_noctx_tests(
     port_2: str = "",
     port_3: str = "",
     port_4: str = "",
+    gtest_filter: str = "",
     timeout_seconds: int = 600,
+    cooldown_seconds: int = 10,
 ) -> str:
     """
     Run MTL no-context (noctx) integration tests.
 
-    These tests require 4 ports and run serially with 10s cooldown between tests.
+    Each NoCtxTest case is run in its own KahawaiTest process because DPDK EAL
+    cannot be re-initialised within a single process. The tool enumerates the
+    test names that match `gtest_filter` via `--gtest_list_tests` and then
+    invokes one process per test, sleeping `cooldown_seconds` between them
+    (mirrors tests/integration_tests/noctx/run.sh).
 
     Args:
-        port_1: First VF BDF. Auto-discovered if empty.
-        port_2: Second VF BDF. Auto-discovered if empty.
-        port_3: Third VF BDF. Auto-discovered if empty.
-        port_4: Fourth VF BDF. Auto-discovered if empty.
-        timeout_seconds: Max seconds (default 600).
+        port_1..port_4: VF BDFs. Auto-discovered (vfio-pci) if any are empty.
+        gtest_filter: Gtest filter scoped to NoCtxTest (e.g. '*nonsplit*' or
+                      'NoCtxTest.st40i_*'). All NoCtxTest cases if empty.
+        timeout_seconds: Max seconds per individual test process (default 600).
+        cooldown_seconds: Sleep between tests (default 10).
     """
-    run_sh = REPO_ROOT / "tests/integration_tests/noctx/run.sh"
-    if not run_sh.is_file():
-        return "Error: tests/integration_tests/noctx/run.sh not found"
 
     # Auto-discover
     if not all([port_1, port_2, port_3, port_4]):
@@ -1470,41 +1529,102 @@ def run_noctx_tests(
         if err:
             return f"Error: {label} — {err}"
 
-    env_vars = {
-        "TEST_PORT_1": port_1,
-        "TEST_PORT_2": port_2,
-        "TEST_PORT_3": port_3,
-        "TEST_PORT_4": port_4,
-    }
-    out = _run_output(
-        f"bash {run_sh}",
-        env=env_vars,
-        timeout=timeout_seconds,
-    )
+    # Sanitize gtest_filter
+    if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
+        return "Error: invalid gtest_filter characters"
 
-    # Parse pass/fail from output
-    passed = failed = 0
-    for line in out.splitlines():
-        stripped = line.strip()
-        m = re.search(r"\[\s+PASSED\s+\]\s+(\d+)", stripped)
-        if m:
-            passed = int(m.group(1))
-        m = re.search(r"\[\s+FAILED\s+\]\s+(\d+)", stripped)
-        if m:
-            failed = int(m.group(1))
+    binary = REPO_ROOT / "build/tests/KahawaiTest"
+    if not binary.is_file():
+        return "Error: KahawaiTest not built. Run `build_mtl` first."
 
-    status = (
-        "PASSED"
-        if failed == 0 and out.strip()
-        else "FAILED" if failed > 0 else "UNKNOWN"
+    port_list = f"{port_1},{port_2},{port_3},{port_4}"
+
+    # Default to all NoCtxTest cases; scope user filter to NoCtxTest.*
+    if not gtest_filter:
+        list_filter = "NoCtxTest.*"
+    elif gtest_filter.startswith("NoCtxTest."):
+        list_filter = gtest_filter
+    else:
+        list_filter = f"NoCtxTest.*{gtest_filter}*"
+
+    # Enumerate matching test names (one process per test below)
+    listing = _run_output(
+        f"{binary} --gtest_list_tests --no_ctx"
+        f" --port_list={port_list}"
+        f" --gtest_filter={list_filter}",
+        timeout=60,
     )
-    tail = "\n".join(out.splitlines()[-40:])
+    # Output format: "NoCtxTest.\n  test_a\n  test_b\n"
+    test_names: list[str] = []
+    current_suite = ""
+    for raw in listing.splitlines():
+        if not raw or raw.startswith(("DISABLED", "Note:")):
+            continue
+        if not raw.startswith(" "):
+            current_suite = raw.strip().rstrip(".")
+        else:
+            name = raw.strip()
+            if name and current_suite == "NoCtxTest":
+                test_names.append(name)
+
+    if not test_names:
+        return (
+            f"Error: no NoCtxTest cases matched filter '{list_filter}'.\n"
+            f"Listing output:\n{listing}"
+        )
+
+    # Run each test in its own process; collect per-test results
+    sections: list[str] = []
+    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
+    for idx, name in enumerate(test_names):
+        full = f"NoCtxTest.{name}"
+        out = _run_output(
+            f"{binary} --auto_start_stop"
+            f" --port_list={port_list}"
+            f" --gtest_filter={full}"
+            f" --no_ctx_tests",
+            timeout=timeout_seconds,
+        )
+        if "*** TIMEOUT" in out:
+            status = "TIMEOUT"
+        elif re.search(r"\[\s+PASSED\s+\]\s+1\s+test", out):
+            status = "PASS"
+        else:
+            status = "FAIL"
+        results.append((name, status))
+        sections.append(f"===== {full}: {status} =====\n{out}\n")
+        if idx < len(test_names) - 1 and cooldown_seconds > 0:
+            time.sleep(cooldown_seconds)
+
+    combined = "\n".join(sections)
+    log_path = _save_test_log("noctx", combined)
+
+    passed = sum(1 for _, s in results if s == "PASS")
+    failed = sum(1 for _, s in results if s != "PASS")
+    status = "PASSED" if failed == 0 else "FAILED"
+
+    per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
+    last_failure = ""
+    for name, st in results:
+        if st != "PASS":
+            for sec in sections:
+                if sec.startswith(f"===== NoCtxTest.{name}:"):
+                    tail = "\n".join(sec.splitlines()[-30:])
+                    last_failure = (
+                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
+                        f"```\n{tail}\n```"
+                    )
+                    break
+            break
+
     return (
         f"## Noctx Test Results\n"
         f"- Status: {status}\n"
         f"- Ports: {port_1}, {port_2}, {port_3}, {port_4}\n"
-        f"- Passed: {passed}, Failed: {failed}\n"
-        f"\n### Output (last 40 lines)\n```\n{tail}\n```"
+        f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
+        f"- Full log: `{log_path}`\n"
+        f"\n### Per-test results\n{per_test}\n"
+        f"{last_failure}"
     )
 
 

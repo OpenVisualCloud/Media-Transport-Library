@@ -774,7 +774,12 @@ Key CLI flags: `--p_port`, `--r_port`, `--log_level`, `--level` (all/mandatory),
 - **Level filtering**: `MANDATORY` always runs; `ALL` needs `--level all`
 
 #### Noctx Tests (`tests/integration_tests/noctx/`)
-Tests needing isolated `mtl_init`/`mtl_uninit` per test. Run via `noctx/run.sh` (serial, 10s cooldown). Requires 4 ports.
+Tests needing isolated `mtl_init`/`mtl_uninit` per test. DPDK EAL cannot
+re-init within one process, so each `NoCtxTest.*` case is run in its own
+`KahawaiTest` subprocess. `noctx/run.sh` enumerates cases via
+`--gtest_list_tests` and loops; the MCP `run_noctx_tests` tool does the same
+(accepts filters that match many cases). Requires 4 ports, 10s cooldown
+between processes.
 
 ### Fuzz Tests (`tests/fuzz/`)
 
