@@ -69,12 +69,24 @@ Key env vars: `TEST_PORT_1..4`, `TEST_DMA_PORT_P`, `TEST_DMA_PORT_R`, `NIGHTLY=1
 
 ## Noctx Tests
 
-Separate tests requiring 4 ports, run serially with 10s cooldown:
+Separate `NoCtxTest.*` suite that needs isolated `mtl_init`/`mtl_uninit`. DPDK
+EAL cannot be re-initialised inside a single process, so **each test case must
+run in its own KahawaiTest process**. Never pass a filter that matches multiple
+NoCtxTest cases to a single `KahawaiTest` invocation — the second case will
+fail with `dev_eal_init, eal not support re-init`.
+
+Requires 4 VF ports. Run serially with a cooldown (10s) between processes:
+
 ```bash
 TEST_PORT_1=... TEST_PORT_2=... TEST_PORT_3=... TEST_PORT_4=... \
   bash tests/integration_tests/noctx/run.sh
 ```
-Or use MCP tool: `run_noctx_tests()`
+
+`run.sh` enumerates `NoCtxTest.*` via `--gtest_list_tests` and spawns one
+process per test. The MCP tool `run_noctx_tests(gtest_filter=...)` does the
+same enumeration + one-process-per-test loop; it accepts filters that resolve
+to many cases (e.g. `*nonsplit*`, `NoCtxTest.st40i_*`) and reports per-test
+pass/fail.
 
 ## Interpreting Results
 
