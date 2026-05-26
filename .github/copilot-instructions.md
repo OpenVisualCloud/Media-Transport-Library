@@ -1,64 +1,34 @@
 # Media Transport Library (MTL) - Copilot Instructions
 
-## ⚠️ MANDATORY AGENT WORKFLOW — READ THIS FIRST
-
-This file and `.github/copilot-docs/mtl-knowledge-base.md` are **persistent long-term memory** for agents.
-
-### Before Starting
-1. **Read this file fully** before writing or modifying any code.
-2. **Read `.github/copilot-docs/mtl-knowledge-base.md`** — it is the single consolidated reference covering architecture, threading, memory, concurrency, pacing, sessions, DPDK patterns, and testing. Read the relevant §sections for your task.
-3. **Do not guess** about patterns, conventions, or internal APIs — check the knowledge base first.
-
-### While Working
-4. **Fix doc inconsistencies on sight.** If anything is outdated vs the actual codebase — fix it immediately.
-5. **Save new knowledge.** Write non-obvious discoveries into `mtl-knowledge-base.md` under the appropriate §section.
-6. **Keep it compressed.** Bullet points over prose. Tables over paragraphs. Only store what saves a future agent significant time.
-7. **Save conclusions, not descriptions.** Design decisions, invariants, gotchas — not struct fields obvious from headers.
-
-### §Section Quick Reference
-
-All knowledge lives in: `.github/copilot-docs/mtl-knowledge-base.md`
-
-| Task area | §Section |
-|-----------|----------|
-| Design patterns, naming, coding rules, end-to-end flow | §1 Architecture & Design Philosophy |
-| Threads, schedulers, tasklets, lcore, sleep | §2 Threading & Scheduler |
-| malloc, free, mempools, frames, DMA, NUMA | §3 Memory Management |
-| Locks, mutexes, spinlocks, atomics, races | §4 Concurrency & Locking |
-| Pacing, PTP, TSC, rate limiter, VRX, USDT | §5 Pacing, Timing & Performance |
-| Session create/destroy, pipelines, TX/RX data flow, RTCP, slots | §6 Session Lifecycle & Data Flow |
-| DPDK APIs, mbufs, queues, flow rules, device init, header-split | §7 DPDK Usage Patterns |
-| Tests, gtest, pytest, fuzz, RxTxApp, CI | §8 Testing |
-
----
-
 ## Overview
 
-MTL implements SMPTE ST 2110 for media transport over IP. DPDK-based with HW pacing (Intel E810). Supports ST2110-20 (video), ST2110-22 (compressed video), ST2110-30 (audio), ST2110-40 (ancillary), ST2110-41 (fast metadata).
+MTL implements SMPTE ST 2110 for professional media transport over IP. DPDK-based with HW pacing (Intel E810/E830). Supports ST2110-20 (video), ST2110-22 (compressed video), ST2110-30 (audio), ST2110-40 (ancillary), ST2110-41 (fast metadata).
 
-## MCP Tools
+## Production-Quality Bar
 
-The `mtl-system-setup` MCP server (`.github/mcp/mtl_mcp_server.py`) provides 35+ tools for host management. Tools are prefixed `mcp_mtl-system-se_`. Key workflows:
+This is a **client-visible, production repository**. Every change goes through rigorous review.
 
-- **After reboot:** `setup_after_reboot_auto` → handles hugepages + VFs + MtlManager in one step
-- **Run tests:** `run_gtest(gtest_filter="St20p*")` — auto-discovers ports
-- **ICE driver fix:** `ice_driver_rebuild` → `setup_after_reboot_auto` (VFs destroyed!)
-- **Clean rebuild:** `mtl_clean_rebuild`
-- **Diagnose crash:** `dmesg_tail` → `ice_driver_status` → `dpdk_status` → `log_tail`
+- **Performance and maintainability above all** — design the simplest architecture that is fast and easy to understand. Never patch around a problem; find the right solution.
+- **Design before code** — understand the problem, study existing patterns, plan the approach, then implement. Do not start writing code until you can explain why this design is the right one.
+- **Minimal diffs only** — do not add speculative code, convenience wrappers, or refactors beyond what was explicitly requested.
+- **No dead code** — never commit commented-out code, unused helpers, or placeholder stubs.
+- **No gratuitous changes** — do not touch formatting, comments, or variable names in lines you are not modifying for functional reasons.
+- **Each patch must be self-contained** — buildable, testable, and small enough to review in one sitting.
 
-See `.github/instructions/mtl-system-setup.instructions.md` for full tool inventory and decision trees.
+## Always-On Coding Conventions
 
-## Agents
+- **C99 only** in library core (`lib/`). C++ allowed only in tests (gtest).
+- **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_`/`st41_` (media APIs), `st20p_`/`st22p_`/`st30p_` (pipeline APIs).
+- **Error returns**: 0 = success, negative = error. Free resources in reverse allocation order on failure.
+- **Never block in tasklets** — no malloc, no mutex, no sleep, no INFO-level logging in data-plane paths.
+- **Formatting**: `clang-format-14` enforced by CI. Always run `./format-coding.sh` before committing.
+- **Build verification**: Always run `./build.sh` after changes to verify compilation.
+- **Logging**: Use `dbg()`/`info()`/`warn()`/`err()`. Never use `printf`.
+- **Comments**: Short and descriptive. Do not comment obvious code.
 
-- **@MTL System Admin** — Host setup, driver management, test execution (MCP tools only)
-- **@MTL Validation Setup** — Prepare host for pytest validation framework
+## Available Tooling
 
-## Build & Format
-```bash
-./build.sh              # Release build
-./build.sh debug        # Debug build (-O0 -g)
-./build.sh debugonly    # Debug build without ASAN (faster than debug)
-./format-coding.sh      # Format code (requires clang-format-14)
-```
-
-**Always** run `./build.sh` to verify compilation and `./format-coding.sh` to fix formatting before committing. CI rejects improperly formatted code.
+- **MCP Server** (`mtl-system-setup`): 35+ tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
+- **Agents**: "MTL Developer" (code changes), "MTL TDD" (tests-first workflow), "MTL Reviewer" (adversarial code review), "MTL System Admin" (host setup via MCP), "MTL Validation Setup" (pytest framework prep).
+- **Skills**: `/mtl-build` (build + format + verify workflow).
+- **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
