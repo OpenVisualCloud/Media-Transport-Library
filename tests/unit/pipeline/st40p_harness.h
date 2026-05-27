@@ -43,6 +43,11 @@ int ut40p_enqueue_pkt_port_id(ut40p_ctx* ctx, uint16_t seq, uint32_t ts, int mar
 void ut40p_enqueue_burst(ut40p_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
                          int last_marker, enum mtl_session_port port);
 
+/** Enqueue one RTP packet carrying multiple RFC 8331 ANC data packets. */
+int ut40p_enqueue_multi_anc_pkt(ut40p_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                                enum mtl_session_port port, const uint16_t* udw_sizes,
+                                uint8_t anc_count);
+
 /** Call rx_st40p_rtp_ready() once — processes one mbuf from the ring. */
 int ut40p_process(ut40p_ctx* ctx);
 

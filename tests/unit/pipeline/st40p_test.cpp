@@ -8,9 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "mtl_api.h"
 #include "pipeline/st40p_harness.h"
-
-/* ── fixture ───────────────────────────────────────────────────────── */
 
 class St40PipelineRxTest : public ::testing::Test {
  protected:
@@ -35,6 +34,13 @@ class St40PipelineRxTest : public ::testing::Test {
   void enqueue_burst(uint16_t seq_start, int count, uint32_t ts, bool last_marker,
                      enum mtl_session_port port) {
     ut40p_enqueue_burst(ctx_, seq_start, count, ts, last_marker ? 1 : 0, port);
+  }
+
+  int enqueue_multi_anc(uint16_t seq, uint32_t ts, bool marker,
+                        enum mtl_session_port port, const uint16_t* udw_sizes,
+                        uint8_t anc_count) {
+    return ut40p_enqueue_multi_anc_pkt(ctx_, seq, ts, marker ? 1 : 0, port, udw_sizes,
+                                       anc_count);
   }
 
   int process() {
@@ -81,6 +87,66 @@ TEST_F(St40PipelineRxTest, SingleFrameCompletion) {
   EXPECT_TRUE(frame->rtp_marker);
   EXPECT_EQ(frame->status, ST_FRAME_STATUS_COMPLETE);
   put_frame(frame);
+}
+
+/* Multiple ANC data packets carried in a single RTP packet (non-split mode).
+ * Validates that the receiver correctly walks the variable-length per-ANC
+ * payload stride when the 10-bit UDW packing of one or more blocks is not
+ * byte-aligned, and recovers the original metadata and user data words for
+ * every ANC packet in the frame.
+ *
+ * Two size patterns are exercised because a wrong stride manifests
+ * differently depending on what the misread bytes decode to:
+ *   {8, 6, 4} — the misread data_count lands on zero padding, so the
+ *               receiver silently produces an empty meta entry. Caught
+ *               here by the per-byte UDW equality check.
+ *   {6, 6, 6} — the misread data_count decodes to a large value that
+ *               overflows the remaining payload room, surfacing as the
+ *               "ANC packet bytes exceed payload" path and a meta_num
+ *               short of anc_count. */
+TEST_F(St40PipelineRxTest, MultiAncInSingleRtpPacket) {
+  const uint16_t patterns[][3] = {{8, 6, 4}, {6, 6, 6}};
+  const uint8_t anc_count = 3;
+  uint32_t ts = 1000;
+
+  for (const auto& udw_sizes : patterns) {
+    ASSERT_EQ(enqueue_multi_anc(0, ts, true, MTL_SESSION_PORT_P, udw_sizes, anc_count),
+              0);
+    process_all();
+
+    auto* frame = get_frame();
+    ASSERT_NE(frame, nullptr);
+    EXPECT_EQ(frame->rtp_timestamp, ts);
+    EXPECT_EQ(frame->pkts_total, 1u);
+    EXPECT_TRUE(frame->rtp_marker);
+    EXPECT_EQ(frame->status, ST_FRAME_STATUS_COMPLETE);
+    ASSERT_EQ(frame->meta_num, anc_count);
+
+    uint16_t expected_offset = 0;
+    for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
+      const auto& meta = frame->meta[anc_idx];
+      EXPECT_EQ(meta.c, 0u);
+      EXPECT_EQ(meta.line_number, 10u + anc_idx);
+      EXPECT_EQ(meta.hori_offset, 0u);
+      EXPECT_EQ(meta.s, 0u);
+      EXPECT_EQ(meta.stream_num, 0u);
+      EXPECT_EQ(meta.did, 0x45u);
+      EXPECT_EQ(meta.sdid, 0x01u);
+      EXPECT_EQ(meta.udw_size, udw_sizes[anc_idx]);
+      EXPECT_EQ(meta.udw_offset, expected_offset);
+
+      for (uint16_t udw_idx = 0; udw_idx < udw_sizes[anc_idx]; udw_idx++) {
+        uint8_t expected = static_cast<uint8_t>(((anc_idx + 1) * 17 + udw_idx) & 0xff);
+        EXPECT_EQ(frame->udw_buff_addr[expected_offset + udw_idx], expected);
+      }
+
+      expected_offset += udw_sizes[anc_idx];
+    }
+    EXPECT_EQ(frame->udw_buffer_fill, expected_offset);
+    put_frame(frame);
+
+    ts += 1000;
+  }
 }
 
 /* Timestamp change completes the previous frame without marker. */
