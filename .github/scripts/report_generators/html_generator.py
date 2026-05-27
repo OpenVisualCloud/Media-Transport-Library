@@ -2,14 +2,17 @@
 # Copyright(c) 2026 Intel Corporation
 """HTML report generation for MTL nightly test reports."""
 
+import re
 from collections import defaultdict
 from datetime import datetime
 from itertools import groupby
+from math import pi
 
 # Column definitions for test result tables: (header_label, data_key)
 _PYTEST_COLUMNS = [
     ("NIC", "nic"),
     ("Category", "category"),
+    ("Runner", "runner"),
     ("Passed", "passed"),
     ("Failed", "failed"),
     ("Skipped", "skipped"),
@@ -22,6 +25,7 @@ _PYTEST_COLUMNS = [
 _GTEST_COLUMNS = [
     ("NIC", "nic"),
     ("Category", "category"),
+    ("Runner", "runner"),
     ("Passed", "passed"),
     ("Failed", "failed"),
     ("Skipped", "skipped"),
@@ -34,6 +38,28 @@ _REGRESSION_SECTIONS = [
     ("new_failures", "New Failures", "not present in baseline", False, "warning"),
     ("fixes", "Fixes", "previously failing, now passing", True, "success"),
 ]
+
+# SVG donut chart colors
+_CHART_COLORS = {
+    "passed": "#34a853",
+    "failed": "#ea4335",
+    "error": "#8c0c00",
+    "xfailed": "#1a73e8",
+    "skipped": "#f9ab00",
+}
+
+# Application display order
+_APP_ORDER = ["rxtxapp", "ffmpeg", "gstreamer"]
+
+# Statuses that carry displayable log output
+_LOG_STATUSES = ("FAILED", "ERROR", "SKIPPED")
+
+_APPLICATION_RE = re.compile(r"\|application\s*=\s*(\w+)\|")
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def generate_html_report(
@@ -54,14 +80,16 @@ def generate_html_report(
         system_info_section=(
             _generate_system_info(system_info_list) if system_info_list else ""
         ),
-        overall_summary=_generate_summary_cards("Overall Summary", stats["combined"]),
+        overall_summary=_generate_summary_cards(
+            "Overall Summary", stats["combined"], "overall"
+        ),
         pytest_summary=(
-            _generate_summary_cards("Pytest Summary", stats["pytest"])
+            _generate_summary_cards("Pytest Summary", stats["pytest"], "pytest")
             if pytest_data
             else ""
         ),
         gtest_summary=(
-            _generate_summary_cards("GTest Summary", stats["gtest"])
+            _generate_summary_cards("GTest Summary", stats["gtest"], "gtest")
             if gtest_data
             else ""
         ),
@@ -93,17 +121,24 @@ def _calculate_statistics(pytest_data, gtest_data):
                 "passed": 0,
                 "failed": 0,
                 "skipped": 0,
+                "error": 0,
+                "xfailed": 0,
                 "pass_rate": 0,
             }
         passed = sum(d.get("passed", 0) for d in data)
         failed = sum(d.get("failed", 0) for d in data)
+        error = sum(d.get("error", 0) for d in data)
+        xfailed = sum(d.get("xfailed", 0) for d in data)
+        denominator = passed + failed + error + xfailed
         return {
             "total": sum(d.get("total", 0) for d in data),
             "passed": passed,
             "failed": failed,
             "skipped": sum(d.get("skipped", 0) for d in data),
+            "error": error,
+            "xfailed": xfailed,
             "pass_rate": (
-                passed / (passed + failed) * 100 if (passed + failed) > 0 else 0
+                (passed + xfailed) / denominator * 100 if denominator > 0 else 0
             ),
         }
 
@@ -111,6 +146,9 @@ def _calculate_statistics(pytest_data, gtest_data):
     g = _suite_stats(gtest_data)
     cp = p["passed"] + g["passed"]
     cf = p["failed"] + g["failed"]
+    ce = p["error"] + g["error"]
+    cxf = p["xfailed"] + g["xfailed"]
+    denominator = cp + cf + ce + cxf
     return {
         "pytest": p,
         "gtest": g,
@@ -119,23 +157,111 @@ def _calculate_statistics(pytest_data, gtest_data):
             "passed": cp,
             "failed": cf,
             "skipped": p["skipped"] + g["skipped"],
-            "pass_rate": cp / (cp + cf) * 100 if (cp + cf) > 0 else 0,
+            "error": ce,
+            "xfailed": cxf,
+            "pass_rate": (cp + cxf) / denominator * 100 if denominator > 0 else 0,
         },
     }
 
 
 # ---------------------------------------------------------------------------
-# Section generators
+# Summary cards
 # ---------------------------------------------------------------------------
 
 
-def _format_run_datetime(metadata, prefix):
-    """Extract formatted date and time strings from metadata."""
-    raw = metadata.get(f"{prefix}_run_date", "")
-    if not raw:
-        return "N/A", "N/A"
-    parts = raw.split("T")
-    return parts[0], parts[1].rstrip("Z") if len(parts) > 1 else "N/A"
+def _generate_summary_cards(title, stats, section_prefix=""):
+    """Generate a summary card grid. Non-zero failed/error/skipped cards link to details."""
+    rate = stats["pass_rate"]
+    rate_cls = (
+        "card-success"
+        if rate >= 95
+        else "card-warning" if rate >= 80 else "card-danger"
+    )
+
+    def _card(label, value, css_class, status_key=None):
+        inner = (
+            f'<div class="card-label">{label}</div>'
+            f'<div class="card-value">{value}</div>'
+        )
+        card_cls = f"card {css_class}" if css_class else "card"
+        if status_key and section_prefix and int(value) > 0:
+            href = f"#{section_prefix}-{status_key}-details"
+            return (
+                f'<a href="{href}" class="card-link">'
+                f'<div class="{card_cls}">{inner}</div></a>'
+            )
+        return f'<div class="{card_cls}">{inner}</div>'
+
+    return (
+        f'<div class="section"><h2>{title}</h2><div class="card-grid">'
+        + _card("Total Tests", stats["total"], "")
+        + _card("Passed", stats["passed"], "card-success")
+        + _card("Failed", stats["failed"], "card-danger", "failed")
+        + _card("Error", stats.get("error", 0), "card-danger", "error")
+        + _card("Skipped", stats["skipped"], "card-warning", "skipped")
+        + f'<div class="card {rate_cls}"><div class="card-label">Pass Rate</div>'
+        f'<div class="card-value">{rate:.1f}%</div></div>'
+        "</div></div>"
+    )
+
+
+def _generate_status_detail_sections(data, prefix):
+    """Generate collapsible sections listing tests by status (failed/error/skipped)."""
+    status_tests = {"failed": [], "error": [], "skipped": []}
+    for d in data:
+        for tc in d.get("test_cases", []):
+            key = tc.get("result", "").lower()
+            if key in status_tests:
+                status_tests[key].append((d, tc))
+
+    status_meta = [
+        ("failed", "Failed Tests", "toggle-danger"),
+        ("error", "Error Tests", "toggle-danger"),
+        ("skipped", "Skipped Tests", "toggle-warning"),
+    ]
+
+    # Build buttons row and content panels separately
+    buttons = ""
+    panels = ""
+    for status_key, label, btn_cls in status_meta:
+        tests = status_tests[status_key]
+        if not tests:
+            continue
+        section_id = f"{prefix}-{status_key}-details"
+        content_id = f"{section_id}-content"
+        buttons += (
+            f'<button class="toggle-btn {btn_cls}" '
+            f"onclick=\"toggleDetails('{content_id}', this)\" "
+            f'aria-expanded="false">{label} ({len(tests)})</button>'
+        )
+        panels += (
+            f'<div id="{content_id}" class="details">'
+            "<table><thead><tr>"
+            "<th>NIC</th><th>Category</th><th>Test Name</th>"
+            "<th>Duration</th><th>Log</th>"
+            "</tr></thead><tbody>"
+        )
+        for idx, (d, tc) in enumerate(tests):
+            log_id = f"{section_id}-log-{idx}"
+            log_cell = _log_toggle_span(tc, log_id)
+            panels += (
+                f"<tr><td>{d.get('nic', '')}</td>"
+                f"<td>{d.get('category', '')}</td>"
+                f"<td>{tc.get('test_name', '')}</td>"
+                f"<td>{tc.get('duration', '')}</td>"
+                f"<td>{log_cell}</td></tr>"
+            )
+            panels += _log_row(tc, log_id, colspan=5)
+        panels += "</tbody></table></div>"
+
+    if not buttons:
+        return ""
+    return f'<div class="status-buttons-row">{buttons}</div>' f"{panels}"
+
+
+# ---------------------------------------------------------------------------
+# Section generators
+# ---------------------------------------------------------------------------
 
 
 def _generate_test_run_info(test_metadata):
@@ -149,12 +275,17 @@ def _generate_test_run_info(test_metadata):
         branch = test_metadata.get(f"{prefix}_branch")
         if not run_num or not branch:
             continue
-        date, time = _format_run_datetime(test_metadata, prefix)
+        raw = test_metadata.get(f"{prefix}_run_date", "")
+        if raw:
+            parts = raw.split("T")
+            date = parts[0]
+            time = parts[1].rstrip("Z") if len(parts) > 1 else "N/A"
+        else:
+            date, time = "N/A", "N/A"
         url = test_metadata.get(f"{prefix}_run_url")
         link = (
             f'<a href="{url}" target="_blank">#{run_num}</a>' if url else f"#{run_num}"
         )
-        # Baseline column
         bl_num = test_metadata.get(f"baseline_{prefix}_run_number")
         bl_url = test_metadata.get(f"baseline_{prefix}_run_url")
         bl_branch = test_metadata.get(f"baseline_{prefix}_branch", "")
@@ -180,30 +311,6 @@ def _generate_test_run_info(test_metadata):
         "<table><thead><tr><th>Test Suite</th><th>Run</th><th>Branch</th>"
         "<th>Date &amp; Time</th><th>Regression Baseline</th></tr></thead><tbody>"
         f"{rows}</tbody></table></div>"
-    )
-
-
-def _generate_summary_cards(title, stats):
-    """Generate a summary card grid for any test suite."""
-    rate = stats["pass_rate"]
-    rate_cls = (
-        "card-success"
-        if rate >= 95
-        else "card-warning" if rate >= 80 else "card-danger"
-    )
-    return (
-        f'<div class="section"><h2>{title}</h2><div class="card-grid">'
-        f'<div class="card"><div class="card-label">Total Tests</div>'
-        f'<div class="card-value">{stats["total"]}</div></div>'
-        f'<div class="card card-success"><div class="card-label">Passed</div>'
-        f'<div class="card-value">{stats["passed"]}</div></div>'
-        f'<div class="card card-danger"><div class="card-label">Failed</div>'
-        f'<div class="card-value">{stats["failed"]}</div></div>'
-        f'<div class="card card-warning"><div class="card-label">Skipped</div>'
-        f'<div class="card-value">{stats["skipped"]}</div></div>'
-        f'<div class="card {rate_cls}"><div class="card-label">Pass Rate</div>'
-        f'<div class="card-value">{rate:.1f}%</div></div>'
-        "</div></div>"
     )
 
 
@@ -249,7 +356,20 @@ def _generate_regression_section(regression_data):
 
     coverage = regression_data.get("coverage")
     if coverage:
-        html += _generate_coverage_note(coverage)
+        cur = coverage["current_total"]
+        base = coverage["baseline_total"]
+        delta = cur - base
+        sign = "+" if delta > 0 else ""
+        html += (
+            '<div style="margin:10px 0;padding:8px 14px;'
+            "background:#f0f4f8;border-left:4px solid #4a90d9;"
+            'border-radius:4px;font-size:0.92em;color:#333">'
+            f"<strong>Coverage:</strong> current run has <strong>{cur}</strong> "
+            f"tests, baseline had <strong>{base}</strong> ({sign}{delta}). "
+            f"{coverage['common']} in common, {coverage['only_in_current']} new "
+            f"in current, {coverage['only_in_baseline']} absent from current."
+            "</div>"
+        )
 
     for key, label, subtitle, show_baseline, modifier in _REGRESSION_SECTIONS:
         entries = regression_data.get(key, [])
@@ -260,35 +380,14 @@ def _generate_regression_section(regression_data):
             f'<button class="toggle-btn toggle-{modifier}" '
             f"onclick=\"toggleDetails('{detail_id}', this)\" "
             f'aria-expanded="false">{label} ({len(entries)})</button>'
+            f'<div id="{detail_id}" class="details">'
+            f"<h4>{label} &mdash; {subtitle}</h4>"
         )
-        html += f'<div id="{detail_id}" class="details">'
-        html += f"<h4>{label} &mdash; {subtitle}</h4>"
         html += _build_regression_table(entries, show_baseline)
         html += "</div>"
 
     html += "</div>"
     return html
-
-
-def _generate_coverage_note(coverage):
-    """Generate a coverage comparison note for the regression section."""
-    cur = coverage["current_total"]
-    base = coverage["baseline_total"]
-    common = coverage["common"]
-    only_cur = coverage["only_in_current"]
-    only_base = coverage["only_in_baseline"]
-    delta = cur - base
-    sign = "+" if delta > 0 else ""
-    return (
-        '<div style="margin:10px 0;padding:8px 14px;'
-        "background:#f0f4f8;border-left:4px solid #4a90d9;"
-        'border-radius:4px;font-size:0.92em;color:#333">'
-        f"<strong>Coverage:</strong> current run has <strong>{cur}</strong> tests, "
-        f"baseline had <strong>{base}</strong> ({sign}{delta}). "
-        f"{common} in common, {only_cur} new in current, "
-        f"{only_base} absent from current."
-        "</div>"
-    )
 
 
 def _build_regression_table(entries, show_baseline):
@@ -303,13 +402,12 @@ def _build_regression_table(entries, show_baseline):
 
     for idx, e in enumerate(entries):
         log = e.get("log", "")
+        log_id = f"reglog-{e['nic']}-{idx}"
         log_cell = ""
         if log:
-            log_id = f"reglog-{e['nic']}-{idx}"
             log_cell = (
                 f' <span class="log-toggle" '
-                f"onclick=\"toggleDetails('{log_id}', this)\">"
-                f"Show log</span>"
+                f"onclick=\"toggleDetails('{log_id}', this)\">Show log</span>"
             )
         html += (
             f"<tr><td>{e['platform']}</td><td>{e['nic']}</td>"
@@ -326,56 +424,44 @@ def _build_regression_table(entries, show_baseline):
         )
         if log:
             col_span = 6 if show_baseline else 5
-            escaped_log = _escape_html(log)
             html += (
                 f'<tr class="log-row"><td colspan="{col_span}">'
                 f'<pre id="{log_id}" class="log-content">'
-                f"{escaped_log}</pre></td></tr>"
+                f"{_escape_html(log)}</pre></td></tr>"
             )
 
     html += "</tbody></table>"
     return html
 
 
-def _result_class(result):
-    """Return CSS class name for a test result string."""
-    if result and result.lower() in ("passed", "failed", "skipped"):
-        return f"result-{result.lower()}"
-    return ""
-
-
-def _escape_html(text):
-    """Escape HTML special characters in log text."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
 # ---------------------------------------------------------------------------
 # Donut charts
 # ---------------------------------------------------------------------------
 
-# SVG donut chart colors: (key, color)
-_CHART_COLORS = {
-    "passed": "#34a853",
-    "failed": "#ea4335",
-    "skipped": "#f9ab00",
-}
 
+def _svg_donut(passed, failed, skipped, size=100, stroke=14, error=0, xfailed=0):
+    """Return an inline SVG donut chart.
 
-def _svg_donut(passed, failed, skipped, size=100, stroke=14):
-    """Return an inline SVG donut chart with pass/fail/skip segments."""
-    total = passed + failed + skipped
-    if total == 0:
-        return ""
-
+    Shows pass/fail/error/xfailed segments (skipped excluded from chart).
+    Displays (passed+xfailed)/(passed+failed+error+xfailed) as percentage.
+    Renders a grey placeholder when no countable tests exist.
+    """
+    total = passed + failed + error + xfailed
     r = (size - stroke) / 2
-    circ = 2 * 3.14159265 * r
     cx = cy = size / 2
-    rate = passed / (passed + failed) * 100 if (passed + failed) > 0 else 0
+
+    if total == 0:
+        return (
+            f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">'
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
+            f'stroke="#e0e0e0" stroke-width="{stroke}"/>'
+            f'<text x="{cx}" y="{cy}" text-anchor="middle" '
+            f'dominant-baseline="central" '
+            f'font-size="14" font-weight="700" fill="#9aa0a6">N/A</text></svg>'
+        )
+
+    circ = 2 * pi * r
+    rate = (passed + xfailed) / total * 100
     rate_color = "#137333" if rate >= 95 else "#7c6900" if rate >= 80 else "#a50e0e"
 
     segments = []
@@ -383,16 +469,16 @@ def _svg_donut(passed, failed, skipped, size=100, stroke=14):
     for count, color in [
         (passed, _CHART_COLORS["passed"]),
         (failed, _CHART_COLORS["failed"]),
-        (skipped, _CHART_COLORS["skipped"]),
+        (error, _CHART_COLORS["error"]),
+        (xfailed, _CHART_COLORS["xfailed"]),
     ]:
         if count == 0:
             continue
         dash = count / total * circ
-        gap = circ - dash
         segments.append(
             f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
             f'stroke="{color}" stroke-width="{stroke}" '
-            f'stroke-dasharray="{dash:.2f} {gap:.2f}" '
+            f'stroke-dasharray="{dash:.2f} {circ - dash:.2f}" '
             f'stroke-dashoffset="{-offset:.2f}" '
             f'transform="rotate(-90 {cx} {cy})"/>'
         )
@@ -408,32 +494,148 @@ def _svg_donut(passed, failed, skipped, size=100, stroke=14):
     )
 
 
-def _generate_chart_grid(data):
-    """Build a grid of donut charts, one per unique category."""
-    # Aggregate across NICs per category
-    agg = defaultdict(lambda: {"passed": 0, "failed": 0, "skipped": 0, "total": 0})
+def _aggregate_by_nic_category(data):
+    """Aggregate test data counts by (nic, category) key."""
+    agg = defaultdict(
+        lambda: {
+            "passed": 0,
+            "failed": 0,
+            "skipped": 0,
+            "error": 0,
+            "xfailed": 0,
+            "total": 0,
+        }
+    )
     for d in data:
-        cat = d.get("category", "unknown")
-        agg[cat]["passed"] += d.get("passed", 0)
-        agg[cat]["failed"] += d.get("failed", 0)
-        agg[cat]["skipped"] += d.get("skipped", 0)
-        agg[cat]["total"] += d.get("total", 0)
+        key = (d.get("nic", "unknown"), d.get("category", "unknown"))
+        for field in ("passed", "failed", "skipped", "error", "xfailed", "total"):
+            agg[key][field] += d.get(field, 0)
+    return agg
 
-    html = '<div class="chart-grid">'
-    for cat in sorted(agg):
-        s = agg[cat]
-        donut = _svg_donut(s["passed"], s["failed"], s["skipped"])
+
+def _render_chart_items(agg, nic):
+    """Render donut chart items for a single NIC from aggregated data."""
+    html = ""
+    for key in sorted(k for k in agg if k[0] == nic):
+        s = agg[key]
+        donut = _svg_donut(
+            s["passed"],
+            s["failed"],
+            s["skipped"],
+            error=s["error"],
+            xfailed=s["xfailed"],
+        )
         html += (
-            f'<div class="chart-item">'
-            f"<div>{donut}</div>"
-            f'<div class="chart-label">{cat}</div>'
+            f'<div class="chart-item"><div>{donut}</div>'
+            f'<div class="chart-label">{key[1]}</div>'
             f'<div class="chart-counts">'
             f'<span class="cnt-pass">{s["passed"]}</span> / '
             f'<span class="cnt-fail">{s["failed"]}</span> / '
             f'<span class="cnt-skip">{s["skipped"]}</span>'
             f"</div></div>"
         )
-    html += "</div>"
+    return html
+
+
+def _generate_chart_grid(data):
+    """Build a grid of donut charts, one per NIC per category."""
+    agg = _aggregate_by_nic_category(data)
+    nics = sorted(set(k[0] for k in agg))
+    html = ""
+    for nic in nics:
+        html += (
+            f'<h3 style="font-size:13px;color:#366092;margin:12px 0 6px;">'
+            f"{nic.upper()}</h3>"
+            '<div class="chart-grid">'
+        )
+        html += _render_chart_items(agg, nic)
+        html += "</div>"
+    return html
+
+
+# ---------------------------------------------------------------------------
+# Application extraction & charts
+# ---------------------------------------------------------------------------
+
+
+def _extract_application(test_name):
+    """Extract application name from '|application = <name>|' in test name."""
+    m = _APPLICATION_RE.search(test_name)
+    return m.group(1) if m else "unknown"
+
+
+def _split_data_by_application(data):
+    """Split data into per-application groups based on test_cases.
+
+    Returns {app_name: [entries]} with recalculated per-app counts.
+    """
+    app_data = defaultdict(list)
+
+    for d in data:
+        test_cases = d.get("test_cases", [])
+        if not test_cases:
+            app_data["unknown"].append(d)
+            continue
+
+        app_cases = defaultdict(list)
+        for tc in test_cases:
+            app_cases[_extract_application(tc.get("test_name", ""))].append(tc)
+
+        for app, cases in app_cases.items():
+            app_data[app].append(
+                {
+                    "nic": d["nic"],
+                    "category": d["category"],
+                    "runner": d.get("runner", "unknown"),
+                    "application": app,
+                    "passed": sum(1 for tc in cases if tc["result"] == "PASSED"),
+                    "failed": sum(1 for tc in cases if tc["result"] == "FAILED"),
+                    "error": sum(1 for tc in cases if tc["result"] == "ERROR"),
+                    "skipped": sum(1 for tc in cases if tc["result"] == "SKIPPED"),
+                    "xpassed": sum(1 for tc in cases if tc["result"] == "XPASS"),
+                    "xfailed": sum(1 for tc in cases if tc["result"] == "XFAIL"),
+                    "total": len(cases),
+                    "test_cases": cases,
+                }
+            )
+
+    return dict(app_data)
+
+
+def _sorted_app_keys(app_groups):
+    """Sort application keys by preferred order, then alphabetically."""
+    return sorted(
+        app_groups.keys(),
+        key=lambda a: (_APP_ORDER.index(a) if a in _APP_ORDER else 999, a),
+    )
+
+
+def _generate_app_chart_sections(data):
+    """Generate chart sections grouped by Application, then NIC and Category."""
+    app_groups = _split_data_by_application(data)
+    html = ""
+
+    for app in _sorted_app_keys(app_groups):
+        entries = app_groups[app]
+        app_label = app.capitalize() if app != "unknown" else "Other"
+        agg = _aggregate_by_nic_category(entries)
+        nics = sorted(set(k[0] for k in agg))
+
+        html += (
+            f'<div style="margin-bottom:18px;">'
+            f'<h3 style="font-size:14px;color:#366092;margin-bottom:4px;">'
+            f"{app_label}</h3>"
+        )
+        for nic in nics:
+            html += (
+                f'<h4 style="font-size:13px;color:#5f6368;margin:10px 0 6px;">'
+                f"{nic.upper()}</h4>"
+                '<div class="chart-grid">'
+            )
+            html += _render_chart_items(agg, nic)
+            html += "</div>"
+        html += "</div>"
+
     return html
 
 
@@ -442,99 +644,193 @@ def _generate_chart_grid(data):
 # ---------------------------------------------------------------------------
 
 
-def _generate_test_table(data, prefix, columns):
+def _generate_test_table(data, prefix, columns, include_application=False):
     """Generate a test results table grouped by category with NIC breakdown."""
-    col_count = len(columns)
-    html = "<table><thead><tr>"
-    for header, _ in columns:
-        html += f"<th>{header}</th>"
-    html += "</tr></thead><tbody>"
+    if include_application:
+        return _generate_test_table_with_app(data, prefix, columns)
 
-    # Group by category, then by NIC within each category
+    col_count = len(columns)
+    html = _table_header(columns)
+
     sorted_data = sorted(data, key=lambda x: (x["category"], x["nic"]))
     idx = 0
     for category, group in groupby(sorted_data, key=lambda x: x["category"]):
-        entries = list(group)
-        # Category group header row
-        html += (
-            f'<tr class="category-group">'
-            f'<td colspan="{col_count}">{category}</td></tr>'
-        )
-
-        for d in entries:
+        html += _category_header_row(category, col_count)
+        for d in list(group):
             detail_id = f"{prefix}-detail-{idx}"
             idx += 1
-            html += "<tr>"
-            for _, key in columns:
-                val = d.get(key, 0)
-                if key == "category":
-                    html += (
-                        f'<td><span class="category-pill" '
-                        f"onclick=\"toggleDetails('{detail_id}', this)\" "
-                        f'aria-expanded="false">{val}</span></td>'
-                    )
-                else:
-                    html += f"<td>{val}</td>"
-            html += "</tr>"
-
-            test_cases = d.get("test_cases", [])
-            if test_cases:
-                html += (
-                    f'<tr><td colspan="{col_count}">'
-                    f'<div id="{detail_id}" class="details">'
-                    f'<h4>{d["nic"]} &mdash; {d["category"]} &mdash; '
-                    f"Detailed Results</h4>"
-                    "<table><thead><tr><th>Test Name</th><th>Result</th>"
-                    "<th>Duration</th></tr></thead><tbody>"
-                )
-                for tc in sorted(test_cases, key=lambda x: x["test_name"]):
-                    cls = _result_class(tc["result"])
-                    log = tc.get("log", "")
-                    log_cell = ""
-                    if log and tc["result"] in ("FAILED", "ERROR"):
-                        log_id = f"{detail_id}-log-{tc['test_name']}"
-                        log_cell = (
-                            f' <span class="log-toggle" '
-                            f"onclick=\"toggleDetails('{log_id}', this)\">"
-                            f"Show log</span>"
-                        )
-                    html += (
-                        f'<tr><td>{tc["test_name"]}{log_cell}</td>'
-                        f'<td class="{cls}">{tc["result"]}</td>'
-                        f'<td>{tc["duration"]}</td></tr>'
-                    )
-                    if log and tc["result"] in ("FAILED", "ERROR"):
-                        escaped_log = _escape_html(log)
-                        html += (
-                            f'<tr class="log-row"><td colspan="3">'
-                            f'<pre id="{log_id}" class="log-content">'
-                            f"{escaped_log}</pre></td></tr>"
-                        )
-                html += "</tbody></table></div></td></tr>"
+            html += _data_row(d, columns, detail_id)
+            html += _detail_section(d, detail_id, col_count)
 
     html += "</tbody></table>"
     return html
 
 
+def _generate_test_table_with_app(data, prefix, columns):
+    """Generate table grouped by Application -> Category -> NIC."""
+    app_groups = _split_data_by_application(data)
+    app_columns = [("Application", "application")] + list(columns)
+    col_count = len(app_columns)
+
+    html = _table_header(app_columns)
+    idx = 0
+
+    for app in _sorted_app_keys(app_groups):
+        entries = app_groups[app]
+        app_label = app.capitalize() if app != "unknown" else "Other"
+
+        html += (
+            f'<tr class="category-group">'
+            f'<td colspan="{col_count}" style="background:#dbe5f1;">'
+            f"<strong>{app_label}</strong></td></tr>"
+        )
+
+        sorted_entries = sorted(entries, key=lambda x: (x["category"], x["nic"]))
+        for category, cat_group in groupby(sorted_entries, key=lambda x: x["category"]):
+            html += _category_header_row(category, col_count)
+            for d in list(cat_group):
+                detail_id = f"{prefix}-detail-{idx}"
+                idx += 1
+                html += _data_row(d, columns, detail_id, app_prefix=app_label)
+                html += _detail_section(
+                    d,
+                    detail_id,
+                    col_count,
+                    title_prefix=f"{app_label} &mdash; ",
+                )
+
+    html += "</tbody></table>"
+    return html
+
+
+def _table_header(columns):
+    """Generate table opening with header row."""
+    html = "<table><thead><tr>"
+    for header, _ in columns:
+        html += f"<th>{header}</th>"
+    html += "</tr></thead><tbody>"
+    return html
+
+
+def _category_header_row(category, col_count):
+    """Generate a category group header row."""
+    return (
+        f'<tr class="category-group">' f'<td colspan="{col_count}">{category}</td></tr>'
+    )
+
+
+def _data_row(d, columns, detail_id, app_prefix=None):
+    """Generate a clickable data row."""
+    html = (
+        f"<tr onclick=\"toggleDetails('{detail_id}', this)\" "
+        f'style="cursor:pointer" aria-expanded="false">'
+    )
+    if app_prefix is not None:
+        html += f"<td>{app_prefix}</td>"
+    for _, key in columns:
+        val = d.get(key, 0)
+        if key == "category":
+            html += f'<td><span class="category-pill">{val}</span></td>'
+        else:
+            html += f"<td>{val}</td>"
+    html += "</tr>"
+    return html
+
+
+def _detail_section(d, detail_id, col_count, title_prefix=""):
+    """Generate collapsible detail section with individual test case results."""
+    test_cases = d.get("test_cases", [])
+    if not test_cases:
+        return ""
+
+    html = (
+        f'<tr><td colspan="{col_count}">'
+        f'<div id="{detail_id}" class="details">'
+        f"<h4>{title_prefix}{d['nic']} &mdash; {d['category']} &mdash; "
+        f"Detailed Results</h4>"
+        "<table><thead><tr><th>Test Name</th><th>Result</th>"
+        "<th>Duration</th></tr></thead><tbody>"
+    )
+    for tc in sorted(test_cases, key=lambda x: x["test_name"]):
+        log_id = f"{detail_id}-log-{tc['test_name']}"
+        log_cell = _log_toggle_span(tc, log_id)
+        html += (
+            f'<tr><td>{tc["test_name"]}{log_cell}</td>'
+            f'<td class="{_result_class(tc["result"])}">{tc["result"]}</td>'
+            f'<td>{tc["duration"]}</td></tr>'
+        )
+        html += _log_row(tc, log_id, colspan=3)
+    html += "</tbody></table></div></td></tr>"
+    return html
+
+
 def _generate_pytest_table(pytest_data):
-    """Generate pytest results section with category donut charts."""
-    charts = _generate_chart_grid(pytest_data)
-    table = _generate_test_table(pytest_data, "pytest", _PYTEST_COLUMNS)
+    """Generate pytest results section with application-grouped charts."""
+    charts = _generate_app_chart_sections(pytest_data)
+    status_details = _generate_status_detail_sections(pytest_data, "pytest")
+    table = _generate_test_table(
+        pytest_data, "pytest", _PYTEST_COLUMNS, include_application=True
+    )
     return (
         '<div class="section">'
-        "<h2>Pytest Results by NIC and Category</h2>"
-        f"{charts}{table}</div>"
+        "<h2>Pytest Results by Application, NIC and Category</h2>"
+        f"{charts}{status_details}{table}</div>"
     )
 
 
 def _generate_gtest_table(gtest_data):
     """Generate gtest results section with category donut charts."""
     charts = _generate_chart_grid(gtest_data)
+    status_details = _generate_status_detail_sections(gtest_data, "gtest")
     table = _generate_test_table(gtest_data, "gtest", _GTEST_COLUMNS)
     return (
         '<div class="section">'
         "<h2>GTest Results by NIC and Test Category</h2>"
-        f"{charts}{table}</div>"
+        f"{charts}{status_details}{table}</div>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+
+def _log_toggle_span(tc, log_id):
+    """Return a 'Show log' toggle span if the test case has displayable log."""
+    if not tc.get("log") or tc["result"] not in _LOG_STATUSES:
+        return ""
+    return (
+        f' <span class="log-toggle" '
+        f'onclick="event.stopPropagation(); '
+        f"toggleDetails('{log_id}', this)\">Show log</span>"
+    )
+
+
+def _log_row(tc, log_id, colspan):
+    """Return a hidden log row if the test case has displayable log."""
+    if not tc.get("log") or tc["result"] not in _LOG_STATUSES:
+        return ""
+    return (
+        f'<tr class="log-row"><td colspan="{colspan}">'
+        f'<pre id="{log_id}" class="log-content">'
+        f"{_escape_html(tc['log'])}</pre></td></tr>"
+    )
+
+
+def _result_class(result):
+    """Return CSS class name for a test result string."""
+    if result and result.lower() in ("passed", "failed", "skipped"):
+        return f"result-{result.lower()}"
+    return ""
+
+
+def _escape_html(text):
+    """Escape HTML special characters."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
 
 
@@ -571,7 +867,8 @@ def _get_html_template():
         }}
         h2 {{
             font-size: 16px; font-weight: 600; color: #1a3a5c;
-            margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e8ecf0;
+            margin-bottom: 16px; padding-bottom: 8px;
+            border-bottom: 2px solid #e8ecf0;
         }}
         .card-grid {{
             display: grid;
@@ -590,6 +887,15 @@ def _get_html_template():
         .card-success {{ background: #e6f4ea; border-left-color: #34a853; color: #137333; }}
         .card-danger  {{ background: #fce8e6; border-left-color: #ea4335; color: #a50e0e; }}
         .card-warning {{ background: #fef7e0; border-left-color: #f9ab00; color: #7c6900; }}
+        .card-link {{
+            text-decoration: none; color: inherit; display: block;
+            border-radius: 8px; transition: transform .1s ease, box-shadow .1s ease;
+        }}
+        .card-link:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,.12);
+        }}
+        .card-link .card {{ cursor: pointer; }}
         table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
         thead th {{
             background: #1a3a5c; color: #fff; padding: 10px 14px;
@@ -615,6 +921,7 @@ def _get_html_template():
         }}
         .toggle-btn::before {{ content: "\u25b6 "; font-size: 10px; }}
         .toggle-btn[aria-expanded="true"]::before {{ content: "\u25bc "; }}
+        .status-buttons-row {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }}
         .toggle-danger  {{ background: #ea4335; }}
         .toggle-danger:hover  {{ background: #c5221f; }}
         .toggle-warning {{ background: #f9ab00; color: #1d1d1f; }}
@@ -631,7 +938,9 @@ def _get_html_template():
         .details table {{ font-size: 13px; }}
         .details thead th {{ background: #5f6368; font-size: 12px; }}
         .category-group {{ margin-top: 4px; }}
-        .category-group td {{ background: #eef3f8; font-weight: 600; color: #1a3a5c; }}
+        .category-group td {{
+            background: #eef3f8; font-weight: 600; color: #1a3a5c;
+        }}
         .chart-grid {{
             display: flex; flex-wrap: wrap; gap: 20px;
             margin-bottom: 20px; padding: 16px 0;

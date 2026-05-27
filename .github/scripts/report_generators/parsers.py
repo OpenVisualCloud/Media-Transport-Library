@@ -33,6 +33,9 @@ def parse_pytest_html(html_file):
         for k in ["passed", "failed", "skipped", "error", "xpassed", "xfailed"]
     )
 
+    # Extract runner hostname from setup phase logs
+    stats["runner"] = _extract_runner_from_pytest(soup)
+
     # Parse individual test cases
     test_cases = _parse_pytest_test_cases(soup, nic, category, html_file)
     stats["test_cases"] = test_cases
@@ -68,12 +71,16 @@ def parse_gtest_log(log_file):
         results = _parse_gtest_summary(content, nic)
         test_suites, all_test_cases = _parse_gtest_individual_tests(content, nic)
 
+    # Extract runner hostname from log content
+    runner = _extract_runner_from_gtest(content)
+
     # Add test cases to results if not already added
     for result in results:
         if "test_cases" not in result:
             result["test_cases"] = [
                 tc for tc in all_test_cases if tc["category"] == result["category"]
             ]
+        result["runner"] = runner
 
     return results
 
@@ -182,6 +189,33 @@ def _detect_ubuntu_version(kernel_version):
 # Private helper functions
 
 
+def _extract_runner_from_pytest(soup):
+    """Extract runner hostname from pytest HTML setup phase logs.
+
+    Looks for uname output like 'Linux mtl-runner-11 6.8.0-...' in pre tags.
+    The pattern matches 'Linux <hostname> <kernel-version>' format.
+    """
+    pres = soup.find_all("pre")
+    for pre in pres:
+        text = pre.get_text()
+        # Match uname output: Linux <hostname> <kernel-version>
+        match = re.search(r"Linux\s+([\w.-]+)\s+\d+\.\d+\.\d+", text)
+        if match:
+            return match.group(1)
+    return "unknown"
+
+
+def _extract_runner_from_gtest(content):
+    """Extract runner hostname from gtest log content.
+
+    Looks for uname output pattern: 'Linux <hostname> <kernel-version>'.
+    """
+    match = re.search(r"Linux\s+([\w.-]+)\s+\d+\.\d+\.\d+", content)
+    if match:
+        return match.group(1)
+    return "unknown"
+
+
 def _extract_nic_category_from_filename(filename):
     """Extract NIC and category from pytest report filename."""
     # Try vendor-specific pattern first: nightly-test-report-{nic}-{vendor}-{category}.html
@@ -240,9 +274,9 @@ def _parse_pytest_test_cases(soup, nic, category, html_file):
         # Determine result
         result = _determine_test_result(test_classes, result_text)
 
-        # Extract failure log from the detail body (only for non-passing tests)
+        # Extract log from the detail body (for failed, error, and skipped tests)
         log = ""
-        if result in ("FAILED", "ERROR"):
+        if result in ("FAILED", "ERROR", "SKIPPED"):
             log = _extract_pytest_log(test_detail, summary)
 
         if test_name:
@@ -303,11 +337,9 @@ def _determine_test_result(test_classes, result_text):
 
     if "passed" in test_classes_lower or "passed" in result_text_lower:
         return "PASSED"
-    elif (
-        "failed" in test_classes_lower
-        or "failed" in result_text_lower
-        or "error" in result_text_lower
-    ):
+    elif "error" in test_classes_lower or "error" in result_text_lower:
+        return "ERROR"
+    elif "failed" in test_classes_lower or "failed" in result_text_lower:
         return "FAILED"
     elif "skipped" in test_classes_lower or "skipped" in result_text_lower:
         return "SKIPPED"
