@@ -114,3 +114,4 @@ openh264*
 level-zero-*
 
 venv*
+.github/mcp/.venv/

@@ -2,10 +2,8 @@
     "servers": {
         "mtl-system-setup": {
             "type": "stdio",
-            "command": "${workspaceFolder}/.github/mcp/.venv/bin/python3",
-            "args": [
-                "${workspaceFolder}/.github/mcp/mtl_mcp_server.py"
-            ],
+            "command": "${workspaceFolder}/.github/mcp/run_server.sh",
+            "args": [],
             "env": {}
         }
     }
