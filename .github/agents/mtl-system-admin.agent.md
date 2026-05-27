@@ -1,8 +1,17 @@
 ---
-description: "System administration agent for MTL hosts. Handles post-reboot setup, driver installation, DPDK/ICE management, VF creation, MtlManager, and test execution. Uses MCP tools exclusively — never edits source code to fix system issues."
+description: "Configures MTL hosts via MCP tools (no shell). Use for: post-reboot setup (hugepages, VFs, MtlManager), driver install/rebuild (DPDK, ICE), NIC bind/unbind, building MTL via `build_mtl`, running integration gtest `KahawaiTest` via `run_gtest` MCP tool against real VFs. This is the **enforced exit gate** for data-plane / session-lifecycle changes — MTL Developer (TDD) hands off here at Gate 6. Do NOT use for: running unit gtest `./build/tests/unit/UnitTest` (→ MTL Developer (TDD)); editing source code (→ MTL Developer (TDD)); arbitrary shell commands. Tools: MCP `mcp_mtl-system-se_*` only. Requires: MCP server reachable."
 name: "MTL System Admin"
 tools: [tool_search, mtl-system-setup/*]
 user-invocable: true
+handoffs:
+  - label: Diagnose Code Issue
+    agent: MTL Developer (TDD)
+    prompt: "An integration test failed on real hardware and the symptom looks like a code defect (not host setup). Read the failure, walk Gate 1 (knowledge) then Gate 2 (write a failing unit/integration test that pins the symptom), then propose a fix."
+    send: true
+  - label: Plan This
+    agent: MTL Planner
+    prompt: "This task spans host setup plus code/tests/review — produce a phased plan."
+    send: true
 ---
 
 # MTL System Admin
