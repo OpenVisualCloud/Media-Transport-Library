@@ -15,10 +15,12 @@ cd "${script_folder}" || exit 1
 mtl_folder="${script_folder}/../../.."
 
 # Detect whether to use .local_install (CI) or local build paths
-if [ -d "${mtl_folder}/.local_install" ]; then
-	BUILD_PATH="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"
-else
-	BUILD_PATH="${mtl_folder}/build/tests/KahawaiTest"
+if [ -z "${BUILD_PATH:-}" ]; then
+	if [ -d "${mtl_folder}/.local_install" ]; then
+		BUILD_PATH="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"
+	else
+		BUILD_PATH="${mtl_folder}/build/tests/KahawaiTest"
+	fi
 fi
 ENV_FILE="${script_folder}/noctx.env"
 
@@ -42,7 +44,7 @@ if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ 
 	exit 1
 fi
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.*" 2>/dev/null |
+test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.${NOCTX_FILTER}*" 2>/dev/null |
 	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 # Use TMP_FOLDER from environment or fallback to /tmp

@@ -1,0 +1,92 @@
+From patchwork Wed May  6 14:07:03 2026
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+X-Patchwork-Submitter: "Burakov, Anatoly" <anatoly.burakov@intel.com>
+X-Patchwork-Id: 163686
+X-Patchwork-Delegate: bruce.richardson@intel.com
+Return-Path: <dev-bounces@dpdk.org>
+X-Original-To: patchwork@inbox.dpdk.org
+Delivered-To: patchwork@inbox.dpdk.org
+Received: from mails.dpdk.org (mails.dpdk.org [217.70.189.124])
+	by inbox.dpdk.org (Postfix) with ESMTP id 3593B4B14B;
+	Wed,  6 May 2026 16:07:18 +0200 (CEST)
+Received: from mails.dpdk.org (localhost [127.0.0.1])
+	by mails.dpdk.org (Postfix) with ESMTP id CB2834027E;
+	Wed,  6 May 2026 16:07:17 +0200 (CEST)
+Received: from mgamail.intel.com (mgamail.intel.com [192.198.163.10])
+ by mails.dpdk.org (Postfix) with ESMTP id 82E5540278
+ for <dev@dpdk.org>; Wed,  6 May 2026 16:07:15 +0200 (CEST)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple;
+ d=intel.com; i=@intel.com; q=dns/txt; s=Intel;
+ t=1778076435; x=1809612435;
+ h=from:to:subject:date:message-id:mime-version:
+ content-transfer-encoding;
+ bh=BDErRCMUqJVOL1rLpJ7wmC1z7j5XXfvpGM7F5AaAlPo=;
+ b=Z4KvuVGuFF2fSoQpxEHPwA11Yk37bvHRbT4ZItCM3WnylvRBNfqLe9td
+ 2ry0+rZ6G8Y8Icw/vKz6czIBYETU96PgMCEynRjopl5tnkwnhy1Iolzjo
+ 67re5+E0nbGUIYmlMX9j1Qy5TP7jZ6tarjvgCsuP+kQRYWyMz79WQaFHO
+ 1DM/952GKQqgOZ9xMUfSryu3iBK9iUvgaQmfA/mDu+E+zOMbg5T4LVJ07
+ M0iQZ+R7u1i9iMEVy1K/Gz/85RhiU4JagixNghYDa4AmuDR3Vu00d1Cmt
+ PohJklCJr1C6sjAgrDga8pWbtT+FVSWvOLuXfLg5RF9Er6dmfqJOYbLnw g==;
+X-CSE-ConnectionGUID: rhf34Pa4S2COfm7rT8R45Q==
+X-CSE-MsgGUID: qaRj04tfQiCWhUzW9EXV7w==
+X-IronPort-AV: E=McAfee;i="6800,10657,11777"; a="90386383"
+X-IronPort-AV: E=Sophos;i="6.23,219,1770624000"; d="scan'208";a="90386383"
+Received: from orviesa002.jf.intel.com ([10.64.159.142])
+ by fmvoesa104.fm.intel.com with ESMTP/TLS/ECDHE-RSA-AES256-GCM-SHA384;
+ 06 May 2026 07:07:08 -0700
+X-CSE-ConnectionGUID: kjpHzZ+RSgCeswhwJgJsEQ==
+X-CSE-MsgGUID: X48vvQNARbO0f5s3Tx45mg==
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="6.23,219,1770624000"; d="scan'208";a="266507226"
+Received: from silpixa00401119.ir.intel.com ([10.20.224.206])
+ by orviesa002.jf.intel.com with ESMTP; 06 May 2026 07:07:05 -0700
+From: Anatoly Burakov <anatoly.burakov@intel.com>
+To: dev@dpdk.org, Vladimir Medvedkin <vladimir.medvedkin@intel.com>,
+ Bruce Richardson <bruce.richardson@intel.com>
+Subject: [PATCH v1 1/1] net/iavf: fix large VF IRQ mapping
+Date: Wed,  6 May 2026 15:07:03 +0100
+Message-ID: 
+ <c50ef6c3d4ecaa7902d325d5e8a7fd4c92c8eeb6.1778076415.git.anatoly.burakov@intel.com>
+X-Mailer: git-send-email 2.47.3
+MIME-Version: 1.0
+X-BeenThere: dev@dpdk.org
+X-Mailman-Version: 2.1.29
+Precedence: list
+List-Id: DPDK patches and discussions <dev.dpdk.org>
+List-Unsubscribe: <https://mails.dpdk.org/options/dev>,
+ <mailto:dev-request@dpdk.org?subject=unsubscribe>
+List-Archive: <http://mails.dpdk.org/archives/dev/>
+List-Post: <mailto:dev@dpdk.org>
+List-Help: <mailto:dev-request@dpdk.org?subject=help>
+List-Subscribe: <https://mails.dpdk.org/listinfo/dev>,
+ <mailto:dev-request@dpdk.org?subject=subscribe>
+Errors-To: dev-bounces@dpdk.org
+
+The PF will check buffer size for being too big, and the chunk sizing code
+correctly calls that out. However, the size was actually still too big
+because `struct virtchnl_queue_vector_maps` already had one queue vector
+as part of its definition, so `chunk_sz` was too big by 1.
+
+Fixes: 292d3b781ac4 ("net/iavf: replace unnecessary hugepage memory allocations")
+
+Signed-off-by: Anatoly Burakov <anatoly.burakov@intel.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/intel/iavf/iavf_vchnl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_vchnl.c b/drivers/net/intel/iavf/iavf_vchnl.c
+index c2f340db81..dd09b0fa61 100644
+--- a/drivers/net/intel/iavf/iavf_vchnl.c
++++ b/drivers/net/intel/iavf/iavf_vchnl.c
+@@ -1528,7 +1528,7 @@ iavf_config_irq_map_lv_chunk(struct iavf_adapter *adapter,
+ 
+ 	/* for some reason PF side checks for buffer being too big, so adjust it down */
+ 	buf_len = sizeof(struct virtchnl_queue_vector_maps) +
+-		  sizeof(struct virtchnl_queue_vector) * chunk_sz;
++		  sizeof(struct virtchnl_queue_vector) * (chunk_sz - 1);
+ 
+ 	args.ops = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
+ 	args.in_args = (u8 *)map_info;
