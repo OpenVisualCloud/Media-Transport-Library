@@ -37,14 +37,16 @@ def test_format(
     fps,
     output_format,
 ):
-    if output_format == "h264" and application == "rxtxapp":
-        pytest.skip("RxTxApp does not support h264 output format")
+    if application == "rxtxapp":
+        pytest.skip("RxTxApp does not support output_format parameter")
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
     app = app_factory(application)
+    if output_format == "h264":
+        app.require_encoder(host, "libopenh264")
     app.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,

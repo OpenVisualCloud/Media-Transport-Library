@@ -99,6 +99,10 @@ class Application(ABC):
         """Return the executable name for this framework."""
         pass
 
+    def require_encoder(self, host, encoder: str) -> None:
+        """Check that *encoder* is available. No-op by default; override in subclasses."""
+        pass
+
     def create_command(self, **kwargs):
         """Populate self.command (and optionally self.config) from user parameters.
 

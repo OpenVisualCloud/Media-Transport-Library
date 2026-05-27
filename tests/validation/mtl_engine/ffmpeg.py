@@ -76,6 +76,19 @@ class FFmpeg(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["ffmpeg"]
 
+    def require_encoder(self, host, encoder: str) -> None:
+        """Raise EnvironmentError if *encoder* is not available in FFmpeg on *host*."""
+        res = host.connection.execute_command(
+            f"ffmpeg -encoders 2>/dev/null | grep {encoder} || true",
+            shell=True,
+            timeout=10,
+        )
+        if encoder not in (res.stdout or ""):
+            raise EnvironmentError(
+                f"{encoder} encoder not available in FFmpeg; "
+                f"install the codec library and rebuild FFmpeg"
+            )
+
     # ----------------------------------------------------- param plumbing
     def set_params(self, **kwargs):
         """Strip FFmpeg-only kwargs into ``self._ff_params`` first, then defer.

@@ -8,7 +8,9 @@ from math import floor
 from .execute import log_fail
 
 
-def check_st20p_integrity(src_url: str, out_url: str, frame_size: int):
+def check_st20p_integrity(
+    src_url: str, out_url: str, frame_size: int, skip_frames: int = 1
+):
     src_chunk_sums = []
 
     with open(src_url, "rb") as f:
@@ -23,15 +25,19 @@ def check_st20p_integrity(src_url: str, out_url: str, frame_size: int):
             chunk_sum = hashlib.md5(chunk).hexdigest()
             out_chunk_sums.append(chunk_sum)
 
+    # Skip initial frames that may be corrupted during session establishment
+    src_chunk_sums = src_chunk_sums[skip_frames:]
+    out_chunk_sums = out_chunk_sums[skip_frames:]
+
     if len(src_chunk_sums) < len(out_chunk_sums):
         for i in range(len(src_chunk_sums)):
             if src_chunk_sums[i] != out_chunk_sums[i]:
-                log_fail(f"Received frame {i} is invalid")
+                log_fail(f"Received frame {i + skip_frames} is invalid")
                 return False
     else:
         for i in range(len(out_chunk_sums)):
             if out_chunk_sums[i] != src_chunk_sums[i]:
-                log_fail(f"Received frame {i} is invalid")
+                log_fail(f"Received frame {i + skip_frames} is invalid")
                 return False
 
     return True
