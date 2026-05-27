@@ -335,7 +335,7 @@ def test_st40p_fps_size(
 @pytest.mark.nightly
 def test_st40p_redundant_progressive(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -369,7 +369,7 @@ def test_st40p_redundant_progressive(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -404,7 +404,7 @@ def test_st40p_redundant_progressive(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -432,7 +432,7 @@ def test_st40p_redundant_progressive(
     try:
         with _test_summary("test_st40p_redundant_progressive", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -456,7 +456,7 @@ def test_st40p_redundant_progressive(
 @pytest.mark.nightly
 def test_st40p_redundant_progressive_gap(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -489,7 +489,7 @@ def test_st40p_redundant_progressive_gap(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -526,7 +526,7 @@ def test_st40p_redundant_progressive_gap(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -556,7 +556,7 @@ def test_st40p_redundant_progressive_gap(
     try:
         with _test_summary("test_st40p_redundant_progressive_gap", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -580,7 +580,7 @@ def test_st40p_redundant_progressive_gap(
 @pytest.mark.nightly
 def test_st40p_redundant_progressive_split(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -614,7 +614,7 @@ def test_st40p_redundant_progressive_split(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -650,7 +650,7 @@ def test_st40p_redundant_progressive_split(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -678,7 +678,7 @@ def test_st40p_redundant_progressive_split(
     try:
         with _test_summary("test_st40p_redundant_progressive_split", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -702,7 +702,7 @@ def test_st40p_redundant_progressive_split(
 @pytest.mark.nightly
 def test_st40p_redundant_progressive_split_gap(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -735,7 +735,7 @@ def test_st40p_redundant_progressive_split_gap(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -773,7 +773,7 @@ def test_st40p_redundant_progressive_split_gap(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -801,7 +801,7 @@ def test_st40p_redundant_progressive_split_gap(
     try:
         with _test_summary("test_st40p_redundant_progressive_split_gap", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -825,7 +825,7 @@ def test_st40p_redundant_progressive_split_gap(
 @pytest.mark.nightly
 def test_st40i_redundant_split(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -859,7 +859,7 @@ def test_st40i_redundant_split(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -896,7 +896,7 @@ def test_st40i_redundant_split(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -927,7 +927,7 @@ def test_st40i_redundant_split(
     try:
         with _test_summary("test_st40i_redundant_split", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -951,7 +951,7 @@ def test_st40i_redundant_split(
 @pytest.mark.nightly
 def test_st40i_redundant_split_gap(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -984,7 +984,7 @@ def test_st40i_redundant_split_gap(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_ports[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -1023,7 +1023,7 @@ def test_st40i_redundant_split_gap(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_ports[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -1054,7 +1054,7 @@ def test_st40i_redundant_split_gap(
     try:
         with _test_summary("test_st40i_redundant_split_gap", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -1598,7 +1598,7 @@ def test_st40i_interlace_flag_mismatch(
 @pytest.mark.nightly
 def test_st40p_interlace_auto_detect_reset(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -1629,7 +1629,7 @@ def test_st40p_interlace_auto_detect_reset(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -1644,7 +1644,7 @@ def test_st40p_interlace_auto_detect_reset(
     frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[1],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -1660,7 +1660,7 @@ def test_st40p_interlace_auto_detect_reset(
     try:
         with _test_summary("test_st40p_interlace_auto_detect_reset", expectation):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config,
                 rx_command=rx_config,
                 input_file=input_file_path,
@@ -1675,7 +1675,7 @@ def test_st40p_interlace_auto_detect_reset(
         # Force a sequence gap to reset auto-detect state and prove cadence re-learns
         gap_frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
         tx_config_gap = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-            build=build,
+            build=mtl_path,
             nic_port_list=interfaces_list[0],
             input_path=input_file_path,
             tx_payload_type=113,
@@ -1691,7 +1691,7 @@ def test_st40p_interlace_auto_detect_reset(
         )
 
         rx_config_gap = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-            build=build,
+            build=mtl_path,
             nic_port_list=interfaces_list[1],
             output_path=output_file_path,
             rx_payload_type=113,
@@ -1710,7 +1710,7 @@ def test_st40p_interlace_auto_detect_reset(
             "test_st40p_interlace_auto_detect_reset_gap", reset_expectation
         ):
             assert GstreamerApp.execute_test(
-                build=build,
+                build=mtl_path,
                 tx_command=tx_config_gap,
                 rx_command=rx_config_gap,
                 input_file=input_file_path,

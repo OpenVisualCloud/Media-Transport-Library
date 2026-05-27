@@ -45,6 +45,8 @@ def test_multisession(
     Validates that the framework can handle two concurrent TX/RX sessions
     on the same interface pair.
     """
+    if application == "rxtxapp":
+        pytest.skip("RxTxApp does not support output_format parameter")
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(

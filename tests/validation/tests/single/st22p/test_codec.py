@@ -36,13 +36,23 @@ def test_st22p_codec(
     """Test st22p codec types (JPEG-XS and H264_CBR)."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+
+    # Check codec encoder availability
+    codec_encoder_map = {
+        "H264_CBR": "libopenh264",
+        "JPEG-XS": "libsvt_jpegxs",
+    }
+    encoder = codec_encoder_map.get(codec)
+    app = app_factory(application)
+    if encoder:
+        app.require_encoder(host, encoder)
+
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
     # JPEG-XS / H264 plugin init adds 3-10s on top of MTL init.
     test_time = max(test_time, 90)
 
-    app = app_factory(application)
     app.create_command(
         session_type="st22p",
         test_mode="multicast",
