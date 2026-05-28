@@ -11,7 +11,12 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
+#include <regex>
+#include <string>
+
 #include "session/st30/st30_rx_test_base.h"
+#include "session/stderr_capture.h"
 
 class St30RxStatsTest : public St30RxBaseTest {};
 
@@ -178,4 +183,146 @@ TEST_F(St30RxStatsTest, ReceivedPlusRedundantEqualsAcceptedPackets) {
   EXPECT_EQ(redundant(), 4u);
   EXPECT_EQ(received() + redundant(), 12u)
       << "every accepted packet is counted in exactly one bucket";
+}
+
+/* Mirrors ST20 BackpressureWarnLineEmitted; single-axis (no pkts_no_slot);
+ * single-port pool of 2. */
+class St30RxFramePoolTest : public ::testing::Test {
+ protected:
+  ut30_test_ctx* ctx_ = nullptr;
+  uint16_t next_seq_ = 0;
+  uint32_t next_ts_ = 1000;
+
+  void SetUp() override {
+    ASSERT_EQ(ut30_init(), 0) << "EAL init failed";
+    ctx_ = ut30_ctx_create(1); /* single port = framebuff pool of 2 */
+    ASSERT_NE(ctx_, nullptr);
+  }
+
+  void TearDown() override {
+    if (ctx_) {
+      ut30_set_hold_frames(ctx_, false);
+      ut30_ctx_destroy(ctx_);
+      ctx_ = nullptr;
+    }
+  }
+
+  void feed_full() {
+    int pkts = ut30_pkts_per_frame(ctx_);
+    ut30_feed_full_frame(ctx_, next_seq_, next_ts_, MTL_SESSION_PORT_P);
+    next_seq_ = (uint16_t)(next_seq_ + pkts);
+    next_ts_ += (uint32_t)pkts;
+  }
+
+  void feed_first_pkt() {
+    ut30_feed_pkt(ctx_, next_seq_, next_ts_, MTL_SESSION_PORT_P);
+    next_seq_ = (uint16_t)(next_seq_ + 1);
+    next_ts_ += 1;
+  }
+
+  uint64_t slot_fail() {
+    return ut30_stat_slot_get_frame_fail(ctx_);
+  }
+};
+
+TEST_F(St30RxFramePoolTest, BackpressureWarnLineEmitted) {
+  auto run_stage = ut_session::capture_stderr;
+
+  const std::string kWarnPrefix = "back-pressure: framebuff pool empty (";
+  const std::string kFreeMid = " free), dropped ";
+  const std::string kRemediation = "raise framebuff_cnt";
+  const std::string kAudioDrain = "st30_rx_put_framebuff";
+
+  /* Healthy: no slot_get_frame_fail deltas → no warn line. */
+  std::string s1 = run_stage([&] {
+    feed_full();
+    feed_full();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  EXPECT_EQ(s1.find(kWarnPrefix), std::string::npos);
+  EXPECT_EQ(s1.find("slot get frame fail"), std::string::npos);
+  EXPECT_EQ(s1.find("framebuff pool empty"), std::string::npos);
+
+  /* Starved interval 1: hold the two completed frames, then start a third
+   * frame → get_frame fails on its first packet. Warn line fires with
+   * gauge + remediation; legacy per-counter line demoted to info. No
+   * sustained suffix yet (counter == 1). */
+  ut30_set_hold_frames(ctx_, true);
+  feed_full();
+  feed_full();
+  std::string s2 = run_stage([&] {
+    feed_first_pkt();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  EXPECT_GE(slot_fail(), 1u) << "back-pressure must have bumped slot_get_frame_fail";
+  EXPECT_NE(s2.find(kWarnPrefix), std::string::npos) << "warn line missing: " << s2;
+  EXPECT_NE(s2.find(kFreeMid), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kRemediation), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kAudioDrain), std::string::npos) << s2;
+  EXPECT_EQ(s2.find("(sustained "), std::string::npos)
+      << "sustained suffix must not appear until 3 consecutive intervals";
+
+  /* Starved intervals 2 and 3 → "(sustained 3x)" appears. */
+  run_stage([&] {
+    feed_first_pkt();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  std::string s3 = run_stage([&] {
+    feed_first_pkt();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  EXPECT_NE(s3.find(kWarnPrefix), std::string::npos) << s3;
+  std::regex sustained_re(R"(\(sustained [0-9]+x\))");
+  EXPECT_TRUE(std::regex_search(s3, sustained_re))
+      << "expected (sustained Nx) suffix after 3 consecutive starved intervals: " << s3;
+
+  /* Recovery: drain, no deltas this interval → no warn, hysteresis resets. */
+  ut30_set_hold_frames(ctx_, false);
+  const uint64_t slot_fail_after_recovery = slot_fail();
+  std::string s4 = run_stage([&] {
+    feed_full();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  EXPECT_EQ(s4.find(kWarnPrefix), std::string::npos);
+  EXPECT_EQ(s4.find("framebuff pool empty"), std::string::npos);
+  EXPECT_EQ(slot_fail(), slot_fail_after_recovery);
+
+  /* Single starved interval after recovery: warn without sustained suffix. */
+  ut30_set_hold_frames(ctx_, true);
+  feed_full();
+  feed_full();
+  std::string s5 = run_stage([&] {
+    feed_first_pkt();
+    ut30_invoke_rx_audio_session_stat(ctx_);
+  });
+  EXPECT_NE(s5.find(kWarnPrefix), std::string::npos) << s5;
+  EXPECT_EQ(s5.find("(sustained "), std::string::npos)
+      << "hysteresis must have reset on recovery; got: " << s5;
+}
+
+/* RTP-mode coverage: in ST30_TYPE_RTP_LEVEL the rtps_ring-full path bumps
+ * stat_slot_get_frame_fail while s->st30_frames stays NULL. The stat
+ * callback must not deref the NULL pool and must not emit the frame-mode
+ * back-pressure warn line. The notice() above remains as the RTP signal. */
+TEST(St30RxRtpRingTest, BackpressureNoCrash) {
+  ASSERT_EQ(ut30_init(), 0);
+  ut30_test_ctx* ctx = ut30_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+
+  void* saved = ut30_detach_frames(ctx);
+  ut30_bump_slot_get_frame_fail(ctx, 5);
+
+  testing::internal::CaptureStderr();
+  ut30_invoke_rx_audio_session_stat(ctx);
+  fflush(stderr);
+  std::string out = testing::internal::GetCapturedStderr();
+  fprintf(stderr, "%s", out.c_str());
+
+  EXPECT_EQ(out.find("back-pressure: framebuff pool empty"), std::string::npos)
+      << "frame-mode warn line must not fire in RTP mode: " << out;
+  EXPECT_NE(out.find("slot get frame fail"), std::string::npos)
+      << "notice() must still surface in RTP mode: " << out;
+
+  ut30_reattach_frames(ctx, saved);
+  ut30_ctx_destroy(ctx);
 }

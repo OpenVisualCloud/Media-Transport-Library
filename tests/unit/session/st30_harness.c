@@ -33,6 +33,8 @@ struct ut30_test_ctx {
 
   struct st_frame_trans frames[UT30_FRAME_COUNT];
   uint8_t frame_storage[UT30_FRAME_COUNT][UT30_FRAME_CAPACITY];
+
+  bool hold_frames;
 };
 
 #include "session/st30_harness.h"
@@ -50,9 +52,11 @@ static uint64_t ut30_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
 static int ut30_notify_frame_ready(void* priv, void* frame,
                                    struct st30_rx_frame_meta* meta) {
   (void)meta;
-  struct st_rx_audio_session_impl* s = priv;
-  if (!s || !frame) return 0;
+  ut30_test_ctx* ctx = priv;
+  if (!ctx || !frame) return 0;
+  if (ctx->hold_frames) return 0;
 
+  struct st_rx_audio_session_impl* s = &ctx->session;
   for (int i = 0; i < s->st30_frames_cnt; i++) {
     if (!s->st30_frames) break;
     if (s->st30_frames[i].addr == frame) {
@@ -109,7 +113,7 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   s->ops.ptime = ST30_PTIME_1MS;
   s->ops.framebuff_cnt = UT30_FRAME_COUNT;
   s->ops.notify_frame_ready = ut30_notify_frame_ready;
-  s->ops.priv = s;
+  s->ops.priv = ctx;
   s->ops.name = "ut30_test";
   s->ops.payload_type = 0;
   s->ops.ssrc = 0;
@@ -313,4 +317,44 @@ uint64_t ut30_stat_wrong_ssrc(const ut30_test_ctx* ctx) {
 
 uint64_t ut30_stat_len_mismatch(const ut30_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_len_mismatch_dropped;
+}
+
+uint64_t ut30_stat_slot_get_frame_fail(const ut30_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_slot_get_frame_fail;
+}
+
+void ut30_set_hold_frames(ut30_test_ctx* ctx, bool hold) {
+  bool was_holding = ctx->hold_frames;
+  ctx->hold_frames = hold;
+  if (was_holding && !hold) {
+    for (int i = 0; i < ctx->session.st30_frames_cnt; i++) {
+      rte_atomic32_set(&ctx->frames[i].refcnt, 0);
+    }
+  }
+}
+
+void* ut30_detach_frames(ut30_test_ctx* ctx) {
+  void* saved = ctx->session.st30_frames;
+  ctx->session.st30_frames = NULL;
+  return saved;
+}
+
+void ut30_reattach_frames(ut30_test_ctx* ctx, void* frames) {
+  ctx->session.st30_frames = frames;
+}
+
+void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n) {
+  ctx->session.port_user_stats.stat_slot_get_frame_fail += n;
+}
+
+void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
+                          enum mtl_session_port port) {
+  int pkts = ctx->session.st30_total_pkts;
+  for (int i = 0; i < pkts; i++) {
+    ut30_feed_pkt(ctx, (uint16_t)(seq_start + i), ts_start + (uint32_t)i, port);
+  }
+}
+
+void ut30_invoke_rx_audio_session_stat(ut30_test_ctx* ctx) {
+  rx_audio_session_stat(&ctx->mgr, &ctx->session);
 }

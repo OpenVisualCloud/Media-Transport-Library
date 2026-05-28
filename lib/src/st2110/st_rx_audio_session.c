@@ -11,6 +11,7 @@
 #include "../mt_log.h"
 #include "../mt_pcap.h"
 #include "../mt_stat.h"
+#include "st_rx_common.h"
 #include "st_rx_timing_parser.h"
 
 static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
@@ -571,6 +572,7 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->first_pkt_rtp_ts = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_frame_us = 0;
+  s->stat_consecutive_busy_intervals = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
@@ -1092,6 +1094,29 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
   if (slot_get_frame_fail) {
     notice("RX_AUDIO_SESSION(%d,%d): slot get frame fail %" PRIu64 "\n", m_idx, idx,
            slot_get_frame_fail);
+  }
+  if (slot_get_frame_fail > 0) {
+    if (s->st30_frames != NULL) {
+      /* Frame-mode: refcnt scan is safe on the mt_stat thread. RTP-mode
+       * leaves st30_frames NULL and is signalled by the notice() above. */
+      uint32_t framebuff_used = 0;
+      for (int i = 0; i < s->st30_frames_cnt; i++) {
+        if (rte_atomic32_read(&s->st30_frames[i].refcnt) > 0) framebuff_used++;
+      }
+      uint32_t total = (uint32_t)s->st30_frames_cnt;
+      uint32_t free_cnt = (total > framebuff_used) ? (total - framebuff_used) : 0;
+      char sustained[32];
+      st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
+                             sizeof(sustained));
+      warn(
+          "RX_AUDIO_SESSION(%d,%d): back-pressure: framebuff pool empty (%u/%u free), "
+          "dropped %" PRIu64
+          " frames in interval; raise framebuff_cnt or drain via "
+          "st30_rx_put_framebuff%s\n",
+          m_idx, idx, free_cnt, total, slot_get_frame_fail, sustained);
+    }
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
   }
 
   memcpy(snap, us, sizeof(*snap));

@@ -20,6 +20,7 @@
 #ifndef _ST30_SESSION_HARNESS_H_
 #define _ST30_SESSION_HARNESS_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "mtl_api.h"
@@ -116,6 +117,31 @@ int ut30_pkts_per_frame(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_wrong_ssrc(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_len_mismatch(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_slot_get_frame_fail(const ut30_test_ctx* ctx);
+
+/* Hold app-side frames: when true the notify_frame_ready stub no longer
+ * releases refcnts, allowing the test to drive the framebuff pool to
+ * exhaustion. Flipping back to false releases all held refcnts. */
+void ut30_set_hold_frames(ut30_test_ctx* ctx, bool hold);
+
+/* Feed every packet of a single frame on the same wire. Per-packet RTP
+ * timestamps start at `ts_start` and increment by 1 (audio handler
+ * requires strictly increasing tmstamp). */
+void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
+                          enum mtl_session_port port);
+
+/* Drive the mt_stat-thread stat callback synchronously for assertions on
+ * the rate-limited stat lines. */
+void ut30_invoke_rx_audio_session_stat(ut30_test_ctx* ctx);
+
+/* Simulate ST30_TYPE_RTP_LEVEL where st30_frames is never allocated.
+ * Caller must reattach before destroy so the harness can free the array. */
+void* ut30_detach_frames(ut30_test_ctx* ctx);
+void ut30_reattach_frames(ut30_test_ctx* ctx, void* frames);
+
+/* Directly bump the slot-get-frame-fail counter (the RTP rtps_ring-full
+ * path bumps this; the harness does not yet drive packets through it). */
+void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n);
 
 #ifdef __cplusplus
 }
