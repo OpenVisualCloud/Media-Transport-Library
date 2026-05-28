@@ -2,6 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <errno.h>
+#include <string.h>
+
 #include "../mt_log.h"
 #include "../mt_platform.h"
 #include "st40_api.h"
@@ -210,4 +213,89 @@ uint16_t st40_add_parity_bits(uint16_t val) {
 
 int st40_check_parity_bits(uint16_t val) {
   return val == st40_add_parity_bits(val & 0xFF);
+}
+
+int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_meta* meta,
+                               const uint8_t* udw_in, uint32_t* written) {
+  /* Note: st_tx_ancillary_session.c intentionally does NOT use this helper;
+   * its per-value TX_ANC_TEST_APPLY_PARITY hook requires direct primitive
+   * access. See st_tx_ancillary_test.h. */
+  uint16_t udw_size = meta->udw_size;
+  uint32_t need = st40_rfc8331_payload_bytes(udw_size);
+  if (room < need) return -ENOSPC;
+
+  /* Zero the body so checksum padding bits are deterministic. */
+  memset(buf, 0, need);
+
+  struct st40_rfc8331_payload_hdr* ph = (struct st40_rfc8331_payload_hdr*)buf;
+  ph->first_hdr_chunk.c = meta->c;
+  ph->first_hdr_chunk.line_number = meta->line_number;
+  ph->first_hdr_chunk.horizontal_offset = meta->hori_offset;
+  ph->first_hdr_chunk.s = meta->s;
+  ph->first_hdr_chunk.stream_num = meta->stream_num;
+  ph->second_hdr_chunk.did = st40_add_parity_bits(meta->did);
+  ph->second_hdr_chunk.sdid = st40_add_parity_bits(meta->sdid);
+  ph->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+
+  st40_rfc8331_payload_hdr_bswap(ph);
+
+  uint8_t* udw_dst = (uint8_t*)&ph->second_hdr_chunk;
+  for (uint16_t i = 0; i < udw_size; i++) {
+    st40_set_udw(i + 3, st40_add_parity_bits(udw_in[i]), udw_dst);
+  }
+  uint16_t checksum = st40_calc_checksum(3 + udw_size, udw_dst);
+  st40_set_udw(udw_size + 3, checksum, udw_dst);
+
+  *written = need;
+  return 0;
+}
+
+enum st40_rfc8331_decode_result st40_rfc8331_decode_packet(
+    const uint8_t* buf, uint32_t room, struct st40_meta* meta, uint8_t* udw_out,
+    uint32_t udw_cap, uint32_t* consumed) {
+  if (room < sizeof(struct st40_rfc8331_payload_hdr))
+    return ST40_RFC8331_DECODE_SHORT_BUFFER;
+
+  /* Read header without mutating caller memory: copy + bswap a local. */
+  struct st40_rfc8331_payload_hdr hdr_local =
+      *(const struct st40_rfc8331_payload_hdr*)buf;
+  st40_rfc8331_payload_hdr_bswap(&hdr_local);
+
+  if (!st40_check_parity_bits(hdr_local.second_hdr_chunk.did) ||
+      !st40_check_parity_bits(hdr_local.second_hdr_chunk.sdid) ||
+      !st40_check_parity_bits(hdr_local.second_hdr_chunk.data_count))
+    return ST40_RFC8331_DECODE_PARITY_FAIL;
+
+  uint16_t udw_size = hdr_local.second_hdr_chunk.data_count & 0xFF;
+  uint32_t need = st40_rfc8331_payload_bytes(udw_size);
+  if (room < need) return ST40_RFC8331_DECODE_SHORT_BUFFER;
+  if (udw_out && udw_size > udw_cap) return ST40_RFC8331_DECODE_SHORT_BUFFER;
+
+  /* UDW/checksum reads need the second chunk in wire layout; the source
+   * buffer already is, so read directly from it. */
+  const uint8_t* udw_src =
+      (const uint8_t*)&((const struct st40_rfc8331_payload_hdr*)buf)->second_hdr_chunk;
+
+  for (uint16_t i = 0; i < udw_size; i++) {
+    uint16_t udw = st40_get_udw(i + 3, udw_src);
+    if (!st40_check_parity_bits(udw)) return ST40_RFC8331_DECODE_PARITY_FAIL;
+    if (udw_out) udw_out[i] = (uint8_t)(udw & 0xFF);
+  }
+
+  uint16_t checksum_wire = st40_get_udw(udw_size + 3, udw_src);
+  uint16_t checksum_calc = st40_calc_checksum(3 + udw_size, udw_src);
+  if (checksum_wire != checksum_calc) return ST40_RFC8331_DECODE_CHECKSUM_FAIL;
+
+  meta->c = hdr_local.first_hdr_chunk.c;
+  meta->line_number = hdr_local.first_hdr_chunk.line_number;
+  meta->hori_offset = hdr_local.first_hdr_chunk.horizontal_offset;
+  meta->s = hdr_local.first_hdr_chunk.s;
+  meta->stream_num = hdr_local.first_hdr_chunk.stream_num;
+  meta->did = hdr_local.second_hdr_chunk.did & 0xFF;
+  meta->sdid = hdr_local.second_hdr_chunk.sdid & 0xFF;
+  meta->udw_size = udw_size;
+  meta->udw_offset = 0;
+
+  *consumed = need;
+  return ST40_RFC8331_DECODE_OK;
 }

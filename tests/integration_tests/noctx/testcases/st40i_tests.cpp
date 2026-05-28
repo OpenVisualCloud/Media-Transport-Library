@@ -87,12 +87,11 @@ namespace {
 
 static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint32_t ts,
                                    bool marker, const std::vector<uint8_t>& payload) {
-  out.clear();
-  out.resize(sizeof(st40_rfc8331_rtp_hdr) + sizeof(st40_rfc8331_payload_hdr) - 4 +
-             ((3 + payload.size() + 1) * 10 + 7) / 8);
+  uint32_t payload_bytes =
+      st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
+  out.assign(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes, 0);
 
   auto* rtp = reinterpret_cast<st40_rfc8331_rtp_hdr*>(out.data());
-  memset(rtp, 0, sizeof(*rtp));
   rtp->base.version = 2;
   rtp->base.payload_type = 113;
   rtp->base.seq_number = htons(seq);
@@ -100,32 +99,17 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   rtp->base.tmstamp = htonl(ts);
   rtp->base.marker = marker ? 1 : 0;
   rtp->first_hdr_chunk.anc_count = 1;
-
-  auto* ph = reinterpret_cast<st40_rfc8331_payload_hdr*>(rtp + 1);
-  memset(ph, 0, sizeof(*ph));
-  ph->first_hdr_chunk.c = 0;
-  ph->first_hdr_chunk.line_number = 1;
-  ph->first_hdr_chunk.horizontal_offset = 0;
-  ph->first_hdr_chunk.s = 0;
-  ph->first_hdr_chunk.stream_num = 0;
-  ph->second_hdr_chunk.did = st40_add_parity_bits(0x45);
-  ph->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
-  ph->second_hdr_chunk.data_count = st40_add_parity_bits(payload.size());
-
-  uint8_t* udw_dst = reinterpret_cast<uint8_t*>(&ph->second_hdr_chunk);
-  for (size_t i = 0; i < payload.size(); i++) {
-    st40_set_udw(static_cast<int>(i + 3), st40_add_parity_bits(payload[i]), udw_dst);
-  }
-  uint16_t checksum = st40_calc_checksum(3 + payload.size(), udw_dst);
-  st40_set_udw(static_cast<int>(payload.size() + 3), checksum, udw_dst);
-
-  uint32_t payload_bytes =
-      st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
-
   rtp->length = htons(payload_bytes);
   st40_rfc8331_rtp_hdr_bswap(rtp);
-  st40_rfc8331_payload_hdr_bswap(ph);
-  out.resize(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes);
+
+  struct st40_meta meta = {};
+  meta.line_number = 1;
+  meta.did = 0x45;
+  meta.sdid = 0x01;
+  meta.udw_size = static_cast<uint16_t>(payload.size());
+  uint32_t written = 0;
+  st40_rfc8331_encode_packet(reinterpret_cast<uint8_t*>(rtp + 1), payload_bytes, &meta,
+                             payload.data(), &written);
 }
 
 static int send_rtp_burst(const st_tests_context* ctx, uint16_t port,

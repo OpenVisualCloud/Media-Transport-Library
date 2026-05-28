@@ -6,52 +6,40 @@
 
 static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr) {
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
-  struct st40_rfc8331_payload_hdr* payload_hdr =
-      (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
+  uint8_t* payload = (uint8_t*)&hdr[1];
+  uint32_t payload_offset = 0;
+  /* RTP payload size is not exposed here; cap at maximum possible ANC bytes
+   * (ST40_MAX_META * worst-case per-packet size) so the decoder's bounds
+   * check still fires if a malformed packet claims an impossible size. */
+  uint32_t payload_room = ST40_MAX_META * st40_rfc8331_payload_bytes(255);
 
   int anc_count = hdr->first_hdr_chunk.anc_count;
-  int idx, total_size, payload_len;
   dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);
 
-  for (idx = 0; idx < anc_count; idx++) {
-    st40_rfc8331_payload_hdr_bswap(payload_hdr);
-    if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
-        !st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
-        !st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-      err("%s(%d), anc RTP checkParityBits error\n", __func__, s->idx);
+  uint8_t udw_buf[256];
+  for (int idx = 0; idx < anc_count; idx++) {
+    struct st40_meta meta;
+    uint32_t consumed = 0;
+    enum st40_rfc8331_decode_result rc = st40_rfc8331_decode_packet(
+        payload + payload_offset, payload_room - payload_offset, &meta, udw_buf,
+        sizeof(udw_buf), &consumed);
+    if (rc == ST40_RFC8331_DECODE_PARITY_FAIL) {
+      err("%s(%d), anc RTP parity error\n", __func__, s->idx);
       return;
     }
-    int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
-
-    // verify checksum
-    uint16_t checksum = 0;
-    checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-    /* Re-swap second chunk to wire order; the 10-bit UDW/checksum reads below assume
-     * network byte layout. */
-    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
-    if (checksum !=
-        st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
+    if (rc == ST40_RFC8331_DECODE_CHECKSUM_FAIL) {
       err("%s(%d), anc frame checksum error\n", __func__, s->idx);
       return;
     }
-    // get payload
-#ifdef DEBUG
-    uint16_t data;
-    for (int i = 0; i < udw_size; i++) {
-      data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-      if (!st40_check_parity_bits(data)) err("anc udw checkParityBits error\n");
-      dbg("%c", data & 0xff);
+    if (rc != ST40_RFC8331_DECODE_OK) {
+      err("%s(%d), anc decode error %d\n", __func__, s->idx, rc);
+      return;
     }
+#ifdef DEBUG
+    for (uint16_t i = 0; i < meta.udw_size; i++) dbg("%c", udw_buf[i]);
     dbg("\n");
 #endif
-    total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                                 // 10-bit words: DID, SDID, DATA_COUNT
-                                                 // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of ANC data packet
-    payload_len =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
-    payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
+    payload_offset += consumed;
   }
 
   s->stat_frame_total_received++;

@@ -760,6 +760,43 @@ void st40_rfc8331_rtp_hdr_bswap(struct st40_rfc8331_rtp_hdr* hdr);
 void st40_rfc8331_payload_hdr_bswap(struct st40_rfc8331_payload_hdr* hdr);
 
 /**
+ * Result of st40_rfc8331_decode_packet().
+ */
+enum st40_rfc8331_decode_result {
+  ST40_RFC8331_DECODE_OK = 0,
+  ST40_RFC8331_DECODE_SHORT_BUFFER,
+  ST40_RFC8331_DECODE_PARITY_FAIL,
+  ST40_RFC8331_DECODE_CHECKSUM_FAIL,
+};
+
+/**
+ * Decode one wire-order RFC 8331 ANC sub-packet from @p buf (capacity
+ * @p room), write parsed meta to @p meta and up to @p udw_cap stripped
+ * UDW bytes (low 8 bits per word) to @p udw_out.
+ *
+ * On success @p *consumed is set to the number of bytes occupied on the
+ * wire (post 4-byte alignment) so the caller can advance to the next
+ * sub-packet. @p udw_out may be NULL with @p udw_cap == 0 when the
+ * caller only needs meta and size.
+ */
+enum st40_rfc8331_decode_result st40_rfc8331_decode_packet(
+    const uint8_t* buf, uint32_t room, struct st40_meta* meta, uint8_t* udw_out,
+    uint32_t udw_cap, uint32_t* consumed);
+
+/**
+ * Encode one ANC sub-packet at @p buf (capacity @p room) from @p meta and
+ * @p udw_in (meta->udw_size bytes; may be NULL when meta->udw_size == 0).
+ * On success writes wire-order bytes and sets @p *written to the bytes
+ * occupied on the wire.
+ *
+ * @return
+ *   - 0 on success
+ *   - -ENOSPC if @p room is too small for the packet
+ */
+int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_meta* meta,
+                               const uint8_t* udw_in, uint32_t* written);
+
+/**
  * Add parity from st2110-40(ancillary) payload.
  *
  * @param val

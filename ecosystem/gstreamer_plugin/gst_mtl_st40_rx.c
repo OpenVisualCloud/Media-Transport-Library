@@ -130,8 +130,6 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
                                                  void* usrptr);
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
                                                   SessionPortArgs* portArgs);
-static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
-    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size);
 
 static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
@@ -385,42 +383,10 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
   return mbuf;
 }
 
-static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
-    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
-  gint package_size;
-  gint payload_len;
-
-  package_size = ((WORD_10_BIT_ALIGN + udw_size) * USER_DATA_WORD_BIT_SIZE) / BYTE_SIZE;
-  payload_len = sizeof(struct st40_rfc8331_payload_hdr) -
-                (package_size % WORD_10_BIT_ALIGN) + package_size;
-
-  return (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
-}
-
-static GstFlowReturn gst_mtl_st40_rx_check_parity(
-    const struct st40_rfc8331_payload_hdr* payload_hdr) {
-  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did)) {
-    GST_ERROR("Parity check failed for DID");
-    return GST_FLOW_ERROR;
-  }
-  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid)) {
-    GST_ERROR("Parity check failed for SDID");
-    return GST_FLOW_ERROR;
-  }
-  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-    GST_ERROR("Parity check failed for Data Count");
-    return GST_FLOW_ERROR;
-  }
-  return GST_FLOW_OK;
-}
-
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buffer,
                                                  void* usrptr) {
   struct st40_rfc8331_rtp_hdr* hdr;
-  struct st40_rfc8331_payload_hdr* payload_hdr;
   GstMapInfo dest_info;
-  guint16 data;
-  gint udw_size;
   guint buffer_size = 0, meta_offset, anc_count;
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
@@ -445,15 +411,24 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   guint8* anc_data[anc_count];
   guint8 anc_data_count[anc_count];
 
-  payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
+  uint8_t* payload = (uint8_t*)&hdr[1];
+  uint32_t payload_offset = 0;
+  uint32_t payload_room = ST40_MAX_META * st40_rfc8331_payload_bytes(255);
+
   for (int i = 0; i < anc_count; i++) {
-    st40_rfc8331_payload_hdr_bswap(payload_hdr);
-    if (gst_mtl_st40_rx_check_parity(payload_hdr) != GST_FLOW_OK) {
+    struct st40_meta meta;
+    uint8_t udw_buf[256];
+    uint32_t consumed = 0;
+    enum st40_rfc8331_decode_result rc = st40_rfc8331_decode_packet(
+        payload + payload_offset, payload_room - payload_offset, &meta, udw_buf,
+        sizeof(udw_buf), &consumed);
+    if (rc != ST40_RFC8331_DECODE_OK) {
+      GST_ERROR("Ancillary decode failed for packet %d, result=%d", i, rc);
       for (int j = 0; j < i; j++) free(anc_data[j]);
       return GST_FLOW_ERROR;
     }
 
-    udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
+    int udw_size = meta.udw_size;
     anc_data_count[i] = udw_size;
     meta_offset = 0;
     buffer_size += udw_size;
@@ -472,31 +447,19 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     }
 
     if (src->include_metadata_in_buffer) {
-      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.c;
-      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.line_number;
-      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.horizontal_offset;
-      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.s;
-      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.stream_num;
-      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.did & 0xff;
-      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.sdid & 0xff;
-      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.data_count & 0xff;
+      anc_data[i][meta_offset++] = meta.c;
+      anc_data[i][meta_offset++] = meta.line_number;
+      anc_data[i][meta_offset++] = meta.hori_offset;
+      anc_data[i][meta_offset++] = meta.s;
+      anc_data[i][meta_offset++] = meta.stream_num;
+      anc_data[i][meta_offset++] = meta.did;
+      anc_data[i][meta_offset++] = meta.sdid;
+      anc_data[i][meta_offset++] = meta.udw_size;
     }
 
-    /* Re-swap second chunk to wire order; the 10-bit UDW/checksum reads below assume
-     * network byte layout. */
-    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+    memcpy(anc_data[i] + meta_offset, udw_buf, udw_size);
 
-    for (int d = 0; d < udw_size; d++) {
-      data = st40_get_udw(d + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-      if (!st40_check_parity_bits(data)) {
-        GST_ERROR("Ancillary data parity bits check failed, data=0x%03x", data & 0x3FF);
-        for (int j = 0; j <= i; j++) free(anc_data[j]);
-        return GST_FLOW_ERROR;
-      }
-      anc_data[i][d + meta_offset] = data & 0xff;
-    }
-
-    payload_hdr = gst_mtl_st40_rx_shift_payload_hdr(payload_hdr, udw_size);
+    payload_offset += consumed;
   }
 
   *buffer = gst_buffer_new_allocate(NULL, buffer_size, NULL);
