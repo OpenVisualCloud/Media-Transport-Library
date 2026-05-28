@@ -121,8 +121,23 @@ LLMs produce characteristic mistakes. Hunt for these aggressively:
 - **Cargo-cult patterns** — Copying a pattern from elsewhere without understanding why it was needed there. The context may be different.
 - **Verbose error handling for impossible cases** — Validating inputs deep inside internal functions where the caller already validated. Only validate at system boundaries.
 - **Docstrings and comments on unchanged code** — Adding documentation to code that wasn't modified is scope creep.
+- **Comment bloat** — Multi-line comments where one line would do; comments that narrate the diff ("now uses X", "added Y"); comments that restate what the code obviously does; comments appended to instead of rewritten. See section 1a.
 - **Dead code paths** — Branches that can never execute given the actual inputs.
 - **Inconsistent style within the diff** — Mixing conventions because LLM training data has both.
+
+### 1a. Comment & Docstring Quality
+
+Comments are load-bearing only when they say something the code cannot. Flag every comment in the diff that fails any of these:
+
+- **Restates the code.** `/* increment counter */ counter++;` — delete.
+- **Narrates the change.** `/* now also handles X */`, `/* added to fix Y */`, `/* renamed from foo */`. The diff and commit message carry provenance; the source must not.
+- **Names an issue, PR, ticket, SHA, reviewer, or chat context.** `/* Issue #1517 reproduction */`, `/* per review */`. Reference spec sections only; everything else lives in `git log`.
+- **Longer than necessary.** One line is the target, two the ceiling — except docstrings on exported public API (`mtl_*`, `st*_*`, harness `ut*_*` crossing files). Internal `static` helpers earn a comment only when name + signature do not explain them.
+- **Appended to an existing comment** instead of rewritten whole. Tell-tale: a paragraph whose later clauses contradict, qualify, or duplicate earlier ones.
+- **Stale.** A comment on a line that no longer matches it. If the diff touches the line, the comment must be corrected or deleted.
+- **Docstring on a one-line `static` wrapper.** If the function is trivial and used in one place, inline it instead.
+
+If a function gains more comment lines than code lines in the diff, that is itself a finding. Severity: WARNING when isolated, BLOCKER when pervasive (the diff is unreviewable for the next person).
 
 ### 2. MTL Convention Violations
 
