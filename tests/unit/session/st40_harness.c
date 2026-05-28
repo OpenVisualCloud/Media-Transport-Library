@@ -308,6 +308,10 @@ void ut40_session_reset(ut_test_ctx* ctx) {
   rx_ancillary_session_reset(&ctx->session, false);
 }
 
+void ut40_invoke_rx_ancillary_session_stat(ut_test_ctx* ctx) {
+  rx_ancillary_session_stat(&ctx->session);
+}
+
 int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker) {
   *out_count = 0;
   *out_has_marker = false;
