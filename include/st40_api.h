@@ -710,7 +710,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta);
  * @return
  *   - udw
  */
-uint16_t st40_get_udw(uint32_t idx, uint8_t* data);
+uint16_t st40_get_udw(uint32_t idx, const uint8_t* data);
 
 /**
  * Set udw from for st2110-40(ancillary) payload.
@@ -734,7 +734,7 @@ void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
  * @return
  *   - checksum
  */
-uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data);
+uint16_t st40_calc_checksum(uint32_t data_num, const uint8_t* data);
 
 /**
  * Wire-aligned byte size of one RFC 8331 ANC data packet inside an RTP
