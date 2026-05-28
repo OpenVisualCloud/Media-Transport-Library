@@ -549,13 +549,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    /* Compute byte size of 10-bit words
-      (DID, SDID, DC, payload, checksum) and align to 4 */
-    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10; /* words = udw_size + 4 */
-    uint32_t total_size = (total_bits + 7) / 8;              /* ceil(bits/8) */
-    total_size = (total_size + 3) & ~0x3U;                   /* align to 4 bytes */
-    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
-                            total_size; /* Full size of one ANC */
+    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
     if (s->split_payload && size_to_send > s->max_pkt_len) {
       err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
           size_to_send, s->max_pkt_len);
@@ -648,13 +642,7 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    /* Compute byte size of 10-bit words (DID, SDID, DC, payload, checksum)
-       and align to 4 */
-    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
-    uint32_t total_size = (total_bits + 7) / 8;
-    total_size = (total_size + 3) & ~0x3U;
-    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
-                            total_size; /* Full size of one ANC */
+    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
     if (s->split_payload && size_to_send > s->max_pkt_len) {
       err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
           size_to_send, s->max_pkt_len);

@@ -274,14 +274,7 @@ static int rx_st40p_rtp_ready(void* priv) {
     meta_entry->udw_size = udw_words;
     meta_entry->udw_offset = frame_info->udw_buffer_fill;
 
-    uint32_t total_bits = (3 + udw_words + 1) * 10;
-    /* SMPTE ST 2110-40 / RFC 8331 packs the 10-bit fields (DID, SDID, DC,
-     * UDW[], checksum) bit-contiguously. Round the total bit count up to
-     * whole bytes, then 4-byte align per the RFC. */
-    uint32_t total_size = (total_bits + 7) / 8;
-    uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
-    uint32_t anc_packet_bytes =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
+    uint32_t anc_packet_bytes = st40_rfc8331_payload_bytes(udw_words);
     if (payload_offset + anc_packet_bytes > payload_room) {
       warn("%s(%d), ANC packet bytes exceed payload (offset=%u, size=%u, room=%u)\n",
            __func__, ctx->idx, payload_offset, anc_packet_bytes, payload_room);

@@ -228,13 +228,6 @@ static struct rte_mbuf* make_pipeline_mbuf(uint16_t seq, uint32_t ts, int marker
   return m;
 }
 
-static uint32_t ut40p_anc_payload_bytes(uint16_t udw_size) {
-  uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
-  uint32_t total_size = (total_bits + 7) / 8;
-  total_size = (total_size + 3) & ~0x3U;
-  return sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;
-}
-
 static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marker,
                                             uint16_t dpdk_port_id,
                                             const uint16_t* udw_sizes,
@@ -243,7 +236,7 @@ static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marke
 
   size_t payload_len = 0;
   for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++)
-    payload_len += ut40p_anc_payload_bytes(udw_sizes[anc_idx]);
+    payload_len += st40_rfc8331_payload_bytes(udw_sizes[anc_idx]);
 
   size_t rtp_len = sizeof(struct st40_rfc8331_rtp_hdr) + payload_len;
   size_t total = UT40P_L234_HDR_LEN + rtp_len;
@@ -299,7 +292,7 @@ static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marke
     uint16_t checksum = st40_calc_checksum(3 + udw_size, udw_dst);
     st40_set_udw(udw_size + 3, checksum, udw_dst);
 
-    payload += ut40p_anc_payload_bytes(udw_size);
+    payload += st40_rfc8331_payload_bytes(udw_size);
   }
 
   m->data_len = total;

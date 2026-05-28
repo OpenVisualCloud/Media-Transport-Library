@@ -119,10 +119,8 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   uint16_t checksum = st40_calc_checksum(3 + payload.size(), udw_dst);
   st40_set_udw(static_cast<int>(payload.size() + 3), checksum, udw_dst);
 
-  uint32_t total_bits = (3 + payload.size() + 1) * 10;
-  uint32_t total_size = (total_bits + 7) / 8;
-  uint32_t total_size_aligned = (total_size + 3) & ~0x3u;
-  uint32_t payload_bytes = sizeof(st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
+  uint32_t payload_bytes =
+      st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
 
   rtp->length = htons(payload_bytes);
   rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);

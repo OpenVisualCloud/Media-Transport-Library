@@ -3,6 +3,7 @@
  */
 
 #include "../mt_log.h"
+#include "st40_api.h"
 
 typedef union anc_udw_10_6e {
   struct {
@@ -183,6 +184,14 @@ uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data) {
   chks = (~((chks << 1)) & 0x200) | chks;
 
   return chks;
+}
+
+uint32_t st40_rfc8331_payload_bytes(uint16_t udw_size) {
+  /* 10-bit words: DID, SDID, DC, UDW[udw_size], checksum. */
+  uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
+  uint32_t total_size = (total_bits + 7) / 8;
+  total_size = (total_size + 3) & ~0x3U;
+  return (uint32_t)(sizeof(struct st40_rfc8331_payload_hdr) - 4) + total_size;
 }
 
 uint16_t st40_add_parity_bits(uint16_t val) {

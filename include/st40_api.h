@@ -737,6 +737,17 @@ void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
 uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data);
 
 /**
+ * Wire-aligned byte size of one RFC 8331 ANC data packet inside an RTP
+ * payload (4-byte payload header + 10-bit-packed DID/SDID/DC/UDW[]/checksum,
+ * ceil to whole bytes, then rounded up to a 4-byte boundary).
+ *
+ * @param udw_size
+ *   User Data Word count (0..255, the 8-bit DataCount field).
+ * @return byte count to advance per ANC packet on the wire.
+ */
+uint32_t st40_rfc8331_payload_bytes(uint16_t udw_size);
+
+/**
  * Add parity from st2110-40(ancillary) payload.
  *
  * @param val
