@@ -1166,6 +1166,9 @@ struct st_rx_ancillary_session_impl {
   rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
   uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
+  /* sustained-busy hysteresis for the unified back-pressure warn line.
+   * Single-writer (mt_stat thread). */
+  uint32_t stat_consecutive_busy_intervals;
   struct mt_stat_u64 stat_time;
 };
 

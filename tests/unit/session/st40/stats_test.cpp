@@ -11,7 +11,12 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
+#include <regex>
+#include <string>
+
 #include "session/st40/st40_rx_test_base.h"
+#include "session/stderr_capture.h"
 
 class St40RxStatsTest : public St40RxBaseTest {};
 
@@ -221,4 +226,103 @@ TEST_F(St40RxStatsTest, UnrecoveredDoesNotUnderflow) {
   EXPECT_LE(unrecovered(), unrec_after_gap)
       << "stat_pkts_unrecovered must not underflow when late arrivals re-fire the "
          "decrement path";
+}
+
+/* Mirrors ST20/ST30 BackpressureWarnLineEmitted: single-axis trigger on
+ * stat_pkts_enqueue_fail; the gauge reports rte_ring fill, not framebuff
+ * pool free. ST40 ancillary RX has no frame-mode/RTP-mode split — the
+ * packet_ring is the only back-pressure resource. */
+class St40RxBackpressureTest : public ::testing::Test {
+ protected:
+  ut_test_ctx* ctx_ = nullptr;
+  uint16_t next_seq_ = 1;
+  uint32_t next_ts_ = 1000;
+
+  void SetUp() override {
+    ASSERT_EQ(ut40_init(), 0);
+    ctx_ = ut40_ctx_create(1);
+    ASSERT_NE(ctx_, nullptr);
+  }
+
+  void TearDown() override {
+    if (ctx_) {
+      ut40_set_skip_drain(false);
+      ut40_drain_ring();
+      ut40_ctx_destroy(ctx_);
+      ctx_ = nullptr;
+    }
+  }
+
+  void feed(int count) {
+    for (int i = 0; i < count; i++) {
+      ut40_feed_pkt(ctx_, next_seq_, next_ts_, 0, MTL_SESSION_PORT_P);
+      next_seq_ = (uint16_t)(next_seq_ + 1);
+      next_ts_ += 1;
+    }
+  }
+
+  uint64_t enqueue_fail() {
+    return ut40_stat_enqueue_fail(ctx_);
+  }
+};
+
+TEST_F(St40RxBackpressureTest, WarnLineEmitted) {
+  auto run_stage = ut_session::capture_stderr;
+
+  const std::string kWarnPrefix = "back-pressure: rtp ring full (";
+  const std::string kUsedMid = " used)";
+  const std::string kRemediation = "raise rtp_ring_size";
+  const std::string kLegacy = "enqueue failed pkts";
+
+  /* Healthy: drain on, feed a handful → no warn. */
+  std::string s1 = run_stage([&] {
+    feed(5);
+    ut40_invoke_rx_ancillary_session_stat(ctx_);
+  });
+  EXPECT_EQ(s1.find(kWarnPrefix), std::string::npos);
+  EXPECT_EQ(s1.find("rtp ring full"), std::string::npos);
+  EXPECT_EQ(enqueue_fail(), 0u);
+
+  /* Starved interval 1: pause drain, fill ring to capacity + overflow. */
+  ut40_set_skip_drain(true);
+  feed(520); /* ring capacity is 511 — last ~9 bump enqueue_fail */
+  std::string s2 = run_stage([&] { ut40_invoke_rx_ancillary_session_stat(ctx_); });
+  EXPECT_GT(enqueue_fail(), 0u) << "ring must have overflowed";
+  EXPECT_NE(s2.find(kWarnPrefix), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kUsedMid), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kRemediation), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kLegacy), std::string::npos)
+      << "legacy notice() preserved as cross-mode signal: " << s2;
+  EXPECT_EQ(s2.find("(sustained "), std::string::npos)
+      << "no sustained suffix on first starved interval: " << s2;
+
+  /* Starved intervals 2 and 3: keep feeding so enqueue_fail bumps each interval. */
+  run_stage([&] {
+    feed(10);
+    ut40_invoke_rx_ancillary_session_stat(ctx_);
+  });
+  std::string s3 = run_stage([&] {
+    feed(10);
+    ut40_invoke_rx_ancillary_session_stat(ctx_);
+  });
+  EXPECT_NE(s3.find(kWarnPrefix), std::string::npos) << s3;
+  std::regex sustained_re(R"(\(sustained [0-9]+x\))");
+  EXPECT_TRUE(std::regex_search(s3, sustained_re))
+      << "expected (sustained Nx) after 3 consecutive intervals: " << s3;
+
+  /* Recovery: drain ring, do not feed → no new enqueue_fail delta. */
+  ut40_set_skip_drain(false);
+  ut40_drain_ring();
+  const uint64_t fail_after_recovery = enqueue_fail();
+  std::string s4 = run_stage([&] { ut40_invoke_rx_ancillary_session_stat(ctx_); });
+  EXPECT_EQ(s4.find(kWarnPrefix), std::string::npos) << s4;
+  EXPECT_EQ(enqueue_fail(), fail_after_recovery);
+
+  /* New single starved interval: hysteresis must have reset. */
+  ut40_set_skip_drain(true);
+  feed(520);
+  std::string s5 = run_stage([&] { ut40_invoke_rx_ancillary_session_stat(ctx_); });
+  EXPECT_NE(s5.find(kWarnPrefix), std::string::npos) << s5;
+  EXPECT_EQ(s5.find("(sustained "), std::string::npos)
+      << "hysteresis must have reset on recovery: " << s5;
 }

@@ -155,6 +155,10 @@ void ut40_set_skip_drain(bool skip);
  * sub-scenario inside a test. */
 void ut40_session_reset(ut_test_ctx* ctx);
 
+/* Drive the mt_stat-thread stat callback synchronously for assertions on
+ * the rate-limited stat lines. */
+void ut40_invoke_rx_ancillary_session_stat(ut_test_ctx* ctx);
+
 /* Dequeue every packet currently on the ANC ring, counting them and
  * reporting whether any of them carried the RTP marker bit.
  *   *out_count       — total number of packets dequeued.

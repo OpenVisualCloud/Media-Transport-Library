@@ -9,6 +9,7 @@
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
+#include "st_rx_common.h"
 
 #ifdef MTL_ENABLE_FUZZING_ST40
 #define ST40_FUZZ_LOG(...) info(__VA_ARGS__)
@@ -373,6 +374,7 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   memset(&s->anc_window_prev, 0, sizeof(s->anc_window_prev));
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
+  s->stat_consecutive_busy_intervals = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
@@ -763,6 +765,19 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   if (pkts_enqueue_fail) {
     notice("RX_ANC_SESSION(%d): enqueue failed pkts %" PRIu64 "\n", idx,
            pkts_enqueue_fail);
+  }
+  if (pkts_enqueue_fail > 0 && s->packet_ring != NULL) {
+    uint32_t used = rte_ring_count(s->packet_ring);
+    uint32_t total = rte_ring_get_capacity(s->packet_ring);
+    char sustained[32];
+    st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
+                           sizeof(sustained));
+    warn(
+        "RX_ANC_SESSION(%d): back-pressure: rtp ring full (%u/%u used), "
+        "dropped %" PRIu64 " pkts in interval; raise rtp_ring_size%s\n",
+        idx, used, total, pkts_enqueue_fail, sustained);
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
   }
   if (s->ops.interlaced) {
     notice("RX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
