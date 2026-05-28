@@ -21,6 +21,7 @@
 #ifndef _ST20_SESSION_HARNESS_H_
 #define _ST20_SESSION_HARNESS_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "mtl_api.h"
@@ -134,9 +135,29 @@ uint64_t ut20_stat_received(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_redundant(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_lost_pkts(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx);
+
+/* Suppress the harness refcnt-dec in notify_frame_ready to simulate an
+ * application that stops calling st20_rx_put_framebuff. The
+ * hold→release transition drains the withheld refcnts. */
+void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold);
+
+/* Bump stat_pkts_no_slot by `n` without touching stat_pkts_pool_empty —
+ * simulates a non-back-pressure no_slot bump path (e.g. past-tmstamp
+ * drop, DMA-busy drop) so tests can prove the warn line's pkts number
+ * is driven by stat_pkts_pool_empty alone, not the wider no_slot total. */
+void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n);
+
+/* Live value of the segregated pool-empty packet counter that drives the
+ * back-pressure warn line's pkts number. */
+uint64_t ut20_stat_pkts_pool_empty(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx);
+
+/* Invoke the production rv_stat() against the harness session without
+ * standing up an mt_stat thread. Tests assert on its real log output. */
+void ut20_invoke_rv_stat(ut20_test_ctx* ctx);
 
 /* Number of frames the production handler has marked completed/delivered
  * since session reset. Returns the live value of `stat_frames_received`. */

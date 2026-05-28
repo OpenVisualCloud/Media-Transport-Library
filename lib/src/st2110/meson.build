@@ -21,6 +21,7 @@ sources += files(
   'st_convert.c',
   'st_fmt.c',
   'st_rx_timing_parser.c',
+  'st_rx_common.c',
 )
 
 subdir('pipeline')
