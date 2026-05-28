@@ -11,7 +11,12 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
+#include <regex>
+#include <string>
+
 #include "session/st20/st20_rx_test_base.h"
+#include "session/stderr_capture.h"
 
 class St20RxStatsTest : public St20RxBaseTest {};
 
@@ -163,6 +168,148 @@ TEST_F(St20RxStatsWideTest, UnrecoveredZeroWhenReconstructionSucceeds) {
   EXPECT_EQ(pkts_unrecovered(), 0u)
       << "every gap on one wire was filled by the other wire";
   EXPECT_LE(pkts_unrecovered(), lost_session()) << "documented invariant";
+}
+
+/* Frame-pool exhaustion: app stops releasing frames → both counters bump. */
+class St20RxFramePoolTest : public St20RxBaseTest {
+ protected:
+  /* Single port → slot_max == 1, the minimal geometry that exhibits the bug. */
+  int num_port() const override {
+    return 1;
+  }
+
+  void TearDown() override {
+    if (ctx_) {
+      ut20_set_hold_frames(ctx_, false);
+    }
+    St20RxBaseTest::TearDown();
+  }
+
+  void feed_first_pkt(uint32_t ts) {
+    ut20_feed_frame_pkt(ctx_, 0, ts, MTL_SESSION_PORT_P);
+  }
+};
+
+/* Pool exhaustion: app stops releasing frames → both counters bump,
+ * warn line fires, "(sustained 3x)" appears, resets on recovery. */
+TEST_F(St20RxFramePoolTest, BackpressureWarnLineEmitted) {
+  auto run_stage = ut_session::capture_stderr;
+
+  const std::string kWarnPrefix = "back-pressure: framebuff pool empty (";
+  const std::string kFreeMid = " free), dropped ";
+  const std::string kRemediation = "raise framebuff_cnt";
+
+  /* Healthy: no deltas → no warn line, no info/notice for back-pressure. */
+  std::string s1 = run_stage([&] {
+    feed_full(1000, MTL_SESSION_PORT_P);
+    feed_full(2000, MTL_SESSION_PORT_P);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  EXPECT_EQ(s1.find(kWarnPrefix), std::string::npos);
+  EXPECT_EQ(s1.find("tmstamp outside OFO window"), std::string::npos);
+  EXPECT_EQ(s1.find("framebuff pool empty"), std::string::npos);
+
+  /* Starved interval 1: both deltas > 0 → unified warn line with gauge,
+   * dropped counts, remediation; legacy lines emit at info. No sustained
+   * suffix yet (counter == 1). */
+  ut20_set_hold_frames(ctx_, true);
+  feed_full(3000, MTL_SESSION_PORT_P);
+  feed_full(4000, MTL_SESSION_PORT_P);
+  std::string s2 = run_stage([&] {
+    feed_first_pkt(5000);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  EXPECT_NE(s2.find(kWarnPrefix), std::string::npos) << "warn line missing: " << s2;
+  EXPECT_NE(s2.find(kFreeMid), std::string::npos) << s2;
+  EXPECT_NE(s2.find(kRemediation), std::string::npos) << s2;
+  EXPECT_EQ(s2.find("(sustained "), std::string::npos)
+      << "sustained suffix must not appear until 3 consecutive intervals";
+
+  /* Starved intervals 2 and 3: counter increments each call. After the
+   * third consecutive starved interval the "(sustained 3x)" suffix
+   * appears on the warn line. */
+  run_stage([&] {
+    feed_first_pkt(6000);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  std::string s3 = run_stage([&] {
+    feed_first_pkt(7000);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  EXPECT_NE(s3.find(kWarnPrefix), std::string::npos) << s3;
+  std::regex sustained_re(R"(\(sustained [0-9]+x\))");
+  EXPECT_TRUE(std::regex_search(s3, sustained_re))
+      << "expected (sustained Nx) suffix after 3 consecutive starved intervals: " << s3;
+
+  /* Recovery: pool drained → no deltas this interval → no warn, no
+   * legacy lines, hysteresis counter resets so a future single-interval
+   * starvation will again start at "no suffix". */
+  ut20_set_hold_frames(ctx_, false);
+  const uint64_t no_slot_after_recovery = no_slot();
+  std::string s4 = run_stage([&] {
+    feed_full(9000, MTL_SESSION_PORT_P);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  EXPECT_EQ(s4.find(kWarnPrefix), std::string::npos);
+  EXPECT_EQ(s4.find("tmstamp outside OFO window"), std::string::npos);
+  EXPECT_EQ(s4.find("framebuff pool empty"), std::string::npos);
+  EXPECT_EQ(no_slot(), no_slot_after_recovery); /* freeze after drain */
+
+  /* Single starved interval after recovery: warn appears WITHOUT
+   * sustained suffix, proving the hysteresis counter reset. */
+  ut20_set_hold_frames(ctx_, true);
+  feed_full(10000, MTL_SESSION_PORT_P);
+  feed_full(11000, MTL_SESSION_PORT_P);
+  std::string s5 = run_stage([&] {
+    feed_first_pkt(12000);
+    ut20_invoke_rv_stat(ctx_);
+  });
+  EXPECT_NE(s5.find(kWarnPrefix), std::string::npos) << s5;
+  EXPECT_EQ(s5.find("(sustained "), std::string::npos)
+      << "hysteresis must have reset on recovery; got: " << s5;
+}
+
+/* The warn line's "M pkts" number must reflect ONLY pool-empty drops
+ * (stat_pkts_pool_empty delta), not the wider stat_pkts_no_slot total
+ * which is also bumped by past-tmstamp and DMA-busy paths. Drives a
+ * concurrent non-pool-empty no_slot bump alongside a real pool-empty
+ * interval and asserts the reported number isolates the pool-empty
+ * cause. */
+TEST_F(St20RxFramePoolTest, BackpressureReportsOnlyPoolEmptyPkts) {
+  auto run_stage = ut_session::capture_stderr;
+
+  /* Inject a non-pool-empty no_slot bump (simulating past-ts drops). */
+  const uint64_t kPastTsBump = 7;
+  ut20_bump_pkts_no_slot_past_ts(ctx_, kPastTsBump);
+
+  /* Drive a real pool-empty interval: one frame attempt with the pool
+   * held → exactly UT20_PKTS_PER_FRAME-worth of pool-empty pkts will
+   * land in stat_pkts_pool_empty. */
+  ut20_set_hold_frames(ctx_, true);
+  feed_full(1000, MTL_SESSION_PORT_P);
+  feed_full(2000, MTL_SESSION_PORT_P);
+  std::string s = run_stage([&] {
+    feed_first_pkt(3000);
+    ut20_invoke_rv_stat(ctx_);
+  });
+
+  ASSERT_NE(s.find("back-pressure: framebuff pool empty ("), std::string::npos)
+      << "warn line did not fire: " << s;
+
+  /* Extract "dropped F frames / M pkts" — M must NOT include the
+   * kPastTsBump past-ts pkts. */
+  std::smatch m;
+  std::regex dropped_re(R"(dropped ([0-9]+) frames / ([0-9]+) pkts)");
+  ASSERT_TRUE(std::regex_search(s, m, dropped_re))
+      << "warn line missing 'dropped F frames / M pkts': " << s;
+  const uint64_t reported_pkts = std::stoull(m[2].str());
+
+  /* Exact-equal makes this an oracle, not a bounded sanity check: any future
+   * regression that sources the M-pkts from a counter other than
+   * stat_pkts_pool_empty will mismatch. */
+  EXPECT_EQ(reported_pkts, ut20_stat_pkts_pool_empty(ctx_))
+      << "reported pkts must equal stat_pkts_pool_empty delta exactly: " << s;
+  EXPECT_GT(reported_pkts, 0u) << "expected real pool-empty pkts: " << s;
 }
 
 /* Genuine post-redundancy loss: both wires drop the same packet, so the

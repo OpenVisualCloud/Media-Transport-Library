@@ -23,9 +23,17 @@ class St20RxBaseTest : public ::testing::Test {
  protected:
   ut20_test_ctx* ctx_ = nullptr;
 
+  /* Geometry knobs; subclasses override only what differs. */
+  virtual int num_port() const {
+    return 2;
+  }
+  virtual int pkts_per_frame() const {
+    return 2;
+  }
+
   void SetUp() override {
     ASSERT_EQ(ut20_init(), 0);
-    ctx_ = ut20_ctx_create(2);
+    ctx_ = ut20_ctx_create_geom(num_port(), pkts_per_frame());
     ASSERT_NE(ctx_, nullptr);
   }
 

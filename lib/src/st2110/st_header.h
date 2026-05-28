@@ -667,6 +667,14 @@ struct st_rx_video_session_impl {
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
+  /* Pool-empty drops in rv_get_frame() NULL path. Snap kept alongside for
+   * rv_stat delta — segregated from the wider stat_pkts_no_slot which is
+   * also bumped by past-ts and DMA-busy paths. */
+  uint64_t stat_pkts_pool_empty;
+  uint64_t stat_pkts_pool_empty_snap;
+  /* Consecutive rv_stat intervals with back-pressure; drives the
+   * "(sustained Nx)" suffix. Reset on any clean interval. */
+  uint32_t stat_consecutive_busy_intervals;
   struct mt_stat_u64 stat_time;
 };
 

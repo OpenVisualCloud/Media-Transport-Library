@@ -14,6 +14,7 @@
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
 #include "st_fmt.h"
+#include "st_rx_common.h"
 #include "st_rx_timing_parser.h"
 
 #ifdef MTL_GPU_DIRECT_ENABLED
@@ -1198,6 +1199,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
     s->port_user_stats.stat_slot_get_frame_fail++;
+    s->stat_pkts_pool_empty++;
     if (s->st22_info)
       MT_USDT_ST22_RX_NO_FRAMEBUFFER(s->parent->idx, s->idx, tmstamp);
     else
@@ -3179,6 +3181,9 @@ static void rv_session_reset(struct st_rx_video_session_impl* s,
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->cpu_busy_score = 0;
   s->dma_busy_score = 0;
+  s->stat_consecutive_busy_intervals = 0;
+  s->stat_pkts_pool_empty = 0;
+  s->stat_pkts_pool_empty_snap = 0;
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
@@ -3560,10 +3565,24 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): rtp dropped pkts %" PRIu64 " as ring full\n", m_idx,
            idx, d);
   }
-  d = us->stat_pkts_no_slot - snap->stat_pkts_no_slot;
-  if (d) {
-    notice("RX_VIDEO_SESSION(%d,%d): dropped pkts %" PRIu64 " as no slot\n", m_idx, idx,
-           d);
+  /* Back-pressure detector: stat_pkts_pool_empty isolates the consumer
+   * back-pressure cause (rv_get_frame() pool exhaustion) from the wider
+   * stat_pkts_no_slot which also bumps on past-ts and DMA-busy paths. */
+  uint64_t d_pkts_no_slot = us->stat_pkts_no_slot - snap->stat_pkts_no_slot;
+  uint64_t d_slot_get_frame_fail =
+      us->stat_slot_get_frame_fail - snap->stat_slot_get_frame_fail;
+  uint64_t d_pool_empty = s->stat_pkts_pool_empty - s->stat_pkts_pool_empty_snap;
+  bool backpressure = (d_pool_empty > 0);
+  if (d_pkts_no_slot) {
+    if (backpressure) {
+      info("RX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " pkts dropped: tmstamp outside OFO window (slot ring of %d full)\n",
+           m_idx, idx, d_pkts_no_slot, ST_VIDEO_RX_REC_NUM_OFO);
+    } else {
+      notice("RX_VIDEO_SESSION(%d,%d): %" PRIu64
+             " pkts dropped: tmstamp outside OFO window (slot ring of %d full)\n",
+             m_idx, idx, d_pkts_no_slot, ST_VIDEO_RX_REC_NUM_OFO);
+    }
   }
   /* Per-port arrival line: port-balance visible at a glance.
    * port[].frames counts frames the port could have completed alone (got all
@@ -3688,8 +3707,36 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   d = us->stat_slot_get_frame_fail - snap->stat_slot_get_frame_fail;
   if (d) {
-    notice("RX_VIDEO_SESSION(%d,%d): slot get frame fail %" PRIu64 "\n", m_idx, idx, d);
+    if (backpressure) {
+      info("RX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " frames skipped: framebuff pool empty (raise framebuff_cnt)\n",
+           m_idx, idx, d);
+    } else {
+      notice("RX_VIDEO_SESSION(%d,%d): %" PRIu64
+             " frames skipped: framebuff pool empty (raise framebuff_cnt)\n",
+             m_idx, idx, d);
+    }
   }
+  if (backpressure) {
+    uint32_t framebuff_used = 0;
+    for (int i = 0; i < s->st20_frames_cnt; i++) {
+      if (rte_atomic32_read(&s->st20_frames[i].refcnt) > 0) framebuff_used++;
+    }
+    uint32_t total = (uint32_t)s->st20_frames_cnt;
+    uint32_t free_cnt = (total > framebuff_used) ? (total - framebuff_used) : 0;
+    char sustained[32];
+    st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
+                           sizeof(sustained));
+    warn(
+        "RX_VIDEO_SESSION(%d,%d): back-pressure: framebuff pool empty (%u/%u free), "
+        "dropped %" PRIu64 " frames / %" PRIu64
+        " pkts in interval; raise framebuff_cnt or drain via "
+        "st20_rx_put_framebuff%s\n",
+        m_idx, idx, free_cnt, total, d_slot_get_frame_fail, d_pool_empty, sustained);
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
+  }
+  s->stat_pkts_pool_empty_snap = s->stat_pkts_pool_empty;
   d = us->stat_slot_query_ext_fail - snap->stat_slot_query_ext_fail;
   if (d) {
     notice("RX_VIDEO_SESSION(%d,%d): slot query ext fail %" PRIu64 "\n", m_idx, idx, d);

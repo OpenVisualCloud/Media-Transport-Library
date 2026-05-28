@@ -13,6 +13,7 @@
  */
 
 #include <rte_atomic.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,6 +50,8 @@ struct ut20_test_ctx {
   struct st_frame_trans frames[UT20_FRAME_COUNT];
   uint8_t frame_storage[UT20_FRAME_COUNT][UT20_MAX_FRAME_SIZE];
   uint8_t bitmaps[ST_VIDEO_RX_REC_NUM_OFO][UT20_MAX_BITMAP_SIZE];
+
+  bool hold_frames;
 };
 
 #include "session/st20_harness.h"
@@ -66,9 +69,11 @@ static uint64_t ut20_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
 static int ut20_notify_frame_ready(void* priv, void* frame,
                                    struct st20_rx_frame_meta* meta) {
   (void)meta;
-  struct st_rx_video_session_impl* s = priv;
-  if (!s || !frame) return 0;
+  ut20_test_ctx* ctx = priv;
+  if (!ctx || !frame) return 0;
+  if (ctx->hold_frames) return 0;
 
+  struct st_rx_video_session_impl* s = &ctx->session;
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     if (!s->st20_frames) break;
     if (s->st20_frames[i].addr == frame) {
@@ -138,7 +143,7 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
   s->ops.ssrc = 0;
   s->ops.framebuff_cnt = UT20_FRAME_COUNT;
   s->ops.notify_frame_ready = ut20_notify_frame_ready;
-  s->ops.priv = s;
+  s->ops.priv = ctx;
   s->ops.name = "ut20_test";
 
   s->st20_pg.fmt = ST20_FMT_YUV_422_10BIT;
@@ -184,6 +189,11 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
 }
 
 void ut20_ctx_destroy(ut20_test_ctx* ctx) {
+  if (!ctx) return;
+  /* Drain any held refcnts so destroy-while-holding is safe. */
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    rte_atomic32_set(&ctx->frames[i].refcnt, 0);
+  }
   free(ctx);
 }
 
@@ -352,6 +362,32 @@ uint64_t ut20_stat_port_lost(const ut20_test_ctx* ctx, enum mtl_session_port por
 
 uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_no_slot;
+}
+
+uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_slot_get_frame_fail;
+}
+
+void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
+  bool was_holding = ctx->hold_frames;
+  ctx->hold_frames = hold;
+  if (was_holding && !hold) {
+    for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+      rte_atomic32_set(&ctx->frames[i].refcnt, 0);
+    }
+  }
+}
+
+void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n) {
+  ctx->session.port_user_stats.stat_pkts_no_slot += n;
+}
+
+uint64_t ut20_stat_pkts_pool_empty(const ut20_test_ctx* ctx) {
+  return ctx->session.stat_pkts_pool_empty;
+}
+
+void ut20_invoke_rv_stat(ut20_test_ctx* ctx) {
+  rv_stat(&ctx->mgr, &ctx->session);
 }
 
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx) {
