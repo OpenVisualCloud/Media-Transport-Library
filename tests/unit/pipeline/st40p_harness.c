@@ -281,8 +281,7 @@ static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marke
     payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
     payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
 
-    payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
-    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(payload_hdr);
 
     uint8_t* udw_dst = (uint8_t*)&payload_hdr->second_hdr_chunk;
     for (uint16_t udw_idx = 0; udw_idx < udw_size; udw_idx++) {

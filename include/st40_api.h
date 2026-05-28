@@ -748,6 +748,18 @@ uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data);
 uint32_t st40_rfc8331_payload_bytes(uint16_t udw_size);
 
 /**
+ * Byte-swap the first header chunk of an RFC 8331 RTP header in place
+ * between host and network order.
+ */
+void st40_rfc8331_rtp_hdr_bswap(struct st40_rfc8331_rtp_hdr* hdr);
+
+/**
+ * Byte-swap both header chunks of an RFC 8331 payload header in place
+ * between host and network order.
+ */
+void st40_rfc8331_payload_hdr_bswap(struct st40_rfc8331_payload_hdr* hdr);
+
+/**
  * Add parity from st2110-40(ancillary) payload.
  *
  * @param val

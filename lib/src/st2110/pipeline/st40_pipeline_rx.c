@@ -258,9 +258,8 @@ static int rx_st40p_rtp_ready(void* priv) {
 
     payload_hdr = (struct st40_rfc8331_payload_hdr*)(payload + payload_offset);
 
-    struct st40_rfc8331_payload_hdr hdr_local = {0};
-    hdr_local.swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
-    hdr_local.swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+    struct st40_rfc8331_payload_hdr hdr_local = *payload_hdr;
+    st40_rfc8331_payload_hdr_bswap(&hdr_local);
 
     uint16_t udw_words = hdr_local.second_hdr_chunk.data_count & 0xFF;
     struct st40_meta* meta_entry = &frame_info->meta[frame_info->meta_num];

@@ -447,8 +447,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   for (int i = 0; i < anc_count; i++) {
-    payload_hdr->swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
-    payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(payload_hdr);
     if (gst_mtl_st40_rx_check_parity(payload_hdr) != GST_FLOW_OK) {
       for (int j = 0; j < i; j++) free(anc_data[j]);
       return GST_FLOW_ERROR;
@@ -483,6 +482,8 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
       anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.data_count & 0xff;
     }
 
+    /* Re-swap second chunk to wire order; the 10-bit UDW/checksum reads below assume
+     * network byte layout. */
     payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
 
     for (int d = 0; d < udw_size; d++) {

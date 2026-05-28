@@ -3,6 +3,7 @@
  */
 
 #include "../mt_log.h"
+#include "../mt_platform.h"
 #include "st40_api.h"
 
 typedef union anc_udw_10_6e {
@@ -192,6 +193,15 @@ uint32_t st40_rfc8331_payload_bytes(uint16_t udw_size) {
   uint32_t total_size = (total_bits + 7) / 8;
   total_size = (total_size + 3) & ~0x3U;
   return (uint32_t)(sizeof(struct st40_rfc8331_payload_hdr) - 4) + total_size;
+}
+
+void st40_rfc8331_rtp_hdr_bswap(struct st40_rfc8331_rtp_hdr* hdr) {
+  hdr->swapped_first_hdr_chunk = htonl(hdr->swapped_first_hdr_chunk);
+}
+
+void st40_rfc8331_payload_hdr_bswap(struct st40_rfc8331_payload_hdr* hdr) {
+  hdr->swapped_first_hdr_chunk = htonl(hdr->swapped_first_hdr_chunk);
+  hdr->swapped_second_hdr_chunk = htonl(hdr->swapped_second_hdr_chunk);
 }
 
 uint16_t st40_add_parity_bits(uint16_t val) {

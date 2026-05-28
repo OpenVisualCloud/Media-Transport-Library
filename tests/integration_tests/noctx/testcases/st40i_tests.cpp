@@ -123,9 +123,8 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
       st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
 
   rtp->length = htons(payload_bytes);
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
-  ph->swapped_first_hdr_chunk = htonl(ph->swapped_first_hdr_chunk);
-  ph->swapped_second_hdr_chunk = htonl(ph->swapped_second_hdr_chunk);
+  st40_rfc8331_rtp_hdr_bswap(rtp);
+  st40_rfc8331_payload_hdr_bswap(ph);
   out.resize(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes);
 }
 
