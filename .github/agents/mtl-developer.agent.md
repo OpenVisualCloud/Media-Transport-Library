@@ -76,6 +76,19 @@ For any **behavior change** (bugfix, new feature, regression), the test that pin
 
 Minimal diff to pass the Gate 2 test. Follow the auto-loaded C coding rules. Match existing patterns. Do not refactor adjacent code or add speculative helpers.
 
+**Comment discipline.** The default is **no comment**. Code reads itself; names carry meaning. A comment is justified only when the reader cannot recover the answer from the code itself. Apply ruthlessly:
+
+- **Default: write none.** Add a comment only when you can name a specific reader question the code does not answer (an invariant, a non-obvious *why*, a hardware quirk, a spec-section reference). If you cannot name the question in one sentence, delete the comment.
+- **Docstrings only on exported API** — public headers (`mtl_*`, `st*_*`) and harness symbols used across files (`ut*_*`). Internal `static` functions, struct fields with obvious names, local variables: **no comment**. Rename instead.
+- **No provenance.** Do not name issue numbers, PRs, tickets, commit SHAs, reviewers, or chat context in comments or test names. Describe *what* and *why*; origin lives in `git log`.
+- **No diff narration.** No "added X to fix Y", no "now also does Z", no "renamed from foo", no per-field annotations of what changed. The diff carries that.
+- **One line. Hard.** One line is the target *and* the ceiling for inline comments. Exported-API docstrings may run longer only when documenting parameters, return values, or lifetime contracts the signature cannot express. If a comment needs two lines, the function probably needs a better name or a smaller body.
+- **Rewrite, don't append.** When editing an existing comment, replace it whole with the shortest version that is still true. Never tack on clauses. Never let a comment grow across commits.
+- **Delete stale comments on sight** in lines you are already touching. A wrong comment is worse than no comment.
+- **Every diff should remove more comment lines than it adds**, unless it adds a new exported-API docstring. If your diff doesn't, re-read each new comment and delete the ones that fail the "specific reader question" test.
+
+If a reviewer flags comment bloat, that is a process failure on this gate — the fix is to delete, not to refine.
+
 ### Gate 4 — Green test + clean build
 
 Re-run the Gate 2 test. Paste the pass. Run `./format-coding.sh && ./build.sh`. Paste the line proving zero errors and zero new warnings.
@@ -100,3 +113,4 @@ If your change is in the class listed under [.github/copilot-instructions.md](..
 - Bundling multiple requirements into one test case.
 - Skipping Gate 2 silently — name the exit clause or write the test.
 - Declaring done before firing Gate 5 — self-review is not adversarial review.
+- Narrating the diff in comments ("now uses X", "added to support Y"), appending to existing comments instead of rewriting them, or commenting obvious code. See Gate 3 *Comment discipline*.
