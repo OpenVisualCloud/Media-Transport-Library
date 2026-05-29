@@ -57,7 +57,6 @@ def test_rx_timing_mode_refactored(
                 "pixel_format": video_file["file_format"],
                 "transport_format": video_file["format"],
                 "input_file": str(host.connection.path(media, video_file["filename"])),
-                "output_file": str(host.connection.path(media, video_file["filename"])),
             },
             {
                 "session_type": "st30p",
@@ -66,7 +65,6 @@ def test_rx_timing_mode_refactored(
                 "audio_sampling": "48kHz",
                 "audio_ptime": "1",
                 "input_file": str(host.connection.path(media, audio_file["filename"])),
-                "output_file": str(host.connection.path(media, audio_file["filename"])),
             },
             {
                 "session_type": "ancillary",
