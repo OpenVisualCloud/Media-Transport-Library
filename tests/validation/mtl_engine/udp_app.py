@@ -19,22 +19,32 @@ def _resolve_udp_binary(build: str, relative_path: str) -> str:
     """Resolve a UDP test binary using .local_install or build directory.
 
     Checks (in order):
-      1. .local_install/mtl/bin/<basename>  (CI mode)
-      2. <build>/<relative_path>            (local build mode)
-    Raises EnvironmentError if not found in either location.
+      1. .local_install/mtl/bin/<basename>  (CI mode - MTL apps)
+      2. .local_install/librist/bin/<basename>  (CI mode - librist)
+      3. <build>/<relative_path>            (local build mode)
+    Raises EnvironmentError if not found in any location.
     """
     basename = os.path.basename(relative_path)
-    local_install = os.path.join(build, ".local_install", "mtl", "bin", basename)
+    local_install_mtl = os.path.join(build, ".local_install", "mtl", "bin", basename)
+    local_install_librist = os.path.join(
+        build, ".local_install", "librist", "bin", basename
+    )
     build_path = os.path.join(build, relative_path)
 
-    if os.path.isfile(local_install) and os.access(local_install, os.X_OK):
-        logger.debug(f"Resolved {basename} -> {local_install}")
-        return local_install
+    if os.path.isfile(local_install_mtl) and os.access(local_install_mtl, os.X_OK):
+        logger.debug(f"Resolved {basename} -> {local_install_mtl}")
+        return local_install_mtl
+    if os.path.isfile(local_install_librist) and os.access(
+        local_install_librist, os.X_OK
+    ):
+        logger.debug(f"Resolved {basename} -> {local_install_librist}")
+        return local_install_librist
     if os.path.isfile(build_path) and os.access(build_path, os.X_OK):
         logger.debug(f"Resolved {basename} -> {build_path}")
         return build_path
     raise EnvironmentError(
-        f"Binary '{basename}' not found at '{local_install}' or '{build_path}'. "
+        f"Binary '{basename}' not found at '{local_install_mtl}', "
+        f"'{local_install_librist}', or '{build_path}'. "
         f"Build the project or ensure .local_install is populated."
     )
 

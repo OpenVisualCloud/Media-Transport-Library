@@ -32,3 +32,10 @@ git am ../*.patch
 # build now
 meson build
 ninja -C build
+
+# Install test binaries to prefix if set (for CI stashing)
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	mkdir -p "${MTL_INSTALL_PREFIX}/bin"
+	cp build/test/rist/test_send "${MTL_INSTALL_PREFIX}/bin/"
+	cp build/test/rist/test_receive "${MTL_INSTALL_PREFIX}/bin/"
+fi
