@@ -57,6 +57,13 @@ runs:
         path: .local_install/gstreamer
         fail-on-cache-miss: true
 
+    - name: 'cache: Restore librist'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-librist-${{ steps.local-checksums.outputs.librist }}
+        path: .local_install/librist
+        fail-on-cache-miss: true
+
     - name: Make artifacts executable
       shell: bash
       run: |
@@ -79,6 +86,7 @@ runs:
         echo "${LI}/mtl/bin" >> "$GITHUB_PATH"
         echo "${LI}/ffmpeg/bin" >> "$GITHUB_PATH"
         echo "${LI}/dpdk/bin" >> "$GITHUB_PATH"
+        echo "${LI}/librist/bin" >> "$GITHUB_PATH"
 
         # GStreamer plugins
         echo "GST_PLUGIN_PATH=${LI}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}" >> "$GITHUB_ENV"

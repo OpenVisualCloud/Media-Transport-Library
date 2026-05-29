@@ -478,13 +478,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		else
+			bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
