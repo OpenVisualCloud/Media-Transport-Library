@@ -73,6 +73,7 @@ class NetsniffRecorder:
         self.capture_filter = capture_filter
         self.packets_capture = packets_capture
         self.capture_time = capture_time
+        self._promisc_was_off = False
 
     @staticmethod
     def _sanitize_filename_component(value: str, *, max_len: int = 64) -> str:
@@ -115,6 +116,7 @@ class NetsniffRecorder:
         """
         if not self.netsniff_process or not self.netsniff_process.running:
             connection = self.host.connection
+            self._enable_promisc(connection)
             try:
                 self.pcap_file = self._build_pcap_path()
                 cmd = [
@@ -140,6 +142,9 @@ class NetsniffRecorder:
                 if not self.netsniff_process.running:
                     err = self.netsniff_process.stdout_text
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
+                    # No pcap was written; clear so teardown skips upload.
+                    self.pcap_file = None
+                    self._restore_promisc()
                     return False
                 logger.info(
                     f"netsniff-ng started with PID {self.netsniff_process.pid}."
@@ -147,6 +152,8 @@ class NetsniffRecorder:
                 return True
             except ConnectionCalledProcessError as e:
                 logger.error(f"Failed to start netsniff-ng: {e}")
+                self.pcap_file = None
+                self._restore_promisc()
                 return False
 
     def capture(self, capture_time):
@@ -196,6 +203,7 @@ class NetsniffRecorder:
         # Check if process is still running before trying to stop
         if not self.netsniff_process.running:
             logger.debug("netsniff-ng process has already finished.")
+            self._restore_promisc()
             return
 
         try:
@@ -210,9 +218,64 @@ class NetsniffRecorder:
             logger.debug("Process already finished.")
         else:
             logger.debug("netsniff-ng process stopped gracefully.")
-            return
+        finally:
+            self._restore_promisc()
 
-        logger.debug("netsniff-ng process did not stop by itself.")
+    def _enable_promisc(self, connection):
+        """Enable promiscuous mode on the capture interface; remember prior state.
+
+        No-op when the interface has no kernel netdev (e.g. the PF is bound
+        to vfio-pci for DPDK use). The caller will still try to start
+        netsniff-ng, which will then fail loudly with a useful error.
+        """
+        try:
+            res = connection.execute_command(
+                f"ip -o link show dev {self.interface}", expected_return_codes=None
+            )
+            if res.return_code != 0:
+                logger.warning(
+                    "No kernel netdev for %s (rc=%s): %s",
+                    self.interface,
+                    res.return_code,
+                    (res.stderr or res.stdout or "").strip(),
+                )
+                self._promisc_was_off = False
+                return
+            flags = (res.stdout or "").upper()
+            if "PROMISC" in flags:
+                self._promisc_was_off = False
+                return
+            set_res = connection.execute_command(
+                f"sudo ip link set dev {self.interface} promisc on",
+                expected_return_codes=None,
+            )
+            if set_res.return_code != 0:
+                logger.warning(
+                    "Failed to enable promisc on %s: %s",
+                    self.interface,
+                    (set_res.stderr or set_res.stdout or "").strip(),
+                )
+                self._promisc_was_off = False
+                return
+            self._promisc_was_off = True
+            logger.debug("Enabled promiscuous mode on %s", self.interface)
+        except Exception as e:
+            logger.warning("Could not enable promisc on %s: %s", self.interface, e)
+            self._promisc_was_off = False
+
+    def _restore_promisc(self):
+        if not self._promisc_was_off:
+            return
+        try:
+            self.host.connection.execute_command(
+                f"sudo ip link set dev {self.interface} promisc off",
+                expected_return_codes=None,
+            )
+            logger.debug("Restored promiscuous mode off on %s", self.interface)
+        except Exception as e:
+            logger.warning("Could not restore promisc on %s: %s", self.interface, e)
+        finally:
+            self._promisc_was_off = False
 
     def update_filter(self, src_ip=None, dst_ip=None):
         """
