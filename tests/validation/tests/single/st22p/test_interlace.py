@@ -46,6 +46,7 @@ def test_st22p_interlace(
     test_time = max(test_time, 90)
 
     app = app_factory(application)
+    app.require_encoder(host, "libsvt_jpegxs")
     app.create_command(
         session_type="st22p",
         test_mode="multicast",

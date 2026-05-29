@@ -38,6 +38,7 @@ export MTL_INSTALL_PREFIX
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
 : "${PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:=0}"
+: "${PLUGIN_BUILD_AND_INSTALL_JPEGXS:=0}"
 
 : "${HOOK_PYTHON:=0}"
 : "${HOOK_RUST:=0}"
@@ -180,6 +181,15 @@ function setup_ubuntu_install_dependencies() {
 			nasm \
 			unzip \
 			patch
+	fi
+
+	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+		echo "Installing JPEG-XS dependencies"
+		sudo apt install -y \
+			cmake \
+			yasm \
+			nasm \
+			build-essential
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
@@ -512,6 +522,51 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
+	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+		echo "$STEP Plugin JPEG-XS build and install"
+
+		JPEGXS_REPO="${setup_script_folder}/SVT-JPEG-XS"
+		if [ ! -d "${JPEGXS_REPO}" ]; then
+			git clone --depth 1 https://github.com/OpenVisualCloud/SVT-JPEG-XS.git "${JPEGXS_REPO}"
+		fi
+
+		# Build and install SVT-JPEG-XS library
+		pushd "${JPEGXS_REPO}/Build/linux" >/dev/null || exit 1
+		./build.sh install
+		popd >/dev/null
+
+		# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
+		pushd "${JPEGXS_REPO}/imtl-plugin" >/dev/null || exit 1
+		rm -rf build
+		meson setup build
+		meson compile -C build
+		sudo meson install -C build
+		popd >/dev/null
+
+		# Rebuild FFmpeg with JPEG-XS support
+		FFMPEG_VERSION="${FFMPEG_VERSION:-7.0}"
+		FFMPEG_JPEGXS_DIR="${setup_script_folder}/ffmpeg-jpegxs"
+		if [ -d "${FFMPEG_JPEGXS_DIR}" ]; then
+			rm -rf "${FFMPEG_JPEGXS_DIR}"
+		fi
+
+		wget -q "https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/${FFMPEG_VERSION}.zip" -O "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip"
+		unzip -q "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip" -d "${setup_script_folder}" && rm -f "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip"
+		mv "${setup_script_folder}/FFmpeg-release-${FFMPEG_VERSION}" "${FFMPEG_JPEGXS_DIR}"
+
+		pushd "${FFMPEG_JPEGXS_DIR}" >/dev/null || exit 1
+		cp -f "${JPEGXS_REPO}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
+		git init && git add -A && git commit -m "init" --quiet
+		git am --whitespace=fix "${JPEGXS_REPO}/ffmpeg-plugin/${FFMPEG_VERSION}"/*.patch
+		./configure --enable-shared --disable-static --enable-pic --enable-libsvtjpegxs
+		make -j"${nproc}"
+		sudo make install
+		popd >/dev/null
+
+		sudo ldconfig
+		STEP=$((STEP + 1))
+	fi
+
 	if [ "${HOOK_PYTHON}" == "1" ]; then
 		echo "$STEP Hook Python"
 		pushd "${root_folder}" >/dev/null || exit 1
@@ -626,6 +681,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:AVCodec plugin" \
+		"PLUGIN_BUILD_AND_INSTALL_JPEGXS:JPEG-XS plugin" \
 		"HOOK_PYTHON:Python hook" \
 		"HOOK_RUST:Rust hook" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:MTL monitors" \

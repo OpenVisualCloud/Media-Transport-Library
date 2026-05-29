@@ -992,19 +992,25 @@ def pcap_capture(
         media_file_info, _ = media_file
         test_name = request.node.name
         if "frames_number" not in capture_cfg and "capture_time" not in capture_cfg:
-            capture_cfg["packets_number"] = (
-                FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
-            )
-            logger.info(
-                f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
-            )
+            if media_file_info is None:
+                capture_cfg.setdefault("capture_time", FRAMES_CAPTURE)
+            else:
+                capture_cfg["packets_number"] = (
+                    FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
+                )
+                logger.info(
+                    f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
+                )
         elif "frames_number" in capture_cfg:
-            capture_cfg["packets_number"] = capture_cfg[
-                "frames_number"
-            ] * calculate_packets_per_frame(media_file_info)
-            logger.info(
-                f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
-            )
+            if media_file_info is None:
+                capture_cfg.setdefault("capture_time", FRAMES_CAPTURE)
+            else:
+                capture_cfg["packets_number"] = capture_cfg[
+                    "frames_number"
+                ] * calculate_packets_per_frame(media_file_info)
+                logger.info(
+                    f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
+                )
         capturer = NetsniffRecorder(
             host=host,
             test_name=test_name,
