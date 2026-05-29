@@ -3,6 +3,7 @@
 
 import copy
 import json
+import logging
 import os
 import re
 
@@ -10,6 +11,60 @@ from mtl_engine import udp_app_config
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_udp_binary(build: str, relative_path: str) -> str:
+    """Resolve a UDP test binary using .local_install or build directory.
+
+    Checks (in order):
+      1. .local_install/mtl/bin/<basename>  (CI mode)
+      2. <build>/<relative_path>            (local build mode)
+    Raises EnvironmentError if not found in either location.
+    """
+    basename = os.path.basename(relative_path)
+    local_install = os.path.join(build, ".local_install", "mtl", "bin", basename)
+    build_path = os.path.join(build, relative_path)
+
+    if os.path.isfile(local_install) and os.access(local_install, os.X_OK):
+        logger.debug(f"Resolved {basename} -> {local_install}")
+        return local_install
+    if os.path.isfile(build_path) and os.access(build_path, os.X_OK):
+        logger.debug(f"Resolved {basename} -> {build_path}")
+        return build_path
+    raise EnvironmentError(
+        f"Binary '{basename}' not found at '{local_install}' or '{build_path}'. "
+        f"Build the project or ensure .local_install is populated."
+    )
+
+
+def _resolve_ld_preload(build: str) -> str:
+    """Resolve libmtl_udp_preload.so path using env, .local_install, or system."""
+    # Prefer env var set by CI
+    env_path = os.environ.get("MTL_LD_PRELOAD")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+    # .local_install
+    li_path = os.path.join(
+        build,
+        ".local_install",
+        "mtl",
+        "lib",
+        "x86_64-linux-gnu",
+        "libmtl_udp_preload.so",
+    )
+    if os.path.isfile(li_path):
+        return li_path
+    # System path
+    sys_path = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    if os.path.isfile(sys_path):
+        return sys_path
+    raise EnvironmentError(
+        f"libmtl_udp_preload.so not found. Checked MTL_LD_PRELOAD env, "
+        f"'{li_path}', and '{sys_path}'."
+    )
+
 
 sample_ip_dict = {
     "client": "192.168.106.10",
@@ -57,8 +112,11 @@ def execute_test_sample(
     server_env = os.environ.copy()
     server_env["MUFD_CFG"] = os.path.join(os.getcwd(), server_config_file)
 
-    client_command = f"./build/app/UfdClientSample --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
-    server_command = f"./build/app/UfdServerSample --sessions_cnt {sessions_cnt}"
+    client_bin = _resolve_udp_binary(build, "build/app/UfdClientSample")
+    server_bin = _resolve_udp_binary(build, "build/app/UfdServerSample")
+
+    client_command = f"{client_bin} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
+    server_command = f"{server_bin} --sessions_cnt {sessions_cnt}"
 
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
@@ -103,19 +161,26 @@ def execute_test_librist(
     save_as_json(config_file=receive_config_file, config=receive_config)
 
     send_env = os.environ.copy()
-    send_env["LD_PRELOAD"] = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    send_env["LD_PRELOAD"] = _resolve_ld_preload(build)
     send_env["MUFD_CFG"] = os.path.join(os.getcwd(), send_config_file)
 
     receive_env = os.environ.copy()
-    receive_env["LD_PRELOAD"] = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    receive_env["LD_PRELOAD"] = _resolve_ld_preload(build)
     receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
 
+    send_bin = _resolve_udp_binary(
+        build, "ecosystem/librist/librist/build/test/rist/test_send"
+    )
+    receive_bin = _resolve_udp_binary(
+        build, "ecosystem/librist/librist/build/test/rist/test_receive"
+    )
+
     send_command = (
-        f"./ecosystem/librist/librist/build/test/rist/test_send --sleep_us={sleep_us}"
+        f"{send_bin} --sleep_us={sleep_us}"
         + f" --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
     receive_command = (
-        "./ecosystem/librist/librist/build/test/rist/test_receive"
+        f"{receive_bin}"
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 
