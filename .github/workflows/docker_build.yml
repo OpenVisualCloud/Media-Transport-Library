@@ -42,7 +42,6 @@ jobs:
 
   ubuntu-docker-build:
     needs: changes
-    if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
@@ -98,7 +97,6 @@ jobs:
 
   manager-docker-build:
     needs: changes
-    if: ${{ needs.changes.outputs.manager_build == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
