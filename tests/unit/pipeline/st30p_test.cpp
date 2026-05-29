@@ -6,10 +6,9 @@
  *   stat_frames_received → bumped in st30p_rx_get_frame() (app consumes).
  *   stat_frames_dropped  → bumped in rx_st30p_frame_ready() when no free
  *                          framebuf is available (back-pressure).
+ *   stat_frames_corrupted → bumped in st30p_rx_get_frame() iff the frame's
+ *                          status is ST_FRAME_STATUS_CORRUPTED.
  *   stat_busy            → bumps 1:1 with stat_frames_dropped.
- *
- * ST30p has no per-frame corrupted concept; frames_corrupted is not
- * tracked by this layer and not asserted on.
  */
 
 #include <gtest/gtest.h>
@@ -32,7 +31,10 @@ class St30PipelineRxTest : public ::testing::Test {
   }
 
   int inject(uint32_t ts) {
-    return ut30p_inject_frame(ctx_, ts);
+    return ut30p_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, ts);
+  }
+  int inject_corrupted(uint32_t ts) {
+    return ut30p_inject_frame(ctx_, ST_FRAME_STATUS_CORRUPTED, ts);
   }
   struct st30_frame* get_frame() {
     return ut30p_get_frame(ctx_);
@@ -45,6 +47,9 @@ class St30PipelineRxTest : public ::testing::Test {
   }
   uint64_t frames_dropped() {
     return ut30p_stat_frames_dropped(ctx_);
+  }
+  uint64_t frames_corrupted() {
+    return ut30p_stat_frames_corrupted(ctx_);
   }
   uint32_t stat_busy() {
     return ut30p_stat_busy(ctx_);
@@ -134,4 +139,27 @@ TEST_F(St30PipelineRxTest, GetSessionStatsOverlay) {
 
   EXPECT_EQ(api.common.stat_frames_received, frames_received());
   EXPECT_EQ(api.common.stat_frames_dropped, frames_dropped());
+}
+
+/* CORRUPTED frames are still delivered to the application.  They bump
+ * BOTH stat_frames_received and stat_frames_corrupted; COMPLETE frames
+ * bump only the former. */
+TEST_F(St30PipelineRxTest, CorruptedDeliveredAndCounted) {
+  ASSERT_EQ(inject(1000), 0);
+  ASSERT_EQ(inject_corrupted(2000), 0);
+  ASSERT_EQ(inject(3000), 0);
+
+  for (int i = 0; i < 3; i++) {
+    struct st30_frame* f = get_frame();
+    ASSERT_NE(f, nullptr) << "frame " << i;
+    EXPECT_EQ(put_frame(f), 0);
+  }
+
+  EXPECT_EQ(frames_received(), 3u);
+  EXPECT_EQ(frames_corrupted(), 1u)
+      << "only the CORRUPTED frame must bump stat_frames_corrupted";
+
+  struct st30_rx_user_stats api {};
+  ASSERT_EQ(ut30p_get_session_stats(ctx_, &api), 0);
+  EXPECT_EQ(api.common.stat_frames_corrupted, 1u);
 }

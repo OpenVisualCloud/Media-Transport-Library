@@ -352,6 +352,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
         (uint16_t)(seq_id - s->session_seq_id - 1);
+    /* attribute the whole gap to the frame currently being assembled; audio places
+     * packets by arrival order, so a gap straddling a frame boundary is charged to
+     * this frame rather than split across the boundary */
+    s->frame_unrecovered_pkts += (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* The package is accepted and goes into the frame */
@@ -418,6 +422,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     meta->channel = ops->channel;
     meta->rtp_timestamp = s->first_pkt_rtp_ts;
     meta->frame_recv_size = s->frame_recv_size;
+    meta->status =
+        s->frame_unrecovered_pkts ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
 
     MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
                                     s->first_pkt_rtp_ts, meta->frame_recv_size);
@@ -442,6 +448,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     }
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
+    s->frame_unrecovered_pkts = 0;
     rte_atomic32_inc(&s->stat_frames_received);
     s->st30_cur_frame = NULL;
   }
@@ -568,6 +575,8 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->tmstamp = -1;
   s->frame_recv_size = 0;
   s->st30_pkt_idx = 0;
+  s->frame_unrecovered_pkts = 0;
+  s->burst_loss_cnt = 0;
   s->st30_cur_frame = NULL;
   s->first_pkt_rtp_ts = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
@@ -652,6 +661,19 @@ static int ra_dump_pcap(struct st_rx_audio_session_impl* s, struct rte_mbuf** mb
   return 0;
 }
 
+static bool ra_simulate_pkt_loss(struct st_rx_audio_session_impl* s) {
+  if (s->burst_loss_cnt == 0) {
+    if (((float)rand() / (float)RAND_MAX) < s->sim_loss_rate) {
+      s->burst_loss_cnt = rand() % s->burst_loss_max + 1;
+    } else {
+      return false;
+    }
+  }
+  s->burst_loss_cnt--;
+  dbg("%s(%d), simulate pkt loss, burst left %u\n", __func__, s->idx, s->burst_loss_cnt);
+  return true;
+}
+
 static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_audio_session_impl* s = s_priv->session;
@@ -675,11 +697,15 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
 
   if (ST30_TYPE_FRAME_LEVEL == st30_type) {
     for (uint16_t i = 0; i < nb; i++) {
+      if ((s->ops.flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) && ra_simulate_pkt_loss(s))
+        continue;
       int rc = rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
       if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
     }
   } else {
     for (uint16_t i = 0; i < nb; i++) {
+      if ((s->ops.flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) && ra_simulate_pkt_loss(s))
+        continue;
       int rc = rx_audio_session_handle_rtp_pkt(impl, s, mbuf[i], s_port);
       if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
     }
@@ -928,6 +954,14 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   }
   s->st30_frame_size = ops->framebuff_size;
   rx_audio_session_reset(s, true);
+
+  if (ops->flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) {
+    /* st30_rx_ops exposes no loss tuning knobs; use fixed test defaults */
+    s->burst_loss_max = 1;
+    s->sim_loss_rate = 0.1;
+    info("%s(%d), simulated packet loss max burst %u rate %f\n", __func__, idx,
+         s->burst_loss_max, s->sim_loss_rate);
+  }
 
   if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_STAT) {
     info("%s(%d), enable the timing analyze stat\n", __func__, idx);

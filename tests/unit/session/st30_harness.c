@@ -35,6 +35,10 @@ struct ut30_test_ctx {
   uint8_t frame_storage[UT30_FRAME_COUNT][UT30_FRAME_CAPACITY];
 
   bool hold_frames;
+
+  uint64_t frames_complete;
+  uint64_t frames_corrupted;
+  enum st_frame_status last_status;
 };
 
 #include "session/st30_harness.h"
@@ -51,9 +55,17 @@ static uint64_t ut30_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static int ut30_notify_frame_ready(void* priv, void* frame,
                                    struct st30_rx_frame_meta* meta) {
-  (void)meta;
   ut30_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
+
+  if (meta) {
+    ctx->last_status = meta->status;
+    if (meta->status == ST_FRAME_STATUS_CORRUPTED)
+      ctx->frames_corrupted++;
+    else
+      ctx->frames_complete++;
+  }
+
   if (ctx->hold_frames) return 0;
 
   struct st_rx_audio_session_impl* s = &ctx->session;
@@ -272,6 +284,22 @@ int ut30_session_seq_id(const ut30_test_ctx* ctx) {
 
 int ut30_frames_received(const ut30_test_ctx* ctx) {
   return rte_atomic32_read(&ctx->session.stat_frames_received);
+}
+
+uint64_t ut30_frames_complete(const ut30_test_ctx* ctx) {
+  return ctx->frames_complete;
+}
+
+uint64_t ut30_frames_corrupted(const ut30_test_ctx* ctx) {
+  return ctx->frames_corrupted;
+}
+
+int ut30_last_frame_status(const ut30_test_ctx* ctx) {
+  return ctx->last_status;
+}
+
+void ut30_reset(ut30_test_ctx* ctx) {
+  rx_audio_session_reset(&ctx->session, false);
 }
 
 int ut30_pkts_per_frame(const ut30_test_ctx* ctx) {

@@ -109,6 +109,19 @@ int ut30_session_seq_id(const ut30_test_ctx* ctx);
  * stat counter). */
 int ut30_frames_received(const ut30_test_ctx* ctx);
 
+/* Per-frame status tally captured by the harness frame-ready stub from
+ * st30_rx_frame_meta::status. `complete` counts frames delivered with
+ * ST_FRAME_STATUS_COMPLETE, `corrupted` counts ST_FRAME_STATUS_CORRUPTED;
+ * `last` returns the status of the most recently delivered frame (or
+ * ST_FRAME_STATUS_COMPLETE before any frame is delivered). */
+uint64_t ut30_frames_complete(const ut30_test_ctx* ctx);
+uint64_t ut30_frames_corrupted(const ut30_test_ctx* ctx);
+int ut30_last_frame_status(const ut30_test_ctx* ctx);
+
+/* Drive the production session reset, clearing the per-frame loss accumulator
+ * and sequence watermarks. Test-side frame-status tallies are preserved. */
+void ut30_reset(ut30_test_ctx* ctx);
+
 /* Number of audio packets that constitute one frame in this harness's
  * synthetic configuration. Tests use it to derive expected counts. */
 int ut30_pkts_per_frame(const ut30_test_ctx* ctx);

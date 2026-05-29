@@ -246,6 +246,12 @@ enum st30p_rx_flag {
   /** Force the numa of the created session, both CPU and memory */
   ST30P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
 
+  /**
+   * Flag bit in flags of struct st30p_rx_ops.
+   * If enabled, simulate random packet loss, test usage only.
+   */
+  ST30P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(3)),
+
   /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_rx_set_block_timeout to customize) */
   ST30P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),

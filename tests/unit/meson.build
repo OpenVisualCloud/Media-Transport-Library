@@ -35,6 +35,7 @@ unit_sources = [
   'session/st30/stats_test.cpp',
   'session/st30/reorder_test.cpp',
   'session/st30/err_packets_test.cpp',
+  'session/st30/corruption_test.cpp',
   'session/st20_harness.c',
   'session/st20/slot_test.cpp',
   'session/st20/redundancy_test.cpp',
@@ -47,6 +48,8 @@ unit_sources = [
   'pipeline/st40p_test.cpp',
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
+  'pipeline/st30p_harness.c',
+  'pipeline/st30p_test.cpp',
   'main.cpp',
 ]
 

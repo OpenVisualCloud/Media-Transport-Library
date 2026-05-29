@@ -35,15 +35,17 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt);
 void ut30p_ctx_destroy(ut30p_ctx* ctx);
 
 /** Inject one synthetic audio frame as if the transport just completed it.
+ *  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the
  *  stat_frames_dropped path). */
-int ut30p_inject_frame(ut30p_ctx* ctx, uint32_t timestamp);
+int ut30p_inject_frame(ut30p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
 
 struct st30_frame* ut30p_get_frame(ut30p_ctx* ctx);
 int ut30p_put_frame(ut30p_ctx* ctx, struct st30_frame* frame);
 
 uint64_t ut30p_stat_frames_received(const ut30p_ctx* ctx);
 uint64_t ut30p_stat_frames_dropped(const ut30p_ctx* ctx);
+uint64_t ut30p_stat_frames_corrupted(const ut30p_ctx* ctx);
 uint32_t ut30p_stat_busy(const ut30p_ctx* ctx);
 
 int ut30p_get_session_stats(ut30p_ctx* ctx, struct st30_rx_user_stats* stats);
