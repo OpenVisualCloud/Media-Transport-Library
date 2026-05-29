@@ -6,10 +6,12 @@
 # spike analysis showing when the worst isolation violations occurred.
 #
 # Usage:
-#   sudo ./isolation_monitor.sh [sample_duration] [cpu_min] [cpu_max]
-#   sudo ./isolation_monitor.sh              # 5s samples, auto-detect cores
+#   sudo ./isolation_monitor.sh [sample_duration] [cpu_spec...]
+#   sudo ./isolation_monitor.sh              # 30s samples, auto-detect cores
 #   sudo ./isolation_monitor.sh 3            # 3s samples
-#   sudo ./isolation_monitor.sh 5 2 7        # 5s samples, CPUs 2-7
+#   sudo ./isolation_monitor.sh 5 2-7        # 5s samples, CPUs 2-7
+#   sudo ./isolation_monitor.sh 5 2 5 7      # 5s samples, CPUs 2, 5, 7
+#   sudo ./isolation_monitor.sh 5 2-4,7      # 5s samples, CPUs 2,3,4,7
 
 set -euo pipefail
 
