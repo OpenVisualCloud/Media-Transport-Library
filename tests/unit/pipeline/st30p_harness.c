@@ -95,12 +95,13 @@ void ut30p_ctx_destroy(ut30p_ctx* ctx) {
   free(ctx);
 }
 
-int ut30p_inject_frame(ut30p_ctx* ctx, uint32_t timestamp) {
+int ut30p_inject_frame(ut30p_ctx* ctx, enum st_frame_status status, uint32_t timestamp) {
   struct st30_rx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));
   meta.timestamp = timestamp;
   meta.rtp_timestamp = timestamp;
   meta.frame_recv_size = 1;
+  meta.status = status;
 
   static uint8_t dummy_frame_storage;
   return rx_st30p_frame_ready(&ctx->pipeline, &dummy_frame_storage, &meta);
@@ -120,6 +121,10 @@ uint64_t ut30p_stat_frames_received(const ut30p_ctx* ctx) {
 
 uint64_t ut30p_stat_frames_dropped(const ut30p_ctx* ctx) {
   return ctx->pipeline.stat_frames_dropped;
+}
+
+uint64_t ut30p_stat_frames_corrupted(const ut30p_ctx* ctx) {
+  return ctx->pipeline.stat_frames_corrupted;
 }
 
 uint32_t ut30p_stat_busy(const ut30p_ctx* ctx) {

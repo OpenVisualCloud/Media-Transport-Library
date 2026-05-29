@@ -206,11 +206,11 @@ static void test_st30p_rx_frame_thread(void* args) {
     if (frame->channel != s->audio_channel) s->incomplete_frame_cnt++;
     if (frame->ptime != s->audio_ptime) s->incomplete_frame_cnt++;
     if (frame->sampling != s->audio_sampling) s->incomplete_frame_cnt++;
+    if (!st_is_frame_complete(frame->status)) s->incomplete_frame_cnt++;
 
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
-
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
       if (s->pre_timestamp) {
@@ -882,8 +882,134 @@ TEST(St30p, redundant_stats) {
 
   /* verify RX received frames */
   EXPECT_GT(test_ctx_rx->fb_rec, 0) << "Must have received frames";
+  EXPECT_EQ(rx_stats.common.stat_frames_corrupted, (uint64_t)0)
+      << "clean redundant session must not report corrupted frames";
   info("%s, TX sent %d, RX received %d frames\n", __func__, test_ctx_tx->fb_send,
        test_ctx_rx->fb_rec);
+
+  ret = st30p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st30p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+
+  delete test_ctx_tx;
+  delete test_ctx_rx;
+}
+
+/*
+ * Verify ST30p RX reports per-frame corruption when post-redundancy packet
+ * loss occurs. ST30P_RX_FLAG_SIMULATE_PKT_LOSS drops packets on the RX side
+ * so frames close short of full coverage; those frames must be delivered to
+ * the app with status ST_FRAME_STATUS_CORRUPTED and counted in
+ * common.stat_frames_corrupted.
+ */
+TEST(St30p, rx_simulate_pkt_loss) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st30p_tx_ops ops_tx;
+  struct st30p_rx_ops ops_rx;
+  int udp_port = ST30P_TEST_UDP_PORT + 200;
+
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != NULL);
+  test_ctx_tx->idx = 0;
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st30p_sim_loss_tx";
+  ops_tx.priv = test_ctx_tx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
+  ops_tx.port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
+  ops_tx.fmt = ST30_FMT_PCM24;
+  ops_tx.channel = 2;
+  ops_tx.sampling = ST30_SAMPLING_48K;
+  ops_tx.ptime = ST30_PTIME_1MS;
+  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+      ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
+  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
+  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
+
+  test_ctx_tx->frame_size = ops_tx.framebuff_size;
+  test_ctx_tx->audio_fmt = ops_tx.fmt;
+  test_ctx_tx->audio_channel = ops_tx.channel;
+  test_ctx_tx->audio_sampling = ops_tx.sampling;
+  test_ctx_tx->audio_ptime = ops_tx.ptime;
+
+  auto tx_handle = st30p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  test_ctx_tx->handle = tx_handle;
+  test_ctx_tx->stop = false;
+  auto tx_thread = std::thread(test_st30p_tx_frame_thread, test_ctx_tx);
+
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != NULL);
+  test_ctx_rx->idx = 0;
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st30p_sim_loss_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = 1;
+  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_R]);
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
+  ops_rx.port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
+  ops_rx.fmt = ST30_FMT_PCM24;
+  ops_rx.channel = 2;
+  ops_rx.sampling = ST30_SAMPLING_48K;
+  ops_rx.ptime = ST30_PTIME_1MS;
+  ops_rx.framebuff_size = st30_calculate_framebuff_size(
+      ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET | ST30P_RX_FLAG_SIMULATE_PKT_LOSS;
+
+  test_ctx_rx->frame_size = ops_rx.framebuff_size;
+  test_ctx_rx->audio_fmt = ops_rx.fmt;
+  test_ctx_rx->audio_channel = ops_rx.channel;
+  test_ctx_rx->audio_sampling = ops_rx.sampling;
+  test_ctx_rx->audio_ptime = ops_rx.ptime;
+
+  auto rx_handle = st30p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != NULL);
+  ret = st30p_rx_set_block_timeout(rx_handle, NS_PER_S);
+  EXPECT_EQ(ret, 0);
+  test_ctx_rx->handle = rx_handle;
+  test_ctx_rx->stop = false;
+  auto rx_thread = std::thread(test_st30p_rx_frame_thread, test_ctx_rx);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(10);
+
+  test_ctx_tx->stop = true;
+  st30p_tx_wake_block(tx_handle);
+  test_ctx_tx->cv.notify_all();
+  tx_thread.join();
+
+  test_ctx_rx->stop = true;
+  st30p_rx_wake_block(rx_handle);
+  test_ctx_rx->cv.notify_all();
+  rx_thread.join();
+
+  struct st30_rx_user_stats rx_stats;
+  ret = st30p_rx_get_session_stats(rx_handle, &rx_stats);
+  EXPECT_GE(ret, 0);
+
+  EXPECT_GT(test_ctx_rx->fb_rec, 0) << "Must have received frames";
+  EXPECT_GT(rx_stats.common.stat_frames_corrupted, (uint64_t)0)
+      << "simulated packet loss must produce corrupted frames";
+  info("%s, RX received %d frames, %" PRIu64 " corrupted\n", __func__,
+       test_ctx_rx->fb_rec, rx_stats.common.stat_frames_corrupted);
 
   ret = st30p_tx_free(tx_handle);
   EXPECT_GE(ret, 0);

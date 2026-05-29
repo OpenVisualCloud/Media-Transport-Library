@@ -95,7 +95,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->timestamp = meta->timestamp;
   frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
-  frame->status = ST_FRAME_STATUS_COMPLETE;
+  frame->status = meta->status;
   framebuff->stat = ST30P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st30p_next_idx(ctx, framebuff->idx);
@@ -144,6 +144,8 @@ static int rx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_rx
     ops_rx.socket_id = ops->socket_id;
     ops_rx.flags |= ST30_RX_FLAG_FORCE_NUMA;
   }
+  if (ops->flags & ST30P_RX_FLAG_SIMULATE_PKT_LOSS)
+    ops_rx.flags |= ST30_RX_FLAG_SIMULATE_PKT_LOSS;
 
   transport = st30_rx_create(impl, &ops_rx);
   if (!transport) {
@@ -330,6 +332,8 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
   __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+  if (frame->status == ST_FRAME_STATUS_CORRUPTED)
+    __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
   MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
   /* check if dump USDT enabled */
@@ -567,6 +571,8 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
       __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
   stats->common.stat_frames_dropped =
       __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  stats->common.stat_frames_corrupted =
+      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -586,6 +592,7 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
 
   __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
   ret = st30_rx_reset_session_stats(ctx->transport);
   MT_HANDLE_RELEASE(ctx);
   return ret;

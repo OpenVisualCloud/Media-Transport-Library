@@ -958,6 +958,12 @@ struct st_rx_audio_session_impl {
   uint64_t first_pkt_ptp_ts; /* PTP time stamp for the first pkt */
   int64_t tmstamp;
   size_t frame_recv_size;
+  uint32_t frame_unrecovered_pkts; /* post-redundancy lost pkts in current frame */
+
+  /* simulated packet loss for test usage, ST30_RX_FLAG_SIMULATE_PKT_LOSS */
+  uint16_t burst_loss_max;
+  float sim_loss_rate;
+  uint16_t burst_loss_cnt;
 
   /* st30 rtp info */
   struct rte_ring* st30_rtps_ring;
