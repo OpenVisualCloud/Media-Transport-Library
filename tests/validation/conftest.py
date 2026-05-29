@@ -8,7 +8,6 @@ import logging
 import os
 import re
 import shutil
-import signal
 import time
 from typing import Any, Dict
 
@@ -373,16 +372,72 @@ def _select_capture_host(hosts: dict):
     return hosts["client"] if "client" in hosts else list(hosts.values())[0]
 
 
+_REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for ptp daemons
+
+
+def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
+    """Forcefully kill any ptp4l/phc2sys daemons.
+
+    Required because ``host.connection.start_process('sudo <tool> ...')`` wraps
+    the daemon in ``bash -c 'sudo ...'``; ``process.kill(SIGTERM)`` only signals
+    the bash wrapper, sudo does NOT propagate signals to its child, and the
+    actual daemon (root) reparents to PID 1 and persists. Leaked daemons hold
+    stale ``struct ptp_clock *`` across SR-IOV VF cycling and have been seen to
+    trigger ``ice``-driver use-after-free in ``ptp_clock_index()``, hanging the
+    host. Always cleanup via ``pkill`` on the argv, not via the process handle.
+    """
+    for name in patterns:
+        try:
+            host.connection.execute_command(
+                f"sudo pkill -TERM -x {name} || true", expected_return_codes=None
+            )
+        except Exception as e:
+            logger.debug("pkill -TERM %s: %s", name, e)
+    time.sleep(_REAP_GRACE_SEC)
+    for name in patterns:
+        try:
+            host.connection.execute_command(
+                f"sudo pkill -KILL -x {name} || true", expected_return_codes=None
+            )
+        except Exception as e:
+            logger.debug("pkill -KILL %s: %s", name, e)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def reap_leaked_phc_daemons(hosts):
+    """Wipe any phc2sys/ptp4l stragglers at session start AND end.
+
+    Defends against host hangs caused by leaked daemons from a previously
+    crashed session colliding with ``ice`` SR-IOV teardown
+    (use-after-free in ``ptp_clock_index``). See _reap_ptp_daemons.
+    """
+    for host in hosts.values():
+        _reap_ptp_daemons(host)
+    yield
+    for host in hosts.values():
+        _reap_ptp_daemons(host)
+
+
 @pytest.fixture(scope="function")
 def ptp_sync(request, test_config: dict, hosts):
-    """Start phc2sys or ptp4l for the capture interface before tests.
+    """Start ptp4l only for tests marked ``@pytest.mark.ptp``.
 
-    - Uses the same interface selection logic as PCAP capture.
-    - For tests marked with @pytest.mark.ptp: starts ptp4l for PTP synchronization.
-    - For other tests: detects PTP Hardware Clock via `ethtool -T` and runs phc2sys.
+    Historical design ran phc2sys for every pcap-capturing test, which
+    multiplied the sudo+kill leak (see _reap_ptp_daemons) into 8+ daemons in
+    seconds and disciplined CLOCK_REALTIME backward by hundreds of ms against
+    a free-running PHC (no grandmaster on the test fabric) -- enough to
+    corrupt systemd-journald. We now:
 
-    The process is stopped at the end of the test.
+    * early-return for non-@pytest.mark.ptp tests (no daemon at all);
+    * for @pytest.mark.ptp tests, run ptp4l only -- NOT phc2sys (keep wall
+      clock untouched, pcap uses CLOCK_REALTIME which is fine for ptp4l's
+      own assertions);
+    * cleanup via ``sudo pkill`` on the argv, never via the process handle.
     """
+    if not request.node.get_closest_marker("ptp"):
+        yield
+        return
+
     capture_cfg = test_config.get("capture_cfg", {})
     if not (capture_cfg and capture_cfg.get("enable")):
         yield
@@ -394,92 +449,33 @@ def ptp_sync(request, test_config: dict, hosts):
         host, capture_cfg, single_host=is_single_host
     )
 
-    # For tests marked with @pytest.mark.ptp, start ptp4l instead of phc2sys
-    if request.node.get_closest_marker("ptp"):
-        logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
+    # Belt-and-braces: ensure no leftover daemon from a previous test/session
+    # is holding a stale PHC handle before we start a new one.
+    _reap_ptp_daemons(host)
 
-        log_path = f"/tmp/ptp4l-{capture_iface}.log"
-        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
-        ptp4l_process = host.connection.start_process(
-            ptp4l_cmd,
-            stderr_to_stdout=True,
-            output_file=log_path,
-        )
-
-        # Give ptp4l a moment to fail fast (e.g., missing interface).
-        time.sleep(0.2)
-        if not ptp4l_process.running:
-            raise RuntimeError(
-                f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
-            )
-
-        try:
-            yield
-        finally:
-            if not ptp4l_process:
-                return
-
-            if not ptp4l_process.running:
-                raise RuntimeError(
-                    f"ptp4l process (iface={capture_iface}) "
-                    f"stopped unexpectedly. See log: {log_path}"
-                )
-
-            ptp4l_process.kill(wait=None, with_signal=signal.SIGTERM)
-        return
-
-    # For non-PTP tests, start phc2sys
-    ptp_details = host.connection.execute_command(
-        f"sudo ethtool -T '{capture_iface}' 2>/dev/null || true"
-    )
-    ptp_idx = ""
-    for line in (ptp_details.stdout or "").splitlines():
-        # Keep this equivalent to: awk -F': ' '/PTP Hardware Clock:/ {print $2; exit}'
-        if "PTP Hardware Clock:" in line:
-            ptp_idx = line.split(": ", 1)[1].strip() if ": " in line else ""
-            break
-
-    if not ptp_idx.isdigit():
-        raise RuntimeError(
-            "ERROR: failed to parse PTP Hardware Clock index for "
-            f"{capture_iface}. Details: {ptp_details.stdout}{ptp_details.stderr}"
-        )
-
-    capture_ptp = f"/dev/ptp{ptp_idx}"
-
-    logger.info(
-        f"Starting phc2sys: {capture_ptp} -> CLOCK_REALTIME (iface={capture_iface})"
-    )
-
-    log_path = f"/tmp/phc2sys-{capture_iface}.log"
-    phc2sys_cmd = "sudo phc2sys " f"-s '{capture_ptp}' -c CLOCK_REALTIME -O 0 -m"
-    phc2sys_process = host.connection.start_process(
-        phc2sys_cmd,
+    logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
+    log_path = f"/tmp/ptp4l-{capture_iface}.log"
+    ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
+    ptp4l_process = host.connection.start_process(
+        ptp4l_cmd,
         stderr_to_stdout=True,
         output_file=log_path,
     )
 
-    # Give phc2sys a moment to fail fast (e.g., missing /dev/ptpX permissions).
+    # Give ptp4l a moment to fail fast (e.g., missing interface).
     time.sleep(0.2)
-    if not phc2sys_process.running:
+    if not ptp4l_process.running:
+        _reap_ptp_daemons(host)
         raise RuntimeError(
-            f"Failed to start phc2sys (iface={capture_iface}, ptp={capture_ptp}). "
-            f"log={log_path}"
+            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
         )
 
     try:
         yield
     finally:
-        if not phc2sys_process:
-            return
-
-        if not phc2sys_process.running:
-            raise RuntimeError(
-                f"phc2sys process (iface={capture_iface}, ptp={capture_ptp}) "
-                f"stopped unexpectedly. See log: {log_path}"
-            )
-
-        phc2sys_process.kill(wait=None, with_signal=signal.SIGTERM)
+        # NEVER rely on ptp4l_process.kill() -- it only signals the bash
+        # wrapper, leaking the actual ptp4l (root) into PID 1.
+        _reap_ptp_daemons(host)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
