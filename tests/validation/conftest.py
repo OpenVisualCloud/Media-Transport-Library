@@ -299,7 +299,25 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
             nic for nic in host.network_interfaces if target == _pci_device_id(nic)
         ]
         if direct_matches:
-            return direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
+            if len(direct_matches) == 1:
+                return direct_matches[0]
+            # Ambiguous (e.g. dual-port NIC: both ports share vendor:device).
+            # Pick by topology, mirroring the auto-select branch below:
+            #   * single-host loopback -> the PF with active VFs (only place
+            #     VF-to-VF embedded-switch traffic is observable);
+            #   * multi-host wire traffic -> a PF without active VFs.
+            vf_pf_indices = _get_active_vf_pf_indices(host)
+            active_pfs = [
+                nic
+                for nic in direct_matches
+                if host.network_interfaces.index(nic) in vf_pf_indices
+            ]
+            inactive_pfs = [nic for nic in direct_matches if nic not in active_pfs]
+            if single_host and active_pfs:
+                return active_pfs[0]
+            if not single_host and inactive_pfs:
+                return inactive_pfs[0]
+            return direct_matches[0]
 
         available = [
             f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
