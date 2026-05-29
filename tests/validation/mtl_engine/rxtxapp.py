@@ -503,6 +503,29 @@ class RxTxApp(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
 
+    # Encoder → MTL plugin .so mapping for pre-flight checks.
+    _ENCODER_PLUGIN_MAP = {
+        "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
+        "libopenh264": "libst_plugin_st22_avcodec.so",
+    }
+
+    def require_encoder(self, host, encoder: str) -> None:
+        """Raise EnvironmentError if the MTL codec plugin for *encoder* is not installed."""
+        plugin_so = self._ENCODER_PLUGIN_MAP.get(encoder)
+        if not plugin_so:
+            return  # Unknown encoder — skip check, let runtime fail if needed
+        # Check standard install paths
+        check_cmd = (
+            f"test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} || "
+            f"test -f /usr/local/lib64/{plugin_so}"
+        )
+        res = host.connection.execute_command(check_cmd, expected_return_codes=None)
+        if res.return_code != 0:
+            raise EnvironmentError(
+                f"MTL codec plugin {plugin_so} (for {encoder}) not found; "
+                f"install the codec library and rebuild MTL plugins"
+            )
+
     # Per-session-type (default UDP port, default payload type). Mirrors the
     # legacy ``add_*_sessions`` helpers; without it every type ends up on
     # 20000/112 and RxTxApp dies during session create due to port collisions.
