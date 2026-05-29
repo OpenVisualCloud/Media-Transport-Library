@@ -88,6 +88,10 @@ HELPEOF
 case "${1:-}" in -h | --help) usage ;; esac
 
 DURATION=${1:-5}
+if ! [[ "$DURATION" =~ ^[0-9]+$ ]] || ((DURATION < 1)); then
+	echo "Error: duration must be a positive integer (got: '$DURATION')" >&2
+	exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAW_LOG=$(mktemp /tmp/sched_audit_XXXXXX.log)
 trap 'rm -f "$RAW_LOG"' EXIT
