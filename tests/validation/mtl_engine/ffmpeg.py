@@ -77,7 +77,30 @@ class FFmpeg(Application):
         return APP_NAME_MAP["ffmpeg"]
 
     def require_encoder(self, host, encoder: str) -> None:
-        """Raise EnvironmentError if *encoder* is not available in FFmpeg on *host*."""
+        """Raise EnvironmentError if *encoder* is not available on *host*.
+
+        For codecs handled by the MTL st22p device (e.g. libsvt_jpegxs), check
+        the MTL plugin .so instead of FFmpeg's built-in encoder list.
+        """
+        # Codecs delivered via MTL plugin (FFmpeg uses -f mtl_st22p, not its own encoder)
+        _MTL_PLUGIN_MAP = {
+            "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
+            "libopenh264": "libst_plugin_st22_avcodec.so",
+        }
+        plugin_so = _MTL_PLUGIN_MAP.get(encoder)
+        if plugin_so:
+            check_cmd = (
+                f"test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} || "
+                f"test -f /usr/local/lib64/{plugin_so}"
+            )
+            res = host.connection.execute_command(check_cmd, expected_return_codes=None)
+            if res.return_code != 0:
+                raise EnvironmentError(
+                    f"MTL codec plugin {plugin_so} (for {encoder}) not found; "
+                    f"install the codec library and rebuild MTL plugins"
+                )
+            return
+
         res = host.connection.execute_command(
             f"ffmpeg -encoders 2>/dev/null | grep {encoder} || true",
             shell=True,
