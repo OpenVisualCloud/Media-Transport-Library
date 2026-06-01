@@ -30,17 +30,16 @@ TEST_F(St30RxRedundancyTest, NormalRedundancy) {
   EXPECT_EQ(received(), 8u);
 }
 
-/* Timestamp-only filter: R's packets are filtered even with higher seq_ids,
- * because their timestamps are not strictly greater than P's latest.
- * This is the key ST30 difference from ST40 (which checks both ts and seq). */
+/* Redundancy via positional dedup: R's packets land on slots already filled by
+ * P (same frame base), so each is counted redundant and returns accepted (0).
+ * The timestamps are not strictly greater, but positional placement dedups. */
 TEST_F(St30RxRedundancyTest, TimestampOnlyFilter) {
   feed_burst(0, 4, 1000, MTL_SESSION_PORT_P);
 
-  /* port 1 has HIGHER seq_ids but same/old timestamps → filtered */
+  uint32_t s = spp();
   for (int i = 0; i < 4; i++) {
-    int rc = feed(4 + i, 1000 + i, MTL_SESSION_PORT_R);
-    EXPECT_LT(rc, 0) << "seq " << (4 + i)
-                     << " should be filtered (ts not greater, ST30 ignores seq)";
+    int rc = feed(4 + i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
+    EXPECT_EQ(rc, 0) << "seq " << (4 + i) << " deduped on a filled slot";
   }
 
   EXPECT_EQ(redundant(), 4u);
@@ -63,14 +62,13 @@ TEST_F(St30RxRedundancyTest, NewTimestampAlwaysAccepted) {
       << "Source switch with new timestamp should not produce phantom unrecovered";
 }
 
-/* Same timestamp, different seq on second port. Even though R has a
- * higher seq_id, it is filtered because the timestamp is not strictly
- * greater. */
+/* Same timestamp, different seq on second port: R lands on the slot P already
+ * filled, so it is deduped and counted redundant. */
 TEST_F(St30RxRedundancyTest, SameTimestampDiffSeqFiltered) {
   feed(5, 1000, MTL_SESSION_PORT_P);
 
   int rc = feed(6, 1000, MTL_SESSION_PORT_R);
-  EXPECT_LT(rc, 0) << "Same timestamp should be filtered even with newer seq";
+  EXPECT_EQ(rc, 0) << "same slot deduped";
   EXPECT_EQ(redundant(), 1u);
 }
 
@@ -95,15 +93,15 @@ TEST_F(St30RxRedundancyTest, BurstSwitchoverAudio) {
 }
 
 /* Multiple packets with the same timestamp on the same port. Only the
- * first packet per timestamp is accepted; subsequent ones are filtered. */
+ * first fills the slot; subsequent ones are deduped as redundant. */
 TEST_F(St30RxRedundancyTest, SameTimestampFiltered) {
   feed(0, 1000, MTL_SESSION_PORT_P);
-  /* same ts again — filtered */
+  /* same ts again — deduped */
   int rc = feed(1, 1000, MTL_SESSION_PORT_P);
-  EXPECT_LT(rc, 0) << "Same timestamp should be filtered";
+  EXPECT_EQ(rc, 0) << "same slot deduped";
   /* a third one too */
   rc = feed(5, 1000, MTL_SESSION_PORT_P);
-  EXPECT_LT(rc, 0) << "Same timestamp should be filtered";
+  EXPECT_EQ(rc, 0) << "same slot deduped";
   EXPECT_EQ(redundant(), 2u);
   EXPECT_EQ(received(), 1u);
 }
@@ -130,15 +128,16 @@ TEST_F(St30RxRedundancyTest, ThresholdBypass) {
       << "After exceeding threshold on both ports, packets should be accepted";
 }
 
-/* Interleaved ports with increasing timestamps. P and R alternate, each
- * packet with a strictly newer timestamp. All packets accepted. */
+/* Interleaved ports with strictly newer timestamps spaced by one slot each.
+ * Every packet lands on its own positional slot — all accepted. */
 TEST_F(St30RxRedundancyTest, InterleavedPortsIncreasingTs) {
-  feed(0, 1000, MTL_SESSION_PORT_P);
-  feed(1, 1001, MTL_SESSION_PORT_R);
-  feed(2, 1002, MTL_SESSION_PORT_P);
-  feed(3, 1003, MTL_SESSION_PORT_R);
-  feed(4, 1004, MTL_SESSION_PORT_P);
-  feed(5, 1005, MTL_SESSION_PORT_R);
+  uint32_t s = spp();
+  feed(0, 1000 + 0u * s, MTL_SESSION_PORT_P);
+  feed(1, 1000 + 1u * s, MTL_SESSION_PORT_R);
+  feed(2, 1000 + 2u * s, MTL_SESSION_PORT_P);
+  feed(3, 1000 + 3u * s, MTL_SESSION_PORT_R);
+  feed(4, 1000 + 4u * s, MTL_SESSION_PORT_P);
+  feed(5, 1000 + 5u * s, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(unrecovered(), 0u);
   EXPECT_EQ(redundant(), 0u);
@@ -161,9 +160,10 @@ TEST_F(St30RxRedundancyTest, InterleavedPortsIncreasingTs) {
 
 /* P delivers all frames; R is silent. P is credited once per frame. */
 TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryOnly) {
+  uint32_t t = (uint32_t)ppf() * spp();
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
-  feed_burst(ppf(), ppf(), 2000, MTL_SESSION_PORT_P);
-  feed_burst(2 * ppf(), ppf(), 3000, MTL_SESSION_PORT_P);
+  feed_burst(ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_P);
+  feed_burst(2 * ppf(), ppf(), 1000 + 2 * t, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(frames_done(), 3);
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 3u);
@@ -172,8 +172,9 @@ TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryOnly) {
 
 /* All frames originate on R; P is silent. R is credited once per frame. */
 TEST_F(St30RxRedundancyTest, PerPortFramesSecondaryOnly) {
+  uint32_t t = (uint32_t)ppf() * spp();
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_R);
-  feed_burst(ppf(), ppf(), 2000, MTL_SESSION_PORT_R);
+  feed_burst(ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(frames_done(), 2);
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 0u);
@@ -198,13 +199,15 @@ TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryFirstSecondaryFiltered) {
  * (with a strictly newer ts). R wins the credit for frame N+1; P keeps the
  * credit for frame N. */
 TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
+  uint32_t t = (uint32_t)ppf() * spp();
+  uint32_t s = spp();
   /* frame 1: P starts and finishes */
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
   /* frame 2: R sends the first pkt (new ts) — wins the credit */
-  feed(ppf(), 2000, MTL_SESSION_PORT_R);
-  /* finish frame 2 from R (or P, same outcome — credit already assigned) */
+  feed(ppf(), 1000 + t, MTL_SESSION_PORT_R);
+  /* finish frame 2 from R */
   for (int i = 1; i < ppf(); i++) {
-    feed(ppf() + i, 2000 + i, MTL_SESSION_PORT_R);
+    feed(ppf() + i, 1000 + t + (uint32_t)i * s, MTL_SESSION_PORT_R);
   }
 
   EXPECT_EQ(frames_done(), 2);
@@ -220,10 +223,11 @@ TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
  * fresh timestamps. The handover must be seamless — every unique packet
  * accepted exactly once, no phantom unrecovered. */
 TEST_F(St30RxRedundancyTest, PortGoesSilentMidStreamPeerContinues) {
-  for (int i = 0; i < 4; i++) feed(i, 1000 + i, MTL_SESSION_PORT_P);
-  for (int i = 0; i < 4; i++) feed(i, 1000 + i, MTL_SESSION_PORT_R);
+  uint32_t s = spp();
+  for (int i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_P);
+  for (int i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
   /* P dies. R takes over with strictly newer timestamps. */
-  for (int i = 4; i < 8; i++) feed(i, 1000 + i, MTL_SESSION_PORT_R);
+  for (int i = 4; i < 8; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(received(), 8u);
   EXPECT_EQ(redundant(), 4u) << "R's first 4 pkts duplicated P's";
@@ -235,13 +239,14 @@ TEST_F(St30RxRedundancyTest, PortGoesSilentMidStreamPeerContinues) {
  * recurring source switches do not leak phantom unrecovered, do not
  * accumulate redundant, and do not corrupt session_seq tracking. */
 TEST_F(St30RxRedundancyTest, SustainedAlternatingBurstSwitchover) {
+  uint32_t s = spp();
   uint32_t ts = 1000;
   uint16_t seq = 0;
   for (int g = 0; g < 8; g++) {
     enum mtl_session_port p = (g % 2 == 0) ? MTL_SESSION_PORT_P : MTL_SESSION_PORT_R;
-    for (int i = 0; i < 4; i++) feed(seq + i, ts + i, p);
+    for (int i = 0; i < 4; i++) feed(seq + i, ts + (uint32_t)i * s, p);
     seq += 4;
-    ts += 4;
+    ts += 4u * s;
   }
 
   EXPECT_EQ(received(), 32u);

@@ -163,3 +163,20 @@ TEST_F(St30PipelineRxTest, CorruptedDeliveredAndCounted) {
   ASSERT_EQ(ut30p_get_session_stats(ctx_, &api), 0);
   EXPECT_EQ(api.common.stat_frames_corrupted, 1u);
 }
+
+/* CORRUPTED transport frames must each be delivered via get_frame and counted
+ * in stat_frames_corrupted (the count rises by exactly the corrupted count). */
+TEST_F(St30PipelineRxTest, CorruptedFramesCountedInStats) {
+  ASSERT_EQ(inject(1000), 0);           /* real frame */
+  ASSERT_EQ(inject_corrupted(2000), 0); /* corrupted frame */
+  ASSERT_EQ(inject_corrupted(3000), 0); /* corrupted frame */
+
+  for (int i = 0; i < 3; i++) {
+    struct st30_frame* f = get_frame();
+    ASSERT_NE(f, nullptr) << "frame " << i;
+    EXPECT_EQ(put_frame(f), 0);
+  }
+
+  EXPECT_EQ(frames_received(), 3u);
+  EXPECT_EQ(frames_corrupted(), 2u) << "both corrupted frames counted";
+}

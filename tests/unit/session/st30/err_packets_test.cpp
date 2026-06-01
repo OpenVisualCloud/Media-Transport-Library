@@ -108,12 +108,13 @@ TEST_F(St30RxErrPacketsTest, MixedBurstOnlyBadCounted) {
 
 /* Redundancy-filtered packets must not inflate err_packets. */
 TEST_F(St30RxErrPacketsTest, RedundancyFilterDoesNotBumpErrCounter) {
+  uint32_t s = ut30_samples_per_pkt(ctx_);
   /* P delivers the frame first */
-  feed_good(0, 1000, MTL_SESSION_PORT_P);
-  feed_good(1, 1001, MTL_SESSION_PORT_P);
+  feed_good(0, 1000 + 0u * s, MTL_SESSION_PORT_P);
+  feed_good(1, 1000 + 1u * s, MTL_SESSION_PORT_P);
   /* R sends the same packets a beat later -- legitimate redundancy. */
-  feed_good(0, 1000, MTL_SESSION_PORT_R);
-  feed_good(1, 1001, MTL_SESSION_PORT_R);
+  feed_good(0, 1000 + 0u * s, MTL_SESSION_PORT_R);
+  feed_good(1, 1000 + 1u * s, MTL_SESSION_PORT_R);
 
   /* Sanity: the redundancy filter classified them. */
   EXPECT_EQ(ut30_stat_redundant(ctx_), 2u);

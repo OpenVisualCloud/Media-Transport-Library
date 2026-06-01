@@ -64,6 +64,9 @@ class St30RxBaseTest : public ::testing::Test {
   int ppf() {
     return ut30_pkts_per_frame(ctx_);
   }
+  uint32_t spp() {
+    return ut30_samples_per_pkt(ctx_);
+  }
 
   uint64_t port_pkts(enum mtl_session_port p) {
     return ut30_stat_port_pkts(ctx_, p);
