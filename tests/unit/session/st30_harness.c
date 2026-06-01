@@ -15,6 +15,7 @@
 /* ── tuning constants ─────────────────────────────────────────────────── */
 
 #define UT30_FRAME_COUNT 2
+#define UT30_FRAME_STORAGE 8
 #define UT30_FRAME_CAPACITY 8192
 
 /*
@@ -31,14 +32,20 @@ struct ut30_test_ctx {
   struct st_rx_audio_sessions_mgr mgr;
   struct st_rx_audio_session_impl session;
 
-  struct st_frame_trans frames[UT30_FRAME_COUNT];
-  uint8_t frame_storage[UT30_FRAME_COUNT][UT30_FRAME_CAPACITY];
+  struct st_frame_trans frames[UT30_FRAME_STORAGE];
+  uint8_t frame_storage[UT30_FRAME_STORAGE][UT30_FRAME_CAPACITY];
+  uint8_t* bitmap_storage;
 
   bool hold_frames;
 
   uint64_t frames_complete;
   uint64_t frames_corrupted;
   enum st_frame_status last_status;
+
+  /* ordered log of delivered frames for timeline assertions */
+  uint64_t rec_ts[64];
+  int rec_status[64];
+  int rec_n;
 };
 
 #include "session/st30_harness.h"
@@ -64,6 +71,11 @@ static int ut30_notify_frame_ready(void* priv, void* frame,
       ctx->frames_corrupted++;
     else
       ctx->frames_complete++;
+    if (ctx->rec_n < (int)(sizeof(ctx->rec_ts) / sizeof(ctx->rec_ts[0]))) {
+      ctx->rec_ts[ctx->rec_n] = meta->timestamp;
+      ctx->rec_status[ctx->rec_n] = meta->status;
+      ctx->rec_n++;
+    }
   }
 
   if (ctx->hold_frames) return 0;
@@ -103,7 +115,7 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   ctx->mgr.parent = &ctx->impl;
   ctx->mgr.idx = 0;
 
-  for (int i = 0; i < UT30_FRAME_COUNT; i++) {
+  for (int i = 0; i < UT30_FRAME_STORAGE; i++) {
     memset(&ctx->frames[i], 0, sizeof(ctx->frames[i]));
     ctx->frames[i].idx = i;
     ctx->frames[i].addr = ctx->frame_storage[i];
@@ -140,6 +152,16 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   s->st30_frame_size = pkt_multiple * UT30_PKT_PAYLOAD;
   s->ops.framebuff_size = (uint32_t)s->st30_frame_size;
   s->st30_pkt_size = UT30_PKT_PAYLOAD + sizeof(struct st_rfc3550_audio_hdr);
+  s->rtp_ticks_per_frame =
+      (uint32_t)(s->st30_frame_size / (st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
+  s->samples_per_pkt =
+      (uint32_t)(s->pkt_len / (st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
+  ctx->bitmap_storage = calloc(1, ((size_t)s->st30_total_pkts + 7) / 8);
+  if (!ctx->bitmap_storage) {
+    free(ctx);
+    return NULL;
+  }
+  s->frame_bitmap = ctx->bitmap_storage;
 
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
@@ -155,6 +177,8 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
 }
 
 void ut30_ctx_destroy(ut30_test_ctx* ctx) {
+  if (!ctx) return;
+  free(ctx->bitmap_storage);
   free(ctx);
 }
 
@@ -207,8 +231,9 @@ int ut30_feed_pkt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
 
 void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
                      enum mtl_session_port port) {
+  uint32_t spp = ctx->session.samples_per_pkt;
   for (int i = 0; i < count; i++) {
-    ut30_feed_pkt(ctx, seq_start + i, ts + i, port);
+    ut30_feed_pkt(ctx, seq_start + i, ts + (uint32_t)i * spp, port);
   }
 }
 
@@ -306,6 +331,24 @@ int ut30_pkts_per_frame(const ut30_test_ctx* ctx) {
   return ctx->session.st30_total_pkts;
 }
 
+uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx) {
+  return ctx->session.samples_per_pkt;
+}
+
+int ut30_frame_log_count(const ut30_test_ctx* ctx) {
+  return ctx->rec_n;
+}
+
+uint64_t ut30_frame_log_ts(const ut30_test_ctx* ctx, int i) {
+  if (i < 0 || i >= ctx->rec_n) return 0;
+  return ctx->rec_ts[i];
+}
+
+int ut30_frame_log_status(const ut30_test_ctx* ctx, int i) {
+  if (i < 0 || i >= ctx->rec_n) return -1;
+  return ctx->rec_status[i];
+}
+
 uint64_t ut30_stat_port_pkts(const ut30_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].packets;
 }
@@ -378,8 +421,9 @@ void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n) {
 void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
                           enum mtl_session_port port) {
   int pkts = ctx->session.st30_total_pkts;
+  uint32_t spp = ctx->session.samples_per_pkt;
   for (int i = 0; i < pkts; i++) {
-    ut30_feed_pkt(ctx, (uint16_t)(seq_start + i), ts_start + (uint32_t)i, port);
+    ut30_feed_pkt(ctx, (uint16_t)(seq_start + i), ts_start + (uint32_t)i * spp, port);
   }
 }
 

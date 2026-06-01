@@ -106,6 +106,11 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
     s->st30_frames = NULL;
   }
 
+  if (s->frame_bitmap) {
+    mt_rte_free(s->frame_bitmap);
+    s->frame_bitmap = NULL;
+  }
+
   dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
 }
@@ -142,6 +147,13 @@ static int rx_audio_session_alloc_frames(struct st_rx_audio_session_impl* s) {
     st30_frame->flags = ST_FT_FLAG_RTE_MALLOC;
     st30_frame->addr = frame;
     st30_frame->iova = rte_malloc_virt2iova(frame);
+  }
+
+  s->frame_bitmap = mt_rte_zmalloc_socket(((size_t)s->st30_total_pkts + 7) / 8, soc_id);
+  if (!s->frame_bitmap) {
+    err("%s(%d), frame_bitmap alloc fail\n", __func__, idx);
+    rx_audio_session_free_frames(s);
+    return -ENOMEM;
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -248,6 +260,95 @@ static int rx_audio_session_usdt_dump_frame(struct st_rx_audio_session_impl* s,
   return 0;
 }
 
+static int rx_audio_session_open_frame(struct st_rx_audio_session_impl* s,
+                                       enum mtl_session_port s_port, uint32_t tmstamp,
+                                       uint64_t ptp_ts) {
+  s->st30_cur_frame = rx_audio_session_get_frame(s);
+  if (!s->st30_cur_frame) {
+    s->port_user_stats.stat_slot_get_frame_fail++;
+    return -EIO;
+  }
+
+  /* Anchor on the grid floor carried by s->tmstamp so a missing leading packet
+   * leaves slot 0 unset; resync to the arriving ts on a jump beyond one frame. */
+  uint32_t spp = s->samples_per_pkt ? s->samples_per_pkt : 1;
+  uint32_t grid_base = (uint32_t)(s->tmstamp + 1);
+  uint32_t base = (((uint32_t)(tmstamp - grid_base) / spp) < (uint32_t)s->st30_total_pkts)
+                      ? grid_base
+                      : tmstamp;
+
+  memset(s->frame_bitmap, 0, ((size_t)s->st30_total_pkts + 7) / 8);
+  s->frame_recv_size = 0;
+  s->first_pkt_rtp_ts = base;
+  s->first_pkt_ptp_ts = ptp_ts;
+  s->tmstamp = (int64_t)(uint32_t)(base - 1);
+  s->port_user_stats.common.port[s_port].frames++;
+  return 0;
+}
+
+/* Close the open frame: COMPLETE when every positional slot was filled,
+ * CORRUPTED otherwise (mirrors st20 rv_frame_notify). The floor watermark is
+ * advanced to the next frame so a late packet for this just-closed frame is
+ * dropped by the redundancy filter. */
+static void rx_audio_session_frame_notify(struct mtl_main_impl* impl,
+                                          struct st_rx_audio_session_impl* s) {
+  struct st30_rx_ops* ops = &s->ops;
+  struct st30_rx_frame_meta* meta = &s->meta;
+  struct st_frame_trans* frame = s->st30_cur_frame;
+  uint64_t tsc_start = 0;
+
+  if (s->enable_timing_parser) {
+    struct st_rx_audio_tp* tp = s->tp;
+    uint64_t now = mt_get_tsc(impl);
+    if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
+      for (int sp = 0; sp < ops->num_port; sp++) {
+        struct st_ra_tp_slot* slot = &s->tp->slot[sp];
+        ra_tp_slot_parse_result(s, sp);
+        if (s->enable_timing_parser_meta) {
+          ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
+        }
+        ra_tp_slot_init(slot);
+      }
+      tp->last_parse_time = now;
+    }
+  }
+
+  meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  meta->timestamp = s->first_pkt_rtp_ts;
+  meta->timestamp_first_pkt = s->first_pkt_ptp_ts;
+  meta->fmt = ops->fmt;
+  meta->sampling = ops->sampling;
+  meta->channel = ops->channel;
+  meta->rtp_timestamp = s->first_pkt_rtp_ts;
+  meta->frame_recv_size = s->frame_recv_size;
+  meta->status = (s->frame_recv_size >= s->st30_frame_size) ? ST_FRAME_STATUS_COMPLETE
+                                                            : ST_FRAME_STATUS_CORRUPTED;
+
+  MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
+                                  s->first_pkt_rtp_ts, meta->frame_recv_size);
+  if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
+    rx_audio_session_usdt_dump_frame(s, frame);
+  } else {
+    rx_audio_session_usdt_dump_close(s);
+  }
+
+  bool time_measure = mt_sessions_time_measure(impl);
+  if (time_measure) tsc_start = mt_get_tsc(impl);
+  int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
+  if (time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+  if (ret < 0) {
+    warn("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
+    rx_audio_session_put_frame(s, frame);
+  }
+
+  s->tmstamp = (int64_t)(uint32_t)(s->first_pkt_rtp_ts + s->rtp_ticks_per_frame - 1);
+  rte_atomic32_inc(&s->stat_frames_received);
+  s->st30_cur_frame = NULL;
+}
+
 static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                              struct st_rx_audio_session_impl* s,
                                              struct rte_mbuf* mbuf,
@@ -292,11 +393,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
 
-  if (s->st30_pkt_idx == 0) {
-    s->first_pkt_rtp_ts = tmstamp;
-    s->first_pkt_ptp_ts = mt_mbuf_time_stamp(impl, mbuf, port);
-  }
-
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
@@ -324,7 +420,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->port_user_stats.common.port[s_port].packets++;
   s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
-  /* all packets need to have increasing timestamp */
+  /* drop packets older than the open frame's base (or the next-frame floor
+   * between frames); the bitmap dedups packets inside the open frame */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
@@ -342,7 +439,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
          __func__, s->idx, tmstamp, s->tmstamp);
   }
   s->redundant_error_cnt[s_port] = 0;
-  s->tmstamp = tmstamp;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
@@ -352,10 +448,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
         (uint16_t)(seq_id - s->session_seq_id - 1);
-    /* attribute the whole gap to the frame currently being assembled; audio places
-     * packets by arrival order, so a gap straddling a frame boundary is charged to
-     * this frame rather than split across the boundary */
-    s->frame_unrecovered_pkts += (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* The package is accepted and goes into the frame */
@@ -364,93 +456,49 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
 
   if (!s->st30_cur_frame) {
-    s->st30_cur_frame = rx_audio_session_get_frame(s);
-    if (!s->st30_cur_frame) {
+    if (rx_audio_session_open_frame(s, s_port, tmstamp,
+                                    mt_mbuf_time_stamp(impl, mbuf, port)) < 0) {
       dbg("%s(%d,%d), seq %d drop as frame run out\n", __func__, s->idx, s_port, seq_id);
-      s->port_user_stats.stat_slot_get_frame_fail++;
       MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
       return -EIO;
     }
-
-    s->port_user_stats.common.port[s_port].frames++;
   }
 
-  uint32_t offset = s->st30_pkt_idx * s->pkt_len;
-  if ((offset + s->pkt_len) > s->st30_frame_size) {
-    dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
-        offset, s->st30_frame_size);
-    s->port_user_stats.stat_pkts_dropped++;
-    return -EIO;
+  uint32_t spp = s->samples_per_pkt ? s->samples_per_pkt : 1;
+  uint32_t idx = (tmstamp - s->first_pkt_rtp_ts) / spp;
+
+  if (idx >= (uint32_t)s->st30_total_pkts) {
+    /* forward jump: close the open frame (CORRUPTED if partial), emit nothing
+     * for any wholly-missing frames in between, then open a fresh frame at this
+     * timestamp. A late packet for the just-closed frame is dropped — the
+     * single slot keeps no history of it. */
+    rx_audio_session_frame_notify(impl, s);
+    if (rx_audio_session_open_frame(s, s_port, tmstamp,
+                                    mt_mbuf_time_stamp(impl, mbuf, port)) < 0) {
+      dbg("%s(%d,%d), seq %d drop as frame run out\n", __func__, s->idx, s_port, seq_id);
+      MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
+      return -EIO;
+    }
+    idx = (tmstamp - s->first_pkt_rtp_ts) / spp;
   }
-  rte_memcpy(s->st30_cur_frame->addr + offset, payload, s->pkt_len);
+
+  if (mt_bitmap_test_and_set(s->frame_bitmap, (int)idx)) {
+    dbg("%s(%d,%d), seq %d idx %u already received\n", __func__, s->idx, s_port, seq_id,
+        idx);
+    s->port_user_stats.common.stat_pkts_redundant++;
+    return 0;
+  }
+
+  rte_memcpy(s->st30_cur_frame->addr + (size_t)idx * s->pkt_len, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
   s->port_user_stats.common.stat_pkts_received++;
-  s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
     ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
   }
 
-  // notify frame done
   if (s->frame_recv_size >= s->st30_frame_size) {
-    struct st30_rx_frame_meta* meta = &s->meta;
-    uint64_t tsc_start = 0;
-    struct st_frame_trans* frame = s->st30_cur_frame;
-
-    if (s->enable_timing_parser) {
-      /* parse timing result every 200ms */
-      struct st_rx_audio_tp* tp = s->tp;
-      uint64_t now = mt_get_tsc(impl);
-      if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
-        for (int sp = 0; sp < ops->num_port; sp++) {
-          struct st_ra_tp_slot* slot = &s->tp->slot[sp];
-          ra_tp_slot_parse_result(s, sp);
-          if (s->enable_timing_parser_meta) {
-            ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
-          }
-          ra_tp_slot_init(slot);
-        }
-        tp->last_parse_time = now;
-      }
-    }
-
-    meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = s->first_pkt_rtp_ts;
-    meta->timestamp_first_pkt = s->first_pkt_ptp_ts;
-    meta->fmt = ops->fmt;
-    meta->sampling = ops->sampling;
-    meta->channel = ops->channel;
-    meta->rtp_timestamp = s->first_pkt_rtp_ts;
-    meta->frame_recv_size = s->frame_recv_size;
-    meta->status =
-        s->frame_unrecovered_pkts ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
-
-    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
-                                    s->first_pkt_rtp_ts, meta->frame_recv_size);
-    /* check if dump USDT enabled */
-    if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
-      rx_audio_session_usdt_dump_frame(s, frame);
-    } else {
-      rx_audio_session_usdt_dump_close(s);
-    }
-
-    /* get a full frame */
-    bool time_measure = mt_sessions_time_measure(impl);
-    if (time_measure) tsc_start = mt_get_tsc(impl);
-    int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
-    if (time_measure) {
-      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
-      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
-    }
-    if (ret < 0) {
-      err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
-      rx_audio_session_put_frame(s, frame);
-    }
-    s->frame_recv_size = 0;
-    s->st30_pkt_idx = 0;
-    s->frame_unrecovered_pkts = 0;
-    rte_atomic32_inc(&s->stat_frames_received);
-    s->st30_cur_frame = NULL;
+    rx_audio_session_frame_notify(impl, s);
   }
 
   return 0;
@@ -574,8 +622,6 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
   s->frame_recv_size = 0;
-  s->st30_pkt_idx = 0;
-  s->frame_unrecovered_pkts = 0;
   s->burst_loss_cnt = 0;
   s->st30_cur_frame = NULL;
   s->first_pkt_rtp_ts = 0;
@@ -953,6 +999,10 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
   s->st30_frame_size = ops->framebuff_size;
+  uint32_t per_frame_div = (uint32_t)st30_get_sample_size(ops->fmt) * ops->channel;
+  s->rtp_ticks_per_frame =
+      per_frame_div ? (uint32_t)(s->st30_frame_size / per_frame_div) : 0;
+  s->samples_per_pkt = per_frame_div ? (s->pkt_len / per_frame_div) : 0;
   rx_audio_session_reset(s, true);
 
   if (ops->flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) {

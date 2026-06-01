@@ -48,7 +48,8 @@ int ut30_feed_pkt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                   enum mtl_session_port port);
 
 /* Convenience: feed `count` consecutive packets starting at `seq_start`,
- * all with the same `ts`. */
+ * with RTP timestamps starting at `ts` and striding by samples_per_pkt so
+ * each lands in its own positional slot. */
 void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
                      enum mtl_session_port port);
 
@@ -126,6 +127,15 @@ void ut30_reset(ut30_test_ctx* ctx);
  * synthetic configuration. Tests use it to derive expected counts. */
 int ut30_pkts_per_frame(const ut30_test_ctx* ctx);
 
+/* Sample-clock ticks carried by one packet (RTP timestamp advance per packet). */
+uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx);
+
+/* Ordered log of delivered frames, captured by the frame-ready stub. `count` is
+ * the number logged; `ts`/`status` index into it. */
+int ut30_frame_log_count(const ut30_test_ctx* ctx);
+uint64_t ut30_frame_log_ts(const ut30_test_ctx* ctx, int i);
+int ut30_frame_log_status(const ut30_test_ctx* ctx, int i);
+
 /* Per-reason drop counters. */
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx);
 uint64_t ut30_stat_wrong_ssrc(const ut30_test_ctx* ctx);
@@ -138,8 +148,8 @@ uint64_t ut30_stat_slot_get_frame_fail(const ut30_test_ctx* ctx);
 void ut30_set_hold_frames(ut30_test_ctx* ctx, bool hold);
 
 /* Feed every packet of a single frame on the same wire. Per-packet RTP
- * timestamps start at `ts_start` and increment by 1 (audio handler
- * requires strictly increasing tmstamp). */
+ * timestamps start at `ts_start` and stride by samples_per_pkt so each lands
+ * in its own positional slot. */
 void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
                           enum mtl_session_port port);
 

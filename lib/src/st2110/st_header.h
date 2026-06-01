@@ -945,7 +945,6 @@ struct st_rx_audio_session_impl {
   uint32_t pkt_len;       /* data len(byte) for each pkt */
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
   int st30_total_pkts;    /* total pkts in one frame */
-  int st30_pkt_idx;       /* pkt index in current frame */
   int session_seq_id;     /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
@@ -958,7 +957,12 @@ struct st_rx_audio_session_impl {
   uint64_t first_pkt_ptp_ts; /* PTP time stamp for the first pkt */
   int64_t tmstamp;
   size_t frame_recv_size;
-  uint32_t frame_unrecovered_pkts; /* post-redundancy lost pkts in current frame */
+
+  /* positional single-slot frame assembly: packets are placed by their RTP
+   * timestamp offset within the open frame and tracked in frame_bitmap. */
+  uint32_t rtp_ticks_per_frame; /* media-clock ticks spanning one frame buffer */
+  uint32_t samples_per_pkt;     /* sample-clock ticks carried by one packet */
+  uint8_t* frame_bitmap;        /* per-pkt received bitmap for the open frame */
 
   /* simulated packet loss for test usage, ST30_RX_FLAG_SIMULATE_PKT_LOSS */
   uint16_t burst_loss_max;

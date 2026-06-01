@@ -25,9 +25,10 @@ TEST_F(St30RxTimestampTest, AudioFrameBoundary) {
   int total_pkts = ppf();
   ASSERT_GT(total_pkts, 0);
 
-  /* each packet needs a unique (increasing) timestamp */
+  /* each packet lands in its own positional slot */
+  uint32_t s = spp();
   for (int i = 0; i < total_pkts; i++) {
-    feed(i, 1000 + i, MTL_SESSION_PORT_P);
+    feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_P);
   }
 
   EXPECT_EQ(received(), (uint64_t)total_pkts);
@@ -35,15 +36,14 @@ TEST_F(St30RxTimestampTest, AudioFrameBoundary) {
   EXPECT_EQ(unrecovered(), 0u);
 }
 
-/* 32-bit timestamp wraparound from near UINT32_MAX to near zero.
- * The wrapped timestamps should be accepted as strictly greater. */
+/* 32-bit timestamp wraparound from near UINT32_MAX past zero. Positional
+ * slots span the wrap boundary and every packet is accepted. */
 TEST_F(St30RxTimestampTest, TimestampWrapAround) {
   ut30_ctx_destroy(ctx_);
   ctx_ = ut30_ctx_create(1);
   ASSERT_NE(ctx_, nullptr);
 
-  feed_burst(0, 4, 0xFFFFFFF0, MTL_SESSION_PORT_P);
-  feed_burst(4, 4, 0x00000010, MTL_SESSION_PORT_P);
+  feed_burst(0, 8, 0xFFFFFFF0, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(unrecovered(), 0u);
   EXPECT_EQ(received(), 8u);
@@ -82,7 +82,7 @@ TEST_F(St30RxTimestampTest, BackToBackMonotonic) {
   ASSERT_NE(ctx_, nullptr);
 
   for (int i = 0; i < 40; i++) {
-    feed(i, 1000 + i, MTL_SESSION_PORT_P);
+    feed(i, 1000 + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
   }
 
   EXPECT_EQ(unrecovered(), 0u);

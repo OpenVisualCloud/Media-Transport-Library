@@ -49,12 +49,14 @@ TEST_F(St30RxStatsTest, MultipleFrames) {
   ASSERT_NE(ctx_, nullptr);
 
   int total = ppf();
+  uint32_t s = spp();
   uint16_t seq = 0;
-  uint32_t ts = 1000;
+  uint32_t base = 1000;
   for (int f = 0; f < 3; f++) {
     for (int i = 0; i < total; i++) {
-      feed(seq++, ts++, MTL_SESSION_PORT_P);
+      feed(seq++, base + (uint32_t)i * s, MTL_SESSION_PORT_P);
     }
+    base += (uint32_t)total * s;
   }
 
   EXPECT_EQ(frames_done(), 3);
@@ -141,12 +143,13 @@ TEST_F(St30RxStatsTest, PortLostNotInflatedAtSeqWrap) {
  * has its own monotonic timestamp. Reconstruction must succeed — every
  * packet accepted exactly once, no unrecovered, no redundant. */
 TEST_F(St30RxStatsTest, DisjointPortLossesUnionRecovers) {
-  feed(0, 1000, MTL_SESSION_PORT_R);
-  feed(1, 1001, MTL_SESSION_PORT_R);
-  feed(2, 1002, MTL_SESSION_PORT_R);
-  feed(3, 1003, MTL_SESSION_PORT_P);
-  feed(4, 1004, MTL_SESSION_PORT_P);
-  feed(5, 1005, MTL_SESSION_PORT_P);
+  uint32_t s = spp();
+  feed(0, 1000 + 0u * s, MTL_SESSION_PORT_R);
+  feed(1, 1000 + 1u * s, MTL_SESSION_PORT_R);
+  feed(2, 1000 + 2u * s, MTL_SESSION_PORT_R);
+  feed(3, 1000 + 3u * s, MTL_SESSION_PORT_P);
+  feed(4, 1000 + 4u * s, MTL_SESSION_PORT_P);
+  feed(5, 1000 + 5u * s, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(received(), 6u);
   EXPECT_EQ(redundant(), 0u);
@@ -211,13 +214,13 @@ class St30RxFramePoolTest : public ::testing::Test {
     int pkts = ut30_pkts_per_frame(ctx_);
     ut30_feed_full_frame(ctx_, next_seq_, next_ts_, MTL_SESSION_PORT_P);
     next_seq_ = (uint16_t)(next_seq_ + pkts);
-    next_ts_ += (uint32_t)pkts;
+    next_ts_ += (uint32_t)pkts * ut30_samples_per_pkt(ctx_);
   }
 
   void feed_first_pkt() {
     ut30_feed_pkt(ctx_, next_seq_, next_ts_, MTL_SESSION_PORT_P);
     next_seq_ = (uint16_t)(next_seq_ + 1);
-    next_ts_ += 1;
+    next_ts_ += (uint32_t)ut30_pkts_per_frame(ctx_) * ut30_samples_per_pkt(ctx_);
   }
 
   uint64_t slot_fail() {
