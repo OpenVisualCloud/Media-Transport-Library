@@ -13,6 +13,7 @@ script_folder=${script_path/$script_name/}
 cd "${script_folder}" || exit 1
 
 mtl_folder="${script_folder}/../../.."
+sleep_time=30
 
 # Detect whether to use .local_install (CI) or local build paths
 if [ -z "${BUILD_PATH:-}" ]; then
@@ -77,7 +78,12 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		fi
 	fi
 
-	sleep 10
+	echo -n "Waiting ${sleep_time}s "
+	for ((i = sleep_time; i > 0; i--)); do
+		printf '.'
+		sleep 1
+	done
+	echo
 done < <(echo "$test_names")
 
 echo "All noctx tests completed. XML files saved in $XML_OUTPUT_DIR"
