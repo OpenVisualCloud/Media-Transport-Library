@@ -5,10 +5,6 @@
 
 set -xe
 
-# Allow pip to modify system packages when run outside a venv (Debian/Ubuntu
-# set environments as externally managed).
-export PIP_BREAK_SYSTEM_PACKAGES=1
-
 # SET DEFAULT ARGUMENTS
 
 # When set, all build scripts install to this prefix instead of system-wide.
@@ -49,8 +45,11 @@ export MTL_INSTALL_PREFIX
 : "${TOOLS_RUN_SET_TAI_OFFSET:=0}"
 
 # CICD ONLY ARGUMENTS
+# Non-interactive build that sets up every dependency for MTL. Any
+# dependency install failure, including the Ice driver's kernel headers,
+# aborts the script immediately.
+# Use in containers.
 : "${CICD_BUILD:=0}"
-: "${CICD_BUILD_BUILD_ICE_DRIVER:=0}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -69,6 +68,9 @@ fi
 # Before MTL build install
 function setup_ubuntu_install_dependencies() {
 	echo "1.1. Install the build dependency from OS software store"
+	# Allow pip to modify system packages when run outside a venv (Debian/Ubuntu
+	# set environments as externally managed).
+	export PIP_BREAK_SYSTEM_PACKAGES=1
 
 	# Mtl library dependencies
 	sudo apt update
@@ -95,49 +97,20 @@ function setup_ubuntu_install_dependencies() {
 		netsniff-ng \
 		unzip
 
-	# CiCd only
-	if [ "${CICD_BUILD}" == "1" ]; then
-		sudo apt install -y tzdata python3-venv wget doxygen
-		sudo ln -fs /usr/share/zoneinfo/Europe/Warsaw /etc/localtime
-		sudo dpkg-reconfigure -f noninteractive tzdata
-		python3 -m venv /tmp/mtl-venv
-		# shellcheck disable=SC1091
-		. /tmp/mtl-venv/bin/activate
-		git config --global user.email "you@example.com"
-		git config --global user.name "Your Name"
-	fi
-
 	python3 -m pip install --upgrade pip
 	python3 -m pip install pyelftools ninja
 
 	# Ice driver dependencies
-	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
 		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
-			if [ "${CICD_BUILD}" != "0" ]; then
-				ret=0
-			else
-				log_error "Error: Failed to install linux-headers-$(uname -r)."
-				echo "Do you want to try installing the generic linux-headers-generic package instead?"
-				echo "It may work for your system, but it is not guaranteed."
-				ret=$(get_user_input_confirm)
-			fi
-
-			if [ "$ret" == "1" ]; then
-				if ! sudo apt install -y linux-headers-generic; then
-					log_error "Error: Failed to install linux-headers-generic as well."
-				else
-					log_warning "Installed linux-headers-generic."
-				fi
-			else
-				log_warning "Installation aborted by user.."
-				exit 0
-			fi
+			log_error "Error: Failed to install linux-headers-$(uname -r)."
+			exit 1
 		fi
 	fi
 
-	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
 		echo "Installing eBPF/XDP dependencies"
 		sudo apt install -y \
 			make \
@@ -149,7 +122,7 @@ function setup_ubuntu_install_dependencies() {
 			gcc-multilib # clang llvm
 	fi
 
-	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
 		echo "Installing GPU Direct dependencies"
 		ONE_API_TGZ="oneapi.tgz"
 
@@ -180,7 +153,7 @@ function setup_ubuntu_install_dependencies() {
 		rm -rf "${setup_script_folder}/level-zero-${ONE_API_GPU_VER}"
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
 		echo "Installing FFMPEG dependencies"
 		sudo apt install -y \
 			nasm \
@@ -188,7 +161,7 @@ function setup_ubuntu_install_dependencies() {
 			patch
 	fi
 
-	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
 		echo "Installing JPEG-XS dependencies"
 		sudo apt install -y \
 			cmake \
@@ -197,7 +170,7 @@ function setup_ubuntu_install_dependencies() {
 			build-essential
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "Installing GStreamer dependencies"
 		sudo apt install -y \
 			libunwind-dev \
@@ -209,13 +182,13 @@ function setup_ubuntu_install_dependencies() {
 			libgstreamer1.0-dev
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "Installing OBS dependencies"
 		sudo apt install -y \
 			libobs-dev
 	fi
 
-	if [ "${HOOK_PYTHON}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${HOOK_PYTHON}" == "1" ]; then
 		echo "Installing Python hook dependencies"
 		sudo apt install -y \
 			swig \
@@ -225,21 +198,21 @@ function setup_ubuntu_install_dependencies() {
 		python3 -m pip install setuptools
 	fi
 
-	if [ "${HOOK_RUST}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${HOOK_RUST}" == "1" ]; then
 		echo "Installing Rust hook dependencies"
 		sudo apt install -y \
 			cargo \
 			rustc
 	fi
 
-	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
+	if [ "${CICD_BUILD}" == "1" ] || [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
 		echo "Installing MTL readpcap dependencies"
 		sudo apt install -y \
 			libpcap-dev
 	fi
 
 	sudo ldconfig
-	echo -e "${GREEN}All dependencies installed successfully."
+	echo "All dependencies installed."
 }
 
 # Allow sourcing of the script.
@@ -322,12 +295,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		else
 			bash "${root_folder}/script/build_dpdk.sh" -f
 		fi
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
-		echo "$STEP ICE driver build"
-		bash "${root_folder}/script/build_drivers.sh" --driver ice --build-only
 		STEP=$((STEP + 1))
 	fi
 
@@ -523,6 +490,16 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem RIST plugin build and install"
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		else
+			bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		fi
+		STEP=$((STEP + 1))
+	fi
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem OBS plugin build and install"
 		pushd "${root_folder}/ecosystem/obs_mtl" >/dev/null || exit 1
@@ -682,8 +659,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator" \
 		"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool" \
 		"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run" \
-		"CICD_BUILD:CICD mode" \
-		"CICD_BUILD_BUILD_ICE_DRIVER:CICD ICE driver build"; do
+		"CICD_BUILD:CICD mode"; do
 
 		var=${entry%%:*}
 		desc=${entry#*:}
