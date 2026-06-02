@@ -23,5 +23,5 @@ mfd-network-adapter==14.5.0      # NetworkInterface (common/nicctl.py)
 
 # --- third-party libs directly imported ---
 requests==2.33.1                 # compliance/compliance_client.py
-paramiko==3.4.0                  # conftest.py SSH ProxyCommand tunneling
+paramiko==5.0.0                  # conftest.py SSH ProxyCommand tunneling
 PyYAML==6.0.3                    # configs/gen_config.py
