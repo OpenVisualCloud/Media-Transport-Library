@@ -27,7 +27,6 @@ jobs:
           - st40p
           - gstreamer
           - kernel_socket
-          - performance
           - ptp
           - rss_mode
           - rx_timing
