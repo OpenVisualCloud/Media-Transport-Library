@@ -52,7 +52,6 @@ def test_st41_dit(
     dit,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test the Data Item Type (DIT) fastmetadata_data_item_type."""
     _, media_file_path = media_file
@@ -78,9 +77,7 @@ def test_st41_dit(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -116,7 +113,6 @@ def test_st41_fps(
     fps,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test st41 with different frame rates."""
     _, media_file_path = media_file
@@ -143,9 +139,7 @@ def test_st41_fps(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -178,7 +172,6 @@ def test_st41_k_bit(
     k_bit,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test st41 with different k-bit values."""
     _, media_file_path = media_file
@@ -204,9 +197,7 @@ def test_st41_k_bit(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -239,7 +230,6 @@ def test_st41_no_chain(
     type_mode,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test st41 with tx_no_chain=True."""
     _, media_file_path = media_file
@@ -267,9 +257,7 @@ def test_st41_no_chain(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -304,7 +292,6 @@ def test_st41_payload_type(
     type_mode,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test st41 with different payload types."""
     _, media_file_path = media_file
@@ -330,9 +317,7 @@ def test_st41_payload_type(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -367,7 +352,6 @@ def test_st41_type_mode(
     type_mode,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Test st41 with different transmission modes (unicast, multicast)."""
     _, media_file_path = media_file
@@ -394,6 +378,4 @@ def test_st41_type_mode(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)

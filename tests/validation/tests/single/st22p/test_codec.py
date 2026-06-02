@@ -30,7 +30,6 @@ def test_st22p_codec(
     test_time,
     codec,
     test_config,
-    pcap_capture,
     media_file,
 ):
     """Test st22p codec types (JPEG-XS and H264_CBR)."""
@@ -67,6 +66,4 @@ def test_st22p_codec(
         codec_threads=2,
         test_time=test_time,
     )
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)

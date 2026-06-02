@@ -47,7 +47,6 @@ def test_st22p_fps(
     fps,
     codec,
     test_config,
-    pcap_capture,
     media_file,
 ):
     """Test st22p at different frame rates."""
@@ -74,6 +73,4 @@ def test_st22p_fps(
         codec_threads=16,
         test_time=test_time,
     )
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)

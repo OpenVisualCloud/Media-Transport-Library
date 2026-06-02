@@ -28,7 +28,6 @@ def test_st22p_format(
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
-    pcap_capture,
     media_file,
 ):
     """Test st22p with different media formats/resolutions."""
@@ -57,6 +56,4 @@ def test_st22p_format(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
