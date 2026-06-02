@@ -35,7 +35,6 @@ def test_st22p_quality(
     test_time,
     quality,
     test_config,
-    pcap_capture,
     media_file,
 ):
     """Test st22p JPEG-XS encoder quality settings."""
@@ -63,7 +62,5 @@ def test_st22p_quality(
         codec_threads=2,
         test_time=test_time,
     )
-    result = app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    result = app.execute_test(build=mtl_path, test_time=test_time, host=host)
     assert result, "st22p quality test failed validation."
