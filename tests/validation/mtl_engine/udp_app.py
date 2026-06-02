@@ -3,50 +3,19 @@
 
 import copy
 import json
-import logging
 import os
 import re
 
 from mtl_engine import udp_app_config
 
-from .const import LOG_FOLDER
+from .const import (
+    LIBRIST_TEST_RECEIVE_EXE,
+    LIBRIST_TEST_SEND_EXE,
+    LOG_FOLDER,
+    UFD_CLIENT_SAMPLE_EXE,
+    UFD_SERVER_SAMPLE_EXE,
+)
 from .execute import call, log_fail, wait
-
-logger = logging.getLogger(__name__)
-
-
-def _resolve_udp_binary(build: str, relative_path: str) -> str:
-    """Resolve a UDP test binary using .local_install or build directory.
-
-    Checks (in order):
-      1. .local_install/mtl/bin/<basename>  (CI mode - MTL apps)
-      2. .local_install/librist/bin/<basename>  (CI mode - librist)
-      3. <build>/<relative_path>            (local build mode)
-    Raises EnvironmentError if not found in any location.
-    """
-    basename = os.path.basename(relative_path)
-    local_install_mtl = os.path.join(build, ".local_install", "mtl", "bin", basename)
-    local_install_librist = os.path.join(
-        build, ".local_install", "librist", "bin", basename
-    )
-    build_path = os.path.join(build, relative_path)
-
-    if os.path.isfile(local_install_mtl) and os.access(local_install_mtl, os.X_OK):
-        logger.debug(f"Resolved {basename} -> {local_install_mtl}")
-        return local_install_mtl
-    if os.path.isfile(local_install_librist) and os.access(
-        local_install_librist, os.X_OK
-    ):
-        logger.debug(f"Resolved {basename} -> {local_install_librist}")
-        return local_install_librist
-    if os.path.isfile(build_path) and os.access(build_path, os.X_OK):
-        logger.debug(f"Resolved {basename} -> {build_path}")
-        return build_path
-    raise EnvironmentError(
-        f"Binary '{basename}' not found at '{local_install_mtl}', "
-        f"'{local_install_librist}', or '{build_path}'. "
-        f"Build the project or ensure .local_install is populated."
-    )
 
 
 def _resolve_ld_preload(build: str) -> str:
@@ -122,11 +91,8 @@ def execute_test_sample(
     server_env = os.environ.copy()
     server_env["MUFD_CFG"] = os.path.join(os.getcwd(), server_config_file)
 
-    client_bin = _resolve_udp_binary(build, "build/app/UfdClientSample")
-    server_bin = _resolve_udp_binary(build, "build/app/UfdServerSample")
-
-    client_command = f"{client_bin} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
-    server_command = f"{server_bin} --sessions_cnt {sessions_cnt}"
+    client_command = f"{UFD_CLIENT_SAMPLE_EXE} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
+    server_command = f"{UFD_SERVER_SAMPLE_EXE} --sessions_cnt {sessions_cnt}"
 
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
@@ -178,19 +144,12 @@ def execute_test_librist(
     receive_env["LD_PRELOAD"] = _resolve_ld_preload(build)
     receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
 
-    send_bin = _resolve_udp_binary(
-        build, "ecosystem/librist/librist/build/test/rist/test_send"
-    )
-    receive_bin = _resolve_udp_binary(
-        build, "ecosystem/librist/librist/build/test/rist/test_receive"
-    )
-
     send_command = (
-        f"{send_bin} --sleep_us={sleep_us}"
+        f"{LIBRIST_TEST_SEND_EXE} --sleep_us={sleep_us}"
         + f" --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
     receive_command = (
-        f"{receive_bin}"
+        f"{LIBRIST_TEST_RECEIVE_EXE}"
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 

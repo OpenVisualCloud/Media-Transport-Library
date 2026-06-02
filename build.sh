@@ -115,10 +115,11 @@ fi
 
 # build app
 pushd app/
-meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${APP_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${APP_BUILD_DIR}"
 ninja
+do_install
 popd
 
 # build tests
