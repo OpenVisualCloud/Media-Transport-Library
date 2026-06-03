@@ -34,6 +34,9 @@ on:
       librist_hash:
         description: 'librist source checksum'
         value: ${{ jobs.checksums.outputs.librist }}
+      plugins_hash:
+        description: 'st22 avcodec plugin source checksum'
+        value: ${{ jobs.checksums.outputs.plugins }}
 
 permissions:
   contents: read
@@ -67,6 +70,7 @@ jobs:
       ffmpeg: ${{ steps.sums.outputs.ffmpeg }}
       gstreamer: ${{ steps.sums.outputs.gstreamer }}
       librist: ${{ steps.sums.outputs.librist }}
+      plugins: ${{ steps.sums.outputs.plugins }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -128,6 +132,13 @@ jobs:
           key: stash-librist-${{ needs.checksums.outputs.librist }}
           path: .local_install/librist
 
+      - name: 'stash: Restore plugins cache'
+        id: plugins-cache
+        uses: actions/cache@v4
+        with:
+          key: stash-plugins-${{ needs.checksums.outputs.plugins }}
+          path: .local_install/plugins
+
       - name: Evaluate cache results
         id: needs-build
         shell: bash
@@ -137,6 +148,7 @@ jobs:
           ffmpeg_miss=${{ steps.ffmpeg-cache.outputs.cache-hit != 'true' && '1' || '0' }}
           gstreamer_miss=${{ steps.gstreamer-cache.outputs.cache-hit != 'true' && '1' || '0' }}
           librist_miss=${{ steps.librist-cache.outputs.cache-hit != 'true' && '1' || '0' }}
+          plugins_miss=${{ steps.plugins-cache.outputs.cache-hit != 'true' && '1' || '0' }}
 
           {
             echo "SETUP_BUILD_AND_INSTALL_DPDK=${dpdk_miss}"
@@ -144,13 +156,14 @@ jobs:
             echo "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${ffmpeg_miss}"
             echo "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${gstreamer_miss}"
             echo "ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN=${librist_miss}"
+            echo "PLUGIN_BUILD_AND_INSTALL_AVCODEC=${plugins_miss}"
           } >> "$GITHUB_ENV"
 
           any_miss=0
-          [[ "$dpdk_miss" == "1" || "$mtl_miss" == "1" || "$ffmpeg_miss" == "1" || "$gstreamer_miss" == "1" || "$librist_miss" == "1" ]] && any_miss=1
+          [[ "$dpdk_miss" == "1" || "$mtl_miss" == "1" || "$ffmpeg_miss" == "1" || "$gstreamer_miss" == "1" || "$librist_miss" == "1" || "$plugins_miss" == "1" ]] && any_miss=1
           echo "any_miss=${any_miss}" >> "$GITHUB_OUTPUT"
 
-          echo "::notice::DPDK=$( [ "$dpdk_miss" = 1 ] && echo MISS || echo HIT )  MTL=$( [ "$mtl_miss" = 1 ] && echo MISS || echo HIT )  FFmpeg=$( [ "$ffmpeg_miss" = 1 ] && echo MISS || echo HIT )  GStreamer=$( [ "$gstreamer_miss" = 1 ] && echo MISS || echo HIT )  librist=$( [ "$librist_miss" = 1 ] && echo MISS || echo HIT )"
+          echo "::notice::DPDK=$( [ "$dpdk_miss" = 1 ] && echo MISS || echo HIT )  MTL=$( [ "$mtl_miss" = 1 ] && echo MISS || echo HIT )  FFmpeg=$( [ "$ffmpeg_miss" = 1 ] && echo MISS || echo HIT )  GStreamer=$( [ "$gstreamer_miss" = 1 ] && echo MISS || echo HIT )  librist=$( [ "$librist_miss" = 1 ] && echo MISS || echo HIT )  plugins=$( [ "$plugins_miss" = 1 ] && echo MISS || echo HIT )"
 
       # Build what is missing
       - name: Setup environment and build

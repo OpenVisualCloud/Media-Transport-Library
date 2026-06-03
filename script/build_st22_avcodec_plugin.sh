@@ -36,10 +36,21 @@ WORKSPACE=$PWD
 ST22_AVCODEC_PLUGIN_BUILD_DIR=${WORKSPACE}/build/st22_avcodec_plugin
 
 # build st22 avcodec plugin
+# When MTL_PLUGIN_PREFIX is set, install into that prefix (no sudo, used for the
+# CI .local_install cache). Otherwise fall back to a system-wide install.
+meson_prefix_args=()
+if [ -n "${MTL_PLUGIN_PREFIX:-}" ]; then
+	meson_prefix_args+=(--prefix "${MTL_PLUGIN_PREFIX}")
+fi
+
 pushd "${script_folder}/../plugins/st22_avcodec/"
-meson "${ST22_AVCODEC_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
+meson "${ST22_AVCODEC_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype" "${meson_prefix_args[@]}"
 popd
 pushd "${ST22_AVCODEC_PLUGIN_BUILD_DIR}"
 ninja
-sudo ninja install
+if [ -n "${MTL_PLUGIN_PREFIX:-}" ]; then
+	ninja install
+else
+	sudo ninja install
+fi
 popd

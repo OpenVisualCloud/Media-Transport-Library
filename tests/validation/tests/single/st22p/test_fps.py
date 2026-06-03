@@ -59,6 +59,13 @@ def test_st22p_fps(
     test_time = max(test_time, 90)
 
     app = app_factory(application)
+    codec_encoder_map = {
+        "H264_CBR": "libopenh264",
+        "JPEG-XS": "libsvt_jpegxs",
+    }
+    encoder = codec_encoder_map.get(codec)
+    if encoder:
+        app.require_encoder(host, encoder, use_mtl_plugin=True)
     app.create_command(
         session_type="st22p",
         test_mode="multicast",

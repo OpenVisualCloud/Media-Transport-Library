@@ -64,10 +64,32 @@ runs:
         path: .local_install/librist
         fail-on-cache-miss: true
 
+    - name: 'cache: Restore plugins'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-plugins-${{ steps.local-checksums.outputs.plugins }}
+        path: .local_install/plugins
+        fail-on-cache-miss: true
+
     - name: Make artifacts executable
       shell: bash
       run: |
         find .local_install -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} + 2>/dev/null || true
+
+    - name: Stage st22 plugins for runtime kahawai.json
+      shell: bash
+      run: |
+        # The runtime ~/.kahawai.json references plugins under /usr/local/lib.
+        # Publish the cached st22 avcodec plugin there so MTL can dlopen it.
+        set -euo pipefail
+        src="$(find .local_install/plugins -name 'libst_plugin_st22_avcodec.so' -print -quit 2>/dev/null || true)"
+        if [ -n "${src}" ]; then
+          sudo install -D -m 0755 "${src}" "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_avcodec.so"
+          sudo ldconfig 2>/dev/null || true
+          echo "::notice::Staged $(basename "${src}") to /usr/local/lib/x86_64-linux-gnu"
+        else
+          echo "::warning::st22 avcodec plugin not found in .local_install/plugins"
+        fi
 
     - name: Validate ice drivers
       shell: bash
@@ -100,7 +122,7 @@ runs:
         # Refresh linker cache (best-effort)
         sudo ldconfig 2>/dev/null || true
 
-        echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer}"
+        echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,librist,plugins}"
 
     - name: Read shadow host credentials
       id: shadow-creds

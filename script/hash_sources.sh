@@ -10,6 +10,7 @@
 #   ffmpeg    = hash(ffmpeg_paths + mtl_checksum)
 #   gstreamer = hash(gstreamer_paths + mtl_checksum)
 #   librist   = hash(librist_paths + mtl_checksum)
+#   plugins   = hash(plugins_paths + mtl_checksum)
 
 set -euo pipefail
 
@@ -97,6 +98,10 @@ gstreamer="$(hash_string "${mtl} ${gstreamer_paths_hash}")"
 librist_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_librist.env"))"
 librist="$(hash_string "${mtl} ${librist_paths_hash}")"
 
+# shellcheck disable=SC2046
+plugins_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_plugins.env"))"
+plugins="$(hash_string "${mtl} ${plugins_paths_hash}")"
+
 # ─── Output ─────────────────────────────────────────────────────────────────
 
 if [ -n "$OUTPUT_ENV" ]; then
@@ -106,6 +111,7 @@ if [ -n "$OUTPUT_ENV" ]; then
 		echo "ffmpeg=${ffmpeg}"
 		echo "gstreamer=${gstreamer}"
 		echo "librist=${librist}"
+		echo "plugins=${plugins}"
 	} >>"$OUTPUT_ENV"
 fi
 
@@ -114,4 +120,5 @@ printf '  %-20s %s\n' \
 	"mtl:" "${mtl}" \
 	"ffmpeg:" "${ffmpeg}" \
 	"gstreamer:" "${gstreamer}" \
-	"librist:" "${librist}"
+	"librist:" "${librist}" \
+	"plugins:" "${plugins}"
