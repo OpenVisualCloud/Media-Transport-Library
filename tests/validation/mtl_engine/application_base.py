@@ -99,7 +99,7 @@ class Application(ABC):
         """Return the executable name for this framework."""
         pass
 
-    def require_encoder(self, host, encoder: str) -> None:
+    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Check that *encoder* is available. No-op by default; override in subclasses."""
         pass
 

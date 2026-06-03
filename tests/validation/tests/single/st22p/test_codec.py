@@ -44,7 +44,7 @@ def test_st22p_codec(
     encoder = codec_encoder_map.get(codec)
     app = app_factory(application)
     if encoder:
-        app.require_encoder(host, encoder)
+        app.require_encoder(host, encoder, use_mtl_plugin=True)
 
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")

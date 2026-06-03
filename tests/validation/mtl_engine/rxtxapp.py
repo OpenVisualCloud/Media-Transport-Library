@@ -509,7 +509,7 @@ class RxTxApp(Application):
         "libopenh264": "libst_plugin_st22_avcodec.so",
     }
 
-    def require_encoder(self, host, encoder: str) -> None:
+    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if the MTL codec plugin for *encoder* is not installed."""
         plugin_so = self._ENCODER_PLUGIN_MAP.get(encoder)
         if not plugin_so:
