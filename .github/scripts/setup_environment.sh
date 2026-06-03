@@ -37,7 +37,7 @@ export MTL_INSTALL_PREFIX
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
-: "${PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:=0}"
+: "${PLUGIN_BUILD_AND_INSTALL_AVCODEC:=0}"
 : "${PLUGIN_BUILD_AND_INSTALL_JPEGXS:=0}"
 
 : "${HOOK_PYTHON:=0}"
@@ -510,14 +510,18 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-		echo "$STEP Plugin sample build and install"
-		bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-		echo "$STEP Plugin sample build and install"
-		"${root_folder}/script/build_st22_avcodec_plugin.sh"
+		echo "$STEP Plugin AVCODEC build and install"
+		# st22 avcodec plugin installs to a sibling directory for independent caching.
+		# It links libavcodec/libavutil, provided by the .local_install/ffmpeg build.
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_PLUGIN_PREFIX="${local_base}/plugins" \
+				PKG_CONFIG_PATH="${local_base}/ffmpeg/lib/pkgconfig:${local_base}/ffmpeg/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}" \
+				LD_LIBRARY_PATH="${local_base}/ffmpeg/lib:${local_base}/ffmpeg/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
+				bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		else
+			bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -679,7 +683,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:RIST plugin" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin" \
-		"PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:AVCodec plugin" \
+		"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_JPEGXS:JPEG-XS plugin" \
 		"HOOK_PYTHON:Python hook" \
 		"HOOK_RUST:Rust hook" \
