@@ -43,11 +43,32 @@ if [ "$sourced" -eq 0 ]; then
 	archive_name="ice-${ICE_VER}.tar.gz"
 	echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
 
-	rm -f "$archive_name"
-	wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name"
-	if [ ! -f "$archive_name" ]; then
-		echo "Failed to download $archive_name"
-		exit 1
+	IS_GITHUB_ARCHIVE=0
+	# Check if local archive already exists and is a valid compressed file
+	if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
+		echo "Found valid local archive $archive_name, skipping download."
+		# Check if the existing local file is actually a GitHub download
+		if tar -tzf "$archive_name" | grep -q "^ethernet-linux-ice"; then
+			IS_GITHUB_ARCHIVE=1
+		fi
+	else
+		rm -f "$archive_name"
+		echo "Downloading ICE driver of version ${ICE_VER}..."
+		wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name" || true
+		if [ ! -f "$archive_name" ] || ! gzip -t "$archive_name" >/dev/null 2>&1; then
+			echo "Intel mirror download failed or was blocked by AWS WAF. Trying GitHub fallback..."
+			rm -f "$archive_name"
+			wget "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "$archive_name" || true
+			if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
+				echo "Successfully downloaded driver from GitHub fallback."
+				IS_GITHUB_ARCHIVE=1
+			else
+				echo "Error: Failed to download a valid $archive_name from both Intel mirror and GitHub."
+				echo "This is likely caused by corporate proxy blockage or firewall settings."
+				rm -f "$archive_name"
+				exit 1
+			fi
+		fi
 	fi
 
 	if [ -d "ice-${ICE_VER}" ]; then
@@ -58,6 +79,12 @@ if [ "$sourced" -eq 0 ]; then
 	tar xvzf "$archive_name"
 
 	rm -f "$archive_name"
+
+	if [ "${IS_GITHUB_ARCHIVE}" -eq 1 ]; then
+		if [ -d "ethernet-linux-ice-${ICE_VER}" ]; then
+			mv "ethernet-linux-ice-${ICE_VER}" "ice-${ICE_VER}"
+		fi
+	fi
 
 	if [ ! -d "ice-${ICE_VER}" ]; then
 		echo "Failed to extract $archive_name"
