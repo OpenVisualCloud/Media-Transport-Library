@@ -11,7 +11,7 @@ import re
 from mfd_connect import SSHConnection
 
 from . import ip_pools
-from .application_base import Application
+from .application_base import MTL_ENCODER_PLUGIN_MAP, Application, mtl_plugin_check_cmd
 from .config.mappings import APP_NAME_MAP, RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import log_fail
@@ -503,23 +503,14 @@ class RxTxApp(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
 
-    # Encoder → MTL plugin .so mapping for pre-flight checks.
-    _ENCODER_PLUGIN_MAP = {
-        "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
-        "libopenh264": "libst_plugin_st22_avcodec.so",
-    }
-
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if the MTL codec plugin for *encoder* is not installed."""
-        plugin_so = self._ENCODER_PLUGIN_MAP.get(encoder)
+        plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
         if not plugin_so:
             return  # Unknown encoder — skip check, let runtime fail if needed
-        # Check standard install paths
-        check_cmd = (
-            f"test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} || "
-            f"test -f /usr/local/lib64/{plugin_so}"
+        res = host.connection.execute_command(
+            mtl_plugin_check_cmd(plugin_so), shell=True, expected_return_codes=None
         )
-        res = host.connection.execute_command(check_cmd, expected_return_codes=None)
         if res.return_code != 0:
             raise EnvironmentError(
                 f"MTL codec plugin {plugin_so} (for {encoder}) not found; "

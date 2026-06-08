@@ -21,7 +21,12 @@ from __future__ import annotations
 import logging
 
 from mtl_engine import ffmpeg_app, ip_pools
-from mtl_engine.application_base import Application, ProcSpec
+from mtl_engine.application_base import (
+    MTL_ENCODER_PLUGIN_MAP,
+    Application,
+    ProcSpec,
+    mtl_plugin_check_cmd,
+)
 from mtl_engine.config.mappings import APP_NAME_MAP
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 
@@ -87,19 +92,12 @@ class FFmpeg(Application):
         """
         if use_mtl_plugin:
             # Codecs delivered via MTL plugin (FFmpeg uses -f mtl_st22p)
-            _MTL_PLUGIN_MAP = {
-                "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
-                "libopenh264": "libst_plugin_st22_avcodec.so",
-            }
-            plugin_so = _MTL_PLUGIN_MAP.get(encoder)
+            plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
             if plugin_so:
-                check_cmd = (
-                    f"ldconfig -p 2>/dev/null | grep -q {plugin_so} || "
-                    f"test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} || "
-                    f"test -f /usr/local/lib64/{plugin_so}"
-                )
                 res = host.connection.execute_command(
-                    check_cmd, expected_return_codes=None
+                    mtl_plugin_check_cmd(plugin_so),
+                    shell=True,
+                    expected_return_codes=None,
                 )
                 if res.return_code != 0:
                     raise EnvironmentError(
