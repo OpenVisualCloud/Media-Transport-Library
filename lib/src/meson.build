@@ -33,4 +33,5 @@ subdir('datapath')
 subdir('dev')
 subdir('st2110')
 subdir('deprecated/udp')
+subdir('new_api')
 
