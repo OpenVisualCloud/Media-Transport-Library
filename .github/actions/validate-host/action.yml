@@ -69,27 +69,38 @@ runs:
       with:
         key: stash-plugins-${{ steps.local-checksums.outputs.plugins }}
         path: .local_install/plugins
-        fail-on-cache-miss: true
+        # Non-fatal: a missing/failed st22 plugin build only disables the codec
+        # tests (they skip via require_encoder); it must not abort validation.
+        fail-on-cache-miss: false
 
     - name: Make artifacts executable
       shell: bash
       run: |
         find .local_install -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} + 2>/dev/null || true
 
-    - name: Stage st22 plugins for runtime kahawai.json
+    - name: 'kahawai: Generate CI plugin registry from cache'
       shell: bash
       run: |
-        # The runtime ~/.kahawai.json references plugins under /usr/local/lib.
-        # Publish the cached st22 avcodec plugin there so MTL can dlopen it.
+        # Build a CI-owned kahawai.json that points at the cached st22 avcodec
+        # plugin under .local_install/plugins -- no system install. MTL loads it
+        # via KAHAWAI_CFG_PATH (exported below). The plugin .so itself is built
+        # by the build workflow and restored from the `plugins` cache above.
+        # The template reproduces the runner plugin set: jpegxs/sample stay at
+        # their /usr/local install paths (a missing .so is a non-fatal dlopen
+        # warning), only avcodec is sourced from the cache.
         set -euo pipefail
-        src="$(find .local_install/plugins -name 'libst_plugin_st22_avcodec.so' -print -quit 2>/dev/null || true)"
-        if [ -n "${src}" ]; then
-          sudo install -D -m 0755 "${src}" "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_avcodec.so"
-          sudo ldconfig 2>/dev/null || true
-          echo "::notice::Staged $(basename "${src}") to /usr/local/lib/x86_64-linux-gnu"
-        else
-          echo "::warning::st22 avcodec plugin not found in .local_install/plugins"
+        WS="${{ github.workspace }}"
+        template="${WS}/.github/workflows/kahawai_template.json"
+        cfg="${RUNNER_TEMP:-/tmp}/kahawai_ci.json"
+        plugin_dir="$(find "${WS}/.local_install/plugins" -name 'libst_plugin_st22_avcodec.so' -printf '%h\n' -quit 2>/dev/null || true)"
+        if [ -z "${plugin_dir}" ]; then
+          echo "::warning::st22 avcodec plugin not found in .local_install/plugins; H264 st22p tests will skip"
+          plugin_dir="${WS}/.local_install/plugins/lib/x86_64-linux-gnu"
         fi
+        cp -f "${template}" "${cfg}"
+        sed -i "s+REPLACE_BY_CICD_PLUGIN_DIR+${plugin_dir}+g" "${cfg}"
+        echo "KAHAWAI_CFG_PATH=${cfg}" >> "$GITHUB_ENV"
+        echo "::notice::CI kahawai registry ${cfg} (avcodec from ${plugin_dir})"
 
     - name: Validate ice drivers
       shell: bash

@@ -22,6 +22,32 @@ logger = logging.getLogger(__name__)
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
 
+# Encoder name -> MTL st22 plugin shared object, for require_encoder()
+# pre-flight checks shared across framework adapters.
+MTL_ENCODER_PLUGIN_MAP = {
+    "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
+    "libopenh264": "libst_plugin_st22_avcodec.so",
+}
+
+
+def mtl_plugin_check_cmd(plugin_so: str) -> str:
+    """Return a shell test that succeeds when *plugin_so* is loadable on the host.
+
+    Probes, in order: the dynamic-linker cache, the system plugin directories,
+    and the plugin path recorded in the active ``KAHAWAI_CFG_PATH`` registry --
+    which in CI points into the cached ``.local_install/plugins`` tree, so a
+    locally built (non system-installed) plugin is detected too.
+    """
+    return (
+        f"ldconfig -p 2>/dev/null | grep -q {plugin_so} "
+        f"|| test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} "
+        f"|| test -f /usr/local/lib64/{plugin_so} "
+        '|| { cfg="${KAHAWAI_CFG_PATH:-kahawai.json}"; ok=1; '
+        f"for p in $(grep -F '{plugin_so}' \"$cfg\" 2>/dev/null | grep -oE '/[^\"]+\\.so'); do "
+        '[ -f "$p" ] && ok=0 && break; done; [ "$ok" = 0 ]; }'
+    )
+
+
 @dataclass
 class ProcSpec:
     """Specification for one process inside a :meth:`Application._run_proc_group` call.
