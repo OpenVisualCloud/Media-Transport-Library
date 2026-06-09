@@ -15,6 +15,10 @@
 #include "../mt_log.h"
 #include "../mt_mem.h"
 
+/* Cap on frames dropped per get_next_frame, mirroring the pipeline's
+ * ST_TX_DROP_MAX_BATCH, so a backlog cannot stall the datapath thread. */
+#define MT_VIDEO_TX_DROP_MAX_BATCH (80)
+
 /*************************************************************************
  * TX Frame State Machine
  *
@@ -54,6 +58,8 @@ struct video_tx_ctx {
   /** Per-frame state tracking (protected by session->buffer_lock) */
   enum tx_frame_state* frame_state;
   uint16_t frame_cnt;
+  bool drop_when_late; /**< drop frames past their TX window (needs USER_PACING) */
+  enum st_fps fps;     /**< frame rate, for the late-drop grace window */
 
   /* User slice callback (if any) */
   int (*user_query_lines_ready)(void* priv, uint16_t frame_idx, uint16_t* lines_ready);
@@ -67,6 +73,19 @@ struct video_tx_ctx {
 /** Get the video_tx_ctx from session (caller must ensure session is valid). */
 static inline struct video_tx_ctx* tx_ctx_from_session(struct mtl_session_impl* s) {
   return s->inner.video_tx->ops.priv;
+}
+
+static bool tx_frame_is_late(struct video_tx_ctx* ctx,
+                             struct st_tx_video_session_impl* tx_impl,
+                             uint16_t idx) {
+  struct mtl_session_impl* s = ctx->session;
+  if (!(s->flags & MTL_SESSION_FLAG_USER_PACING)) return false;
+  struct st20_tx_frame_meta* meta = &tx_impl->st20_frames[idx].tv_meta;
+  if (meta->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t frame_tai = meta->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(s->parent, MTL_PORT_P);
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->fps));
+  return cur_tai >= frame_tai + frame_period_ns;
 }
 
 /*************************************************************************
@@ -160,11 +179,23 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
     }
   }
 
+  uint16_t drop_cnt = 0;
   for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
     enum tx_frame_state expected = TX_FRAME_READY;
     if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
                                     TX_FRAME_TRANSMITTING, false,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+      if (ctx->drop_when_late && drop_cnt < MT_VIDEO_TX_DROP_MAX_BATCH &&
+          tx_frame_is_late(ctx, tx_impl, i)) {
+        __atomic_add_fetch(&s->stats.buffers_dropped, 1, __ATOMIC_RELAXED);
+        mtl_event_t event = {0};
+        event.type = MTL_EVENT_FRAME_LATE;
+        event.frame_late.epoch_skipped = 0;
+        mtl_session_event_post(s, &event);
+        __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
+        drop_cnt++;
+        continue;
+      }
       *next_frame_idx = i;
       rte_atomic32_set(&tx_impl->st20_frames[i].refcnt, 0);
       return 0;
@@ -717,6 +748,9 @@ static void tx_apply_session_flags(struct st20_tx_ops* ops,
     ops->flags |= ST20_TX_FLAG_DISABLE_BULK;
   if (config->base.flags & MTL_SESSION_FLAG_STATIC_PAD_P)
     ops->flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  /* DROP_WHEN_LATE has no raw st20 equivalent; act on it in get_next_frame. */
+  ctx->fps = config->fps;
+  ctx->drop_when_late = config->base.flags & MTL_SESSION_FLAG_DROP_WHEN_LATE;
 
   /* Advanced TX options */
   if (config->start_vrx) ops->start_vrx = config->start_vrx;

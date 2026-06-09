@@ -128,6 +128,7 @@ typedef enum {
 #define MTL_SESSION_FLAG_DISABLE_BULK (1 << 15)    /**< TX: Disable bulk enqueue */
 #define MTL_SESSION_FLAG_STATIC_PAD_P (1 << 16)    /**< TX: Static padding for primary */
 #define MTL_SESSION_FLAG_USE_MULTI_THREADS (1 << 17) /**< RX: Multi-thread processing */
+#define MTL_SESSION_FLAG_DROP_WHEN_LATE (1 << 18) /**< TX: Drop frame if late (requires USER_PACING) */
 
 /*************************************************************************
  * Opaque Handles
