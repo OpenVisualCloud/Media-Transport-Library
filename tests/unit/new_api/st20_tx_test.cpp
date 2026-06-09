@@ -136,6 +136,71 @@ TEST_F(St20NewApiTxTest, DropWhenLateIgnoredWithoutUserPacing) {
   EXPECT_EQ(dropped(), 0u);
 }
 
+/* DropWhenLate ON + USER_PACING but the frame was never stamped with a TAI
+ * timestamp (timestamp==0/tfmt==0). The late gate must treat an unstamped slot
+ * as not-late regardless of the wall clock, otherwise every unstamped frame
+ * looks infinitely late and is silently dropped. */
+TEST_F(St20NewApiTxTest, DropWhenLateIgnoresUnstampedFrame) {
+  ut20tx_set_drop_when_late(ctx_, true);
+  ut20tx_set_user_pacing(ctx_, true);
+  ut20tx_set_fps(ctx_, ST_FPS_P59_94);
+
+  /* put a READY frame WITHOUT stamping any TAI timestamp on it */
+  mtl_buffer_t* b = get();
+  ASSERT_NE(b, nullptr);
+  ASSERT_EQ(put(b), 0);
+  ASSERT_EQ(state(0), kReady);
+
+  /* wall clock far in the future: a timestamp==0 slot would look infinitely
+   * late under a naive gate, but an unstamped frame must NOT be dropped. */
+  ut20tx_set_ptp_now(ctx_, kFrameTai + 1000 * kPeriodNs);
+
+  uint16_t idx = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0)
+      << "an unstamped frame must be transmitted, not dropped";
+  EXPECT_EQ(idx, 0u);
+  EXPECT_EQ(state(0), kTransmitting);
+  EXPECT_EQ(dropped(), 0u);
+}
+
+/* DropWhenLate ON + USER_PACING in MTL_BUFFER_USER_OWNED mode: when a posted
+ * external buffer is dropped as late, the app must still reclaim it. The drop
+ * path must deliver MTL_EVENT_BUFFER_DONE carrying the exact user_ctx and clear
+ * the per-frame ctx slot, otherwise the external buffer leaks. */
+TEST_F(St20NewApiTxTest, DropWhenLateUserOwnedReturnsBuffer) {
+  ut20tx_set_drop_when_late(ctx_, true);
+  ut20tx_set_user_pacing(ctx_, true);
+  ut20tx_set_fps(ctx_, ST_FPS_P59_94);
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  int user_data = 0;
+  void* user_ctx = &user_data;
+
+  /* stamp slot 0 so the bound user buffer is eligible for the late check */
+  ut20tx_frame_set_timestamp(ctx_, 0, kFrameTai);
+  ut20tx_set_ptp_now(ctx_, kFrameTai + 2 * kPeriodNs);
+
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &user_data, user_ctx), 0);
+
+  uint16_t idx = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx), -EBUSY)
+      << "the late user buffer must be dropped, not transmitted";
+  EXPECT_EQ(state(0), kFree);
+  EXPECT_EQ(dropped(), 1u);
+
+  bool got_done = false;
+  mtl_event_t ev;
+  while (ut20tx_poll_event(ctx_, &ev) == 0) {
+    if (ev.type == MTL_EVENT_BUFFER_DONE) {
+      EXPECT_EQ(ev.ctx, user_ctx);
+      got_done = true;
+    }
+  }
+  EXPECT_TRUE(got_done) << "user-owned drop must return the buffer to the app";
+  EXPECT_EQ(ut20tx_user_buf_ctx(ctx_, 0), nullptr)
+      << "the per-frame user_ctx slot must be cleared, not leaked";
+}
+
 /* Full FREE -> APP_OWNED -> READY -> TRANSMITTING -> FREE walk via the public
  * callbacks. buffers_processed bumps on frame_done (transmission complete),
  * not on get or put. */

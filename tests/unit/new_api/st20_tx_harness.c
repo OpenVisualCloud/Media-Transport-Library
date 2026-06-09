@@ -182,6 +182,7 @@ ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
 
 void ut20tx_ctx_destroy(ut20tx_ctx* ctx) {
   if (!ctx) return;
+  mtl_session_user_buf_uinit(&ctx->s);
   if (ctx->s.event_ring) rte_ring_free(ctx->s.event_ring);
   free(ctx->vctx.frame_state);
   free(ctx->s.buffers);
@@ -209,6 +210,24 @@ void ut20tx_set_fps(ut20tx_ctx* ctx, enum st_fps fps) {
 
 void ut20tx_set_ptp_now(ut20tx_ctx* ctx, uint64_t ns) {
   ctx->impl.ptp_usync = ns;
+}
+
+int ut20tx_set_user_owned(ut20tx_ctx* ctx) {
+  ctx->s.ownership = MTL_BUFFER_USER_OWNED;
+  return mtl_session_user_buf_init(&ctx->s, ctx->framebuff_cnt);
+}
+
+int ut20tx_post_user_buffer(ut20tx_ctx* ctx, void* data, void* user_ctx) {
+  return mtl_session_user_buf_enqueue(&ctx->s, data, 0, UT20TX_FRAME_STRIDE, user_ctx);
+}
+
+void ut20tx_frame_set_timestamp(ut20tx_ctx* ctx, uint16_t idx, uint64_t tai_ns) {
+  ctx->frames[idx].tv_meta.timestamp = tai_ns;
+  ctx->frames[idx].tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
+}
+
+void* ut20tx_user_buf_ctx(ut20tx_ctx* ctx, uint16_t idx) {
+  return ctx->s.user_buf_ctx ? ctx->s.user_buf_ctx[idx] : NULL;
 }
 
 /* ── state machine drivers ────────────────────────────────────────────── */

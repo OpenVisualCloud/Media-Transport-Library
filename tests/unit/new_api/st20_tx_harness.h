@@ -45,6 +45,17 @@ void ut20tx_set_fps(ut20tx_ctx* ctx, enum st_fps fps);
 /** Set the wall clock returned by mt_get_ptp_time() (TAI ns). */
 void ut20tx_set_ptp_now(ut20tx_ctx* ctx, uint64_t ns);
 
+/* ── user-owned mode drivers ─────────────────────────────────────────── */
+
+/** Switch the session to MTL_BUFFER_USER_OWNED and init the user-buf ring. */
+int ut20tx_set_user_owned(ut20tx_ctx* ctx);
+/** Post an external user buffer (queued for get_next_frame to bind). */
+int ut20tx_post_user_buffer(ut20tx_ctx* ctx, void* data, void* user_ctx);
+/** Stamp a frame slot's tv_meta with a TAI timestamp, bypassing buffer_put. */
+void ut20tx_frame_set_timestamp(ut20tx_ctx* ctx, uint16_t idx, uint64_t tai_ns);
+/** Read the per-frame user_ctx slot (user-owned completion bookkeeping). */
+void* ut20tx_user_buf_ctx(ut20tx_ctx* ctx, uint16_t idx);
+
 /* ── frame state machine drivers ─────────────────────────────────────── */
 
 /** Wraps the buffer_get vtable entry (FREE -> APP_OWNED). NULL on -ETIMEDOUT. */

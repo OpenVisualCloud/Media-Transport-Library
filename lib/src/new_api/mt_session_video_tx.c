@@ -15,10 +15,6 @@
 #include "../mt_log.h"
 #include "../mt_mem.h"
 
-/* Cap on frames dropped per get_next_frame, mirroring the pipeline's
- * ST_TX_DROP_MAX_BATCH, so a backlog cannot stall the datapath thread. */
-#define MT_VIDEO_TX_DROP_MAX_BATCH (80)
-
 /*************************************************************************
  * TX Frame State Machine
  *
@@ -81,7 +77,8 @@ static bool tx_frame_is_late(struct video_tx_ctx* ctx,
   struct mtl_session_impl* s = ctx->session;
   if (!(s->flags & MTL_SESSION_FLAG_USER_PACING)) return false;
   struct st20_tx_frame_meta* meta = &tx_impl->st20_frames[idx].tv_meta;
-  if (meta->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  /* timestamp==0 marks an unstamped slot (tfmt==0 also == TAI), never late */
+  if (meta->timestamp == 0 || meta->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
   uint64_t frame_tai = meta->timestamp;
   uint64_t cur_tai = mt_get_ptp_time(s->parent, MTL_PORT_P);
   uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->fps));
@@ -179,21 +176,29 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
     }
   }
 
-  uint16_t drop_cnt = 0;
   for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
     enum tx_frame_state expected = TX_FRAME_READY;
     if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
                                     TX_FRAME_TRANSMITTING, false,
                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
-      if (ctx->drop_when_late && drop_cnt < MT_VIDEO_TX_DROP_MAX_BATCH &&
-          tx_frame_is_late(ctx, tx_impl, i)) {
+      if (ctx->drop_when_late && tx_frame_is_late(ctx, tx_impl, i)) {
         __atomic_add_fetch(&s->stats.buffers_dropped, 1, __ATOMIC_RELAXED);
+        if (s->ownership == MTL_BUFFER_USER_OWNED) {
+          /* Return the external buffer to the app, mirroring frame_done. */
+          void* user_ctx = NULL;
+          if (s->user_buf_ctx && i < s->user_buf_ctx_cnt) {
+            user_ctx = s->user_buf_ctx[i];
+            s->user_buf_ctx[i] = NULL;
+          }
+          mtl_event_t done = {0};
+          done.type = MTL_EVENT_BUFFER_DONE;
+          done.ctx = user_ctx;
+          mtl_session_event_post(s, &done);
+        }
         mtl_event_t event = {0};
         event.type = MTL_EVENT_FRAME_LATE;
-        event.frame_late.epoch_skipped = 0;
         mtl_session_event_post(s, &event);
         __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
-        drop_cnt++;
         continue;
       }
       *next_frame_idx = i;
