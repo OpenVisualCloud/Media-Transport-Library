@@ -217,3 +217,227 @@ TEST_F(St20NewApiRxTest, DroppedMonotonicWithOverflow) {
         << ": buffers_dropped must bump exactly once per event";
   }
 }
+
+/* rx_fill_buffer_status collapses both COMPLETE and RECONSTRUCTED transport
+ * statuses onto MTL_FRAME_STATUS_COMPLETE (no INCOMPLETE flag); any other
+ * status (CORRUPTED) surfaces MTL_FRAME_STATUS_INCOMPLETE + the flag. This is a
+ * deliberate divergence from the pipeline, which passes the raw status through
+ * (RECONSTRUCTED stays RECONSTRUCTED — see St20PipelineRxTest). */
+TEST_F(St20NewApiRxTest, StatusCompleteVsReconstructed) {
+  ASSERT_EQ(ut20rx_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, 1000), 0);
+  ASSERT_EQ(ut20rx_inject_frame(ctx_, ST_FRAME_STATUS_RECONSTRUCTED, 2000), 0);
+  ASSERT_EQ(ut20rx_inject_frame(ctx_, ST_FRAME_STATUS_CORRUPTED, 3000), 0);
+
+  mtl_buffer_t* b0 = get_buffer();
+  ASSERT_NE(b0, nullptr);
+  EXPECT_EQ(b0->status, MTL_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(b0->flags & MTL_BUF_FLAG_INCOMPLETE, 0u);
+  EXPECT_EQ(put_buffer(b0), 0);
+
+  mtl_buffer_t* b1 = get_buffer();
+  ASSERT_NE(b1, nullptr);
+  EXPECT_EQ(b1->status, MTL_FRAME_STATUS_COMPLETE)
+      << "RECONSTRUCTED must collapse onto COMPLETE in the unified API";
+  EXPECT_EQ(b1->flags & MTL_BUF_FLAG_INCOMPLETE, 0u);
+  EXPECT_EQ(put_buffer(b1), 0);
+
+  mtl_buffer_t* b2 = get_buffer();
+  ASSERT_NE(b2, nullptr);
+  EXPECT_EQ(b2->status, MTL_FRAME_STATUS_INCOMPLETE);
+  EXPECT_NE(b2->flags & MTL_BUF_FLAG_INCOMPLETE, 0u);
+  EXPECT_EQ(put_buffer(b2), 0);
+}
+
+/* rx_convert_and_fill_buffer: derive mode hands the app the transport
+ * framebuffer with no converter call; a transport-fmt != app-fmt session runs
+ * the converter and the buffer carries the app fmt/size. */
+TEST_F(St20NewApiRxTest, ConvertTransportToApp) {
+  /* derive (default): no converter, zero-copy transport buffer */
+  ASSERT_EQ(inject_complete(1000), 0);
+  mtl_buffer_t* d = get_buffer();
+  ASSERT_NE(d, nullptr);
+  EXPECT_EQ(ut20rx_convert_calls(ctx_), 0) << "derive mode must not convert";
+  EXPECT_EQ(put_buffer(d), 0);
+
+  /* fresh ctx switched into convert mode */
+  ut20rx_ctx_destroy(ctx_);
+  ctx_ = ut20rx_ctx_create(/*framebuff_cnt=*/3);
+  ASSERT_NE(ctx_, nullptr);
+
+  static uint8_t app_buf[64];
+  ut20rx_enable_convert(ctx_, ST_FRAME_FMT_YUV422PLANAR10LE, app_buf, sizeof(app_buf));
+
+  ASSERT_EQ(inject_complete(2000), 0);
+  mtl_buffer_t* c = get_buffer();
+  ASSERT_NE(c, nullptr);
+  EXPECT_EQ(ut20rx_convert_calls(ctx_), 1) << "convert mode must run the converter once";
+  EXPECT_EQ(c->video.fmt, ST_FRAME_FMT_YUV422PLANAR10LE)
+      << "converted buffer must carry the app fmt";
+  EXPECT_EQ(c->data, app_buf) << "converted buffer must point at the app destination";
+  EXPECT_EQ(c->size, sizeof(app_buf));
+  EXPECT_EQ(put_buffer(c), 0);
+}
+
+/* rx_fill_user_metadata copies the frame_trans user_meta pointer/size into the
+ * delivered buffer (RX pass-through). */
+TEST_F(St20NewApiRxTest, UserMetaPassthrough) {
+  static uint8_t meta_blob[16] = {0xDE, 0xAD, 0xBE, 0xEF};
+  ut20rx_set_frame_user_meta(ctx_, /*idx=*/0, meta_blob, sizeof(meta_blob));
+
+  ASSERT_EQ(inject_complete(1000), 0);
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(b->user_meta, meta_blob);
+  EXPECT_EQ(b->user_meta_size, sizeof(meta_blob));
+  EXPECT_EQ(put_buffer(b), 0);
+}
+
+/* rx_fill_buffer_video_fields reflects the synthetic st20_rx_frame_meta into the
+ * buffer's video sub-struct (pkts_total/pkts_recv/second_field/dimensions);
+ * interlaced is carried from the convert ctx (false by default here). */
+TEST_F(St20NewApiRxTest, VideoMetaFieldsFilled) {
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.timestamp = 4242;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.width = 1920;
+  meta.height = 1080;
+  meta.pkts_total = 100;
+  meta.pkts_recv[0] = 90;
+  meta.pkts_recv[1] = 80;
+  meta.second_field = true;
+  ASSERT_EQ(ut20rx_inject_meta(ctx_, &meta), 0);
+
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(b->video.width, 1920u);
+  EXPECT_EQ(b->video.height, 1080u);
+  EXPECT_EQ(b->video.pkts_total, 100u);
+  EXPECT_EQ(b->video.pkts_recv[0], 90u);
+  EXPECT_EQ(b->video.pkts_recv[1], 80u);
+  EXPECT_TRUE(b->video.second_field);
+  EXPECT_FALSE(b->video.interlaced) << "interlaced is convert-ctx driven, false here";
+  EXPECT_EQ(put_buffer(b), 0);
+}
+
+/* rx_fill_buffer_status forwards rtp_timestamp/tfmt/timestamp from the meta. */
+TEST_F(St20NewApiRxTest, RtpTimestampAndTfmt) {
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.pkts_total = 1;
+  meta.rtp_timestamp = 0xCAFEu;
+  meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta.timestamp = 0x123456789ULL;
+  ASSERT_EQ(ut20rx_inject_meta(ctx_, &meta), 0);
+
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(b->rtp_timestamp, 0xCAFEu);
+  EXPECT_EQ(b->tfmt, ST10_TIMESTAMP_FMT_TAI);
+  EXPECT_EQ(b->timestamp, 0x123456789ULL);
+  EXPECT_EQ(put_buffer(b), 0);
+}
+
+/* mtl_video_rx_session_init clamps a requested framebuff_cnt < 2 up to 2 (the
+ * pipeline does the same — mirrored in St20PipelineRxTest). Counts >= 2 pass
+ * through unchanged. */
+TEST_F(St20NewApiRxTest, FramebuffCntClampedToTwo) {
+  EXPECT_EQ(ut20rx_clamp_framebuff_cnt(0), 2u);
+  EXPECT_EQ(ut20rx_clamp_framebuff_cnt(1), 2u);
+  EXPECT_EQ(ut20rx_clamp_framebuff_cnt(2), 2u);
+  EXPECT_EQ(ut20rx_clamp_framebuff_cnt(5), 5u);
+}
+
+/* video_rx_buffer_get(timeout_ms=0) on an empty ready_ring returns -ETIMEDOUT
+ * immediately (the harness wrapper surfaces that as NULL); a queued frame is
+ * returned. Divergence from the pipeline: the unified RX get is a bounded poll,
+ * not a condvar wait — timeout_ms=0 never blocks. */
+TEST_F(St20NewApiRxTest, BlockGetTimeoutSemantics) {
+  EXPECT_EQ(get_buffer(), nullptr) << "empty ready_ring + timeout 0 must not block";
+
+  ASSERT_EQ(inject_complete(1000), 0);
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr) << "a queued frame is returned immediately";
+  EXPECT_EQ(put_buffer(b), 0);
+
+  EXPECT_EQ(get_buffer(), nullptr) << "ring drained again → -ETIMEDOUT";
+}
+
+/* Characterization of divergence #4: the buffers_processed bump site depends on
+ * ownership. LIBRARY_OWNED bumps in buffer_get (app consumes); USER_OWNED via
+ * buffer_post bumps in notify_frame_ready (the lib copies into the user buffer
+ * and returns the frame immediately, before any buffer_get). Exactly once per
+ * delivered frame in each mode. */
+TEST_F(St20NewApiRxTest, BuffersProcessedSiteCrossMode) {
+  /* LIBRARY_OWNED: no bump at ingress, one bump at buffer_get */
+  ASSERT_EQ(inject_complete(1000), 0);
+  EXPECT_EQ(buffers_processed(), 0u) << "library-owned: ingress must not bump";
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(buffers_processed(), 1u) << "library-owned: buffer_get bumps once";
+  EXPECT_EQ(put_buffer(b), 0);
+
+  /* USER_OWNED post: the bump moves to ingress (notify_frame_ready) */
+  ut20rx_ctx_destroy(ctx_);
+  ctx_ = ut20rx_ctx_create(/*framebuff_cnt=*/3);
+  ASSERT_NE(ctx_, nullptr);
+  ASSERT_EQ(ut20rx_enable_user_owned_post(ctx_), 0);
+
+  static uint8_t user_buf[64];
+  ASSERT_EQ(ut20rx_mem_register(ctx_, user_buf, sizeof(user_buf)), 0);
+  ASSERT_EQ(ut20rx_post_user_buffer(ctx_, user_buf, sizeof(user_buf), (void*)0x77), 0);
+
+  ASSERT_EQ(inject_complete(2000), 0);
+  EXPECT_EQ(buffers_processed(), 1u)
+      << "user-owned post: notify_frame_ready bumps once, no buffer_get needed";
+}
+
+/* video_rx_notify_detected posts MTL_EVENT_FORMAT_DETECTED carrying the detected
+ * geometry. Reachable without a NIC by driving the static callback directly. */
+TEST_F(St20NewApiRxTest, AutoDetectPostsFormatEvent) {
+  ASSERT_EQ(
+      ut20rx_notify_detected(ctx_, 1920, 1080, ST_FPS_P59_94, ST20_PACKING_BPM, false),
+      0);
+
+  mtl_event_t ev{};
+  ASSERT_EQ(ut20rx_poll_event(ctx_, &ev), 0) << "a FORMAT_DETECTED event must be posted";
+  EXPECT_EQ(ev.type, MTL_EVENT_FORMAT_DETECTED);
+  EXPECT_EQ(ev.format_detected.width, 1920u);
+  EXPECT_EQ(ev.format_detected.height, 1080u);
+}
+
+/* integration-only: MTL_EVENT_TIMING_REPORT (case 10, TimingParserPostsReport)
+ * is not posted anywhere in lib/src/new_api — the timing-parser report path is
+ * not yet wired into the unified session, so there is no production code to
+ * exercise at the unit tier. Route to Phase 4 once the parser → event bridge
+ * lands. */
+
+/* The query_ext_frame wrapper (USER_OWNED, no app callback) binds a buffer
+ * posted via buffer_post to the next transport ext_frame slot: addr/len/opaque
+ * come straight off the posted user buffer. Exercises mem_register + buffer_post
+ * + the wrapper end to end. */
+TEST_F(St20NewApiRxTest, ExtFrameQueryWrapperBinds) {
+  ut20rx_ctx_destroy(ctx_);
+  ctx_ = ut20rx_ctx_create(/*framebuff_cnt=*/3);
+  ASSERT_NE(ctx_, nullptr);
+  ASSERT_EQ(ut20rx_enable_user_owned_post(ctx_), 0);
+
+  static uint8_t user_buf[128];
+  ASSERT_EQ(ut20rx_mem_register(ctx_, user_buf, sizeof(user_buf)), 0);
+  ASSERT_EQ(ut20rx_post_user_buffer(ctx_, user_buf, sizeof(user_buf), (void*)0x99), 0);
+
+  struct st20_rx_frame_meta meta {};
+  meta.width = 1920;
+  meta.height = 1080;
+  meta.frame_total_size = sizeof(user_buf);
+
+  struct st20_ext_frame ext {};
+  ASSERT_EQ(ut20rx_query_ext_frame(ctx_, &ext, &meta), 0)
+      << "a posted user buffer must be available to bind";
+  EXPECT_EQ(ext.buf_addr, user_buf);
+  EXPECT_EQ(ext.buf_len, sizeof(user_buf));
+  EXPECT_EQ(ext.opaque, (void*)0x99);
+}

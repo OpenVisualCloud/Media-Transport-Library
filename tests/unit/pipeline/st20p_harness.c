@@ -67,6 +67,8 @@ struct ut20p_ctx {
 
 #include "pipeline/st20p_harness.h"
 
+#define UT20P_USER_META_SIZE 64 /* per-framebuf user_meta scratch */
+
 /* ── init ─────────────────────────────────────────────────────────────── */
 
 int ut20p_init(void) {
@@ -95,6 +97,16 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
      * `dst = src`, so setting src.priv is sufficient. */
     ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
     ctx->framebuffs[i].dst.priv = &ctx->framebuffs[i];
+    /* mirrors production user_meta alloc so frame_ready can copy meta->user_meta
+     * and get_frame can surface it. */
+    ctx->framebuffs[i].user_meta_buffer_size = UT20P_USER_META_SIZE;
+    ctx->framebuffs[i].user_meta = calloc(1, UT20P_USER_META_SIZE);
+    if (!ctx->framebuffs[i].user_meta) {
+      for (int j = 0; j < i; j++) free(ctx->framebuffs[j].user_meta);
+      free(ctx->framebuffs);
+      free(ctx);
+      return NULL;
+    }
   }
 
   struct st20p_rx_ctx* p = &ctx->pipeline;
@@ -124,6 +136,7 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
 void ut20p_ctx_destroy(ut20p_ctx* ctx) {
   if (!ctx) return;
   pthread_mutex_destroy(&ctx->pipeline.lock);
+  for (int i = 0; i < ctx->framebuff_cnt; i++) free(ctx->framebuffs[i].user_meta);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -131,11 +144,6 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx) {
 /* ── inject one frame via rx_st20p_frame_ready ────────────────────────── */
 
 int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t timestamp) {
-  /* Stack-allocated synthetic meta — frame_ready copies what it needs
-   * into the framebuf.  The frame addr only needs to be a stable
-   * non-NULL pointer; with derive=true it is never dereferenced by the
-   * pipeline before delivery, and our st20_rx_put_framebuff stub
-   * ignores it on release. */
   struct st20_rx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));
   meta.status = status;
@@ -144,9 +152,16 @@ int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t tim
   meta.frame_total_size = 1;
   meta.frame_recv_size = 1;
   meta.pkts_total = 1;
+  return ut20p_inject_meta(ctx, &meta);
+}
 
+int ut20p_inject_meta(ut20p_ctx* ctx, const struct st20_rx_frame_meta* meta) {
+  /* The frame addr only needs to be a stable non-NULL pointer; with
+   * derive=true it is never dereferenced by the pipeline before delivery, and
+   * our st20_rx_put_framebuff stub ignores it on release. */
   static uint8_t dummy_frame_storage; /* address-stable sentinel */
-  return rx_st20p_frame_ready(&ctx->pipeline, &dummy_frame_storage, &meta);
+  struct st20_rx_frame_meta local = *meta;
+  return rx_st20p_frame_ready(&ctx->pipeline, &dummy_frame_storage, &local);
 }
 
 /* ── frame get/put ────────────────────────────────────────────────────── */

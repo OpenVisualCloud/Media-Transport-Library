@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include "pipeline/st20p_harness.h"
 
 class St20PipelineRxTest : public ::testing::Test {
@@ -187,4 +189,87 @@ TEST_F(St20PipelineRxTest, BusyEqualsDroppedInvariant) {
     EXPECT_EQ(stat_busy(), frames_dropped())
         << "after drop " << (i + 1) << ": stat_busy and frames_dropped diverged";
   }
+}
+
+/* Pipeline passes the transport frame status through unchanged: a RECONSTRUCTED
+ * frame is delivered as RECONSTRUCTED (not collapsed to COMPLETE). This is the
+ * old-pipeline analog of the new-API St20NewApiRxTest.StatusCompleteVsReconstructed,
+ * which DOES collapse RECONSTRUCTED onto MTL_FRAME_STATUS_COMPLETE — the two
+ * suites pin opposite, deliberate mappings. */
+TEST_F(St20PipelineRxTest, StatusReconstructedPassthrough) {
+  ASSERT_EQ(ut20p_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, 1000), 0);
+  ASSERT_EQ(ut20p_inject_frame(ctx_, ST_FRAME_STATUS_RECONSTRUCTED, 2000), 0);
+
+  struct st_frame* f0 = get_frame();
+  ASSERT_NE(f0, nullptr);
+  EXPECT_EQ(f0->status, ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(put_frame(f0), 0);
+
+  struct st_frame* f1 = get_frame();
+  ASSERT_NE(f1, nullptr);
+  EXPECT_EQ(f1->status, ST_FRAME_STATUS_RECONSTRUCTED)
+      << "pipeline forwards the raw transport status, no COMPLETE collapse";
+  EXPECT_EQ(put_frame(f1), 0);
+}
+
+/* rx_st20p_frame_ready forwards rtp_timestamp/tfmt/timestamp from the meta onto
+ * the delivered st_frame (analog of St20NewApiRxTest.RtpTimestampAndTfmt). */
+TEST_F(St20PipelineRxTest, RtpTimestampAndTfmt) {
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.pkts_total = 1;
+  meta.rtp_timestamp = 0xCAFEu;
+  meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta.timestamp = 0x123456789ULL;
+  ASSERT_EQ(ut20p_inject_meta(ctx_, &meta), 0);
+
+  struct st_frame* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->rtp_timestamp, 0xCAFEu);
+  EXPECT_EQ(f->tfmt, ST10_TIMESTAMP_FMT_TAI);
+  EXPECT_EQ(f->timestamp, 0x123456789ULL);
+  EXPECT_EQ(put_frame(f), 0);
+}
+
+/* rx_st20p_frame_ready forwards pkts_total/second_field onto the st_frame.
+ * Note the divergence from the new API: the pipeline does NOT copy pkts_recv[]
+ * (only pkts_total), whereas rx_fill_buffer_video_fields fills pkts_recv too. */
+TEST_F(St20PipelineRxTest, VideoMetaFieldsFilled) {
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.pkts_total = 100;
+  meta.second_field = true;
+  ASSERT_EQ(ut20p_inject_meta(ctx_, &meta), 0);
+
+  struct st_frame* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->pkts_total, 100u);
+  EXPECT_TRUE(f->second_field);
+  EXPECT_EQ(put_frame(f), 0);
+}
+
+/* rx_st20p_frame_ready copies meta->user_meta into the framebuf's user_meta
+ * buffer and get_frame surfaces it (analog of St20NewApiRxTest.UserMetaPassthrough;
+ * the pipeline copies by value into its own buffer rather than aliasing). */
+TEST_F(St20PipelineRxTest, UserMetaPassthrough) {
+  static const uint8_t blob[8] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04};
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.pkts_total = 1;
+  meta.user_meta = blob;
+  meta.user_meta_size = sizeof(blob);
+  ASSERT_EQ(ut20p_inject_meta(ctx_, &meta), 0);
+
+  struct st_frame* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  ASSERT_NE(f->user_meta, nullptr);
+  EXPECT_EQ(f->user_meta_size, sizeof(blob));
+  EXPECT_EQ(memcmp(f->user_meta, blob, sizeof(blob)), 0);
+  EXPECT_EQ(put_frame(f), 0);
 }

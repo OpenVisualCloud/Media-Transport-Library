@@ -46,6 +46,51 @@ void ut20rx_ctx_destroy(ut20rx_ctx* ctx);
  *  full (drives the buffers_dropped path). */
 int ut20rx_inject_frame(ut20rx_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
 
+/** Inject one frame with caller-supplied metadata. The harness picks the
+ *  cyclic frame slot; the caller owns every meta field (status, tfmt,
+ *  rtp_timestamp, pkts_total, pkts_recv[], second_field, ...). Same return
+ *  contract as ut20rx_inject_frame. */
+int ut20rx_inject_meta(ut20rx_ctx* ctx, const struct st20_rx_frame_meta* meta);
+
+/** Attach user metadata to a frame slot before injecting it, exercising the
+ *  rx_fill_user_metadata pass-through (frame_trans->user_meta → buf->user_meta). */
+void ut20rx_set_frame_user_meta(ut20rx_ctx* ctx, int idx, void* meta, size_t size);
+
+/** Switch out of derive mode so buffer_get runs rx_convert_and_fill_buffer.
+ *  Provides one app-format destination buffer for every frame slot. */
+void ut20rx_enable_convert(ut20rx_ctx* ctx, enum st_frame_fmt app_fmt, void* app_buf,
+                           size_t app_size);
+
+/** Count of times the stubbed converter ran since ctx_create (0 in derive mode). */
+int ut20rx_convert_calls(const ut20rx_ctx* ctx);
+
+/** Drive video_rx_notify_detected() directly (auto-detect format event). */
+int ut20rx_notify_detected(ut20rx_ctx* ctx, uint32_t width, uint32_t height,
+                           enum st_fps fps, enum st20_packing packing, bool interlaced);
+
+/** Non-blocking drain of one session event (shared video_session_event_poll). */
+int ut20rx_poll_event(ut20rx_ctx* ctx, mtl_event_t* event);
+
+/** Reconfigure the session for USER_OWNED buffer-post mode (no app
+ *  query_ext_frame). Returns 0 on success. */
+int ut20rx_enable_user_owned_post(ut20rx_ctx* ctx);
+
+/** Wraps the mem_register vtable entry (user-owned zero-copy registration). */
+int ut20rx_mem_register(ut20rx_ctx* ctx, void* addr, size_t size);
+
+/** Wraps the buffer_post vtable entry (post a user buffer for receiving). */
+int ut20rx_post_user_buffer(ut20rx_ctx* ctx, void* data, size_t size, void* user_ctx);
+
+/** Drive the query_ext_frame wrapper directly; on success *out binds to a
+ *  posted user buffer slot. */
+int ut20rx_query_ext_frame(ut20rx_ctx* ctx, struct st20_ext_frame* out,
+                           struct st20_rx_frame_meta* meta);
+
+/** Drive the framebuff_cnt < 2 clamp through mtl_video_rx_session_init without a
+ *  NIC: st20_rx_create is stubbed to capture ops.framebuff_cnt and fail, so init
+ *  returns before any transport dereference. Returns the clamped framebuff_cnt. */
+uint16_t ut20rx_clamp_framebuff_cnt(uint32_t requested);
+
 /** Wraps video_rx_buffer_get() with timeout_ms=0 (non-blocking). */
 mtl_buffer_t* ut20rx_buffer_get(ut20rx_ctx* ctx);
 
