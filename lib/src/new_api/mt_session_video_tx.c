@@ -198,6 +198,7 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
         mtl_event_t event = {0};
         event.type = MTL_EVENT_FRAME_LATE;
         mtl_session_event_post(s, &event);
+        /* Drop the low-level pacing stamp so a reused slot starts unstamped. */
         tx_impl->st20_frames[i].tv_meta.timestamp = 0;
         tx_impl->st20_frames[i].tv_meta.tfmt = 0;
         __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);

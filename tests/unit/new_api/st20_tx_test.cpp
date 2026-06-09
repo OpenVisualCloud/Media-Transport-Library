@@ -204,6 +204,84 @@ TEST_F(St20NewApiTxTest, DropWhenLateUnstampedSurvivesSlotReuse) {
   EXPECT_EQ(dropped(), 0u);
 }
 
+/* DropWhenLate ON + USER_PACING, USER_OWNED slot reuse after a completed
+ * transmit. User-owned bind never runs tx_apply_buffer_metadata, so only
+ * notify_frame_done (clear A) can drop the transmit-time pacing stamp. A slot
+ * stamped during transmit must start unstamped when the app rebinds it with a
+ * fresh buffer, otherwise the stale past stamp false-drops it. Reverting clear A
+ * alone makes this fail — clear B cannot mask it. */
+TEST_F(St20NewApiTxTest, DropWhenLateUserOwnedSurvivesSlotReuseAfterTransmit) {
+  ut20tx_set_drop_when_late(ctx_, true);
+  ut20tx_set_user_pacing(ctx_, true);
+  ut20tx_set_fps(ctx_, ST_FPS_P59_94);
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  int data1 = 0, uctx1 = 0;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data1, &uctx1), 0);
+
+  /* First use: an unstamped user buffer binds slot 0 and transmits. */
+  uint16_t idx = 0xffff;
+  ASSERT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0);
+  ASSERT_EQ(idx, 0u);
+  ASSERT_EQ(state(0), kTransmitting);
+
+  /* Mimic the low-level pacing path stamping tv_meta with a past TAI cursor. */
+  ut20tx_frame_set_timestamp(ctx_, idx, kFrameTai);
+
+  /* Transmission completes: notify_frame_done (clear A) drops that stamp. */
+  ASSERT_EQ(ut20tx_frame_done(ctx_, idx), 0);
+  ASSERT_EQ(state(0), kFree);
+
+  /* Rebind the same slot with a fresh unstamped buffer, wall clock far past. */
+  ut20tx_set_ptp_now(ctx_, kFrameTai + 1000 * kPeriodNs);
+  int data2 = 0, uctx2 = 0;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data2, &uctx2), 0);
+
+  uint16_t idx2 = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx2), 0)
+      << "a user-owned reused slot must transmit, not drop on a stale "
+         "transmit-time pacing stamp";
+  EXPECT_EQ(idx2, 0u);
+  EXPECT_EQ(state(0), kTransmitting);
+  EXPECT_EQ(dropped(), 0u);
+}
+
+/* DropWhenLate ON + USER_PACING, USER_OWNED slot reuse after a drop. When a
+ * stamped buffer is dropped as late, the get_next_frame drop path itself
+ * (clear C) must clear the slot's tv_meta, otherwise the next fresh buffer that
+ * rebinds the slot inherits the stale past stamp and is false-dropped too.
+ * Reverting clear C alone makes this fail. */
+TEST_F(St20NewApiTxTest, DropWhenLateUserOwnedSurvivesSlotReuseAfterDrop) {
+  ut20tx_set_drop_when_late(ctx_, true);
+  ut20tx_set_user_pacing(ctx_, true);
+  ut20tx_set_fps(ctx_, ST_FPS_P59_94);
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  /* Arm a drop: stamp slot 0 past TAI, wall clock far ahead. The bound buffer
+   * inherits the slot stamp — user-owned never re-stamps tv_meta. */
+  ut20tx_frame_set_timestamp(ctx_, 0, kFrameTai);
+  ut20tx_set_ptp_now(ctx_, kFrameTai + 1000 * kPeriodNs);
+
+  int data1 = 0, uctx1 = 0;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data1, &uctx1), 0);
+  uint16_t idx = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx), -EBUSY)
+      << "the stamped late user buffer must be dropped";
+  EXPECT_EQ(state(0), kFree);
+  EXPECT_EQ(dropped(), 1u);
+
+  /* Rebind the same slot with a fresh unstamped buffer. */
+  int data2 = 0, uctx2 = 0;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data2, &uctx2), 0);
+  uint16_t idx2 = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx2), 0)
+      << "a user-owned reused slot must transmit, not drop on a stale "
+         "drop-path pacing stamp";
+  EXPECT_EQ(idx2, 0u);
+  EXPECT_EQ(state(0), kTransmitting);
+  EXPECT_EQ(dropped(), 1u);
+}
+
 /* DropWhenLate ON + USER_PACING in MTL_BUFFER_USER_OWNED mode: when a posted
  * external buffer is dropped as late, the app must still reclaim it. The drop
  * path must deliver MTL_EVENT_BUFFER_DONE carrying the exact user_ctx and clear
