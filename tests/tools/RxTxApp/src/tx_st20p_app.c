@@ -322,8 +322,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   }
 
   if (st20p && st20p->drop_when_late)
-    warn("%s(%d), drop_when_late not supported on unified session path, ignored\n",
-         __func__, idx);
+    config.base.flags |= MTL_SESSION_FLAG_DROP_WHEN_LATE;
 
   if (ctx->tx_exact_user_pacing) config.base.flags |= MTL_SESSION_FLAG_EXACT_USER_PACING;
   if (ctx->tx_ts_epoch) config.base.flags |= MTL_SESSION_FLAG_RTP_TIMESTAMP_EPOCH;
