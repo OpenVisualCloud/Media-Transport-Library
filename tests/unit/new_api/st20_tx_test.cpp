@@ -163,6 +163,47 @@ TEST_F(St20NewApiTxTest, DropWhenLateIgnoresUnstampedFrame) {
   EXPECT_EQ(dropped(), 0u);
 }
 
+/* DropWhenLate ON + USER_PACING, library-owned slot reuse: the low-level TX
+ * pacing path stamps st20_frames[idx].tv_meta with a non-zero PAST cursor on
+ * every transmitted frame (st_tx_video_session.c). When the app later reuses
+ * that same slot with an UNSTAMPED buffer, the stale stamp must NOT be mistaken
+ * for an app deadline — the frame must transmit, not drop. */
+TEST_F(St20NewApiTxTest, DropWhenLateUnstampedSurvivesSlotReuse) {
+  ut20tx_set_drop_when_late(ctx_, true);
+  ut20tx_set_user_pacing(ctx_, true);
+  ut20tx_set_fps(ctx_, ST_FPS_P59_94);
+
+  /* First use: drive an unstamped frame through slot 0 to TRANSMITTING. */
+  mtl_buffer_t* b = get();
+  ASSERT_NE(b, nullptr);
+  ASSERT_EQ(put(b), 0);
+  uint16_t idx = 0xffff;
+  ASSERT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0);
+  ASSERT_EQ(idx, 0u);
+
+  /* Mimic the low-level pacing path stamping tv_meta with a past TAI cursor. */
+  ut20tx_frame_set_timestamp(ctx_, idx, kFrameTai);
+
+  /* Transmission completes: the slot returns to FREE. */
+  ASSERT_EQ(ut20tx_frame_done(ctx_, idx), 0);
+  ASSERT_EQ(state(0), kFree);
+
+  /* Reuse the slot with an UNSTAMPED buffer while the wall clock is far past
+   * the stale stamp. */
+  ut20tx_set_ptp_now(ctx_, kFrameTai + 1000 * kPeriodNs);
+  mtl_buffer_t* b2 = get();
+  ASSERT_NE(b2, nullptr);
+  ASSERT_EQ(put(b2), 0);
+
+  uint16_t idx2 = 0xffff;
+  EXPECT_EQ(ut20tx_get_next_frame(ctx_, &idx2), 0)
+      << "a reused slot with an unstamped buffer must transmit, not drop on a "
+         "stale low-level stamp";
+  EXPECT_EQ(idx2, 0u);
+  EXPECT_EQ(state(0), kTransmitting);
+  EXPECT_EQ(dropped(), 0u);
+}
+
 /* DropWhenLate ON + USER_PACING in MTL_BUFFER_USER_OWNED mode: when a posted
  * external buffer is dropped as late, the app must still reclaim it. The drop
  * path must deliver MTL_EVENT_BUFFER_DONE carrying the exact user_ctx and clear

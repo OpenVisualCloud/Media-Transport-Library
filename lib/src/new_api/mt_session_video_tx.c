@@ -198,6 +198,8 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
         mtl_event_t event = {0};
         event.type = MTL_EVENT_FRAME_LATE;
         mtl_session_event_post(s, &event);
+        tx_impl->st20_frames[i].tv_meta.timestamp = 0;
+        tx_impl->st20_frames[i].tv_meta.tfmt = 0;
         __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
         continue;
       }
@@ -230,6 +232,10 @@ static int video_tx_notify_frame_done(void* priv, uint16_t frame_idx,
     user_ctx = s->user_buf_ctx[frame_idx];
     s->user_buf_ctx[frame_idx] = NULL;
   }
+
+  /* Drop the low-level pacing stamp so a reused slot starts unstamped. */
+  tx_impl->st20_frames[frame_idx].tv_meta.timestamp = 0;
+  tx_impl->st20_frames[frame_idx].tv_meta.tfmt = 0;
 
   __atomic_store_n(&ctx->frame_state[frame_idx], TX_FRAME_FREE, __ATOMIC_RELEASE);
 
@@ -388,6 +394,10 @@ static void tx_apply_buffer_metadata(mtl_buffer_t* buf, struct st_frame_trans* f
   if (buf->timestamp) {
     ft->tv_meta.timestamp = buf->timestamp;
     ft->tv_meta.tfmt = buf->tfmt;
+  } else {
+    /* Clear any stale low-level stamp so an unstamped frame is never late. */
+    ft->tv_meta.timestamp = 0;
+    ft->tv_meta.tfmt = 0;
   }
 }
 
