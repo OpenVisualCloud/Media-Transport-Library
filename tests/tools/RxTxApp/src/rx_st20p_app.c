@@ -118,7 +118,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
         err("%s(%d), invalid user meta size %" PRId64 "\n", __func__, idx,
             buf->user_meta_size);
       } else {
-        st_sha256((unsigned char*)buf->data, buf->data_size, shas);
+        st_sha256((unsigned char*)buf->data, s->st20p_frame_size, shas);
         if (memcmp(shas, buf->user_meta, sizeof(shas))) {
           err("%s(%d), sha check fail for frame %p\n", __func__, idx, buf->data);
           st_sha_dump("user meta sha:", buf->user_meta);
