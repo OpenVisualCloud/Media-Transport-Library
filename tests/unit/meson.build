@@ -47,6 +47,8 @@ unit_sources = [
   'pipeline/st40p_test.cpp',
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
+  'new_api/st20_rx_harness.c',
+  'new_api/st20_rx_test.cpp',
   'main.cpp',
 ]
 
