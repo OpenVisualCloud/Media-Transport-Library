@@ -49,8 +49,18 @@ void ut20tx_set_ptp_now(ut20tx_ctx* ctx, uint64_t ns);
 
 /** Switch the session to MTL_BUFFER_USER_OWNED and init the user-buf ring. */
 int ut20tx_set_user_owned(ut20tx_ctx* ctx);
-/** Post an external user buffer (queued for get_next_frame to bind). */
+/** Drive the production buffer_post path: binds the buffer on the app thread. */
 int ut20tx_post_user_buffer(ut20tx_ctx* ctx, void* data, void* user_ctx);
+/** Switch the user-owned convert ctx to non-derive, so buffer_post takes the
+ *  format-conversion branch (the shared video_convert_frame stub copies the
+ *  first source byte to the destination slot). */
+void ut20tx_set_user_convert(ut20tx_ctx* ctx);
+/** Round-trip one entry through the value-backed user-buf ring, copying the
+ *  dequeued fields to the out-params. Returns 0 on success. */
+int ut20tx_user_buf_roundtrip(ut20tx_ctx* ctx, void* data, mtl_iova_t iova,
+                              size_t size, void* user_ctx, void** out_data,
+                              mtl_iova_t* out_iova, size_t* out_size,
+                              void** out_ctx);
 /** Stamp a frame slot's tv_meta with a TAI timestamp, bypassing buffer_put. */
 void ut20tx_frame_set_timestamp(ut20tx_ctx* ctx, uint16_t idx, uint64_t tai_ns);
 /** Read the per-frame user_ctx slot (user-owned completion bookkeeping). */

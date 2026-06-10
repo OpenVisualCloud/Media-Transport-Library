@@ -210,12 +210,50 @@ void ut20tx_set_ptp_now(ut20tx_ctx* ctx, uint64_t ns) {
 }
 
 int ut20tx_set_user_owned(ut20tx_ctx* ctx) {
-  ctx->s.ownership = MTL_BUFFER_USER_OWNED;
-  return mtl_session_user_buf_init(&ctx->s, ctx->framebuff_cnt);
+  struct mtl_session_impl* s = &ctx->s;
+  s->ownership = MTL_BUFFER_USER_OWNED;
+
+  /* Catch-all DMA registration so video_tx_buffer_post's IOVA lookup resolves
+   * any stack buffer the tests post (iova == virtual address; never DMA'd). */
+  struct mtl_dma_mem_impl* reg = mt_rte_zmalloc_socket(sizeof(*reg), s->socket_id);
+  if (!reg) return -ENOMEM;
+  reg->addr = NULL;
+  reg->size = (size_t)-1;
+  reg->iova = 0;
+  s->dma_registrations[0] = reg;
+  s->dma_registration_cnt = 1;
+
+  return mtl_session_user_buf_init(s, ctx->framebuff_cnt);
+}
+
+void ut20tx_set_user_convert(ut20tx_ctx* ctx) {
+  ctx->vctx.convert.derive = false;
+  ctx->vctx.convert.frame_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->vctx.convert.transport_fmt = ST20_FMT_YUV_422_10BIT;
 }
 
 int ut20tx_post_user_buffer(ut20tx_ctx* ctx, void* data, void* user_ctx) {
-  return mtl_session_user_buf_enqueue(&ctx->s, data, 0, UT20TX_FRAME_STRIDE, user_ctx);
+  return mtl_video_tx_vtable.buffer_post(&ctx->s, data, UT20TX_FRAME_STRIDE,
+                                         user_ctx);
+}
+
+int ut20tx_user_buf_roundtrip(ut20tx_ctx* ctx, void* data, mtl_iova_t iova,
+                              size_t size, void* user_ctx, void** out_data,
+                              mtl_iova_t* out_iova, size_t* out_size,
+                              void** out_ctx) {
+  int ret = mtl_session_user_buf_enqueue(&ctx->s, data, iova, size, user_ctx);
+  if (ret != 0) return ret;
+
+  struct mtl_user_buffer_entry e;
+  memset(&e, 0, sizeof(e));
+  ret = mtl_session_user_buf_dequeue(&ctx->s, &e);
+  if (ret != 0) return ret;
+
+  if (out_data) *out_data = e.data;
+  if (out_iova) *out_iova = e.iova;
+  if (out_size) *out_size = e.size;
+  if (out_ctx) *out_ctx = e.user_ctx;
+  return 0;
 }
 
 void ut20tx_frame_set_timestamp(ut20tx_ctx* ctx, uint16_t idx, uint64_t tai_ns) {

@@ -10,10 +10,9 @@
  * and st20_tx_ops.
  */
 
-#include "mt_session_video_common.h"
-
 #include "../mt_log.h"
 #include "../mt_mem.h"
+#include "mt_session_video_common.h"
 
 /*************************************************************************
  * TX Frame State Machine
@@ -48,7 +47,7 @@ enum tx_frame_state {
 
 struct video_tx_ctx {
   struct mtl_session_impl* session;
-  st20_tx_handle handle;           /**< low-level TX handle */
+  st20_tx_handle handle;            /**< low-level TX handle */
   struct video_convert_ctx convert; /**< shared format conversion context */
 
   /** Per-frame state tracking (protected by session->buffer_lock) */
@@ -72,8 +71,7 @@ static inline struct video_tx_ctx* tx_ctx_from_session(struct mtl_session_impl* 
 }
 
 static bool tx_frame_is_late(struct video_tx_ctx* ctx,
-                             struct st_tx_video_session_impl* tx_impl,
-                             uint16_t idx) {
+                             struct st_tx_video_session_impl* tx_impl, uint16_t idx) {
   struct mtl_session_impl* s = ctx->session;
   if (!(s->flags & MTL_SESSION_FLAG_USER_PACING)) return false;
   struct st20_tx_frame_meta* meta = &tx_impl->st20_frames[idx].tv_meta;
@@ -93,11 +91,77 @@ static bool tx_frame_is_late(struct video_tx_ctx* ctx,
  *************************************************************************/
 
 /**
+ * Claim a FREE frame slot for the app thread to fill.
+ *
+ * Scans frame_state[] and CAS FREE→APP_OWNED so the slot is reserved before any
+ * buffer is dequeued. Claiming first lets the drain pop the backlog only when a
+ * slot is guaranteed, so a failed bind never has to rotate the ring head.
+ *
+ * @return claimed slot index, or -EAGAIN if no slot is free.
+ */
+static int video_tx_claim_free_slot(struct mtl_session_impl* s,
+                                    struct video_tx_ctx* ctx) {
+  struct st_tx_video_session_impl* tx_impl = s->inner.video_tx;
+
+  for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
+    enum tx_frame_state expected = TX_FRAME_FREE;
+    if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected, TX_FRAME_APP_OWNED,
+                                    false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      return i;
+  }
+
+  return -EAGAIN;
+}
+
+/**
+ * Fill a claimed (APP_OWNED) slot with a posted user buffer and publish READY.
+ *
+ * Derive mode points st20_tx at the external buffer (zero-copy); non-derive
+ * converts the app-format data into the slot's transport framebuffer. On hard
+ * error the slot is returned to FREE so it is not leaked as APP_OWNED.
+ *
+ * @return 0 if bound, negative errno on bind error.
+ */
+static int video_tx_fill_slot(struct mtl_session_impl* s, struct video_tx_ctx* ctx,
+                              uint16_t idx, const struct mtl_user_buffer_entry* e) {
+  struct st_tx_video_session_impl* tx_impl = s->inner.video_tx;
+
+  int ret;
+  if (ctx->convert.derive) {
+    struct st20_ext_frame ext = {0};
+    ext.buf_addr = e->data;
+    ext.buf_iova = e->iova;
+    ext.buf_len = e->size;
+    ext.opaque = e->user_ctx;
+    ret = st20_tx_set_ext_frame(ctx->handle, idx, &ext);
+  } else {
+    ret = video_convert_frame(
+        &ctx->convert, e->data, e->iova, e->size, tx_impl->st20_frames[idx].addr,
+        tx_impl->st20_frames[idx].iova, ctx->convert.transport_frame_size, true);
+  }
+  if (ret < 0) {
+    err("%s(%s), bind failed for slot %u: %d\n", __func__, s->name, idx, ret);
+    __atomic_store_n(&ctx->frame_state[idx], TX_FRAME_FREE, __ATOMIC_RELEASE);
+    return ret;
+  }
+
+  if (s->user_buf_ctx && idx < s->user_buf_ctx_cnt) s->user_buf_ctx[idx] = e->user_ctx;
+
+  __atomic_store_n(&ctx->frame_state[idx], TX_FRAME_READY, __ATOMIC_RELEASE);
+  return 0;
+}
+
+/** Return a buffer to the app on hard bind error so it is not lost. */
+static void video_tx_post_buffer_done(struct mtl_session_impl* s, void* user_ctx) {
+  mtl_event_t ev = {0};
+  ev.type = MTL_EVENT_BUFFER_DONE;
+  ev.ctx = user_ctx;
+  mtl_session_event_post(s, &ev);
+}
+
+/**
  * get_next_frame callback - library asks which frame to transmit next.
  * Scans for a frame in READY state and transitions it to TRANSMITTING.
- *
- * For user-owned mode: also checks the user_buf_ring for posted buffers
- * and sets ext_frame on a free frame slot before marking it READY.
  */
 static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
                                    struct st20_tx_frame_meta* meta) {
@@ -109,78 +173,11 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
   if (!tx_impl || !tx_impl->st20_frames) return -EIO;
   if (!ctx->frame_state) return -EAGAIN; /* init not yet complete */
 
-  /* User-owned mode: check for posted buffers and bind to free frame slots */
-  if (s->ownership == MTL_BUFFER_USER_OWNED) {
-    struct mtl_user_buffer_entry entry;
-    while (mtl_session_user_buf_dequeue(s, &entry) == 0) {
-      /* Find a free frame slot to bind this user buffer */
-      bool bound = false;
-      for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
-        enum tx_frame_state expected = TX_FRAME_FREE;
-        if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
-                                        TX_FRAME_APP_OWNED, false,
-                                        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-          int ret;
-
-          if (ctx->convert.derive) {
-            /* Formats match — true zero-copy via ext_frame.
-             * st20_tx sends the user buffer directly; no conversion. */
-            struct st20_ext_frame ext = {0};
-            ext.buf_addr = entry.data;
-            ext.buf_iova = entry.iova;
-            ext.buf_len = entry.size;
-            ext.opaque = entry.user_ctx;
-
-            ret = st20_tx_set_ext_frame(ctx->handle, i, &ext);
-            if (ret < 0) {
-              err("%s(%s), st20_tx_set_ext_frame failed for slot %u: %d\n",
-                  __func__, s->name, i, ret);
-              __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
-              continue;
-            }
-          } else {
-            /* Format conversion needed: convert user data (app format) into
-             * the library's own framebuffer (transport format).
-             * st20_tx will transmit the correctly-formatted framebuffer. */
-            ret = video_convert_frame(
-                &ctx->convert, entry.data, entry.iova, entry.size,
-                tx_impl->st20_frames[i].addr, tx_impl->st20_frames[i].iova,
-                ctx->convert.transport_frame_size, true /* TX: app→transport */);
-            if (ret < 0) {
-              err("%s(%s), format conversion failed for slot %u: %d\n",
-                  __func__, s->name, i, ret);
-              __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
-              continue;
-            }
-          }
-
-          /* Save user context for completion event */
-          if (s->user_buf_ctx && i < s->user_buf_ctx_cnt) {
-            s->user_buf_ctx[i] = entry.user_ctx;
-          }
-
-          /* Mark ready for transmission */
-          __atomic_store_n(&ctx->frame_state[i], TX_FRAME_READY, __ATOMIC_RELEASE);
-          bound = true;
-          break;
-        }
-      }
-      if (!bound) {
-        dbg("%s(%s), no free frame slot for user buffer, requeueing\n",
-            __func__, s->name);
-        /* Re-enqueue - no slot free yet */
-        mtl_session_user_buf_enqueue(s, entry.data, entry.iova, entry.size,
-                                     entry.user_ctx);
-        break;
-      }
-    }
-  }
-
   for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
     enum tx_frame_state expected = TX_FRAME_READY;
     if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
-                                    TX_FRAME_TRANSMITTING, false,
-                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+                                    TX_FRAME_TRANSMITTING, false, __ATOMIC_ACQUIRE,
+                                    __ATOMIC_RELAXED)) {
       if (ctx->drop_when_late && tx_frame_is_late(ctx, tx_impl, i)) {
         __atomic_add_fetch(&s->stats.buffers_dropped, 1, __ATOMIC_RELAXED);
         if (s->ownership == MTL_BUFFER_USER_OWNED) {
@@ -340,9 +337,8 @@ static int tx_try_claim_frame(struct mtl_session_impl* s, mtl_buffer_t** buf) {
     if (rte_atomic32_read(&tx_impl->st20_frames[i].refcnt) != 0) continue;
 
     enum tx_frame_state expected = TX_FRAME_FREE;
-    if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
-                                    TX_FRAME_APP_OWNED, false,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+    if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected, TX_FRAME_APP_OWNED,
+                                    false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
       /* Claimed this frame for the app */
 
       struct mtl_buffer_impl* b = &s->buffers[i % s->buffer_count];
@@ -495,41 +491,87 @@ static int video_tx_buffer_put(struct mtl_session_impl* s, mtl_buffer_t* buf) {
 /**
  * Post a user-owned buffer for transmission (zero-copy mode).
  *
- * Looks up IOVA from registered DMA regions, then enqueues the buffer.
- * The get_next_frame callback will bind it to a frame slot and transmit.
+ * Binds the buffer to a free frame slot on this (app) thread: derive mode
+ * points st20_tx at the external buffer, non-derive converts it into the slot's
+ * transport framebuffer. Buffers posted while every slot is busy are deferred
+ * to the user-buf ring and bound, oldest-first, by a later post. The bind stage
+ * is strict-FIFO; the final transmit order is the get_next_frame slot policy.
  * Completion is signaled via MTL_EVENT_BUFFER_DONE with user_ctx.
+ *
+ * Single-producer: must be called from one app thread per session, matching the
+ * buffer API contract. The pacing tasklet never touches the user-buf ring, so
+ * rte_ring_empty() is a reliable backlog check on this thread.
+ *
+ * Completion contract: a 0 return means the buffer was accepted and yields
+ * exactly one asynchronous MTL_EVENT_BUFFER_DONE; a negative return means the
+ * buffer was rejected synchronously and produces no completion event. Entries
+ * already accepted into the backlog are drained only by subsequent
+ * buffer_post() calls, so the app must keep posting until all completions
+ * arrive (or stop the session) to avoid stranding a backlogged buffer.
  */
-static int video_tx_buffer_post(struct mtl_session_impl* s, void* data,
-                                size_t size, void* user_ctx) {
+static int video_tx_buffer_post(struct mtl_session_impl* s, void* data, size_t size,
+                                void* user_ctx) {
   if (s->ownership != MTL_BUFFER_USER_OWNED) {
     err("%s(%s), buffer_post only valid in USER_OWNED mode\n", __func__, s->name);
     return -EINVAL;
   }
 
-  /* Look up IOVA for the user buffer */
+  struct video_tx_ctx* ctx = tx_ctx_from_session(s);
+
+  /* Drain the backlog claim-then-pop: a slot is reserved before the head is
+   * dequeued, so the ring order is never disturbed when no slot is free. */
+  for (;;) {
+    int idx = video_tx_claim_free_slot(s, ctx);
+    if (idx < 0) break;
+
+    struct mtl_user_buffer_entry deferred;
+    if (mtl_session_user_buf_dequeue(s, &deferred) != 0) {
+      __atomic_store_n(&ctx->frame_state[idx], TX_FRAME_FREE, __ATOMIC_RELEASE);
+      break;
+    }
+
+    if (video_tx_fill_slot(s, ctx, idx, &deferred) < 0)
+      video_tx_post_buffer_done(s, deferred.user_ctx);
+  }
+
   mtl_iova_t iova = mtl_session_lookup_iova(s, data, size);
   if (iova == MTL_BAD_IOVA) {
-    err("%s(%s), failed to get IOVA for buffer %p (not registered?)\n",
-        __func__, s->name, data);
+    err("%s(%s), failed to get IOVA for buffer %p (not registered?)\n", __func__, s->name,
+        data);
     return -EINVAL;
   }
 
-  return mtl_session_user_buf_enqueue(s, data, iova, size, user_ctx);
+  /* A non-empty backlog outranks the new buffer: enqueue it to the tail. */
+  if (!rte_ring_empty(s->user_buf_ring))
+    return mtl_session_user_buf_enqueue(s, data, iova, size, user_ctx);
+
+  int idx = video_tx_claim_free_slot(s, ctx);
+  if (idx < 0) return mtl_session_user_buf_enqueue(s, data, iova, size, user_ctx);
+
+  struct mtl_user_buffer_entry e = {
+      .data = data, .iova = iova, .size = size, .user_ctx = user_ctx};
+  /* Direct bind of the new buffer: a hard error is reported synchronously via
+   * the negative return (video_tx_fill_slot already released the slot to FREE),
+   * so do not also post a BUFFER_DONE - that would give the app two completions
+   * for one buffer. Only backlog entries, already accepted with a 0 return, are
+   * completed asynchronously on error above. */
+  int ret = video_tx_fill_slot(s, ctx, idx, &e);
+  if (ret < 0) return ret;
+  return 0;
 }
 
 /**
  * Register a memory region for DMA access (user-owned mode).
  * After registration, buffers from this region can be passed to buffer_post().
  */
-static int video_tx_mem_register(struct mtl_session_impl* s, void* addr,
-                                 size_t size, mtl_dma_mem_t** handle) {
+static int video_tx_mem_register(struct mtl_session_impl* s, void* addr, size_t size,
+                                 mtl_dma_mem_t** handle) {
   if (s->dma_registration_cnt >= 8) {
     err("%s(%s), too many DMA registrations (max 8)\n", __func__, s->name);
     return -ENOSPC;
   }
 
-  struct mtl_dma_mem_impl* reg =
-      mt_rte_zmalloc_socket(sizeof(*reg), s->socket_id);
+  struct mtl_dma_mem_impl* reg = mt_rte_zmalloc_socket(sizeof(*reg), s->socket_id);
   if (!reg) return -ENOMEM;
 
   reg->parent = s->parent;
@@ -555,8 +597,8 @@ static int video_tx_mem_register(struct mtl_session_impl* s, void* addr,
 
   s->dma_registrations[s->dma_registration_cnt++] = reg;
 
-  info("%s(%s), registered DMA region %p, size %zu, iova 0x%" PRIx64 "\n",
-       __func__, s->name, addr, size, reg->iova);
+  info("%s(%s), registered DMA region %p, size %zu, iova 0x%" PRIx64 "\n", __func__,
+       s->name, addr, size, reg->iova);
 
   *handle = (mtl_dma_mem_t*)reg;
   return 0;
@@ -565,8 +607,7 @@ static int video_tx_mem_register(struct mtl_session_impl* s, void* addr,
 /**
  * Unregister a previously registered DMA memory region.
  */
-static int video_tx_mem_unregister(struct mtl_session_impl* s,
-                                   mtl_dma_mem_t* handle) {
+static int video_tx_mem_unregister(struct mtl_session_impl* s, mtl_dma_mem_t* handle) {
   struct mtl_dma_mem_impl* reg = (struct mtl_dma_mem_impl*)handle;
 
   for (uint8_t i = 0; i < s->dma_registration_cnt; i++) {
@@ -586,17 +627,13 @@ static int video_tx_mem_unregister(struct mtl_session_impl* s,
   return -EINVAL;
 }
 
-static int video_tx_stats_get(struct mtl_session_impl* s,
-                              mtl_session_stats_t* stats) {
+static int video_tx_stats_get(struct mtl_session_impl* s, mtl_session_stats_t* stats) {
   /* Read stats atomically — no lock needed, no deadlock possible */
   stats->buffers_processed =
       __atomic_load_n(&s->stats.buffers_processed, __ATOMIC_RELAXED);
-  stats->bytes_processed =
-      __atomic_load_n(&s->stats.bytes_processed, __ATOMIC_RELAXED);
-  stats->buffers_dropped =
-      __atomic_load_n(&s->stats.buffers_dropped, __ATOMIC_RELAXED);
-  stats->epochs_missed =
-      __atomic_load_n(&s->stats.epochs_missed, __ATOMIC_RELAXED);
+  stats->bytes_processed = __atomic_load_n(&s->stats.bytes_processed, __ATOMIC_RELAXED);
+  stats->buffers_dropped = __atomic_load_n(&s->stats.buffers_dropped, __ATOMIC_RELAXED);
+  stats->epochs_missed = __atomic_load_n(&s->stats.epochs_missed, __ATOMIC_RELAXED);
 
   struct st_tx_video_session_impl* tx_impl = s->inner.video_tx;
   struct video_tx_ctx* ctx = tx_impl ? tx_impl->ops.priv : NULL;
@@ -668,7 +705,7 @@ const mtl_session_vtable_t mtl_video_tx_vtable = {
     .buffer_flush = NULL,
     .mem_register = video_tx_mem_register,
     .mem_unregister = video_tx_mem_unregister,
-    .event_poll = video_session_event_poll,   /* shared implementation */
+    .event_poll = video_session_event_poll,     /* shared implementation */
     .get_event_fd = video_session_get_event_fd, /* shared implementation */
     .stats_get = video_tx_stats_get,
     .stats_reset = video_session_stats_reset, /* shared implementation */
@@ -920,9 +957,8 @@ int mtl_video_tx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
 
   info("%s(%d), transport fmt %s, input fmt: %s, frame_size %zu, fb_cnt %u, derive %d\n",
        __func__, s->idx, st20_fmt_name(config->transport_fmt),
-       st_frame_fmt_name(config->frame_fmt),
-       ctx->convert.transport_frame_size, ops.framebuff_cnt,
-       ctx->convert.derive);
+       st_frame_fmt_name(config->frame_fmt), ctx->convert.transport_frame_size,
+       ops.framebuff_cnt, ctx->convert.derive);
 
   return 0;
 }

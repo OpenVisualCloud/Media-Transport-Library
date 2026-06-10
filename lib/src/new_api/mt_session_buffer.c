@@ -205,8 +205,9 @@ int mtl_session_user_buf_init(struct mtl_session_impl* s, uint16_t frame_cnt) {
 
   snprintf(ring_name, sizeof(ring_name), "mtl_ub_%p", s);
 
-  s->user_buf_ring =
-      rte_ring_create(ring_name, MTL_USER_BUF_RING_SIZE, s->socket_id, 0);
+  s->user_buf_ring = rte_ring_create_elem(
+      ring_name, sizeof(struct mtl_user_buffer_entry), MTL_USER_BUF_RING_SIZE,
+      s->socket_id, 0);
   if (!s->user_buf_ring) {
     err("%s(%s), failed to create user buffer ring\n", __func__, s->name);
     return -ENOMEM;
@@ -228,13 +229,7 @@ int mtl_session_user_buf_init(struct mtl_session_impl* s, uint16_t frame_cnt) {
 }
 
 void mtl_session_user_buf_uinit(struct mtl_session_impl* s) {
-  /* Drain and free any remaining entries in the ring */
   if (s->user_buf_ring) {
-    void* obj = NULL;
-    while (rte_ring_dequeue(s->user_buf_ring, &obj) == 0 && obj) {
-      mt_rte_free(obj);
-      obj = NULL;
-    }
     rte_ring_free(s->user_buf_ring);
     s->user_buf_ring = NULL;
   }
@@ -259,20 +254,10 @@ int mtl_session_user_buf_enqueue(struct mtl_session_impl* s, void* data,
                                  mtl_iova_t iova, size_t size, void* user_ctx) {
   if (!s->user_buf_ring) return -EINVAL;
 
-  struct mtl_user_buffer_entry* entry =
-      mt_rte_zmalloc_socket(sizeof(*entry), s->socket_id);
-  if (!entry) {
-    err("%s(%s), failed to alloc user buffer entry\n", __func__, s->name);
-    return -ENOMEM;
-  }
+  struct mtl_user_buffer_entry e = {
+      .data = data, .iova = iova, .size = size, .user_ctx = user_ctx};
 
-  entry->data = data;
-  entry->iova = iova;
-  entry->size = size;
-  entry->user_ctx = user_ctx;
-
-  if (rte_ring_enqueue(s->user_buf_ring, entry) != 0) {
-    mt_rte_free(entry);
+  if (rte_ring_enqueue_elem(s->user_buf_ring, &e, sizeof(e)) != 0) {
     dbg("%s(%s), user buffer ring full\n", __func__, s->name);
     return -ENOSPC;
   }
@@ -284,14 +269,9 @@ int mtl_session_user_buf_dequeue(struct mtl_session_impl* s,
                                  struct mtl_user_buffer_entry* entry) {
   if (!s->user_buf_ring) return -EINVAL;
 
-  void* obj = NULL;
-  if (rte_ring_dequeue(s->user_buf_ring, &obj) != 0 || !obj) {
+  if (rte_ring_dequeue_elem(s->user_buf_ring, entry, sizeof(*entry)) != 0) {
     return -EAGAIN;
   }
-
-  struct mtl_user_buffer_entry* queued = (struct mtl_user_buffer_entry*)obj;
-  *entry = *queued;
-  mt_rte_free(queued);
   return 0;
 }
 

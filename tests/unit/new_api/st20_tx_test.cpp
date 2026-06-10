@@ -394,6 +394,82 @@ TEST_F(St20NewApiTxTest, UserOwnedFrameDonePostsBufferDone) {
   EXPECT_EQ(ev.ctx, user_ctx);
 }
 
+/* B4: the full-frame pixel conversion of a user-owned, non-derive buffer must
+ * run on the app thread inside buffer_post, NOT inside the pacing tasklet. After
+ * post and BEFORE any get_next_frame call, the destination slot is already
+ * converted and READY. (The shared video_convert_frame stub copies the first
+ * source byte to the slot, so the sentinel proves the convert branch ran.) */
+TEST_F(St20NewApiTxTest, UserOwnedConvertHappensOnPostNotTasklet) {
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+  ut20tx_set_user_convert(ctx_);
+
+  uint8_t user_data[8] = {0xCC};
+  int ctx_sentinel = 0;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, user_data, &ctx_sentinel), 0);
+
+  EXPECT_EQ(state(0), kReady)
+      << "post must leave the bound slot READY before any get_next_frame";
+  EXPECT_EQ(((uint8_t*)ut20tx_frame_addr(ctx_, 0))[0], 0xCC)
+      << "conversion must run on the post (app) thread, not the tasklet";
+}
+
+/* B3: user-buf entries round-trip through the value-backed ring by value, so the
+ * producer never allocates. The dequeued fields must match what was enqueued. */
+TEST_F(St20NewApiTxTest, UserOwnedValueRingRoundTrip) {
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  int data = 0;
+  int sentinel = 0;
+  void* out_data = nullptr;
+  mtl_iova_t out_iova = 0;
+  size_t out_size = 0;
+  void* out_ctx = nullptr;
+  ASSERT_EQ(ut20tx_user_buf_roundtrip(ctx_, &data, 0xdead, 64, &sentinel, &out_data,
+                                      &out_iova, &out_size, &out_ctx),
+            0);
+
+  EXPECT_EQ(out_data, &data);
+  EXPECT_EQ(out_iova, 0xdeadu);
+  EXPECT_EQ(out_size, 64u);
+  EXPECT_EQ(out_ctx, &sentinel);
+}
+
+/* B4 backpressure: with all N slots busy and several buffers backlogged, a post
+ * that cannot bind must leave the backlog in strict submission order. When one
+ * slot later frees, the OLDEST deferred buffer binds it — proving the drain
+ * never rotates the ring head. Multiple residents at the no-slot moment are
+ * required: a single-entry backlog cannot expose head rotation. */
+TEST_F(St20NewApiTxTest, UserOwnedPostBackpressureDefersAndBinds) {
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  int data[7] = {0};
+  int sentinel[7] = {0};
+
+  /* Three slots: posts 0..2 bind, posts 3..5 are deferred (backlog [3,4,5]).
+   * Each deferred post drains first while every slot is busy; a pop-then-fail
+   * drain would rotate the head out of order before the backlog even settles. */
+  for (int i = 0; i < 6; i++)
+    ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data[i], &sentinel[i]), 0)
+        << "post must never block; excess buffers are deferred";
+  EXPECT_EQ(state(0), kReady);
+  EXPECT_EQ(state(1), kReady);
+  EXPECT_EQ(state(2), kReady);
+
+  /* Free exactly ONE slot. */
+  uint16_t idx = 0xffff;
+  ASSERT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0);
+  ASSERT_EQ(ut20tx_frame_done(ctx_, idx), 0);
+  ASSERT_EQ(state(idx), kFree);
+
+  /* A later post drains the backlog into the freed slot. The oldest deferred
+   * buffer (data[3]) must bind it, not a newer one. */
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &data[6], &sentinel[6]), 0);
+  EXPECT_EQ(state(idx), kReady);
+  EXPECT_EQ(ut20tx_user_buf_ctx(ctx_, idx), &sentinel[3])
+      << "oldest deferred buffer must bind first (strict FIFO at bind stage)";
+  EXPECT_EQ(dropped(), 0u);
+}
+
 /* buffer_put threads the buffer's user_meta pointer/size into the frame slot's
  * tv_meta, so the transport sends it alongside the frame. */
 TEST_F(St20NewApiTxTest, UserMetaPassthroughOnPut) {
