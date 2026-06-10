@@ -350,6 +350,50 @@ TEST_F(St20NewApiTxTest, FrameLifecycleGetPutTransmit) {
   EXPECT_EQ(processed(), 1u) << "buffers_processed bumps on frame_done";
 }
 
+/* Library-owned TX: a completed transmission returns the slot to FREE
+ * implicitly and the app reuses it via the next buffer_get. It does NOT consume
+ * a per-frame completion event, so notify_frame_done must NOT post BUFFER_DONE
+ * — a per-frame flood would overflow the value-backed event ring. */
+TEST_F(St20NewApiTxTest, LibraryOwnedFrameDonePostsNoEvent) {
+  mtl_buffer_t* b = get();
+  ASSERT_NE(b, nullptr);
+  ASSERT_EQ(put(b), 0);
+  uint16_t idx = 0xffff;
+  ASSERT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0);
+
+  ASSERT_EQ(ut20tx_frame_done(ctx_, idx), 0);
+  EXPECT_EQ(processed(), 1u);
+
+  mtl_event_t ev;
+  EXPECT_EQ(ut20tx_poll_event_timeout(ctx_, &ev, 0), -ETIMEDOUT)
+      << "library-owned frame_done must not post a per-frame BUFFER_DONE event";
+}
+
+/* User-owned TX: notify_frame_done returns the external buffer to the app via
+ * MTL_EVENT_BUFFER_DONE carrying the exact registered user_ctx. */
+TEST_F(St20NewApiTxTest, UserOwnedFrameDonePostsBufferDone) {
+  ASSERT_EQ(ut20tx_set_user_owned(ctx_), 0);
+
+  /* Distinct objects for data and ctx so the assertion can only be satisfied by
+   * the registered user_ctx, not by the buffer data/IOVA pointer. */
+  int user_data = 0;
+  int ctx_sentinel = 0;
+  void* user_ctx = &ctx_sentinel;
+  ASSERT_EQ(ut20tx_post_user_buffer(ctx_, &user_data, user_ctx), 0);
+
+  uint16_t idx = 0xffff;
+  ASSERT_EQ(ut20tx_get_next_frame(ctx_, &idx), 0);
+  ASSERT_EQ(state(0), kTransmitting);
+
+  ASSERT_EQ(ut20tx_frame_done(ctx_, idx), 0);
+
+  mtl_event_t ev;
+  ASSERT_EQ(ut20tx_poll_event_timeout(ctx_, &ev, 0), 0)
+      << "user-owned frame_done must post a BUFFER_DONE event";
+  EXPECT_EQ(ev.type, MTL_EVENT_BUFFER_DONE);
+  EXPECT_EQ(ev.ctx, user_ctx);
+}
+
 /* buffer_put threads the buffer's user_meta pointer/size into the frame slot's
  * tv_meta, so the transport sends it alongside the frame. */
 TEST_F(St20NewApiTxTest, UserMetaPassthroughOnPut) {

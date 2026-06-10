@@ -246,11 +246,13 @@ static int video_tx_notify_frame_done(void* priv, uint16_t frame_idx,
                      __ATOMIC_RELAXED);
 
   /* Post completion event */
-  mtl_event_t event = {0};
-  event.type = MTL_EVENT_BUFFER_DONE;
-  event.timestamp = meta ? meta->epoch : 0;
-  event.ctx = user_ctx; /* User context for user-owned mode */
-  mtl_session_event_post(s, &event);
+  if (s->ownership == MTL_BUFFER_USER_OWNED) {
+    mtl_event_t event = {0};
+    event.type = MTL_EVENT_BUFFER_DONE;
+    event.timestamp = meta ? meta->epoch : 0;
+    event.ctx = user_ctx; /* User context for user-owned mode */
+    mtl_session_event_post(s, &event);
+  }
 
   return 0;
 }
