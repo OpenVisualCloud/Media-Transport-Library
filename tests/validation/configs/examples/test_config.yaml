@@ -15,6 +15,13 @@ capture_cfg:
   # Optional: pick a different NIC for netsniff-ng capture than the one used by the test.
   # Priority: sniff_interface > sniff_interface_index > sniff_pci_device.
   # sniff_interface_index: 1
+  # ST 2110-21 compliance capture uses netsniff-ng with NIC hardware (on-wire)
+  # RX timestamps (immune to RX coalescing, correct Cinst/VRX). The capture NIC
+  # PHC is disciplined to TAI (the RTP media timescale) for the capture window
+  # (phc_sync) so the absolute-offset check passes.
+  # phc_sync: true        # set false for Remedy B (MTL paces from the NIC PHC,
+  #                       # i.e. enable_ptp: true) so the PHC is not pulled to
+  #                       # the system-derived TAI clock.
 ebu_server:
   ebu_ip: ebu_ip
   user: user
