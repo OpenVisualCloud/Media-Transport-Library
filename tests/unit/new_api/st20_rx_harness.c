@@ -103,6 +103,7 @@ struct ut20rx_ctx {
   int framebuff_cnt;
   uint32_t enq_seq; /* advanced only on a successful enqueue */
   bool user_owned;  /* user_buf ring initialized → uinit at destroy */
+  bool buffers_rte; /* wrapper pool came from mtl_session_init_buffers (rte) */
 };
 
 #include "new_api/st20_rx_harness.h"
@@ -222,7 +223,10 @@ void ut20rx_ctx_destroy(ut20rx_ctx* ctx) {
     rte_ring_free(ctx->s.event_ring);
   }
   if (ctx->vctx.ready_ring) rte_ring_free(ctx->vctx.ready_ring);
-  free(ctx->s.buffers);
+  if (ctx->buffers_rte)
+    mtl_session_buffers_uinit(&ctx->s);
+  else
+    free(ctx->s.buffers);
   free(ctx->frames);
   free(ctx->frame_storage);
   free(ctx);
@@ -306,6 +310,38 @@ int ut20rx_enable_user_owned_post(ut20rx_ctx* ctx) {
   int ret = mtl_session_user_buf_init(&ctx->s, ctx->framebuff_cnt);
   if (ret == 0) ctx->user_owned = true;
   return ret;
+}
+
+static int ut20rx_stub_query_ext(void* priv, struct st_ext_frame* ext,
+                                 struct mtl_buffer* frame_meta) {
+  (void)priv;
+  (void)ext;
+  (void)frame_meta;
+  return 0;
+}
+
+int ut20rx_enable_user_owned_query_ext(ut20rx_ctx* ctx) {
+  ctx->s.ownership = MTL_BUFFER_USER_OWNED;
+  ctx->vctx.user_query_ext_frame = ut20rx_stub_query_ext;
+  int ret = mtl_session_user_buf_init(&ctx->s, ctx->framebuff_cnt);
+  if (ret == 0) ctx->user_owned = true;
+  return ret;
+}
+
+uint32_t ut20rx_frame_count(ut20rx_ctx* ctx) {
+  return mtl_session_video_frame_count(&ctx->s);
+}
+
+uint32_t ut20rx_buffer_count(ut20rx_ctx* ctx) {
+  return ctx->s.buffer_count;
+}
+
+int ut20rx_init_buffers(ut20rx_ctx* ctx) {
+  free(ctx->s.buffers); /* drop the libc pool ut20rx_ctx_create allocated */
+  ctx->s.buffers = NULL;
+  ctx->s.buffer_count = 0;
+  ctx->buffers_rte = true;
+  return mtl_session_init_buffers(&ctx->s);
 }
 
 int ut20rx_mem_register(ut20rx_ctx* ctx, void* addr, size_t size) {

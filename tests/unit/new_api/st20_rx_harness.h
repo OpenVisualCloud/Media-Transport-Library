@@ -75,6 +75,18 @@ int ut20rx_poll_event(ut20rx_ctx* ctx, mtl_event_t* event);
  *  query_ext_frame). Returns 0 on success. */
 int ut20rx_enable_user_owned_post(ut20rx_ctx* ctx);
 
+/** Reconfigure for USER_OWNED with an explicit (app) query_ext_frame callback,
+ *  so notify_frame_ready takes the per-frame opaque-saving branch. */
+int ut20rx_enable_user_owned_query_ext(ut20rx_ctx* ctx);
+
+/** Number of low-level frames (mtl_session_video_frame_count). */
+uint32_t ut20rx_frame_count(ut20rx_ctx* ctx);
+/** Current wrapper pool size (s->buffer_count). */
+uint32_t ut20rx_buffer_count(ut20rx_ctx* ctx);
+/** Drop the wrapper pool, then rebuild it via the production create-path
+ *  helper (mtl_session_init_buffers). Returns its result. */
+int ut20rx_init_buffers(ut20rx_ctx* ctx);
+
 /** Wraps the mem_register vtable entry (user-owned zero-copy registration). */
 int ut20rx_mem_register(ut20rx_ctx* ctx, void* addr, size_t size);
 

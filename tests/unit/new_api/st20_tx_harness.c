@@ -58,6 +58,7 @@ struct ut20tx_ctx {
   struct st_frame_trans* frames;
   uint8_t* frame_storage;
   int framebuff_cnt;
+  bool buffers_rte; /* wrapper pool came from mtl_session_init_buffers (rte) */
 };
 
 #include "new_api/st20_tx_harness.h"
@@ -185,7 +186,10 @@ void ut20tx_ctx_destroy(ut20tx_ctx* ctx) {
   mtl_session_user_buf_uinit(&ctx->s);
   if (ctx->s.event_ring) rte_ring_free(ctx->s.event_ring);
   free(ctx->vctx.frame_state);
-  free(ctx->s.buffers);
+  if (ctx->buffers_rte)
+    mtl_session_buffers_uinit(&ctx->s);
+  else
+    free(ctx->s.buffers);
   free(ctx->frames);
   free(ctx->frame_storage);
   free(ctx);
@@ -314,4 +318,28 @@ int ut20tx_reset_stats(ut20tx_ctx* ctx) {
 
 int ut20tx_poll_event(ut20tx_ctx* ctx, mtl_event_t* ev) {
   return mtl_video_tx_vtable.event_poll(&ctx->s, ev, 0 /* non-blocking */);
+}
+
+/* ── slice op ─────────────────────────────────────────────────────────── */
+
+int ut20tx_slice_ready(ut20tx_ctx* ctx, mtl_buffer_t* buf, uint16_t lines) {
+  return mtl_video_tx_vtable.slice_ready(&ctx->s, buf, lines);
+}
+
+/* ── buffer pool sizing ───────────────────────────────────────────────── */
+
+uint32_t ut20tx_frame_count(ut20tx_ctx* ctx) {
+  return mtl_session_video_frame_count(&ctx->s);
+}
+
+uint32_t ut20tx_buffer_count(ut20tx_ctx* ctx) {
+  return ctx->s.buffer_count;
+}
+
+int ut20tx_init_buffers(ut20tx_ctx* ctx) {
+  free(ctx->s.buffers); /* drop the libc pool ut20tx_ctx_create allocated */
+  ctx->s.buffers = NULL;
+  ctx->s.buffer_count = 0;
+  ctx->buffers_rte = true;
+  return mtl_session_init_buffers(&ctx->s);
 }

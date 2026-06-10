@@ -55,6 +55,16 @@ void mtl_session_buffers_uinit(struct mtl_session_impl* s) {
   s->buffer_count = 0;
 }
 
+uint32_t mtl_session_video_frame_count(struct mtl_session_impl* s) {
+  if (s->direction == MTL_SESSION_TX)
+    return s->inner.video_tx ? s->inner.video_tx->st20_frames_cnt : 0;
+  return s->inner.video_rx ? s->inner.video_rx->st20_frames_cnt : 0;
+}
+
+int mtl_session_init_buffers(struct mtl_session_impl* s) {
+  return mtl_session_buffers_init(s, mtl_session_video_frame_count(s));
+}
+
 /*************************************************************************
  * Buffer Fill from st_frame_trans
  *************************************************************************/

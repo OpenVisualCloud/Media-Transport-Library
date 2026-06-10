@@ -16,6 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
+#include <set>
+
 #include "new_api/st20_tx_harness.h"
 
 /* P59_94: one frame period is ~16.683 ms. A TAI base of 1 s keeps both the
@@ -432,4 +435,35 @@ TEST_F(St20NewApiTxTest, FramebuffCntNoTxClamp) {
     EXPECT_EQ(state((uint16_t)i), kAppOwned);
   }
   EXPECT_EQ(get(), nullptr) << "exactly 8 slots, no more";
+}
+
+/* Slice TX is not implemented in the unified session. slice_ready must report
+ * -ENOTSUP (mirroring the RX slice_query twin), never fake success by
+ * returning 0 and silently dropping the submitted lines. */
+TEST_F(St20NewApiTxTest, SliceReadyUnsupported) {
+  mtl_buffer_t* b = get();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(ut20tx_slice_ready(ctx_, b, 10), -ENOTSUP)
+      << "slice TX is unimplemented; it must not claim success";
+}
+
+/* The wrapper pool must be sized from the actual (bumped, >= 2) frame count, not
+ * the raw num_buffers. A num_buffers of 0 or 1 must still yield
+ * buffer_count == frame_count, else the hot path s->buffers[i % buffer_count]
+ * divides by zero (0) or aliases two frames onto one wrapper (1). */
+TEST_F(St20NewApiTxTest, BufferPoolSizeFollowsFrameCount) {
+  const uint32_t fc = ut20tx_frame_count(ctx_);
+  ASSERT_GE(fc, 2u);
+
+  ASSERT_EQ(ut20tx_init_buffers(ctx_), 0);
+  ASSERT_EQ(ut20tx_buffer_count(ctx_), fc)
+      << "wrapper pool must match the frame count (no % 0, no aliasing)";
+
+  std::set<mtl_buffer_t*> seen;
+  for (uint32_t i = 0; i < fc; i++) {
+    mtl_buffer_t* b = get();
+    ASSERT_NE(b, nullptr) << "frame " << i << " must be claimable";
+    EXPECT_TRUE(seen.insert(b).second)
+        << "frame " << i << " must map to a distinct wrapper";
+  }
 }

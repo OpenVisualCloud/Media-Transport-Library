@@ -649,7 +649,7 @@ static int video_tx_slice_ready(struct mtl_session_impl* s, mtl_buffer_t* buf,
   (void)s;
   (void)buf;
   (void)lines;
-  return 0;
+  return -ENOTSUP;
 }
 
 /*************************************************************************

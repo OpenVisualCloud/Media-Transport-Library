@@ -109,18 +109,16 @@ int mtl_video_session_create(mtl_handle mt, const mtl_video_config_t* config,
     return ret;
   }
 
-  /* Initialize buffer wrappers */
-  if (config->base.num_buffers > 0) {
-    ret = mtl_session_buffers_init(s, config->base.num_buffers);
-    if (ret < 0) {
-      err("%s, buffers init failed: %d\n", __func__, ret);
-      if (config->base.direction == MTL_SESSION_TX)
-        mtl_video_tx_session_uinit(s);
-      else
-        mtl_video_rx_session_uinit(s);
-      mtl_session_free(s);
-      return ret;
-    }
+  /* Initialize buffer wrappers, one per low-level frame (forced >= 2) */
+  ret = mtl_session_init_buffers(s);
+  if (ret < 0) {
+    err("%s, buffers init failed: %d\n", __func__, ret);
+    if (config->base.direction == MTL_SESSION_TX)
+      mtl_video_tx_session_uinit(s);
+    else
+      mtl_video_rx_session_uinit(s);
+    mtl_session_free(s);
+    return ret;
   }
 
   info("%s(%s), created %s video %s session\n", __func__, s->name,

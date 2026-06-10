@@ -22,6 +22,8 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "new_api/st20_rx_harness.h"
 
 class St20NewApiRxTest : public ::testing::Test {
@@ -440,4 +442,54 @@ TEST_F(St20NewApiRxTest, ExtFrameQueryWrapperBinds) {
   EXPECT_EQ(ext.buf_addr, user_buf);
   EXPECT_EQ(ext.buf_len, sizeof(user_buf));
   EXPECT_EQ(ext.opaque, (void*)0x99);
+}
+
+/* In USER_OWNED mode with an explicit app query_ext_frame, the transport carries
+ * the app's ext opaque on meta->opaque. The unified session must surface that
+ * opaque as the buffer completion ctx (buf->user_data), NOT the library's
+ * internal user_meta scratch buffer. */
+TEST_F(St20NewApiRxTest, ExtFrameCompletionCarriesAppOpaque) {
+  ASSERT_EQ(ut20rx_enable_user_owned_query_ext(ctx_), 0);
+
+  /* A distinct non-NULL user_meta proves the completion ctx is the app opaque,
+   * not the internal user_meta pointer. */
+  ut20rx_set_frame_user_meta(ctx_, 0, (void*)0xDEAD, 8);
+
+  struct st20_rx_frame_meta meta {};
+  meta.status = ST_FRAME_STATUS_COMPLETE;
+  meta.frame_total_size = 1;
+  meta.frame_recv_size = 1;
+  meta.pkts_total = 1;
+  meta.opaque = (void*)0xABCD; /* the app ext opaque */
+  ASSERT_EQ(ut20rx_inject_meta(ctx_, &meta), 0);
+
+  mtl_buffer_t* b = get_buffer();
+  ASSERT_NE(b, nullptr);
+  EXPECT_EQ(b->user_data, (void*)0xABCD)
+      << "completion ctx must be the app ext opaque, not the lib user_meta";
+  EXPECT_EQ(put_buffer(b), 0);
+}
+
+/* The wrapper pool must be sized from the actual (bumped, >= 2) frame count, not
+ * the raw num_buffers. The create path forces st20_frames_cnt >= 2, so a
+ * num_buffers of 0 or 1 must still yield buffer_count == frame_count: otherwise
+ * the hot path s->buffers[i % buffer_count] divides by zero (0) or aliases two
+ * frames onto one wrapper (1). */
+TEST_F(St20NewApiRxTest, BufferPoolSizeFollowsFrameCount) {
+  const uint32_t fc = ut20rx_frame_count(ctx_);
+  ASSERT_GE(fc, 2u);
+
+  ASSERT_EQ(ut20rx_init_buffers(ctx_), 0);
+  ASSERT_EQ(ut20rx_buffer_count(ctx_), fc)
+      << "wrapper pool must match the frame count (no % 0, no aliasing)";
+
+  std::set<mtl_buffer_t*> seen;
+  for (uint32_t i = 0; i < fc; i++) {
+    ASSERT_EQ(inject_complete(1000 + i), 0);
+    mtl_buffer_t* b = get_buffer();
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(seen.insert(b).second)
+        << "frame " << i << " must map to a distinct wrapper";
+    EXPECT_EQ(put_buffer(b), 0);
+  }
 }

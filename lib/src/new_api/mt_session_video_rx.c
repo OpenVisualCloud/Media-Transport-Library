@@ -158,7 +158,7 @@ static int video_rx_notify_frame_ready(void* priv, void* frame,
     for (uint16_t i = 0; i < rx_impl->st20_frames_cnt; i++) {
       if (rx_impl->st20_frames[i].addr == frame) {
         if (i < s->user_buf_ctx_cnt) {
-          s->user_buf_ctx[i] = rx_impl->st20_frames[i].user_meta;
+          s->user_buf_ctx[i] = meta->opaque;
         }
         break;
       }

@@ -390,6 +390,14 @@ int mtl_session_buffers_init(struct mtl_session_impl* s, uint32_t count);
 /** Cleanup buffer wrapper pool */
 void mtl_session_buffers_uinit(struct mtl_session_impl* s);
 
+/** Number of low-level transport frames allocated for a video session (the
+ *  create path forces this >= 2). The wrapper pool must be sized to this, not the
+ *  raw num_buffers, else the hot path % buffer_count divides by zero or aliases. */
+uint32_t mtl_session_video_frame_count(struct mtl_session_impl* s);
+
+/** Size the buffer wrapper pool to the actual frame count (create path). */
+int mtl_session_init_buffers(struct mtl_session_impl* s);
+
 /** Initialize event ring */
 int mtl_session_events_init(struct mtl_session_impl* s);
 

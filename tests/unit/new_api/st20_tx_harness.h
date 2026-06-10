@@ -98,6 +98,21 @@ int ut20tx_reset_stats(ut20tx_ctx* ctx);
 /** Non-blocking event_poll wrapper. 0 + *ev on an event, -ETIMEDOUT if none. */
 int ut20tx_poll_event(ut20tx_ctx* ctx, mtl_event_t* ev);
 
+/* ── slice op ─────────────────────────────────────────────────────────── */
+
+/** Wraps the slice_ready vtable entry (slice TX is not implemented). */
+int ut20tx_slice_ready(ut20tx_ctx* ctx, mtl_buffer_t* buf, uint16_t lines);
+
+/* ── buffer pool sizing ───────────────────────────────────────────────── */
+
+/** Number of low-level frames (mtl_session_video_frame_count). */
+uint32_t ut20tx_frame_count(ut20tx_ctx* ctx);
+/** Current wrapper pool size (s->buffer_count). */
+uint32_t ut20tx_buffer_count(ut20tx_ctx* ctx);
+/** Drop the wrapper pool, then rebuild it via the production create-path
+ *  helper (mtl_session_init_buffers). Returns its result. */
+int ut20tx_init_buffers(ut20tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
