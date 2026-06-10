@@ -70,6 +70,19 @@ int ut20rx_notify_detected(ut20rx_ctx* ctx, uint32_t width, uint32_t height,
 
 /** Non-blocking drain of one session event (shared video_session_event_poll). */
 int ut20rx_poll_event(ut20rx_ctx* ctx, mtl_event_t* event);
+/** event_poll wrapper with an explicit timeout (drives the blocking path). */
+int ut20rx_poll_event_timeout(ut20rx_ctx* ctx, mtl_event_t* event, uint32_t timeout_ms);
+/** Post an event through the producer path (mtl_session_event_post). */
+int ut20rx_post_event(ut20rx_ctx* ctx, const mtl_event_t* event);
+/** Read the producer-side dropped-event counter (s->events_dropped). */
+uint64_t ut20rx_events_dropped(const ut20rx_ctx* ctx);
+/** Wraps the get_event_fd vtable slot; -ENOSYS if the slot is NULL. */
+int ut20rx_get_event_fd(ut20rx_ctx* ctx);
+/** Set the session stopped flag (drives the poll -EAGAIN path). */
+void ut20rx_set_stopped(ut20rx_ctx* ctx);
+/** Drive the full production stop path (sets stopped + signals the eventfd to
+ *  wake a consumer already blocked in event_poll). */
+void ut20rx_stop(ut20rx_ctx* ctx);
 
 /** Reconfigure the session for USER_OWNED buffer-post mode (no app
  *  query_ext_frame). Returns 0 on success. */

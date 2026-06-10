@@ -81,8 +81,6 @@ int ut20tx_init(void) {
 /* ── context create / destroy ─────────────────────────────────────────── */
 
 ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
-  static uint32_t ring_seq;
-
   ut20tx_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
   ctx->framebuff_cnt = framebuff_cnt;
@@ -125,7 +123,6 @@ ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
   s->ownership = MTL_BUFFER_LIBRARY_OWNED;
   s->flags = 0;
   s->stopped = 0;
-  s->event_fd = -1;
   s->inner.video_tx = tx;
   snprintf(s->name, sizeof(s->name), "ut_new_tx");
 
@@ -142,11 +139,7 @@ ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
     s->buffers[i].idx = i;
   }
 
-  char ring_name[RTE_RING_NAMESIZE];
-  snprintf(ring_name, sizeof(ring_name), "utntx_%u", ring_seq++);
-  s->event_ring =
-      rte_ring_create(ring_name, 64, s->socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
-  if (!s->event_ring) {
+  if (mtl_session_events_init(s) < 0) {
     free(s->buffers);
     free(ctx->frames);
     free(ctx->frame_storage);
@@ -164,7 +157,7 @@ ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
   v->convert.height = 1080;
   v->frame_state = calloc(framebuff_cnt, sizeof(enum tx_frame_state));
   if (!v->frame_state) {
-    rte_ring_free(s->event_ring);
+    mtl_session_events_uinit(s);
     free(s->buffers);
     free(ctx->frames);
     free(ctx->frame_storage);
@@ -184,7 +177,7 @@ ut20tx_ctx* ut20tx_ctx_create(int framebuff_cnt) {
 void ut20tx_ctx_destroy(ut20tx_ctx* ctx) {
   if (!ctx) return;
   mtl_session_user_buf_uinit(&ctx->s);
-  if (ctx->s.event_ring) rte_ring_free(ctx->s.event_ring);
+  mtl_session_events_uinit(&ctx->s);
   free(ctx->vctx.frame_state);
   if (ctx->buffers_rte)
     mtl_session_buffers_uinit(&ctx->s);
@@ -318,6 +311,31 @@ int ut20tx_reset_stats(ut20tx_ctx* ctx) {
 
 int ut20tx_poll_event(ut20tx_ctx* ctx, mtl_event_t* ev) {
   return mtl_video_tx_vtable.event_poll(&ctx->s, ev, 0 /* non-blocking */);
+}
+
+int ut20tx_poll_event_timeout(ut20tx_ctx* ctx, mtl_event_t* ev, uint32_t timeout_ms) {
+  return mtl_video_tx_vtable.event_poll(&ctx->s, ev, timeout_ms);
+}
+
+int ut20tx_post_event(ut20tx_ctx* ctx, const mtl_event_t* ev) {
+  return mtl_session_event_post(&ctx->s, ev);
+}
+
+uint64_t ut20tx_events_dropped(const ut20tx_ctx* ctx) {
+  return ctx->s.events_dropped;
+}
+
+int ut20tx_get_event_fd(ut20tx_ctx* ctx) {
+  if (!ctx->s.vt->get_event_fd) return -ENOSYS;
+  return ctx->s.vt->get_event_fd(&ctx->s);
+}
+
+void ut20tx_set_stopped(ut20tx_ctx* ctx) {
+  mtl_session_set_stopped(&ctx->s);
+}
+
+void ut20tx_stop(ut20tx_ctx* ctx) {
+  mtl_session_stop((mtl_session_t*)&ctx->s);
 }
 
 /* ── slice op ─────────────────────────────────────────────────────────── */

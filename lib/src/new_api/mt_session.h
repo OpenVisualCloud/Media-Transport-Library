@@ -245,8 +245,9 @@ struct mtl_session_impl {
   struct mtl_buffer_impl* buffers; /**< Buffer wrapper pool */
 
   /* Event queue */
-  struct rte_ring* event_ring; /**< Pending events */
-  int event_fd;                /**< For epoll integration */
+  struct rte_ring* event_ring; /**< Pending events (value-backed) */
+  int event_fd;                /**< Wakeup fd for the blocking consumer */
+  uint64_t events_dropped;     /**< Events dropped on a full ring (producer) */
 
   /*
    * User-owned buffer management (MTL_BUFFER_USER_OWNED mode).
@@ -406,6 +407,9 @@ void mtl_session_events_uinit(struct mtl_session_impl* s);
 
 /** Post event to session */
 int mtl_session_event_post(struct mtl_session_impl* s, const mtl_event_t* event);
+
+/** Wake a consumer blocked in event_poll (non-blocking eventfd bump). */
+void mtl_session_events_signal(struct mtl_session_impl* s);
 
 /*************************************************************************
  * User-Owned Buffer Helpers

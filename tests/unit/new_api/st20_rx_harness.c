@@ -155,7 +155,6 @@ ut20rx_ctx* ut20rx_ctx_create(int framebuff_cnt) {
   s->socket_id = rte_socket_id();
   s->ownership = MTL_BUFFER_LIBRARY_OWNED;
   s->stopped = 0;
-  s->event_fd = -1;
   s->inner.video_rx = rx;
   snprintf(s->name, sizeof(s->name), "ut_new_rx");
 
@@ -194,10 +193,7 @@ ut20rx_ctx* ut20rx_ctx_create(int framebuff_cnt) {
     return NULL;
   }
 
-  snprintf(ring_name, sizeof(ring_name), "utnrxe_%u", ring_seq++);
-  s->event_ring =
-      rte_ring_create(ring_name, 64, s->socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
-  if (!s->event_ring) {
+  if (mtl_session_events_init(s) < 0) {
     rte_ring_free(v->ready_ring);
     free(s->buffers);
     free(ctx->frames);
@@ -214,14 +210,7 @@ ut20rx_ctx* ut20rx_ctx_create(int framebuff_cnt) {
 void ut20rx_ctx_destroy(ut20rx_ctx* ctx) {
   if (!ctx) return;
   if (ctx->user_owned) mtl_session_user_buf_uinit(&ctx->s);
-  if (ctx->s.event_ring) {
-    void* obj = NULL;
-    while (rte_ring_dequeue(ctx->s.event_ring, &obj) == 0 && obj) {
-      mt_rte_free(obj);
-      obj = NULL;
-    }
-    rte_ring_free(ctx->s.event_ring);
-  }
+  mtl_session_events_uinit(&ctx->s);
   if (ctx->vctx.ready_ring) rte_ring_free(ctx->vctx.ready_ring);
   if (ctx->buffers_rte)
     mtl_session_buffers_uinit(&ctx->s);
@@ -302,6 +291,31 @@ int ut20rx_notify_detected(ut20rx_ctx* ctx, uint32_t width, uint32_t height,
 
 int ut20rx_poll_event(ut20rx_ctx* ctx, mtl_event_t* event) {
   return mtl_video_rx_vtable.event_poll(&ctx->s, event, 0 /* non-blocking */);
+}
+
+int ut20rx_poll_event_timeout(ut20rx_ctx* ctx, mtl_event_t* event, uint32_t timeout_ms) {
+  return mtl_video_rx_vtable.event_poll(&ctx->s, event, timeout_ms);
+}
+
+int ut20rx_post_event(ut20rx_ctx* ctx, const mtl_event_t* event) {
+  return mtl_session_event_post(&ctx->s, event);
+}
+
+uint64_t ut20rx_events_dropped(const ut20rx_ctx* ctx) {
+  return ctx->s.events_dropped;
+}
+
+int ut20rx_get_event_fd(ut20rx_ctx* ctx) {
+  if (!ctx->s.vt->get_event_fd) return -ENOSYS;
+  return ctx->s.vt->get_event_fd(&ctx->s);
+}
+
+void ut20rx_set_stopped(ut20rx_ctx* ctx) {
+  mtl_session_set_stopped(&ctx->s);
+}
+
+void ut20rx_stop(ut20rx_ctx* ctx) {
+  mtl_session_stop((mtl_session_t*)&ctx->s);
 }
 
 int ut20rx_enable_user_owned_post(ut20rx_ctx* ctx) {

@@ -16,8 +16,11 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <set>
+#include <thread>
 
 #include "new_api/st20_tx_harness.h"
 
@@ -466,4 +469,93 @@ TEST_F(St20NewApiTxTest, BufferPoolSizeFollowsFrameCount) {
     EXPECT_TRUE(seen.insert(b).second)
         << "frame " << i << " must map to a distinct wrapper";
   }
+}
+
+/* ── event-system mechanism (producer-nonblocking / consumer-blocking) ─── */
+
+/* Producer overflow: posting far past the ring capacity must never block or
+ * crash; the surplus is dropped and counted in s->events_dropped. Proves the
+ * post path drops-on-full instead of allocating/growing. */
+TEST_F(St20NewApiTxTest, EventPostDropsOnFullBumpsCounter) {
+  mtl_event_t ev = {};
+  ev.type = MTL_EVENT_BUFFER_DONE;
+
+  const int kPosts = 256;
+  int accepted = 0, dropped = 0;
+  for (int i = 0; i < kPosts; i++) {
+    ev.ctx = reinterpret_cast<void*>(static_cast<uintptr_t>(i));
+    int ret = ut20tx_post_event(ctx_, &ev);
+    if (ret == 0)
+      accepted++;
+    else
+      dropped++;
+  }
+
+  EXPECT_GT(dropped, 0) << "posting past ring capacity must drop the surplus";
+  EXPECT_EQ(accepted + dropped, kPosts);
+  EXPECT_EQ(ut20tx_events_dropped(ctx_), static_cast<uint64_t>(dropped))
+      << "every dropped post must bump the producer drop counter";
+}
+
+/* Value round-trip: the queue stores events by value (copy-in), so a polled
+ * event reproduces the posted type/ctx/status/timestamp — not a freed pointer. */
+TEST_F(St20NewApiTxTest, EventPostPollValueRoundTrip) {
+  mtl_event_t in = {};
+  in.type = MTL_EVENT_FRAME_LATE;
+  in.status = -42;
+  in.timestamp = kFrameTai;
+  in.ctx = reinterpret_cast<void*>(static_cast<uintptr_t>(0xABCD));
+
+  ASSERT_EQ(ut20tx_post_event(ctx_, &in), 0);
+
+  mtl_event_t out = {};
+  ASSERT_EQ(ut20tx_poll_event(ctx_, &out), 0);
+  EXPECT_EQ(out.type, in.type);
+  EXPECT_EQ(out.status, in.status);
+  EXPECT_EQ(out.timestamp, in.timestamp);
+  EXPECT_EQ(out.ctx, in.ctx);
+}
+
+/* timeout_ms == 0 on an empty queue is non-blocking and returns -ETIMEDOUT. */
+TEST_F(St20NewApiTxTest, EventPollTimeoutZeroOnEmpty) {
+  mtl_event_t ev;
+  EXPECT_EQ(ut20tx_poll_event(ctx_, &ev), -ETIMEDOUT);
+}
+
+/* Pre-check path: stopped before poll() is entered, so the top-of-function
+ * check returns -EAGAIN without ever blocking. */
+TEST_F(St20NewApiTxTest, EventPollPreStopReturnsEagain) {
+  ut20tx_set_stopped(ctx_);
+  mtl_event_t ev;
+  EXPECT_EQ(ut20tx_poll_event_timeout(ctx_, &ev, 1000), -EAGAIN);
+}
+
+/* Missed-wakeup path: a consumer already blocked in poll() must wake promptly
+ * when another thread calls stop(), returning -EAGAIN well under the timeout
+ * rather than waiting out the full timeout_ms. */
+TEST_F(St20NewApiTxTest, EventPollStopWakesBlockedPoll) {
+  std::atomic<bool> entered{false};
+  std::atomic<int> ret{1};
+  std::thread consumer([&] {
+    mtl_event_t ev;
+    entered.store(true, std::memory_order_release);
+    ret.store(ut20tx_poll_event_timeout(ctx_, &ev, 5000), std::memory_order_release);
+  });
+
+  while (!entered.load(std::memory_order_acquire)) std::this_thread::yield();
+
+  auto t0 = std::chrono::steady_clock::now();
+  ut20tx_stop(ctx_);
+  consumer.join();
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+
+  EXPECT_EQ(ret.load(std::memory_order_acquire), -EAGAIN);
+  EXPECT_LT(elapsed_ms, 1000) << "stop() must wake the blocked poll promptly";
+}
+
+/* get_event_fd is wired and returns a valid (>= 0) wakeup fd. */
+TEST_F(St20NewApiTxTest, EventFdValid) {
+  EXPECT_GE(ut20tx_get_event_fd(ctx_), 0);
 }

@@ -97,6 +97,19 @@ int ut20tx_reset_stats(ut20tx_ctx* ctx);
 
 /** Non-blocking event_poll wrapper. 0 + *ev on an event, -ETIMEDOUT if none. */
 int ut20tx_poll_event(ut20tx_ctx* ctx, mtl_event_t* ev);
+/** event_poll wrapper with an explicit timeout (drives the blocking path). */
+int ut20tx_poll_event_timeout(ut20tx_ctx* ctx, mtl_event_t* ev, uint32_t timeout_ms);
+/** Post an event through the producer path (mtl_session_event_post). */
+int ut20tx_post_event(ut20tx_ctx* ctx, const mtl_event_t* ev);
+/** Read the producer-side dropped-event counter (s->events_dropped). */
+uint64_t ut20tx_events_dropped(const ut20tx_ctx* ctx);
+/** Wraps the get_event_fd vtable slot; -ENOSYS if the slot is NULL. */
+int ut20tx_get_event_fd(ut20tx_ctx* ctx);
+/** Set the session stopped flag (drives the poll -EAGAIN path). */
+void ut20tx_set_stopped(ut20tx_ctx* ctx);
+/** Drive the full production stop path (sets stopped + signals the eventfd to
+ *  wake a consumer already blocked in event_poll). */
+void ut20tx_stop(ut20tx_ctx* ctx);
 
 /* ── slice op ─────────────────────────────────────────────────────────── */
 

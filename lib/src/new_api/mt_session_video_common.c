@@ -13,6 +13,7 @@
 #include "mt_session_video_common.h"
 
 #include <errno.h>
+#include <poll.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -59,8 +60,7 @@ int video_convert_ctx_init(struct video_convert_ctx* cvt,
 
   /* Calculate app-side frame size */
   cvt->app_frame_size =
-      st_frame_size(config->frame_fmt, config->width, config->height,
-                    config->interlaced);
+      st_frame_size(config->frame_fmt, config->width, config->height, config->interlaced);
   if (!cvt->app_frame_size) {
     err("%s(%s), failed to get frame size for fmt %s\n", __func__, config->base.name,
         st_frame_fmt_name(config->frame_fmt));
@@ -173,41 +173,58 @@ int video_convert_frame(struct video_convert_ctx* cvt, void* src_data,
 
 int video_session_event_poll(struct mtl_session_impl* s, mtl_event_t* event,
                              uint32_t timeout_ms) {
+  /* Single-consumer contract: the event ring is RING_F_SC_DEQ, so only one
+   * thread may call event_poll on a session at a time. */
   if (mtl_session_check_stopped(s)) {
     return -EAGAIN;
   }
 
-  /* Non-blocking dequeue attempt */
-  if (s->event_ring) {
-    void* obj = NULL;
-    if (rte_ring_dequeue(s->event_ring, &obj) == 0 && obj) {
-      *event = *(mtl_event_t*)obj;
-      mt_rte_free(obj);
-      return 0;
-    }
+  /* Non-blocking value dequeue attempt */
+  if (s->event_ring && rte_ring_dequeue_elem(s->event_ring, event, sizeof(*event)) == 0) {
+    return 0;
   }
 
   if (timeout_ms == 0) {
     return -ETIMEDOUT;
   }
 
-  /* Poll with timeout */
   uint64_t deadline_ns = video_calc_deadline_ns(timeout_ms);
 
+  /* Consumer (app thread) may block: wait on the eventfd up to the deadline,
+   * waking as soon as the producer posts. */
   while (!mtl_session_check_stopped(s)) {
-    void* obj = NULL;
-    if (s->event_ring && rte_ring_dequeue(s->event_ring, &obj) == 0 && obj) {
-      *event = *(mtl_event_t*)obj;
-      mt_rte_free(obj);
+    if (s->event_ring &&
+        rte_ring_dequeue_elem(s->event_ring, event, sizeof(*event)) == 0) {
       return 0;
     }
 
-    usleep(100);
-
     if (video_deadline_reached(deadline_ns)) return -ETIMEDOUT;
+
+    if (s->event_fd >= 0) {
+      uint64_t now_ns = video_now_ns();
+      /* Round the remaining time up to whole milliseconds: truncation to 0
+       * while time remains would turn poll() into a busy-wait. */
+      int wait_ms = 0;
+      if (deadline_ns > now_ns) {
+        wait_ms = (int)((deadline_ns - now_ns + 999999ULL) / 1000000ULL);
+      }
+      struct pollfd pfd = {.fd = s->event_fd, .events = POLLIN};
+      int pret = poll(&pfd, 1, wait_ms);
+      if (pret > 0 && (pfd.revents & POLLIN)) {
+        uint64_t cnt;
+        ssize_t n = read(s->event_fd, &cnt, sizeof(cnt));
+        (void)n;
+      }
+    } else {
+      usleep(100);
+    }
   }
 
   return -EAGAIN;
+}
+
+int video_session_get_event_fd(struct mtl_session_impl* s) {
+  return s->event_fd;
 }
 
 /*************************************************************************

@@ -189,6 +189,9 @@ int mtl_session_stop(mtl_session_t* session) {
   /* Set stopped flag - this is safe from signal handlers */
   mtl_session_set_stopped(s);
 
+  /* Wake any consumer already blocked in event_poll so it re-checks stopped */
+  mtl_session_events_signal(s);
+
   /* Call type-specific stop if available */
   if (s->vt && s->vt->stop) {
     s->vt->stop(s);
@@ -355,17 +358,7 @@ int mtl_session_event_poll(mtl_session_t* session, mtl_event_t* event,
   }
 
   if (!s->vt || !s->vt->event_poll) {
-    /* Default: try to dequeue from event ring */
-    if (s->event_ring) {
-      void* obj = NULL;
-      if (rte_ring_dequeue(s->event_ring, &obj) == 0 && obj) {
-        mtl_event_t* ev = (mtl_event_t*)obj;
-        *event = *ev;
-        mt_rte_free(ev);
-        return 0;
-      }
-    }
-    return -ETIMEDOUT;
+    return -ENOSYS;
   }
 
   return s->vt->event_poll(s, event, timeout_ms);
@@ -378,11 +371,11 @@ int mtl_session_get_event_fd(mtl_session_t* session) {
     return -EINVAL;
   }
 
-  if (s->vt && s->vt->get_event_fd) {
-    return s->vt->get_event_fd(s);
+  if (!s->vt || !s->vt->get_event_fd) {
+    return -ENOSYS;
   }
 
-  return s->event_fd;
+  return s->vt->get_event_fd(s);
 }
 
 /*************************************************************************
@@ -403,12 +396,9 @@ int mtl_session_stats_get(mtl_session_t* session, mtl_session_stats_t* stats) {
   /* Default: return cached stats (atomic reads, relaxed ordering) */
   stats->buffers_processed =
       __atomic_load_n(&s->stats.buffers_processed, __ATOMIC_RELAXED);
-  stats->bytes_processed =
-      __atomic_load_n(&s->stats.bytes_processed, __ATOMIC_RELAXED);
-  stats->buffers_dropped =
-      __atomic_load_n(&s->stats.buffers_dropped, __ATOMIC_RELAXED);
-  stats->epochs_missed =
-      __atomic_load_n(&s->stats.epochs_missed, __ATOMIC_RELAXED);
+  stats->bytes_processed = __atomic_load_n(&s->stats.bytes_processed, __ATOMIC_RELAXED);
+  stats->buffers_dropped = __atomic_load_n(&s->stats.buffers_dropped, __ATOMIC_RELAXED);
+  stats->epochs_missed = __atomic_load_n(&s->stats.epochs_missed, __ATOMIC_RELAXED);
   stats->buffers_free = 0;
   stats->buffers_in_use = 0;
   return 0;
@@ -474,8 +464,8 @@ int mtl_session_io_stats_reset(mtl_session_t* session) {
   return s->vt->io_stats_reset(s);
 }
 
-int mtl_session_pcap_dump(mtl_session_t* session, uint32_t max_dump_packets,
-                          bool sync, struct st_pcap_dump_meta* meta) {
+int mtl_session_pcap_dump(mtl_session_t* session, uint32_t max_dump_packets, bool sync,
+                          struct st_pcap_dump_meta* meta) {
   struct mtl_session_impl* s = MTL_SESSION_IMPL(session);
 
   if (!s || !MTL_SESSION_VALID(s)) {

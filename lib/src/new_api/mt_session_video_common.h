@@ -115,6 +115,11 @@ int video_convert_frame(struct video_convert_ctx* cvt, void* src_data,
 int video_session_event_poll(struct mtl_session_impl* s, mtl_event_t* event,
                              uint32_t timeout_ms);
 
+/**
+ * Return the session's event wakeup fd for app epoll/select integration.
+ */
+int video_session_get_event_fd(struct mtl_session_impl* s);
+
 /*************************************************************************
  * Shared Stats (identical for TX and RX)
  *************************************************************************/
@@ -143,15 +148,21 @@ int video_session_notify_event(void* priv, enum st_event ev, void* args);
  *************************************************************************/
 
 /**
+ * Current CLOCK_MONOTONIC time in nanoseconds.
+ */
+static inline uint64_t video_now_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+/**
  * Calculate an absolute deadline in nanoseconds from a relative timeout.
  * Returns 0 if timeout_ms == 0 (non-blocking).
  */
 static inline uint64_t video_calc_deadline_ns(uint32_t timeout_ms) {
   if (timeout_ms == 0) return 0;
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec +
-         (uint64_t)timeout_ms * 1000000ULL;
+  return video_now_ns() + (uint64_t)timeout_ms * 1000000ULL;
 }
 
 /**
@@ -160,10 +171,7 @@ static inline uint64_t video_calc_deadline_ns(uint32_t timeout_ms) {
  */
 static inline bool video_deadline_reached(uint64_t deadline_ns) {
   if (deadline_ns == 0) return true; /* Non-blocking mode */
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  uint64_t now = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-  return now >= deadline_ns;
+  return video_now_ns() >= deadline_ns;
 }
 
 #if defined(__cplusplus)
