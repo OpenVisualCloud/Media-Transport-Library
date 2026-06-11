@@ -58,22 +58,29 @@ TEST_F(St20RxStatsTest, ReceivedPlusRedundantInvariant) {
 }
 
 /* lost_packets invariant: stat_lost_packets equals the sum of per-port
- * lost counters. Inducing real loss on each wire (a one-packet gap on
- * the primary and a one-packet gap on the secondary, each filled by the
- * other wire) makes the invariant non-trivial. Uses a 4-pkt frame so
- * intra-frame gaps are expressible. */
+ * lost counters. P delivers {0,2}, R delivers {1,3}; the frame fully
+ * reconstructs (4 unique pkts) but each port carries a per-frame deficit
+ * of 2 charged at finalisation. */
 TEST_F(St20RxStatsTest, LostPacketsInvariant) {
   ut20_test_ctx* wide = ut20_ctx_create_geom(2, 4);
   ASSERT_NE(wide, nullptr);
 
   ut20_feed_frame_pkt(wide, 0, 1000, MTL_SESSION_PORT_P);
-  ut20_feed_frame_pkt(wide, 1, 1000, MTL_SESSION_PORT_R); /* R first; R_last=1 */
-  ut20_feed_frame_pkt(wide, 3, 1000, MTL_SESSION_PORT_R); /* R skipped pkt 2 */
-  ut20_feed_frame_pkt(wide, 2, 1000, MTL_SESSION_PORT_P); /* P jumped 0->2 */
+  ut20_feed_frame_pkt(wide, 1, 1000, MTL_SESSION_PORT_R);
+  ut20_feed_frame_pkt(wide, 3, 1000, MTL_SESSION_PORT_R);
+  ut20_feed_frame_pkt(wide, 2, 1000, MTL_SESSION_PORT_P);
+  /* Recycle the slot (slot_max==2) so the completed frame's deferred per-port
+   * loss is accounted; flush frames are fully redundant (zero deficit). */
+  for (uint32_t ts = 90000; ts <= 91000; ts += 1000) {
+    for (int i = 0; i < 4; i++) {
+      ut20_feed_frame_pkt(wide, i, ts, MTL_SESSION_PORT_P);
+      ut20_feed_frame_pkt(wide, i, ts, MTL_SESSION_PORT_R);
+    }
+  }
 
-  EXPECT_EQ(ut20_frames_received(wide), 1);
-  EXPECT_EQ(ut20_stat_port_lost(wide, MTL_SESSION_PORT_P), 1u);
-  EXPECT_EQ(ut20_stat_port_lost(wide, MTL_SESSION_PORT_R), 1u);
+  EXPECT_EQ(ut20_frames_received(wide), 3);
+  EXPECT_EQ(ut20_stat_port_lost(wide, MTL_SESSION_PORT_P), 2u);
+  EXPECT_EQ(ut20_stat_port_lost(wide, MTL_SESSION_PORT_R), 2u);
   EXPECT_EQ(ut20_stat_lost_pkts(wide), ut20_stat_port_lost(wide, MTL_SESSION_PORT_P) +
                                            ut20_stat_port_lost(wide, MTL_SESSION_PORT_R))
       << "stat_lost_packets must equal the sum of per-port lost_packets";
@@ -120,35 +127,47 @@ class St20RxStatsWideTest : public ::testing::Test {
   uint64_t port_lost(enum mtl_session_port p) {
     return ut20_stat_port_lost(ctx_, p);
   }
+  /* Completed-frame per-port loss is charged when the slot is recycled; with
+   * redundancy slot_max==2, so two fresh fully-redundant (zero-deficit) frames
+   * rotate the slot window and finalise the frame under test. */
+  void flush() {
+    for (int f = 0; f < 2; f++) {
+      uint32_t ts = 90000 + (uint32_t)f * 1000u;
+      for (int i = 0; i < kPktsPerFrame; i++) {
+        feed(i, ts, MTL_SESSION_PORT_P);
+        feed(i, ts, MTL_SESSION_PORT_R);
+      }
+    }
+  }
 };
 
-/* P jumps from pkt 0 to pkt 3 in its own sequence, leaving a 2-pkt hole;
- * R fills the hole in order. The loss attributed to P equals the size of
- * P's own gap; R records no loss. */
+/* P delivers {0,3}, R delivers {1,2}; the frame reconstructs from the
+ * union of both wires. Each port carries a per-frame deficit equal to the
+ * two packets the OTHER port supplied. */
 TEST_F(St20RxStatsWideTest, PortLossCountsOwnGapsOnly) {
   feed(0, 1000, MTL_SESSION_PORT_P);
   feed(1, 1000, MTL_SESSION_PORT_R);
   feed(2, 1000, MTL_SESSION_PORT_R);
-  feed(3, 1000, MTL_SESSION_PORT_P); /* P jumped 0 -> 3 on its wire */
+  feed(3, 1000, MTL_SESSION_PORT_P);
+  flush();
 
-  EXPECT_EQ(frames_received(), 1);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u)
-      << "P's wire skipped pkts 1 and 2 between its own observations";
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u) << "R sent pkts 1 and 2 in order";
+  EXPECT_EQ(frames_received(), 3);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u) << "P missed pkts 1 and 2";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 2u) << "R missed pkts 0 and 3";
 }
 
-/* Both wires misbehave concurrently: R reorders its own packets while P
- * skips two indices. The two per-port counters must not contaminate each
- * other and reordering on one wire must not be classified as loss on
- * either wire. */
+/* P delivers {0,3}, R delivers {2,1} (reordered on its own wire). Reorder
+ * does not affect the loss count — only the per-frame delivery count at
+ * finalisation matters, so each port carries a deficit of 2. */
 TEST_F(St20RxStatsWideTest, PerPortLossIsIndependent) {
-  feed(0, 1000, MTL_SESSION_PORT_P); /* P_last = 0 */
-  feed(2, 1000, MTL_SESSION_PORT_R); /* R first; R_last = 2 */
-  feed(1, 1000, MTL_SESSION_PORT_R); /* R reorder of its own packet */
-  feed(3, 1000, MTL_SESSION_PORT_P); /* P jumps 0 -> 3 */
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1000, MTL_SESSION_PORT_R);
+  feed(1, 1000, MTL_SESSION_PORT_R); /* reorder on R */
+  feed(3, 1000, MTL_SESSION_PORT_P);
+  flush();
 
-  EXPECT_EQ(frames_received(), 1);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u);
+  EXPECT_EQ(frames_received(), 3);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 2u);
   EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u);
 }
 
@@ -162,8 +181,9 @@ TEST_F(St20RxStatsWideTest, UnrecoveredZeroWhenReconstructionSucceeds) {
   feed(1, 1000, MTL_SESSION_PORT_R); /* recovers P's gap */
   feed(2, 1000, MTL_SESSION_PORT_R);
   feed(3, 1000, MTL_SESSION_PORT_P);
+  flush();
 
-  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(frames_received(), 3);
   EXPECT_GE(lost_session(), 1u) << "P's wire really skipped packets";
   EXPECT_EQ(pkts_unrecovered(), 0u)
       << "every gap on one wire was filled by the other wire";
@@ -334,4 +354,249 @@ TEST_F(St20RxStatsWideTest, UnrecoveredWhenBothPortsMissSamePacket) {
   EXPECT_GE(pkts_unrecovered(), 1u) << "the missing pkt is post-redundancy loss";
   EXPECT_LE(pkts_unrecovered(), lost_session())
       << "documented invariant: unrecovered <= lost";
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Per-port loss contract.
+ *
+ * Contract pinned by these cases:
+ *   port[i].lost_packets += max(0, expected_this_frame - unique_arrivals_on_i)
+ *                          charged at frame finalisation.
+ *   expected_this_frame   = pkts_received + this frame's all-port holes.
+ *   stat_lost_packets      = sum over ports of port[i].lost_packets.
+ *
+ * A per-packet forward-gap-on-each-port's-own-sequence model is blind to
+ * frame-edge losses and double-counts packets dropped on BOTH ports. The
+ * tests below isolate those two failure modes.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+class St20RxStatsSinglePortTest : public ::testing::Test {
+ protected:
+  static constexpr int kPktsPerFrame = 4;
+  ut20_test_ctx* ctx_ = nullptr;
+  void SetUp() override {
+    ASSERT_EQ(ut20_init(), 0);
+    ctx_ = ut20_ctx_create_geom(1, kPktsPerFrame);
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    if (ctx_) ut20_ctx_destroy(ctx_);
+  }
+  void feed(int pkt_idx, uint32_t ts) {
+    ut20_feed_frame_pkt(ctx_, pkt_idx, ts, MTL_SESSION_PORT_P);
+  }
+  uint64_t port_lost_p() {
+    return ut20_stat_port_lost(ctx_, MTL_SESSION_PORT_P);
+  }
+  uint64_t lost_session() {
+    return ut20_stat_lost_pkts(ctx_);
+  }
+  uint64_t pkts_unrecovered() {
+    return ut20_stat_pkts_unrecovered(ctx_);
+  }
+  int frames_received() {
+    return ut20_frames_received(ctx_);
+  }
+};
+
+/* Single-port session: a packet dropped at the LEADING edge of the frame
+ * has no prior packet on this port to compare against, so the per-packet
+ * forward-gap detector cannot see it. The new contract recognises it as
+ * a per-frame deficit at finalisation. */
+TEST_F(St20RxStatsSinglePortTest, GapBeforeFirstSeenPktCountedAsPerPortLoss) {
+  /* Frame ts=1000: pkt 0 dropped on wire; deliver pkts 1,2,3. */
+  feed(1, 1000);
+  feed(2, 1000);
+  feed(3, 1000);
+  /* Drive a clean second frame so the partial slot is reclaimed/finalised. */
+  for (int i = 0; i < kPktsPerFrame; i++) feed(i, 2000);
+
+  EXPECT_EQ(port_lost_p(), 1u)
+      << "leading-edge loss on single-port session must charge port[P]";
+  EXPECT_EQ(lost_session(), pkts_unrecovered())
+      << "single-port: stat_lost_packets == stat_pkts_unrecovered";
+}
+
+/* P delivers contiguous prefix (pkts 0..2); R delivers only the trailing
+ * pkt (3). The frame fully reconstructs but each port carries a deficit
+ * equal to what the OTHER port covered, even though neither port observed
+ * a per-packet forward gap in its own sequence stream. */
+TEST_F(St20RxStatsWideTest, LastPacketDroppedOnPortCountsAsPerPortDeficit) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1000, MTL_SESSION_PORT_P);
+  feed(3, 1000, MTL_SESSION_PORT_R); /* R's only contribution */
+  flush();
+
+  EXPECT_EQ(frames_received(), 3);
+  EXPECT_EQ(pkts_unrecovered(), 0u) << "frame recovered through redundancy";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 1u) << "P missed pkt 3";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 3u) << "R missed pkts 0,1,2";
+  EXPECT_EQ(lost_session(), port_lost(MTL_SESSION_PORT_P) + port_lost(MTL_SESSION_PORT_R))
+      << "stat_lost_packets equals the sum of per-port deficits";
+}
+
+/* Both ports drop the same packet index: hole is unrecoverable. The new
+ * contract charges the hole to EACH port's per-frame deficit, so
+ * stat_lost_packets (= sum of per-port deficits) counts it once per port,
+ * while stat_pkts_unrecovered counts the all-port hole exactly once. */
+TEST_F(St20RxStatsWideTest, BothPortsMissSamePacketNoDoubleCount) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(0, 1000, MTL_SESSION_PORT_R);
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_R);
+  feed(3, 1000, MTL_SESSION_PORT_P);
+  feed(3, 1000, MTL_SESSION_PORT_R);
+  /* Drive two complete subsequent frames so the partial slot is reclaimed. */
+  for (int i = 0; i < kPktsPerFrame; i++) {
+    feed(i, 2000, MTL_SESSION_PORT_P);
+    feed(i, 2000, MTL_SESSION_PORT_R);
+  }
+  for (int i = 0; i < kPktsPerFrame; i++) {
+    feed(i, 3000, MTL_SESSION_PORT_P);
+    feed(i, 3000, MTL_SESSION_PORT_R);
+  }
+
+  EXPECT_EQ(pkts_unrecovered(), 1u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 1u);
+  EXPECT_EQ(lost_session(), port_lost(MTL_SESSION_PORT_P) + port_lost(MTL_SESSION_PORT_R))
+      << "stat_lost_packets equals the sum of per-port deficits";
+}
+
+/* The very first frame can be corrupted — there is no prior complete
+ * frame from which to latch "expected pkts per frame". Accounting must
+ * derive `expected` from the in-flight frame's own geometry, otherwise
+ * startup losses are silently dropped. */
+TEST_F(St20RxStatsWideTest, FirstFrameCorruptedCountsLossCorrectly) {
+  /* First frame: only pkts 0,1 delivered (both ports); pkts 2,3 dropped. */
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(0, 1000, MTL_SESSION_PORT_R);
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_R);
+  /* Drive two complete subsequent frames so the slot is reclaimed. */
+  for (int i = 0; i < kPktsPerFrame; i++) {
+    feed(i, 2000, MTL_SESSION_PORT_P);
+    feed(i, 2000, MTL_SESSION_PORT_R);
+  }
+  for (int i = 0; i < kPktsPerFrame; i++) {
+    feed(i, 3000, MTL_SESSION_PORT_P);
+    feed(i, 3000, MTL_SESSION_PORT_R);
+  }
+
+  EXPECT_GE(frames_incomplete(), 1u);
+  EXPECT_EQ(pkts_unrecovered(), 2u) << "pkts 2 and 3 unrecoverable on first frame";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 2u);
+  EXPECT_EQ(lost_session(), port_lost(MTL_SESSION_PORT_P) + port_lost(MTL_SESSION_PORT_R))
+      << "stat_lost_packets equals the sum of per-port deficits";
+}
+
+/* Opposite-edge drops: P provides contiguous prefix, R provides contiguous
+ * suffix. Frame fully reconstructs but each port carries the deficit the
+ * other port covered. */
+TEST_F(St20RxStatsWideTest, ContiguousPrefixSuffixPerPortDeficit) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_P);
+  feed(2, 1000, MTL_SESSION_PORT_R);
+  feed(3, 1000, MTL_SESSION_PORT_R);
+  flush();
+
+  EXPECT_EQ(frames_received(), 3);
+  EXPECT_EQ(pkts_unrecovered(), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 2u);
+  EXPECT_EQ(lost_session(), port_lost(MTL_SESSION_PORT_P) + port_lost(MTL_SESSION_PORT_R))
+      << "stat_lost_packets equals the sum of per-port deficits";
+}
+
+/* A completed-but-port-short frame whose slot is never recycled: P delivers
+ * {0,3}, R delivers {1,2}; the frame finalises (loss_pending set) but no later
+ * frame rotates its slot, so the deferred per-port deficit stays pending until
+ * the detach flush runs, mirroring the production teardown path. */
+TEST_F(St20RxStatsWideTest, FinalSlotDeficitChargedAtDetach) {
+  feed(0, 1000, MTL_SESSION_PORT_P);
+  feed(1, 1000, MTL_SESSION_PORT_R);
+  feed(2, 1000, MTL_SESSION_PORT_R);
+  feed(3, 1000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u)
+      << "deficit deferred: the slot has not been recycled";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u);
+
+  ut20_session_detach(ctx_);
+
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u) << "detach flush charges P's deficit";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 2u) << "detach flush charges R's deficit";
+  EXPECT_EQ(lost_session(),
+            port_lost(MTL_SESSION_PORT_P) + port_lost(MTL_SESSION_PORT_R));
+}
+
+/* Known, tolerated limitation: a same-wire duplicate/retransmit of an
+ * already-received packet inflates pkts_recv_per_port, so the expected <= recv
+ * guard in rv_slot_account_per_port_loss zeroes the genuine per-port deficit.
+ * This is accepted to keep the redundant common-path twin credit correct
+ * (unconditional ++ on the bitmap-set branch) and the per-packet handler cheap;
+ * the precise fix would need per-port per-index delivery tracking. This test
+ * PINS the masked behaviour so a future change to it is a conscious decision. */
+TEST(St20Stats, same_port_dup_masks_deficit_known_limitation) {
+  ASSERT_EQ(ut20_init(), 0);
+  ut20_test_ctx* ctx = ut20_ctx_create_geom(1, 4);
+  ASSERT_NE(ctx, nullptr);
+
+  ut20_feed_frame_pkt(ctx, 0, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_frame_pkt(ctx, 1, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_frame_pkt(ctx, 3, 1000, MTL_SESSION_PORT_P); /* pkt 2 lost on wire */
+  ut20_feed_frame_pkt(ctx, 0, 1000, MTL_SESSION_PORT_P); /* same-port duplicate */
+
+  /* Recycle the incomplete slot so its deferred deficit is finalised. */
+  for (int i = 0; i < 4; i++) ut20_feed_frame_pkt(ctx, i, 2000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(ut20_stat_port_lost(ctx, MTL_SESSION_PORT_P), 0u)
+      << "same-port dup inflates recv; deficit guard masks the per-port hole";
+  EXPECT_EQ(ut20_stat_lost_pkts(ctx), 0u);
+
+  ut20_ctx_destroy(ctx);
+}
+
+/* Control for the regression above: the identical 0,1,3 gap WITHOUT the masking
+ * duplicate must charge the loss. If this also reads 0, incomplete-frame
+ * charging is broken more broadly than the duplicate-masking case. */
+TEST(St20Stats, single_port_gap_charges_deficit_control) {
+  ASSERT_EQ(ut20_init(), 0);
+  ut20_test_ctx* ctx = ut20_ctx_create_geom(1, 4);
+  ASSERT_NE(ctx, nullptr);
+
+  ut20_feed_frame_pkt(ctx, 0, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_frame_pkt(ctx, 1, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_frame_pkt(ctx, 3, 1000, MTL_SESSION_PORT_P); /* pkt 2 lost on wire */
+
+  for (int i = 0; i < 4; i++) ut20_feed_frame_pkt(ctx, i, 2000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(ut20_stat_port_lost(ctx, MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(ut20_stat_lost_pkts(ctx), 1u);
+
+  ut20_ctx_destroy(ctx);
+}
+
+/* RTP-passthrough mode (ST20_TYPE_RTP_LEVEL) has no frame-completion event to
+ * defer per-port loss to, so rv_handle_rtp_pkt INTENTIONALLY keeps the inline
+ * forward-gap charge that frame mode dropped. This pins that a sequence gap is
+ * still counted in RTP mode. Feed seq 0,1,3 (gap at 2); the loss must surface
+ * inline in stat_lost_packets without any frame finalisation. */
+TEST(St20Stats, rtp_mode_loss_accounting_regression) {
+  ASSERT_EQ(ut20_init(), 0);
+  ut20_test_ctx* ctx = ut20_ctx_create_geom(1, 4);
+  ASSERT_NE(ctx, nullptr);
+  ut20_ctx_enable_rtp(ctx);
+
+  ut20_feed_rtp_pkt(ctx, 0, 0, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_rtp_pkt(ctx, 1, 1, 1000, MTL_SESSION_PORT_P);
+  ut20_feed_rtp_pkt(ctx, 3, 3, 1000, MTL_SESSION_PORT_P); /* seq 2 lost on wire */
+
+  EXPECT_GE(ut20_stat_lost_pkts(ctx), 1u)
+      << "RTP-mode sequence gap at seq 2 must charge at least one lost packet";
+
+  ut20_ctx_destroy(ctx);
 }

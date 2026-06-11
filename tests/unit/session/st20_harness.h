@@ -77,6 +77,17 @@ int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint3
 /* Feed every packet of one full frame on `port`, in pkt_idx order. */
 void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port port);
 
+/* Switch the session into RTP-passthrough mode (ST20_TYPE_RTP_LEVEL): allocate
+ * the rtps_ring, install a no-op notify_rtp_ready, and route packets through
+ * rv_handle_rtp_pkt. Call once after ut20_ctx_create*() and before feeding. */
+void ut20_ctx_enable_rtp(ut20_test_ctx* ctx);
+
+/* Feed packet `pkt_idx` of an RTP-mode frame at timestamp `ts` with explicit
+ * sequence `seq`, driving rv_handle_rtp_pkt directly. Requires a prior
+ * ut20_ctx_enable_rtp(). */
+int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
+                      enum mtl_session_port port);
+
 /* Feed one packet with an overridden RTP payload type (`pt`) — for negative
  * tests that assert PT validation. All other fields as ut20_feed_pkt(). */
 int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
@@ -92,6 +103,11 @@ int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t l
  * ut20_ctx_create() and before feeding any packet. */
 void ut20_ctx_set_pt(ut20_test_ctx* ctx, uint8_t pt);
 void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc);
+
+/* Force a session port's physical link up/down. A link-down port is a dead
+ * wire: it never receives data and is not charged per-port loss at frame
+ * finalisation (see rv_slot_account_per_port_loss). */
+void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool down);
 
 /* Wrapper feeders — drive the production `_handle_mbuf` wrapper instead
  * of the per-packet handler. Use these (not the direct feeders above)
@@ -178,6 +194,11 @@ int ut20_total_frame_pkts(void);
 /* Live geometry: number of packets per frame for THIS context. Returns
  * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
+
+/* Drive the production detach-time flush of any slot still holding a deferred
+ * per-port deficit (test-only). Exercises `rv_flush_pending_loss`, the path the
+ * production `rv_detach` runs before its final stat dump. */
+void ut20_session_detach(ut20_test_ctx* ctx);
 
 #ifdef __cplusplus
 }

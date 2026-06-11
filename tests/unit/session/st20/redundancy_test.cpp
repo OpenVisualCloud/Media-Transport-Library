@@ -456,12 +456,13 @@ TEST_F(St20RxRedundancyWideTest, OtherPortDiesAfterOnePacketReconstructs) {
   EXPECT_EQ(pkts_unrecovered(), 0u);
 }
 
-/* Sustained single-port operation: R is silent for many consecutive frames
- * while P delivers each one alone. Counters must scale linearly with no
- * pollution from the missing wire — no phantom losses, no phantom
- * duplicates, and per-port frame credit attributed entirely to P. */
+/* Sustained single-port operation: the R wire is link-down (cable pulled)
+ * for many consecutive frames while P delivers each one alone. A dead wire
+ * receives nothing by definition, so it must not be charged per-port loss —
+ * counters scale linearly with P, R only accrues frames_partial. */
 TEST_F(St20RxRedundancyTest, SustainedSinglePortAcrossManyFrames) {
   constexpr int N = 16;
+  set_port_down(MTL_SESSION_PORT_R, true);
   for (int i = 0; i < N; i++) feed_full(1000u + 1000u * i, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(frames_received(), N);
@@ -470,7 +471,28 @@ TEST_F(St20RxRedundancyTest, SustainedSinglePortAcrossManyFrames) {
       << "R never contributed a packet to any frame";
   EXPECT_EQ(redundant(), 0u);
   EXPECT_EQ(pkts_unrecovered(), 0u);
+
+  /* Recycle every pending slot so the deferred per-port accounting runs. */
+  flush();
   EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
   EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u)
-      << "a silent wire must not be charged with phantom losses";
+      << "a link-down wire must not be charged with phantom losses";
+}
+
+/* Companion to the dead-wire case: the R link is UP but silent. An up port
+ * is expected to carry data, so every packet it failed to deliver is genuine
+ * loss and must be charged to its per-port deficit at frame finalisation. */
+TEST_F(St20RxRedundancyTest, SilentLinkUpPortChargedLoss) {
+  set_port_down(MTL_SESSION_PORT_R, false);
+  feed_full(1000, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 1);
+  EXPECT_EQ(frames_partial(MTL_SESSION_PORT_R), 1u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u) << "deficit deferred until recycle";
+
+  /* Recycle the slot so the deferred per-port accounting runs. */
+  flush();
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+  EXPECT_GT(port_lost(MTL_SESSION_PORT_R), 0u)
+      << "an up wire that delivered nothing missed every packet of the frame";
 }

@@ -38,79 +38,72 @@ TEST_F(St20RxReorderTest, ReorderThenDuplicateNotDoubleCounted) {
   EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
 }
 
-/* Regression: after a reorder, slot->last_pkt_idx must NOT regress, otherwise
- * the next forward jump re-counts already-lost packets as new losses.
- *
- * Sequence on a single port (line_num=0 for all so the frame offset check
- * does not interfere; pkt_idx is derived purely from RTP seq):
- *   seq 1000 → pkt_idx 0, base established
- *   seq 1005 → pkt_idx 5, forward jump → gap = 4 lost (pkts 1..4)
- *   seq 1003 → pkt_idx 3, reorder (recovers one of the "lost" pkts)
- *   seq 1006 → pkt_idx 6, only pkt 4 is a NEW loss between the prior
- *              high-water mark (5) and 6
- *
- * Expected port_lost == 4 (the four lost in the first forward jump; the
- * implementation does not decrement on reorder recovery, but it must NOT
- * inflate by another 2 just because last_pkt_idx regressed to 3). */
+/* Regression: after a reorder, slot->last_pkt_idx must NOT regress, else the
+ * next forward jump re-counts already-seen packets. Single port, line_num=0
+ * so pkt_idx comes purely from RTP seq:
+ *   seq 1000→idx 0, 1005→idx 5, 1003→idx 3 (reorder), 1006→idx 6.
+ * Four distinct packets (0,3,5,6) of the eight-packet frame arrive. */
 TEST_F(St20RxReorderTest, ReorderDoesNotRegressLastPktIdx) {
-  /* Payload 10 bytes/pkt so 4 pkts (40B) fit in the 80B harness frame
-   * without auto-closing the slot at frame_recv_size >= frame_size. */
+  /* 10 bytes/pkt so the slot does not auto-close before all four arrive. */
   ut20_feed_pkt(ctx_, 1000, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1005, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1003, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1006, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
 
+  /* Before recycle: reorder counted once, loss is deferred (still 0). */
   EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 1u);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 4u)
-      << "If last_pkt_idx regresses on reorder, pkt 6 over-counts lost as "
-         "6-3-1=2 instead of 0, inflating port_lost from 4 to 6";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u) << "loss is deferred, not inline";
+
+  /* After recycle: deficit = span(8) - recv_on_P(4) = 4, charged once. */
+  flush();
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 4u);
 }
 
-/* Cross-port: each port's `last_pkt_idx` is tracked separately, so a
- * packet arriving on one port can never poison the gap or reorder
- * arithmetic for the next packet on the OTHER port. Every port's
- * loss/reorder counter reflects only events on its own stream.
- *
- *   1. P sends pkt 0 (P_last = 0)
- *   2. R sends pkt 5 (first pkt on R; no gap counted, R_last = 5)
- *   3. P sends pkt 3 (P_last = 0 → forward jump on P: gap = 2 lost on P)
- *   4. R sends pkt 6 (R_last = 5 → in-order on R: no gap, no reorder)
- *
- * P's forward jump must NOT register as reorder (it's a gap on P), and R's
- * counters must be untouched by anything happening on P. */
+/* Cross-port: each port tracks its own last_pkt_idx, so an arrival on one
+ * wire never poisons gap/reorder math on the other.
+ *   P→idx 0, R→idx 5, P→idx 3, R→idx 6.
+ * P's forward jump is a gap (not reorder); R stays in order. */
 TEST_F(St20RxReorderTest, ReorderOnOnePortDoesNotPoisonOtherPort) {
   ut20_feed_pkt(ctx_, 1000, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1005, 1000, 0, 0, 10, MTL_SESSION_PORT_R);
   ut20_feed_pkt(ctx_, 1003, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
   ut20_feed_pkt(ctx_, 1006, 1000, 0, 0, 10, MTL_SESSION_PORT_R);
 
-  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u)
-      << "P sent pkts 0 then 3: forward gap on P, not reorder";
-  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 0u);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u)
-      << "P's forward jump from pkt 0 to pkt 3 implies 2 missing on P's stream";
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u)
-      << "R sent pkt 5 then pkt 6: first-pkt establishes R_last, then in-order";
+  /* Before recycle: no reorder on either wire, no inline loss. */
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 0u) << "P gap, not reorder";
+  EXPECT_EQ(port_reordered(MTL_SESSION_PORT_R), 0u) << "R untouched by P";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_R), 0u);
+
+  /* After recycle: both wires delivered the same count of a symmetric pattern,
+   * so each carries an identical, non-zero deficit. Asserting symmetry (not a
+   * literal value tied to the harness geometry/estimator) is what proves the
+   * non-poisoning property: neither wire's pattern skews the other's loss. */
+  flush();
+  EXPECT_GT(port_lost(MTL_SESSION_PORT_P), 0u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), port_lost(MTL_SESSION_PORT_R));
 }
 
-/* Multi-step reorder: large initial gap, then several reorders fill it in
- * out of order, then resume forward. Ensures the high-water-mark fix holds
- * across a sequence of regressions, and that lost is counted exactly once
- * per missing slot (not re-added on each subsequent forward step). */
+/* Multi-step reorder: large initial gap, several reorders fill it out of
+ * order, then resume forward. Confirms the high-water mark holds and loss is
+ * counted once per missing slot, not re-added on each forward step. */
 TEST_F(St20RxReorderTest, MultipleReordersDoNotInflateLost) {
-  /* 8 pkts of 10 bytes each fit the 80B harness frame. */
-  ut20_feed_pkt(ctx_, 100, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* pkt 0 */
-  ut20_feed_pkt(ctx_, 106, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* pkt 6, gap=5 */
-  ut20_feed_pkt(ctx_, 102, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* reorder */
-  ut20_feed_pkt(ctx_, 104, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* reorder */
-  ut20_feed_pkt(ctx_, 101, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* reorder */
-  ut20_feed_pkt(ctx_, 107, 1000, 0, 0, 10, MTL_SESSION_PORT_P); /* in-order, gap=0 */
+  /* idx 0,6,2,4,1,7 → six distinct packets of the 8-packet frame. */
+  ut20_feed_pkt(ctx_, 100, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
+  ut20_feed_pkt(ctx_, 106, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
+  ut20_feed_pkt(ctx_, 102, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
+  ut20_feed_pkt(ctx_, 104, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
+  ut20_feed_pkt(ctx_, 101, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
+  ut20_feed_pkt(ctx_, 107, 1000, 0, 0, 10, MTL_SESSION_PORT_P);
 
+  /* Before recycle: three reorders, loss deferred (still 0). */
   EXPECT_EQ(port_reordered(MTL_SESSION_PORT_P), 3u);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 5u)
-      << "Lost must be counted exactly once when pkt 6 arrived; the three "
-         "subsequent reorders must not inflate it, and pkt 7 must compute "
-         "gap from the high-water mark (6), not the last reordered idx";
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
+
+  /* After recycle: deficit = span(8) - recv_on_P(6) = 2, counted once
+   * despite the repeated reorders. */
+  flush();
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 2u);
 }
 
 /* Sustained cross-wire interleaving across many frames: every frame is

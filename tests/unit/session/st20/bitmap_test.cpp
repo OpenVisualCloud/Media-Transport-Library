@@ -42,10 +42,16 @@ TEST_F(St20RxBitmapTest, SeqIdWrapAround32WithGap) {
    * 0xFFFFFFFE) + 1 = 2. Use line 1 so the offset stays inside the frame. */
   ut20_feed_pkt(ctx_, 0x00000000, 1000, 1, 0, 40, MTL_SESSION_PORT_P);
 
-  /* Both packets accepted; the missing seq=0xFFFFFFFF (pkt_idx 1) counted lost. */
+  /* Both lines fill the frame by bytes (2 x 40B = 80B) even though pkt_idx
+   * jumps 0 -> 2 (the wrapped seq 0xFFFFFFFF / idx 1 never arrived). A
+   * byte-complete frame charges ZERO per-port loss before and after recycle;
+   * the old inline-gap model charged 1 on that 0->2 jump. */
   EXPECT_EQ(received(), 2u);
-  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 1u);
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
   EXPECT_EQ(idx_oo_bitmap(), 0u);
+
+  flush();
+  EXPECT_EQ(port_lost(MTL_SESSION_PORT_P), 0u);
 }
 
 /* Reorder across the wrap: pkt_idx 1 (seq 0) arrives before pkt_idx 0

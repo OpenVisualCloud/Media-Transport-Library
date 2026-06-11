@@ -105,4 +105,20 @@ class St20RxBaseTest : public ::testing::Test {
   void feed_full(uint32_t ts, enum mtl_session_port port) {
     ut20_feed_full_frame(ctx_, ts, port);
   }
+
+  void set_port_down(enum mtl_session_port p, bool down) {
+    ut20_set_port_down(ctx_, p, down);
+  }
+
+  /* Finalise the frame(s) under test by rotating the slot window through the
+   * real rv_slot_by_tmstamp recycle path: with redundancy slot_max==2, two
+   * fresh fully-redundant (zero-deficit) frames evict the slots under test and
+   * charge any deferred per-port loss. Read per-port loss AFTER calling this. */
+  void flush() {
+    for (int f = 0; f < 2; f++) {
+      uint32_t ts = 90000 + static_cast<uint32_t>(f) * 1000u;
+      feed_full(ts, MTL_SESSION_PORT_P);
+      feed_full(ts, MTL_SESSION_PORT_R);
+    }
+  }
 };
