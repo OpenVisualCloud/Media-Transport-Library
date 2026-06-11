@@ -124,16 +124,14 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: 'preparation: Restore valid repository owner and print env'
-        if: always()
-        run: |
-          sudo chown -R "${USER}" "$(pwd)" || true
-          env | grep TEST_ || true
-
-      - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: 'preparation: Clean workspace and checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ inputs.branch-to-checkout }}'
+
+      - name: 'preparation: Print TEST_ environment'
+        if: always()
+        run: env | grep TEST_ || true
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
