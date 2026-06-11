@@ -1,0 +1,61 @@
+name: Checkout (clean)
+description: >
+  Reset workspace ownership and remove stale .local_install, then check out the
+  repository. Designed to run as the first step of a job, before any checkout.
+  It is referenced as a remote action so the runner fetches it before touching
+  the workspace. On GitHub-hosted runners the clean is a harmless no-op; on
+  persistent self-hosted runners it fixes root-owned files left by previous
+  sudo test runs that would otherwise break checkout.
+
+inputs:
+  ref:
+    description: Branch, tag or SHA to check out. Defaults to the ref that triggered the workflow.
+    required: false
+    default: ''
+  repository:
+    description: Repository (owner/repo) to check out. Defaults to the current repository.
+    required: false
+    default: ''
+  token:
+    description: Token used to fetch the repository. Defaults to the workflow token.
+    required: false
+    default: ''
+  path:
+    description: Relative path under $GITHUB_WORKSPACE to place the repository.
+    required: false
+    default: ''
+  fetch-depth:
+    description: Number of commits to fetch. 0 fetches all history.
+    required: false
+    default: '1'
+  fetch-tags:
+    description: Whether to fetch tags even when fetch-depth > 0.
+    required: false
+    default: 'false'
+  submodules:
+    description: Whether to check out submodules (true, recursive or false).
+    required: false
+    default: 'false'
+  persist-credentials:
+    description: Whether to persist the token in the local git config.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Clean workspace (handle root-owned files)
+      shell: bash
+      run: sudo rm -rf "${GITHUB_WORKSPACE}/.local_install" || true && sudo chown -R "$USER:$USER" "${GITHUB_WORKSPACE}"
+
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        repository: ${{ inputs.repository != '' && inputs.repository || github.repository }}
+        ref: ${{ inputs.ref }}
+        token: ${{ inputs.token != '' && inputs.token || github.token }}
+        path: ${{ inputs.path }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        fetch-tags: ${{ inputs.fetch-tags }}
+        submodules: ${{ inputs.submodules }}
+        persist-credentials: ${{ inputs.persist-credentials }}
