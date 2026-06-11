@@ -194,6 +194,14 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
     rte_atomic32_set(&ctx->frames[i].refcnt, 0);
   }
+  if (ctx->session.rtps_ring) {
+    void* deq = NULL;
+    while (rte_ring_sc_dequeue(ctx->session.rtps_ring, &deq) == 0) {
+      rte_pktmbuf_free((struct rte_mbuf*)deq);
+    }
+    rte_ring_free(ctx->session.rtps_ring);
+    ctx->session.rtps_ring = NULL;
+  }
   free(ctx);
 }
 
@@ -284,6 +292,38 @@ void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port
   }
 }
 
+static int ut20_notify_rtp_ready(void* priv) {
+  (void)priv;
+  return 0;
+}
+
+void ut20_ctx_enable_rtp(ut20_test_ctx* ctx) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  char ring_name[32];
+  snprintf(ring_name, sizeof(ring_name), "ut20_rtp_%p", (void*)ctx);
+  s->rtps_ring =
+      rte_ring_create(ring_name, 128, s->socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
+  s->ops.type = ST20_TYPE_RTP_LEVEL;
+  s->ops.notify_rtp_ready = ut20_notify_rtp_ready;
+  s->pkt_handler = rv_handle_rtp_pkt;
+}
+
+int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
+                      enum mtl_session_port port) {
+  uint16_t ln, lo, ll;
+  pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
+  struct rte_mbuf* m = make_video_mbuf(seq, ts, ln, lo, ll);
+  if (!m) return -1;
+  int rc = rv_handle_rtp_pkt(&ctx->session, m, port, true);
+  /* drain whatever the handler enqueued so the ring never fills */
+  void* deq = NULL;
+  while (rte_ring_sc_dequeue(ctx->session.rtps_ring, &deq) == 0) {
+    rte_pktmbuf_free((struct rte_mbuf*)deq);
+  }
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
 int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
                      uint16_t line_offset, uint16_t line_length,
                      enum mtl_session_port port, uint8_t pt) {
@@ -336,6 +376,14 @@ void ut20_ctx_set_pt(ut20_test_ctx* ctx, uint8_t pt) {
 
 void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc) {
   ctx->session.ops.ssrc = ssrc;
+}
+
+void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool down) {
+  enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
+  if (down)
+    ctx->impl.inf[phy].status |= MT_IF_STAT_PORT_DOWN;
+  else
+    ctx->impl.inf[phy].status &= ~MT_IF_STAT_PORT_DOWN;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */
@@ -408,6 +456,10 @@ int ut20_total_frame_pkts(void) {
 
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
   return (int)ctx->session.ops.height;
+}
+
+void ut20_session_detach(ut20_test_ctx* ctx) {
+  rv_flush_pending_loss(&ctx->session);
 }
 
 uint64_t ut20_stat_wrong_pt(const ut20_test_ctx* ctx) {
