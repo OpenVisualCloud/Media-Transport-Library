@@ -93,9 +93,8 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Clean workspace (handle root-owned files)
-        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
 
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache

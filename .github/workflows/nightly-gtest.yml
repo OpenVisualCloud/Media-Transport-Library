@@ -39,10 +39,8 @@ jobs:
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
-      - name: 'preparation: Clean workspace'
-        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
       - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ inputs.commit_sha || github.sha }}'
       - name: 'preparation: Validate host and download artifacts'

@@ -40,9 +40,8 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Clean workspace (handle root-owned files)
-        run: sudo rm -rf "${{ github.workspace }}/.local_install" || true && sudo chown -R "$USER:$USER" "${{ github.workspace }}"
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Clean workspace and checkout
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -85,7 +84,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout MTL
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
