@@ -855,12 +855,19 @@ def dpdk_build() -> str:
 
 
 @mcp.tool()
-def build_mtl(mode: str = "release") -> str:
+def build_mtl(mode: str = "debugonly") -> str:
     """
     Build the Media Transport Library.
 
+    Use 'debugonly' (the default) when building to run integration tests:
+    the simulate-loss / redundancy packet-drop test paths are guarded by
+    MTL_SIMULATE_PACKET_DROPS, which is only defined for non-release builds.
+    A 'release' build silently compiles those paths out, so tests that rely
+    on them (e.g. *redundant* drop tests) skip their drop assertions.
+
     Args:
-        mode: Build mode — 'release', 'debug' (with ASAN), or 'debugonly' (debug without ASAN).
+        mode: Build mode — 'debugonly' (debug without ASAN, default — required
+            for simulate-loss tests), 'debug' (with ASAN), or 'release'.
     """
     if mode not in ("release", "debug", "debugonly"):
         return f"Error: mode must be 'release', 'debug', or 'debugonly'. Got '{mode}'."
@@ -1362,6 +1369,30 @@ def status_report() -> str:
 # ===================================================================
 
 
+def _build_has_simulate_drops() -> bool:
+    """True if build/ was compiled with MTL_SIMULATE_PACKET_DROPS.
+
+    The macro is defined only for non-release builds (see meson.build). It
+    gates the simulate-loss / redundancy packet-drop test paths, so a release
+    build makes those tests silently skip their drop assertions. Detected by
+    inspecting the compile database emitted by meson.
+    """
+    ccmds = REPO_ROOT / "build/compile_commands.json"
+    try:
+        return "MTL_SIMULATE_PACKET_DROPS" in ccmds.read_text()
+    except OSError:
+        return False
+
+
+_SIM_DROPS_HINT = (
+    "\n\n> **Warning:** `build/` was compiled in **release** mode "
+    "(no `MTL_SIMULATE_PACKET_DROPS`). Simulate-loss / redundancy "
+    "packet-drop test paths are compiled out, so their drop assertions "
+    'silently skip. Rebuild with `build_mtl(mode="debugonly")` before '
+    "running these tests."
+)
+
+
 @mcp.tool()
 def run_gtest(
     p_port: str = "",
@@ -1388,6 +1419,8 @@ def run_gtest(
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
         return "Error: KahawaiTest not built. Run `build_mtl` first."
+
+    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
 
     # Auto-discover ports from VFIO-bound VFs
     if not p_port or not r_port:
@@ -1465,6 +1498,7 @@ def run_gtest(
     # Save full log
     log_path = _save_test_log("gtest", out)
     summary += f"\n- Full log: `{log_path}`"
+    summary += sim_hint
 
     # Include last 40 lines for context
     tail = "\n".join(out.splitlines()[-40:])
@@ -1536,6 +1570,8 @@ def run_noctx_tests(
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
         return "Error: KahawaiTest not built. Run `build_mtl` first."
+
+    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
 
     port_list = f"{port_1},{port_2},{port_3},{port_4}"
 
@@ -1625,6 +1661,7 @@ def run_noctx_tests(
         f"- Full log: `{log_path}`\n"
         f"\n### Per-test results\n{per_test}\n"
         f"{last_failure}"
+        f"{sim_hint}"
     )
 
 
