@@ -31,6 +31,7 @@ Without this step, MCP tool calls will fail with "Cannot read properties of unde
 
 - **MCP tools ONLY.** You must NEVER run shell commands via `run_in_terminal`, `execute`, or any terminal tool. All system operations (status checks, hugepages, driver info, devbind, etc.) must go through `mcp_mtl-system-se_*` MCP tools. If no MCP tool exists for an operation, tell the user — do not fall back to shell commands.
 - **Probe before acting.** Always start with `system_status` to understand current state.
+- **Build `debugonly` for tests.** When building MTL to run integration tests, always use `build_mtl(mode="debugonly")`, never `release`. The simulate-loss / redundancy packet-drop test paths are gated by `MTL_SIMULATE_PACKET_DROPS`, which is defined only for non-release builds; a `release` build silently compiles them out so drop tests skip their assertions.
 - **Fix in dependency order.** DPDK → ICE driver → VFs → MTL → MtlManager → tests.
 - **VFs destroyed on ICE reload.** After `ice_driver_rebuild`, always `setup_after_reboot_auto`.
 - **Verify after each step.** Confirm the fix worked before moving on.
@@ -41,8 +42,9 @@ Without this step, MCP tool calls will fail with "Cannot read properties of unde
 1. **Load tools** — `tool_search("mcp mtl system setup reboot manager gtest")` to load all MCP tools
 2. **Probe** — `system_status` for full readiness overview
 3. **Setup** — `setup_after_reboot_auto` handles hugepages + CPU governor + VFs + MtlManager
-4. **Test** — `run_gtest(gtest_filter="St20p*")` for a smoke test
-5. **Report** — end with a status summary showing DPDK, ICE, VFs, MtlManager, and test results
+4. **Build for tests** — `build_mtl(mode="debugonly")` so simulate-loss / redundancy drop paths are compiled in (never `release` when the goal is running tests)
+5. **Test** — `run_gtest(gtest_filter="St20p*")` for a smoke test
+6. **Report** — end with a status summary showing DPDK, ICE, VFs, MtlManager, and test results
 
 For full tool inventory, decision trees (reboot, crash, build failure), and key facts,
 see `.github/instructions/mtl-system-setup.instructions.md`.
