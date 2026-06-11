@@ -39,6 +39,7 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  │                      stat_lost_packets    += gap_size                       │
  │     backward seq ──► port[i].reordered_packets++                            │
  │     same seq     ──► port[i].duplicates_same_port++  (audio/anc/fmd only)   │
+ │     (video charges port[i].lost_packets at frame recycle — see step 8)      │
  └──────┬───────────────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -96,6 +97,11 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  │                                          .frames_partial[P]++               │
  │       (same for port R)                                                     │
  │       gap → estimated missing pkts ──► stat_pkts_unrecovered += est         │
+ │       per-port deficit (deferred)  ──► port[i].lost_packets += deficit      │
+ │         deficit = max(0, span − recv_on_port[i])                            │
+ │         span = pkts_received + this-frame all-port holes                    │
+ │         charged at frame recycle, not at completion, so late                │
+ │         redundant twins are counted first (stats appear one frame later)    │
  │                                                                             │
  │     ST20 / ST22 (transport): intra-frame loss detected                       │
  │                                    ──► stat_frames_incomplete++             │
@@ -125,7 +131,7 @@ actually got.
 
 | Counter | Meaning |
 |---|---|
-| `port[i].lost_packets` | Packets missing on **this** port (pre-redundancy) |
+| `port[i].lost_packets` | Packets missing on **this** port (pre-redundancy). Video: per-frame deficit `max(0, span − recv_on_port[i])` charged to each participating port at frame recycle (appears one frame after the loss). Audio/anc/fmd: per-port forward sequence gap. |
 | `port[i].reordered_packets` | Backward arrival on the same port |
 | `port[i].duplicates_same_port` | Same seq twice on the same port (audio/anc/fmd; always 0 for video) |
 | `stat_pkts_redundant` | Cross-port duplicate filtered — **expected** on 2-port sessions |
@@ -138,6 +144,10 @@ save_rate (%)         == 100 * lost / (lost + unrecovered)
 ```
 
 `save_rate` answers: **"is redundancy covering the gaps?"** 100% = yes.
+
+> **Note.** A same-port duplicate or retransmit inflates that port's received
+> count, so a genuine `port[i].lost_packets` deficit can be masked (read as 0).
+> Aggregate cross-port recovery accounting is unaffected.
 
 ### Reading table
 
