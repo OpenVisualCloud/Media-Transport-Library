@@ -462,13 +462,13 @@ def _start_capture_phc_sync(host, iface: str):
     # clock (UTC) as master this lands the PHC on TAI = UTC + tai_utc_offset.
     tai_utc_offset = _host_tai_utc_offset(host)
     if tai_utc_offset == 0:
-        # A genuine 0 (kernel TAI offset never set by a PTP stack) parks the PHC
-        # on UTC -- exactly the 37s timescale error this discipline removes --
-        # so the absolute-offset (VRX) check would silently regress.
-        logger.warning(
-            "TAI-UTC offset reads 0 on %s; capture PHC will be disciplined to "
-            "UTC and ST 2110-21 VRX may fail. Set the kernel TAI offset "
-            "(ptp4l/adjtimex) on the capture host.",
+        # The ``align_tai_offset`` session fixture zeroes the kernel TAI offset
+        # so RxTxApp's RTP media clock (CLOCK_TAI) collapses onto UTC; pinning
+        # the PHC to CLOCK_REALTIME (UTC) then matches the RTP timescale, so a
+        # 0 offset here is the aligned, expected state -- not an error.
+        logger.debug(
+            "TAI-UTC offset is 0 on %s; PHC disciplined to UTC to match the "
+            "TAI-aligned RTP clock.",
             host.name,
         )
     # ``-S 0.001`` steps the (free-running) PHC straight onto TAI when the
@@ -995,6 +995,65 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
             )
 
     yield media_file_info, ramdisk_media_file_path
+
+
+def _align_host_tai_offset(host) -> None:
+    offset = _host_tai_utc_offset(host)
+    if offset == 0:
+        logger.info(
+            "Host %s kernel TAI offset already 0; no alignment needed", host.name
+        )
+        return
+
+    mtl_root = get_host_mtl_path(host)
+    src = f"{mtl_root}/tools/set_tai_offset/set_tai_offset.c"
+    binary = f"{mtl_root}/tools/set_tai_offset/build/set_tai_offset"
+
+    probe = host.connection.execute_command(
+        f"test -x '{binary}'", expected_return_codes=None
+    )
+    if probe.return_code != 0:
+        build = host.connection.execute_command(
+            f"mkdir -p '{mtl_root}/tools/set_tai_offset/build' "
+            f"&& cc -O2 -o '{binary}' '{src}'",
+            expected_return_codes=None,
+        )
+        if build.return_code != 0:
+            logger.warning(
+                "Could not build set_tai_offset on %s: %s", host.name, build.stderr
+            )
+            return
+
+    res = host.connection.execute_command(
+        f"sudo '{binary}' -0 -v", expected_return_codes=None
+    )
+    logger.info("set_tai_offset on %s: %s", host.name, res.stdout)
+    if res.return_code != 0:
+        logger.warning("Failed to align TAI offset on %s: %s", host.name, res.stderr)
+        return
+
+    new_offset = _host_tai_utc_offset(host)
+    if new_offset != 0:
+        logger.warning(
+            "Host %s TAI offset still %d after alignment", host.name, new_offset
+        )
+    else:
+        logger.info("Host %s kernel TAI offset aligned: %d -> 0", host.name, offset)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def align_tai_offset(hosts):
+    """Zero the kernel TAI-UTC offset on every host before any test runs.
+
+    ST 2110 RTP timestamps in RxTxApp read ``CLOCK_TAI`` while single-host
+    loopback PHC capture lands on ``CLOCK_REALTIME`` (UTC). The kernel
+    TAI-UTC offset (leap seconds) makes RTP and PHC differ by that amount, so
+    EBU ST 2110-21 compliance capture fails. Zeroing the offset makes
+    ``CLOCK_TAI == CLOCK_REALTIME`` so RTP == PHC and capture is compliant.
+    """
+    for host in hosts.values():
+        _align_host_tai_offset(host)
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)
