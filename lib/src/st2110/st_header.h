@@ -441,6 +441,9 @@ struct st_rx_video_slot_impl {
   uint64_t timestamp_first_pkt;
   /* Per-port high-water mark of pkt_idx within the current frame (init -1). */
   int last_pkt_idx[MTL_SESSION_PORT_MAX];
+  /* complete frame delivered; per-port loss accounting deferred to recycle so
+   * late redundant twins are counted first */
+  bool loss_pending;
 };
 
 enum st20_detect_status {

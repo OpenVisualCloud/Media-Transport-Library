@@ -809,6 +809,39 @@ static int rv_st22_usdt_dump_frame(struct mtl_main_impl* impl,
   return 0;
 }
 
+/* Charge each port the frame's reception deficit at finalisation.
+ * expected = pkts_received + all-port holes; stat_lost_packets stays the
+ * sum of the per-port deficits. A port whose link is down receives nothing
+ * and is a dead wire (counted via frames_partial), not charged phantom
+ * per-packet loss. A link-up port that fell short missed those packets and
+ * is charged the full deficit. */
+static void rv_slot_account_per_port_loss(struct st_rx_video_session_impl* s,
+                                          struct st_rx_video_slot_impl* slot,
+                                          uint32_t expected) {
+  struct mtl_main_impl* impl = s->impl;
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    uint32_t recv = slot->pkts_recv_per_port[s_port];
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+    if (mt_if_port_is_down(impl, port)) continue;
+    if (expected <= recv) continue;
+    uint32_t deficit = expected - recv;
+    s->port_user_stats.common.port[s_port].lost_packets += deficit;
+    s->port_user_stats.common.stat_lost_packets += deficit;
+  }
+}
+
+/* Charge every slot still holding a deferred deficit at end-of-stream (detach),
+ * so frames completed-but-port-short are not dropped by the recycle-triggered
+ * accounting model. Clears loss_pending so a re-attach cannot re-charge. */
+static void rv_flush_pending_loss(struct st_rx_video_session_impl* s) {
+  for (int i = 0; i < s->slot_max; i++) {
+    struct st_rx_video_slot_impl* slot = &s->slots[i];
+    if (!slot->loss_pending) continue;
+    rv_slot_account_per_port_loss(s, slot, slot->pkts_received);
+    slot->loss_pending = false;
+  }
+}
+
 static void rv_frame_notify(struct st_rx_video_session_impl* s,
                             struct st_rx_video_slot_impl* slot) {
   struct st20_rx_ops* ops = &s->ops;
@@ -880,6 +913,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
   if (meta->frame_recv_size >= s->st20_frame_size) {
     meta->status = ST_FRAME_STATUS_COMPLETE;
+    slot->loss_pending = true;
     if (ops->num_port > 1) {
       if ((slot->pkts_recv_per_port[MTL_SESSION_PORT_P] < slot->pkts_received) &&
           (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] < slot->pkts_received))
@@ -924,6 +958,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
     int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
+    rv_slot_account_per_port_loss(
+        s, slot, slot->pkts_received + (miss_pkts > 0 ? (uint32_t)miss_pkts : 0));
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
 
 #if 0 /* for miss pkt detail */
@@ -988,6 +1024,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   int ret = -EIO;
 
   if (st_is_frame_complete(status)) {
+    slot->loss_pending = true;
     /* Per-port completeness accounting (mirrors ST20). With redundancy,
      * the frame may be complete overall while one port was missing pkts;
      * surface that asymmetry via frames_partial. */
@@ -1021,6 +1058,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
+    rv_slot_account_per_port_loss(s, slot, slot->pkts_received + (uint32_t)miss_pkts);
 #if 0 /* for miss pkt detail */
     int total_pkts = s->st22_expect_size_per_frame / pd_sz_per_pkt;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
@@ -1180,6 +1218,13 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       rv_frame_notify(s, slot);
     slot->frame = NULL;
   }
+  /* Charge any deferred (complete-frame) per-port loss now that late redundant
+   * twins have had their chance to land. Incomplete frames already accounted
+   * inline and leave loss_pending clear, so this never double-charges. */
+  if (slot->loss_pending) {
+    rv_slot_account_per_port_loss(s, slot, slot->pkts_received);
+    slot->loss_pending = false;
+  }
 
   rv_slot_init_frame_size(slot);
   slot->tmstamp = tmstamp;
@@ -1287,23 +1332,18 @@ static struct st_rx_video_slot_impl* rv_rtp_slot_by_tmstamp(
 
 static void rv_slot_full_frame(struct st_rx_video_session_impl* s,
                                struct st_rx_video_slot_impl* slot) {
-  /* end of frame */
+  /* end of frame; retain pkts_received/pkts_recv_per_port so deferred per-port
+   * loss accounting at recycle sees late redundant twins */
   rv_frame_notify(s, slot);
   rv_slot_init_frame_size(slot);
-  slot->pkts_received = 0;
-  slot->pkts_recv_per_port[MTL_SESSION_PORT_P] = 0;
-  slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   slot->frame = NULL; /* frame pass to app */
 }
 
 static void rv_st22_slot_full_frame(struct st_rx_video_session_impl* s,
                                     struct st_rx_video_slot_impl* slot) {
-  /* end of frame */
+  /* end of frame; retain counters for deferred per-port loss accounting */
   rv_st22_frame_notify(s, slot, ST_FRAME_STATUS_COMPLETE);
   rv_slot_init_frame_size(slot);
-  slot->pkts_received = 0;
-  slot->pkts_recv_per_port[MTL_SESSION_PORT_P] = 0;
-  slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   slot->frame = NULL; /* frame pass to app */
 }
 
@@ -1674,11 +1714,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
-      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
-      s->port_user_stats.common.stat_lost_packets += gap;
-      s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
+    if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
        * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
@@ -1708,9 +1744,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return -EIO;
     }
   }
-  /* only advance, never regress: a reorder must not move the high-water
-   * mark backward, otherwise the next forward jump re-counts already-lost
-   * packets as new losses */
+  /* high-water mark per port, used only for intra-frame reorder detection
+   * (a later pkt_idx below this mark is a backward arrival). Advance, never
+   * regress, so a reorder does not lower the mark. */
   if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* if enable_timing_parser */
@@ -2072,11 +2108,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
-      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
-      s->port_user_stats.common.stat_lost_packets += gap;
-      s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
+    if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
        * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
@@ -2243,11 +2275,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
-    if (pkt_idx > (slot->last_pkt_idx[s_port] + 1) && slot->last_pkt_idx[s_port] >= 0) {
-      int gap = pkt_idx - slot->last_pkt_idx[s_port] - 1;
-      s->port_user_stats.common.stat_lost_packets += gap;
-      s->port_user_stats.common.port[s_port].lost_packets += gap;
-    } else if (pkt_idx < slot->last_pkt_idx[s_port]) {
+    if (pkt_idx < slot->last_pkt_idx[s_port]) {
       /* intra-frame reorder on this port: a not-yet-seen pkt_idx arrived
        * behind the highest accepted index for THIS port in the current frame */
       s->port_user_stats.common.port[s_port].reordered_packets++;
@@ -3154,6 +3182,7 @@ static void rv_reset_slot(struct st_rx_video_session_impl* s,
   slot->seq_id_got = false;
   slot->pkts_received = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) slot->pkts_recv_per_port[i] = 0;
+  slot->loss_pending = false;
   slot->timestamp_first_pkt = 0;
   slot->second_field = false;
   slot->st22_payload_length = 0;
@@ -3830,6 +3859,7 @@ static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
                      struct st_rx_video_session_impl* s) {
   if (!mgr || !s) return -EINVAL;
   s->attached = false;
+  rv_flush_pending_loss(s);
   rv_stat(mgr, s);
   rv_uinit(impl, s);
   return 0;
