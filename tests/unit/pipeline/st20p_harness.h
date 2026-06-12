@@ -44,6 +44,11 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx);
  *  stat_frames_dropped path). */
 int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
 
+/** Inject one frame with caller-supplied metadata (status, tfmt, rtp_timestamp,
+ *  pkts_total, second_field, user_meta, ...). Same return contract as
+ *  ut20p_inject_frame. */
+int ut20p_inject_meta(ut20p_ctx* ctx, const struct st20_rx_frame_meta* meta);
+
 /** Wraps st20p_rx_get_frame(). */
 struct st_frame* ut20p_get_frame(ut20p_ctx* ctx);
 

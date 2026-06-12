@@ -72,4 +72,9 @@ decision to commit once Reviewer returns. If Reviewer raises BLOCKERs the user
 re-invokes the Develop agent with them, and Gates 2–4 run again for the fix. This is
 why Gates 5 and 6 are the only truly enforceable checks — they involve independent
 agents producing independent evidence; Gates 0–4 rely on the Develop agent following
-its own checklist.
+its own checklist. Because Gates 0–4 are self-reported, after a Develop handoff the
+orchestrator should independently re-run `./build.sh` (or MCP `build_mtl`) and the
+**full** unit suite rather than trusting a "builds clean" / "test crashes" report
+verbatim — reported crashes are frequently stale-build artifacts (root-owned
+`.ninja_deps`, a broken user-local `ninja`) that vanish on a clean rebuild, not real
+regressions.
