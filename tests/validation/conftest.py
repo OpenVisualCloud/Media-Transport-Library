@@ -263,14 +263,16 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
          packets -- capturing on the TX/egress PF yields software timestamps
          (smeared by RX interrupt coalescing -> false VRX/Cinst).  We
          therefore capture on the **receive-side** PF: the highest-index PF
-         that hosts active VFs.
+         by topology convention (TX=index 0 egress, RX=highest index),
+         independent of VF-pool population timing.
        * *Multi-host* (``single_host=False``): traffic arrives over the
          physical wire, so any PF on the capture host can observe it.
          We **prefer** a PF that does *not* host VFs to avoid resource
          contention between DPDK and kernel-mode netsniff-ng.
 
-    3. **Fallback** — ``network_interfaces[0]`` when no VF information is
-       available yet (e.g. session fixture has not run).
+    3. **Fallback** — for single-host with two or more PFs the highest-index
+       (receive-side) PF is used even when VF information is not yet
+       available; ``network_interfaces[0]`` only for a lone PF.
     """
 
     def _pci_device_id(nic) -> str:
@@ -308,9 +310,12 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
             # Ambiguous (e.g. dual-port NIC: both ports share vendor:device).
             # Pick by topology, mirroring the auto-select branch below:
             #   * single-host loopback -> the receive-side PF (highest-index
-            #     PF with active VFs); only there does the NIC attach hardware
-            #     RX timestamps, which ST 2110-21 timing requires;
+            #     match, TX=index 0 egress); only there does the NIC attach
+            #     hardware RX timestamps, which ST 2110-21 timing requires.
+            #     Independent of VF-pool population timing.
             #   * multi-host wire traffic -> a PF without active VFs.
+            if single_host:
+                return direct_matches[-1]
             vf_pf_indices = _get_active_vf_pf_indices(host)
             active_pfs = [
                 nic
@@ -318,9 +323,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
                 if host.network_interfaces.index(nic) in vf_pf_indices
             ]
             inactive_pfs = [nic for nic in direct_matches if nic not in active_pfs]
-            if single_host and active_pfs:
-                return active_pfs[-1]
-            if not single_host and inactive_pfs:
+            if inactive_pfs:
                 return inactive_pfs[0]
             return direct_matches[0]
 
@@ -336,18 +339,19 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
     vf_pf_indices = _get_active_vf_pf_indices(host)
 
     if single_host:
-        # Loopback: TX egresses the primary PF and is received on the
-        # redundant PF.  ST 2110-21 timing needs hardware RX timestamps,
-        # which the NIC only attaches to received packets, so capture on the
-        # receive-side (highest-index) PF that hosts active VFs.  Capturing
-        # the TX/egress PF gives software timestamps and false VRX/Cinst.
-        if vf_pf_indices:
-            idx = max(vf_pf_indices)
+        # Loopback: TX egresses the primary PF (index 0) and is received on
+        # the redundant (highest-index) PF.  ST 2110-21 timing needs hardware
+        # RX timestamps, which the NIC only attaches to received packets, so
+        # capture on the receive-side PF by topology order -- independent of
+        # VF-pool population timing.  Capturing the TX/egress PF gives
+        # software timestamps and false VRX/Cinst.
+        if len(host.network_interfaces) >= 2:
             logger.debug(
-                "Single-host: selecting capture interface %s (receive-side PF)",
-                host.network_interfaces[idx].name,
+                "Single-host: selecting capture interface %s (receive-side PF, "
+                "topology order)",
+                host.network_interfaces[-1].name,
             )
-            return host.network_interfaces[idx]
+            return host.network_interfaces[-1]
     else:
         # Multi-host: wire traffic is visible on any PF.  Prefer one
         # without active VFs so netsniff-ng doesn't compete with DPDK
