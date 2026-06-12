@@ -38,13 +38,8 @@ class NetsniffRecorder:
     """
     Class to handle the recording of network traffic using netsniff-ng.
 
-    Captures with hardware (on-wire) RX timestamps, which netsniff-ng uses by
-    default when the NIC supports them, written in the nanosecond pcap format
-    (``-T 0xa1b23c4d``). This is immune to NIC RX interrupt coalescing, so
-    ST 2110-21 Cinst/VRX are derived from true on-wire packet spacing. The
-    timestamps originate from the NIC PHC, so the capture fixture also
-    disciplines that PHC to the system clock (phc2sys) for the absolute-offset
-    check.
+    Captures with hardware (on-wire) RX timestamps in nanosecond pcap format
+    for accurate ST 2110-21 timing (see the ``-T`` flag in ``start``).
 
     Attributes:
         host: Host object containing connection and network interfaces.

@@ -308,12 +308,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
             if len(direct_matches) == 1:
                 return direct_matches[0]
             # Ambiguous (e.g. dual-port NIC: both ports share vendor:device).
-            # Pick by topology, mirroring the auto-select branch below:
-            #   * single-host loopback -> the receive-side PF (highest-index
-            #     match, TX=index 0 egress); only there does the NIC attach
-            #     hardware RX timestamps, which ST 2110-21 timing requires.
-            #     Independent of VF-pool population timing.
-            #   * multi-host wire traffic -> a PF without active VFs.
+            # single-host -> highest-index (RX-side) PF; multi-host -> PF without VFs.
             if single_host:
                 return direct_matches[-1]
             vf_pf_indices = _get_active_vf_pf_indices(host)
@@ -336,15 +331,10 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
         )
 
     # --- 2. Auto-select based on VF placement and topology ---------------
-    vf_pf_indices = _get_active_vf_pf_indices(host)
-
     if single_host:
-        # Loopback: TX egresses the primary PF (index 0) and is received on
-        # the redundant (highest-index) PF.  ST 2110-21 timing needs hardware
-        # RX timestamps, which the NIC only attaches to received packets, so
-        # capture on the receive-side PF by topology order -- independent of
-        # VF-pool population timing.  Capturing the TX/egress PF gives
-        # software timestamps and false VRX/Cinst.
+        # Loopback: capture on the receive-side (highest-index) PF; the NIC only
+        # attaches hardware RX timestamps to received packets, and ST 2110-21
+        # timing needs them. Capturing the TX/egress PF gives false VRX/Cinst.
         if len(host.network_interfaces) >= 2:
             logger.debug(
                 "Single-host: selecting capture interface %s (receive-side PF, "
@@ -356,6 +346,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
         # Multi-host: wire traffic is visible on any PF.  Prefer one
         # without active VFs so netsniff-ng doesn't compete with DPDK
         # for the VFIO group resources.
+        vf_pf_indices = _get_active_vf_pf_indices(host)
         for i, nic in enumerate(host.network_interfaces):
             if i not in vf_pf_indices:
                 logger.debug(
@@ -421,11 +412,9 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
 def _host_tai_utc_offset(host) -> int:
     """Return the host's current TAI-UTC offset in seconds (e.g. 37).
 
-    ST 2110 media (RTP) timestamps are on the PTP/TAI timescale, while the
-    Linux system clock (``CLOCK_REALTIME``) is UTC -- the two differ by the
-    accumulated leap seconds. The kernel exposes the live offset as
-    ``CLOCK_TAI - CLOCK_REALTIME``; we read it on the capture host so the value
-    stays correct across future leap seconds instead of hard-coding 37.
+    RTP media timestamps run on TAI; the Linux system clock is UTC. The two
+    differ by the accumulated leap seconds, read live as
+    ``CLOCK_TAI - CLOCK_REALTIME``.
     """
     cmd = (
         "python3 -c 'import time;"
@@ -441,23 +430,13 @@ def _host_tai_utc_offset(host) -> int:
 
 
 def _start_capture_phc_sync(host, iface: str):
-    """Discipline the capture NIC's PHC to TAI for the capture.
+    """Discipline the capture NIC's PHC to TAI via phc2sys and block until converged.
 
-    ST 2110-21 compliance needs hardware (on-wire) capture timestamps so RX
-    interrupt coalescing cannot smear packet spacing. Those timestamps come
-    from the NIC PHC, which free-runs -- its absolute offset from the RTP media
-    epoch makes ST 2110-21 VRX fail. The RTP media clock is TAI, so we discipline
-    the PHC onto TAI: ``phc2sys -s CLOCK_REALTIME`` tracks the system clock (UTC)
-    and ``-O <tai_utc_offset>`` adds the leap-second offset so the PHC lands on
-    TAI. The wall clock is the source and is never adjusted (avoids the
-    journald-corruption failure mode that got the old phc2sys path removed).
-
-    The function blocks until the PHC has actually converged onto TAI --
-    starting the capture while phc2sys is still slewing a tens-of-ms offset
-    makes ST 2110-21 VRX fail even with flawless on-wire pacing.
-
-    Returns the process handle (or ``None`` if it failed to start). Always reap
-    via :func:`_reap_ptp_daemons`, never via the handle (sudo+bash wrapper).
+    Hardware capture timestamps come from the free-running NIC PHC; its absolute
+    offset from the RTP/TAI media epoch fails ST 2110-21 VRX. phc2sys slaves the
+    PHC to the system clock (``-O`` adds the leap offset -> TAI); the wall clock
+    is never adjusted. Capturing mid-slew fails VRX, so we wait for convergence.
+    Returns the proc handle or ``None``; always reap via :func:`_reap_ptp_daemons`.
     """
     # Clear any straggler before starting a fresh one.
     _reap_ptp_daemons(host, patterns=("phc2sys",))
@@ -465,16 +444,7 @@ def _start_capture_phc_sync(host, iface: str):
     # phc2sys ``-O`` drives the slave (PHC) to ``master + O``; with the system
     # clock (UTC) as master this lands the PHC on TAI = UTC + tai_utc_offset.
     tai_utc_offset = _host_tai_utc_offset(host)
-    if tai_utc_offset == 0:
-        # The ``align_tai_offset`` session fixture zeroes the kernel TAI offset
-        # so RxTxApp's RTP media clock (CLOCK_TAI) collapses onto UTC; pinning
-        # the PHC to CLOCK_REALTIME (UTC) then matches the RTP timescale, so a
-        # 0 offset here is the aligned, expected state -- not an error.
-        logger.debug(
-            "TAI-UTC offset is 0 on %s; PHC disciplined to UTC to match the "
-            "TAI-aligned RTP clock.",
-            host.name,
-        )
+    # offset 0 = TAI-aligned state (align_tai_offset fixture), not an error.
     # ``-S 0.001`` steps the (free-running) PHC straight onto TAI when the
     # initial offset exceeds 1ms instead of slewing for tens of seconds;
     # once synced the offset stays sub-microsecond so no further steps occur.
@@ -499,10 +469,7 @@ def _start_capture_phc_sync(host, iface: str):
         )
         _reap_ptp_daemons(host, patterns=("phc2sys",))
         return None
-    # Wait for the PHC to actually converge. Capturing before convergence leaves
-    # a large fixed PHC<->TAI offset (a free-running PHC can be tens of ms off
-    # the media clock); that offset fails ST 2110-21 VRX even with perfect
-    # on-wire pacing.
+    # Block until synced; capturing mid-slew fails VRX.
     if not _wait_phc_sync_converged(host, log_path):
         logger.warning(
             "phc2sys did not converge within %ss on %s; capture timestamps may "
@@ -1193,11 +1160,8 @@ def pcap_capture(
     The capturer process must be stopped BEFORE the ramdisk is unmounted,
     otherwise the unmount will fail with 'device busy'.
 
-    Capture uses netsniff-ng with hardware (on-wire) RX timestamps in the
-    nanosecond pcap format, so RX interrupt coalescing cannot smear ST 2110-21
-    packet spacing. Those timestamps come from the NIC PHC, which is disciplined
-    to TAI (the RTP media timescale) for the capture window (phc_sync) for the
-    absolute-offset check.
+    The capture NIC PHC is disciplined to TAI (phc_sync) for the capture window
+    so the ST 2110-21 absolute-offset check passes.
     """
     capture_cfg = test_config.get("capture_cfg", {})
     capturer = None
@@ -1240,15 +1204,10 @@ def pcap_capture(
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
         )
-        # netsniff-ng captures with NIC hardware (on-wire) RX timestamps, which
-        # are immune to RX interrupt coalescing (correct ST 2110-21 Cinst/VRX).
-        # Those timestamps come from the NIC PHC, so discipline it to the system
-        # clock for the absolute-offset check. Skip when MTL itself paces from
-        # the NIC PHC (Remedy B: set capture_cfg.phc_sync=false alongside
-        # enable_ptp), because then the PHC is the shared reference, not wall
-        # time.  Also skip for @pytest.mark.ptp tests: ptp_sync already runs
-        # ptp4l on this PHC, so a second daemon (phc2sys) would fight it for the
-        # clock.
+        # Discipline the capture NIC PHC to TAI for the absolute-offset check.
+        # Skip for Remedy B (phc_sync=false: MTL paces from the NIC PHC itself)
+        # and for @pytest.mark.ptp tests (ptp_sync already runs ptp4l on this
+        # PHC; a second phc2sys daemon would fight it).
         ptp_marked = request.node.get_closest_marker("ptp") is not None
         if capture_cfg.get("phc_sync", True) and not ptp_marked:
             if _start_capture_phc_sync(host, capture_iface) is not None:
