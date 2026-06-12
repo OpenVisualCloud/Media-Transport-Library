@@ -38,6 +38,9 @@ class NetsniffRecorder:
     """
     Class to handle the recording of network traffic using netsniff-ng.
 
+    Captures with hardware (on-wire) RX timestamps in nanosecond pcap format
+    for accurate ST 2110-21 timing (see the ``-T`` flag in ``start``).
+
     Attributes:
         host: Host object containing connection and network interfaces.
         test_name (str): Name for the capture session (used for file naming).
@@ -126,6 +129,13 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     f"'{self.pcap_file}'",
+                    # Nanosecond, tcpdump/EBU-compatible pcap magic (0xa1b23c4d).
+                    # netsniff-ng records hardware (on-wire) RX timestamps by
+                    # default; the ns format preserves them at full resolution
+                    # so RX interrupt coalescing cannot smear ST 2110-21 packet
+                    # spacing (the usec default 0xa1b2c3d4 truncates them).
+                    "-T",
+                    "0xa1b23c4d",
                     (
                         f"--num {self.packets_capture}"
                         if self.packets_capture is not None
@@ -156,7 +166,7 @@ class NetsniffRecorder:
                 self._restore_promisc()
                 return False
 
-    def capture(self, capture_time):
+    def capture(self, capture_time=None):
         """
         Starts netsniff-ng, captures packets count set in packets_capture or capture_time in seconds, then stops.
         :param capture_time: Fallback capture time in seconds if self.capture_time is not set (e.g. test_time)
@@ -169,7 +179,7 @@ class NetsniffRecorder:
                 logger.info(
                     f"Capturing traffic for {effective_capture_time} seconds..."
                 )
-                sleep(effective_capture_time)
+                sleep(effective_capture_time or 0)
                 self.stop()
                 logger.info("Capture complete.")
             else:
@@ -178,9 +188,9 @@ class NetsniffRecorder:
                         f"Capturing traffic for {self.packets_capture} packets..."
                     )
                     # Use effective_capture_time as timeout to allow full test duration for packet capture
-                    timeout = effective_capture_time
+                    timeout = (effective_capture_time or 0) + 10
 
-                    self.netsniff_process.wait(timeout=timeout + 10)
+                    self.netsniff_process.wait(timeout=timeout)
                     logger.info("Capture complete.")
                     logger.debug(self.netsniff_process.stdout_text)
                 except RemoteProcessTimeoutExpired:
