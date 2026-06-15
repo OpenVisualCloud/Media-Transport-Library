@@ -1446,6 +1446,12 @@ def app_factory(mtl_path):
             return FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
             )
+        elif application == "gstreamer":
+            from mtl_engine.gstreamer import GStreamer
+
+            # app_path is vestigial for GStreamer (gst-launch-1.0 is on PATH);
+            # pass the MTL build dir to satisfy the base constructor.
+            return GStreamer(app_path=mtl_path)
         else:
             raise ValueError(f"Unknown application: {application}")
 
