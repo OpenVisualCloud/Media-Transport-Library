@@ -576,9 +576,16 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
 		pushd "${JPEGXS_REPO}/imtl-plugin" >/dev/null || exit 1
 		rm -rf build
-		meson setup build
-		meson compile -C build
-		sudo meson install -C build
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			meson setup build --prefix="${local_base}/plugins"
+			meson compile -C build
+			meson install -C build
+		else
+			meson setup build
+			meson compile -C build
+			sudo meson install -C build
+		fi
 		popd >/dev/null
 
 		# Rebuild FFmpeg with JPEG-XS support

@@ -156,6 +156,7 @@ jobs:
             echo "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${gstreamer_miss}"
             echo "ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN=${librist_miss}"
             echo "PLUGIN_BUILD_AND_INSTALL_AVCODEC=${plugins_miss}"
+            echo "PLUGIN_BUILD_AND_INSTALL_JPEGXS=${plugins_miss}"
           } >> "$GITHUB_ENV"
 
           any_miss=0
