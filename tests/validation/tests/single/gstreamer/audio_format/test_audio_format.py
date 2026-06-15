@@ -13,14 +13,16 @@ import os
 import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine import GstreamerApp
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
 @pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -72,38 +74,21 @@ def test_audio_format(
     # )
 
     # Input path unused; pipeline generates audio internally
-    tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
-        tx_payload_type=111,
-        tx_queues=4,
+        session_type="st30",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         audio_format=audio_format,
-        channels=audio_channel,
-        sampling=audio_rate,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st30_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
-        rx_payload_type=111,
-        rx_queues=4,
-        rx_audio_format=GstreamerApp.audio_format_change(
-            audio_format,
-            rx_side=True,
-        ),
-        rx_channels=audio_channel,
-        rx_sampling=audio_rate,
+        audio_channels=audio_channel,
+        audio_rate=audio_rate,
     )
 
     try:
-        GstreamerApp.execute_test(
+        app.execute_test(
             build=mtl_path,
-            tx_command=tx_config,
-            rx_command=rx_config,
-            input_file=input_file_path,
-            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,

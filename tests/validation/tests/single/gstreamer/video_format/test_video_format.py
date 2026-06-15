@@ -16,6 +16,7 @@ from mtl_engine.media_files import gstreamer_formats
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     list(gstreamer_formats.values()),
@@ -24,6 +25,8 @@ from mtl_engine.media_files import gstreamer_formats
 )
 @pytest.mark.parametrize("file", gstreamer_formats.keys())
 def test_video_format(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
@@ -54,37 +57,22 @@ def test_video_format(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
-        format=GstreamerApp.video_format_change(video_file["format"]),
-        tx_payload_type=112,
-        tx_queues=4,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
-        width=video_file["width"],
-        height=video_file["height"],
-        framerate=video_file["fps"],
-        format=GstreamerApp.video_format_change(video_file["format"]),
-        rx_payload_type=112,
-        rx_queues=4,
+        gst_format=GstreamerApp.video_format_change(video_file["format"]),
     )
 
     try:
-        GstreamerApp.execute_test(
+        app.execute_test(
             build=mtl_path,
-            tx_command=tx_config,
-            rx_command=rx_config,
-            input_file=input_file_path,
-            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
