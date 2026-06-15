@@ -836,7 +836,7 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
 }
 
 static int dev_start_timesync(struct mt_interface* inf) {
-  int ret, i = 0, max_retry = 10;
+  int ret, i = 0, max_retry = 100;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct timespec spec;
@@ -2309,6 +2309,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       if (ret < 0) return ret;
       inf->tx_dynfield_offset = ret;
     }
+#endif
+
+#if defined(MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ) || \
+    RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+    /* PHC frequency adjustment (incval disciplining) is implemented by the ice
+     * PF and igc PMDs; the IAVF (VF) PMD has no timesync ops. */
+    if (inf->drv_info.drv_type == MT_DRV_ICE || inf->drv_info.drv_type == MT_DRV_IGC)
+      inf->feature |= MT_IF_FEATURE_TIMESYNC_ADJUST_FREQ;
 #endif
 
     if (mt_user_hw_timestamp(impl) &&
