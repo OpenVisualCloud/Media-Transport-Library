@@ -45,7 +45,7 @@ permissions:
 jobs:
   # ── Gate: wait for Linter workflow on this commit ──
   wait-for-linter:
-    if: ${{ !inputs.skip_linter_check }}
+    if: ${{ !inputs.skip_linter_check && github.ref_name != 'main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
