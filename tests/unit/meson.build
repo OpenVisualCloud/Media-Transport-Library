@@ -61,3 +61,44 @@ executable('UnitTest', unit_sources,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
                   usdt_provider_header_dep],
   install : false)
+
+gstreamer_unit_include_dirs = unit_include_dirs + [
+  include_directories('../../ecosystem/gstreamer_plugin'),
+]
+
+gstreamer_unit_c_args = unit_c_args + [
+  '-Wno-redundant-decls',
+  '-Wno-discarded-qualifiers',
+  '-Wno-declaration-after-statement',
+  '-Wno-missing-prototypes',
+  '-Wno-missing-declarations',
+  '-Wno-stringop-truncation',
+]
+
+gst_dep = dependency('gstreamer-1.0', required : false)
+gstbase_dep = dependency('gstreamer-base-1.0', required : false)
+gstreamer_video_dep = dependency('gstreamer-video-1.0', required : false)
+gstreamer_audio_dep = dependency('gstreamer-audio-1.0', required : false)
+glib_dep = dependency('glib-2.0', required : false)
+
+if gst_dep.found() and gstbase_dep.found() and gstreamer_video_dep.found() and gstreamer_audio_dep.found() and glib_dep.found()
+  gstreamer_unit_sources = [
+    '../../ecosystem/gstreamer_plugin/gst_mtl_common.c',
+    'gstreamer/gst_mtl_st20p_tx_harness.c',
+    'gstreamer/gst_mtl_st20p_tx_finalize_test.cpp',
+    'gstreamer/gst_mtl_st20p_tx_refcnt_test.cpp',
+    'main.cpp',
+  ]
+
+  executable('UnitTestGstreamer', gstreamer_unit_sources,
+    c_args : gstreamer_unit_c_args,
+    cpp_args : unit_cpp_args,
+    link_args : unit_link_args,
+    include_directories : gstreamer_unit_include_dirs,
+    dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
+                    usdt_provider_header_dep, gst_dep, gstbase_dep,
+                    gstreamer_video_dep, gstreamer_audio_dep, glib_dep],
+    install : false)
+else
+  message('Skipping UnitTestGstreamer: required gstreamer/glib dependencies not found')
+endif
