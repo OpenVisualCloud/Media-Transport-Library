@@ -115,4 +115,7 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);
 
 gint gst_mtl_common_deinit_handle(mtl_handle* handle);
+
+gboolean gst_mtl_common_wait_pending_buffers(gint* pending_buffers, guint timeout_ms,
+                                             guint poll_sleep_us);
 #endif /* __GST_MTL_COMMON_H__ */
