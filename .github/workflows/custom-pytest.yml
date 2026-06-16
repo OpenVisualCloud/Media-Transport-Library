@@ -106,7 +106,7 @@ jobs:
           ./.venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
             --topology_config=./configs/topology_config.yaml \
-            "${{ inputs.marker && format('-m {0}', inputs.marker) || '' }}" \
+            ${{ inputs.marker && format('-m ''{0}''', inputs.marker) || '' }} \
             --template=html/index.html \
             --report=./report.html \
             "./${{ inputs.dir }}"
