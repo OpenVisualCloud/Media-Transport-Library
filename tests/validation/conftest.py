@@ -1412,7 +1412,39 @@ def _ensure_clean_hw_state(hosts):
 
 @pytest.fixture(scope="session", autouse=True)
 def _register_local_libs(hosts, mtl_path):
-    """Register .local_install libraries via ldconfig so LD_LIBRARY_PATH is unnecessary."""
+    """Register .local_install libraries via ldconfig and configure local plugin path."""
+    # Build a CI/local-runner owned kahawai.json configuration.
+    # Point at cached st22 avcodec plugin under .local_install/plugins with fallback,
+    # so we don't depend on system-wide installation.
+    local_plugins_dir = os.path.join(mtl_path, ".local_install/plugins")
+    if os.path.exists(local_plugins_dir):
+        template = os.path.join(mtl_path, ".github/workflows/kahawai_template.json")
+        cfg = "/tmp/kahawai_ci.json"
+        try:
+            # Find directory of the plugin inside local plugins
+            plugin_dir = None
+            for root, dirs, files in os.walk(local_plugins_dir):
+                if "libst_plugin_st22_avcodec.so" in files:
+                    plugin_dir = root
+                    break
+            if not plugin_dir:
+                plugin_dir = os.path.join(local_plugins_dir, "lib/x86_64-linux-gnu")
+
+            if os.path.exists(template):
+                with open(template, "r") as f:
+                    content = f.read()
+                content = content.replace("REPLACE_BY_CICD_PLUGIN_DIR", plugin_dir)
+                with open(cfg, "w") as f:
+                    f.write(content)
+                os.environ["KAHAWAI_CFG_PATH"] = cfg
+                logger.info(
+                    "Automatic KAHAWAI_CFG_PATH registration: %s (avcodec from %s)",
+                    cfg,
+                    plugin_dir,
+                )
+        except Exception as e:
+            logger.warning("Dynamic KAHAWAI_CFG_PATH generation failed: %s", e)
+
     # Some *_LIB_PATH constants are colon-separated (LD_LIBRARY_PATH style).
     # ld.so.conf requires one directory per line, so split on ':' first.
     raw_paths = [MTL_LIB_PATH, DPDK_LIB_PATH, FFMPEG_LIB_PATH, GSTREAMER_LIB_PATH]
