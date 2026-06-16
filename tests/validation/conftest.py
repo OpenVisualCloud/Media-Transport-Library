@@ -1134,7 +1134,22 @@ def pcap_capture(
     capturer = None
     phc_sync_active = False
     phc_sync_host = None
-    if capture_cfg and capture_cfg.get("enable"):
+
+    # EBU pcap compliance analyser does not support 8K resolution
+    is_8k = False
+    if media_file:
+        media_file_info, _ = media_file
+        if media_file_info and (
+            media_file_info.get("height", 0) >= 4320
+            or media_file_info.get("width", 0) >= 7680
+        ):
+            is_8k = True
+            logger.info(
+                "8K resolution detected. Disabling PCAP capture and compliance check as EBU compliance "
+                "analyser does not support 8K."
+            )
+
+    if capture_cfg and capture_cfg.get("enable") and not is_8k:
         host = _select_capture_host(hosts)
         is_single_host = len(hosts) == 1
         media_file_info, _ = media_file
