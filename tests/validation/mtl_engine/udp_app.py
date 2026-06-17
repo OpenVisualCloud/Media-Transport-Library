@@ -94,8 +94,12 @@ def execute_test_sample(
     client_command = f"{UFD_CLIENT_SAMPLE_EXE} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
     server_command = f"{UFD_SERVER_SAMPLE_EXE} --sessions_cnt {sessions_cnt}"
 
-    client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
-    server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
+    client_proc = call(
+        client_command, build, test_time, sigint=True, env=client_env, host=host
+    )
+    server_proc = call(
+        server_command, build, test_time, sigint=True, env=server_env, host=host
+    )
 
     # Wait for both processes to finish
     wait(client_proc)
@@ -153,8 +157,12 @@ def execute_test_librist(
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 
-    send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
-    receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)
+    send_proc = call(
+        send_command, build, test_time, sigint=True, env=send_env, host=host
+    )
+    receive_proc = call(
+        receive_command, build, test_time, sigint=True, env=receive_env, host=host
+    )
 
     wait(send_proc)
     wait(receive_proc)
