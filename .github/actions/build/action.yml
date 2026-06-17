@@ -60,3 +60,4 @@ runs:
           ./tests/tools/RxTxApp/build/RxTxApp
           ./ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so
           ./tests/tools/gstreamer_tools/builddir/*.so
+          ./script/build/st22_avcodec_plugin/libst_plugin_st22_avcodec.so
