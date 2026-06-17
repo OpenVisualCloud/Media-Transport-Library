@@ -42,6 +42,8 @@ def mtl_plugin_check_cmd(plugin_so: str) -> str:
         f"ldconfig -p 2>/dev/null | grep -q {plugin_so} "
         f"|| test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} "
         f"|| test -f /usr/local/lib64/{plugin_so} "
+        f"|| ( [ -d .local_install/plugins ] && find .local_install/plugins -name "
+        f"'{plugin_so}' 2>/dev/null | grep -q '{plugin_so}' ) "
         '|| { cfg="${KAHAWAI_CFG_PATH:-kahawai.json}"; ok=1; '
         f"for p in $(grep -F '{plugin_so}' \"$cfg\" 2>/dev/null | grep -oE '/[^\"]+\\.so'); do "
         '[ -f "$p" ] && ok=0 && break; done; [ "$ok" = 0 ]; }'
