@@ -14,8 +14,12 @@ on:
         description: Marker
         required: false
         type: string
+      test_filter:
+        description: 'Pytest keyword filter (-k), e.g. test_st20p_resolutions'
+        required: false
+        type: string
       dir:
-        description: Directory (subdirectory of tests/validation)
+        description: 'Directory (subdirectory of tests/validation) or a specific test path'
         required: true
         type: string
         default: tests
@@ -106,7 +110,8 @@ jobs:
           ./.venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
             --topology_config=./configs/topology_config.yaml \
-            ${{ inputs.marker && format('-m ''{0}''', inputs.marker) || '' }} \
+            ${{ inputs.marker && format('-m "{0}"', inputs.marker) || '' }} \
+            ${{ inputs.test_filter && format('-k "{0}"', inputs.test_filter) || '' }} \
             --template=html/index.html \
             --report=./report.html \
             "./${{ inputs.dir }}"
