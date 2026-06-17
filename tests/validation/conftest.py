@@ -1421,6 +1421,14 @@ def _register_local_libs(hosts, mtl_path):
     for p in raw_paths:
         for part in p.split(":"):
             lib_dirs.append(os.path.join(mtl_path, part.removeprefix("./")))
+
+    # Also register plugin paths from .local_install/plugins if it exists
+    plugins_base = os.path.join(mtl_path, ".local_install/plugins")
+    if os.path.isdir(plugins_base):
+        for root, dirs, files in os.walk(plugins_base):
+            if any(f.endswith(".so") for f in files):
+                lib_dirs.append(root)
+
     conf = "\\n".join(lib_dirs)
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
     # /usr/local/lib precedes /etc/ld.so.conf.d/* in /etc/ld.so.conf, so any
@@ -1428,7 +1436,9 @@ def _register_local_libs(hosts, mtl_path):
     purge = (
         "mkdir -p /var/backups/mtl_libav_shadow && "
         "mv -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so* "
-        "/usr/local/lib/libpostproc*.so* /var/backups/mtl_libav_shadow/ "
+        "/usr/local/lib/libpostproc*.so* /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_avcodec.so* "
+        "/usr/local/lib64/libst_plugin_st22_avcodec.so* "
+        "/usr/local/lib/libst_plugin_st22_avcodec.so* /var/backups/mtl_libav_shadow/ "
         "2>/dev/null; true"
     )
     for host in hosts.values():
