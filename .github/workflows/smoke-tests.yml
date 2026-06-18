@@ -61,6 +61,8 @@ jobs:
         nic:
           - e810
           - e830
+          - e825
+          - e835
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 90
@@ -103,6 +105,10 @@ jobs:
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e825" ]; then
+            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e835" ]; then
+            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}

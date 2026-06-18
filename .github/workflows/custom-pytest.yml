@@ -9,7 +9,8 @@ on:
         options:
           - e810
           - e830
-          - gnrd
+          - e825
+          - e835
       marker:
         description: Marker
         required: false
@@ -80,8 +81,10 @@ jobs:
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ inputs.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "gnrd" ]; then
+          elif [ "${{ inputs.nic }}" = "e825" ]; then
             echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.nic }}" = "e835" ]; then
+            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate pytest configuration files
         working-directory: ./tests/validation/configs
