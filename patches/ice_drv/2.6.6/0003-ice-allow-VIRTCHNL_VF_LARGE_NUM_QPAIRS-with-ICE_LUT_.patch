@@ -1,0 +1,42 @@
+From c354eda48c4c2d4bf4c53c3ccaf59e4741426ac1 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Mon, 27 Apr 2026 04:40:15 -0400
+Subject: [PATCH 2/3] ice: allow VIRTCHNL_VF_LARGE_NUM_QPAIRS with ICE_LUT_VSI
+
+Remove the rss_lut_type != ICE_LUT_VSI restriction when
+negotiating the VIRTCHNL_VF_LARGE_NUM_QPAIRS capability.
+
+ST2110 workloads create one TX/RX queue pair per media
+session. A single VF handling multiple simultaneous video,
+audio, and ancillary data sessions can easily exceed the
+default 16 queue pair limit. LARGE_NUM_QPAIRS lifts this cap
+but was blocked when using ICE_LUT_VSI RSS lookup type.
+
+For ST2110 use cases, RSS distribution is not the primary
+concern since media streams use flow director rules for
+steering. The LUT type restriction unnecessarily prevents
+allocating enough queues for multi-session operation.
+
+Change-type: FeatureImplementation
+Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+---
+ src/ice_virtchnl.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index bc68d8a..d3553d7 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -769,8 +769,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
+ 	if (test_bit(VIRTCHNL_VF_OFFLOAD_USO, vf->driver_caps))
+ 		vfres->vf_cap_flags |= BIT(VIRTCHNL_VF_OFFLOAD_USO);
+ 
+-	if (test_bit(VIRTCHNL_VF_LARGE_NUM_QPAIRS, vf->driver_caps) &&
+-	    vsi->rss_lut_type != ICE_LUT_VSI)
++if (test_bit(VIRTCHNL_VF_LARGE_NUM_QPAIRS, vf->driver_caps))
+ 		vfres->vf_cap_flags |= BIT(VIRTCHNL_VF_LARGE_NUM_QPAIRS);
+ 
+ 	/* Indicate that VF can send more flags in VIRTCHNL_OP_GET_VF_CAPS2 */
+-- 
+2.47.3
+
