@@ -62,12 +62,32 @@ static struct st40p_tx_frame* tx_st40p_next_available(
   /* check ready frame from idx_start */
   for (uint16_t idx = 0; idx < ctx->framebuff_cnt; idx++) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
       return framebuff;
     }
   }
 
   /* no any desired frame */
+  return NULL;
+}
+
+/* Scan for a framebuff in state `desired` and atomically claim it by
+ * transitioning it to `claimed`. A concurrent thread can win the race on the
+ * scanned candidate between the scan and the claim; on a lost race this keeps
+ * scanning instead of giving up, so the caller only sees NULL once every slot
+ * has genuinely been checked and found unavailable. */
+static struct st40p_tx_frame* tx_st40p_claim_available(
+    struct st40p_tx_ctx* ctx, enum st40p_tx_frame_status desired,
+    enum st40p_tx_frame_status claimed) {
+  struct st40p_tx_frame* framebuff;
+
+  while ((framebuff = tx_st40p_next_available(ctx, desired))) {
+    uint32_t expected = desired;
+    if (__atomic_compare_exchange_n(&framebuff->stat, &expected, claimed, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      return framebuff;
+  }
+
   return NULL;
 }
 
@@ -108,9 +128,7 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
    * (put_frame_abort), and read from any thread via st40p_tx_get_session_stats(). */
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame_info->rtp_timestamp;
-  framebuff->stat = ST40P_TX_FRAME_DROPPED;
-
-  mt_pthread_mutex_unlock(&ctx->lock);
+  __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_DROPPED, __ATOMIC_RELEASE);
 
   dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
       " frame %" PRIu64 "\n",
@@ -126,13 +144,10 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST40P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff->stat = ST40P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_FREE, __ATOMIC_RELEASE);
 
   tx_st40p_notify_frame_available(ctx);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -145,7 +160,6 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st40p_newest_available(ctx, ST40P_TX_FRAME_READY);
     if (!framebuff) break; /* no ready frame available */
@@ -159,7 +173,6 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     /* When drop-when-late is active, ensure the app knows about free slots so it
      * can refill the pipeline promptly after drops freed frames. */
     if (ctx->ops.flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
@@ -169,7 +182,17 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
     return -EBUSY;
   }
 
-  framebuff->stat = ST40P_TX_FRAME_IN_TRANSMITTING;
+  /* Atomically claim READY -> IN_TRANSMITTING.  A concurrent transport thread
+   * may have already taken this slot between the scan and now; on a lost
+   * race return -EBUSY and let the caller (transport loop) retry. */
+  {
+    uint32_t expected_stat = ST40P_TX_FRAME_READY;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected_stat,
+                                     ST40P_TX_FRAME_IN_TRANSMITTING, false,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+      return -EBUSY;
+    }
+  }
   *next_frame_idx = framebuff->idx;
 
   if (ctx->ops.flags & (ST40P_TX_FLAG_USER_PACING)) {
@@ -177,7 +200,6 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->timestamp = framebuff->frame_info.timestamp;
   }
 
-  mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST40P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
 
@@ -201,17 +223,16 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   frame_info->interlaced = ctx->ops.interlaced;
   frame_info->second_field = ctx->ops.interlaced ? meta->second_field : false;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  if (ST40P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+  if (ST40P_TX_FRAME_IN_TRANSMITTING ==
+      __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     ret = 0;
-    framebuff->stat = ST40P_TX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_FREE, __ATOMIC_RELEASE);
     dbg("%s(%d), done_idx %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
-        frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx,
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED), frame_idx);
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
@@ -353,7 +374,7 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     framebuff = &frames[i];
     frame_info = &framebuff->frame_info;
-    framebuff->stat = ST40P_TX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_FREE, __ATOMIC_RELAXED);
     framebuff->idx = i;
 
     frame_info->udw_buff_addr = mt_rte_zmalloc_socket(ops->max_udw_buff_size, soc_id);
@@ -464,10 +485,12 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st40p_next_available(ctx, ST40P_TX_FRAME_FREE);
+  /* Claim FREE->IN_USER. tx_st40p_claim_available() retries across the ring
+   * on a lost CAS race, so it only returns NULL once every slot has actually
+   * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
+   * even while other FREE frames remain (spurious failure under contention). */
+  framebuff = tx_st40p_claim_available(ctx, ST40P_TX_FRAME_FREE, ST40P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -475,20 +498,17 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = tx_st40p_next_available(ctx, ST40P_TX_FRAME_FREE);
+    framebuff = tx_st40p_claim_available(ctx, ST40P_TX_FRAME_FREE, ST40P_TX_FRAME_IN_USER);
   }
 
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST40P_TX_FRAME_IN_USER;
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_seq_number++;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  framebuff->seq_number =
+      __atomic_fetch_add(&ctx->framebuff_seq_number, 1, __ATOMIC_RELAXED);
 
   frame_info = &framebuff->frame_info;
   ctx->stat_get_frame_succ++;
@@ -508,9 +528,9 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST40P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST40P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
@@ -526,7 +546,7 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
   }
 
   framebuff->frame_info.udw_buffer_fill = 0;
-  framebuff->stat = ST40P_TX_FRAME_READY;
+  __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_READY, __ATOMIC_RELEASE);
   ctx->stat_put_frame++;
   MT_USDT_ST40P_TX_FRAME_PUT(idx, framebuff->idx, framebuff->anc_frame->data);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, framebuff->anc_frame);
@@ -545,14 +565,14 @@ int st40p_tx_put_frame_abort(st40p_tx_handle handle, struct st40_frame_info* fra
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST40P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST40P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
-  framebuff->stat = ST40P_TX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST40P_TX_FRAME_FREE, __ATOMIC_RELEASE);
   ctx->stat_drop_frame++;
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
@@ -591,7 +611,6 @@ int st40p_tx_free(st40p_tx_handle handle) {
   }
   tx_st40p_uinit_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -642,7 +661,6 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_TX;
   ctx->wake_on_destroy = (void (*)(void*))tx_st40p_block_wake;
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);

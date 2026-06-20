@@ -16,7 +16,7 @@ enum st30p_rx_frame_status {
 };
 
 struct st30p_rx_frame {
-  enum st30p_rx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st30_frame frame;
   uint16_t idx;
 };
@@ -39,7 +39,6 @@ struct st30p_rx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
   struct st30p_rx_frame* framebuffs;
-  pthread_mutex_t lock;
   bool ready;
 
   /* usdt dump */

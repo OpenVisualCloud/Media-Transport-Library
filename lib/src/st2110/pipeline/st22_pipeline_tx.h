@@ -20,7 +20,7 @@ enum st22p_tx_frame_status {
 };
 
 struct st22p_tx_frame {
-  enum st22p_tx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st_frame src; /* before encoding */
   struct st_frame dst; /* encoded */
   struct st22_encode_frame_meta encode_frame;
@@ -47,7 +47,6 @@ struct st22p_tx_ctx {
   uint16_t framebuff_cnt;
   uint32_t framebuff_sequence_number;
   struct st22p_tx_frame* framebuffs;
-  pthread_mutex_t lock; /* protect framebuffs */
 
   /* for ST22P_TX_FLAG_BLOCK_GET */
   bool block_get;

@@ -41,7 +41,6 @@ struct st40p_rx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
   struct st40p_rx_frame* framebuffs;
-  pthread_mutex_t lock;
   bool ready;
 
   /* for ST40P_RX_FLAG_BLOCK_GET */
@@ -67,7 +66,7 @@ struct st40p_rx_ctx {
 };
 
 struct st40p_rx_frame {
-  enum st40p_rx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st40_frame_info frame_info;
   struct st40_meta meta[ST40_MAX_META];
   uint16_t idx;

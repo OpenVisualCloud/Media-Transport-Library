@@ -105,6 +105,26 @@ static struct st22p_tx_frame* tx_st22p_newest_available(
   return framebuff_newest;
 }
 
+/* Scan for a framebuff in state `desired` and atomically claim it by
+ * transitioning it to `claimed`. A concurrent thread can win the race on the
+ * scanned candidate between the scan and the claim; on a lost race this keeps
+ * scanning instead of giving up, so the caller only sees NULL once every slot
+ * has genuinely been checked and found unavailable. */
+static struct st22p_tx_frame* tx_st22p_claim_available(
+    struct st22p_tx_ctx* ctx, enum st22p_tx_frame_status desired,
+    enum st22p_tx_frame_status claimed) {
+  struct st22p_tx_frame* framebuff;
+
+  while ((framebuff = tx_st22p_next_available(ctx, desired))) {
+    uint32_t expected = desired;
+    if (__atomic_compare_exchange_n(&framebuff->stat, &expected, claimed, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      return framebuff;
+  }
+
+  return NULL;
+}
+
 /* Check if the newest ENCODED frame has missed its transmission window.
  * Drops the frame (ENCODED -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
  *
@@ -141,8 +161,6 @@ static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
   rtp_ts = frame->rtp_timestamp;
   framebuff->stat = ST22P_TX_FRAME_DROPPED;
 
-  mt_pthread_mutex_unlock(&ctx->lock);
-
   notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
          "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
          __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
@@ -157,13 +175,10 @@ static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST22P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff->stat = ST22P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   tx_st22p_notify_frame_available(ctx);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -175,21 +190,34 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  do {
+  while (1) {
     framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
     if (!framebuff) break; /* no encoded frame available */
-    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
-      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
-      framebuff = NULL;
-      break;
+
+    if (tx_st22p_if_frame_late(ctx, framebuff)) {
+      /* frame missed its TX window and was dropped; cap the batch then rescan */
+      if (++drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+        info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx,
+             drop_cnt);
+        framebuff = NULL;
+        break;
+      }
+      continue;
     }
-    drop_cnt++;
-  } while (tx_st22p_if_frame_late(ctx, framebuff));
+
+    /* Claim ENCODED -> IN_TRANSMITTING atomically. newest_available() is a
+     * lock-free scan, so the slot may have been taken by a late-drop or
+     * (defensively) another consumer between the scan and here; on a lost race
+     * the CAS fails and we rescan. Mirrors the FREE->IN_USER claim. */
+    uint32_t expected = ST22P_TX_FRAME_ENCODED;
+    if (__atomic_compare_exchange_n(&framebuff->stat, &expected,
+                                    ST22P_TX_FRAME_IN_TRANSMITTING, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      break; /* claimed */
+  }
 
   /* not any encoded frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     /* When drop-when-late is active, ensure the app knows about free slots so it
      * can refill the pipeline promptly after drops freed frames. */
     if (ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) {
@@ -199,7 +227,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
     return -EBUSY;
   }
 
-  framebuff->stat = ST22P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
   struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
@@ -211,7 +238,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
         framebuff->idx, meta->timestamp);
   }
   meta->codestream_size = framebuff->dst.data_size;
-  mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
@@ -231,7 +257,6 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST22P_TX_FRAME_FREE;
@@ -241,7 +266,6 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
     err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
         frame_idx);
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
@@ -310,24 +334,23 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
 
   ctx->stat_encode_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_READY);
+  /* Claim READY->IN_ENCODING. tx_st22p_claim_available() retries across the
+   * ring on a lost CAS race, so it only returns NULL once every slot has
+   * actually been checked -- unlike a scan-then-single-CAS-attempt, which
+   * could give up even while other READY frames remain. */
+  framebuff =
+      tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
   if (!framebuff && ctx->encode_block_get) { /* wait here for block mode */
-    mt_pthread_mutex_unlock(&ctx->lock);
     tx_st22p_encode_get_block_wait(ctx);
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_READY);
+    framebuff =
+        tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     dbg("%s(%d), no ready frame\n", __func__, idx);
     goto out;
   }
-
-  framebuff->stat = ST22P_TX_FRAME_IN_ENCODING;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
@@ -354,9 +377,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
 
   MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_ENCODING != framebuff->stat) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in encoding %d\n", __func__, idx, encode_idx,
         framebuff->stat);
     ret = -EIO;
@@ -372,12 +393,10 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
          __func__, idx, encode_idx, result, data_size, ST22_ENCODE_MIN_FRAME_SZ,
          max_size);
     framebuff->stat = ST22P_TX_FRAME_FREE;
-    mt_pthread_mutex_unlock(&ctx->lock);
     tx_st22p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_encode_fail);
   } else {
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
-    mt_pthread_mutex_unlock(&ctx->lock);
   }
 
   MT_USDT_ST22P_TX_ENCODE_PUT(idx, framebuff->idx, frame->src->addr[0],
@@ -727,10 +746,12 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
+  /* Claim FREE->IN_USER. tx_st22p_claim_available() retries across the ring
+   * on a lost CAS race, so it only returns NULL once every slot has actually
+   * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
+   * even while other FREE frames remain (spurious failure under contention). */
+  framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -738,19 +759,16 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
+    framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST22P_TX_FRAME_IN_USER;
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_sequence_number++;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  framebuff->seq_number =
+      __atomic_fetch_add(&ctx->framebuff_sequence_number, 1, __ATOMIC_RELAXED);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   if (ctx->ops.interlaced) { /* init second_field but user still can customize */
@@ -979,7 +997,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->wake_on_destroy = (void (*)(void*))tx_st22p_block_wake_all;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->encode_block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->encode_block_wake_cond);
@@ -1066,7 +1083,6 @@ int st22p_tx_free(st22p_tx_handle handle) {
   }
   tx_st22p_uinit_src_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   mt_pthread_mutex_destroy(&ctx->encode_block_wake_mutex);
