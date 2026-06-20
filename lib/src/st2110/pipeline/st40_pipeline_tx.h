@@ -43,7 +43,6 @@ struct st40p_tx_ctx {
   uint16_t framebuff_cnt;
   uint32_t framebuff_seq_number;
   struct st40p_tx_frame* framebuffs;
-  pthread_mutex_t lock;
   bool ready;
 
   int frames_per_sec;
@@ -65,7 +64,7 @@ struct st40p_tx_ctx {
 };
 
 struct st40p_tx_frame {
-  enum st40p_tx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st40_frame_info frame_info;
   uint16_t idx;
   /** Pointer to the main ancillary frame buffer */

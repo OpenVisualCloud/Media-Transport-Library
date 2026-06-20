@@ -120,8 +120,6 @@ static int rx_st40p_rtp_ready(void* priv) {
   uint32_t rtp_timestamp = ntohl(hdr->base.tmstamp);
   uint16_t seq_number = ntohs(hdr->base.seq_number);
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
   /* Route late packet to pending frame if it matches the pending timestamp */
   if (ctx->pending_frame && rtp_timestamp == ctx->pending_rtp_timestamp) {
     framebuff = ctx->pending_frame;
@@ -364,7 +362,6 @@ static int rx_st40p_rtp_ready(void* priv) {
   }
 
 out:
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   /* return mbuf to transport */
   st40_rx_put_mbuf(ctx->transport, mbuf);
@@ -513,12 +510,10 @@ static int rx_st40p_stat(void* priv) {
   enum st40p_rx_frame_status producer_stat;
   enum st40p_rx_frame_status consumer_stat;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
   producer_stat = framebuff[producer_idx].stat;
   consumer_stat = framebuff[consumer_idx].stat;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   notice("RX_st40p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          rx_st40p_stat_name(producer_stat), consumer_idx,
@@ -583,12 +578,9 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
   framebuff =
       rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&
            !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
@@ -600,21 +592,25 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
         rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
   }
 
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST40P_RX_FRAME_IN_USER;
-  /* point to next */
+  /* Claim READY->IN_USER atomically so concurrent consumers can't grab the same
+   * slot; on a lost race return NULL and let the caller retry. */
+  {
+    uint32_t expected = ST40P_RX_FRAME_READY;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected, ST40P_RX_FRAME_IN_USER,
+                                     false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
+  /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   frame_info = &framebuff->frame_info;
   ctx->stat_get_frame_succ++;
@@ -738,7 +734,6 @@ int st40p_rx_free(st40p_rx_handle handle) {
   ctx->pending_frame = NULL;
   rx_st40p_uinit_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -796,7 +791,6 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
     ctx->port_id[i] = UINT16_MAX;
   }
 
-  mt_pthread_mutex_init(&ctx->lock, NULL);
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;

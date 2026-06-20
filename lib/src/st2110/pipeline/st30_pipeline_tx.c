@@ -107,8 +107,6 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
   rtp_ts = frame->rtp_timestamp;
   framebuff->stat = ST30P_TX_FRAME_DROPPED;
 
-  mt_pthread_mutex_unlock(&ctx->lock);
-
   dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
       " frame %" PRIu64 "\n",
       __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
@@ -123,13 +121,10 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff->stat = ST30P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   tx_st30p_notify_frame_available(ctx);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -143,7 +138,6 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
     if (!framebuff) break; /* no ready frame available */
@@ -157,7 +151,6 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     /* When drop-when-late is active, ensure the app knows about free slots so it
      * can refill the pipeline promptly after drops freed frames. */
     if (ctx->ops.flags & ST30P_TX_FLAG_DROP_WHEN_LATE) {
@@ -176,7 +169,6 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->timestamp = frame->timestamp;
   }
 
-  mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST30P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
 
@@ -195,7 +187,6 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST30P_TX_FRAME_FREE;
@@ -205,7 +196,6 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
     err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
         frame_idx);
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
@@ -472,10 +462,8 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -483,19 +471,24 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST30P_TX_FRAME_IN_USER;
+  /* Claim FREE->IN_USER atomically so concurrent producers can't grab the same
+   * slot; on a lost race return NULL and let the caller retry. */
+  {
+    uint32_t expected = ST30P_TX_FRAME_FREE;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected, ST30P_TX_FRAME_IN_USER,
+                                     false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_seq_number++;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  framebuff->seq_number =
+      __atomic_fetch_add(&ctx->framebuff_seq_number, 1, __ATOMIC_RELAXED);
 
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
@@ -521,11 +514,9 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    mt_pthread_mutex_unlock(&ctx->lock);
     ret = -EIO;
     goto out;
   }
@@ -534,7 +525,6 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
   ctx->stat_put_frame++;
   MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->addr);
-  mt_pthread_mutex_unlock(&ctx->lock);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -550,11 +540,9 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    mt_pthread_mutex_unlock(&ctx->lock);
     ret = -EIO;
     goto out;
   }
@@ -563,7 +551,6 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
   ctx->stat_drop_frame++;
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -601,7 +588,6 @@ int st30p_tx_free(st30p_tx_handle handle) {
 
   tx_st30p_usdt_dump_close(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -652,7 +638,6 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
   ctx->type = MT_ST30_HANDLE_PIPELINE_TX;
   ctx->wake_on_destroy = (void (*)(void*))tx_st30p_block_wake;
   ctx->usdt_dump_fd = -1;
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
