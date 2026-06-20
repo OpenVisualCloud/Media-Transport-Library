@@ -95,6 +95,11 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
      * `dst = src`, so setting src.priv is sufficient. */
     ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
     ctx->framebuffs[i].dst.priv = &ctx->framebuffs[i];
+    /* convert_frame.priv lets ut20p_convert_frame_idx() recover the
+     * owning slot index from a st20_convert_frame_meta pointer. */
+    ctx->framebuffs[i].convert_frame.src = &ctx->framebuffs[i].src;
+    ctx->framebuffs[i].convert_frame.dst = &ctx->framebuffs[i].dst;
+    ctx->framebuffs[i].convert_frame.priv = &ctx->framebuffs[i];
   }
 
   struct st20p_rx_ctx* p = &ctx->pipeline;
@@ -112,18 +117,11 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
    * but our stubs ignore it. */
   p->transport = (st20_rx_handle)(uintptr_t)0x1;
 
-  if (pthread_mutex_init(&p->lock, NULL) != 0) {
-    free(ctx->framebuffs);
-    free(ctx);
-    return NULL;
-  }
-
   return ctx;
 }
 
 void ut20p_ctx_destroy(ut20p_ctx* ctx) {
   if (!ctx) return;
-  pthread_mutex_destroy(&ctx->pipeline.lock);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -157,6 +155,37 @@ struct st_frame* ut20p_get_frame(ut20p_ctx* ctx) {
 
 int ut20p_put_frame(ut20p_ctx* ctx, struct st_frame* frame) {
   return st20p_rx_put_frame(&ctx->pipeline, frame);
+}
+void ut20p_set_frame_ready(ut20p_ctx* ctx, int idx) {
+  __atomic_store_n(&ctx->framebuffs[idx].stat, ST20P_RX_FRAME_READY, __ATOMIC_RELEASE);
+}
+
+struct st20_convert_frame_meta* ut20p_convert_get_frame(ut20p_ctx* ctx) {
+  return rx_st20p_convert_get_frame(&ctx->pipeline);
+}
+
+int ut20p_convert_put_frame(ut20p_ctx* ctx, struct st20_convert_frame_meta* frame,
+                            int result) {
+  return rx_st20p_convert_put_frame(&ctx->pipeline, frame, result);
+}
+
+int ut20p_convert_frame_idx(const struct st20_convert_frame_meta* meta) {
+  const struct st20p_rx_frame* framebuff = meta->priv;
+  return framebuff->idx;
+}
+/* ── concurrency-test helpers ─────────────────────────────────────────── */
+
+int ut20p_frame_idx(const struct st_frame* frame) {
+  const struct st20p_rx_frame* framebuff = frame->priv;
+  return framebuff->idx;
+}
+
+int ut20p_framebuff_cnt(const ut20p_ctx* ctx) {
+  return ctx->framebuff_cnt;
+}
+
+int ut20p_frame_stat(const ut20p_ctx* ctx, int i) {
+  return (int)ctx->framebuffs[i].stat;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */
