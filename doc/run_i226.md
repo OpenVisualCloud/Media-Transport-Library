@@ -14,10 +14,18 @@ It targets:
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
+  git gcc meson ninja-build python3 python3-pyelftools pkg-config \
+  libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev \
+  systemtap-sdt-dev llvm clang flex byacc \
   linux-tools-common linux-tools-generic linux-tools-$(uname -r) \
   ethtool pciutils numactl jq \
   linuxptp
 ```
+
+Do not use `python3 -m pip install --user pyelftools ninja` on recent Ubuntu
+releases unless you are intentionally using a virtual environment. Ubuntu's
+Python packages are externally managed, so `python3-pyelftools` and
+`ninja-build` should be installed with `apt`.
 
 ### 1.2 BIOS/Kernel pre-checks
 
@@ -66,12 +74,26 @@ cd $mtl_source_code
 ### 2.2 Prepare VFIO access
 
 Follow the shared VFIO permissions flow in [Run Guide](run.md#31-allow-current-user-to-access-devvfio-devices).
+Load the VFIO kernel modules before binding the I226-V to `vfio-pci`:
+
+```bash
+sudo modprobe vfio
+sudo modprobe vfio-pci
+lsmod | grep -E "^vfio|^vfio_pci"
+```
+
+If `dpdk-devbind.py` reports `Warning: no supported DPDK kernel modules are loaded`
+or `Error: Driver 'vfio-pci' is not loaded`, re-run the `modprobe` commands above and
+then retry the bind command.
 
 ### 2.3 Bind I226-V port to `vfio-pci`
 
 ```bash
 # Identify BDF and current driver
 sudo dpdk-devbind.py -s
+
+# Ensure the DPDK kernel driver is loaded
+sudo modprobe vfio-pci
 
 # Bring interface down before rebinding
 sudo ip link set <ifname> down
@@ -158,4 +180,3 @@ ethtool <ifname> | grep -E "Speed|Duplex|Link detected"
 sudo ptp4l -i <ifname> -m
 sudo phc2sys -s <ifname> -c CLOCK_REALTIME -m
 ```
-
