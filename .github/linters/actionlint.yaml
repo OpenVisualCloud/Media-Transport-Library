@@ -3,6 +3,7 @@ self-hosted-runner:
     - dpdk
     - e810
     - e830
-    - gnrd
+    - e825
+    - e835
     - perf
     - sut

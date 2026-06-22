@@ -201,11 +201,11 @@ print_summary() {
 
 stage_preflight() {
 	local nic_count free_g cpus
-	nic_count=$(lspci -nn 2>/dev/null | grep -cEi '8086:(1592|12d2)')
+	nic_count=$(lspci -nn 2>/dev/null | grep -cEi '8086:(1592|12d2|579d|1249)')
 	if [[ "$nic_count" -eq 0 ]]; then
-		warn "preflight: no Intel E810/E830 NIC detected; pytest will fail"
+		warn "preflight: no Intel E810/E830/E825/E835 NIC detected; pytest will fail"
 	else
-		log "preflight: NIC E810/E830 PF count = $nic_count"
+		log "preflight: NIC E810/E830/E825/E835 PF count = $nic_count"
 	fi
 	free_g=$(df -BG --output=avail / | tail -1 | tr -dc 0-9)
 	if [[ "$free_g" -lt 10 ]]; then
@@ -233,7 +233,7 @@ stage_preflight() {
 	# Selected PF status (informational)
 	local bdf="$PCI_DEVICE_BDF"
 	if [[ -z "$bdf" && "$nic_count" -gt 0 ]]; then
-		bdf="0000:$(lspci -nn | grep -Ei '8086:(1592|12d2)' | head -1 | awk '{print $1}')"
+		bdf="0000:$(lspci -nn | grep -Ei '8086:(1592|12d2|579d|1249)' | head -1 | awk '{print $1}')"
 	fi
 	if [[ -n "$bdf" ]]; then
 		local drv numa
@@ -436,7 +436,7 @@ stage_venv() {
 
 stage_configs() {
 	local detected_bdf detected_vendor_device cur_vd need_regen=0
-	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2)' | head -1 | awk '{print "0000:"$1}')
+	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2|579d|1249)' | head -1 | awk '{print "0000:"$1}')
 	if [[ -n "$detected_bdf" ]]; then
 		detected_vendor_device=$(lspci -s "${detected_bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
 	fi
@@ -459,7 +459,7 @@ stage_configs() {
 	check_only_or_install "configs" || return $?
 	[[ -n "$PCI_DEVICE_BDF" ]] || PCI_DEVICE_BDF="$detected_bdf"
 	[[ -n "$PCI_DEVICE_BDF" ]] || {
-		err "configs: no E810/E830 PF found and PCI_DEVICE_BDF unset"
+		err "configs: no E810/E830/E825/E835 PF found and PCI_DEVICE_BDF unset"
 		return 1
 	}
 	[[ -n "$SSH_KEY" ]] || {
