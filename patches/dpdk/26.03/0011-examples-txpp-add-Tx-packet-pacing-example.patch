@@ -1,0 +1,1078 @@
+From 3b1292d4905873f452a50ef6df6b634626fedd19 Mon Sep 17 00:00:00 2001
+From: Soumyadeep Hore <soumyadeep.hore@intel.com>
+Date: Wed, 10 Jun 2026 10:35:15 +0530
+Subject: [PATCH 11/11] examples/txpp: add Tx packet pacing example
+
+Add a new example application demonstrating E830 Tx Packet Pacing
+(TxPP) with configurable intra-burst spacing. The application sends
+bursts of packets with precise hardware-level timing using the TXTIME
+offload and captures received packets with hardware RX timestamps.
+
+Features:
+  - Configurable intra-burst interval (128ns granularity)
+  - Configurable inter-burst gap, burst size, packet size
+  - Hardware PHC clock for scheduling future TX timestamps
+  - Optional RX port with hardware timestamp capture
+  - Nanosecond pcap output for validation
+Signed-off-by: Soumyadeep Hore <soumyadeep.hore@intel.com>
+---
+ examples/meson.build      |    1 +
+ examples/txpp/main.c      | 1014 +++++++++++++++++++++++++++++++++++++
+ examples/txpp/meson.build |   12 +
+ 3 files changed, 1027 insertions(+)
+ create mode 100644 examples/txpp/main.c
+ create mode 100644 examples/txpp/meson.build
+
+diff --git a/examples/meson.build b/examples/meson.build
+index 25d9c88457..b3d14254ee 100644
+--- a/examples/meson.build
++++ b/examples/meson.build
+@@ -51,6 +51,7 @@ all_examples = [
+         'service_cores',
+         'skeleton',
+         'timer',
++        'txpp',
+         'vdpa',
+         'vhost',
+         'vhost_blk',
+diff --git a/examples/txpp/main.c b/examples/txpp/main.c
+new file mode 100644
+index 0000000000..78f5aa3b00
+--- /dev/null
++++ b/examples/txpp/main.c
+@@ -0,0 +1,1014 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2024 Intel Corporation
++ *
++ * TX Packet Pacing (TxPP) Example Application
++ *
++ * Demonstrates E830 TxPP with configurable intra-burst pacing.
++ * All packets evenly spaced at the configured interval.
++ * Dst MAC = PF1 for loopback capture via tcpdump.
++ *
++ * Usage: dpdk-txpp [EAL] -- -p PORT -n INTRA_NS [-t SECS] [-b BURST] [-d MAC]
++ */
++
++#include <stdint.h>
++#include <stdalign.h>
++#include <stdbool.h>
++#include <signal.h>
++#include <unistd.h>
++#include <time.h>
++#include <string.h>
++#include <stdlib.h>
++
++#include <rte_eal.h>
++#include <rte_ethdev.h>
++#include <rte_mbuf.h>
++#include <rte_mbuf_dyn.h>
++#include <rte_mempool.h>
++#include <rte_cycles.h>
++#include <rte_log.h>
++#include <rte_ether.h>
++#include <rte_ip.h>
++#include <rte_udp.h>
++#include <stdio.h>
++
++#define RTE_LOGTYPE_TXPP RTE_LOGTYPE_USER1
++
++/* Configuration */
++#define NB_RX_DESC          1024
++#define NB_TX_DESC          1024
++#define MEMPOOL_CACHE_SIZE  256
++#define NUM_MBUFS           65535
++#define MAX_BURST           32
++
++/* Packet parameters */
++#define PKT_SIZE_MAX        1518
++static uint32_t pkt_size = 64;
++#define IP_SRC_ADDR         RTE_IPV4(198, 18, 0, 1)
++#define IP_DST_ADDR         RTE_IPV4(198, 18, 0, 2)
++#define UDP_SRC_PORT        9
++#define UDP_DST_PORT        9
++
++#ifndef NS_PER_S
++#define NS_PER_S            1000000000ULL
++#endif
++
++static volatile bool force_quit;
++static uint16_t port_id;
++static uint16_t rx_port_id = RTE_MAX_ETHPORTS; /* RX capture port (PF1) */
++static struct rte_mempool *mbuf_pool;
++static struct rte_mempool *rx_mbuf_pool;
++
++/* Dynamic timestamp field/flag */
++static int timestamp_dynfield_offset = -1;
++static uint64_t timestamp_dynflag;
++
++/* App parameters */
++static uint64_t intra_ns = 128;          /* default 128ns (1 HW tick) */
++static uint64_t inter_ns = 512;          /* default 512ns inter-burst gap */
++static uint32_t burst_size = 32;
++static uint32_t run_seconds = 5;
++
++/* PF1 MAC for loopback (peer port on same card) */
++static struct rte_ether_addr dst_mac = {{0x00, 0x00, 0x00, 0x00, 0x01, 0x01}};
++
++/* Mixed mode: run paced + unpaced queues simultaneously */
++static bool mixed_mode;
++
++/* Pcap output */
++static char pcap_filename[256];
++#define PCAP_MAX_PKTS 1000
++struct pcap_pkt {
++	uint32_t ts_sec;
++	uint32_t ts_nsec;
++	uint16_t caplen;
++	uint8_t data[1518];
++};
++static struct pcap_pkt pcap_pkts[PCAP_MAX_PKTS];
++static volatile uint32_t pcap_count;
++
++/* RX capture stats */
++#define MAX_DELTAS 200000
++static uint64_t rx_deltas[MAX_DELTAS];
++static volatile uint64_t rx_delta_count;
++static volatile uint64_t rx_total_pkts;
++
++/* Stats */
++static uint64_t total_tx;
++static uint64_t total_drops;
++static volatile uint64_t unpaced_tx;
++
++static void signal_handler(int signum)
++{
++	if (signum == SIGINT || signum == SIGTERM)
++		force_quit = true;
++}
++
++static inline void
++set_pkt_timestamp(struct rte_mbuf *pkt, uint64_t txtime_ns)
++{
++	pkt->ol_flags |= timestamp_dynflag;
++	*RTE_MBUF_DYNFIELD(pkt, timestamp_dynfield_offset, uint64_t *) = txtime_ns;
++}
++
++/* Pre-built packet template (copied to each mbuf like testpmd) */
++static uint8_t pkt_template[PKT_SIZE_MAX];
++static size_t pkt_hdr_len;
++
++static void
++init_pkt_template(void)
++{
++	struct rte_ether_hdr *eth_hdr;
++	struct rte_ipv4_hdr *ip_hdr;
++	struct rte_udp_hdr *udp_hdr;
++	uint16_t pkt_data_len;
++	uint16_t pkt_len;
++
++	memset(pkt_template, 0, pkt_size);
++
++	pkt_data_len = pkt_size - sizeof(struct rte_ether_hdr) -
++		       sizeof(struct rte_ipv4_hdr) -
++		       sizeof(struct rte_udp_hdr);
++	pkt_len = pkt_size - sizeof(struct rte_ether_hdr);
++
++	eth_hdr = (struct rte_ether_hdr *)pkt_template;
++	rte_ether_addr_copy(&dst_mac, &eth_hdr->dst_addr);
++	/* src_addr filled after port_init */
++	eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
++
++	ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
++	ip_hdr->version_ihl = RTE_IPV4_VHL_DEF;
++	ip_hdr->total_length = rte_cpu_to_be_16(pkt_len);
++	ip_hdr->time_to_live = 64;
++	ip_hdr->next_proto_id = IPPROTO_UDP;
++	ip_hdr->src_addr = rte_cpu_to_be_32(IP_SRC_ADDR);
++	ip_hdr->dst_addr = rte_cpu_to_be_32(IP_DST_ADDR);
++	ip_hdr->hdr_checksum = rte_ipv4_cksum(ip_hdr);
++
++	udp_hdr = (struct rte_udp_hdr *)(ip_hdr + 1);
++	udp_hdr->src_port = rte_cpu_to_be_16(UDP_SRC_PORT);
++	udp_hdr->dst_port = rte_cpu_to_be_16(UDP_DST_PORT);
++	udp_hdr->dgram_len = rte_cpu_to_be_16(pkt_data_len +
++					       sizeof(struct rte_udp_hdr));
++	udp_hdr->dgram_cksum = 0;
++
++	pkt_hdr_len = sizeof(struct rte_ether_hdr) +
++		      sizeof(struct rte_ipv4_hdr) +
++		      sizeof(struct rte_udp_hdr);
++}
++
++/*
++ * Stamp an already-allocated mbuf with the pre-built template.
++ * Matches testpmd's approach: minimal per-packet work.
++ */
++static inline void
++prepare_pkt(struct rte_mbuf *pkt)
++{
++	uint8_t *dst = rte_pktmbuf_mtod(pkt, uint8_t *);
++
++	rte_memcpy(dst, pkt_template, pkt_size);
++
++	pkt->data_len = pkt_size;
++	pkt->pkt_len = pkt_size;
++	pkt->nb_segs = 1;
++	pkt->l2_len = sizeof(struct rte_ether_hdr);
++	pkt->l3_len = sizeof(struct rte_ipv4_hdr);
++}
++
++static int
++port_init(uint16_t pid)
++{
++	struct rte_eth_conf port_conf = {0};
++	struct rte_eth_dev_info dev_info;
++	struct rte_eth_txconf txconf;
++	struct rte_eth_rxconf rxconf;
++	uint16_t nb_txq = mixed_mode ? 2 : 1;
++	int ret;
++
++	ret = rte_eth_dev_info_get(pid, &dev_info);
++	if (ret != 0)
++		return ret;
++
++	if (!(dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
++		printf("Port %u does not support TX timestamp offload\n", pid);
++		return -ENOTSUP;
++	}
++
++	port_conf.txmode.offloads = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
++	port_conf.rxmode.offloads = RTE_ETH_RX_OFFLOAD_TIMESTAMP;
++
++	ret = rte_eth_dev_configure(pid, 1, nb_txq, &port_conf);
++	if (ret != 0)
++		return ret;
++
++	rxconf = dev_info.default_rxconf;
++	rxconf.offloads = port_conf.rxmode.offloads;
++	ret = rte_eth_rx_queue_setup(pid, 0, NB_RX_DESC,
++				     rte_eth_dev_socket_id(pid),
++				     &rxconf, mbuf_pool);
++	if (ret < 0)
++		return ret;
++
++	/* Queue 0: paced (with TXTIME offload) */
++	txconf = dev_info.default_txconf;
++	txconf.offloads = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
++	ret = rte_eth_tx_queue_setup(pid, 0, NB_TX_DESC,
++				     rte_eth_dev_socket_id(pid),
++				     &txconf);
++	if (ret < 0)
++		return ret;
++
++	/* Queue 1: unpaced (no TXTIME offload — truly no TXTIME ring) */
++	if (mixed_mode) {
++		txconf = dev_info.default_txconf;
++		txconf.offloads = 0;  /* no timestamp offload */
++		ret = rte_eth_tx_queue_setup(pid, 1, NB_TX_DESC,
++					     rte_eth_dev_socket_id(pid),
++					     &txconf);
++		if (ret < 0)
++			return ret;
++	}
++
++	ret = rte_eth_dev_start(pid);
++	if (ret < 0)
++		return ret;
++
++	/* Enable timesync — required for PHC and TXTIME engine */
++	ret = rte_eth_timesync_enable(pid);
++	if (ret < 0)
++		printf("  Warning: timesync_enable failed: %d\n", ret);
++
++	/* Allow HW txtime engine to stabilize after dev_start */
++	rte_delay_ms(100);
++
++	rte_eth_promiscuous_enable(pid);
++
++	return 0;
++}
++
++/*
++ * Pre-initialize all mbufs in the pool with packet template.
++ * After TX frees mbufs back to pool, data persists in DMA buffers.
++ * This lets the hot loop skip reset/memcpy entirely.
++ */
++static void
++preinit_pool(void)
++{
++	const uint32_t batch = 256;
++	struct rte_mbuf *pkts[256];
++	uint32_t total = 0;
++	struct rte_mbuf **all;
++
++	all = malloc(sizeof(struct rte_mbuf *) * (NUM_MBUFS + batch));
++	if (!all) {
++		printf("  %s: malloc failed\n", __func__);
++		return;
++	}
++
++	/* Drain the entire pool (no put-back until done) */
++	while (rte_mempool_get_bulk(mbuf_pool, (void **)pkts, batch) == 0) {
++		for (uint32_t i = 0; i < batch; i++) {
++			rte_pktmbuf_reset(pkts[i]);
++			prepare_pkt(pkts[i]);
++			pkts[i]->ol_flags = timestamp_dynflag;
++			all[total + i] = pkts[i];
++		}
++		total += batch;
++	}
++
++	/* Return all mbufs to pool */
++	if (total > 0)
++		rte_mempool_put_bulk(mbuf_pool, (void **)all, total);
++	free(all);
++	printf("  Pre-initialized %u mbufs in pool\n", total);
++}
++
++static void
++tx_loop(void)
++{
++	struct rte_mbuf *pkts[MAX_BURST];
++	uint32_t i, nb_tx;
++	uint64_t skew;
++	uint64_t start_tsc = rte_rdtsc();
++	uint64_t end_tsc = start_tsc + (uint64_t)run_seconds * rte_get_tsc_hz();
++	uint64_t stats_tsc = start_tsc + rte_get_tsc_hz();
++	uint64_t pkt_seq = 0;
++
++	/* Print configuration first, before syncing time */
++	printf("\nTxPP Configuration:\n");
++	printf("  Inter-burst gap: %" PRIu64 " ns", inter_ns);
++	if (inter_ns >= 1000000)
++		printf(" (%.3f ms)", inter_ns / 1e6);
++	else if (inter_ns >= 1000)
++		printf(" (%.3f us)", inter_ns / 1e3);
++	printf("\n");
++	printf("  Intra-burst gap: %" PRIu64 " ns", intra_ns);
++	if (intra_ns >= 1000000)
++		printf(" (%.3f ms)", intra_ns / 1e6);
++	else if (intra_ns >= 1000)
++		printf(" (%.3f us)", intra_ns / 1e3);
++	printf("\n");
++	printf("  Burst size: %u\n", burst_size);
++	printf("  Run time: %u seconds\n", run_seconds);
++	printf("  Pkt size: %u bytes\n", pkt_size);
++	printf("  Dst MAC: %02x:%02x:%02x:%02x:%02x:%02x (PF1 loopback)\n",
++	       dst_mac.addr_bytes[0], dst_mac.addr_bytes[1],
++	       dst_mac.addr_bytes[2], dst_mac.addr_bytes[3],
++	       dst_mac.addr_bytes[4], dst_mac.addr_bytes[5]);
++
++	/*
++	 * Read PHC — use it directly as the starting skew.
++	 * Same approach as testpmd: first pkt = PHC + inter.
++	 * No artificial future offset.
++	 */
++	{
++		struct timespec phc_ts;
++
++		if (rte_eth_timesync_read_time(port_id, &phc_ts) != 0) {
++			printf("ERROR: Failed to read PHC time\n");
++			return;
++		}
++		skew = (uint64_t)phc_ts.tv_sec * NS_PER_S +
++		       (uint64_t)phc_ts.tv_nsec;
++	}
++
++	/*
++	 * Re-read PHC just before TX start — minimum staleness.
++	 *
++	 * Known HW behavior: the E830 TXTIME engine may release the
++	 * first ~400 packets at wire rate before pacing engages.
++	 * This is an intermittent HW warmup artifact (~50% of runs)
++	 * and is NOT affected by phase alignment, offset size,
++	 * submission rate, ts_pacing_slot, or tx_pipe_delay_mode.
++	 */
++	{
++		struct timespec phc_ts2;
++
++		rte_delay_us(100);
++		rte_eth_timesync_read_time(port_id, &phc_ts2);
++		skew = (uint64_t)phc_ts2.tv_sec * NS_PER_S +
++		       (uint64_t)phc_ts2.tv_nsec;
++	}
++
++	while (!force_quit && rte_rdtsc() < end_tsc) {
++
++		/* Bulk alloc all mbufs at once like testpmd */
++		if (rte_mempool_get_bulk(mbuf_pool, (void **)pkts,
++					burst_size) != 0)
++			continue;
++
++		/*
++		 * Save skew before preparing burst.
++		 * Rewind for unsent packets to keep skew tracking PHC.
++		 */
++		uint64_t saved_skew = skew;
++
++		/* Fast path: mbufs pre-initialized with packet data.
++		 * Minimal per-pkt work: set data_len (required for TXTIME HW)
++		 * + timestamp dynfield.
++		 */
++		for (i = 0; i < burst_size; i++) {
++			pkts[i]->data_len = pkt_size;
++			pkts[i]->ol_flags = timestamp_dynflag;
++			if (i == 0)
++				skew += inter_ns;
++			else
++				skew += intra_ns;
++			*RTE_MBUF_DYNFIELD(pkts[i], timestamp_dynfield_offset,
++					    uint64_t *) = skew;
++		}
++
++		nb_tx = rte_eth_tx_burst(port_id, 0, pkts, burst_size);
++
++		/* Rewind skew for unsent packets */
++		if (nb_tx < burst_size) {
++			if (nb_tx == 0)
++				skew = saved_skew;
++			else
++				skew = saved_skew + inter_ns +
++				       (uint64_t)(nb_tx - 1) * intra_ns;
++			rte_mempool_put_bulk(mbuf_pool,
++					(void **)&pkts[nb_tx],
++					burst_size - nb_tx);
++			total_drops += (burst_size - nb_tx);
++		}
++
++		total_tx += nb_tx;
++		pkt_seq += nb_tx;
++
++		/* Periodic stats */
++		if (rte_rdtsc() > stats_tsc) {
++			double elapsed = (double)(rte_rdtsc() - start_tsc) / rte_get_tsc_hz();
++			printf("  TX: %" PRIu64 " pkts, drops: %" PRIu64
++			       ", rate: %.1f pps (%.1fs)\n",
++			       total_tx, total_drops,
++			       total_tx / elapsed, elapsed);
++			stats_tsc = rte_rdtsc() + rte_get_tsc_hz();
++		}
++	}
++}
++
++/* RX capture worker — receives on rx_port with HW timestamps */
++static int
++rx_capture_worker(__rte_unused void *arg)
++{
++	struct rte_mbuf *pkts[MAX_BURST];
++	uint64_t prev_ts = 0;
++	uint64_t count = 0;
++	uint64_t total = 0;
++	uint64_t start_tsc = rte_rdtsc();
++	uint64_t skip_tsc = 3 * rte_get_tsc_hz(); /* skip first 3 seconds */
++	bool recording = false;
++
++	printf("  RX capture worker started on lcore %u (port %u, 3s warmup skip)\n",
++	       rte_lcore_id(), rx_port_id);
++
++	while (!force_quit) {
++		uint16_t nb_rx = rte_eth_rx_burst(rx_port_id, 0, pkts, MAX_BURST);
++		if (nb_rx == 0)
++			continue;
++
++		if (!recording && (rte_rdtsc() - start_tsc) > skip_tsc) {
++			recording = true;
++			prev_ts = 0; /* reset so first delta after skip is clean */
++		}
++
++		for (uint16_t i = 0; i < nb_rx; i++) {
++			uint64_t ts = *RTE_MBUF_DYNFIELD(pkts[i],
++					timestamp_dynfield_offset, uint64_t *);
++
++			if (recording && ts != 0 && prev_ts != 0 && ts > prev_ts) {
++				uint64_t delta = ts - prev_ts;
++				if (count < MAX_DELTAS)
++					rx_deltas[count] = delta;
++				count++;
++			}
++			if (ts != 0)
++				prev_ts = ts;
++			total++;
++
++			/* Save to pcap buffer if enabled */
++			if (recording && pcap_filename[0] != '\0') {
++				uint32_t idx = pcap_count;
++				if (idx < PCAP_MAX_PKTS) {
++					uint16_t clen = pkts[i]->data_len;
++					if (clen > 1518)
++						clen = 1518;
++					pcap_pkts[idx].ts_sec = (uint32_t)(ts / NS_PER_S);
++					pcap_pkts[idx].ts_nsec = (uint32_t)(ts % NS_PER_S);
++					pcap_pkts[idx].caplen = clen;
++					rte_memcpy(pcap_pkts[idx].data,
++						   rte_pktmbuf_mtod(pkts[i], void *), clen);
++					pcap_count = idx + 1;
++				}
++			}
++		}
++
++		rte_pktmbuf_free_bulk(pkts, nb_rx);
++	}
++
++	rx_delta_count = count;
++	rx_total_pkts = total;
++	printf("  RX capture done: %" PRIu64 " pkts, %" PRIu64 " deltas\n",
++	       total, count);
++	return 0;
++}
++
++/* Unpaced TX worker — sends on queue 1 at wire rate (no timestamps) */
++/* Uses UDP dst port 10 to distinguish from paced traffic (port 9) */
++static int
++unpaced_tx_worker(__rte_unused void *arg)
++{
++	struct rte_mbuf *pkts[MAX_BURST];
++	uint32_t i, nb_tx;
++	uint64_t end_tsc = rte_rdtsc() + (uint64_t)run_seconds * rte_get_tsc_hz();
++
++	printf("  Unpaced worker started on lcore %u (queue 1, UDP dst port 10)\n",
++	       rte_lcore_id());
++
++	while (!force_quit && rte_rdtsc() < end_tsc) {
++		if (rte_mempool_get_bulk(mbuf_pool, (void **)pkts,
++					MAX_BURST) != 0)
++			continue;
++
++		for (i = 0; i < MAX_BURST; i++) {
++			rte_pktmbuf_reset(pkts[i]);
++			prepare_pkt(pkts[i]);
++			/* Overwrite UDP dst port to 10 for identification */
++			struct rte_udp_hdr *udp = rte_pktmbuf_mtod_offset(
++				pkts[i], struct rte_udp_hdr *,
++				sizeof(struct rte_ether_hdr) +
++				sizeof(struct rte_ipv4_hdr));
++			udp->dst_port = rte_cpu_to_be_16(10);
++			/* Set timestamp to 0 — HW treats as past, sends immediately */
++			*RTE_MBUF_DYNFIELD(pkts[i], timestamp_dynfield_offset, uint64_t *) = 0;
++		}
++
++		nb_tx = rte_eth_tx_burst(port_id, 1, pkts, MAX_BURST);
++		if (nb_tx < MAX_BURST)
++			rte_mempool_put_bulk(mbuf_pool,
++					(void **)&pkts[nb_tx],
++					MAX_BURST - nb_tx);
++		unpaced_tx += nb_tx;
++	}
++
++	printf("  Unpaced worker done: %" PRIu64 " pkts sent\n", unpaced_tx);
++	return 0;
++}
++
++static void
++print_usage(const char *prgname)
++{
++	printf("Usage: %s [EAL options] -- -p PORT -i INTER -n INTRA [-t SECS] [-b BURST] [-s SIZE] [-m] [-r RX_PORT] [-d MAC] [-o PCAP]\n"
++	       "  -p PORT_ID    : TX port to use (default 0)\n"
++	       "  -r RX_PORT    : RX capture port for HW timestamp measurement\n"
++	       "  -i INTER_NS   : inter-burst gap in ns (default 512)\n"
++	       "  -n INTRA_NS   : intra-burst pacing in ns (default 128)\n"
++	       "  -t SECONDS    : run duration (default 5)\n"
++	       "  -b BURST      : burst size 1-32 (default 32)\n"
++	       "  -s PKT_SIZE   : packet size in bytes (default 64)\n"
++	       "  -m            : mixed mode (paced Q0 + unpaced Q1)\n"
++	       "  -d DST_MAC    : destination MAC xx:xx:xx:xx:xx:xx\n"
++	       "  -o PCAP_FILE  : save captured packets to pcap file (ns resolution)\n",
++	       prgname);
++}
++
++static int
++parse_mac(const char *str, struct rte_ether_addr *addr)
++{
++	unsigned int bytes[6];
++	if (sscanf(str, "%x:%x:%x:%x:%x:%x",
++		   &bytes[0], &bytes[1], &bytes[2],
++		   &bytes[3], &bytes[4], &bytes[5]) != 6)
++		return -1;
++	for (int i = 0; i < 6; i++)
++		addr->addr_bytes[i] = (uint8_t)bytes[i];
++	return 0;
++}
++
++static int
++parse_args(int argc, char **argv)
++{
++	int opt;
++
++	while ((opt = getopt(argc, argv, "p:r:i:n:t:b:s:md:o:")) != -1) {
++		switch (opt) {
++		case 'p':
++			port_id = (uint16_t)atoi(optarg);
++			break;
++		case 'r':
++			rx_port_id = (uint16_t)atoi(optarg);
++			break;
++		case 'i':
++			inter_ns = strtoull(optarg, NULL, 10);
++			break;
++		case 'n':
++			intra_ns = strtoull(optarg, NULL, 10);
++			break;
++		case 't':
++			run_seconds = (uint32_t)atoi(optarg);
++			break;
++		case 'b':
++			burst_size = (uint32_t)atoi(optarg);
++			if (burst_size < 1)
++				burst_size = 1;
++			if (burst_size > MAX_BURST)
++				burst_size = MAX_BURST;
++			break;
++		case 's':
++			pkt_size = (uint32_t)atoi(optarg);
++			if (pkt_size < 64)
++				pkt_size = 64;
++			if (pkt_size > PKT_SIZE_MAX)
++				pkt_size = PKT_SIZE_MAX;
++			break;
++		case 'm':
++			mixed_mode = true;
++			break;
++		case 'd':
++			if (parse_mac(optarg, &dst_mac) < 0) {
++				printf("Invalid MAC: %s\n", optarg);
++				return -1;
++			}
++			break;
++		case 'o':
++			snprintf(pcap_filename, sizeof(pcap_filename), "%s", optarg);
++			break;
++		default:
++			print_usage(argv[0]);
++			return -1;
++		}
++	}
++	return 0;
++}
++
++static void
++write_pcap_file(void)
++{
++	if (pcap_filename[0] == '\0' || pcap_count == 0)
++		return;
++
++	FILE *fp = fopen(pcap_filename, "wb");
++	if (!fp) {
++		printf("  ERROR: Cannot open pcap file %s\n", pcap_filename);
++		return;
++	}
++
++	/* Pcap global header (nanosecond resolution) */
++	uint32_t ghdr_buf[6];
++	ghdr_buf[0] = 0xa1b23c4d; /* magic: nanosecond pcap */
++	ghdr_buf[1] = (2) | (4 << 16); /* ver_major=2, ver_minor=4 */
++	ghdr_buf[2] = 0; /* thiszone */
++	ghdr_buf[3] = 0; /* sigfigs */
++	ghdr_buf[4] = 65535; /* snaplen */
++	ghdr_buf[5] = 1; /* LINKTYPE_ETHERNET */
++	fwrite(ghdr_buf, 24, 1, fp);
++
++	uint32_t n = pcap_count;
++	for (uint32_t i = 0; i < n; i++) {
++		struct {
++			uint32_t ts_sec;
++			uint32_t ts_nsec;
++			uint32_t caplen;
++			uint32_t origlen;
++		} phdr = {
++			.ts_sec = pcap_pkts[i].ts_sec,
++			.ts_nsec = pcap_pkts[i].ts_nsec,
++			.caplen = pcap_pkts[i].caplen,
++			.origlen = pcap_pkts[i].caplen
++		};
++		fwrite(&phdr, sizeof(phdr), 1, fp);
++		fwrite(pcap_pkts[i].data, pcap_pkts[i].caplen, 1, fp);
++	}
++
++	fclose(fp);
++	printf("  Pcap saved: %s (%u packets)\n", pcap_filename, n);
++}
++
++int
++main(int argc, char **argv)
++{
++	int ret, dynf;
++
++	ret = rte_eal_init(argc, argv);
++	if (ret < 0)
++		rte_exit(EXIT_FAILURE, "Error with EAL init\n");
++	argc -= ret;
++	argv += ret;
++
++	ret = parse_args(argc, argv);
++	if (ret < 0)
++		rte_exit(EXIT_FAILURE, "Invalid arguments\n");
++
++	signal(SIGINT, signal_handler);
++	signal(SIGTERM, signal_handler);
++
++	if (!rte_eth_dev_is_valid_port(port_id))
++		rte_exit(EXIT_FAILURE, "Port %u is not valid\n", port_id);
++
++	mbuf_pool = rte_pktmbuf_pool_create("TXPP_MBUF_POOL", NUM_MBUFS,
++					    MEMPOOL_CACHE_SIZE, 0,
++					    RTE_MBUF_DEFAULT_BUF_SIZE,
++					    rte_socket_id());
++	if (mbuf_pool == NULL)
++		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
++
++	/* Register dynamic timestamp field and flag */
++	dynf = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
++	if (dynf < 0) {
++		struct rte_mbuf_dynflag dynflag_desc = {0};
++		strlcpy(dynflag_desc.name, RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME,
++			sizeof(dynflag_desc.name));
++		dynf = rte_mbuf_dynflag_register(&dynflag_desc);
++		if (dynf < 0)
++			rte_exit(EXIT_FAILURE, "Cannot register TX timestamp dynflag\n");
++	}
++	timestamp_dynflag = 1ULL << dynf;
++
++	{
++		int off;
++		struct rte_mbuf_dynfield desc = {0};
++		strlcpy(desc.name, RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, sizeof(desc.name));
++		desc.size = sizeof(uint64_t);
++		desc.align = alignof(uint64_t);
++		off = rte_mbuf_dynfield_register(&desc);
++		if (off < 0)
++			rte_exit(EXIT_FAILURE, "Cannot register TX timestamp dynfield\n");
++		timestamp_dynfield_offset = off;
++	}
++
++	ret = port_init(port_id);
++	if (ret != 0)
++		rte_exit(EXIT_FAILURE, "Port init failed: %s\n", rte_strerror(-ret));
++
++	printf("Port %u initialized (%u TX queue%s, 1 RX queue)\n",
++	       port_id, mixed_mode ? 2 : 1, mixed_mode ? "s" : "");
++	if (mixed_mode)
++		printf("  Mixed mode: Q0=paced, Q1=unpaced\n");
++
++	/* Initialize packet template with src MAC from port */
++	init_pkt_template();
++	{
++		struct rte_ether_hdr *eth = (struct rte_ether_hdr *)pkt_template;
++		rte_eth_macaddr_get(port_id, &eth->src_addr);
++	}
++
++	/* Pre-init all pool mbufs so hot loop only sets refcnt + timestamp */
++	preinit_pool();
++
++	/* Initialize RX capture port if specified */
++	unsigned int rx_lcore = RTE_MAX_LCORE;
++	if (rx_port_id != RTE_MAX_ETHPORTS) {
++		if (!rte_eth_dev_is_valid_port(rx_port_id))
++			rte_exit(EXIT_FAILURE, "RX port %u is not valid\n", rx_port_id);
++
++		rx_mbuf_pool = rte_pktmbuf_pool_create("RX_MBUF_POOL", 8191,
++						       MEMPOOL_CACHE_SIZE, 0,
++						       RTE_MBUF_DEFAULT_BUF_SIZE,
++						       rte_socket_id());
++		if (rx_mbuf_pool == NULL)
++			rte_exit(EXIT_FAILURE, "Cannot create RX mbuf pool\n");
++
++		/* Configure RX port with timestamp offload */
++		struct rte_eth_conf rx_conf = {0};
++		struct rte_eth_dev_info rx_info;
++		rte_eth_dev_info_get(rx_port_id, &rx_info);
++		rx_conf.rxmode.offloads = RTE_ETH_RX_OFFLOAD_TIMESTAMP;
++		ret = rte_eth_dev_configure(rx_port_id, 1, 0, &rx_conf);
++		if (ret != 0)
++			rte_exit(EXIT_FAILURE, "RX port configure failed: %d\n", ret);
++
++		struct rte_eth_rxconf rx_rxconf = rx_info.default_rxconf;
++		rx_rxconf.offloads = RTE_ETH_RX_OFFLOAD_TIMESTAMP;
++		ret = rte_eth_rx_queue_setup(rx_port_id, 0, 4096,
++					     rte_eth_dev_socket_id(rx_port_id),
++					     &rx_rxconf, rx_mbuf_pool);
++		if (ret < 0)
++			rte_exit(EXIT_FAILURE, "RX queue setup failed: %d\n", ret);
++
++		ret = rte_eth_dev_start(rx_port_id);
++		if (ret < 0)
++			rte_exit(EXIT_FAILURE, "RX port start failed: %d\n", ret);
++
++		ret = rte_eth_timesync_enable(rx_port_id);
++		if (ret < 0)
++			printf("  Warning: RX port timesync_enable failed: %d\n", ret);
++
++		rte_eth_promiscuous_enable(rx_port_id);
++		printf("  RX capture port %u initialized (HW timestamps)\n", rx_port_id);
++
++		/* Cross-sync PHC timers between TX and RX ports.
++		 * Like ptp4l in kernel tests: ensure both PFs see same time.
++		 */
++		{
++			struct timespec tx_time, rx_time;
++			int64_t offset_ns;
++
++			rte_eth_timesync_read_time(port_id, &tx_time);
++			rte_eth_timesync_read_time(rx_port_id, &rx_time);
++			offset_ns = ((int64_t)tx_time.tv_sec - rx_time.tv_sec) * NS_PER_S +
++				    ((int64_t)tx_time.tv_nsec - rx_time.tv_nsec);
++			printf("  PHC before sync: TX=%" PRId64 ".%09" PRId64
++			       " RX=%" PRId64 ".%09" PRId64
++			       " offset=%" PRId64 "ns\n",
++			       (int64_t)tx_time.tv_sec,
++			       (int64_t)tx_time.tv_nsec,
++			       (int64_t)rx_time.tv_sec,
++			       (int64_t)rx_time.tv_nsec,
++			       offset_ns);
++
++			/* Sync RX port PHC to TX port PHC */
++			if (offset_ns != 0) {
++				rte_eth_timesync_adjust_time(rx_port_id, offset_ns);
++				printf("  Adjusted RX PHC by %" PRId64 " ns\n", offset_ns);
++			}
++
++			/* Verify sync */
++			rte_delay_ms(10);
++			rte_eth_timesync_read_time(port_id, &tx_time);
++			rte_eth_timesync_read_time(rx_port_id, &rx_time);
++			offset_ns = ((int64_t)tx_time.tv_sec - rx_time.tv_sec) * NS_PER_S +
++				    ((int64_t)tx_time.tv_nsec - rx_time.tv_nsec);
++			printf("  PHC after sync:  TX=%" PRId64 ".%09" PRId64
++			       " RX=%" PRId64 ".%09" PRId64
++			       " offset=%" PRId64 "ns\n",
++			       (int64_t)tx_time.tv_sec,
++			       (int64_t)tx_time.tv_nsec,
++			       (int64_t)rx_time.tv_sec,
++			       (int64_t)rx_time.tv_nsec,
++			       offset_ns);
++		}
++	}
++
++	/* Print link status and MAC */
++	{
++		struct rte_eth_link link;
++		struct rte_ether_addr mac;
++
++		/* Wait for link UP (needed when peer port negotiates) */
++		printf("  Waiting for link...\n");
++		for (int w = 0; w < 50; w++) { /* up to 5s */
++			rte_eth_link_get_nowait(port_id, &link);
++			if (link.link_status)
++				break;
++			rte_delay_ms(100);
++		}
++		rte_eth_macaddr_get(port_id, &mac);
++		printf("  Link: %s %u Mbps %s\n",
++		       link.link_status ? "UP" : "DOWN",
++		       link.link_speed,
++		       link.link_duplex ? "Full" : "Half");
++		printf("  Src MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
++		       mac.addr_bytes[0], mac.addr_bytes[1],
++		       mac.addr_bytes[2], mac.addr_bytes[3],
++		       mac.addr_bytes[4], mac.addr_bytes[5]);
++
++		/* Also wait for RX port link */
++		if (rx_port_id != RTE_MAX_ETHPORTS) {
++			struct rte_eth_link rx_link;
++			for (int w = 0; w < 50; w++) {
++				rte_eth_link_get_nowait(rx_port_id, &rx_link);
++				if (rx_link.link_status)
++					break;
++				rte_delay_ms(100);
++			}
++			printf("  RX port link: %s %u Mbps\n",
++			       rx_link.link_status ? "UP" : "DOWN",
++			       rx_link.link_speed);
++		}
++	}
++
++	/* Launch RX capture worker */
++	if (rx_port_id != RTE_MAX_ETHPORTS) {
++		rx_lcore = rte_get_next_lcore(rte_lcore_id(), 1, 0);
++		if (rx_lcore == RTE_MAX_LCORE)
++			rte_exit(EXIT_FAILURE, "RX capture needs at least 2 lcores\n");
++		rte_eal_remote_launch(rx_capture_worker, NULL, rx_lcore);
++	}
++
++	/* Launch unpaced worker on another lcore if mixed mode */
++	unsigned int worker_lcore = RTE_MAX_LCORE;
++	if (mixed_mode) {
++		unsigned int next = rx_lcore != RTE_MAX_LCORE ?
++			rte_get_next_lcore(rx_lcore, 1, 0) :
++			rte_get_next_lcore(rte_lcore_id(), 1, 0);
++		worker_lcore = next;
++		if (worker_lcore == RTE_MAX_LCORE)
++			rte_exit(EXIT_FAILURE, "Mixed mode needs another lcore\n");
++		rte_eal_remote_launch(unpaced_tx_worker, NULL, worker_lcore);
++	}
++
++	tx_loop();
++
++	/* Wait for workers to finish */
++	if (mixed_mode && worker_lcore != RTE_MAX_LCORE)
++		rte_eal_wait_lcore(worker_lcore);
++
++	/* Wait for HW to drain + RX to collect remaining packets */
++	rte_delay_ms(500);
++	force_quit = true;
++	if (rx_lcore != RTE_MAX_LCORE)
++		rte_eal_wait_lcore(rx_lcore);
++
++	printf("\n=== Final Results ===\n");
++	printf("  TX packets: %" PRIu64 "\n", total_tx);
++	printf("  TX drops:   %" PRIu64 "\n", total_drops);
++	printf("  Inter:      %" PRIu64 " ns\n", inter_ns);
++	printf("  Intra:      %" PRIu64 " ns\n", intra_ns);
++	if (total_tx > 0) {
++		double actual_rate = (double)total_tx / run_seconds;
++		double expected_rate = 1e9 / intra_ns;
++		printf("  Actual rate:   %.1f pps\n", actual_rate);
++		printf("  Expected rate: %.1f pps\n", expected_rate);
++		printf("  Accuracy:      %.2f%%\n", actual_rate / expected_rate * 100.0);
++	}
++
++	if (mixed_mode)
++		printf("  Unpaced TX (Q1): %" PRIu64 " pkts\n", unpaced_tx);
++
++	/* HW port stats */
++	{
++		struct rte_eth_stats stats;
++		rte_eth_stats_get(port_id, &stats);
++		printf("  HW opackets: %" PRIu64 "\n", stats.opackets);
++		printf("  HW obytes:   %" PRIu64 "\n", stats.obytes);
++		printf("  HW oerrors:  %" PRIu64 "\n", stats.oerrors);
++		printf("  HW ipackets: %" PRIu64 "\n", stats.ipackets);
++	}
++
++	/* RX HW timestamp delta analysis */
++	if (rx_port_id != RTE_MAX_ETHPORTS && rx_delta_count > 0) {
++		uint64_t n = rx_delta_count;
++		if (n > MAX_DELTAS)
++			n = MAX_DELTAS;
++
++		/* Separate intra-burst from inter-burst deltas */
++		uint64_t threshold = (inter_ns != intra_ns) ?
++			(inter_ns + intra_ns) / 2 : UINT64_MAX;
++
++		/* Compute stats on intra-burst deltas only */
++		uint64_t sum = 0, min_d = UINT64_MAX, max_d = 0;
++		uint64_t target = intra_ns;
++		uint64_t within_10pct = 0, within_25pct = 0;
++		uint64_t exact_ticks = 0;
++		uint64_t intra_count = 0;
++		uint64_t inter_count = 0;
++
++		for (uint64_t i = 0; i < n; i++) {
++			uint64_t d = rx_deltas[i];
++			if (d >= threshold) {
++				inter_count++;
++				continue;
++			}
++			intra_count++;
++			sum += d;
++			if (d < min_d)
++				min_d = d;
++			if (d > max_d)
++				max_d = d;
++			/* Within 10% of target */
++			if (d >= target * 90 / 100 && d <= target * 110 / 100)
++				within_10pct++;
++			/* Within 25% */
++			if (d >= target * 75 / 100 && d <= target * 125 / 100)
++				within_25pct++;
++			/* Within 1 HW tick (128ns) of target */
++			int64_t err = (int64_t)d - (int64_t)target;
++			if (err < 0)
++				err = -err;
++			if ((uint64_t)err <= 128)
++				exact_ticks++;
++		}
++
++		double avg = intra_count > 0 ? (double)sum / intra_count : 0;
++
++		printf("\n=== RX HW Timestamp Analysis ===\n");
++		printf("  RX packets:       %" PRIu64 "\n", rx_total_pkts);
++		printf("  Valid deltas:     %" PRIu64 "\n", rx_delta_count);
++		if (inter_ns != intra_ns)
++			printf("  Intra-burst:      %" PRIu64 "  Inter-burst: %" PRIu64 "\n",
++			       intra_count, inter_count);
++		printf("  Target spacing:   %" PRIu64 " ns\n", target);
++		printf("  Average delta:    %.1f ns\n", avg);
++		printf("  Min delta:        %" PRIu64 " ns\n", min_d);
++		printf("  Max delta:        %" PRIu64 " ns\n", max_d);
++		printf("  Within +/-10%%:    %" PRIu64 "/%" PRIu64 " (%.1f%%)\n",
++		       within_10pct, intra_count,
++		       intra_count ? 100.0 * within_10pct / intra_count : 0);
++		printf("  Within +/-25%%:    %" PRIu64 "/%" PRIu64 " (%.1f%%)\n",
++		       within_25pct, intra_count,
++		       intra_count ? 100.0 * within_25pct / intra_count : 0);
++		printf("  Within 1 tick:    %" PRIu64 "/%" PRIu64 " (%.1f%%)\n",
++		       exact_ticks, intra_count,
++		       intra_count ? 100.0 * exact_ticks / intra_count : 0);
++
++		/* Histogram */
++		printf("\n  Delta histogram (ns):\n");
++		static const uint64_t bins[] = {
++			0, 64, 96, 128, 160, 192, 256,
++			384, 512, 1024, 10000, UINT64_MAX
++		};
++		static const char * const labels[] = {
++			"<64", "64-96", "96-128", "128-160",
++			"160-192", "192-256", "256-384",
++			"384-512", "512-1024", "1024-10000",
++			">10000"
++		};
++		uint64_t counts[11] = {0};
++		for (uint64_t i = 0; i < n; i++) {
++			for (int b = 0; b < 11; b++) {
++				if (rx_deltas[i] >= bins[b] && rx_deltas[i] < bins[b+1]) {
++					counts[b]++;
++					break;
++				}
++			}
++		}
++		for (int b = 0; b < 11; b++) {
++			if (counts[b] > 0)
++				printf("    %10s: %6" PRIu64 " (%5.1f%%)\n",
++				       labels[b], counts[b], 100.0 * counts[b] / n);
++		}
++
++		/* Print first 50 raw deltas for inspection */
++		printf("\n  First 50 deltas (ns):\n    ");
++		uint64_t show = n < 50 ? n : 50;
++		for (uint64_t i = 0; i < show; i++) {
++			printf("%" PRIu64 " ", rx_deltas[i]);
++			if ((i + 1) % 10 == 0)
++				printf("\n    ");
++		}
++		printf("\n");
++	}
++
++	/* Write pcap file if requested */
++	write_pcap_file();
++
++	rte_eth_dev_stop(port_id);
++	if (rx_port_id != RTE_MAX_ETHPORTS) {
++		rte_eth_dev_stop(rx_port_id);
++		rte_eth_dev_close(rx_port_id);
++	}
++	rte_eth_dev_close(port_id);
++	rte_eal_cleanup();
++
++	return 0;
++}
+diff --git a/examples/txpp/meson.build b/examples/txpp/meson.build
+new file mode 100644
+index 0000000000..1c50cd5a57
+--- /dev/null
++++ b/examples/txpp/meson.build
+@@ -0,0 +1,12 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(c) 2024 Intel Corporation
++
++# meson file, for building this example as part of a main DPDK build.
++#
++# To build this example as a standalone application with an already-installed
++# DPDK instance, use 'make'
++
++allow_experimental_apis = true
++sources = files(
++        'main.c',
++)
+-- 
+2.34.1
+

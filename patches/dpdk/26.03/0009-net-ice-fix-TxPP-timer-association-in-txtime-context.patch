@@ -1,0 +1,36 @@
+From 9c05e102304f23b9b6e1b8af4ec1347d514f0507 Mon Sep 17 00:00:00 2001
+From: Soumyadeep Hore <soumyadeep.hore@intel.com>
+Date: Wed, 10 Jun 2026 10:35:04 +0530
+Subject: [PATCH 09/11] net/ice: fix TxPP timer association in txtime context
+
+The txtime context setup was missing the timer_num field assignment,
+leaving it at the default value of 0. This causes incorrect PHC timer
+association on multi-function NICs where the PF may be associated with
+a different timer index.
+
+Set timer_num from hw->func_caps.ts_func_info.tmr_index_assoc to ensure
+the txtime scheduling engine uses the correct PHC timer for timestamp
+comparison.
+
+Fixes: 0b6ff09a1f19 ("net/intel: support Tx packet pacing for E830")
+Cc: stable@dpdk.org
+Signed-off-by: Soumyadeep Hore <soumyadeep.hore@intel.com>
+---
+ drivers/net/intel/ice/ice_rxtx.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index 31b74be9ba..40150748d8 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -778,6 +778,7 @@ ice_setup_txtime_ctx(struct ci_tx_queue *txq,
+ 	txtime_ctx->ts_res = ICE_TXTIME_CTX_RESOLUTION_128NS;
+ 	txtime_ctx->drbell_mode_32 = ICE_TXTIME_CTX_DRBELL_MODE_32;
+ 	txtime_ctx->ts_fetch_prof_id = ICE_TXTIME_CTX_FETCH_PROF_ID_0;
++	txtime_ctx->timer_num = hw->func_caps.ts_func_info.tmr_index_assoc;
+ 
+ 	return 0;
+ }
+-- 
+2.34.1
+

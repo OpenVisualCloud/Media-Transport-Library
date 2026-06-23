@@ -456,10 +456,40 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (!mt_ptp_is_locked(impl, MTL_PORT_P)) {
-    /* fallback to tsc if ptp is not synced */
-    return video_trs_tsc_tasklet(impl, s, s_port);
-  }
+  /* DEBUG: TSN HW launch time rides the NIC PHC directly, so it paces correctly
+   * whether or not PTP is disciplined to an external master. The software TSC
+   * fallback (taken when PTP is not "locked") is removed here so that every
+   * burst goes through the HW launch-time path under test. Final state: TSN
+   * always runs with --ptp. */
+
+// #ifdef MTL_TXPP_PROBE
+//   /* TXPP probe P-call: tasklet entry cadence. If the tasklet itself is not
+//    * scheduled for ~one frame_time, the launch stamps of the queued packets go
+//    * stale before they reach the HW. max_gap = worst entry-to-entry interval in
+//    * the window; ring at entry shows how full the SW ring is when we are (re)run.
+//    * Logged ~every 10ms, forced whenever a single inter-entry gap exceeds 1ms. */
+//   {
+//     static uint64_t prev_entry_tsc[MTL_SESSION_PORT_MAX];
+//     static uint64_t win_max_gap[MTL_SESSION_PORT_MAX];
+//     static uint64_t win_calls[MTL_SESSION_PORT_MAX];
+//     static uint64_t probe_next_tsc;
+//     uint64_t entry_tsc = mt_get_tsc(impl);
+//     uint64_t gap = prev_entry_tsc[s_port] ? (entry_tsc - prev_entry_tsc[s_port]) : 0;
+//     prev_entry_tsc[s_port] = entry_tsc;
+//     if (gap > win_max_gap[s_port]) win_max_gap[s_port] = gap;
+//     win_calls[s_port]++;
+//     if (gap > 1000000 || entry_tsc >= probe_next_tsc) {
+//       info("%s(%d), TXPP P-call: gap=%" PRIu64 " ns max_gap=%" PRIu64
+//            " ns calls=%" PRIu64 " ring=%u inflight=%u%s\n",
+//            __func__, s->idx, gap, win_max_gap[s_port], win_calls[s_port],
+//            rte_ring_count(s->ring[s_port]), s->trs_inflight_num[s_port],
+//            gap > 1000000 ? " STARVED" : "");
+//       probe_next_tsc = entry_tsc + rte_get_tsc_hz() / 100;
+//       win_max_gap[s_port] = 0;
+//       win_calls[s_port] = 0;
+//     }
+//   }
+// #endif
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
@@ -508,6 +538,74 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
       pkts[i]->ol_flags |= inf->tx_launch_time_flag;
       *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t*) = target_ptp;
     }
+
+// #ifdef MTL_TXPP_PROBE
+//     /* TXPP probe P-trs: the launch timestamps as they actually reach the NIC.
+//      * lead = first descriptor's launch time vs the live PHC at submit time
+//      * (must stay >= 0; negative = past-dated -> HW flushes at wire rate). To
+//      * catch every past-date we read the PHC on each bulk and keep the worst
+//      * (min) lead plus a negative-lead count, then emit a summary ~every 10ms.
+//      * regress = bulks whose head landed before the previous bulk's tail (a
+//      * non-monotonic launch grid). */
+//     {
+//       static uint64_t probe_next_tsc;
+//       static uint64_t prev_tail_ptp[MTL_SESSION_PORT_MAX];
+//       static uint64_t regress_cnt[MTL_SESSION_PORT_MAX];
+//       static int64_t regress_max[MTL_SESSION_PORT_MAX];
+//       static int64_t win_min_lead[MTL_SESSION_PORT_MAX];
+//       static uint64_t win_neg_cnt[MTL_SESSION_PORT_MAX];
+//       static uint64_t win_bulks[MTL_SESSION_PORT_MAX];
+//       static int prev_pastdate[MTL_SESSION_PORT_MAX];
+//       static uint64_t prev_submit_tsc[MTL_SESSION_PORT_MAX];
+//       uint64_t head_ptp = st_tx_mbuf_get_ptp(pkts[0]);
+//       uint64_t tail_ptp = st_tx_mbuf_get_ptp(pkts[valid_bulk - 1]);
+//       uint64_t now_tsc = mt_get_tsc(impl);
+//       struct timespec phc;
+//       int64_t lead = 0;
+//       if (rte_eth_timesync_read_time(mt_port_id(impl, port), &phc) == 0) {
+//         uint64_t phc_now = (uint64_t)phc.tv_sec * NS_PER_S + (uint64_t)phc.tv_nsec;
+//         lead = (int64_t)(head_ptp - phc_now);
+//         if (win_bulks[s_port] == 0 || lead < win_min_lead[s_port])
+//           win_min_lead[s_port] = lead;
+//         if (lead < 0) win_neg_cnt[s_port]++;
+//         /* edge trigger: capture the exact bulk where lead crosses zero in
+//          * either direction. gap_since = wall time since the previous submit
+//          * (a large value = the tx tasklet was starved). ring/inflight show
+//          * where the backlog sits when the past-date window opens. */
+//         int now_pastdate = (lead < 0);
+//         if (now_pastdate != prev_pastdate[s_port]) {
+//           int64_t gap_since =
+//               prev_submit_tsc[s_port] ? (int64_t)(now_tsc - prev_submit_tsc[s_port]) : 0;
+//           info("%s(%d), TXPP P-edge: %s lead=%" PRId64 " ns gap_since_submit=%" PRId64
+//                " ns ring=%u inflight=%u\n",
+//                __func__, s->idx, now_pastdate ? "ENTER-PASTDATE" : "EXIT-PASTDATE", lead,
+//                gap_since, rte_ring_count(ring), s->trs_inflight_num[s_port]);
+//           prev_pastdate[s_port] = now_pastdate;
+//         }
+//       }
+//       prev_submit_tsc[s_port] = now_tsc;
+//       win_bulks[s_port]++;
+//       if (prev_tail_ptp[s_port] && head_ptp < prev_tail_ptp[s_port]) {
+//         int64_t regress = (int64_t)(prev_tail_ptp[s_port] - head_ptp);
+//         regress_cnt[s_port]++;
+//         if (regress > regress_max[s_port]) regress_max[s_port] = regress;
+//       }
+//       prev_tail_ptp[s_port] = tail_ptp;
+//       if (now_tsc >= probe_next_tsc) {
+//         info("%s(%d), TXPP P-trs: head_ptp=%" PRIu64 " lead=%" PRId64
+//              " ns min_lead=%" PRId64 " ns neg=%" PRIu64 "/%" PRIu64
+//              " regress_cnt=%" PRIu64 " regress_max=%" PRId64 " ns%s\n",
+//              __func__, s->idx, head_ptp, lead, win_min_lead[s_port], win_neg_cnt[s_port],
+//              win_bulks[s_port], regress_cnt[s_port], regress_max[s_port],
+//              win_neg_cnt[s_port] ? " PASTDATE" : "");
+//         probe_next_tsc = now_tsc + rte_get_tsc_hz() / 100; /* ~10ms */
+//         regress_max[s_port] = 0;
+//         win_min_lead[s_port] = 0;
+//         win_neg_cnt[s_port] = 0;
+//         win_bulks[s_port] = 0;
+//       }
+//     }
+// #endif
 
     tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
 

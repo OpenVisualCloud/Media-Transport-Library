@@ -1952,13 +1952,22 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
 uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
                             enum mtl_port port);
 
+uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port);
+
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
+#ifdef MTL_TXPP_PROBE
+  /* DEBUG: TxPP HW launch time is referenced to the NIC PHC. The normal
+   * ptp_get_time_fn applies a software offset correction (ptp_from_eth) once a
+   * PTP master is seen, so it diverges from the raw PHC that the HW launch
+   * engine actually compares against. Pin every pacing read to the raw PHC so
+   * the builder/transmitter and the HW agree on one clock. */
+  return mt_get_raw_ptp_time(impl, port);
+#else
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
+#endif
 }
 
 int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeout_ms);
-
-uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 static inline struct rte_ether_addr* mt_eth_s_addr(struct rte_ether_hdr* eth) {
