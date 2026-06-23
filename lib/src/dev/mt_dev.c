@@ -1169,10 +1169,28 @@ static int dev_start_port(struct mt_interface* inf) {
       rte_eth_add_tx_callback(port_id, q, dev_tx_pkt_check, inf);
   }
 
+  /*
+   * IGC timesync accesses the configured RX queues and enables a timestamp
+   * prefix that must be accounted for when the PMD allocates RX buffers at
+   * port start. Enable it after queue setup, but before rte_eth_dev_start().
+   */
+  if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
+      (inf->drv_info.drv_type == MT_DRV_IGC)) {
+    ret = dev_start_timesync(inf);
+    if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
+  }
+
   ret = rte_eth_dev_start(port_id);
   if (ret < 0) {
     err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
     return ret;
+  }
+
+  /* Port start resets IGC timestamp registers; restore them after RX init. */
+  if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
+      (inf->drv_info.drv_type == MT_DRV_IGC)) {
+    ret = dev_start_timesync(inf);
+    if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
   }
 
   if (mt_has_virtio_user(impl, port)) {
@@ -1839,7 +1857,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF)) {
+        (port_type == MT_PORT_PF) && (inf->drv_info.drv_type != MT_DRV_IGC)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
@@ -1874,7 +1892,8 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     }
     /* try to start time sync after rte_eth_dev_start */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
+        (port_type == MT_PORT_PF) && (inf->drv_info.drv_type != MT_DRV_IGC) &&
+        !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
