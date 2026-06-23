@@ -36,6 +36,9 @@ def test_st22p_codec(
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
+    if codec == "H264_CBR" and "10" in media_file_info["file_format"]:
+        pytest.skip("H264_CBR codec plugin does not support 10-bit formats")
+
     # Check codec encoder availability
     codec_encoder_map = {
         "H264_CBR": "libopenh264",

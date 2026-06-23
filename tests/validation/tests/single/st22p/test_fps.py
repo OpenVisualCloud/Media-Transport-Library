@@ -52,6 +52,10 @@ def test_st22p_fps(
     """Test st22p at different frame rates."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+
+    if codec == "H264_CBR" and "10" in media_file_info["file_format"]:
+        pytest.skip("H264_CBR codec plugin does not support 10-bit formats")
+
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
