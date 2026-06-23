@@ -4,14 +4,15 @@
 
 #include "st22_pipeline_tx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 
 static const char* st22p_tx_frame_stat_name[ST22P_TX_FRAME_STATUS_MAX] = {
-    "free", "in_user", "ready", "in_encoding", "encoded", "in_trans",
+    "free", "in_user", "ready", "in_encoding", "encoded", "dropped", "in_trans",
 };
 
 static const char* st22p_tx_frame_stat_name_short[ST22P_TX_FRAME_STATUS_MAX] = {
-    "F", "U", "R", "IE", "E", "T",
+    "F", "U", "R", "IE", "E", "D", "T",
 };
 
 static const char* tx_st22p_stat_name(enum st22p_tx_frame_status stat) {
@@ -46,6 +47,13 @@ static void tx_st22p_encode_block_wake(struct st22p_tx_ctx* ctx) {
   mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
   mt_pthread_cond_signal(&ctx->encode_block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
+}
+
+/* wake_on_destroy hook: signal both public and plugin-internal block conds so
+ * any thread sleeping under our guard observes destroying=1 and bails. */
+static void tx_st22p_block_wake_all(struct st22p_tx_ctx* ctx) {
+  tx_st22p_block_wake(ctx);
+  tx_st22p_encode_block_wake(ctx);
 }
 
 static void tx_st22p_encode_notify_frame_ready(struct st22p_tx_ctx* ctx) {
@@ -97,18 +105,97 @@ static struct st22p_tx_frame* tx_st22p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if the newest ENCODED frame has missed its transmission window.
+ * Drops the frame (ENCODED -> DROPPED -> FREE) if cur_tai > frame_tai + frame_period.
+ *
+ * Locking contract (mirrors st20p):
+ *   1. Caller holds ctx->lock.
+ *   2. This function drops the lock to fire app callbacks outside it.
+ *   3. Returns with ctx->lock held.
+ *   4. Returns true if the frame was dropped (caller should retry).
+ */
+static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
+                                   struct st22p_tx_frame* framebuff) {
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  uint32_t rtp_ts;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST22P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be compared against PTP wall time */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST22P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
+         "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
+         __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+         cur_tai, frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame->status = ST_FRAME_STATUS_DROPPED;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST22P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  framebuff->stat = ST22P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st22p_notify_frame_available(ctx);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st22_tx_frame_meta* meta) {
   struct st22p_tx_ctx* ctx = priv;
   struct st22p_tx_frame* framebuff;
+  int drop_cnt = 0;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
+  do {
+    framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
+    if (!framebuff) break; /* no encoded frame available */
+    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
+  } while (tx_st22p_if_frame_late(ctx, framebuff));
+
   /* not any encoded frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE))
+        tx_st22p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
@@ -128,42 +215,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
 
-int st22p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st22p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST22P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st22p_user_frame(ctx, framebuff));
-  }
-
-  /* notify app can get frame */
-  tx_st22p_notify_frame_available(ctx);
-  MT_USDT_ST22P_TX_FRAME_DONE(ctx->idx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -191,9 +243,12 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
     struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+    frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
   }
 
   tx_st22p_notify_frame_available(ctx);
@@ -240,19 +295,17 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   struct st22p_tx_ctx* ctx = priv;
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff;
+  struct st22_encode_frame_meta* ret_frame = NULL;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, NULL);
 
   if (!ctx->ready) {
     dbg("%s(%d), not ready %d\n", __func__, idx, ctx->type);
     if (ctx->encode_block_get) {
       tx_st22p_encode_get_block_wait(ctx);
-      if (!ctx->ready) return NULL;
+      if (!ctx->ready) goto out;
     }
-    return NULL; /* not ready */
+    goto out; /* not ready */
   }
 
   ctx->stat_encode_get_frame_try++;
@@ -270,7 +323,7 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
     dbg("%s(%d), no ready frame\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST22P_TX_FRAME_IN_ENCODING;
@@ -278,10 +331,12 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
 
   ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  struct st22_encode_frame_meta* frame = &framebuff->encode_frame;
-  MT_USDT_ST22P_TX_ENCODE_GET(idx, framebuff->idx, frame->src->addr[0],
-                              frame->dst->addr[0]);
-  return frame;
+  ret_frame = &framebuff->encode_frame;
+  MT_USDT_ST22P_TX_ENCODE_GET(idx, framebuff->idx, ret_frame->src->addr[0],
+                              ret_frame->dst->addr[0]);
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_frame;
 }
 
 /* min frame size should be capable of bulk pkts */
@@ -295,18 +350,17 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
   uint16_t encode_idx = framebuff->idx;
   size_t data_size = frame->dst->data_size;
   size_t max_size = ctx->encode_impl->codestream_max_size;
+  int ret;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_ENCODING != framebuff->stat) {
     mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in encoding %d\n", __func__, idx, encode_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   ctx->stat_encode_put_frame++;
@@ -328,7 +382,10 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
 
   MT_USDT_ST22P_TX_ENCODE_PUT(idx, framebuff->idx, frame->src->addr[0],
                               frame->dst->addr[0], result, data_size);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 static int tx_st22p_encode_dump(void* priv) {
@@ -359,7 +416,7 @@ static int tx_st22p_encode_dump(void* priv) {
                          st22p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st22p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st22p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_ST22P(%s), frame get try %d succ %d, put %d\n", ctx->ops_name,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
@@ -595,14 +652,7 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   return 0;
 }
 
-static int tx_st22p_get_block_wait(struct st22p_tx_ctx* ctx) {
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                               ctx->block_timeout_ns);
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  return 0;
-}
+/* tx_st22p_get_block_wait inlined into st22p_tx_get_frame; see mt_handle_guard.h */
 
 static int tx_st22p_usdt_dump_frame(struct st22p_tx_ctx* ctx, struct st_frame* frame) {
   int idx = ctx->idx;
@@ -669,13 +719,11 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff;
+  struct st_frame* frame = NULL;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -683,7 +731,12 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    tx_st22p_get_block_wait(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+      mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                   ctx->block_timeout_ns);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
@@ -691,10 +744,11 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST22P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   framebuff->seq_number = ctx->framebuff_sequence_number++;
   mt_pthread_mutex_unlock(&ctx->lock);
 
@@ -704,9 +758,11 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     ctx->second_field = ctx->second_field ? false : true;
   }
   ctx->stat_get_frame_succ++;
-  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  frame = tx_st22p_user_frame(ctx, framebuff);
   dbg("%s(%d), frame %u addr %p\n", __func__, idx, framebuff->idx, frame->addr[0]);
   MT_USDT_ST22P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame;
 }
 
@@ -715,21 +771,21 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ctx->ext_frame) {
     err("%s(%d), EXT_FRAME enabled, use st22p_tx_put_ext_frame instead\n", __func__, idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ctx->ops.interlaced) { /* update second_field */
@@ -758,7 +814,35 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   }
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st22p_tx_put_frame_abort(st22p_tx_handle handle, struct st_frame* frame) {
+  struct st22p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st22p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
+
+  if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    ret = -EIO;
+    goto out;
+  }
+
+  framebuff->stat = ST22P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
@@ -769,25 +853,25 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
   uint16_t producer_idx = framebuff->idx;
   int ret = 0;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   if (!ctx->ext_frame) {
     err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ctx->derive) {
     err("%s(%d), derive mode not support ext frame\n", __func__, idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   uint8_t planes = st_frame_fmt_planes(framebuff->src.fmt);
@@ -804,7 +888,7 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
   if (ret < 0) {
     err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
         producer_idx);
-    return ret;
+    goto out;
   }
 
   if (ctx->ops.interlaced) { /* update second_field */
@@ -816,7 +900,10 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
   ctx->stat_put_frame++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
@@ -889,6 +976,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->ext_frame = (ops->flags & ST22P_TX_FLAG_EXT_FRAME) ? true : false;
   ctx->impl = impl;
   ctx->type = MT_ST22_HANDLE_PIPELINE_TX;
+  ctx->wake_on_destroy = (void (*)(void*))tx_st22p_block_wake_all;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
@@ -954,10 +1042,14 @@ int st22p_tx_free(st22p_tx_handle handle) {
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST22_HANDLE_PIPELINE_TX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
 
   if (ctx->framebuffs && mt_started(impl)) {
     tx_st22p_framebuffs_flush(ctx);
@@ -988,73 +1080,66 @@ int st22p_tx_free(st22p_tx_handle handle) {
 void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
   struct st22p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
 
   if (ctx->ext_frame) {
     err("%s(%d), not known as EXT_FRAME flag enabled\n", __func__, cidx);
-    return NULL;
+    goto out;
   }
 
-  return tx_st22p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
+  ret_addr = tx_st22p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }
 
 size_t st22p_tx_frame_size(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
-  return ctx->src_size;
+  ret = ctx->src_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
-  return st22_tx_update_destination(ctx->transport, dst);
+  ret = st22_tx_update_destination(ctx->transport, dst);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st22p_tx_wake_block(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
   if (ctx->block_get) tx_st22p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st22p_tx_set_block_timeout(st22p_tx_handle handle, uint64_t timedwait_ns) {
   struct st22p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }

@@ -1,0 +1,43 @@
+{
+  "_comment": "TX-side config for 14-stream multi-channel pipeline. Adjust active_streams to enable fewer channels.",
+  "global": {
+    "active_streams": 14,
+    "mtl_port": "<SENDER_VF_BDF>",
+    "sip": "<SENDER_DPDK_IP>",
+    "tx_port": "<SYNTH_TX_VF_BDF>",
+    "tx_sip": "<SYNTH_TX_DPDK_IP>",
+    "mxl_domain": "/dev/shm/mxl_16",
+    "fabrics_provider": "verbs",
+    "fabrics_local_ip": "<SENDER_RDMA_IP>",
+    "tx_lcores": "<SYNTH_TX_LCORES>",
+    "mtl_lcores": "<SENDER_LCORES>",
+    "framebuff_cnt": 8,
+    "accept_incomplete": true,
+    "duration_sec": 0,
+    "payload_type": 112,
+    "video": {
+      "width": 1920,
+      "height": 1080,
+      "fps_num": 60000,
+      "fps_den": 1001
+    }
+  },
+  "streams": [
+    { "id": 0,  "label": "Stream 1",  "multicast_ip": "<MULTICAST_BASE>.1",  "udp_port": 20000, "fabrics_local_port": "5100" },
+    { "id": 1,  "label": "Stream 2",  "multicast_ip": "<MULTICAST_BASE>.2",  "udp_port": 20000, "fabrics_local_port": "5101" },
+    { "id": 2,  "label": "Stream 3",  "multicast_ip": "<MULTICAST_BASE>.3",  "udp_port": 20000, "fabrics_local_port": "5102" },
+    { "id": 3,  "label": "Stream 4",  "multicast_ip": "<MULTICAST_BASE>.4",  "udp_port": 20000, "fabrics_local_port": "5103" },
+    { "id": 4,  "label": "Stream 5",  "multicast_ip": "<MULTICAST_BASE>.5",  "udp_port": 20000, "fabrics_local_port": "5104" },
+    { "id": 5,  "label": "Stream 6",  "multicast_ip": "<MULTICAST_BASE>.6",  "udp_port": 20000, "fabrics_local_port": "5105" },
+    { "id": 6,  "label": "Stream 7",  "multicast_ip": "<MULTICAST_BASE>.7",  "udp_port": 20000, "fabrics_local_port": "5106" },
+    { "id": 7,  "label": "Stream 8",  "multicast_ip": "<MULTICAST_BASE>.8",  "udp_port": 20000, "fabrics_local_port": "5107" },
+    { "id": 8,  "label": "Stream 9",  "multicast_ip": "<MULTICAST_BASE>.9",  "udp_port": 20000, "fabrics_local_port": "5108" },
+    { "id": 9,  "label": "Stream 10", "multicast_ip": "<MULTICAST_BASE>.10", "udp_port": 20000, "fabrics_local_port": "5109" },
+    { "id": 10, "label": "Stream 11", "multicast_ip": "<MULTICAST_BASE>.11", "udp_port": 20000, "fabrics_local_port": "5110" },
+    { "id": 11, "label": "Stream 12", "multicast_ip": "<MULTICAST_BASE>.12", "udp_port": 20000, "fabrics_local_port": "5111" },
+    { "id": 12, "label": "Stream 13", "multicast_ip": "<MULTICAST_BASE>.13", "udp_port": 20000, "fabrics_local_port": "5112" },
+    { "id": 13, "label": "Stream 14", "multicast_ip": "<MULTICAST_BASE>.14", "udp_port": 20000, "fabrics_local_port": "5113" },
+    { "id": 14, "label": "Stream 15", "multicast_ip": "<MULTICAST_BASE>.15", "udp_port": 20000, "fabrics_local_port": "5114" },
+    { "id": 15, "label": "Stream 16", "multicast_ip": "<MULTICAST_BASE>.16", "udp_port": 20000, "fabrics_local_port": "5115" }
+  ]
+}

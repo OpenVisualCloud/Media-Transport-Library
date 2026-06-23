@@ -11,6 +11,8 @@ on:
       - 'maint-**'
 permissions:
   contents: read
+  checks: read
+  actions: read
 jobs:
   smoke-check-for-changes:
     runs-on: ubuntu-22.04
@@ -19,15 +21,37 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
 
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: .github/path_filters.yml
-
-  run-smoke-tests:
+  build:
     needs: smoke-check-for-changes
+    if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Wait for Build workflow
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: build
+  run-smoke-tests:
+    needs:
+      - smoke-check-for-changes
+      - build
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
@@ -36,23 +60,31 @@ jobs:
       matrix:
         nic:
           - e810
-          - e810-dell
           - e830
+          - e825
+          - e835
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 90
     steps:
       - name: 'preparation: Harden Runner'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ github.ref }}'
-      - uses: ./.github/actions/build
+      - name: 'preparation: Validate host and download artifacts'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        uses: ./.github/actions/validate-host
+
+      - name: 'cleanup: Kill stale processes before test'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        uses: ./.github/actions/cleanup
+
       - name: 'installation: Install pipenv environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         working-directory: tests/validation
@@ -71,10 +103,12 @@ jobs:
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e825" ]; then
+            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e835" ]; then
+            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
@@ -82,44 +116,28 @@ jobs:
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
-            --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          sudo pkill -9 -f "gtest.sh" || true
-          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
-      - name: 'preparation: Start MtlManager at background'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          sudo MtlManager &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         timeout-minutes: 60
         run: |
-          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: smoke-test-report-${{ matrix.nic }}
           path: |
@@ -161,3 +179,7 @@ jobs:
               echo "❌ No report.json file was generated"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup

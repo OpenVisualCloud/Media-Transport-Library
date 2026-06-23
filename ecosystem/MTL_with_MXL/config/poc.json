@@ -1,0 +1,45 @@
+{
+  "_comment": "Single-stream ST2110-20 pipeline with ST 2022-7 redundancy (P+R paths).",
+  "video": {
+    "width": 1920,
+    "height": 1080,
+    "fps_num": 60000,
+    "fps_den": 1001
+  },
+  "sender": {
+    "sip": "<SENDER_DPDK_IP>",
+    "rx_ip": "<MULTICAST_P>",
+    "rx_udp_port": 20000,
+    "payload_type": 112,
+    "mxl_domain": "/dev/shm/mxl_tx",
+    "provider": "verbs",
+    "local_ip": "<SENDER_RDMA_IP>",
+    "local_port": "0",
+    "worker_cpu": -1,
+    "mtl_lcores": "<SENDER_LCORES>",
+    "fb_count": 3,
+    "queue_depth": 4,
+    "accept_incomplete": true,
+    "redundancy": true,
+    "sip_r": "<SENDER_DPDK_IP_R>",
+    "rx_ip_r": "<MULTICAST_R>",
+    "rx_udp_port_r": 20000
+  },
+  "synth_tx": {
+    "sip": "<SYNTH_TX_DPDK_IP>",
+    "sip_r": "<SYNTH_TX_DPDK_IP_R>",
+    "tx_ip": "<MULTICAST_P>",
+    "tx_ip_r": "<MULTICAST_R>",
+    "tx_udp_port": 20000,
+    "tx_udp_port_r": 20000,
+    "lcores": "<SYNTH_TX_LCORES>",
+    "pattern": "bars"
+  },
+  "receiver": {
+    "mxl_domain": "/dev/shm/mxl_rx",
+    "provider": "verbs",
+    "bind_ip": "<RECEIVER_RDMA_IP>",
+    "bind_port": "5000",
+    "consumer_cpu": -1
+  }
+}

@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
 
+: "${EXIT_ON_FAILURE:=1}"
+
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
@@ -10,7 +12,16 @@ script_folder=${script_path/$script_name/}
 . "${script_folder}/../../../script/common.sh"
 cd "${script_folder}" || exit 1
 
-BUILD_PATH="${script_folder}/../../../build/tests/KahawaiTest"
+mtl_folder="${script_folder}/../../.."
+
+# Detect whether to use .local_install (CI) or local build paths
+if [ -z "${BUILD_PATH:-}" ]; then
+	if [ -d "${mtl_folder}/.local_install" ]; then
+		BUILD_PATH="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"
+	else
+		BUILD_PATH="${mtl_folder}/build/tests/KahawaiTest"
+	fi
+fi
 ENV_FILE="${script_folder}/noctx.env"
 
 if [ -f "$ENV_FILE" ]; then
@@ -33,7 +44,7 @@ if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ 
 	exit 1
 fi
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.*" 2>/dev/null |
+test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.${NOCTX_FILTER}*" 2>/dev/null |
 	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 # Use TMP_FOLDER from environment or fallback to /tmp
@@ -60,10 +71,13 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		echo "Test NoCtxTest.$test_name passed"
 	else
 		echo "Test NoCtxTest.$test_name failed with exit code $?"
-		exit 1
+		if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
+			echo "Exiting due to test failure."
+			exit 1
+		fi
 	fi
 
-	sleep 30
+	sleep 10
 done < <(echo "$test_names")
 
 echo "All noctx tests completed. XML files saved in $XML_OUTPUT_DIR"

@@ -288,10 +288,10 @@ static int app_rx_audio_result(struct st_app_rx_audio_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                              : "FAILED",
-           framerate, s->stat_frame_total_received);
+  notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+        ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                           : "FAILED",
+        framerate, s->stat_frame_total_received);
   return 0;
 }
 

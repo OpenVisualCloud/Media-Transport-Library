@@ -5,6 +5,8 @@
 #ifndef _MT_LIB_MT_HEAD_H_
 #define _MT_LIB_MT_HEAD_H_
 
+#include <stdatomic.h>
+
 enum mt_handle_type {
   MT_HANDLE_UNKNOWN = 0,
   MT_HANDLE_MAIN = 1,

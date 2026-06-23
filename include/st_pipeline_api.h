@@ -489,6 +489,15 @@ enum st20p_tx_flag {
   ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
   /** Force the numa of the created session, both CPU and memory */
   ST20P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(11)),
+  /**
+   * Enable two-phase external frame release for EXT_FRAME mode.
+   * When set together with ST20P_TX_FLAG_EXT_FRAME, the library parks the frame
+   * in an intermediate state after notify_frame_done; the application must call
+   * st20p_tx_notify_ext_frame_free() to release the slot back to the free pool.
+   * Without this flag the legacy behavior is preserved (frame goes to FREE
+   * immediately after notify_frame_done).
+   */
+  ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -1473,6 +1482,20 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
 int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame);
 
 /**
+ * Abort and release a frame obtained by st22p_tx_get_frame.
+ * The frame is returned to the free pool immediately without encoding or transmitting.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22 pipeline session.
+ * @param frame
+ *   the frame pointer by st22p_tx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st22p_tx_put_frame_abort(st22p_tx_handle handle, struct st_frame* frame);
+
+/**
  * Put back the frame which get by st22p_tx_get_frame to the tx
  * st2110-22 pipeline session with external framebuffer.
  *
@@ -1599,6 +1622,20 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
  *   - <0: Error code if put fail.
  */
 int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame);
+
+/**
+ * Abort and release a frame obtained by st22p_rx_get_frame.
+ * The frame is returned to the free pool immediately without any processing.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22 pipeline session.
+ * @param frame
+ *   the frame pointer by st22p_rx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st22p_rx_put_frame_abort(st22p_rx_handle handle, struct st_frame* frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-22 pipeline session.
@@ -1745,6 +1782,20 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
 int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
+ * Abort and release a frame obtained by st20p_tx_get_frame.
+ * The frame is returned to the free pool immediately without converting or transmitting.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer by st20p_tx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame);
+
+/**
  * Put back the frame which get by st20p_tx_get_frame to the tx
  * st2110-20 pipeline session with external framebuffer.
  *
@@ -1760,6 +1811,26 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
  */
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame);
+
+/**
+ * Notify the tx st2110-20 pipeline session that the application has finished
+ * processing an external frame previously signalled via notify_frame_done.
+ *
+ * Only effective when ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is set.
+ * In that mode, after notify_frame_done fires, the frame slot is held in
+ * IN_USER state so the application can safely unmap / release external buffers.
+ * Call this function once cleanup is complete to release the slot back to FREE.
+ * When ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is not set this is a silent no-op.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer received in the notify_frame_done callback.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if the frame is not in IN_USER state.
+ */
+int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.
@@ -1815,6 +1886,7 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param port
@@ -1830,6 +1902,7 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param port
@@ -1929,6 +2002,20 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
 int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame);
 
 /**
+ * Abort and release a frame obtained by st20p_rx_get_frame.
+ * The frame is returned to the free pool immediately without any processing.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20 pipeline session.
+ * @param frame
+ *   the frame pointer by st20p_rx_get_frame.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if abort fail.
+ */
+int st20p_rx_put_frame_abort(st20p_rx_handle handle, struct st_frame* frame);
+
+/**
  * Get the framebuffer pointer from the rx st2110-20 pipeline session.
  *
  * @param handle
@@ -1997,6 +2084,7 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
  * @param port
@@ -2012,6 +2100,7 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
  * @param port
@@ -2328,6 +2417,24 @@ int st_field_split(const struct st_frame* frame, struct st_frame* first,
 
 /** helper for name to codec */
 enum st22_codec st_name_to_codec(const char* name);
+
+/**
+ * Check if a frame is late by comparing its TAI timestamp against the current
+ * MTL PTP time.
+ *
+ * @param mt
+ *   The MTL transport handle.
+ * @param frame
+ *   The frame pointer (st20p/st22p).
+ * @return
+ *   true if the frame is late (frame timestamp < current PTP time), false otherwise.
+ *   Always returns false if the frame timestamp format is not TAI.
+ */
+static inline bool st_frame_is_late(mtl_handle mt, struct st_frame* frame) {
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+  uint64_t ptp_now = mtl_ptp_read_time_raw(mt);
+  return (int64_t)(frame->timestamp - ptp_now) < 0;
+}
 
 #if defined(__cplusplus)
 }

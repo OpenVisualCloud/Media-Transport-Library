@@ -1,0 +1,36 @@
+name: Source Checksums
+description: >
+  Compute deterministic SHA-256 hashes for each component group.
+  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, librist}.
+  A parent change forces all children to rehash automatically.
+
+outputs:
+  dpdk:
+    description: 'Hash for DPDK sources'
+    value: ${{ steps.compute.outputs.dpdk }}
+  mtl:
+    description: 'Hash for MTL sources (includes DPDK hash)'
+    value: ${{ steps.compute.outputs.mtl }}
+  ffmpeg:
+    description: 'Hash for FFmpeg plugin sources (includes MTL hash)'
+    value: ${{ steps.compute.outputs.ffmpeg }}
+  gstreamer:
+    description: 'Hash for GStreamer plugin sources (includes MTL hash)'
+    value: ${{ steps.compute.outputs.gstreamer }}
+  librist:
+    description: 'Hash for librist sources (includes MTL hash)'
+    value: ${{ steps.compute.outputs.librist }}
+  plugins:
+    description: 'Hash for st22 avcodec plugin sources (includes MTL hash)'
+    value: ${{ steps.compute.outputs.plugins }}
+
+runs:
+  using: composite
+  steps:
+    - id: compute
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Source Checksums"
+        "${{ github.workspace }}/script/hash_sources.sh" -o "$GITHUB_OUTPUT"
+        echo "::endgroup::"

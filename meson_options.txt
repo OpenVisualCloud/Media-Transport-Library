@@ -5,6 +5,8 @@ option('enable_asan', type: 'boolean', value: false, description: 'enable/disabl
 option('enable_usdt', type: 'boolean', value: true, description: 'enable/disable USDT(User Statically-Defined Tracing) support')
 option('enable_fuzzing', type: 'boolean', value: false,
 	description: 'enable libFuzzer harnesses for RX paths')
+option('enable_unit_tests', type: 'boolean', value: false,
+	description: 'enable unit tests (exposes internal symbols via fuzz wrappers)')
 
 option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: '..\dpdk', description: 'dpdk source code root dir, for Windows')

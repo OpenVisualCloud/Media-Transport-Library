@@ -10,11 +10,11 @@ from typing import List, Optional, Tuple
 
 from mfd_connect import SSHConnection
 from mtl_engine import ip_pools
+from mtl_engine.const import RXTXAPP_EXE
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
-RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
 PTP_SYNC_TIME = 50  # seconds to wait for PTP synchronization
@@ -433,6 +433,38 @@ def add_ancillary_sessions(
     return config
 
 
+def add_st40p_sessions(
+    config: dict,
+    nic_port_list: list,
+    test_mode: str,
+    fps: str,
+    st40p_url: str,
+    payload_type: int = 113,
+    interlaced: bool = False,
+    enable_rtcp: bool = False,
+) -> dict:
+    """Add a TX st40p (pipeline ancillary) and matching RX st40p session pair."""
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    config["tx_sessions"][0]["st40p"].append(tx_session)
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    config["rx_sessions"][0]["st40p"].append(rx_session)
+
+    config["tx_sessions"][0]["st40p"][0]["fps"] = fps
+    config["tx_sessions"][0]["st40p"][0]["st40p_url"] = st40p_url
+    config["tx_sessions"][0]["st40p"][0]["payload_type"] = payload_type
+    config["tx_sessions"][0]["st40p"][0]["interlaced"] = interlaced
+    config["tx_sessions"][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    config["rx_sessions"][0]["st40p"][0]["payload_type"] = payload_type
+    config["rx_sessions"][0]["st40p"][0]["interlaced"] = interlaced
+    config["rx_sessions"][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    return config
+
+
 def add_st41_sessions(
     config: dict,
     no_chain: bool,
@@ -516,31 +548,37 @@ def execute_test(
     f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
 
-    # Adjust test_time for high-res/fps/replicas
+    # Apply a small high-resolution observation-window floor.
+    #
+    # Historically this block multiplied test_time by 2-4x for 4K/8K and again
+    # by ``replicas``. That conflated three unrelated things:
+    #   1) observation window (what test_time is meant to represent),
+    #   2) steady-state warm-up headroom (a small fixed cost), and
+    #   3) parallel session count (replicas run concurrently in the same
+    #      RxTxApp process; longer runtime adds zero coverage).
+    # Each replica produces its own ``app_*_result ... OK`` line whose pass
+    # criterion is FPS-tolerance (a *rate*, not a total), so observing all N
+    # replicas for the configured window is sufficient. Long-running soak
+    # coverage belongs in a separate suite that sets a large test_time
+    # explicitly, not hidden in a per-test multiplier.
+    HIGHRES_FLOOR_S = 20  # warm-up headroom for 4K/8K pipelines
+
     if (
         "video" in config["tx_sessions"][0]
         and len(config["tx_sessions"][0]["video"]) > 0
     ):
         video_format = config["tx_sessions"][0]["video"][0]["video_format"]
-        if any(format in video_format for format in ["4320", "2160"]):
-            test_time = test_time * 2
-            if any(fps in video_format for fps in ["p50", "p59", "p60", "p119"]):
-                test_time = test_time * 2
-            test_time = test_time * config["tx_sessions"][0]["video"][0]["replicas"]
+        if any(fmt in video_format for fmt in ["4320", "2160"]):
+            test_time = max(test_time, HIGHRES_FLOOR_S)
 
     if (
         "st20p" in config["tx_sessions"][0]
         and len(config["tx_sessions"][0]["st20p"]) > 0
     ):
-        video_format = config["tx_sessions"][0]["st20p"][0]["height"]
-        video_fps = config["tx_sessions"][0]["st20p"][0]["fps"]
-        if any(format == video_format for format in [4320, 2160]):
-            test_time = test_time * 2
-            if any(fps in video_fps for fps in ["p50", "p59", "p60", "p119"]):
-                test_time = test_time * 2
-            test_time = test_time * config["tx_sessions"][0]["st20p"][0]["replicas"]
+        if config["tx_sessions"][0]["st20p"][0]["height"] in (4320, 2160):
+            test_time = max(test_time, HIGHRES_FLOOR_S)
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path}"
+    command = f"sudo {RXTXAPP_EXE} --config_file {config_path}"
 
     if virtio_user:
         command += " --virtio_user"
@@ -744,7 +782,7 @@ def execute_perf_test(
     f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
+    command = f"sudo {RXTXAPP_EXE} --config_file {config_path} --test_time {test_time}"
 
     logger.info(f"Performance RxTxApp Command: {command}")
 
@@ -1915,21 +1953,18 @@ def execute_dual_test(
     rx_json_content = rx_config_json.replace('"', '\\"')
     rx_f.write_text(rx_json_content)
 
-    # Adjust test_time for high-res/fps/replicas
+    # See single-host execute_test for the rationale: replicas are concurrent,
+    # so the only adjustment needed for high-res is a small warm-up floor.
+    HIGHRES_FLOOR_S = 20
     if (
         "st20p" in tx_config["tx_sessions"][0]
         and len(tx_config["tx_sessions"][0]["st20p"]) > 0
     ):
-        video_format = tx_config["tx_sessions"][0]["st20p"][0]["height"]
-        video_fps = tx_config["tx_sessions"][0]["st20p"][0]["fps"]
-        if any(format == video_format for format in [4320, 2160]):
-            test_time = test_time * 2
-            if any(fps in video_fps for fps in ["p50", "p59", "p60", "p119"]):
-                test_time = test_time * 2
-            test_time = test_time * tx_config["tx_sessions"][0]["st20p"][0]["replicas"]
+        if tx_config["tx_sessions"][0]["st20p"][0]["height"] in (4320, 2160):
+            test_time = max(test_time, HIGHRES_FLOOR_S)
 
     # Prepare commands
-    base_command = f"sudo {RXTXAPP_PATH} --test_time {test_time}"
+    base_command = f"sudo {RXTXAPP_EXE} --test_time {test_time}"
     if virtio_user:
         base_command += " --virtio_user"
     if rx_timing_parser:

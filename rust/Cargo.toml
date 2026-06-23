@@ -21,4 +21,4 @@ version = "^0.1.0"
 ctrlc = "3.4.4"
 memmap2 = "0.9.4"
 clap = { version = "4.5.4", features = ["derive"] }
-sdl2 = "0.36.0"
+sdl2 = "0.38.0"

@@ -1,6 +1,5 @@
 session_id: 0
-build: /path/to/mtl
-mtl_path: /path/to/mtl
+mtl_path: path/to/Media-Transport-Library
 media_path: /mnt/media
 ramdisk:
   media:
@@ -16,6 +15,9 @@ capture_cfg:
   # Optional: pick a different NIC for netsniff-ng capture than the one used by the test.
   # Priority: sniff_interface > sniff_interface_index > sniff_pci_device.
   # sniff_interface_index: 1
+  # ST 2110-21 capture uses NIC hardware (on-wire) RX timestamps; the capture
+  # PHC is disciplined to TAI (phc_sync) so the absolute-offset check passes.
+  # phc_sync: false  # Remedy B: MTL paces from NIC PHC (enable_ptp); don't pull PHC to wall time.
 ebu_server:
   ebu_ip: ebu_ip
   user: user

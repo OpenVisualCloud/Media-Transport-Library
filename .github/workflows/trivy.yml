@@ -34,6 +34,11 @@ jobs:
     permissions:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@v4
@@ -53,7 +58,7 @@ jobs:
 
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0 # v0.32.0
         with:
           scan-type: config
           scan-ref: ./docker
@@ -73,6 +78,11 @@ jobs:
     permissions:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@v4
@@ -91,7 +101,7 @@ jobs:
           ref: ${{ inputs.branch }}
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0 # v0.35.0
         with:
           scan-type: config
           scan-ref: ./manager
@@ -109,6 +119,11 @@ jobs:
     name: table output scan
     runs-on: ubuntu-22.04
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@v4
@@ -127,7 +142,7 @@ jobs:
           ref: ${{ inputs.branch }}
 
       - name: Run Trivy vulnerability scanner with table output
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0 # v0.35.0
         with:
           scan-type: config
           scan-ref: ./docker
@@ -137,7 +152,7 @@ jobs:
           vuln-type: os,library
 
       - name: Run Trivy manager vulnerability scanner with table output
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0 # v0.35.0
         with:
           scan-type: config
           scan-ref: ./manager

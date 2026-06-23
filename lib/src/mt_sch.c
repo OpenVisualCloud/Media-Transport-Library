@@ -647,6 +647,7 @@ static inline bool sch_socket_match(int cpu_socket, int dev_socket,
  */
 static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
                                       struct mt_user_info* info) {
+#ifndef WINDOWSENV
   if (!shm_entry->active) return;
   struct mt_user_info* u_info = &shm_entry->u_info;
   if (0 != strncmp(u_info->hostname, info->hostname, sizeof(u_info->hostname))) return;
@@ -655,6 +656,9 @@ static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
     shm_entry->active = false;
     info("%s, releasing lcore for dead process pid %d \n", __func__, shm_entry->pid);
   }
+#else
+  err("%s, not supported on Windows\n", __func__);
+#endif
 }
 
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,

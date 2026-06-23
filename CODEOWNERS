@@ -2,4 +2,32 @@
 # Copyright 2023 Intel Corporation
 
 # global-owner
-* @Sakoram @DawidWesierski4 @Falron98
+* @Sakoram @DawidWesierski4 @moleksy @awilczyns @staszczuk @soopel
+
+# CI/CD and GitHub configuration
+/.github/ @staszczuk
+
+# Core library
+/lib/ @Sakoram @DawidWesierski4 @moleksy @awilczyns
+
+# Core library st2110 files
+/lib/src/st2110 @Sakoram @DawidWesierski4
+
+# api folders
+/include/ @Sakoram @DawidWesierski4
+
+# Integration tests
+/tests/integration_tests/ @Sakoram @DawidWesierski4 @moleksy
+
+# Validation tests
+/tests/validation/ @staszczuk @awilczyns
+
+# ecosystem ffmpeg
+/ecosystem/ffmpeg_plugin/ @awilczyns
+
+# ecosystem GStreamer
+/ecosystem/gstreamer_plugin @Sakoram @DawidWesierski4
+
+# scripts
+/script/ @DawidWesierski4
+

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 )
 def test_perf_4tx_4rx_4nics_8ports(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     nic_port_list,
@@ -130,7 +130,7 @@ def test_perf_4tx_4rx_4nics_8ports(
         try:
             passed = rxtxapp.execute_perf_test(
                 config=config,
-                build=build,
+                build=mtl_path,
                 test_time=test_time,
                 host=host,
                 fail_on_error=False,
@@ -175,7 +175,7 @@ def test_perf_4tx_4rx_4nics_8ports(
         try:
             passed = rxtxapp.execute_perf_test(
                 config=config,
-                build=build,
+                build=mtl_path,
                 test_time=test_time,
                 host=host,
                 fail_on_error=False,

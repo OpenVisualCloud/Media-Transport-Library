@@ -18,11 +18,18 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   }
 
 /**
- * This test requires MTL_SIMULATE_PACKET_DROPS to be enabled in the build.
- * so DEBUG mode is necessary for proper functionality.
- * The packet skip feature affects the critical path performance,
+ * This test requires MTL_SIMULATE_PACKET_DROPS to be enabled in the build
+ * (debug/debugonly), so the TX side actually drops the configured packets.
+ * The packet skip feature affects the critical path performance and is
+ * compiled out of release builds. Without it no packets are dropped, so the
+ * test would pass vacuously and mask regressions — skip instead of giving a
+ * misleading green result.
  */
-#ifdef MTL_SIMULATE_PACKET_DROPS
+#ifndef MTL_SIMULATE_PACKET_DROPS
+  GTEST_SKIP() << "requires MTL_SIMULATE_PACKET_DROPS (build with debugonly/debug); "
+                  "without it no packets are dropped and the test cannot validate "
+                  "per-port loss";
+#else
   ctx->para.flags |= MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS;
   ctx->para.port_packet_loss[TX_SESSION_PORT_0].tx_stream_loss_id =
       0; /* drop even packets */
@@ -100,16 +107,14 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
   sleepUntilFailure(testDurationS);
 
+  /* Grab stats before stopping — captures steady-state counters before
+   * session teardown introduces incomplete-frame artifacts. */
+  st20_rx_user_stats stats;
+  st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
+
   latencyBundle.handler->session.stop();
   primaryBundle.handler->session.stop();
   rxBundle.handler->session.stop();
-
-  st20_rx_user_stats stats;
-  st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
-  st20_tx_user_stats statsTxPrimary;
-  st20p_tx_get_session_stats(primaryBundle.handler->sessionsHandleTx, &statsTxPrimary);
-  st20_tx_user_stats statsTxRedundant;
-  st20p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx, &statsTxRedundant);
 
   uint64_t framesSend = primaryStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
@@ -117,15 +122,35 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
 
-  /* packets will not match exactly if we use redundant simulate packet loss */
-  if (!(ctx->para.flags & MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS)) {
-    uint64_t packetsSend = statsTxPrimary.common.port[TX_SESSION_PORT_0].packets;
-    uint64_t packetsRecieved = stats.common.port[TX_SESSION_PORT_0].packets +
-                               stats.common.port[TX_SESSION_PORT_1].packets;
+  /* The test is skipped above unless MTL_SIMULATE_PACKET_DROPS is compiled in,
+   * so by here the even/odd drops are active and per-port loss must be
+   * reported. With 50% simulated drops (divider=2) each port misses half the
+   * packets, and the other port recovers them. */
+  uint64_t lost_p = stats.common.port[MTL_SESSION_PORT_P].lost_packets;
+  uint64_t lost_r = stats.common.port[MTL_SESSION_PORT_R].lost_packets;
+  uint64_t pkts_p = stats.common.port[MTL_SESSION_PORT_P].packets;
+  uint64_t pkts_r = stats.common.port[MTL_SESSION_PORT_R].packets;
 
-    ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 10)
-        << "Comparison against primary stream";
-    ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
-        << "Out of order packets";
+  EXPECT_GT(lost_p, 0u) << "P must report per-port loss with 50% drops";
+  EXPECT_GT(lost_r, 0u) << "R must report per-port loss with 50% drops";
+  EXPECT_EQ(stats.common.stat_lost_packets, lost_p + lost_r)
+      << "session lost == sum of per-port lost";
+
+  /* Each port should lose ~50% of the merged stream's packets */
+  if (pkts_p + lost_p > 0) {
+    double pct_p = 100.0 * lost_p / (pkts_p + lost_p);
+    EXPECT_NEAR(pct_p, 50.0, 5.0) << "P loss percentage should be ~50%";
   }
+  if (pkts_r + lost_r > 0) {
+    double pct_r = 100.0 * lost_r / (pkts_r + lost_r);
+    EXPECT_NEAR(pct_r, 50.0, 5.0) << "R loss percentage should be ~50%";
+  }
+
+  /* With the TX-first stop and drain delay, there should be no
+   * incomplete frames from teardown. All per-port losses should have
+   * been recovered by the other port. */
+  EXPECT_EQ(stats.stat_frames_incomplete, 0u)
+      << "no incomplete frames expected after TX-first stop with drain";
+  EXPECT_EQ(stats.common.stat_pkts_unrecovered, 0u)
+      << "no post-redundancy loss expected with complementary 50/50 drops";
 }

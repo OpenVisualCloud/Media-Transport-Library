@@ -98,6 +98,7 @@ struct st_tests_context {
   char lcores_list[TEST_LCORE_LIST_MAX_LEN];
   uint8_t mcast_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   uint64_t ptp_time;
+  bool user_p_sip;
   enum st_test_level level;
   bool hdr_split;
   bool dhcp;

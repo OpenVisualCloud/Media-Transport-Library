@@ -1,0 +1,297 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
+import pytest
+from common.nicctl import InterfaceSetup
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
+
+pytestmark = pytest.mark.verified
+
+
+# List of supported formats based on st_frame_fmt_from_transport()
+pixel_formats = dict(
+    YUV_422_10bit=("ST20_FMT_YUV_422_10BIT", "YUV422RFC4175PG2BE10"),
+    YUV_422_8bit=("ST20_FMT_YUV_422_8BIT", "UYVY"),
+    YUV_422_12bit=("ST20_FMT_YUV_422_12BIT", "YUV422RFC4175PG2BE12"),
+    YUV_444_10bit=("ST20_FMT_YUV_444_10BIT", "YUV444RFC4175PG4BE10"),
+    YUV_444_12bit=("ST20_FMT_YUV_444_12BIT", "YUV444RFC4175PG2BE12"),
+    YUV_420_8bit=("ST20_FMT_YUV_420_8BIT", "YUV420CUSTOM8"),
+    RGB_8bit=("ST20_FMT_RGB_8BIT", "RGB8"),
+    RGB_10bit=("ST20_FMT_RGB_10BIT", "RGBRFC4175PG4BE10"),
+    RGB_12bit=("ST20_FMT_RGB_12BIT", "RGBRFC4175PG2BE12"),
+    YUV_422_PLANAR10LE=("ST20_FMT_YUV_422_PLANAR10LE", "YUV422PLANAR10LE"),
+    V210=("ST20_FMT_V210", "V210"),
+)
+
+# List of supported one-way conversions based on st_frame_get_converter()
+convert1_formats = dict(
+    UYVY="UYVY",
+    YUV422PLANAR8="YUV422PLANAR8",
+    YUV420PLANAR8="YUV420PLANAR8",
+)
+
+# List of supported two-way conversions based on st_frame_get_converter()
+convert2_formats = dict(
+    V210=("ST20_FMT_YUV_422_10BIT", "YUV_422_10bit", "YUV422RFC4175PG2BE10"),
+    Y210=("ST20_FMT_YUV_422_10BIT", "YUV_422_10bit", "YUV422RFC4175PG2BE10"),
+    YUV422PLANAR12LE=(
+        "ST20_FMT_YUV_422_12BIT",
+        "YUV_422_12bit",
+        "YUV422RFC4175PG2BE12",
+    ),
+    YUV444PLANAR10LE=(
+        "ST20_FMT_YUV_444_10BIT",
+        "YUV_444_10bit",
+        "YUV444RFC4175PG4BE10",
+    ),
+    YUV444PLANAR12LE=(
+        "ST20_FMT_YUV_444_12BIT",
+        "YUV_444_12bit",
+        "YUV444RFC4175PG2BE12",
+    ),
+    GBRPLANAR10LE=("ST20_FMT_RGB_10BIT", "RGB_10bit", "RGBRFC4175PG4BE10"),
+    GBRPLANAR12LE=("ST20_FMT_RGB_12BIT", "RGB_12bit", "RGBRFC4175PG2BE12"),
+)
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "application",
+    [
+        "rxtxapp",
+        "ffmpeg",
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file",
+    list(yuv_files_422p10le.values()),
+    indirect=["media_file"],
+    ids=list(yuv_files_422p10le.keys()),
+)
+def test_st20p_422p10le(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    pcap_capture,
+    media_file,
+):
+    """Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit."""
+    media_file_info, media_file_path = media_file
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    app = app_factory(application)
+    app.create_command(
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        test_mode="multicast",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        framerate=f"p{media_file_info['fps']}",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        input_file=media_file_path,
+        test_time=test_time,
+    )
+
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+    )
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "application",
+    [
+        "rxtxapp",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support RX-side pixel format conversion"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422rfc10["Penguin_1080p"]],
+    indirect=["media_file"],
+    ids=["Penguin_1080p"],
+)
+@pytest.mark.parametrize("format", convert1_formats.keys())
+def test_st20p_convert_on_rx(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    format,
+    pcap_capture,
+    media_file,
+):
+    """Send file in YUV_422_10bit with supported conversion on RX side."""
+    media_file_info, media_file_path = media_file
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    app = app_factory(application)
+    app.create_command(
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        test_mode="multicast",
+        packing="GPM",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        framerate="p30",
+        pixel_format="YUV422RFC4175PG2BE10",
+        transport_format="YUV_422_10bit",
+        output_pixel_format=convert1_formats[format],
+        input_file=media_file_path,
+        test_time=test_time,
+    )
+
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+    )
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "application",
+    [
+        "rxtxapp",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support TX/RX two-way format conversion"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422rfc10["test_8K"]],
+    indirect=["media_file"],
+    ids=["test_8K"],
+)
+@pytest.mark.parametrize("format", convert2_formats.keys())
+def test_st20p_tx_rx_conversion(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    format,
+    pcap_capture,
+    media_file,
+):
+    """Send file in different pixel formats with supported two-way conversion on TX and RX."""
+    media_file_info, media_file_path = media_file
+    _, transport_format, _ = convert2_formats[format]
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    app = app_factory(application)
+    app.create_command(
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        test_mode="multicast",
+        packing="GPM",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        framerate="p30",
+        pixel_format=format,
+        transport_format=transport_format,
+        input_file=media_file_path,
+        test_time=test_time,
+    )
+
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+    )
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "application",
+    [
+        "rxtxapp",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support arbitrary pixel format transport without conversion"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422rfc10["test_8K"]],
+    indirect=["media_file"],
+    ids=["test_8K"],
+)
+@pytest.mark.parametrize("format", pixel_formats.keys())
+def test_st20p_pixel_formats(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    format,
+    test_config,
+    pcap_capture,
+    media_file,
+):
+    """Send file in different supported pixel formats without conversion during transport."""
+    media_file_info, media_file_path = media_file
+    _, file_format = pixel_formats[format]
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    app = app_factory(application)
+    app.create_command(
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        test_mode="multicast",
+        packing="GPM",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        framerate="p30",
+        pixel_format=file_format,
+        transport_format=format,
+        input_file=media_file_path,
+        test_time=test_time,
+    )
+
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+    )

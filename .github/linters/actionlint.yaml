@@ -2,5 +2,8 @@ self-hosted-runner:
   labels:
     - dpdk
     - e810
-    - e810-dell
     - e830
+    - e825
+    - e835
+    - perf
+    - sut

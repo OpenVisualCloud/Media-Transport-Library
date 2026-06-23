@@ -1714,8 +1714,6 @@ struct st20_tx_user_stats {
   uint64_t stat_pkts_chain_realloc_fail;
   uint64_t stat_user_meta_cnt;
   uint64_t stat_user_meta_pkt_cnt;
-  uint64_t stat_recoverable_error;
-  uint64_t stat_unrecoverable_error;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
 };
@@ -1729,12 +1727,9 @@ struct st20_rx_user_stats {
   uint64_t stat_slices_received;
   uint64_t stat_pkts_idx_dropped;
   uint64_t stat_pkts_offset_dropped;
-  uint64_t stat_frames_dropped;
   uint64_t stat_pkts_idx_oo_bitmap;
-  uint64_t stat_frames_pks_missed;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
-  uint64_t stat_pkts_redundant_dropped;
   uint64_t stat_pkts_wrong_interlace_dropped;
   uint64_t stat_pkts_wrong_len_dropped;
   uint64_t stat_pkts_enqueue_fallback;
@@ -1759,7 +1754,50 @@ struct st20_rx_user_stats {
   uint64_t stat_burst_pkts_max;
   uint64_t stat_burst_succ_cnt;
   uint64_t stat_burst_pkts_sum;
-  uint64_t incomplete_frames_cnt;
+  /**
+   * Transport-layer count of frames the receiver could not assemble fully
+   * from the wire (intra-frame packet loss). Bumped per incomplete frame
+   * for ST20 and ST22.
+   *
+   * Relation to common counters:
+   *   - common.stat_frames_corrupted: subset delivered to the app with
+   *     status=ST_FRAME_STATUS_CORRUPTED (only when
+   *     ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME is set). For ST22 the
+   *     pipeline always delivers, so the two should match.
+   *   - common.stat_frames_dropped: pipeline back-pressure (no free user
+   *     slot). Independent of this counter.
+   *
+   * Use stat_frames_incomplete for wire-loss diagnostics; use
+   * common.stat_frames_corrupted for app-visible delivery quality.
+   *
+   * @note ABI rename: this field replaces TWO separate fields previously
+   *       present in this struct:
+   *         - `uint64_t stat_frames_dropped;` (transport-layer; collided
+   *           with `common.stat_frames_dropped` which means pipeline
+   *           back-pressure). Removed.
+   *         - `uint64_t incomplete_frames_cnt;` (same event as the
+   *           transport `stat_frames_dropped` above). Renamed.
+   *       Both old fields were bumped on the same code path; they are now
+   *       merged into a single counter with a clearer name. Migration:
+   *       replace either `incomplete_frames_cnt` or the transport-level
+   *       `stat_frames_dropped` (NOT `common.stat_frames_dropped`) with
+   *       `stat_frames_incomplete`.
+   */
+  uint64_t stat_frames_incomplete; /* old names: incomplete_frames_cnt,
+                                      stat_frames_dropped (transport) */
+  /**
+   * Per-port count of frames where this port could not complete the frame
+   * on its own (the other port's redundant copy filled the missing pkts).
+   * Video-only (ST20 / ST22), so it lives here rather than in the common
+   * per-port struct. Index with `mtl_session_port` (P / R).
+   *
+   * @note ABI move + rename: previously `st_rx_port_stats::incomplete_frames`
+   *       (sat in the common per-port struct, but was always 0 for
+   *       ST30/ST40/ST41). Migration: replace
+   *       `common.port[i].incomplete_frames` with
+   *       `frames_partial[i]` (ST20 / ST22 only).
+   */
+  uint64_t frames_partial[MTL_SESSION_PORT_MAX]; /* old name: port[i].incomplete_frames */
   uint64_t stat_pkts_wrong_kmod_dropped;
 };
 
@@ -1914,6 +1952,7 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param port
@@ -1929,6 +1968,7 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param port
@@ -2263,6 +2303,7 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param port
@@ -2278,6 +2319,7 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(video) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param port

@@ -7,6 +7,10 @@
 
 #include "../st_main.h"
 
+/* Maximum number of late frames that can be dropped in a single next_frame call.
+ * Prevents infinite drop loops when all queued frames are late. */
+#define ST_TX_DROP_MAX_BATCH (80)
+
 struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
                                                   struct st22_get_encoder_request* req);
 int st22_put_encoder(struct mtl_main_impl* impl,

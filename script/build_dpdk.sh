@@ -53,10 +53,33 @@ shift $((OPTIND - 1))
 
 dpdk_folder="dpdk-${DPDK_VER}"
 
+# Check if the correct MTL-patched DPDK is already installed via pkg-config.
+# Since 26.03, MTL patches embed "_mtl_" in the version (e.g. "26.03.9_mtl_").
+# Older versions use a plain version string match.
+dpdk_is_installed() {
+	local installed_ver
+	installed_ver=$(pkg-config --modversion libdpdk 2>/dev/null) || return 1
+	[ -z "$installed_ver" ] && return 1
+
+	local mtl_tag_since="26.03"
+	if printf '%s\n' "$mtl_tag_since" "$DPDK_VER" | sort -V | head -n1 | grep -qx "$mtl_tag_since"; then
+		[[ "$installed_ver" == "${DPDK_VER}.${DPDK_MTL_MINOR_VER}_mtl_"* ]]
+	else
+		[[ "$installed_ver" == "$DPDK_VER" ]]
+	fi
+}
+
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 
 if [ "$sourced" -eq 0 ]; then
-	echo "DPDK version: $DPDK_VER"
+	echo "Attempting to install DPDK version: ${DPDK_VER}.${DPDK_MTL_MINOR_VER}"
+
+	# Skip rebuild if the correct version is already installed system-wide.
+	# Local-prefix installs always rebuild. Use -f to force.
+	if [ $FORCE -eq 0 ] && [ -z "${MTL_INSTALL_PREFIX:-}" ] && dpdk_is_installed; then
+		echo "DPDK already installed ($(pkg-config --modversion libdpdk)). Skipping rebuild."
+		exit 0
+	fi
 
 	if [ $FORCE -eq 1 ] && [ -d "$dpdk_folder" ]; then
 		echo "Force rebuild enabled. Removing existing '$dpdk_folder' directory."
@@ -82,11 +105,19 @@ if [ "$sourced" -eq 0 ]; then
 	fi
 
 	echo "Build and install DPDK now"
-	meson build
+	: "${MTL_PREFIX_ARGS:=}"
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
+	fi
+	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"}
 	ninja -C build
 	(
 		cd build || exit 1
-		sudo ninja install
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			ninja install
+		else
+			sudo ninja install
+		fi
 	)
 
 	cd "$script_folder" || exit 1

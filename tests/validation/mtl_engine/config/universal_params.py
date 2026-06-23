@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
 # Universal parameter definitions for all media applications
 # This serves as the common interface for RxTxApp, FFmpeg, and GStreamer
 
@@ -11,12 +14,20 @@ UNIVERSAL_PARAMS = {
     "nic_port_list": None,  # List of network interfaces/ports
     "tx_nic_port": None,  # Override NIC port for TX direction
     "rx_nic_port": None,  # Override NIC port for RX direction
+    "rx_queues_cnt": None,  # Number of RX queues per interface (overrides auto-calculation)
+    "tx_queues_cnt": None,  # Number of TX queues per interface (overrides auto-calculation)
+    # Redundant mode parameters (ST2022-7 dual-port)
+    "redundant": False,  # Enable redundant (dual-port) mode
+    "nic_port_r": None,  # Redundant NIC port name (2nd E810 port VF)
+    "source_ip_r": None,  # Source IP for redundant port
+    "destination_ip_r": None,  # Destination IP for redundant port
     # Video parameters
     "width": 1920,  # Video width in pixels
     "height": 1080,  # Video height in pixels
     "framerate": "p60",  # Frame rate (p25, p30, p50, p60, etc.)
     "interlaced": False,  # Progressive (False) or Interlaced (True)
     "pixel_format": "YUV422PLANAR10LE",  # Pixel format for TX input and RX output
+    "output_pixel_format": None,  # Optional override for RX output pixel format (st20p conversion)
     "transport_format": "YUV_422_10bit",  # Transport format for streaming
     # Audio parameters
     "audio_format": "PCM24",  # Audio format
@@ -81,6 +92,7 @@ UNIVERSAL_PARAMS = {
     "promiscuous": False,  # Enable RX promiscuous mode
     "cni_thread": False,  # Use dedicated thread for CNI messages
     "sch_session_quota": None,  # Max sessions count per lcore
+    "disable_migrate": False,  # Disable lcore migration for busy sessions
     "p_tx_dst_mac": None,  # Destination MAC for primary port
     "r_tx_dst_mac": None,  # Destination MAC for redundant port
     "nb_tx_desc": None,  # Number of TX descriptors per queue
@@ -100,6 +112,7 @@ UNIVERSAL_PARAMS = {
     "rxtx_simd_512": False,  # Enable DPDK SIMD 512 path
     "rss_mode": None,  # RSS mode (l3_l4, l3, none)
     "tx_no_chain": False,  # Use memcopy instead of mbuf chain
+    "tx_copy_once": False,  # Copy TX frames once, skip memcpy on subsequent passes
     "multi_src_port": False,  # Use multiple source ports for ST20 TX
     "audio_fifo_size": None,  # Audio FIFO size
     "dhcp": False,  # Enable DHCP for all ports
@@ -114,9 +127,27 @@ UNIVERSAL_PARAMS = {
     # Execution control defaults
     "sleep_interval": 4,  # Delay between starting TX and RX
     "tx_first": True,  # Whether to start TX side before RX
-    "timeout_grace": 10,  # Extra seconds for process timeout
+    # Extra seconds added to the shell `timeout` wrapper around the app command.
+    # Must cover DPDK EAL init (~5-15s), the extra `sleep(1)` iteration the
+    # RxTxApp main loop performs after test_time elapses, and `mtl_stop()`
+    # cleanup. Matches the legacy RxTxApp.execute_test() behavior (90s) and
+    # `process_timeout_buffer` so the shell timeout never fires before the
+    # Python `proc.wait()` budget. A too-small value caused tests to be killed
+    # mid-shutdown with rc=124 and reported as failing/"never finishing".
+    "timeout_grace": 90,
     "process_timeout_buffer": 90,  # Buffer added to test_time for run() timeout
     "pattern_duration": 30,  # Duration for generated test patterns
     "default_framerate_numeric": 60,  # Fallback numeric framerate
     "ptp_sync_time": 50,  # Seconds to wait for PTP synchronization
+    # Process-stop ladder for unbounded processes (FFmpeg / RxTxApp without
+    # --test_time). Bounded processes use the shell `timeout N cmd` wrapper
+    # and don't consult these.
+    "stop_graceful_s": 10,  # SIGINT grace before SIGTERM
+    "stop_term_s": 5,  # SIGTERM grace before SIGKILL
+    "stop_vfio_idle_s": 15,  # Max wait for /dev/vfio/* refcount to drop
+    # Output file lifecycle. Subclasses that produce per-test artifacts on the
+    # remote host (e.g. FFmpeg RX yuv/h264 dumps) populate ``self._output_files``
+    # in ``prepare_execution``; the base class deletes them after validation
+    # unless ``keep_output=True``.
+    "keep_output": False,
 }

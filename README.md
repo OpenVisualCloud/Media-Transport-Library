@@ -72,9 +72,9 @@ For DPDK PMD support, you can refer to the DPDK PMD site <https://doc.dpdk.org/g
 
 In cases where your NIC is not supported by DPDK, MTL provides a fallback option with kernel (Linux) socket transport support.
 
-However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
+However, please note that our daily development and validation is primarily conducted on the Intel E810 and E830 series cards, so we can't guarantee the status for other network interface cards (NICs).
 
-An important point to note is that narrow pacing of TX is only supported for the Intel E810 series together with DPDK PMD due to the rate limit feature. All other type of usage have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
+An important point to note is that narrow pacing of TX is only supported for the Intel E810 and E830 series together with DPDK PMD due to the rate limit feature. All other type of usage have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
 
 ## 2. Build
 

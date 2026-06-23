@@ -5,9 +5,11 @@
 #include "st_rx_ancillary_session.h"
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
+#include "st_rx_common.h"
 
 #ifdef MTL_ENABLE_FUZZING_ST40
 #define ST40_FUZZ_LOG(...) info(__VA_ARGS__)
@@ -106,13 +108,14 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
+  bool threshold_bypass = false;
 
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     ST40_FUZZ_LOG("%s(%d,%d), drop payload_type %u expected %u\n", __func__, s->idx,
                   s_port, payload_type, ops->payload_type);
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -122,64 +125,126 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                     ssrc, ops->ssrc);
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
 
+  uint8_t f_bits = rfc8331->first_hdr_chunk.f; /* 2-bit field, no mask needed */
+
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
-  if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
+  if (f_bits == 0x1) {
     ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
                   rfc8331->first_hdr_chunk.f);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+    s->port_user_stats.stat_pkts_wrong_interlace_dropped++;
     return -EINVAL;
   }
-  /* Enforce interlace expectation vs header F bits */
-  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
-  if (ops->interlaced) {
-    /* Expect interlaced: drop progressive/unspecified (0b00) */
-    if (f_bits == 0x0) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
-                    __func__, s->idx, s_port);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
-    }
-  } else {
-    /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
-    if (f_bits & 0x2) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
-                    __func__, s->idx, s_port, f_bits);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
+  /* Auto-detect interlace if enabled */
+  bool pkt_interlaced = f_bits & 0x2;
+  if (s->interlace_auto) {
+    if (!s->interlace_detected || s->interlace_interlaced != pkt_interlaced) {
+      s->interlace_detected = true;
+      s->interlace_interlaced = pkt_interlaced;
+      s->ops.interlaced = pkt_interlaced;
+      info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
+           pkt_interlaced ? "interlaced" : "progressive", f_bits);
     }
   }
 
   /* Count field polarity when interlaced frames are accepted */
-  if (f_bits & 0x2) {
+  if (pkt_interlaced) {
     if (f_bits & 0x1) {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      s->port_user_stats.stat_interlace_second_field++;
     } else {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      s->port_user_stats.stat_interlace_first_field++;
     }
   }
+
+  /* Cross-port F-bit divergence: a mismatch on the same timestamp means the
+   * producer sends different field bits per port — a SMPTE 2110-40 violation.
+   * Rate-limit the warn to one per second. MTL only ever has P/R (max 2). */
+  if (s->ops.num_port > 1) {
+    int other = s_port ^ 1;
+    if (s->last_f_bits[other] != 0xff && s->last_f_tmstamp[other] == tmstamp &&
+        s->last_f_bits[other] != f_bits) {
+      s->stat_internal_field_bit_mismatch++;
+      uint64_t now_ns = mt_get_monotonic_time();
+      if (now_ns - s->f_mismatch_warn_last_ns > NS_PER_S) {
+        err("RX_ANC_SESSION(%d): redundant ports disagree on F bits at ts %u "
+            "(port%d=F=0x%x port%d=F=0x%x) — SMPTE 2110-40 producer violation\n",
+            s->idx, tmstamp, other, s->last_f_bits[other], s_port, f_bits);
+        s->f_mismatch_warn_last_ns = now_ns;
+      }
+    }
+  }
+  s->last_f_bits[s_port] = f_bits;
+  s->last_f_tmstamp[s_port] = tmstamp;
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
   /* not a big deal as long as stream is continous */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — a real same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
+
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
-  get multiple packets with the same timestamp)) */
+  get multiple packets with the same timestamp) */
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
       !mt_seq16_greater(seq_id, s->session_seq_id)) {
+    /* Check per-frame bitmap: if this is a same-frame late arrival carrying unique data,
+     * accept it instead of filtering.  This handles cross-port reordering where port R
+     * delivers seq N+2..N+5 before port P delivers seq N..N+1. */
+    if (s->anc_window_cur.valid && tmstamp == s->anc_window_cur.tmstamp &&
+        !mt_seq32_greater(s->tmstamp, tmstamp)) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_cur.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS &&
+          !(s->anc_window_cur.bitmap & ((uint64_t)1 << offset))) {
+        /* bit is clear — this seq was never delivered, accept as late arrival.
+         * This packet was previously counted as unrecovered when the gap was seen,
+         * so undo that count now that it has arrived. */
+        if (s->port_user_stats.common.stat_pkts_unrecovered > 0)
+          s->port_user_stats.common.stat_pkts_unrecovered--;
+        dbg("%s(%d,%d), late arrival seq %u accepted via bitmap (offset %u)\n", __func__,
+            s->idx, s_port, seq_id, offset);
+        goto accept_pkt;
+      }
+    }
+
+    /* Previous-timestamp window: accept unique late packets for the immediately
+     * previous frame.  This enables the pipeline layer to receive late-arriving
+     * marker packets from the redundant port after the primary has advanced. */
+    if (s->prev_tmstamp >= 0 && tmstamp == (uint32_t)s->prev_tmstamp &&
+        s->anc_window_prev.valid && tmstamp == s->anc_window_prev.tmstamp) {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_prev.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS &&
+          !(s->anc_window_prev.bitmap & ((uint64_t)1 << offset))) {
+        if (s->port_user_stats.common.stat_pkts_unrecovered > 0)
+          s->port_user_stats.common.stat_pkts_unrecovered--;
+        dbg("%s(%d,%d), prev-frame late arrival seq %u accepted (offset %u)\n", __func__,
+            s->idx, s_port, seq_id, offset);
+        goto accept_pkt;
+      }
+    }
+
     if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
       ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
                     seq_id, s->session_seq_id);
@@ -193,31 +258,68 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
 
     s->redundant_error_cnt[s_port]++;
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->port_user_stats.common.stat_pkts_redundant++;
 
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
+        return -EAGAIN; /* filtered redundant, not an error */
       }
     }
+    /* threshold exceeded on all ports — accept the packet and undo the redundant count
+     * so the packet is only counted as received, not both */
+    s->port_user_stats.common.stat_pkts_redundant--;
+    threshold_bypass = true;
     warn(
         "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
         "%d), timestamp %u (old timestamp %ld)\n",
         __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
   }
+
+accept_pkt:
   s->redundant_error_cnt[s_port] = 0;
 
+  /* Save session_seq before update — needed for bitmap base calculation */
+  int old_session_seq = s->session_seq_id;
+
   /* hole in seq id packets going into the session check if the seq_id of the session is
-   * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+   * consistent.  Note: do NOT reset interlace_detected here — a session-merged seq gap
+   * does not imply the producer changed interlacing.  Resetting caused spurious
+   * "detected interlaced stream (F=0x?)" log lines on every seq gap, which on a
+   * redundant stream looked like the two ports disagreed on interlacing. */
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
-  /* update seq id */
-  s->session_seq_id = seq_id;
+  /* update seq id — only advance, never lower for late arrivals */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
+
+  /* Update per-frame bitmap: track which seq offsets have been delivered.
+   * base_seq = old_session_seq + 1 = first expected seq of this frame.
+   * This ensures late arrivals (seq < first accepted seq) still fit in the bitmap. */
+  if (s->anc_window_prev.valid && tmstamp == s->anc_window_prev.tmstamp) {
+    /* This packet belongs to the previous frame — update prev bitmap only */
+    uint16_t offset = (uint16_t)(seq_id - s->anc_window_prev.base_seq);
+    if (offset < ST_RX_ANC_BITMAP_BITS)
+      s->anc_window_prev.bitmap |= ((uint64_t)1 << offset);
+  } else {
+    if (!s->anc_window_cur.valid || tmstamp != s->anc_window_cur.tmstamp) {
+      /* Save current bitmap as prev before resetting for new frame */
+      if (s->anc_window_cur.valid) s->anc_window_prev = s->anc_window_cur;
+      s->anc_window_cur.bitmap = 0;
+      s->anc_window_cur.tmstamp = tmstamp;
+      s->anc_window_cur.base_seq = (uint16_t)(old_session_seq + 1);
+      s->anc_window_cur.valid = true;
+    }
+    {
+      uint16_t offset = (uint16_t)(seq_id - s->anc_window_cur.base_seq);
+      if (offset < ST_RX_ANC_BITMAP_BITS)
+        s->anc_window_cur.bitmap |= ((uint64_t)1 << offset);
+    }
+  }
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -226,19 +328,24 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
         s->idx, seq_id);
     ST40_FUZZ_LOG("%s(%d,%d), enqueue failure for seq %u len %u\n", __func__, s->idx,
                   s_port, seq_id, pkt_len);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
+    s->port_user_stats.stat_pkts_enqueue_fail++;
     MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
-  if (tmstamp != s->tmstamp) {
+  /* Only advance timestamp forward — prev-frame late arrivals must not roll back.
+   * Exception: threshold bypass is a recovery mechanism that may legitimately
+   * move the timestamp backward when the session is stuck. */
+  if (tmstamp != s->tmstamp &&
+      (mt_seq32_greater(tmstamp, s->tmstamp) || threshold_bypass)) {
+    s->prev_tmstamp = s->tmstamp;
+
     rte_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
-  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.stat_pkts_received++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
@@ -262,42 +369,29 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
 
   s->session_seq_id = -1;
   s->tmstamp = -1;
-  s->stat_pkts_dropped = 0;
-  s->stat_pkts_redundant = 0;
-  s->stat_pkts_out_of_order = 0;
-  s->stat_pkts_enqueue_fail = 0;
-  s->stat_pkts_wrong_pt_dropped = 0;
-  s->stat_pkts_wrong_ssrc_dropped = 0;
-  s->stat_pkts_received = 0;
+  s->prev_tmstamp = -1;
+  memset(&s->anc_window_cur, 0, sizeof(s->anc_window_cur));
+  memset(&s->anc_window_prev, 0, sizeof(s->anc_window_prev));
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
-  s->stat_interlace_first_field = 0;
-  s->stat_interlace_second_field = 0;
-  s->stat_pkts_wrong_interlace_dropped = 0;
+  s->stat_consecutive_busy_intervals = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-  memset(s->stat_pkts_out_of_order_per_port, 0,
-         sizeof(s->stat_pkts_out_of_order_per_port));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+
+  /* Reset interlace detection state */
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = s->ops.interlaced;
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     s->latest_seq_id[i] = -1;
     s->redundant_error_cnt[i] = 0;
+    s->last_f_bits[i] = 0xff; /* sentinel: no F bits seen yet on this port */
+    s->last_f_tmstamp[i] = 0;
   }
+  s->f_mismatch_warn_last_ns = 0;
 }
-
-#ifdef MTL_ENABLE_FUZZING_ST40
-int st_rx_ancillary_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                            struct st_rx_ancillary_session_impl* s,
-                                            struct rte_mbuf* mbuf,
-                                            enum mtl_session_port s_port) {
-  return rx_ancillary_session_handle_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) {
-  rx_ancillary_session_reset(s, false);
-}
-#endif
 
 static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
                                             uint16_t nb) {
@@ -311,8 +405,10 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
     return -EIO;
   }
 
-  for (uint16_t i = 0; i < nb; i++)
-    rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
+  for (uint16_t i = 0; i < nb; i++) {
+    int rc = rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
+    if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
+  }
 
   return 0;
 }
@@ -516,6 +612,9 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  s->interlace_auto = !(ops->flags & ST40_RX_FLAG_DISABLE_AUTO_DETECT);
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
@@ -545,7 +644,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
 
   s->attached = true;
   info("%s(%d), flags 0x%x pt %u, %s\n", __func__, idx, ops->flags, ops->payload_type,
-       ops->interlaced ? "interlace" : "progressive");
+       s->interlace_auto ? "auto" : (ops->interlaced ? "interlace" : "progressive"));
   return 0;
 }
 
@@ -558,58 +657,135 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
+  struct st40_rx_user_stats* us = &s->port_user_stats;
+  struct st40_rx_user_stats* snap = &s->stat_snapshot;
+
+  uint64_t pkts_received =
+      us->common.stat_pkts_received - snap->common.stat_pkts_received;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
+  uint64_t lost_pkts = us->common.stat_lost_packets - snap->common.stat_lost_packets;
+  uint64_t pkts_unrecovered =
+      us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
+  uint64_t pkts_dropped = us->stat_pkts_dropped - snap->stat_pkts_dropped;
+  uint64_t pkts_wrong_pt_dropped =
+      us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
+  uint64_t pkts_wrong_ssrc_dropped =
+      us->common.stat_pkts_wrong_ssrc_dropped - snap->common.stat_pkts_wrong_ssrc_dropped;
+  uint64_t pkts_enqueue_fail = us->stat_pkts_enqueue_fail - snap->stat_pkts_enqueue_fail;
+  uint64_t pkts_wrong_interlace_dropped =
+      us->stat_pkts_wrong_interlace_dropped - snap->stat_pkts_wrong_interlace_dropped;
+  uint64_t interlace_first_field =
+      us->stat_interlace_first_field - snap->stat_interlace_first_field;
+  uint64_t interlace_second_field =
+      us->stat_interlace_second_field - snap->stat_interlace_second_field;
+  uint64_t f_mismatch =
+      s->stat_internal_field_bit_mismatch - s->stat_internal_field_bit_mismatch_snap;
+  s->stat_internal_field_bit_mismatch_snap = s->stat_internal_field_bit_mismatch;
+
+  if (pkts_redundant) {
+    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 " (redundant %" PRIu64
+           ")\n",
+           idx, s->ops_name, framerate, frames_received, pkts_received, pkts_redundant);
   } else {
-    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name,
-           framerate, frames_received, s->stat_pkts_received);
+    notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 "\n", idx, s->ops_name,
+           framerate, frames_received, pkts_received);
   }
-  s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
 
-  if (s->stat_pkts_dropped) {
-    notice("RX_ANC_SESSION(%d): dropped pkts %d\n", idx, s->stat_pkts_dropped);
-    s->stat_pkts_dropped = 0;
-  }
-  if (s->stat_pkts_out_of_order) {
-    warn("RX_ANC_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
-         s->stat_pkts_out_of_order,
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+  if (pkts_dropped) {
+    notice("RX_ANC_SESSION(%d): dropped pkts %" PRIu64 "\n", idx, pkts_dropped);
   }
 
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  uint64_t port_pkts[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_frames[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_lost[MTL_SESSION_PORT_MAX] = {0};
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port_pkts[i] = us->common.port[i].packets - snap->common.port[i].packets;
+    port_frames[i] = us->common.port[i].frames - snap->common.port[i].frames;
+    port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
   }
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (s->ops.num_port > 1) {
+    notice("RX_ANC_SESSION(%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
+           " frames first), R=%" PRIu64 " pkts (%" PRIu64 " frames first)\n",
+           idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
+           port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
   }
-  if (s->stat_pkts_wrong_interlace_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_interlace_dropped);
-    s->stat_pkts_wrong_interlace_dropped = 0;
+
+  if (lost_pkts) {
+    uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
+    if (s->ops.num_port > 1) {
+      double pct_p =
+          port_pkts[MTL_SESSION_PORT_P]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
+                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
+              : 0.0;
+      double pct_r =
+          port_pkts[MTL_SESSION_PORT_R]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
+                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
+              : 0.0;
+      double save_rate =
+          (lost_pkts + pkts_unrecovered)
+              ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
+              : 100.0;
+      warn("RX_ANC_SESSION(%d): per-port loss %" PRIu64 " of %" PRIu64 " pkts (P:%" PRIu64
+           "=%.1f%%, R:%" PRIu64 "=%.1f%%), unrecovered (lost on both) %" PRIu64
+           ", save_rate=%.1f%%\n",
+           idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
+           port_lost[MTL_SESSION_PORT_R], pct_r, pkts_unrecovered, save_rate);
+    } else {
+      warn("RX_ANC_SESSION(%d): per-port lost pkts %" PRIu64 ", unrecovered %" PRIu64
+           "\n",
+           idx, lost_pkts, pkts_unrecovered);
+    }
+  } else if (pkts_unrecovered) {
+    /* unrecovered without per-port loss in this window — orphan, surface separately */
+    err("RX_ANC_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
+        pkts_unrecovered);
   }
-  if (s->stat_pkts_enqueue_fail) {
-    notice("RX_ANC_SESSION(%d): enqueue failed pkts %d\n", idx,
-           s->stat_pkts_enqueue_fail);
-    s->stat_pkts_enqueue_fail = 0;
+  if (f_mismatch) {
+    err("RX_ANC_SESSION(%d): F-bit mismatches between redundant ports %" PRIu64 "\n", idx,
+        f_mismatch);
+  }
+
+  if (pkts_wrong_pt_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_pt_dropped);
+  }
+  if (pkts_wrong_ssrc_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_ssrc_dropped);
+  }
+  if (pkts_wrong_interlace_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_interlace_dropped);
+  }
+  if (pkts_enqueue_fail) {
+    notice("RX_ANC_SESSION(%d): enqueue failed pkts %" PRIu64 "\n", idx,
+           pkts_enqueue_fail);
+  }
+  if (pkts_enqueue_fail > 0 && s->packet_ring != NULL) {
+    uint32_t used = rte_ring_count(s->packet_ring);
+    uint32_t total = rte_ring_get_capacity(s->packet_ring);
+    char sustained[32];
+    st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
+                           sizeof(sustained));
+    warn(
+        "RX_ANC_SESSION(%d): back-pressure: rtp ring full (%u/%u used), "
+        "dropped %" PRIu64 " pkts in interval; raise rtp_ring_size%s\n",
+        idx, used, total, pkts_enqueue_fail, sustained);
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
   }
   if (s->ops.interlaced) {
-    notice("RX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    notice("RX_ANC_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, interlace_first_field, interlace_second_field);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -656,6 +832,10 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
+  if (s->interlace_auto) {
+    s->interlace_detected = false;
+    s->interlace_interlaced = s->ops.interlaced;
+  }
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
@@ -837,6 +1017,55 @@ static int rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* 
   return 0;
 }
 
+/* Remove any session ports that map to a down physical port.
+ * When a down port is found at index i, all further entries are shifted down
+ * one slot (port[i] = port[i+1], ...) and num_port is decremented.
+ * Only ops->port[] is shifted — all other per-port arrays (ip_addr, udp_port, etc.)
+ * are left untouched; with the reduced num_port they are simply never indexed.
+ * Returns -EIO if every port is down (caller must abort). */
+/* Prune down ports that are not available. Shifts port names, IP addresses,
+ * UDP ports, and multicast source IP addresses for remaining ports. */
+static int rx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                             struct st40_rx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -921,6 +1150,12 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
     return NULL;
   }
 
+  ret = rx_ancillary_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, rx_ancillary_ops_prune_down_ports fail %d\n", __func__, ret);
+    return NULL;
+  }
+
   ret = rx_ancillary_ops_check(ops);
   if (ret < 0) {
     err("%s, st_rx_audio_ops_check fail %d\n", __func__, ret);
@@ -984,10 +1219,7 @@ int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) 
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -995,16 +1227,19 @@ int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) 
   sch_idx = sch->idx;
 
   ret = st_rx_source_info_check(src, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = rx_ancillary_sessions_mgr_update_src(&sch->rx_anc_mgr, s, src);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st40_rx_free(st40_rx_handle handle) {
@@ -1015,10 +1250,13 @@ int st40_rx_free(st40_rx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_RX_ANC);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -1052,19 +1290,17 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
   struct rte_mbuf* pkt;
   struct st_rx_ancillary_session_impl* s;
   struct rte_ring* packet_ring;
+  void* ret_pkt = NULL;
   int idx, ret;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
@@ -1073,10 +1309,12 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
                      sizeof(struct rte_udp_hdr);
     *len = pkt->data_len - header_len;
     *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
-    return (void*)pkt;
+    ret_pkt = (void*)pkt;
   }
 
-  return NULL;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_pkt;
 }
 
 void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
@@ -1084,26 +1322,21 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_rx_ancillary_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return;
-  }
+  MT_HANDLE_GUARD_VOID(s_impl, MT_HANDLE_RX_ANC);
 
   s = s_impl->impl;
   MTL_MAY_UNUSED(s);
 
   if (pkt) rte_pktmbuf_free(pkt);
   MT_USDT_ST40_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
+  MT_HANDLE_RELEASE(s_impl);
 }
 
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct st_rx_ancillary_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EIO);
 
   s = s_impl->impl;
 
@@ -1113,6 +1346,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_ancillary_queue_id(s, i);
   }
 
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1124,13 +1358,13 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EINVAL);
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1142,12 +1376,14 @@ int st40_rx_reset_session_stats(st40_rx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EINVAL);
   struct st_rx_ancillary_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }

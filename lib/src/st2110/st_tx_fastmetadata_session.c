@@ -5,6 +5,7 @@
 #include "st_tx_fastmetadata_session.h"
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_err.h"
@@ -275,7 +276,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+      s->port_user_stats.common.stat_error_user_timestamp++;
     }
   } else {
     epochs = ptp_time / frame_time;
@@ -293,23 +294,23 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (interlaced) {
     if (second_field) {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      s->port_user_stats.stat_interlace_second_field++;
     } else {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      s->port_user_stats.stat_interlace_first_field++;
     }
   }
 
   to_epoch = tx_fastmetadata_pacing_time(pacing, epochs) - ptp_time;
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
+    s->port_user_stats.common.stat_epoch_mismatch++;
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs > next_epochs)
+    s->port_user_stats.common.stat_epoch_drop += (epochs - next_epochs);
   if (epochs < next_epochs) {
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                        (next_epochs - epochs));
+    s->port_user_stats.common.stat_epoch_onward += (next_epochs - epochs);
   }
 
   pacing->cur_epochs = epochs;
@@ -539,7 +540,6 @@ static int tx_fastmetadata_session_rtp_update_packet(
   if (rtp->tmstamp != s->st41_rtp_time) {
     /* start of a new frame */
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st41_rtp_time = rtp->tmstamp;
@@ -591,7 +591,6 @@ static int tx_fastmetadata_session_build_packet_chain(
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
-        rte_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st41_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
@@ -701,7 +700,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
+        s->port_user_stats.common.stat_exceed_frame_time++;
         dbg("%s(%d), frame %" PRIu16 " build time out %f us\n", __func__, idx,
             s->st41_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
       }
@@ -843,11 +842,15 @@ static int tx_fastmetadata_session_tasklet_frame(
 
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   s->st41_pkt_idx++;
@@ -889,7 +892,6 @@ static int tx_fastmetadata_session_tasklet_frame(
     rte_atomic32_dec(&frame->refcnt);
     s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
@@ -1002,7 +1004,9 @@ static int tx_fastmetadata_session_tasklet_rtp(
   }
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
+  s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1020,7 +1024,9 @@ static int tx_fastmetadata_session_tasklet_rtp(
     }
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
   }
 
   bool done = true;
@@ -1457,7 +1463,8 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
   s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
   s->st41_frame_idx = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1512,52 +1519,58 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
 static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  struct st41_tx_user_stats* us = &s->port_user_stats;
+  struct st41_tx_user_stats* snap = &s->stat_snapshot;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  double framerate = frame_cnt / time_sec;
-
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->stat_pkt_cnt[MTL_SESSION_PORT_R]);
-  s->stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
+  uint64_t frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
+                      snap->common.port[MTL_SESSION_PORT_P].frames;
+  double framerate = frames_p / time_sec;
+  uint64_t pkts_p = us->common.port[MTL_SESSION_PORT_P].build -
+                    snap->common.port[MTL_SESSION_PORT_P].build;
+  uint64_t pkts_r = us->common.port[MTL_SESSION_PORT_R].build -
+                    snap->common.port[MTL_SESSION_PORT_R].build;
 
-  if (s->stat_epoch_mismatch) {
-    notice("TX_FMD_SESSION(%d): st41 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);
-    s->stat_epoch_mismatch = 0;
+  notice("TX_FMD_SESSION(%d:%s): fps %f frames %" PRIu64 " pkts %" PRIu64 ":%" PRIu64
+         "\n",
+         idx, s->ops_name, framerate, frames_p, pkts_p, pkts_r);
+
+  uint64_t d;
+  d = us->common.stat_epoch_mismatch - snap->common.stat_epoch_mismatch;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): st41 epoch mismatch %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_drop) {
-    notice("TX_FMD_SESSION(%d): epoch drop %u\n", idx, s->stat_epoch_drop);
-    s->stat_epoch_drop = 0;
+  d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): epoch drop %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_epoch_onward) {
-    notice("TX_FMD_SESSION(%d): epoch onward %d\n", idx, s->stat_epoch_onward);
-    s->stat_epoch_onward = 0;
+  d = us->common.stat_epoch_onward - snap->common.stat_epoch_onward;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): epoch onward %" PRIu64 "\n", idx, d);
   }
-  if (s->stat_exceed_frame_time) {
-    notice("TX_AUDIO_SESSION(%d): build timeout frames %u\n", idx,
-           s->stat_exceed_frame_time);
-    s->stat_exceed_frame_time = 0;
+  d = us->common.stat_exceed_frame_time - snap->common.stat_exceed_frame_time;
+  if (d) {
+    notice("TX_AUDIO_SESSION(%d): build timeout frames %" PRIu64 "\n", idx, d);
   }
-  if (frame_cnt <= 0) {
+  if (frames_p == 0) {
     warn("TX_FMD_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
   if (s->ops.interlaced) {
-    notice("TX_FMD_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    uint64_t first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
+    uint64_t second = us->stat_interlace_second_field - snap->stat_interlace_second_field;
+    notice("TX_FMD_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, first, second);
   }
 
-  if (s->stat_error_user_timestamp) {
-    notice("TX_FMD_SESSION(%d): error user timestamp %u\n", idx,
-           s->stat_error_user_timestamp);
-    s->stat_error_user_timestamp = 0;
+  d = us->common.stat_error_user_timestamp - snap->common.stat_error_user_timestamp;
+  if (d) {
+    notice("TX_FMD_SESSION(%d): error user timestamp %" PRIu64 "\n", idx, d);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -1799,6 +1812,50 @@ static int tx_fastmetadata_sessions_mgr_uinit(
   return 0;
 }
 
+/* Prune down ports that are not available. Shifts port names, destination IP addresses,
+ * UDP ports, UDP source ports, and destination MAC addresses for remaining ports. */
+static int tx_fastmetadata_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                                struct st41_tx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+      ops->udp_src_port[j] = ops->udp_src_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int tx_fastmetadata_ops_check(struct st41_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -1899,6 +1956,12 @@ st41_tx_handle st41_tx_create(mtl_handle mt, struct st41_tx_ops* ops) {
     return NULL;
   }
 
+  ret = tx_fastmetadata_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, tx_fastmetadata_ops_prune_down_ports fail %d\n", __func__, ret);
+    return NULL;
+  }
+
   ret = tx_fastmetadata_ops_check(ops);
   if (ret < 0) {
     err("%s, st_tx_fastmetadata_ops_check fail %d\n", __func__, ret);
@@ -1962,22 +2025,19 @@ void* st41_tx_get_mbuf(st41_tx_handle handle, void** usrptr) {
   int idx;
   struct rte_ring* packet_ring;
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   if (rte_ring_full(packet_ring)) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   struct rte_mempool* mp =
@@ -1985,11 +2045,13 @@ void* st41_tx_get_mbuf(st41_tx_handle handle, void** usrptr) {
   pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
+out:
+  MT_HANDLE_RELEASE(s_impl);
   return pkt;
 }
 
@@ -2000,15 +2062,13 @@ int st41_tx_put_mbuf(st41_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, -EIO);
 
   if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   s = s_impl->impl;
@@ -2017,7 +2077,8 @@ int st41_tx_put_mbuf(st41_tx_handle handle, void* mbuf, uint16_t len) {
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
@@ -2027,10 +2088,14 @@ int st41_tx_put_mbuf(st41_tx_handle handle, void* mbuf, uint16_t len) {
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring\n", __func__, idx);
     rte_pktmbuf_free(mbuf);
-    return -EBUSY;
+    ret = -EBUSY;
+    goto out;
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info* dst) {
@@ -2039,10 +2104,7 @@ int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info* ds
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -2050,16 +2112,19 @@ int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info* ds
   sch_idx = sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = tx_fastmetadata_sessions_mgr_update_dst(&sch->tx_fmd_mgr, s, dst);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st41_tx_free(st41_tx_handle handle) {
@@ -2070,10 +2135,13 @@ int st41_tx_free(st41_tx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_TX_FMD);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -2105,26 +2173,26 @@ int st41_tx_free(st41_tx_handle handle) {
 void* st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx) {
   struct st_tx_fastmetadata_session_handle_impl* s_impl = handle;
   struct st_tx_fastmetadata_session_impl* s;
+  void* ret_addr = NULL;
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, NULL);
 
   s = s_impl->impl;
   if (idx >= s->st41_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st41_frames_cnt);
-    return NULL;
+    goto out;
   }
   if (!s->st41_frames) {
     err("%s, st41_frames not allocated\n", __func__);
-    return NULL;
+    goto out;
   }
 
   struct st_frame_trans* frame_info = &s->st41_frames[idx];
-
-  return frame_info->addr;
+  ret_addr = frame_info->addr;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_addr;
 }
 
 int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* stats) {
@@ -2135,13 +2203,13 @@ int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, -EINVAL);
   struct st_tx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -2153,12 +2221,13 @@ int st41_tx_reset_session_stats(st41_tx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_TX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_FMD, -EINVAL);
   struct st_tx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }

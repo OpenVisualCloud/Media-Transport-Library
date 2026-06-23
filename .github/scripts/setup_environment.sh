@@ -11,12 +11,17 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 
 # SET DEFAULT ARGUMENTS
 
+# When set, all build scripts install to this prefix instead of system-wide.
+# This replaces the old SKIP_INSTALL logic with a unified local-install approach.
+: "${MTL_INSTALL_PREFIX:=}"
+export MTL_INSTALL_PREFIX
+
 # Before MTL build install
-: "${SETUP_ENVIRONMENT:=1}"
-: "${SETUP_BUILD_AND_INSTALL_DPDK:=1}"
-: "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=1}"
-: "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=1}"
-: "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=1}"
+: "${SETUP_ENVIRONMENT:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DPDK:=0}"
+: "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=0}"
+: "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
+: "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
 
 # MTL build and install
 : "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
@@ -32,7 +37,8 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
-: "${PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:=0}"
+: "${PLUGIN_BUILD_AND_INSTALL_AVCODEC:=0}"
+: "${PLUGIN_BUILD_AND_INSTALL_JPEGXS:=0}"
 
 : "${HOOK_PYTHON:=0}"
 : "${HOOK_RUST:=0}"
@@ -40,6 +46,8 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 : "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:=0}"
 : "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:=0}"
 : "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:=0}"
+: "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:=0}"
+: "${TOOLS_RUN_SET_TAI_OFFSET:=0}"
 
 # CICD ONLY ARGUMENTS
 : "${CICD_BUILD:=0}"
@@ -79,7 +87,8 @@ function setup_ubuntu_install_dependencies() {
 		cmake \
 		linuxptp \
 		ethtool \
-		netsniff-ng
+		netsniff-ng \
+		unzip
 
 	# CiCd only
 	if [ "${CICD_BUILD}" == "1" ]; then
@@ -100,7 +109,7 @@ function setup_ubuntu_install_dependencies() {
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
-		if sudo apt install -y "linux-headers-$(uname -r)"; then
+		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
 			if [ "${CICD_BUILD}" != "0" ]; then
 				ret=0
 			else
@@ -172,6 +181,15 @@ function setup_ubuntu_install_dependencies() {
 			nasm \
 			unzip \
 			patch
+	fi
+
+	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+		echo "Installing JPEG-XS dependencies"
+		sudo apt install -y \
+			cmake \
+			yasm \
+			nasm \
+			build-essential
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
@@ -292,7 +310,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${root_folder}/script/build_dpdk.sh" -f
+		# DPDK installs to a sibling directory for independent caching
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/dpdk" bash "${root_folder}/script/build_dpdk.sh" -f
+		else
+			bash "${root_folder}/script/build_dpdk.sh" -f
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -307,20 +331,54 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 		echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
 
-		wget "https://downloadmirror.intel.com/${ICE_DMID}/ice-${ICE_VER}.tar.gz"
-		tar xvzf "ice-${ICE_VER}.tar.gz"
+		archive_name="ice-${ICE_VER}.tar.gz"
+		IS_GITHUB_ARCHIVE=0
+		if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
+			echo "Found valid local archive $archive_name, skipping download."
+			if tar -tzf "$archive_name" | grep -q "^ethernet-linux-ice"; then
+				IS_GITHUB_ARCHIVE=1
+			fi
+		else
+			rm -f "$archive_name"
+			echo "Downloading ICE driver of version ${ICE_VER}..."
+			wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name" || true
+			if [ ! -f "$archive_name" ] || ! gzip -t "$archive_name" >/dev/null 2>&1; then
+				echo "Intel mirror download failed or was blocked by AWS WAF. Trying GitHub fallback..."
+				rm -f "$archive_name"
+				wget "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "$archive_name" || true
+				if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
+					echo "Successfully downloaded driver from GitHub fallback."
+					IS_GITHUB_ARCHIVE=1
+				else
+					echo "Error: Failed to download a valid $archive_name from both Intel mirror and GitHub."
+					echo "This is likely caused by corporate proxy blockage or firewall settings."
+					rm -f "$archive_name"
+					exit 1
+				fi
+			fi
+		fi
+		if [ -d "ice-${ICE_VER}" ]; then
+			echo "ice-${ICE_VER} directory already exists, please remove it first"
+			exit 1
+		fi
+		tar xvzf "$archive_name"
+		if [ "${IS_GITHUB_ARCHIVE}" -eq 1 ]; then
+			if [ -d "ethernet-linux-ice-${ICE_VER}" ]; then
+				mv "ethernet-linux-ice-${ICE_VER}" "ice-${ICE_VER}"
+			fi
+		fi
+		rm -f "$archive_name"
 		pushd "ice-${ICE_VER}" >/dev/null || exit 1
 
-		git init
-		git add .
-		git commit -m "init version ${ICE_VER}"
-		git am "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch
+		for patch_file in "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
+			patch -p1 -i "$patch_file"
+		done
 
 		pushd src >/dev/null || exit 1
 		make -j"${nproc}"
 		popd >/dev/null
 		popd >/dev/null
-		rm -rf "ice-${ICE_VER}" "ice-${ICE_VER}.tar.gz"
+		rm -rf "ice-${ICE_VER}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
@@ -362,14 +420,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [[ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]]; then
 		echo "$STEP enable MTL_fuzzing=true"
 		mtl_build_options="${mtl_build_options} enable_fuzzing"
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-		echo "$STEP MTL debug build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh debug "${mtl_build_options}"
-		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
@@ -423,20 +473,39 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 			echo "Building FFMPEG plugin without GPU Direct support"
 		fi
 
-		bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		# FFmpeg installs to a sibling directory for independent caching
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/ffmpeg" bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		else
+			bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem GStreamer plugin build and install"
 
-		pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
-		bash build.sh
-		popd >/dev/null
+		# GStreamer plugins go to a sibling directory
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/gstreamer" bash "${root_folder}/ecosystem/gstreamer_plugin/build.sh"
+		else
+			pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
+			bash build.sh
+			popd >/dev/null
+		fi
 
 		pushd "${root_folder}/tests/tools/gstreamer_tools/" >/dev/null || exit 1
 		meson setup builddir
 		ninja -C builddir/
+
+		# Copy test tool .so files alongside gstreamer plugins
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			mkdir -p "${local_base}/gstreamer"
+			cp builddir/*.so "${local_base}/gstreamer/"
+		fi
 		cp builddir/*.so "${root_folder}/ecosystem/gstreamer_plugin/builddir/"
 		popd >/dev/null
 		STEP=$((STEP + 1))
@@ -444,13 +513,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		else
+			bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
@@ -477,14 +545,63 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-		echo "$STEP Plugin sample build and install"
-		bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		echo "$STEP Plugin AVCODEC build and install"
+		# st22 avcodec plugin installs to a sibling directory for independent caching.
+		# It links libavcodec/libavutil, provided by the .local_install/ffmpeg build.
+		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+			MTL_PLUGIN_PREFIX="${local_base}/plugins" \
+				PKG_CONFIG_PATH="${local_base}/ffmpeg/lib/pkgconfig:${local_base}/ffmpeg/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}" \
+				LD_LIBRARY_PATH="${local_base}/ffmpeg/lib:${local_base}/ffmpeg/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
+				bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		else
+			bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		fi
 		STEP=$((STEP + 1))
 	fi
 
-	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-		echo "$STEP Plugin sample build and install"
-		"${root_folder}/script/build_st22_avcodec_plugin.sh"
+	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+		echo "$STEP Plugin JPEG-XS build and install"
+
+		JPEGXS_REPO="${setup_script_folder}/SVT-JPEG-XS"
+		if [ ! -d "${JPEGXS_REPO}" ]; then
+			git clone --depth 1 https://github.com/OpenVisualCloud/SVT-JPEG-XS.git "${JPEGXS_REPO}"
+		fi
+
+		# Build and install SVT-JPEG-XS library
+		pushd "${JPEGXS_REPO}/Build/linux" >/dev/null || exit 1
+		./build.sh install
+		popd >/dev/null
+
+		# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
+		pushd "${JPEGXS_REPO}/imtl-plugin" >/dev/null || exit 1
+		rm -rf build
+		meson setup build
+		meson compile -C build
+		sudo meson install -C build
+		popd >/dev/null
+
+		# Rebuild FFmpeg with JPEG-XS support
+		FFMPEG_VERSION="${FFMPEG_VERSION:-7.0}"
+		FFMPEG_JPEGXS_DIR="${setup_script_folder}/ffmpeg-jpegxs"
+		if [ -d "${FFMPEG_JPEGXS_DIR}" ]; then
+			rm -rf "${FFMPEG_JPEGXS_DIR}"
+		fi
+
+		wget -q "https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/${FFMPEG_VERSION}.zip" -O "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip"
+		unzip -q "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip" -d "${setup_script_folder}" && rm -f "${setup_script_folder}/ffmpeg-${FFMPEG_VERSION}.zip"
+		mv "${setup_script_folder}/FFmpeg-release-${FFMPEG_VERSION}" "${FFMPEG_JPEGXS_DIR}"
+
+		pushd "${FFMPEG_JPEGXS_DIR}" >/dev/null || exit 1
+		cp -f "${JPEGXS_REPO}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
+		git init && git add -A && git commit -m "init" --quiet
+		git am --whitespace=fix "${JPEGXS_REPO}/ffmpeg-plugin/${FFMPEG_VERSION}"/*.patch
+		./configure --enable-shared --disable-static --enable-pic --enable-libsvtjpegxs
+		make -j"${nproc}"
+		sudo make install
+		popd >/dev/null
+
+		sudo ldconfig
 		STEP=$((STEP + 1))
 	fi
 
@@ -547,6 +664,29 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
+	if [ "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET}" == "1" ]; then
+		echo "$STEP Tools set_tai_offset build"
+		pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
+		meson setup build || true
+		ninja -C build -j"${nproc}"
+		popd >/dev/null
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${TOOLS_RUN_SET_TAI_OFFSET}" == "1" ]; then
+		echo "$STEP Tools set_tai_offset run"
+		tai_bin="${root_folder}/tools/set_tai_offset/build/set_tai_offset"
+		if [ ! -x "${tai_bin}" ]; then
+			echo "set_tai_offset not built, building first..."
+			pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
+			meson setup build || true
+			ninja -C build -j"${nproc}"
+			popd >/dev/null
+		fi
+		sudo "${tai_bin}" -v -0
+		STEP=$((STEP + 1))
+	fi
+
 	echo "Selected setup options:"
 	show_flag() {
 		local name="$1"
@@ -578,12 +718,15 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:RIST plugin" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin" \
-		"PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC:AVCodec plugin" \
+		"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin" \
+		"PLUGIN_BUILD_AND_INSTALL_JPEGXS:JPEG-XS plugin" \
 		"HOOK_PYTHON:Python hook" \
 		"HOOK_RUST:Rust hook" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:MTL monitors" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:MTL readpcap" \
 		"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator" \
+		"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool" \
+		"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run" \
 		"CICD_BUILD:CICD mode" \
 		"CICD_BUILD_BUILD_ICE_DRIVER:CICD ICE driver build"; do
 

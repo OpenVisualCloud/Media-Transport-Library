@@ -13,7 +13,8 @@ enum st20p_tx_frame_status {
   ST20P_TX_FRAME_READY,
   ST20P_TX_FRAME_IN_CONVERTING, /* for converting */
   ST20P_TX_FRAME_CONVERTED,
-  ST20P_TX_FRAME_IN_USER,         /* in user */
+  ST20P_TX_FRAME_DROPPED, /* converted but arrived too late; recycled in next_frame */
+  ST20P_TX_FRAME_IN_USER, /* in user */
   ST20P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST20P_TX_FRAME_STATUS_MAX,
 };
@@ -31,11 +32,15 @@ struct st20p_tx_frame {
   bool frame_done_cb_called; /* frame done callback called */
 };
 
+/* See st20p_rx_ctx note re: ->transport lifetime; access via MT_HANDLE_GUARD. */
 struct st20p_tx_ctx {
   struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
+  void (*wake_on_destroy)(void* self);
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st20p_tx_ops ops;
@@ -69,6 +74,9 @@ struct st20p_tx_ctx {
   uint32_t stat_get_frame_succ;
   uint32_t stat_put_frame;
   uint32_t stat_drop_frame;
+  /* cumulative user-facing counters; reset only by reset_session_stats */
+  uint64_t stat_frames_sent;
+  uint64_t stat_frames_dropped;
 };
 
 #endif

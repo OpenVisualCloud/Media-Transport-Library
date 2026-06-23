@@ -8,8 +8,42 @@ import re
 
 from mtl_engine import udp_app_config
 
-from .const import LOG_FOLDER
+from .const import (
+    LIBRIST_TEST_RECEIVE_EXE,
+    LIBRIST_TEST_SEND_EXE,
+    LOG_FOLDER,
+    UFD_CLIENT_SAMPLE_EXE,
+    UFD_SERVER_SAMPLE_EXE,
+)
 from .execute import call, log_fail, wait
+
+
+def _resolve_ld_preload(build: str) -> str:
+    """Resolve libmtl_udp_preload.so path using env, .local_install, or system."""
+    # Prefer env var set by CI
+    env_path = os.environ.get("MTL_LD_PRELOAD")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+    # .local_install
+    li_path = os.path.join(
+        build,
+        ".local_install",
+        "mtl",
+        "lib",
+        "x86_64-linux-gnu",
+        "libmtl_udp_preload.so",
+    )
+    if os.path.isfile(li_path):
+        return li_path
+    # System path
+    sys_path = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    if os.path.isfile(sys_path):
+        return sys_path
+    raise EnvironmentError(
+        f"libmtl_udp_preload.so not found. Checked MTL_LD_PRELOAD env, "
+        f"'{li_path}', and '{sys_path}'."
+    )
+
 
 sample_ip_dict = {
     "client": "192.168.106.10",
@@ -57,8 +91,8 @@ def execute_test_sample(
     server_env = os.environ.copy()
     server_env["MUFD_CFG"] = os.path.join(os.getcwd(), server_config_file)
 
-    client_command = f"./build/app/UfdClientSample --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
-    server_command = f"./build/app/UfdServerSample --sessions_cnt {sessions_cnt}"
+    client_command = f"{UFD_CLIENT_SAMPLE_EXE} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
+    server_command = f"{UFD_SERVER_SAMPLE_EXE} --sessions_cnt {sessions_cnt}"
 
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
@@ -103,19 +137,19 @@ def execute_test_librist(
     save_as_json(config_file=receive_config_file, config=receive_config)
 
     send_env = os.environ.copy()
-    send_env["LD_PRELOAD"] = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    send_env["LD_PRELOAD"] = _resolve_ld_preload(build)
     send_env["MUFD_CFG"] = os.path.join(os.getcwd(), send_config_file)
 
     receive_env = os.environ.copy()
-    receive_env["LD_PRELOAD"] = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
+    receive_env["LD_PRELOAD"] = _resolve_ld_preload(build)
     receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
 
     send_command = (
-        f"./ecosystem/librist/librist/build/test/rist/test_send --sleep_us={sleep_us}"
+        f"{LIBRIST_TEST_SEND_EXE} --sleep_us={sleep_us}"
         + f" --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
     receive_command = (
-        "./ecosystem/librist/librist/build/test/rist/test_receive"
+        f"{LIBRIST_TEST_RECEIVE_EXE}"
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 

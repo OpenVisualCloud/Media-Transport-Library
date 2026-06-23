@@ -8,33 +8,63 @@ on:
         type: choice
         options:
           - e810
-          - e810-dell
           - e830
+          - e825
+          - e835
       marker:
         description: Marker
         required: false
         type: string
+      test_filter:
+        description: 'Pytest keyword filter (-k), e.g. test_st20p_resolutions'
+        required: false
+        type: string
       dir:
-        description: Directory (subdirectory of tests/validation)
+        description: 'Directory (subdirectory of tests/validation) or a specific test path'
         required: true
         type: string
         default: tests
+      shadow_host:
+        description: 'Path to shadow host credentials file (IP/USER). Leave empty to use secret.'
+        required: false
+        type: string
+        default: ''
+      enable_shadow_host:
+        description: 'Enable shadow host sync'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  checks: read
+
 jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+
   run-pytest:
+    needs: build
     runs-on: "${{ inputs.nic }}"
     timeout-minutes: 720
     steps:
       - name: Harden-Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
       - name: Checkout MTL
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: "${{ github.ref }}"
-      - uses: ./.github/actions/build
+      - name: Validate host and download stashes
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || secrets.SHADOW_HOST) || '' }}
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |
@@ -49,53 +79,54 @@ jobs:
         run: |
           if [ "${{ inputs.nic }}" = "e810" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "e810-dell" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ inputs.nic }}" = "e830" ]; then
             echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.nic }}" = "e825" ]; then
+            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.nic }}" = "e835" ]; then
+            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate pytest configuration files
         working-directory: ./tests/validation/configs
         run: |
           python3 gen_config.py \
             --session_id "${{ env.SESSION_ID }}" \
-            --build "${{ secrets.RUNNER_BUILD }}" \
             --mtl_path "${{ secrets.RUNNER_MTL_PATH }}" \
             --pci_device "${{ env.PCI_DEVICE }}" \
             --ip_address 127.0.0.1 \
             --username "${{ secrets.RUNNER_USERNAME }}" \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: Kill active MtlManager and pytest processes
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ inputs.nic }}" >> "$GITHUB_ENV"
-      - name: Start MtlManager
-        run: |
-          sudo MtlManager &
+
+      - name: 'cleanup: Kill stale processes before test'
+        uses: ./.github/actions/cleanup
+
       - name: Run tests
         working-directory: ./tests/validation
         run: |
           ./.venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
             --topology_config=./configs/topology_config.yaml \
-            "${{ inputs.marker && format('-m {0}', inputs.marker) || '' }}" \
+            ${{ inputs.marker && format('-m "{0}"', inputs.marker) || '' }} \
+            ${{ inputs.test_filter && format('-k "{0}"', inputs.test_filter) || '' }} \
             --template=html/index.html \
             --report=./report.html \
             "./${{ inputs.dir }}"
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: "custom-test-report-${{ env.CURRENT_DATE }}"
           path: ./tests/validation/report.html
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup

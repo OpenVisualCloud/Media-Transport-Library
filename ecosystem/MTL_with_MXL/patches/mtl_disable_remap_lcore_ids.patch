@@ -1,0 +1,33 @@
+From: moleksy <maciej.oleksy@intel.com>
+Subject: [PATCH] Fix: disable DPDK --remap-lcore-ids for MTL multi-process lcore control
+
+--remap-lcore-ids causes lcore ID collisions in the global MtlManager
+table when multiple MTL processes run with disjoint CPU sets, because
+all processes remap to the same 0..N ID space.
+
+Apply against MTL commit c02b9f6e3169d213bc2130f5459b6c1176e5e2e7 (v26.01.0.DEV).
+
+---
+ lib/src/dev/mt_dev.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/lib/src/dev/mt_dev.c b/lib/src/dev/mt_dev.c
+index a516a165..43d57e29 100644
+--- a/lib/src/dev/mt_dev.c
++++ b/lib/src/dev/mt_dev.c
+@@ -426,8 +426,11 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
+       argc++;
+   }
+ 
+-#if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
+-  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
++  /* NOTE: --remap-lcore-ids removed — it causes lcore ID collisions in the
++   * global MtlManager table when multiple MTL processes run with disjoint
++   * CPU sets, because all processes remap to the same 0..N ID space. */
++#if 0 /* was: RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0) */
++  argv[argc] = "--remap-lcore-ids";
+   argc++;
+ #endif
+ 
+-- 
+2.43.0

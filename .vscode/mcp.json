@@ -1,0 +1,10 @@
+{
+    "servers": {
+        "mtl-system-setup": {
+            "type": "stdio",
+            "command": "${workspaceFolder}/.github/mcp/run_server.sh",
+            "args": [],
+            "env": {}
+        }
+    }
+}

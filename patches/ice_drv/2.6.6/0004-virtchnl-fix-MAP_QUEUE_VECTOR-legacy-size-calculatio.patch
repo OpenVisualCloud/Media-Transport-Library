@@ -1,0 +1,49 @@
+From 81b4613fa0e03d7294be558393d401ef33e889ab Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Fri, 12 Jun 2026 08:56:46 -0400
+Subject: [PATCH 3/3] virtchnl: fix MAP_QUEUE_VECTOR legacy size calculation
+
+VF traffic could be fully blocked when processing
+VIRTCHNL_OP_MAP_QUEUE_VECTOR (opcode 111) due to an ABI length
+mismatch between PF validation and VF message size computation.
+
+The queue-vector map payload uses a legacy [1]-tail struct size
+convention. Using __vss_full() over-counts one element for this
+struct, making PF expect a message 16 bytes larger than what VF
+sends for a given map count.
+
+For 32 maps:
+- VF sends: 8 + 32*16 = 520
+- PF expected (wrong): 24 + 32*16 = 536
+- PF expected (correct): 24 + (32-1)*16 = 520
+
+This mismatch causes PF to reject opcode 111 with -EINVAL /
+VIRTCHNL_STATUS_ERR_PARAM. As a result, queue->vector mapping is not
+established, RX queues are never polled by NAPI, and VF software sees
+zero packets despite hardware RX counters increasing.
+
+Fix by switching virtchnl_ss_queue_vector_maps() from __vss_full()
+to __vss_byelem(), which is the correct helper for legacy structs
+whose LEGACY_SIZEOF already includes one element.
+
+Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+---
+ src/virtchnl.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/virtchnl.h b/src/virtchnl.h
+index 6d185cb..1054fd3 100644
+--- a/src/virtchnl.h
++++ b/src/virtchnl.h
+@@ -2161,7 +2161,7 @@ VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_fdir_del);
+ 	virtchnl_ss_byone(p, m, c, virtchnl_rss_lut)
+ 
+ #define virtchnl_ss_queue_vector_maps(p, m, c)			      \
+-	__vss_full(p, m, c, virtchnl_queue_vector_maps_LEGACY_SIZEOF)
++	__vss_byelem(p, m, c, virtchnl_queue_vector_maps_LEGACY_SIZEOF)
+ 
+ /* Status returned to VF after VF requests FSUB commands
+  * VIRTCHNL_FSUB_SUCCESS
+-- 
+2.47.3
+

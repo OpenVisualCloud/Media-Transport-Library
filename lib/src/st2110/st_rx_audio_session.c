@@ -7,9 +7,11 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_pcap.h"
 #include "../mt_stat.h"
+#include "st_rx_common.h"
 #include "st_rx_timing_parser.h"
 
 static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
@@ -104,6 +106,11 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
     s->st30_frames = NULL;
   }
 
+  if (s->frame_bitmap) {
+    mt_rte_free(s->frame_bitmap);
+    s->frame_bitmap = NULL;
+  }
+
   dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
 }
@@ -140,6 +147,13 @@ static int rx_audio_session_alloc_frames(struct st_rx_audio_session_impl* s) {
     st30_frame->flags = ST_FT_FLAG_RTE_MALLOC;
     st30_frame->addr = frame;
     st30_frame->iova = rte_malloc_virt2iova(frame);
+  }
+
+  s->frame_bitmap = mt_rte_zmalloc_socket(((size_t)s->st30_total_pkts + 7) / 8, soc_id);
+  if (!s->frame_bitmap) {
+    err("%s(%d), frame_bitmap alloc fail\n", __func__, idx);
+    rx_audio_session_free_frames(s);
+    return -ENOMEM;
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -246,6 +260,95 @@ static int rx_audio_session_usdt_dump_frame(struct st_rx_audio_session_impl* s,
   return 0;
 }
 
+static int rx_audio_session_open_frame(struct st_rx_audio_session_impl* s,
+                                       enum mtl_session_port s_port, uint32_t tmstamp,
+                                       uint64_t ptp_ts) {
+  s->st30_cur_frame = rx_audio_session_get_frame(s);
+  if (!s->st30_cur_frame) {
+    s->port_user_stats.stat_slot_get_frame_fail++;
+    return -EIO;
+  }
+
+  /* Anchor on the grid floor carried by s->tmstamp so a missing leading packet
+   * leaves slot 0 unset; resync to the arriving ts on a jump beyond one frame. */
+  uint32_t spp = s->samples_per_pkt ? s->samples_per_pkt : 1;
+  uint32_t grid_base = (uint32_t)(s->tmstamp + 1);
+  uint32_t base = (((uint32_t)(tmstamp - grid_base) / spp) < (uint32_t)s->st30_total_pkts)
+                      ? grid_base
+                      : tmstamp;
+
+  memset(s->frame_bitmap, 0, ((size_t)s->st30_total_pkts + 7) / 8);
+  s->frame_recv_size = 0;
+  s->first_pkt_rtp_ts = base;
+  s->first_pkt_ptp_ts = ptp_ts;
+  s->tmstamp = (int64_t)(uint32_t)(base - 1);
+  s->port_user_stats.common.port[s_port].frames++;
+  return 0;
+}
+
+/* Close the open frame: COMPLETE when every positional slot was filled,
+ * CORRUPTED otherwise (mirrors st20 rv_frame_notify). The floor watermark is
+ * advanced to the next frame so a late packet for this just-closed frame is
+ * dropped by the redundancy filter. */
+static void rx_audio_session_frame_notify(struct mtl_main_impl* impl,
+                                          struct st_rx_audio_session_impl* s) {
+  struct st30_rx_ops* ops = &s->ops;
+  struct st30_rx_frame_meta* meta = &s->meta;
+  struct st_frame_trans* frame = s->st30_cur_frame;
+  uint64_t tsc_start = 0;
+
+  if (s->enable_timing_parser) {
+    struct st_rx_audio_tp* tp = s->tp;
+    uint64_t now = mt_get_tsc(impl);
+    if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
+      for (int sp = 0; sp < ops->num_port; sp++) {
+        struct st_ra_tp_slot* slot = &s->tp->slot[sp];
+        ra_tp_slot_parse_result(s, sp);
+        if (s->enable_timing_parser_meta) {
+          ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
+        }
+        ra_tp_slot_init(slot);
+      }
+      tp->last_parse_time = now;
+    }
+  }
+
+  meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  meta->timestamp = s->first_pkt_rtp_ts;
+  meta->timestamp_first_pkt = s->first_pkt_ptp_ts;
+  meta->fmt = ops->fmt;
+  meta->sampling = ops->sampling;
+  meta->channel = ops->channel;
+  meta->rtp_timestamp = s->first_pkt_rtp_ts;
+  meta->frame_recv_size = s->frame_recv_size;
+  meta->status = (s->frame_recv_size >= s->st30_frame_size) ? ST_FRAME_STATUS_COMPLETE
+                                                            : ST_FRAME_STATUS_CORRUPTED;
+
+  MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
+                                  s->first_pkt_rtp_ts, meta->frame_recv_size);
+  if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
+    rx_audio_session_usdt_dump_frame(s, frame);
+  } else {
+    rx_audio_session_usdt_dump_close(s);
+  }
+
+  bool time_measure = mt_sessions_time_measure(impl);
+  if (time_measure) tsc_start = mt_get_tsc(impl);
+  int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
+  if (time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+  if (ret < 0) {
+    warn("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
+    rx_audio_session_put_frame(s, frame);
+  }
+
+  s->tmstamp = (int64_t)(uint32_t)(s->first_pkt_rtp_ts + s->rtp_ticks_per_frame - 1);
+  rte_atomic32_inc(&s->stat_frames_received);
+  s->st30_cur_frame = NULL;
+}
+
 static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                              struct st_rx_audio_session_impl* s,
                                              struct rte_mbuf* mbuf,
@@ -265,7 +368,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
 
     return -EINVAL;
   }
@@ -275,7 +378,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
 
       return -EINVAL;
     }
@@ -284,16 +387,11 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (pkt_len != s->pkt_len) {
     dbg("%s(%d,%d), drop as pkt_len mismatch now %u expect %u\n", __func__, s->idx,
         s_port, pkt_len, s->pkt_len);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_len_mismatch_dropped);
+    s->port_user_stats.stat_pkts_len_mismatch_dropped++;
     return -EINVAL;
   }
 
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-
-  if (s->st30_pkt_idx == 0) {
-    s->first_pkt_rtp_ts = tmstamp;
-    s->first_pkt_ptp_ts = mt_mbuf_time_stamp(impl, mbuf, port);
-  }
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
@@ -301,128 +399,106 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
 
-  /* all packets need to have increasing timestamp */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
+
+  /* drop packets older than the open frame's base (or the next-frame floor
+   * between frames); the bitmap dedups packets inside the open frame */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->redundant_error_cnt[s_port]++;
+    s->port_user_stats.common.stat_pkts_redundant++;
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
+        return -EAGAIN; /* filtered redundant, not an error */
       }
     }
+    /* threshold exceeded on all ports — accept the packet and undo the redundant count
+     * so the packet is only counted as received, not both */
+    s->port_user_stats.common.stat_pkts_redundant--;
     warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
          __func__, s->idx, tmstamp, s->tmstamp);
   }
   s->redundant_error_cnt[s_port] = 0;
-  s->tmstamp = tmstamp;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* The package is accepted and goes into the frame */
 
-  s->session_seq_id = seq_id;
+  /* only advance, never go backward */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
 
   if (!s->st30_cur_frame) {
-    s->st30_cur_frame = rx_audio_session_get_frame(s);
-    if (!s->st30_cur_frame) {
+    if (rx_audio_session_open_frame(s, s_port, tmstamp,
+                                    mt_mbuf_time_stamp(impl, mbuf, port)) < 0) {
       dbg("%s(%d,%d), seq %d drop as frame run out\n", __func__, s->idx, s_port, seq_id);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_get_frame_fail);
       MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
       return -EIO;
     }
   }
 
-  uint32_t offset = s->st30_pkt_idx * s->pkt_len;
-  if ((offset + s->pkt_len) > s->st30_frame_size) {
-    dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
-        offset, s->st30_frame_size);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_dropped);
-    return -EIO;
+  uint32_t spp = s->samples_per_pkt ? s->samples_per_pkt : 1;
+  uint32_t idx = (tmstamp - s->first_pkt_rtp_ts) / spp;
+
+  if (idx >= (uint32_t)s->st30_total_pkts) {
+    /* forward jump: close the open frame (CORRUPTED if partial), emit nothing
+     * for any wholly-missing frames in between, then open a fresh frame at this
+     * timestamp. A late packet for the just-closed frame is dropped — the
+     * single slot keeps no history of it. */
+    rx_audio_session_frame_notify(impl, s);
+    if (rx_audio_session_open_frame(s, s_port, tmstamp,
+                                    mt_mbuf_time_stamp(impl, mbuf, port)) < 0) {
+      dbg("%s(%d,%d), seq %d drop as frame run out\n", __func__, s->idx, s_port, seq_id);
+      MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
+      return -EIO;
+    }
+    idx = (tmstamp - s->first_pkt_rtp_ts) / spp;
   }
-  rte_memcpy(s->st30_cur_frame->addr + offset, payload, s->pkt_len);
+
+  if (mt_bitmap_test_and_set(s->frame_bitmap, (int)idx)) {
+    dbg("%s(%d,%d), seq %d idx %u already received\n", __func__, s->idx, s_port, seq_id,
+        idx);
+    s->port_user_stats.common.stat_pkts_redundant++;
+    return 0;
+  }
+
+  rte_memcpy(s->st30_cur_frame->addr + (size_t)idx * s->pkt_len, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
-  s->port_user_stats.common.port[s_port].packets++;
-  s->st30_pkt_idx++;
+  s->port_user_stats.common.stat_pkts_received++;
 
   if (s->enable_timing_parser) {
     ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
   }
 
-  // notify frame done
   if (s->frame_recv_size >= s->st30_frame_size) {
-    struct st30_rx_frame_meta* meta = &s->meta;
-    uint64_t tsc_start = 0;
-    struct st_frame_trans* frame = s->st30_cur_frame;
-
-    if (s->enable_timing_parser) {
-      /* parse timing result every 200ms */
-      struct st_rx_audio_tp* tp = s->tp;
-      uint64_t now = mt_get_tsc(impl);
-      if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
-        for (int sp = 0; sp < ops->num_port; sp++) {
-          struct st_ra_tp_slot* slot = &s->tp->slot[sp];
-          ra_tp_slot_parse_result(s, sp);
-          if (s->enable_timing_parser_meta) {
-            ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
-          }
-          ra_tp_slot_init(slot);
-        }
-        tp->last_parse_time = now;
-      }
-    }
-
-    meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = s->first_pkt_rtp_ts;
-    meta->timestamp_first_pkt = s->first_pkt_ptp_ts;
-    meta->fmt = ops->fmt;
-    meta->sampling = ops->sampling;
-    meta->channel = ops->channel;
-    meta->rtp_timestamp = s->first_pkt_rtp_ts;
-    meta->frame_recv_size = s->frame_recv_size;
-
-    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
-                                    s->first_pkt_rtp_ts, meta->frame_recv_size);
-    /* check if dump USDT enabled */
-    if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
-      rx_audio_session_usdt_dump_frame(s, frame);
-    } else {
-      rx_audio_session_usdt_dump_close(s);
-    }
-
-    /* get a full frame */
-    bool time_measure = mt_sessions_time_measure(impl);
-    if (time_measure) tsc_start = mt_get_tsc(impl);
-    int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
-    if (time_measure) {
-      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
-      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
-    }
-    if (ret < 0) {
-      err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
-      rx_audio_session_put_frame(s, frame);
-    }
-    s->frame_recv_size = 0;
-    s->st30_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats.common.port[s_port].frames++;
-    s->st30_cur_frame = NULL;
+    rx_audio_session_frame_notify(impl, s);
   }
 
   return 0;
@@ -447,7 +523,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -455,7 +531,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -466,27 +542,42 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
+
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* all packets need to have increasing timestamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
-    s->stat_pkts_redundant++;
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->redundant_error_cnt[s_port]++;
+    s->port_user_stats.common.stat_pkts_redundant++;
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
+        return -EAGAIN; /* filtered redundant, not an error */
       }
     }
 
-    /* should never happen */
+    /* threshold exceeded on all ports — accept the packet and undo the redundant count
+     * so the packet is only counted as received, not both */
+    s->port_user_stats.common.stat_pkts_redundant--;
     warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
          __func__, s->idx, tmstamp, s->tmstamp);
   }
@@ -495,28 +586,29 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
+      mt_seq16_greater(seq_id, s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* The package is accepted and goes into the frame */
-  s->session_seq_id = seq_id;
+  /* only advance, never go backward */
+  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
   if (ret < 0) {
     dbg("%s(%d,%d), drop as rtps ring full\n", __func__, seq_id, s_port);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_get_frame_fail);
+    s->port_user_stats.stat_slot_get_frame_fail++;
     return -EIO;
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   ops->notify_rtp_ready(ops->priv);
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
-  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.stat_pkts_received++;
 
   return 0;
 }
@@ -530,46 +622,22 @@ static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
   s->frame_recv_size = 0;
-  s->st30_pkt_idx = 0;
+  s->burst_loss_cnt = 0;
   s->st30_cur_frame = NULL;
   s->first_pkt_rtp_ts = 0;
-  s->stat_pkts_dropped = 0;
-  s->stat_pkts_redundant = 0;
-  s->stat_pkts_out_of_order = 0;
-  s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-  s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
-  s->stat_slot_get_frame_fail = 0;
-  s->stat_pkts_wrong_pt_dropped = 0;
-  s->stat_pkts_wrong_ssrc_dropped = 0;
-  s->stat_pkts_len_mismatch_dropped = 0;
-  s->stat_pkts_received = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_frame_us = 0;
+  s->stat_consecutive_busy_intervals = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     s->redundant_error_cnt[i] = 0;
   }
 
   if (init_stat_time_now) s->usdt_dump_fd = -1;
 }
-
-#ifdef MTL_ENABLE_FUZZING_ST30
-int st_rx_audio_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                        struct st_rx_audio_session_impl* s,
-                                        struct rte_mbuf* mbuf,
-                                        enum mtl_session_port s_port) {
-  if (!s || !mbuf) return -EINVAL;
-  if (s->ops.type == ST30_TYPE_RTP_LEVEL)
-    return rx_audio_session_handle_rtp_pkt(impl, s, mbuf, s_port);
-  return rx_audio_session_handle_frame_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_audio_session_fuzz_reset(struct st_rx_audio_session_impl* s) {
-  rx_audio_session_reset(s, false);
-}
-#endif
 
 static int ra_stop_pcap(struct st_rx_audio_session_impl* s,
                         enum mtl_session_port s_port) {
@@ -639,6 +707,19 @@ static int ra_dump_pcap(struct st_rx_audio_session_impl* s, struct rte_mbuf** mb
   return 0;
 }
 
+static bool ra_simulate_pkt_loss(struct st_rx_audio_session_impl* s) {
+  if (s->burst_loss_cnt == 0) {
+    if (((float)rand() / (float)RAND_MAX) < s->sim_loss_rate) {
+      s->burst_loss_cnt = rand() % s->burst_loss_max + 1;
+    } else {
+      return false;
+    }
+  }
+  s->burst_loss_cnt--;
+  dbg("%s(%d), simulate pkt loss, burst left %u\n", __func__, s->idx, s->burst_loss_cnt);
+  return true;
+}
+
 static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_audio_session_impl* s = s_priv->session;
@@ -661,11 +742,18 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   }
 
   if (ST30_TYPE_FRAME_LEVEL == st30_type) {
-    for (uint16_t i = 0; i < nb; i++)
-      rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
+    for (uint16_t i = 0; i < nb; i++) {
+      if ((s->ops.flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) && ra_simulate_pkt_loss(s))
+        continue;
+      int rc = rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
+      if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
+    }
   } else {
     for (uint16_t i = 0; i < nb; i++) {
-      rx_audio_session_handle_rtp_pkt(impl, s, mbuf[i], s_port);
+      if ((s->ops.flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) && ra_simulate_pkt_loss(s))
+        continue;
+      int rc = rx_audio_session_handle_rtp_pkt(impl, s, mbuf[i], s_port);
+      if (rc < 0 && rc != -EAGAIN) s->port_user_stats.common.port[s_port].err_packets++;
     }
   }
 
@@ -911,7 +999,19 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
   s->st30_frame_size = ops->framebuff_size;
+  uint32_t per_frame_div = (uint32_t)st30_get_sample_size(ops->fmt) * ops->channel;
+  s->rtp_ticks_per_frame =
+      per_frame_div ? (uint32_t)(s->st30_frame_size / per_frame_div) : 0;
+  s->samples_per_pkt = per_frame_div ? (s->pkt_len / per_frame_div) : 0;
   rx_audio_session_reset(s, true);
+
+  if (ops->flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) {
+    /* st30_rx_ops exposes no loss tuning knobs; use fixed test defaults */
+    s->burst_loss_max = 1;
+    s->sim_loss_rate = 0.1;
+    info("%s(%d), simulated packet loss max burst %u rate %f\n", __func__, idx,
+         s->burst_loss_max, s->sim_loss_rate);
+  }
 
   if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_STAT) {
     info("%s(%d), enable the timing analyze stat\n", __func__, idx);
@@ -979,53 +1079,131 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d (redundant %d)\n", m_idx,
-           idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
+  struct st30_rx_user_stats* us = &s->port_user_stats;
+  struct st30_rx_user_stats* snap = &s->stat_snapshot;
+
+  uint64_t pkts_received =
+      us->common.stat_pkts_received - snap->common.stat_pkts_received;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
+  uint64_t lost_pkts = us->common.stat_lost_packets - snap->common.stat_lost_packets;
+  uint64_t pkts_unrecovered =
+      us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
+  uint64_t pkts_dropped = us->stat_pkts_dropped - snap->stat_pkts_dropped;
+  uint64_t pkts_wrong_pt_dropped =
+      us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
+  uint64_t pkts_wrong_ssrc_dropped =
+      us->common.stat_pkts_wrong_ssrc_dropped - snap->common.stat_pkts_wrong_ssrc_dropped;
+  uint64_t pkts_len_mismatch_dropped =
+      us->stat_pkts_len_mismatch_dropped - snap->stat_pkts_len_mismatch_dropped;
+  uint64_t slot_get_frame_fail =
+      us->stat_slot_get_frame_fail - snap->stat_slot_get_frame_fail;
+
+  if (pkts_redundant) {
+    notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %" PRIu64
+           " (redundant %" PRIu64 ")\n",
+           m_idx, idx, s->ops_name, framerate, frames_received, pkts_received,
+           pkts_redundant);
   } else {
-    info("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
-         s->ops_name, framerate, frames_received, s->stat_pkts_received);
+    info("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %" PRIu64 "\n", m_idx, idx,
+         s->ops_name, framerate, frames_received, pkts_received);
   }
 
-  s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
-  if (s->stat_pkts_out_of_order) {
-    warn("RX_AUDIO_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
-         s->stat_pkts_out_of_order,
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  uint64_t port_pkts[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_frames[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_lost[MTL_SESSION_PORT_MAX] = {0};
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port_pkts[i] = us->common.port[i].packets - snap->common.port[i].packets;
+    port_frames[i] = us->common.port[i].frames - snap->common.port[i].frames;
+    port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
+  }
+  if (s->ops.num_port > 1) {
+    /* port[].frames here counts frames whose first packet arrived on this
+     * port — i.e. this port "won the race" for that frame. */
+    notice("RX_AUDIO_SESSION(%d,%d): per-port arrivals P=%" PRIu64 " pkts (%" PRIu64
+           " frames first), R=%" PRIu64 " pkts (%" PRIu64 " frames first)\n",
+           m_idx, idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
+           port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
   }
 
-  if (s->stat_pkts_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): dropped pkts %d\n", m_idx, idx,
-           s->stat_pkts_dropped);
-    s->stat_pkts_dropped = 0;
+  if (lost_pkts) {
+    if (s->ops.num_port > 1) {
+      double pct_p =
+          port_pkts[MTL_SESSION_PORT_P]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
+                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
+              : 0.0;
+      double pct_r =
+          port_pkts[MTL_SESSION_PORT_R]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
+                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
+              : 0.0;
+      double save_rate =
+          (lost_pkts + pkts_unrecovered)
+              ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
+              : 100.0;
+      uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
+      warn("RX_AUDIO_SESSION(%d): per-port loss %" PRIu64 " of %" PRIu64
+           " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+           "=%.1f%%), unrecovered (lost on both) %" PRIu64 ", save_rate=%.1f%%\n",
+           idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
+           port_lost[MTL_SESSION_PORT_R], pct_r, pkts_unrecovered, save_rate);
+    } else {
+      warn("RX_AUDIO_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
+    }
+  } else if (pkts_unrecovered) {
+    err("RX_AUDIO_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
+        pkts_unrecovered);
   }
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr payload_type dropped pkts %d\n", m_idx,
-           idx, s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+
+  if (pkts_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): dropped pkts %" PRIu64 "\n", m_idx, idx,
+           pkts_dropped);
   }
-  if (s->stat_pkts_wrong_ssrc_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr ssrc dropped pkts %d\n", m_idx, idx,
-           s->stat_pkts_wrong_ssrc_dropped);
-    s->stat_pkts_wrong_ssrc_dropped = 0;
+  if (pkts_wrong_pt_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr payload_type dropped pkts %" PRIu64 "\n",
+           m_idx, idx, pkts_wrong_pt_dropped);
   }
-  if (s->stat_pkts_len_mismatch_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): pkt len mismatch dropped pkts %d\n", m_idx, idx,
-           s->stat_pkts_len_mismatch_dropped);
-    s->stat_pkts_len_mismatch_dropped = 0;
+  if (pkts_wrong_ssrc_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr ssrc dropped pkts %" PRIu64 "\n", m_idx,
+           idx, pkts_wrong_ssrc_dropped);
   }
-  if (s->stat_slot_get_frame_fail) {
-    notice("RX_AUDIO_SESSION(%d,%d): slot get frame fail %u\n", m_idx, idx,
-           s->stat_slot_get_frame_fail);
-    s->stat_slot_get_frame_fail = 0;
+  if (pkts_len_mismatch_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): pkt len mismatch dropped pkts %" PRIu64 "\n", m_idx,
+           idx, pkts_len_mismatch_dropped);
   }
+  if (slot_get_frame_fail) {
+    notice("RX_AUDIO_SESSION(%d,%d): slot get frame fail %" PRIu64 "\n", m_idx, idx,
+           slot_get_frame_fail);
+  }
+  if (slot_get_frame_fail > 0) {
+    if (s->st30_frames != NULL) {
+      /* Frame-mode: refcnt scan is safe on the mt_stat thread. RTP-mode
+       * leaves st30_frames NULL and is signalled by the notice() above. */
+      uint32_t framebuff_used = 0;
+      for (int i = 0; i < s->st30_frames_cnt; i++) {
+        if (rte_atomic32_read(&s->st30_frames[i].refcnt) > 0) framebuff_used++;
+      }
+      uint32_t total = (uint32_t)s->st30_frames_cnt;
+      uint32_t free_cnt = (total > framebuff_used) ? (total - framebuff_used) : 0;
+      char sustained[32];
+      st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
+                             sizeof(sustained));
+      warn(
+          "RX_AUDIO_SESSION(%d,%d): back-pressure: framebuff pool empty (%u/%u free), "
+          "dropped %" PRIu64
+          " frames in interval; raise framebuff_cnt or drain via "
+          "st30_rx_put_framebuff%s\n",
+          m_idx, idx, free_cnt, total, slot_get_frame_fail, sustained);
+    }
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
+  }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -1271,6 +1449,53 @@ static int rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr) {
   return 0;
 }
 
+/* Remove any session ports that map to a down physical port.
+ * When a down port is found at index i, all further entries are shifted down
+ * one slot (port[i] = port[i+1], ...) and num_port is decremented.
+ * Only ops->port[] is shifted — all other per-port arrays (ip_addr, udp_port, etc.)
+ * are left untouched; with the reduced num_port they are simply never indexed.
+ * Returns -EIO if every port is down (caller must abort). */
+static int rx_audio_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                         struct st30_rx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port names one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int rx_audio_ops_check(struct st30_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -1368,6 +1593,12 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
     return NULL;
   }
 
+  ret = rx_audio_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, rx_audio_ops_prune_down_ports fail %d\n", __func__, ret);
+    return NULL;
+  }
+
   ret = rx_audio_ops_check(ops);
   if (ret < 0) {
     err("%s, rx_audio_ops_check fail %d\n", __func__, ret);
@@ -1436,10 +1667,7 @@ int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src) 
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -1447,16 +1675,19 @@ int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src) 
   sch_idx = sch->idx;
 
   ret = st_rx_source_info_check(src, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = rx_audio_sessions_mgr_update_src(&sch->rx_a_mgr, s, src);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st30_rx_free(st30_rx_handle handle) {
@@ -1467,10 +1698,13 @@ int st30_rx_free(st30_rx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_RX_AUDIO);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -1503,11 +1737,9 @@ int st30_rx_put_framebuff(st30_rx_handle handle, void* frame) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
   struct st_rx_audio_session_impl* s;
   struct st_frame_trans* st30_frame;
+  int ret;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, -EIO);
 
   s = s_impl->impl;
 
@@ -1515,12 +1747,16 @@ int st30_rx_put_framebuff(st30_rx_handle handle, void* frame) {
     st30_frame = &s->st30_frames[i];
     if (st30_frame->addr == frame) {
       dbg("%s(%d), put frame at %d\n", __func__, s->idx, i);
-      return rx_audio_session_put_frame(s, st30_frame);
+      ret = rx_audio_session_put_frame(s, st30_frame);
+      goto out;
     }
   }
 
   err("%s(%d), invalid frame %p\n", __func__, s->idx, frame);
-  return -EIO;
+  ret = -EIO;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len) {
@@ -1528,52 +1764,50 @@ void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len) {
   struct st_rx_audio_session_impl* s;
   struct rte_mbuf* pkt;
   struct rte_ring* rtps_ring;
+  void* ret_pkt = NULL;
   int idx, ret;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   rtps_ring = s->st30_rtps_ring;
   if (!rtps_ring) {
     err("%s(%d), rtp ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   ret = rte_ring_sc_dequeue(rtps_ring, (void**)&pkt);
   if (ret < 0) {
     dbg("%s(%d), rtp ring is empty\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   size_t hdr_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                    sizeof(struct rte_udp_hdr);
   *len = pkt->data_len - hdr_len;
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_len);
-  return pkt;
+  ret_pkt = pkt;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_pkt;
 }
 
 void st30_rx_put_mbuf(st30_rx_handle handle, void* mbuf) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO)
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-
   if (pkt) rte_pktmbuf_free(pkt);
+
+  MT_HANDLE_GUARD_VOID(s_impl, MT_HANDLE_RX_AUDIO);
+  MT_HANDLE_RELEASE(s_impl);
 }
 
 int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
   struct st_rx_audio_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, -EIO);
 
   s = s_impl->impl;
 
@@ -1583,6 +1817,7 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_audio_queue_id(s, i);
   }
 
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1594,13 +1829,13 @@ int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, -EINVAL);
   struct st_rx_audio_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1612,12 +1847,14 @@ int st30_rx_reset_session_stats(st30_rx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_AUDIO) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_AUDIO, -EINVAL);
   struct st_rx_audio_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }

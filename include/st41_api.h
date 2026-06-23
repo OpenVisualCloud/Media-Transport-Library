@@ -282,18 +282,8 @@ struct st41_rx_ops {
  */
 struct st41_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_pkts_redundant;
-  uint64_t stat_pkts_out_of_order;
-  uint64_t stat_pkts_enqueue_fail;
-  uint64_t stat_pkts_wrong_pt_dropped;
-  uint64_t stat_pkts_wrong_ssrc_dropped;
-  uint64_t stat_pkts_received;
-  uint64_t stat_last_time;
-  uint64_t stat_max_notify_rtp_us;
   uint64_t stat_interlace_first_field;
   uint64_t stat_interlace_second_field;
-  uint64_t stat_pkts_wrong_interlace_dropped;
-  uint64_t stat_epoch_mismatch;
 };
 
 /**
@@ -301,18 +291,21 @@ struct st41_tx_user_stats {
  */
 struct st41_rx_user_stats {
   struct st_rx_user_stats common;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_enqueue_fail;
   uint64_t stat_last_time;
-  uint32_t stat_max_notify_rtp_us;
-  uint32_t stat_interlace_first_field;
-  uint32_t stat_interlace_second_field;
-  int stat_pkts_wrong_interlace_dropped;
+  uint64_t stat_max_notify_rtp_us;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
+  uint64_t stat_interlace_first_field;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
+  uint64_t stat_interlace_second_field;
+  /** @note Always 0 for ST2110-41 (no interlace F-bits in RTP header). */
+  uint64_t stat_pkts_wrong_interlace_dropped;
 };
 
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
  * @param port
@@ -328,6 +321,7 @@ int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
  * @param port
@@ -341,6 +335,7 @@ int st41_tx_reset_session_stats(st41_tx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(fastmetadata) session.
  * @param port
@@ -356,6 +351,7 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-41(fastmetadata) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-41(fastmetadata) session.
  * @param port

@@ -24,7 +24,7 @@ from mtl_engine.media_files import yuv_files
 def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple_dual(
     hosts,
     test_time,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     video_format_1,
@@ -46,7 +46,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple_dual(
 
     ffmpeg_app.execute_dual_test_rgb24_multiple(
         test_time=test_time * test_time_mutlipler,
-        build=build,
+        build=mtl_path,
         tx_host=tx_host,
         rx_host=rx_host,
         type_="frame",

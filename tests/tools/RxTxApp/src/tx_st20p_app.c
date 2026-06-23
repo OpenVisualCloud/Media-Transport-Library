@@ -331,6 +331,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
   }
 
+  if (st20p && st20p->drop_when_late) ops.flags |= ST20P_TX_FLAG_DROP_WHEN_LATE;
+
   if (ctx->tx_exact_user_pacing) ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
   if (ctx->tx_ts_epoch) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;

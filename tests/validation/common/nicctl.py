@@ -1,9 +1,23 @@
-# # SPDX-License-Identifier: BSD-3-Clause
-# # Copyright 2025 Intel Corporation
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
+
+import logging
 import re
+import time
 
 import pytest
 from mfd_network_adapter import NetworkInterface
+
+logger = logging.getLogger(__name__)
+
+# All nicctl shell calls must be bounded. The kernel sysfs writes done by
+# nicctl.sh (sriov_numvfs, dpdk-devbind unbind) can block forever in
+# pci_disable_sriov() / vfio_unregister_group_dev() if any process still
+# holds /dev/vfio/<group> open. The timeouts below convert that infinite
+# wait into a logged warning + escape-hatch (PCI remove/rescan).
+_NICCTL_TIMEOUT = 30
+_NICCTL_LONG_TIMEOUT = 60  # create_vf binds N VFs, allow more headroom
+_VFIO_IDLE_TIMEOUT = 20  # how long to wait for VFIO group to be released
 
 
 class Nicctl:
@@ -28,34 +42,175 @@ class Nicctl:
     def _parse_vf_list(self, output: str) -> list:
         if "No VFs found" in output:
             return []
-        vf_info_regex = r"(\d{4}[0-9a-fA-F:.]+)\(?\S*\)?\s+\S*\s*vfio"
+        # Match PCI addresses from both:
+        # 1. list_vf output (bare PCI addresses, one per line)
+        # 2. create_vf output ("Bind 0000:xx:yy.z(...) to vfio-pci success")
+        vf_info_regex = r"(\d{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d+)"
         return re.findall(vf_info_regex, output)
 
     def vfio_list(self, pci_addr: str = "all") -> list:
         """Returns list of VFs created on host."""
         resp = self.connection.execute_command(
-            f"{self.nicctl} list {pci_addr}", shell=True
+            f"{self.nicctl} list {pci_addr}", shell=True, timeout=_NICCTL_TIMEOUT
         )
         return self._parse_vf_list(resp.stdout)
 
     def create_vfs(self, pci_id: str, num_of_vfs: int = 6) -> list:
-        """Create VFs on NIC.
+        """Create VFs on NIC, idempotently.
+
+        If the PF already has at least ``num_of_vfs`` VFs bound to vfio-pci,
+        return them without touching sysfs. This is the primary defence
+        against the ``vfio_unregister_group_dev`` hang: a session that
+        creates VFs once and reuses them across tests never triggers the
+        kernel refcount race that the implicit ``echo 0 > sriov_numvfs``
+        on re-creation would.
+
         :param pci_id: pci_id of the nic adapter
-        :param num_of_vfs: number of VFs to create
-        :return: returns list of created vfs
+        :param num_of_vfs: minimum number of VFs required
+        :return: list of VF PCI addresses (existing or freshly created)
         """
-        resp = self.connection.execute_command(
-            f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}", shell=True
+        existing = self.vfio_list(pci_id)
+        if len(existing) >= num_of_vfs:
+            logger.debug(
+                "Reusing %d existing VFs on %s (requested %d)",
+                len(existing),
+                pci_id,
+                num_of_vfs,
+            )
+            return existing
+        self.connection.execute_command(
+            f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}",
+            shell=True,
+            timeout=_NICCTL_LONG_TIMEOUT,
         )
-        return self._parse_vf_list(resp.stdout)
+        # Allow VFIO bindings to stabilize after VF creation.
+        # Without this delay, the first DPDK process to open a VF may
+        # hit "Unable to reset device! Error: 11 (Resource temporarily
+        # unavailable)" because the VFIO group/container is not fully
+        # initialized yet.
+        time.sleep(2)
+        # Use vfio_list (nicctl.sh list) to get clean VF addresses.
+        # The create_vf output mixes PF and VF PCI addresses in status
+        # messages, while list_vf outputs only VF addresses.
+        return self.vfio_list(pci_id)
 
     def disable_vf(self, pci_id: str) -> None:
         """Remove VFs on NIC.
+
+        Robust against the well-known VFIO refcount hang: if any process
+        still holds ``/dev/vfio/<group>`` open, the kernel sysfs write
+        ``echo 0 > sriov_numvfs`` blocks forever in
+        ``vfio_unregister_group_dev``. We mitigate in three layers:
+
+          1. Wait for the IOMMU group to go idle (lsof poll).
+          2. Run ``nicctl.sh disable_vf`` with a hard timeout.
+          3. If it timed out, fall back to PCI remove/rescan — the
+             kernel's documented escape hatch that does not wait on
+             refcounts.
+
         :param pci_id: pci_id of the nic adapter
         """
+        self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
+        try:
+            self.connection.execute_command(
+                f"{self.nicctl} disable_vf {pci_id}",
+                shell=True,
+                timeout=_NICCTL_TIMEOUT,
+            )
+            return
+        except Exception as e:
+            logger.warning(
+                "disable_vf %s timed out (%s); attempting PCI remove/rescan",
+                pci_id,
+                e,
+            )
+            self._force_pci_reset(pci_id)
+
+    def bind_pmd(self, pci_id: str) -> None:
+        """Bind VF to DPDK PMD driver."""
         self.connection.execute_command(
-            self.nicctl + " disable_vf " + pci_id, shell=True
+            self.nicctl + " bind_pmd " + pci_id,
+            shell=True,
+            timeout=_NICCTL_TIMEOUT,
         )
+
+    def bind_kernel(self, pci_id: str) -> None:
+        """Bind VF to kernel driver."""
+        self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
+        try:
+            self.connection.execute_command(
+                self.nicctl + " bind_kernel " + pci_id,
+                shell=True,
+                timeout=_NICCTL_TIMEOUT,
+            )
+        except Exception as e:
+            logger.warning(
+                "bind_kernel %s timed out (%s); attempting PCI remove/rescan",
+                pci_id,
+                e,
+            )
+            self._force_pci_reset(pci_id)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _wait_vfio_idle(self, pci_id: str, timeout_s: int) -> bool:
+        """Poll until no userspace process holds /dev/vfio/<group> for *pci_id*.
+
+        Returns True if idle (or no VFIO group bound), False on timeout.
+        Never raises — best-effort precondition check.
+        """
+        try:
+            res = self.connection.execute_command(
+                f"readlink /sys/bus/pci/devices/{pci_id}/iommu_group 2>/dev/null "
+                f"| awk -F/ '{{print $NF}}'",
+                shell=True,
+                timeout=5,
+                expected_return_codes=None,
+            )
+            group = (res.stdout or "").strip()
+        except Exception:
+            return True  # cannot probe, let nicctl try
+        if not group:
+            return True
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                check = self.connection.execute_command(
+                    f"sudo fuser /dev/vfio/{group} 2>/dev/null; echo EXIT:$?",
+                    shell=True,
+                    timeout=5,
+                    expected_return_codes=None,
+                )
+                # fuser exit 1 == no process holds the fd
+                if "EXIT:1" in (check.stdout or ""):
+                    return True
+            except Exception:
+                return False
+            time.sleep(0.5)
+        logger.warning(
+            "VFIO group %s for %s still busy after %ds — disable_vf may block",
+            group,
+            pci_id,
+            timeout_s,
+        )
+        return False
+
+    def _force_pci_reset(self, pci_id: str) -> None:
+        """Last-resort: PCI remove + rescan. Does not wait on refcounts."""
+        try:
+            self.connection.execute_command(
+                f"echo 1 | sudo tee /sys/bus/pci/devices/{pci_id}/remove "
+                f">/dev/null 2>&1; sleep 1; "
+                "echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null 2>&1; true",
+                shell=True,
+                timeout=15,
+                expected_return_codes=None,
+            )
+            logger.info("PCI %s removed and rescanned", pci_id)
+        except Exception as e:
+            logger.error("PCI reset of %s failed: %s", pci_id, e)
 
     def prepare_vfs_for_test(self, nic: NetworkInterface) -> list:
         """Prepare VFs for test."""
@@ -70,23 +225,15 @@ class Nicctl:
                 self.host.vfs = self.vfio_list(nic_pci)
         return self.host.vfs
 
-    def bind_pmd(self, pci_id: str) -> None:
-        """Bind VF to DPDK PMD driver."""
-        self.connection.execute_command(self.nicctl + " bind_pmd " + pci_id, shell=True)
-
-    def bind_kernel(self, pci_id: str) -> None:
-        """Bind VF to kernel driver."""
-        self.connection.execute_command(
-            self.nicctl + " bind_kernel " + pci_id, shell=True
-        )
-
 
 class InterfaceSetup:
-    def __init__(self, hosts, mtl_path):
+    def __init__(self, hosts, mtl_path, host_mtl_paths=None):
         self.hosts = hosts
         self.mtl_path = mtl_path
+        self.host_mtl_paths = host_mtl_paths or {}
         self.nicctl_objs = {
-            host.name: Nicctl(mtl_path, host) for host in hosts.values()
+            host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host)
+            for host in hosts.values()
         }
         self.customs = []
         self.cleanups = []
@@ -122,15 +269,32 @@ class InterfaceSetup:
                     )
             else:
                 if interface_type.lower() == "vf":
-                    vfs = self.nicctl_objs[host.name].create_vfs(
-                        host.network_interfaces[0].pci_address.lspci, count
-                    )
-                    selected_interfaces[host.name] = vfs
-                    self.register_cleanup(
-                        self.nicctl_objs[host.name],
-                        host.network_interfaces[0].pci_address.lspci,
-                        interface_type,
-                    )
+                    # Spread VFs across all declared PFs (round-robin) so that
+                    # sibling test endpoints do not share a single PF's IAVF
+                    # mailbox. With one PF declared, behaviour is unchanged
+                    # (all VFs created on that PF). With N PFs declared, the
+                    # `count` VFs are distributed N-way; remainder lands on
+                    # earlier PFs.
+                    pfs = host.network_interfaces
+                    n_pfs = len(pfs)
+                    selected_interfaces[host.name] = []
+                    if n_pfs <= 1:
+                        per_pf = [count]
+                    else:
+                        per_pf = [count // n_pfs] * n_pfs
+                        for i in range(count % n_pfs):
+                            per_pf[i] += 1
+                    for i, vfs_count in enumerate(per_pf):
+                        if vfs_count <= 0:
+                            continue
+                        pf_pci = pfs[i].pci_address.lspci
+                        vfs = self.nicctl_objs[host.name].create_vfs(pf_pci, vfs_count)
+                        selected_interfaces[host.name].extend(vfs[:vfs_count])
+                        self.register_cleanup(
+                            self.nicctl_objs[host.name],
+                            pf_pci,
+                            interface_type,
+                        )
                 elif interface_type.lower() == "pf":
                     try:
                         selected_interfaces[host.name] = []
@@ -292,8 +456,155 @@ class InterfaceSetup:
 
     def cleanup(self):
         self.cleanup_kernel_ips()
+        # Per-test interface cleanup intentionally does NOT call disable_vf:
+        # VFs created at session start by the ``nic_port_list`` fixture are
+        # reused across all tests (see Nicctl.create_vfs idempotency), which
+        # eliminates the kernel ``vfio_unregister_group_dev`` hang window
+        # entirely. We still rebind PFs back to the kernel driver because PF
+        # driver state is not session-scoped — different tests need PF in
+        # different drivers (ice vs vfio-pci). Each rebind is wrapped so a
+        # single stuck device cannot cascade into the rest of the teardown.
         for nicctl, interface, if_type in self.cleanups:
-            if if_type.lower() == "vf":
-                nicctl.disable_vf(interface)
-            elif if_type.lower() == "pf":
+            if if_type.lower() != "pf":
+                continue
+            try:
                 nicctl.bind_kernel(interface)
+            except Exception as e:
+                logger.warning("PF rebind of %s failed: %s — continuing", interface, e)
+
+
+def _cleanup_hugepages(host, host_name: str) -> None:
+    """Remove stale DPDK hugepage mappings left after SIGKILL."""
+    try:
+        result = host.connection.execute_command(
+            "ls /dev/hugepages/rtemap_* 2>/dev/null | wc -l",
+            shell=True,
+            timeout=10,
+        )
+        count = int((result.stdout or "0").strip())
+        if count > 0:
+            host.connection.execute_command(
+                "sudo rm -f /dev/hugepages/rtemap_*",
+                shell=True,
+                timeout=15,
+            )
+            logger.info(f"Cleaned {count} stale hugepage files on {host_name}")
+    except Exception as e:
+        logger.warning(f"Hugepage cleanup on {host_name}: {e}")
+
+    # Clean stale System V shared memory segments left by crashed MTL processes
+    try:
+        result = host.connection.execute_command(
+            "ipcs -m 2>/dev/null | awk 'NR>3 && $6==0 {print $2}'",
+            shell=True,
+            timeout=10,
+        )
+        stale_ids = (result.stdout or "").strip().split()
+        if stale_ids:
+            for shm_id in stale_ids:
+                host.connection.execute_command(
+                    f"sudo ipcrm -m {shm_id}",
+                    shell=True,
+                    timeout=5,
+                )
+            logger.info(
+                f"Cleaned {len(stale_ids)} stale SysV SHM segments on {host_name}"
+            )
+    except Exception as e:
+        logger.warning(f"SysV SHM cleanup on {host_name}: {e}")
+
+
+def _flr_rebind_vf(host, vf: str, host_name: str) -> bool:
+    """Unbind, perform FLR, and rebind a single VF to vfio-pci.
+
+    Returns True if the VF ended up bound to vfio-pci.
+    """
+    # Unbind
+    host.connection.execute_command(
+        f"sudo sh -c \"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind\" "
+        f"2>/dev/null || true",
+        shell=True,
+        timeout=15,
+    )
+    time.sleep(0.5)
+
+    # Function Level Reset — clears PF queue state
+    host.connection.execute_command(
+        f'sudo sh -c "echo 1 > /sys/bus/pci/devices/{vf}/reset" '
+        f"2>/dev/null || true",
+        shell=True,
+        timeout=15,
+    )
+    time.sleep(1)
+
+    # Rebind to vfio-pci
+    host.connection.execute_command(
+        f"sudo dpdk-devbind.py -b vfio-pci {vf}",
+        shell=True,
+        timeout=30,
+    )
+    result = host.connection.execute_command(
+        f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
+        shell=True,
+        timeout=15,
+    )
+    status = (result.stdout or "").strip()
+    bound = "vfio-pci" in status
+    if bound:
+        logger.debug(f"FLR + rebind VF {vf} on {host_name} — vfio-pci OK")
+    else:
+        logger.warning(f"VF {vf} on {host_name} NOT bound after FLR: {status}")
+    return bound
+
+
+def reset_vfio_bindings(host, host_name: str, vf_list: list) -> None:
+    """Unbind/rebind VFs with FLR to fully reset after a DPDK crash.
+
+    Also kills stale processes and cleans up hugepage files.
+    """
+    from mtl_engine.execute import kill_stale_processes
+
+    kill_stale_processes(host)
+    time.sleep(2)
+    _cleanup_hugepages(host, host_name)
+
+    for vf in vf_list:
+        if not vf:
+            continue
+        try:
+            _flr_rebind_vf(host, vf, host_name)
+        except Exception as e:
+            logger.warning(f"Could not reset VF {vf} on {host_name}: {e}")
+
+
+def ensure_vfio_bound(host, host_name: str, vf_list: list) -> bool:
+    """Ensure all VFs are bound to vfio-pci; rebind any that aren't.
+
+    Returns True if any VF had to be rebound.
+    """
+    any_rebound = False
+    for vf in vf_list:
+        if not vf:
+            continue
+        try:
+            result = host.connection.execute_command(
+                f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
+                shell=True,
+                timeout=15,
+            )
+            status = (result.stdout or "").strip()
+            if "drv=vfio-pci" in status:
+                continue
+
+            logger.warning(
+                f"VF {vf} on {host_name} not bound to vfio-pci "
+                f"({status or 'no status'}), rebinding with FLR"
+            )
+            any_rebound = True
+            if _flr_rebind_vf(host, vf, host_name):
+                logger.info(f"Rebound VF {vf} on {host_name} — vfio-pci OK")
+            else:
+                logger.error(f"Failed to rebind VF {vf} on {host_name}")
+        except Exception as e:
+            logger.warning(f"Could not check VF {vf} on {host_name}: {e}")
+    return any_rebound

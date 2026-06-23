@@ -409,6 +409,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     return NULL;
   }
 
+  /* MTL_FLAG_ALLOW_DOWN_PORTS is a global convenience flag that enables
+   * MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION on every configured port, so
+   * callers don't have to set the per-port flag individually.
+   * Note: at least one port must be up for sessions to work correctly. */
+  if (p->flags & MTL_FLAG_ALLOW_DOWN_PORTS) {
+    for (int i = 0; i < num_ports; i++)
+      p->port_params[i].flags |= MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION;
+  }
+
   ret = mt_dev_init(p, &kport_info);
   if (ret < 0) {
     err("%s, mt_dev_eal_init fail %d\n", __func__, ret);

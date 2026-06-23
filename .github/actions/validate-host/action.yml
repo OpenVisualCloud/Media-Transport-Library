@@ -1,0 +1,161 @@
+name: Validate Host
+description: >
+  Prepare a bare-metal test host: compute local source checksums,
+  restore build components from cache into .local_install/,
+  untar them, make binaries executable, and configure environment
+  so that subsequent steps can run MTL tests without system-wide installation.
+  Optionally sync .local_install/ to a shadow host via SSH.
+
+inputs:
+  shadow_host:
+    description: Path to a file defining IP and USER for the shadow host. If empty, shadow sync is skipped.
+    required: false
+    default: ''
+
+outputs:
+  shadow_host_ip:
+    description: IP address of the shadow host
+    value: ${{ steps.shadow-creds.outputs.ip }}
+  shadow_host_user:
+    description: Username for the shadow host
+    value: ${{ steps.shadow-creds.outputs.user }}
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/cleanup
+
+    - name: Compute local source checksums
+      id: local-checksums
+      uses: ./.github/actions/source-checksums
+
+    - name: 'cache: Restore DPDK'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-dpdk-${{ steps.local-checksums.outputs.dpdk }}
+        path: .local_install/dpdk
+        fail-on-cache-miss: true
+
+    - name: 'cache: Restore MTL'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-mtl-${{ steps.local-checksums.outputs.mtl }}
+        path: .local_install/mtl
+        fail-on-cache-miss: true
+
+    - name: 'cache: Restore FFmpeg'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-ffmpeg-${{ steps.local-checksums.outputs.ffmpeg }}
+        path: .local_install/ffmpeg
+        fail-on-cache-miss: true
+
+    - name: 'cache: Restore GStreamer'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-gstreamer-${{ steps.local-checksums.outputs.gstreamer }}
+        path: .local_install/gstreamer
+        fail-on-cache-miss: true
+
+    - name: 'cache: Restore librist'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-librist-${{ steps.local-checksums.outputs.librist }}
+        path: .local_install/librist
+        fail-on-cache-miss: true
+
+    - name: 'cache: Restore plugins'
+      uses: actions/cache/restore@v4
+      with:
+        key: stash-plugins-${{ steps.local-checksums.outputs.plugins }}
+        path: .local_install/plugins
+        # Non-fatal: a missing/failed st22 plugin build only disables the codec
+        # tests (they skip via require_encoder); it must not abort validation.
+        fail-on-cache-miss: false
+
+    - name: Make artifacts executable
+      shell: bash
+      run: |
+        find .local_install -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} + 2>/dev/null || true
+
+    - name: 'kahawai: Generate CI plugin registry from cache'
+      shell: bash
+      run: |
+        # Build a CI-owned kahawai.json that points at the cached st22 avcodec
+        # plugin under .local_install/plugins -- no system install. MTL loads it
+        # via KAHAWAI_CFG_PATH (exported below). The plugin .so itself is built
+        # by the build workflow and restored from the `plugins` cache above.
+        # The template reproduces the runner plugin set: jpegxs/sample stay at
+        # their /usr/local install paths (a missing .so is a non-fatal dlopen
+        # warning), only avcodec is sourced from the cache.
+        set -euo pipefail
+        WS="${{ github.workspace }}"
+        template="${WS}/.github/workflows/kahawai_template.json"
+        cfg="${RUNNER_TEMP:-/tmp}/kahawai_ci.json"
+        plugin_dir="$(find "${WS}/.local_install/plugins" -name 'libst_plugin_st22_avcodec.so' -printf '%h\n' -quit 2>/dev/null || true)"
+        if [ -z "${plugin_dir}" ]; then
+          echo "::warning::st22 avcodec plugin not found in .local_install/plugins; H264 st22p tests will skip"
+          plugin_dir="${WS}/.local_install/plugins/lib/x86_64-linux-gnu"
+        fi
+        cp -f "${template}" "${cfg}"
+        sed -i "s+REPLACE_BY_CICD_PLUGIN_DIR+${plugin_dir}+g" "${cfg}"
+        echo "KAHAWAI_CFG_PATH=${cfg}" >> "$GITHUB_ENV"
+        echo "::notice::CI kahawai registry ${cfg} (avcodec from ${plugin_dir})"
+
+    - name: Validate ice drivers
+      shell: bash
+      run: ${{ github.workspace }}/script/build_ice_driver.sh
+
+    - name: Configure LD_LIBRARY_PATH, PATH, GST_PLUGIN_PATH
+      shell: bash
+      run: |
+        WS="${{ github.workspace }}"
+        LI="${WS}/.local_install"
+
+        # Shared libraries: DPDK + MTL + FFmpeg
+        echo "LD_LIBRARY_PATH=${LI}/dpdk/lib/x86_64-linux-gnu:${LI}/mtl/lib/x86_64-linux-gnu:${LI}/ffmpeg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+        # Binaries on PATH
+        echo "${LI}/mtl/bin" >> "$GITHUB_PATH"
+        echo "${LI}/ffmpeg/bin" >> "$GITHUB_PATH"
+        echo "${LI}/dpdk/bin" >> "$GITHUB_PATH"
+        echo "${LI}/librist/bin" >> "$GITHUB_PATH"
+
+        # GStreamer plugins
+        echo "GST_PLUGIN_PATH=${LI}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}" >> "$GITHUB_ENV"
+
+        # ld_preload path for UDP tests
+        echo "MTL_LD_PRELOAD=${LI}/mtl/lib/x86_64-linux-gnu/libmtl_udp_preload.so" >> "$GITHUB_ENV"
+
+        # pkg-config for downstream tools
+        echo "PKG_CONFIG_PATH=${LI}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${LI}/mtl/lib/x86_64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
+
+        # Refresh linker cache (best-effort)
+        sudo ldconfig 2>/dev/null || true
+
+        echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,librist,plugins}"
+
+    - name: Read shadow host credentials
+      id: shadow-creds
+      if: inputs.shadow_host != ''
+      shell: bash
+      run: |
+        source "${{ inputs.shadow_host }}"
+        echo "ip=${IP}" >> "$GITHUB_OUTPUT"
+        echo "user=${USER}" >> "$GITHUB_OUTPUT"
+
+    - name: Sync .local_install to shadow host
+      if: steps.shadow-creds.outputs.ip != ''
+      shell: bash
+      run: |
+        IP="${{ steps.shadow-creds.outputs.ip }}"
+        USER="${{ steps.shadow-creds.outputs.user }}"
+        SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
+        echo "::group::Syncing .local_install/ to ${USER}@${IP}"
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "mkdir -p ${{ github.workspace }}/.local_install"
+        rsync -az --delete \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${{ github.workspace }}/.local_install/" \
+          "${USER}@${IP}:${{ github.workspace }}/.local_install/"
+        echo "::endgroup::"
+        echo "::notice::Synced .local_install/ to shadow host ${IP}"

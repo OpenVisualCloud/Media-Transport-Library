@@ -8,10 +8,16 @@
 #include "../st_main.h"
 #include "st30_pipeline_api.h"
 
+/* Maximum number of late frames that can be dropped in a single next_frame call. */
+#ifndef ST_TX_ST30P_DROP_MAX_BATCH
+#define ST_TX_ST30P_DROP_MAX_BATCH (80)
+#endif
+
 enum st30p_tx_frame_status {
   ST30P_TX_FRAME_FREE = 0,
   ST30P_TX_FRAME_IN_USER,         /* in user */
   ST30P_TX_FRAME_READY,           /* ready to transport */
+  ST30P_TX_FRAME_DROPPED,         /* ready but arrived too late; recycled in next_frame */
   ST30P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST30P_TX_FRAME_STATUS_MAX,
 };
@@ -21,13 +27,18 @@ struct st30p_tx_frame {
   struct st30_frame frame;
   uint16_t idx;
   uint32_t seq_number;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
+/* See st20p_rx_ctx note re: ->transport lifetime; access via MT_HANDLE_GUARD. */
 struct st30p_tx_ctx {
   struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
+  void (*wake_on_destroy)(void* self);
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st30p_tx_ops ops;
@@ -56,6 +67,9 @@ struct st30p_tx_ctx {
   uint32_t stat_get_frame_succ;
   uint32_t stat_put_frame;
   uint32_t stat_drop_frame;
+  /* cumulative user-facing counters; reset only by reset_session_stats */
+  uint64_t stat_frames_sent;
+  uint64_t stat_frames_dropped;
 };
 
 #endif

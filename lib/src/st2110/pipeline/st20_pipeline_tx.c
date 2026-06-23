@@ -4,15 +4,17 @@
 
 #include "st20_pipeline_tx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
 static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
-    "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
+    "free",    "ready",   "in_converting",   "converted",
+    "dropped", "in_user", "in_transmitting",
 };
 
 static const char* st20p_tx_frame_stat_name_short[ST20P_TX_FRAME_STATUS_MAX] = {
-    "F", "R", "IC", "C", "U", "T",
+    "F", "R", "IC", "C", "D", "U", "T",
 };
 
 static const char* tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
@@ -74,25 +76,128 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
   return framebuff_newest;
 }
 
+/* Check if a CONVERTED frame is late.
+ *
+ * If late, the sequence is:
+ *   1. Park as DROPPED under lock — invisible to both next_frame (CONVERTED) and
+ *      get_frame (FREE), so no other thread can grab the slot while we clean up.
+ *   2. Unlock before all callbacks so app callbacks cannot deadlock on ctx->lock.
+ *   3. Fire notify_frame_done — app sees the frame and can safely release any
+ *      external buffer it owns (EXT_FRAME mode).
+ *   4. Fire notify_frame_late + USDT probe.
+ *   5. Re-acquire lock, clear ext-buffer pointers on the framebuff so the next
+ *      get_frame call receives a clean slot with no stale external pointers.
+ *   6. If EXT_FRAME_USER_DONE: advance to IN_USER — app must call
+ *      st20p_tx_notify_ext_frame_free to release the slot to FREE.
+ *      Otherwise: advance to FREE, unlock, then notify_frame_available —
+ *      the slot is immediately visible to get_frame callers.
+ *   7. Re-acquire for the caller's do-while loop and return true.
+ *
+ * Must be called with ctx->lock held. Returns with ctx->lock held. */
+static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
+                                   struct st20p_tx_frame* framebuff) {
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  uint32_t rtp_ts; /* captured under lock for use in USDT after unlock */
+  bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
+  /* Park in IN_USER only when user_done flag is set and derive path */
+  bool need_in_user = user_done && !framebuff->frame_done_cb_called;
+
+  /* prerequisite: both flags must be set */
+  if (!(ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) ||
+      !(ctx->ops.flags & ST20P_TX_FLAG_USER_PACING))
+    return false;
+
+  /* only TAI timestamps can be directly compared against PTP wall time;
+   * skip the check for other formats (e.g. ST10_TIMESTAMP_FMT_MEDIA_CLK) */
+  if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
+
+  uint64_t frame_tai = frame->timestamp;
+  uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
+  /* one frame period as grace window: the pipeline has inherent processing latency
+   * (conversion + scheduling) between put_frame and get_next_frame. A frame is only
+   * truly "late" if it missed its TX window by more than one full frame period. */
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+
+  if (cur_tai < frame_tai + frame_period_ns)
+    return false; /* within acceptable TX window */
+
+  dbg("%s(%d), frame %u late by %" PRId64 "ns (> period %" PRIu64 "ns)\n", __func__,
+      ctx->idx, framebuff->idx, (int64_t)(cur_tai - frame_tai), frame_period_ns);
+
+  ctx->stat_drop_frame++;
+  /* relaxed atomic: written from both tasklet (late drop) and user thread
+   * (put_frame_abort), and read from any thread via st20p_tx_get_session_stats(). */
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
+  rtp_ts = frame->rtp_timestamp;
+  framebuff->stat = ST20P_TX_FRAME_DROPPED;
+
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
+      " frame %" PRIu64 "\n",
+      __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
+      cur_tai, frame_tai);
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    frame->status = ST_FRAME_STATUS_DROPPED;
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
+  }
+
+  if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
+  MT_USDT_ST20P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
+
+  mt_pthread_mutex_lock(&ctx->lock);
+
+  /* ext_frame derive: park in IN_USER until app calls
+   * st20p_tx_notify_ext_frame_free */
+  framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  if (!need_in_user) {
+    tx_st20p_notify_frame_available(ctx);
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  return true; /* frame was dropped, caller should retry */
+}
+
 static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
   struct st20p_tx_ctx* ctx = priv;
   struct st20p_tx_frame* framebuff;
+  struct st_frame* frame;
+  int drop_cnt = 0;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
+  do {
+    framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
+    if (!framebuff) break; /* no converted frame available */
+    if (drop_cnt >= ST_TX_DROP_MAX_BATCH) {
+      info("%s(%d), max drop batch %d reached, stopping\n", __func__, ctx->idx, drop_cnt);
+      framebuff = NULL;
+      break;
+    }
+    drop_cnt++;
+  } while (tx_st20p_if_frame_late(ctx, framebuff));
+
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    /* When drop-when-late is active, ensure the app knows about free slots so it
+     * can refill the pipeline promptly after drops freed frames. */
+    if (ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
+      if (tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE))
+        tx_st20p_notify_frame_available(ctx);
+    }
     return -EBUSY;
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  frame = tx_st20p_user_frame(ctx, framebuff);
   meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = frame->tfmt;
@@ -103,49 +208,11 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->user_meta_size = framebuff->user_meta_data_size;
   }
 
-  /* point to next */
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
 
-int st20p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST20P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done &&
-             !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st20p_user_frame(ctx, framebuff));
-    framebuff->frame_done_cb_called = true;
-  }
-
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
-  MT_USDT_ST20P_TX_FRAME_DROP(cidx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -154,16 +221,25 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   struct st20p_tx_ctx* ctx = priv;
   int ret;
   struct st20p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
+  bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
+  /* Park in IN_USER only when user_done flag is set and the app has not yet
+   * been notified (derive path).  When an internal converter is used,
+   * notify_frame_done fires early during put_ext_frame so the app already
+   * released the ext buffer — go to FREE. */
+  bool need_in_user = user_done && !framebuff->frame_done_cb_called;
 
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
+
+  /* Transition state BEFORE the callback so the app can call
+   * st20p_tx_notify_ext_frame_free from within notify_frame_done. */
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
-    framebuff->stat = ST20P_TX_FRAME_FREE;
+    framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
     dbg("%s(%d), frame_idx: %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
@@ -174,12 +250,16 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
     framebuff->frame_done_cb_called = true;
   }
+  if (ret == 0) __atomic_fetch_add(&ctx->stat_frames_sent, 1, __ATOMIC_RELAXED);
 
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
+  if (!need_in_user) {
+    /* notify app can get frame */
+    tx_st20p_notify_frame_available(ctx);
+  }
 
   MT_USDT_ST20P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
 
@@ -200,20 +280,19 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   struct st20p_tx_ctx* ctx = priv;
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff;
+  struct st20_convert_frame_meta* ret_frame = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, NULL);
+  MTL_MAY_UNUSED(idx);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_READY);
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_CONVERTING;
@@ -221,7 +300,10 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
 
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, idx, framebuff->idx,
       framebuff->idx);
-  return &framebuff->convert_frame;
+  ret_frame = &framebuff->convert_frame;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_frame;
 }
 
 static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta* frame,
@@ -231,18 +313,17 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   struct st20p_tx_frame* framebuff = frame->priv;
   uint16_t convert_idx = framebuff->idx;
   size_t data_size = frame->dst->data_size;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_CONVERTING != framebuff->stat) {
     mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if ((result < 0) || (data_size <= 0)) {
@@ -265,7 +346,10 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     framebuff->frame_done_cb_called = true;
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 static int tx_st20p_convert_dump(void* priv) {
@@ -337,11 +421,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-  if (ops->flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st20p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
@@ -554,7 +634,7 @@ static int tx_st20p_stat(void* priv) {
                          st20p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   notice("TX_st20p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
@@ -606,6 +686,8 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
 
     while (1) {
       if (framebuff->stat == ST20P_TX_FRAME_FREE) break;
+      if (framebuff->stat == ST20P_TX_FRAME_DROPPED)
+        break; /* dropped, effectively free */
       if (framebuff->stat == ST20P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */
@@ -626,28 +708,17 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
   }
 }
 
-static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
-  dbg("%s(%d), start\n", __func__, ctx->idx);
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                               ctx->block_timeout_ns);
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  dbg("%s(%d), end\n", __func__, ctx->idx);
-  return 0;
-}
+/* st20p_tx_get_block_wait inlined into st20p_tx_get_frame; see mt_handle_guard.h */
 
 struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff;
+  struct st_frame* frame = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -655,7 +726,12 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
-    st20p_tx_get_block_wait(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+      mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                   ctx->block_timeout_ns);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
@@ -663,7 +739,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_USER;
@@ -672,7 +748,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  frame = tx_st20p_user_frame(ctx, framebuff);
   if (ctx->ops.interlaced) { /* init second_field but user still can customize */
     frame->second_field = ctx->second_field;
     ctx->second_field = ctx->second_field ? false : true;
@@ -681,6 +757,8 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   frame->user_meta_size = 0;
   ctx->stat_get_frame_succ++;
   MT_USDT_ST20P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame;
 }
 
@@ -689,22 +767,22 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME) {
     err("%s(%d), EXT_FRAME flag enabled, use st20p_tx_put_ext_frame instead\n", __func__,
         idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   framebuff->user_meta_data_size = 0;
@@ -713,7 +791,8 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
       err("%s(%d), frame %u user meta size %" PRId64 " too large\n", __func__, idx,
           producer_idx, frame->user_meta_size);
       framebuff->stat = ST20P_TX_FRAME_FREE;
-      return -EIO;
+      ret = -EIO;
+      goto out;
     }
 
     /* copy user meta to framebuff user_meta */
@@ -748,7 +827,36 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     ctx->usdt_frame_cnt = 0;
   }
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
+
+  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    ret = -EIO;
+    goto out;
+  }
+
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  ctx->stat_drop_frame++;
+  __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
@@ -759,20 +867,19 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   uint16_t producer_idx = framebuff->idx;
   int ret = 0;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   if (!(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME)) {
     err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   if (ctx->ops.interlaced) { /* update second_field */
@@ -788,7 +895,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     ret = st20_tx_set_ext_frame(ctx->transport, producer_idx, &trans_ext_frame);
     if (ret < 0) {
       err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, producer_idx);
-      return -EIO;
+      ret = -EIO;
+      goto out;
     }
     framebuff->dst.addr[0] = ext_frame->addr[0];
     framebuff->dst.iova[0] = ext_frame->iova[0];
@@ -808,7 +916,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     if (ret < 0) {
       err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
           producer_idx);
-      return -EIO;
+      ret = -EIO;
+      goto out;
     }
     if (ctx->internal_converter) { /* convert internal */
       ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
@@ -837,7 +946,49 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   }
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* frame) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff = frame->priv;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
+  MTL_MAY_UNUSED(idx);
+
+  if (!(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE)) {
+    /* Two-phase release not enabled. Silently succeed for unconditional callers. */
+    ret = 0;
+    goto out;
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
+  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+    /* Frame is not in IN_USER, this happens when the converter already released
+     * the ext buffer during put_ext_frame and the frame went CONVERTED -> FREE
+     * without the IN_USER step.  Silently succeed so callers can always call
+     * this unconditionally from notify_frame_done. */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    dbg("%s(%d), frame %u not in_user (stat %d), skip\n", __func__, idx, framebuff->idx,
+        framebuff->stat);
+    ret = 0;
+    goto out;
+  }
+  framebuff->stat = ST20P_TX_FRAME_FREE;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  tx_st20p_notify_frame_available(ctx);
+
+  dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
@@ -888,6 +1039,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   ctx->derive = st_frame_fmt_equal_transport(ops->input_fmt, ops->transport_fmt);
   ctx->impl = impl;
   ctx->type = MT_ST20_HANDLE_PIPELINE_TX;
+  ctx->wake_on_destroy = (void (*)(void*))tx_st20p_block_wake;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
@@ -953,10 +1105,14 @@ int st20p_tx_free(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST20_HANDLE_PIPELINE_TX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
@@ -997,141 +1153,137 @@ int st20p_tx_free(st20p_tx_handle handle) {
 void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
 
   if (ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME) {
     err("%s(%d), not known as EXT_FRAME flag enabled\n", __func__, cidx);
-    return NULL;
+    goto out;
   }
 
-  return tx_st20p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
+  ret_addr = tx_st20p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }
 
 size_t st20p_tx_frame_size(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  return ctx->src_size;
+  ret = ctx->src_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  return st20_tx_get_sch_idx(ctx->transport);
+  ret = st20_tx_get_sch_idx(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
                                double* trs_ns, uint32_t* vrx_pkts) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
   ctx = handle;
-  cidx = ctx->idx;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EINVAL);
 
-  return st20_tx_get_pacing_params(ctx->transport, tr_offset_ns, trs_ns, vrx_pkts);
+  ret = st20_tx_get_pacing_params(ctx->transport, tr_offset_ns, trs_ns, vrx_pkts);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  return st20_tx_get_session_stats(ctx->transport, stats);
+  ret = st20_tx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) goto out;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_sent =
+      __atomic_load_n(&ctx->stat_frames_sent, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  return st20_tx_reset_session_stats(ctx->transport);
+  __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
+  ret = st20_tx_reset_session_stats(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  return st20_tx_update_destination(ctx->transport, dst);
+  ret = st20_tx_update_destination(ctx->transport, dst);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_tx_wake_block(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
   if (ctx->block_get) tx_st20p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns) {
   struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }

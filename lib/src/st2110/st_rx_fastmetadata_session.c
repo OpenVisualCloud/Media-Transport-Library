@@ -5,6 +5,7 @@
 #include "st_rx_fastmetadata_session.h"
 
 #include "../datapath/mt_queue.h"
+#include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "st_fastmetadata_transmitter.h"
@@ -101,7 +102,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+    s->port_user_stats.common.stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -109,7 +110,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
+      s->port_user_stats.common.stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -119,13 +120,27 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
   /* not a big deal as long as stream is continous */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
+      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    s->port_user_stats.common.port[s_port].out_of_order_packets++;
-    s->stat_pkts_out_of_order_per_port[s_port]++;
+    s->port_user_stats.common.port[s_port].lost_packets += gap;
+    s->port_user_stats.common.stat_lost_packets += gap;
+  } else if (seq_id == (uint16_t)s->latest_seq_id[s_port]) {
+    /* exact same seq seen again on the same port — same-port duplicate
+     * (distinct from a duplicate arriving on the redundant port) */
+    s->port_user_stats.common.port[s_port].duplicates_same_port++;
+  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+    /* backward arrival on the same port — genuine intra-port reorder */
+    s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  s->latest_seq_id[s_port] = seq_id;
+  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+    s->latest_seq_id[s_port] = seq_id;
+
+  /* count per-port stats before redundancy filtering for consistent reporting */
+  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp)) */
@@ -139,7 +154,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
           s_port, tmstamp, s->tmstamp);
     }
 
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->port_user_stats.common.stat_pkts_redundant++;
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
         return -EIO;
@@ -157,8 +172,8 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
-    s->stat_pkts_out_of_order++;
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.stat_pkts_unrecovered +=
+        (uint16_t)(seq_id - s->session_seq_id - 1);
   }
 
   /* update seq id */
@@ -169,7 +184,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
+    s->port_user_stats.stat_pkts_enqueue_fail++;
     MT_USDT_ST41_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
@@ -181,8 +196,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     s->tmstamp = tmstamp;
   }
 
-  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
-  s->port_user_stats.common.port[s_port].packets++;
+  s->port_user_stats.common.stat_pkts_received++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
@@ -210,8 +224,10 @@ static int rx_fastmetadata_session_handle_mbuf(void* priv, struct rte_mbuf** mbu
     return -EIO;
   }
 
-  for (uint16_t i = 0; i < nb; i++)
-    rx_fastmetadata_session_handle_pkt(impl, s, mbuf[i], s_port);
+  for (uint16_t i = 0; i < nb; i++) {
+    if (rx_fastmetadata_session_handle_pkt(impl, s, mbuf[i], s_port) < 0)
+      s->port_user_stats.common.port[s_port].err_packets++;
+  }
 
   return 0;
 }
@@ -423,10 +439,12 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
-  s->stat_pkts_received = 0;
   s->stat_last_time = mt_get_monotonic_time();
+  s->stat_max_notify_rtp_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
 
   ret = rx_fastmetadata_session_init_hw(impl, s);
   if (ret < 0) {
@@ -464,54 +482,112 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
+  struct st41_rx_user_stats* us = &s->port_user_stats;
+  struct st41_rx_user_stats* snap = &s->stat_snapshot;
+
+  /* write internal-only fields to port_user_stats before snapshot */
+  us->stat_last_time = s->stat_last_time;
+  us->stat_max_notify_rtp_us = s->stat_max_notify_rtp_us;
+
+  uint64_t pkts_received =
+      us->common.stat_pkts_received - snap->common.stat_pkts_received;
+  uint64_t pkts_redundant =
+      us->common.stat_pkts_redundant - snap->common.stat_pkts_redundant;
+  uint64_t lost_pkts = us->common.stat_lost_packets - snap->common.stat_lost_packets;
+  uint64_t pkts_unrecovered =
+      us->common.stat_pkts_unrecovered - snap->common.stat_pkts_unrecovered;
+  uint64_t pkts_wrong_pt_dropped =
+      us->common.stat_pkts_wrong_pt_dropped - snap->common.stat_pkts_wrong_pt_dropped;
+  uint64_t pkts_wrong_ssrc_dropped =
+      us->common.stat_pkts_wrong_ssrc_dropped - snap->common.stat_pkts_wrong_ssrc_dropped;
+  uint64_t pkts_enqueue_fail = us->stat_pkts_enqueue_fail - snap->stat_pkts_enqueue_fail;
+  uint64_t pkts_wrong_interlace_dropped =
+      us->stat_pkts_wrong_interlace_dropped - snap->stat_pkts_wrong_interlace_dropped;
+  uint64_t interlace_first_field =
+      us->stat_interlace_first_field - snap->stat_interlace_first_field;
+  uint64_t interlace_second_field =
+      us->stat_interlace_second_field - snap->stat_interlace_second_field;
+
+  if (pkts_redundant) {
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 " (redundant %" PRIu64
+           ")\n",
+           idx, s->ops_name, framerate, frames_received, pkts_received, pkts_redundant);
   } else {
-    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name,
-           framerate, frames_received, s->stat_pkts_received);
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %" PRIu64 "\n", idx, s->ops_name,
+           framerate, frames_received, pkts_received);
   }
-  s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
 
-  if (s->stat_pkts_out_of_order) {
-    warn("RX_FMD_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
-         s->stat_pkts_out_of_order,
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
-         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
-    s->stat_pkts_out_of_order = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
-    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
+  /* Per-port packet/frame line: port-balance visible at a glance. */
+  uint64_t port_pkts[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_frames[MTL_SESSION_PORT_MAX] = {0};
+  uint64_t port_lost[MTL_SESSION_PORT_MAX] = {0};
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port_pkts[i] = us->common.port[i].packets - snap->common.port[i].packets;
+    port_frames[i] = us->common.port[i].frames - snap->common.port[i].frames;
+    port_lost[i] = us->common.port[i].lost_packets - snap->common.port[i].lost_packets;
+  }
+  if (s->ops.num_port > 1) {
+    notice("RX_FMD_SESSION(%d): port stats P=%" PRIu64 " pkts/%" PRIu64
+           " frames, R=%" PRIu64 " pkts/%" PRIu64 " frames\n",
+           idx, port_pkts[MTL_SESSION_PORT_P], port_frames[MTL_SESSION_PORT_P],
+           port_pkts[MTL_SESSION_PORT_R], port_frames[MTL_SESSION_PORT_R]);
   }
 
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_FMD_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (lost_pkts) {
+    if (s->ops.num_port > 1) {
+      double pct_p =
+          port_pkts[MTL_SESSION_PORT_P]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
+                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
+              : 0.0;
+      double pct_r =
+          port_pkts[MTL_SESSION_PORT_R]
+              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
+                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
+              : 0.0;
+      double save_rate =
+          (lost_pkts + pkts_unrecovered)
+              ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
+              : 100.0;
+      uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
+      warn("RX_FMD_SESSION(%d): per-port loss covered by redundancy: %" PRIu64
+           " of %" PRIu64 " pkts (P:%" PRIu64 "=%.1f%%, R:%" PRIu64
+           "=%.1f%%, save_rate=%.1f%%)\n",
+           idx, lost_pkts, total_pkts + lost_pkts, port_lost[MTL_SESSION_PORT_P], pct_p,
+           port_lost[MTL_SESSION_PORT_R], pct_r, save_rate);
+    } else {
+      warn("RX_FMD_SESSION(%d): per-port lost pkts %" PRIu64 "\n", idx, lost_pkts);
+    }
   }
-  if (s->stat_pkts_wrong_pt_dropped) {
-    notice("RX_FMD_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_pt_dropped);
-    s->stat_pkts_wrong_pt_dropped = 0;
+  if (pkts_unrecovered) {
+    err("RX_FMD_SESSION(%d): unrecovered pkts (lost on all ports) %" PRIu64 "\n", idx,
+        pkts_unrecovered);
   }
-  if (s->stat_pkts_wrong_interlace_dropped) {
-    notice("RX_FMD_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
-           s->stat_pkts_wrong_interlace_dropped);
-    s->stat_pkts_wrong_interlace_dropped = 0;
+
+  if (pkts_wrong_pt_dropped) {
+    notice("RX_FMD_SESSION(%d): wrong hdr payload_type dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_pt_dropped);
   }
-  if (s->stat_pkts_enqueue_fail) {
-    notice("RX_FMD_SESSION(%d): enqueue failed pkts %d\n", idx,
-           s->stat_pkts_enqueue_fail);
-    s->stat_pkts_enqueue_fail = 0;
+  if (pkts_wrong_ssrc_dropped) {
+    notice("RX_FMD_SESSION(%d): wrong hdr ssrc dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_ssrc_dropped);
+  }
+  if (pkts_wrong_interlace_dropped) {
+    notice("RX_FMD_SESSION(%d): wrong hdr interlace dropped pkts %" PRIu64 "\n", idx,
+           pkts_wrong_interlace_dropped);
+  }
+  if (pkts_enqueue_fail) {
+    notice("RX_FMD_SESSION(%d): enqueue failed pkts %" PRIu64 "\n", idx,
+           pkts_enqueue_fail);
   }
   if (s->ops.interlaced) {
-    notice("RX_FMD_SESSION(%d): interlace first field %u second field %u\n", idx,
-           s->stat_interlace_first_field, s->stat_interlace_second_field);
-    s->stat_interlace_first_field = 0;
-    s->stat_interlace_second_field = 0;
+    notice("RX_FMD_SESSION(%d): interlace first field %" PRIu64 " second field %" PRIu64
+           "\n",
+           idx, interlace_first_field, interlace_second_field);
   }
+
+  memcpy(snap, us, sizeof(*snap));
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {
@@ -742,6 +818,49 @@ static int rx_fastmetadata_sessions_mgr_uinit(
   return 0;
 }
 
+/* Prune down ports that are not available. Shifts port names, IP addresses,
+ * UDP ports, and multicast source IP addresses for remaining ports. */
+static int rx_fastmetadata_ops_prune_down_ports(struct mtl_main_impl* impl,
+                                                struct st41_rx_ops* ops) {
+  int num_ports = ops->num_port;
+
+  if (num_ports > MTL_SESSION_PORT_MAX || num_ports <= 0) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_port phy = mt_port_by_name(impl, ops->port[i]);
+    if (phy >= MTL_PORT_MAX || !mt_if_port_is_down(impl, phy)) continue;
+
+    warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
+
+    /* shift all further port-indexed fields one slot down */
+    for (int j = i; j < num_ports - 1; j++) {
+      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      ops->udp_port[j] = ops->udp_port[j + 1];
+    }
+
+    num_ports--;
+    i--;
+  }
+
+  if (num_ports == 0) {
+    err("%s, all %d port(s) are down, cannot create session\n", __func__, ops->num_port);
+    return -EIO;
+  }
+
+  if (num_ports < ops->num_port) {
+    info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
+         ops->num_port, num_ports);
+    ops->num_port = num_ports;
+  }
+
+  return 0;
+}
+
 static int rx_fastmetadata_ops_check(struct st41_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
@@ -826,6 +945,12 @@ st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops* ops) {
     return NULL;
   }
 
+  ret = rx_fastmetadata_ops_prune_down_ports(impl, ops);
+  if (ret < 0) {
+    err("%s, rx_fastmetadata_ops_prune_down_ports fail %d\n", __func__, ret);
+    return NULL;
+  }
+
   ret = rx_fastmetadata_ops_check(ops);
   if (ret < 0) {
     err("%s, st_rx_audio_ops_check fail %d\n", __func__, ret);
@@ -889,10 +1014,7 @@ int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src) 
   struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_FMD, -EIO);
 
   s = s_impl->impl;
   idx = s->idx;
@@ -900,16 +1022,19 @@ int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src) 
   sch_idx = sch->idx;
 
   ret = st_rx_source_info_check(src, s->ops.num_port);
-  if (ret < 0) return ret;
+  if (ret < 0) goto out;
 
   ret = rx_fastmetadata_sessions_mgr_update_src(&sch->rx_fmd_mgr, s, src);
   if (ret < 0) {
     err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
-    return ret;
+    goto out;
   }
 
   info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st41_rx_free(st41_rx_handle handle) {
@@ -920,10 +1045,13 @@ int st41_rx_free(st41_rx_handle handle) {
   int ret, idx;
   int sch_idx;
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
+  int _gd =
+      mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_RX_FMD);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s, invalid type %d\n", __func__, s_impl->type);
+    return _gd;
   }
+  mt_handle_drain(&s_impl->lc_refcnt);
 
   impl = s_impl->parent;
   s = s_impl->impl;
@@ -957,19 +1085,17 @@ void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len) {
   struct rte_mbuf* pkt;
   struct st_rx_fastmetadata_session_impl* s;
   struct rte_ring* packet_ring;
+  void* ret_pkt = NULL;
   int idx, ret;
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_FMD, NULL);
 
   s = s_impl->impl;
   idx = s->idx;
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
-    return NULL;
+    goto out;
   }
 
   ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
@@ -978,10 +1104,12 @@ void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len) {
                      sizeof(struct rte_udp_hdr);
     *len = pkt->data_len - header_len;
     *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
-    return (void*)pkt;
+    ret_pkt = (void*)pkt;
   }
 
-  return NULL;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret_pkt;
 }
 
 void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf) {
@@ -989,26 +1117,21 @@ void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf) {
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_rx_fastmetadata_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return;
-  }
+  MT_HANDLE_GUARD_VOID(s_impl, MT_HANDLE_RX_FMD);
 
   s = s_impl->impl;
   MTL_MAY_UNUSED(s);
 
   if (pkt) rte_pktmbuf_free(pkt);
   MT_USDT_ST41_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
+  MT_HANDLE_RELEASE(s_impl);
 }
 
 int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
   struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
   struct st_rx_fastmetadata_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_FMD, -EIO);
 
   s = s_impl->impl;
 
@@ -1018,6 +1141,7 @@ int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_fastmetadata_queue_id(s, i);
   }
 
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1029,13 +1153,13 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_FMD, -EINVAL);
   struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
 
@@ -1047,12 +1171,14 @@ int st41_rx_reset_session_stats(st41_rx_handle handle) {
     return -EINVAL;
   }
 
-  if (s_impl->type != MT_HANDLE_RX_FMD) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EINVAL;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_FMD, -EINVAL);
   struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
 
+  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  rte_atomic32_set(&s->stat_frames_received, 0);
+  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  MT_HANDLE_RELEASE(s_impl);
   return 0;
 }

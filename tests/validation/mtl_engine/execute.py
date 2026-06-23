@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2024-2025 Intel Corporation
+# Copyright(c) 2026 Intel Corporation
+
 import logging
 import os
 import subprocess
@@ -91,7 +92,8 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
 def readproc(process: subprocess.Popen):
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
-    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.pid{process.pid}.log")
+    log_folder = os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER)
+    logfile = os.path.join(log_folder, "latest", f"{case_id}.pid{process.pid}.log")
 
     output = []
     with open(logfile, "w") as file:
@@ -274,6 +276,85 @@ def log_info(msg: str):
     logger.info(msg)
 
 
+def log_warn(msg: str):
+    add_result_log(msg)
+    logger.warning(msg)
+
+
 def log_result_note(note: str):
     set_result_note(note)
     logger.info(f"Test result note: {note}")
+
+
+# Canonical list of MTL-related process names that may be left over
+# after a crash or timeout.  Mirrors .github/actions/cleanup/action.yml.
+#
+# DPDK's rte_eal_init renames the process main thread to "<argv0>_main"
+# via pthread_setname_np, truncated to TASK_COMM_LEN-1 = 15 chars. That
+# rename becomes /proc/PID/comm, so `pkill -x RxTxApp` never matches a
+# running RxTxApp. We expand each base name to also include the truncated
+# DPDK comm alias; otherwise stale DPDK apps survive cleanup and
+# subsequent `capture_stdout` reads block on still-open stdout pipes.
+_MTL_APP_BASE_NAMES = [
+    "RxTxApp",
+    "KahawaiTest",
+    "KahawaiUfdTest",
+    "KahawaiUplTest",
+    "ffmpeg",
+    "gtest.sh",
+]
+
+# Linux TASK_COMM_LEN is 16; usable comm length is 15 chars.
+_TASK_COMM_LEN = 15
+
+
+def _dpdk_comm_alias(name: str) -> str:
+    """Return the comm name DPDK applies after ``rte_eal_init``."""
+    return (name + "_main")[:_TASK_COMM_LEN]
+
+
+# Flat list: each base name plus its DPDK-renamed alias (deduplicated for
+# names like "ffmpeg" / "gtest.sh" that don't go through rte_eal_init).
+MTL_APP_NAMES = list(
+    dict.fromkeys(
+        n for base in _MTL_APP_BASE_NAMES for n in (base, _dpdk_comm_alias(base))
+    )
+)
+
+
+def kill_stale_processes(*hosts, names: list[str] | None = None) -> None:
+    """Kill leftover MTL-related processes on the given hosts.
+
+    Uses a graceful signal ladder (SIGINT → SIGTERM → SIGKILL) so DPDK
+    applications get a chance to run ``rte_eal_cleanup()`` and release
+    their VFIO group fd. Going straight to SIGKILL leaves the kernel-side
+    VFIO refcount non-zero and causes the next ``nicctl disable_vf`` call
+    to block forever in ``vfio_unregister_group_dev``.
+
+    Args:
+        *hosts: One or more host objects with ``connection.execute_command``.
+        names:  Process names to kill.  Defaults to :data:`MTL_APP_NAMES`.
+    """
+    targets = names or MTL_APP_NAMES
+    # Use exact process name matching (-x) to avoid killing unrelated
+    # processes (e.g., pytest whose test path contains "ffmpeg").
+    kill_cmds = []
+    for sig in ("INT", "TERM", "KILL"):
+        for name in targets:
+            kill_cmds.append(f"sudo pkill -{sig} -x {name} 2>/dev/null")
+        kill_cmds.append("sleep 1")
+    cmd = "; ".join(kill_cmds) + "; true"
+    for host in hosts:
+        try:
+            host.connection.execute_command(cmd, shell=True, timeout=20)
+        except Exception:
+            pass
+
+
+def read_remote_log(host, log_path: str) -> list:
+    """Read a log file from a remote host and return its lines."""
+    try:
+        result = host.connection.execute_command(f"cat {log_path}", shell=True)
+        return result.stdout.splitlines() if result.stdout else []
+    except Exception:
+        return []

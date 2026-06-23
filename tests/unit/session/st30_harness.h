@@ -1,0 +1,173 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 Intel Corporation
+ *
+ * C harness API for the ST 2110-30 (audio) RX session unit tests.
+ *
+ * The harness wraps a single `st_rx_audio_session_impl` configured for a
+ * tiny synthetic geometry. ST30 uses TIMESTAMP-only redundancy filtering
+ * (no per-frame bitmap), which is reflected in the available accessors.
+ *
+ * Two feeder families are exposed:
+ *
+ *   ut30_feed_*                — call the per-packet handler directly.
+ *                                Use to assert on filter/state behaviour.
+ *   ut30_feed_*_via_wrapper    — call the public `_handle_mbuf` wrapper
+ *                                the production tasklet uses. Use whenever
+ *                                the test asserts on per-port `err_packets`
+ *                                or `packets` accounting.
+ */
+
+#ifndef _ST30_SESSION_HARNESS_H_
+#define _ST30_SESSION_HARNESS_H_
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "mtl_api.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct ut30_test_ctx ut30_test_ctx;
+
+/* Initialise the shared DPDK EAL and mempool. Idempotent — safe to call
+ * once per gtest fixture SetUp(). Returns 0 on success, < 0 on failure. */
+int ut30_init(void);
+
+/* Create a context with `num_port` enabled (1 = single-port, 2 = redundant).
+ * Caller owns the returned pointer and must free it with ut30_ctx_destroy().
+ * Returns NULL on allocation failure. */
+ut30_test_ctx* ut30_ctx_create(int num_port);
+void ut30_ctx_destroy(ut30_test_ctx* ctx);
+
+/* Feed one RFC 3550 audio packet directly to the per-packet handler.
+ * Returns the production handler's return code (0 = accepted, < 0 = error
+ * reason; e.g. -EIO for redundancy filtering). */
+int ut30_feed_pkt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                  enum mtl_session_port port);
+
+/* Convenience: feed `count` consecutive packets starting at `seq_start`,
+ * with RTP timestamps starting at `ts` and striding by samples_per_pkt so
+ * each lands in its own positional slot. */
+void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
+                     enum mtl_session_port port);
+
+/* Negative-test feeders: override one RTP field while keeping the others
+ * at session defaults. */
+int ut30_feed_pkt_pt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                     enum mtl_session_port port, uint8_t payload_type);
+int ut30_feed_pkt_ssrc(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                       enum mtl_session_port port, uint32_t ssrc);
+int ut30_feed_pkt_len(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                      enum mtl_session_port port, uint32_t payload_len);
+
+/* Configure the session's expected RTP payload type / SSRC. Call after
+ * ut30_ctx_create() and before feeding any packet. */
+void ut30_ctx_set_pt(ut30_test_ctx* ctx, uint8_t pt);
+void ut30_ctx_set_ssrc(ut30_test_ctx* ctx, uint32_t ssrc);
+
+/* Wrapper feeder — drives the production `_handle_mbuf` wrapper instead of
+ * the per-packet handler. Use this whenever the test asserts on per-port
+ * `err_packets` or per-port `packets`. All RTP fields are explicit so a
+ * single function covers happy-path and negative-path tests. */
+int ut30_feed_pkt_via_wrapper(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                              enum mtl_session_port port, uint8_t pt, uint32_t ssrc,
+                              uint32_t payload_len);
+
+/* Per-port counter accessors. */
+uint64_t ut30_stat_port_err_packets(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_pkts(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_bytes(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_lost(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_reordered(const ut30_test_ctx* ctx, enum mtl_session_port port);
+uint64_t ut30_stat_port_duplicates(const ut30_test_ctx* ctx, enum mtl_session_port port);
+
+/* Per-port frame credit (audio first-pkt-wins).
+ *
+ * ST30 increments `port[i].frames` exactly once per frame, on the port
+ * whose packet allocated the new frame buffer (i.e. the first pkt of the
+ * new RTP timestamp to be accepted post-redundancy). The other port is
+ * not credited even if it later contributes packets to the same frame.
+ * See `rx_audio_session_handle_frame_pkt` in
+ * `lib/src/st2110/st_rx_audio_session.c`. */
+uint64_t ut30_stat_port_frames(const ut30_test_ctx* ctx, enum mtl_session_port port);
+
+/* Session-wide counters. `unrecovered` counts gaps the redundancy filter
+ * could not heal; `redundant` counts cross-port duplicates dropped by the
+ * filter; `received` counts accepted packets after filtering. */
+uint64_t ut30_stat_unrecovered(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_redundant(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_received(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_lost_pkts(const ut30_test_ctx* ctx);
+
+/* Last accepted RTP sequence number (a.k.a. session "watermark") — used by
+ * tests that need to set up a known starting point before injecting reorder
+ * or wrap. */
+int ut30_session_seq_id(const ut30_test_ctx* ctx);
+
+/* Number of frames delivered since session reset (live value of the
+ * stat counter). */
+int ut30_frames_received(const ut30_test_ctx* ctx);
+
+/* Per-frame status tally captured by the harness frame-ready stub from
+ * st30_rx_frame_meta::status. `complete` counts frames delivered with
+ * ST_FRAME_STATUS_COMPLETE, `corrupted` counts ST_FRAME_STATUS_CORRUPTED;
+ * `last` returns the status of the most recently delivered frame (or
+ * ST_FRAME_STATUS_COMPLETE before any frame is delivered). */
+uint64_t ut30_frames_complete(const ut30_test_ctx* ctx);
+uint64_t ut30_frames_corrupted(const ut30_test_ctx* ctx);
+int ut30_last_frame_status(const ut30_test_ctx* ctx);
+
+/* Drive the production session reset, clearing the per-frame loss accumulator
+ * and sequence watermarks. Test-side frame-status tallies are preserved. */
+void ut30_reset(ut30_test_ctx* ctx);
+
+/* Number of audio packets that constitute one frame in this harness's
+ * synthetic configuration. Tests use it to derive expected counts. */
+int ut30_pkts_per_frame(const ut30_test_ctx* ctx);
+
+/* Sample-clock ticks carried by one packet (RTP timestamp advance per packet). */
+uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx);
+
+/* Ordered log of delivered frames, captured by the frame-ready stub. `count` is
+ * the number logged; `ts`/`status` index into it. */
+int ut30_frame_log_count(const ut30_test_ctx* ctx);
+uint64_t ut30_frame_log_ts(const ut30_test_ctx* ctx, int i);
+int ut30_frame_log_status(const ut30_test_ctx* ctx, int i);
+
+/* Per-reason drop counters. */
+uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_wrong_ssrc(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_len_mismatch(const ut30_test_ctx* ctx);
+uint64_t ut30_stat_slot_get_frame_fail(const ut30_test_ctx* ctx);
+
+/* Hold app-side frames: when true the notify_frame_ready stub no longer
+ * releases refcnts, allowing the test to drive the framebuff pool to
+ * exhaustion. Flipping back to false releases all held refcnts. */
+void ut30_set_hold_frames(ut30_test_ctx* ctx, bool hold);
+
+/* Feed every packet of a single frame on the same wire. Per-packet RTP
+ * timestamps start at `ts_start` and stride by samples_per_pkt so each lands
+ * in its own positional slot. */
+void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
+                          enum mtl_session_port port);
+
+/* Drive the mt_stat-thread stat callback synchronously for assertions on
+ * the rate-limited stat lines. */
+void ut30_invoke_rx_audio_session_stat(ut30_test_ctx* ctx);
+
+/* Simulate ST30_TYPE_RTP_LEVEL where st30_frames is never allocated.
+ * Caller must reattach before destroy so the harness can free the array. */
+void* ut30_detach_frames(ut30_test_ctx* ctx);
+void ut30_reattach_frames(ut30_test_ctx* ctx, void* frames);
+
+/* Directly bump the slot-get-frame-fail counter (the RTP rtps_ring-full
+ * path bumps this; the harness does not yet drive packets through it). */
+void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _ST30_SESSION_HARNESS_H_ */

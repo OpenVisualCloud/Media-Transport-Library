@@ -31,9 +31,10 @@ Add `-Denable_asan=true` (or `MTL_BUILD_ENABLE_ASAN=true`) if you also want
 AddressSanitizer instrumentation. Existing build directories can be reconfigured with
 `meson configure build -Denable_fuzzing=true`.
 
-Meson injects the `MTL_ENABLE_FUZZING_ST40`, `MTL_ENABLE_FUZZING_ST30`,
-`MTL_ENABLE_FUZZING_ST20`, and `MTL_ENABLE_FUZZING_ST22` defines so the RX
-implementation exposes the minimal helper hooks required by the fuzzers.
+The fuzz harnesses `#include` the production `.c` files directly so that all static
+functions are visible without any wrapper hooks in the library source. The linker flag
+`--allow-multiple-definition` resolves the resulting duplicate non-static symbols
+between the harness and `libmtl`.
 
 ## Building
 

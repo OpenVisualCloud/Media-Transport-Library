@@ -83,6 +83,11 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 #define ST30_RX_FLAG_FORCE_NUMA (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st30_rx_ops.
+ * If enabled, simulate random packet loss, test usage only.
+ */
+#define ST30_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
+/**
+ * Flag bit in flags of struct st30_rx_ops.
  * Enable the timing analyze in the stat dump
  */
 #define ST30_RX_FLAG_TIMING_PARSER_STAT (MTL_BIT32(16))
@@ -284,6 +289,8 @@ struct st30_rx_frame_meta {
   uint32_t rtp_timestamp;
   /** received data size for current frame */
   size_t frame_recv_size;
+  /** Frame status, complete or corrupted by unrecovered packet loss */
+  enum st_frame_status status;
 };
 
 /**
@@ -543,10 +550,7 @@ struct st30_rx_ops {
  */
 struct st30_tx_user_stats {
   struct st_tx_user_stats common;
-  uint64_t stat_epoch_mismatch;
   uint64_t stat_epoch_late;
-  uint64_t stat_recoverable_error;
-  uint64_t stat_unrecoverable_error;
   uint64_t stat_pkts_burst;
   uint64_t stat_pad_pkts_burst;
   uint64_t stat_warmup_pkts_burst;
@@ -560,7 +564,6 @@ struct st30_tx_user_stats {
  */
 struct st30_rx_user_stats {
   struct st_rx_user_stats common;
-  uint64_t stat_pkts_redundant;
   uint64_t stat_pkts_dropped;
   uint64_t stat_pkts_len_mismatch_dropped;
   uint64_t stat_slot_get_frame_fail;
@@ -569,6 +572,7 @@ struct st30_rx_user_stats {
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
  * @param port
@@ -584,6 +588,7 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
  * @param port
@@ -597,6 +602,7 @@ int st30_tx_reset_session_stats(st30_tx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
  * @param port
@@ -612,6 +618,7 @@ int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(audio) session.
  *
+ * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
  * @param port

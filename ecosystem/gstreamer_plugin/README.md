@@ -107,6 +107,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
 | dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. Required when `enable-dma-offload=true`. | N/A                      |
+| allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
@@ -116,6 +117,11 @@ When `enable-dma-offload` is set to `true`, every plugin that supports DMA will 
 the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
 flag.
 
+When `allow-down-ports` is set to `true`, MTL will proceed with initialization even if
+one or both NIC links are down. Any session whose `port` or `port-red` maps to a down
+interface will have that port silently removed from its port list at creation time,
+reducing `num_port` by one. A session whose only port is down will fail to create.
+This flag is useful for redundant-path setups where one leg may be absent at startup.
 
 > **Warning:**
 > Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTLlibrary. As the MTL library handle is shared between MTL
@@ -418,9 +424,9 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
-| tx-test-mode          | enum     | Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
-| tx-test-pkt-count     | uint     | Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
-| tx-test-pacing-ns     | uint     | Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
+| tx-test-mode          | enum     | **DEBUG build only.** Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
+| tx-test-pkt-count     | uint     | **DEBUG build only.** Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
+| tx-test-pacing-ns     | uint     | **DEBUG build only.** Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
 
 > **Note:**
 > - `raw-udw` streams carry a single ANC packet per frame without per-packet metadata; the element uses `tx-did`/`tx-sdid` for the outgoing headers, so keeping `max-combined-udw-size` small avoids oversized frames.
@@ -459,9 +465,10 @@ gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
-#### 5.1.3. ST40P test-mode knobs
+#### 5.1.3. ST40P test-mode knobs (DEBUG builds only)
 
-Test-only RTP/ANC mutation options for validation (not for production):
+Test-only RTP/ANC mutation options for validation (not for production).  
+These properties and the underlying hot-path logic are compiled only when `MTL_SIMULATE_PACKET_DROPS` is defined (enabled automatically in debug builds via `meson -Dbuildtype=debug`). In release builds the properties are absent and the hot-path stays clean.
 
 | Property              | Description                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------|
@@ -492,6 +499,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
 | frame-info-path     | string  | Optional path to append frame info and sequence stats per frame | N/A                      | NULL          |
 | rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
+| rx-disable-auto-detect | boolean | Skip auto-detection and use the mode set by `rx-interlaced` (`true` = interlaced, `false` = progressive) | TRUE/FALSE | FALSE |
 | output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
 
 When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte
@@ -502,6 +510,7 @@ its user data words so that downstream elements receive complete RFC8331 payload
 > **Note:** `rtp-ring-size` values are validated at runtime. If the supplied number is not a power of
 > two the element fails to initialize, matching the behavior enforced inside
 > `gst_mtl_st40p_rx_start()`.
+> **Interlace auto-detect:** Enabled by default. The `rx-interlaced` property serves as the initial value before the first RTP F bits are observed. Sequence discontinuities reset detection; frame-info shows `seq_discont` when it happens and `interlaced` re-populates after new F bits arrive.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 

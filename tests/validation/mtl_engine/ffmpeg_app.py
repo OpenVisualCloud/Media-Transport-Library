@@ -12,11 +12,11 @@ import time
 from mfd_connect import SSHConnection
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
+from mtl_engine.const import FFMPEG_EXE, FFPROBE_EXE, RXTXAPP_EXE
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
-RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
 # Global variable to store timestamp for consistent logging
@@ -235,11 +235,29 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
+    pix_fmt: str = "yuv422p10le",
+    keep_output: bool = False,
 ):
+    """Execute FFmpeg loopback (or FFmpeg<->RxTxApp) ST2110-20 test.
+
+    When ``keep_output=True`` the output file(s) are NOT deleted after
+    validation and the function returns ``(passed, output_files[0])`` instead
+    of ``passed``. Use this when a follow-up integrity check needs the file.
+
+    ``pix_fmt`` controls FFmpeg input/output pixel format on both sides; the
+    ``video_url`` source must already be in that pix_fmt and ``-filter:v fps=``
+    is dropped to preserve byte-exact frame parity.
+    """
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
     video_size, fps = decode_video_format_16_9(video_format)
+    # When caller pre-converted the source to a non-default pix_fmt (typical
+    # for integrity tests), skip the fps filter so frames stay byte-identical.
+    tx_filter = "" if pix_fmt != "yuv422p10le" else f"-filter:v fps={fps} "
+    # Non-default pix_fmts have a slower TX warmup; bump RX init_retry so the
+    # receiver does not give up before TX starts pacing. Capped at 60 by plugin.
+    init_retry = 20 if pix_fmt == "yuv422p10le" else 60
     match output_format:
         case "yuv":
             ffmpeg_rx_f_flag = "-f rawvideo"
@@ -248,19 +266,19 @@ def execute_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {nic_port_list[0]} "
+            f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
-            f"-video_size {video_size} -f mtl_st20p -i k "
-            f"-init_retry 20 "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i k "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -269,27 +287,29 @@ def execute_test(
             tx_config_file = generate_rxtxapp_tx_config(
                 nic_port_list[1], video_format, video_url, host, build
             )
-            tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
+            tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
-            f"-video_size {video_size} -f mtl_st20p -i 1 "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
-            f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
-            f"-video_size {video_size} -f mtl_st20p -i 2 "
+            f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
+            f"-video_size {video_size} -init_retry {init_retry} "
+            f"-f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
             f"-map 1:0 {ffmpeg_rx_f_flag} {output_files[1]} -y"
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo "
-                f"-pix_fmt yuv422p10le -i {video_url} "
-                f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo "
+                f"-pix_fmt {pix_fmt} -i {video_url} "
+                f"{tx_filter}-p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
                 f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
@@ -298,7 +318,7 @@ def execute_test(
             tx_config_file = generate_rxtxapp_tx_config(
                 nic_port_list[1], video_format, video_url, host, build, True
             )
-            tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
+            tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
 
     rx_proc = None
     tx_proc = None
@@ -330,14 +350,8 @@ def execute_test(
 
         # Wait for test duration with proper timeout handling
         logger.info(f"Running test for {test_time} seconds with timeout {timeout}...")
-        if tx_is_ffmpeg:
-            # FFmpeg TX will complete after test_time, give it a 10s buffer
-            tx_proc.wait(timeout=test_time + 10)
-            logger.info("TX process completed")
-        else:
-            # RxTxApp runs indefinitely, just wait for test duration
-            time.sleep(test_time)
-            logger.info(f"Test duration {test_time}s completed")
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
 
     except Exception as e:
         logger.error(f"Error during test execution: {e}")
@@ -371,14 +385,18 @@ def execute_test(
             passed = check_output_video_h264(
                 output_files[0], video_size, host, build, video_url
             )
-    # Clean up output files after validation
-    try:
-        for output_file in output_files:
-            run(f"rm -f {output_file}", host=host)
-    except Exception as e:
-        logger.info(f"Could not remove output files: {e}")
+    # Clean up output files after validation (unless caller wants to keep them
+    # for follow-up checks like integrity validation).
+    if not keep_output:
+        try:
+            for output_file in output_files:
+                run(f"rm -f {output_file}", host=host)
+        except Exception as e:
+            logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
+    if keep_output:
+        return passed, output_files[0]
     return passed
 
 
@@ -403,9 +421,9 @@ def execute_test_rgb24(
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
         return False
-    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    rx_cmd = f"{RXTXAPP_EXE} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_EXE} -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url} -filter:v format=rgb24 -p_port {nic_port_list[1]} "
         f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -517,16 +535,16 @@ def execute_test_rgb24_multiple(
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
         return False
-    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    rx_cmd = f"{RXTXAPP_EXE} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_EXE} -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url_list[0]} -filter:v format=rgb24 -p_port {nic_port_list[2]} "
         f"-p_sip {ip_pools.tx[0]} "
         f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_EXE} -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url_list[1]} -filter:v format=rgb24 -p_port {nic_port_list[3]} "
         f"-p_sip {ip_pools.tx[1]} "
         f"-p_tx_ip {ip_pools.rx_multicast[1]} "
@@ -678,7 +696,9 @@ def check_output_video_h264(
     height_pattern = r"height=(\d+)"
 
     ffprobe_proc = run(
-        f"ffprobe -v error -show_format -show_streams {output_file}", host=host
+        f"{FFPROBE_EXE} -v error -show_format -show_streams {output_file}",
+        host=host,
+        cwd=build,
     )
 
     codec_name_match = re.search(code_name_pattern, ffprobe_proc.stdout_text)
@@ -743,6 +763,33 @@ def decode_video_format_16_9(video_format: str) -> tuple:
     else:
         log_fail("Invalid video format")
         return None
+
+
+def generate_reference_file(
+    host,
+    build: str,
+    src_url: str,
+    video_size: str,
+    src_pix_fmt: str,
+    dst_pix_fmt: str,
+) -> str:
+    """Transcode a raw YUV source into a reference file in ``dst_pix_fmt``.
+
+    Used by integrity tests to obtain a byte-exact reference matching the
+    pix_fmt that the FFmpeg MTL plugin will both send and receive.
+    Returns the path of the generated reference file on ``host``.
+    """
+    test_name = sanitize_filename(get_case_id())
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    ref_file = f"{build}/tests/{test_name}_{timestamp}_ref_{dst_pix_fmt}.yuv"
+    cmd = (
+        f"{FFMPEG_EXE} -y -f rawvideo -pix_fmt {src_pix_fmt} "
+        f"-video_size {video_size} -i {src_url} "
+        f"-pix_fmt {dst_pix_fmt} -f rawvideo {ref_file}"
+    )
+    logger.info(f"Generating reference file: {ref_file}")
+    run(cmd, cwd=build, timeout=300, testcmd=False, host=host)
+    return ref_file
 
 
 def generate_rxtxapp_rx_config(
@@ -980,14 +1027,14 @@ def execute_dual_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_EXE} -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 -payload_type 112 "
             f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
             f"-f mtl_st20p -i k {ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -996,11 +1043,11 @@ def execute_dual_test(
             tx_config_file = generate_rxtxapp_tx_config(
                 tx_nic_port_list[0], video_format, video_url, tx_host, build
             )
-            tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
+            tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
             f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20000 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
@@ -1012,7 +1059,7 @@ def execute_dual_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1021,7 +1068,7 @@ def execute_dual_test(
             tx_config_file = generate_rxtxapp_tx_config(
                 tx_nic_port_list[0], video_format, video_url, tx_host, build, True
             )
-            tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
+            tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
 
     logger.info(f"TX Host: {tx_host}")
     logger.info(f"RX Host: {rx_host}")
@@ -1154,9 +1201,9 @@ def execute_dual_test_rgb24(
         log_fail(f"Failed to create RX config file: {e}")
         return False
 
-    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    rx_cmd = f"{RXTXAPP_EXE} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
         f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1278,16 +1325,16 @@ def execute_dual_test_rgb24_multiple(
         log_fail(f"Failed to create RX config file: {e}")
         return False
 
-    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    rx_cmd = f"{RXTXAPP_EXE} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {tx_nic_port_list[0]} "
         f"-p_sip {ip_pools.tx[0]} "
         f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_EXE} -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {tx_nic_port_list[1]} "
         f"-p_sip {ip_pools.tx[1]} "
         f"-p_tx_ip {ip_pools.rx_multicast[1]} "

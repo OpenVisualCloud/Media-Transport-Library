@@ -1,151 +1,75 @@
 # Media Transport Library (MTL) - Copilot Instructions
 
 ## Overview
-MTL implements SMPTE ST 2110 for high-throughput, low-latency media over IP. DPDK-based with HW pacing support (Intel E810).
 
-## Key Files to Reference
-- **Public API**: `include/mtl_api.h`, `include/st20_api.h`, `include/st_pipeline_api.h`
-- **Constants**: `lib/src/st2110/st_header.h`, `lib/src/mt_main.h`
-- **Formats/Timing**: `lib/src/st2110/st_fmt.c` (pixel groups, fps, bandwidth calc)
-- **Session impl**: `lib/src/st2110/st_tx_video_session.c`, `st_rx_video_session.c`
-- **Samples**: `app/sample/` (working code for each API)
-- **Tests**: `tests/integration_tests/` (gtest patterns)
+MTL implements SMPTE ST 2110 for professional media transport over IP. DPDK-based with HW pacing (Intel E810/E830). Supports ST2110-20 (video), ST2110-22 (compressed video), ST2110-30 (audio), ST2110-40 (ancillary), ST2110-41 (fast metadata).
 
-## Naming Conventions
-| Prefix | Scope | Example |
-|--------|-------|---------|
-| `mtl_*` | Public API | `mtl_init`, `mtl_start` |
-| `mt_*` | Core internal | `mt_rte_zmalloc_socket` |
-| `st_*` / `st20_*` | ST2110 | `st20_tx_create` |
-| `tv_*` / `rv_*` | TX/RX video (static) | `tv_ops_check` |
-| `ta_*` / `ra_*` | TX/RX audio | |
-| `*_impl` | Internal struct | `st_tx_video_session_impl` |
-| `*_mgr` | Manager struct | `st_tx_video_sessions_mgr` |
+## Production-Quality Bar
 
-**Lifecycle**: `*_init()` / `*_uinit()` (note: "uinit" not "uninit"), `*_attach()` / `*_detach()`
+This is a **client-visible, production repository**. Every change goes through rigorous review.
 
-## Critical Rules
+- **Performance and maintainability above all** — design the simplest architecture that is fast and easy to understand. Never patch around a problem; find the right solution.
+- **Design before code** — understand the problem, study existing patterns, plan the approach, then implement. Do not start writing code until you can explain why this design is the right one.
+- **Minimal diffs only** — do not add speculative code, convenience wrappers, or refactors beyond what was explicitly requested.
+- **No dead code** — never commit commented-out code, unused helpers, or placeholder stubs.
+- **No gratuitous changes** — do not touch formatting, comments, or variable names in lines you are not modifying for functional reasons.
+- **Each patch must be self-contained** — buildable, testable, and small enough to review in one sitting.
 
-### Error Handling
-- Return negative errno: `-EINVAL`, `-ENOMEM`, `-EIO`, `-EBUSY`
-- Use goto-based cleanup for multi-step init
-- Always log with `__func__` and session `idx`: `err("%s(%d), msg\n", __func__, s->idx)`
+## Always-On Coding Conventions
 
-### Memory (see `lib/src/mt_mem.h`)
-- `mt_rte_zmalloc_socket(size, socket_id)` for DMA/NUMA-aware alloc
-- `MT_SAFE_FREE(obj, mt_rte_free)` sets obj=NULL after free
-- Always pass `socket_id` for NUMA locality
+- **C99 only** in library core (`lib/`). C++ allowed only in tests (gtest).
+- **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_`/`st41_` (media APIs), `st20p_`/`st22p_`/`st30p_` (pipeline APIs).
+- **Error returns**: 0 = success, negative = error. Free resources in reverse allocation order on failure.
+- **Never block in tasklets** — no malloc, no mutex, no sleep, no INFO-level logging in data-plane paths.
+- **Formatting**: `clang-format-14` enforced by CI. Always run `./format-coding.sh` before committing.
+- **Build verification**: Always run `./build.sh` after changes to verify compilation.
+- **Logging**: Use `dbg()`/`info()`/`warn()`/`err()`. Never use `printf`.
+- **Comments**: Short and descriptive. Do not comment obvious code.
 
-### Logging (see `lib/src/mt_log.h`)
-- `dbg()` (debug only), `info()`, `warn()`, `err()`, `critical()`
-- `*_once()` variants for single-fire logs
-- Format: `err("%s(%d), what happened\n", __func__, s->idx)`
+## Available Tooling
 
-### Tasklets (CRITICAL)
-- **Never block** in tasklet callbacks - runs in shared polling thread
-- Use `rte_spinlock` (not mutex) for quick critical sections
-- Use `rte_ring` for async thread communication
-- Session access: `*_session_get()` → work → `*_session_put()` (spinlock pattern)
+- **MCP Server** (`mtl-system-setup`): 35+ tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
+- **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "MTL Validation Setup" (pytest framework prep), "Explore" (read-only Q&A).
+- **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates).
+- **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
 
-### Frames (`st_frame_trans` in `st_header.h`)
-- `refcnt` via `rte_atomic32_t`: 0 = free
-- Acquire: find frame with `refcnt==0`, then `rte_atomic32_inc()`
-- Release: `rte_atomic32_dec()`
-- Flags: `ST_FT_FLAG_EXT` (external), `ST_FT_FLAG_RTE_MALLOC`, `ST_FT_FLAG_GPU_MALLOC`
+## Agent Routing Matrix
 
-### Zero-Copy TX Packets
-- Header mbuf from `mbuf_mempool_hdr` + payload mbuf via `rte_pktmbuf_attach_extbuf()`
-- Chain with `rte_pktmbuf_chain()` - no copy of frame data
+Use this table to pick the right subagent. Resolve ambiguity in order:
+**(1) file-path match → (2) binary/tool match → (3) read-only? use Explore → (4) multi-agent? use Planner.**
 
-## Type Patterns
+| Task | Agent | Why |
+|---|---|---|
+| Multi-step work crossing 2+ subsystems (code + host + manager + plugins…) | **MTL Planner** | Decomposes and routes; no execution |
+| Edit any of `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/` | **MTL Developer (TDD)** | Owns code + tests + the six-gate TDD loop in one context window |
+| Build (`./build.sh`, `ninja -C build`, `./format-coding.sh`) | **MTL Developer (TDD)** | Build is Gate 4 of its loop |
+| Run `./build/tests/unit/UnitTest` (unit gtest, no NIC) | **MTL Developer (TDD)** | Test runs are Gate 2 (fail) and Gate 4 (pass) |
+| Run `KahawaiTest` (integration gtest, real VFs) | **MTL System Admin** | Only one with `run_gtest` MCP tool; enforced Gate 6 for data-plane changes |
+| Host setup (hugepages, VFs, drivers, MtlManager) | **MTL System Admin** | MCP-only, no shell |
+| Adversarial review of a saved diff | **MTL Reviewer** | Read-only; enforced Gate 5; refuses if diff empty |
+| Prepare pytest under `tests/validation/` (apt, NFS, configs) | **MTL Validation Setup** | Idempotent setup script |
+| Run pytest under `tests/validation/` | *main agent* per `.github/instructions/mtl-validation-tests.instructions.md` | Validation Setup refuses by design |
+| Read-only Q&A, code archaeology, "where is X defined?" | **Explore** | Cheap, parallelizable |
 
-### Handles (opaque pointers)
-```c
-typedef struct st_tx_video_session_handle_impl* st20_tx_handle;
-typedef struct mtl_main_impl* mtl_handle;
-```
+**Capability boundaries** — every agent declares CAN/CANNOT in its body's "Capability contract" section. If a tool the agent needs is unavailable (e.g. shell `execute` disabled), the agent refuses at Gate 0 rather than producing degraded work. When refused, either enable the missing tool or pick a different agent from the matrix.
 
-### Enums
-- Start at 0, end with `_MAX`: `enum st_fps { ST_FPS_P59_94 = 0, ..., ST_FPS_MAX };`
+## Default workflow for any code change — the six-gate TDD loop
 
-### Flags (use bit macros)
-```c
-#define ST20_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
-```
+Every behavior-changing edit walks these gates in order. They live inside **MTL Developer (TDD)**; the Planner uses them as the default plan shape for multi-subsystem work.
 
-### Common Struct Fields
-- `int idx` - session index for logging
-- `int socket_id` - NUMA socket
-- `struct mtl_main_impl* impl` - parent context
-- `rte_atomic32_t refcnt` - reference count
-- `stat_*` prefix for statistics fields
+0. **Tools present** — `execute` (shell) + `build/` exist, else refuse.
+1. **Knowledge** — written "context I established" block: subsystem, files, KB section, invariants. Delegate to **Explore** if the agent cannot fill it.
+2. **Failing test** — a gtest at the right tier ([`/mtl-write-test`](skills/mtl-write-test/SKILL.md)) exists and **fails** before any production-code edit. Pure-refactor / docs / build-system changes may skip with a stated exemption.
+3. **Implement** — minimal diff to pass the Gate 2 test.
+4. **Green test + clean build** — same test passes; `./format-coding.sh` + `./build.sh` clean.
+5. **Review** — **MTL Reviewer** verdict, no unaddressed BLOCKERs. **Mandatory, no exemption.**
+6. **Integration** — **MTL System Admin** runs the matching `KahawaiTest` filter on real VFs. Mandatory for data-plane / session-lifecycle / pacing / DMA / RSS / kernel-socket / AF_XDP / virtio-user changes; may be skipped with a stated exemption for pure control-plane code.
 
-## Session Lifecycle
-```text
-create() → ops_check() → zmalloc_socket() → sch_get_quota() → mgr_attach() → attach()
-free()   → mgr_detach() → detach() → uinit() → sch_put() → rte_free()
-```
-
-## Validation (see `*_ops_check()` functions)
-- `num_port`: 1-2 (MTL_SESSION_PORT_MAX)
-- `payload_type`: 0-127 (RFC3550), 0=disable
-- `framebuff_cnt`: 2-8 for video
-- IP: not all zeros, multicast=224.x-239.x
-- Redundant ports must have different IPs
-- Check required callbacks based on `type` field
-
-## Pacing (see `st_tx_video_pacing` in `st_header.h`)
-- `trs` = time between packets (ns)
-- `reactive` = 1080/1125 for blanking interval
-- Modes: `ST21_TX_PACING_WAY_RL` (HW rate limit), `ST21_TX_PACING_WAY_TSC` (SW)
-
-## Adding New Session Type
-1. Define ops in `include/st**_api.h`
-2. Create `st_tx/rx_*_session.c/h` with `*_impl` struct
-3. Add `*_ops_check()` validation
-4. Register tasklet in `*_sessions_sch_init()`
-5. Add manager to `mtl_sch_impl` in `mt_main.h`
-6. Add session count atomic in `mtl_main_impl`
-
-## Wire Format Structs
-```c
-MTL_PACK(struct st_rfc3550_rtp_hdr { ... });  // Packed for network
-struct st_rfc4175_video_hdr { ... } __attribute__((__packed__)) __rte_aligned(2);
-```
-
-## Handle Validation (at API entry)
-```c
-if (impl->type != MT_HANDLE_MAIN) return -EIO;  // See mt_handle_type in mt_main.h
-```
-
-## Quick Reference
-| Constant | Value | Location |
-|----------|-------|----------|
-| MTL_SESSION_PORT_MAX | 2 | mtl_api.h |
-| ST_MAX_NAME_LEN | 32 | st_header.h |
-| MTL_PKT_MAX_RTP_BYTES | 1352 | mtl_api.h |
-| ST_SESSION_MAX_BULK | 4 | st_header.h |
-
-## Build & Format
-```bash
-./build.sh              # Release
-./build.sh debugonly    # Debug
-./format-coding.sh      # Format code (requires clang-format-14)
-```
-
-**IMPORTANT**: Always run `./build.sh` to verify your changes compile successfully and `./format-coding.sh` to fix code formatting before committing. CI will reject improperly formatted code.
-
-## Commit Messages (Conventional Commits)
-Format: `<Type>: <description>` — Type is capitalized. See `doc/coding_standard.md`.
-
-| Type | Use |
-|------|-----|
-| `Feat` / `Add` | New feature |
-| `Fix` | Bugfix |
-| `Refactor` | Code change (no bugfix/feature) |
-| `Docs` | Documentation only |
-| `Test` | Tests |
-| `Perf` | Performance improvement |
-| `Build` | Build system/dependencies |
-| `Ci` | CI configuration |
-| `Style` | Formatting (no code change) |
+The agent walks Gates 0–4 inside its own body — it must report evidence for each
+before firing Gate 5. Gates 5 and 6 are **handoffs to sibling agents**; the Develop
+agent's reply terminates before they respond. The user (or orchestrator) owns the
+decision to commit once Reviewer returns. If Reviewer raises BLOCKERs the user
+re-invokes the Develop agent with them, and Gates 2–4 run again for the fix. This is
+why Gates 5 and 6 are the only truly enforceable checks — they involve independent
+agents producing independent evidence; Gates 0–4 rely on the Develop agent following
+its own checklist.

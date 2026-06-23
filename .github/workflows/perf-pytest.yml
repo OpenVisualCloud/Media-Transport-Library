@@ -1,0 +1,126 @@
+name: perf-pytest
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: MTL branch to build and test (defaults to workflow branch)
+        required: false
+        type: string
+      marker:
+        description: 'Pytest marker filter (-m), e.g. performance'
+        required: false
+        type: string
+      test_filter:
+        description: 'Pytest keyword filter (-k), e.g. test_rx[multi_core-59fps-1080p-dma]'
+        required: false
+        type: string
+        default: '1080p and 59fps'
+      num_sessions:
+        description: Fixed session count (skip binary search)
+        required: false
+        type: string
+      sch_quota:
+        description: Scheduler session quota override
+        required: false
+        type: string
+      test_time:
+        description: Test duration in seconds
+        required: false
+        type: string
+        default: '120'
+  schedule:
+    - cron: '0 22 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  run-perf-tests:
+    runs-on: [self-hosted, perf, sut]
+    timeout-minutes: 720
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: 'preparation: Clean workspace and checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        with:
+          ref: '${{ inputs.branch || github.ref }}'
+          fetch-depth: '0'
+      - name: Overlay test framework from workflow branch
+        if: inputs.branch != ''
+        run: |
+          echo "MTL source: ${{ inputs.branch }}"
+          echo "Test framework: ${{ github.sha }} (${{ github.ref_name }})"
+          git checkout ${{ github.sha }} -- tests/validation/ .github/
+      - name: 'preparation: Validate host and download artifacts'
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '${{ secrets.SHADOW_HOST }}'
+      - name: Install pytest dependencies
+        working-directory: ./tests/validation
+        run: |
+          python3 -m venv ./.venv
+          source ./.venv/bin/activate
+          pip install -r ./requirements.txt
+      - name: Set session ID
+        run: |
+          runner_name="${{ runner.name }}"
+          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device
+        run: echo "PCI_DEVICE=${{ secrets.PERF_PCI_DEVICE || '8086:12d2,8086:12d2' }}" >> "$GITHUB_ENV"
+      - name: Generate pytest configuration files
+        working-directory: ./tests/validation/configs
+        run: |
+          source ../.venv/bin/activate
+          SHADOW_IP="${{ steps.validate.outputs.shadow_host_ip }}"
+          SHADOW_USER="${{ steps.validate.outputs.shadow_host_user }}"
+          python3 gen_config.py \
+            --session_id "${{ env.SESSION_ID }}" \
+            --mtl_path "${{ github.workspace }}" "${{ github.workspace }}" \
+            --pci_device "${{ env.PCI_DEVICE }}" "${{ env.PCI_DEVICE }}" \
+            --ip_address "${SHADOW_IP}" "${{ secrets.PERF_SUT_IP }}" \
+            --username "${SHADOW_USER}" \
+            --test_time "${{ inputs.test_time || '120' }}" \
+            --no_capture
+      - name: Export workflow tag for PCAP naming
+        run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
+      - name: Run performance tests
+        working-directory: ./tests/validation
+        run: |
+          ./.venv/bin/python3 -m pytest \
+            --test_config=./configs/test_config.yaml \
+            --topology_config=./configs/topology_config.yaml \
+            ${{ inputs.marker && format('-m "{0}"', inputs.marker) || '' }} \
+            -k "${{ inputs.test_filter || '1080p and 59fps' }}" \
+            --template=html/index.html \
+            --report=./report.html \
+            ${{ inputs.num_sessions && format('--num_sessions {0}', inputs.num_sessions) || '' }} \
+            ${{ inputs.sch_quota && format('--sch_quota {0}', inputs.sch_quota) || '' }} \
+            "./tests/dual/performance"
+      - name: Generate performance report
+        if: always()
+        working-directory: ./tests/validation
+        run: |
+          if [ -d logs/performance ]; then
+            ./.venv/bin/python3 common/generate_report.py \
+              logs/performance -o performance_report.html \
+              || echo "::warning::Performance report generation failed"
+          else
+            echo "::warning::No performance logs found — skipping report generation"
+          fi
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "perf-test-report-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/validation/report.html
+            ./tests/validation/performance_report.html
+      - name: Clean up
+        if: always()
+        uses: ./.github/actions/cleanup

@@ -23,13 +23,7 @@ endif
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
 enable_fuzzing_opt = get_option('enable_fuzzing')
-
-if enable_fuzzing_opt
-  add_global_arguments('-DMTL_ENABLE_FUZZING_ST40', language : 'c')
-  add_global_arguments('-DMTL_ENABLE_FUZZING_ST30', language : 'c')
-  add_global_arguments('-DMTL_ENABLE_FUZZING_ST20', language : 'c')
-  add_global_arguments('-DMTL_ENABLE_FUZZING_ST22', language : 'c')
-endif
+enable_unit_tests_opt = get_option('enable_unit_tests')
 
 # get external variables
 add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always', check: false).stdout().strip() + '"', language : 'c')
@@ -77,11 +71,16 @@ if enable_fuzzing_opt
   subdir('tests/fuzz')
 endif
 
+if enable_unit_tests_opt
+  subdir('tests/unit')
+endif
+
 pkg = import('pkgconfig')
 pkg.generate(
   name : meson.project_name(),
   version : meson.project_version(),
   libraries : mtl_lib,
   filebase : meson.project_name(),
+  subdirs : ['.', meson.project_name()],
   description : 'Media Transport Library'
 )

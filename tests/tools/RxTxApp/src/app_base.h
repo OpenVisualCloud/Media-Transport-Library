@@ -14,6 +14,7 @@
 #include <mtl/st30_api.h>
 #include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
+#include <mtl/st40_pipeline_api.h>
 #include <mtl/st41_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pcap.h>
@@ -209,10 +210,17 @@ struct st_app_tx_audio_session {
 };
 
 struct st_app_tx_anc_session {
+  struct st_app_context* ctx;
+
   int idx;
   st40_tx_handle handle;
 
   uint16_t framebuff_cnt;
+
+  uint64_t frame_num;
+  double frame_time;
+  uint64_t local_tai_base_time;
+  struct st_user_time* user_time;
 
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
@@ -480,6 +488,57 @@ struct st_app_tx_st22p_session {
   bool st22p_app_thread_stop;
 };
 
+struct st_app_tx_st40p_session {
+  struct st_app_context* ctx;
+
+  int idx;
+  st40p_tx_handle handle;
+  mtl_handle st;
+  int framebuff_cnt;
+
+  st_json_st40p_session_t* st40p;
+
+  char st40p_source_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st40p_source_begin;
+  uint8_t* st40p_source_end;
+  uint8_t* st40p_frame_cursor;
+
+  double expect_fps;
+  double frame_time;
+  uint64_t frame_num;
+  uint64_t local_tai_base_time;
+  struct st_user_time* user_time;
+
+  size_t udw_payload_limit;
+
+  pthread_t st40p_app_thread;
+  bool st40p_app_thread_stop;
+
+  int fb_send;
+  int fb_send_done;
+};
+
+struct st_app_rx_st40p_session {
+  struct st_app_context* ctx;
+  int idx;
+  mtl_handle st;
+  st40p_rx_handle handle;
+  int framebuff_cnt;
+
+  pthread_t st40p_app_thread;
+  pthread_cond_t st40p_wake_cond;
+  pthread_mutex_t st40p_wake_mutex;
+  bool st40p_app_thread_stop;
+
+  /* stat */
+  int stat_frame_total_received;
+  uint64_t stat_frame_first_rx_time;
+  int stat_frame_seq_discont;
+  int stat_frame_marker_missing;
+  uint32_t stat_seq_lost_total;
+  double expect_fps;
+};
+
 struct st_app_rx_st22p_session {
   int idx;
   mtl_handle st;
@@ -718,6 +777,10 @@ struct st_app_context {
   struct st_app_tx_st22p_session* tx_st22p_sessions;
   int tx_st22p_session_cnt;
 
+  char tx_st40p_url[ST_APP_URL_MAX_LEN];
+  struct st_app_tx_st40p_session* tx_st40p_sessions;
+  int tx_st40p_session_cnt;
+
   char tx_st20p_url[ST_APP_URL_MAX_LEN]; /* send st20p content url*/
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
@@ -756,6 +819,9 @@ struct st_app_context {
 
   struct st_app_rx_st30p_session* rx_st30p_sessions;
   int rx_st30p_session_cnt;
+
+  struct st_app_rx_st40p_session* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
 
   struct st_app_rx_video_session* rx_st20r_sessions;
   int rx_st20r_session_cnt;

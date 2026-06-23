@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTL-MXL POC — ST 2022-7 Redundancy Demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --card: #141a22;
+    --card-bright: #1a2230;
+    --border: #2a3444;
+    --border-bright: #3a4a5e;
+    --text: #d0d8e0;
+    --dim: #707c8c;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #79c0ff;
+    --p-color: #58a6ff;
+    --r-color: #bc8cff;
+    --glow-green: rgba(63,185,80,0.25);
+    --glow-blue: rgba(88,166,255,0.15);
+    --server-border: #4a9eff;
+    --server-border-active: #5ce882;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { display: none; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 40px;
+    position: relative;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 1800px;
+    height: 1800px;
+    background: url('intel_logo_boxed.svg') center/contain no-repeat;
+    opacity: 0.05;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Top header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 54px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .header h1 {
+    font-size: 3.4em;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #f0f6fc;
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .header h1 .mtl {
+    background: linear-gradient(135deg, #58a6ff 0%, #79c0ff 50%, #58a6ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header h1 .arrow {
+    display: inline-block;
+    font-size: 0.7em;
+    color: var(--dim);
+    -webkit-text-fill-color: var(--dim);
+    margin: 0 8px;
+    vertical-align: middle;
+    opacity: 0.6;
+  }
+  .header h1 .mxl {
+    background: linear-gradient(135deg, #bc8cff 0%, #d4b0ff 50%, #bc8cff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header h1 .standard {
+    display: block;
+    font-size: 0.55em;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 6px;
+    background: linear-gradient(90deg, var(--green), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header .subtitle {
+    font-size: 1.4em;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── Page layout ── */
+  .page-layout {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    max-width: 3600px;
+  }
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── Preview panels ── */
+  .preview-column {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-width: 340px;
+    max-width: 480px;
+    gap: 16px;
+  }
+  .preview-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .preview-panel h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .preview-panel .thumb-container {
+    position: relative;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .preview-panel img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 10px;
+  }
+  .preview-panel .thumb-placeholder {
+    color: var(--dim);
+    font-size: 1em;
+    padding: 70px 24px;
+  }
+  .preview-panel .thumb-meta {
+    font-size: 0.9em;
+    color: var(--dim);
+    margin-top: 10px;
+  }
+  .preview-panel .thumb-status {
+    font-size: 0.85em;
+    color: var(--dim);
+    margin-top: 6px;
+  }
+
+  /* ── Status bar ── */
+  .status-bar {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 16px;
+    font-size: 1.05em;
+    color: var(--dim);
+    align-items: center;
+  }
+  .status-bar .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.red   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  .dot.grey  { background: var(--dim); }
+
+  /* ── Redundancy banner ── */
+  .redundancy-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 28px;
+    margin-bottom: 12px;
+    font-size: 1.15em;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+  }
+  .redundancy-banner .icon { font-size: 1.4em; }
+  .redundancy-banner .status-text { font-weight: 600; }
+  .redundancy-banner.protected { border-color: var(--green); box-shadow: 0 0 20px var(--glow-green); }
+  .redundancy-banner.degraded  { border-color: var(--orange); }
+  .redundancy-banner.failed    { border-color: var(--red); }
+
+  /* ── Pipeline SVG ── */
+  .pipeline-container {
+    position: relative;
+    width: 100%;
+    max-width: 1800px;
+  }
+  svg.pipeline {
+    width: 100%;
+    height: auto;
+  }
+
+  .node-box {
+    fill: var(--card-bright);
+    stroke: var(--border-bright);
+    stroke-width: 2;
+    rx: 12;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+  }
+  .node-box.active {
+    stroke: var(--green);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 12px rgba(63,185,80,0.35));
+  }
+  .node-box.synth-p {
+    stroke: var(--p-color);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 14px rgba(88,166,255,0.4));
+  }
+  .node-box.synth-p.active {
+    stroke: var(--p-color);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 18px rgba(88,166,255,0.5));
+  }
+  .node-box.synth-r {
+    stroke: var(--purple);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 14px rgba(188,140,255,0.4));
+  }
+  .node-box.synth-r.active {
+    stroke: var(--purple);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 18px rgba(188,140,255,0.5));
+  }
+  /* Server boxes: vivid border for visibility */
+  .server-box {
+    stroke: var(--server-border);
+    stroke-width: 2.5;
+    rx: 14;
+    filter: drop-shadow(0 4px 20px rgba(0,0,0,0.5))
+           drop-shadow(0 0 8px rgba(74,158,255,0.15));
+  }
+  .server-box.active {
+    stroke: var(--server-border-active);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 24px rgba(92,232,130,0.35))
+           drop-shadow(0 4px 20px rgba(0,0,0,0.5));
+  }
+  .server-glow {
+    fill: none;
+    stroke: var(--server-border-active);
+    stroke-width: 1.5;
+    rx: 18;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  .server-glow.active {
+    opacity: 0.2;
+  }
+  .machine-zone-label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-anchor: middle;
+  }
+  .machine-zone {
+    fill: none;
+    stroke: #3a6a9e;
+    stroke-width: 1.5;
+    stroke-dasharray: 8 4;
+    rx: 16;
+    opacity: 0.55;
+  }
+  .node-label {
+    fill: #f0f6fc;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .node-sublabel {
+    fill: var(--dim);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .node-metric {
+    fill: var(--cyan);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    text-anchor: middle;
+  }
+  .flow-path {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: opacity 0.4s;
+  }
+  .flow-path.p-path { stroke: var(--p-color); }
+  .flow-path.r-path { stroke: var(--r-color); }
+  .flow-path.rdma   { stroke: var(--green); }
+  .flow-path.disabled { opacity: 0.12; stroke-dasharray: 10 8; }
+
+  .flow-label {
+    font-size: 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .flow-label.p-label { fill: var(--p-color); }
+  .flow-label.r-label { fill: var(--r-color); }
+  .flow-label.rdma-label { fill: var(--green); }
+  .flow-label.disabled { opacity: 0.25; }
+
+  .flow-throughput {
+    font-size: 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-weight: 500;
+    text-anchor: middle;
+  }
+  .flow-latency {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    text-anchor: middle;
+    fill: var(--dim);
+  }
+  .arrow-label {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    fill: var(--dim);
+    text-anchor: middle;
+  }
+
+  /* Particles */
+  .particle { opacity: 0.9; }
+  .particle.p-particle { fill: var(--p-color); filter: drop-shadow(0 0 5px var(--p-color)); }
+  .particle.r-particle { fill: var(--r-color); filter: drop-shadow(0 0 5px var(--r-color)); }
+  .particle.rdma-particle { fill: var(--green); filter: drop-shadow(0 0 5px var(--green)); }
+  .particle.inner-particle { fill: var(--cyan); filter: drop-shadow(0 0 6px rgba(121,192,255,0.8)); }
+  .particle.disabled { display: none; }
+
+  /* ── Toggle panel ── */
+  .toggle-panel {
+    display: flex;
+    gap: 28px;
+    margin-top: 20px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  }
+  .toggle-group .path-badge {
+    font-size: 0.9em;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .toggle-group .path-badge.p-badge { background: var(--p-color); color: #0a0e14; }
+  .toggle-group .path-badge.r-badge { background: var(--r-color); color: #0a0e14; }
+  .toggle-group label {
+    font-size: 1em;
+    font-weight: 500;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    cursor: pointer;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-slider {
+    position: absolute; cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #30363d;
+    transition: 0.3s;
+    border-radius: 28px;
+  }
+  .toggle-slider:before {
+    position: absolute; content: "";
+    height: 22px; width: 22px;
+    left: 3px; bottom: 3px;
+    background-color: #8b949e;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background-color: var(--green);
+  }
+  .toggle-switch input:checked + .toggle-slider.slider-danger {
+    background-color: var(--red);
+  }
+  .toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+    background-color: white;
+  }
+  .toggle-status {
+    font-size: 0.9em;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    min-width: 36px;
+  }
+  .toggle-status.on  { color: var(--green); }
+  .toggle-status.on-danger { color: var(--red); }
+  .toggle-status.off { color: var(--red); }
+  .toggle-hint {
+    font-size: 0.85em;
+    color: var(--dim);
+    padding: 6px 16px;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  /* ── Metrics cards ── */
+  .metrics-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 20px;
+    max-width: 1800px;
+  }
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 18px;
+    min-width: 150px;
+    text-align: center;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  }
+  .metric-card:hover {
+    border-color: var(--blue);
+    box-shadow: 0 0 16px var(--glow-blue);
+  }
+  .metric-card .label {
+    font-size: 0.8em;
+    font-weight: 500;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+  .metric-card .value {
+    font-size: 1.4em;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+  }
+  .metric-card .unit {
+    font-size: 0.5em;
+    color: var(--dim);
+    margin-left: 2px;
+  }
+  .metric-card .minmax {
+    font-size: 0.75em;
+    color: var(--dim);
+    margin-top: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Config bar ── */
+  .config-bar {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-top: 24px;
+    font-size: 0.95em;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .config-bar label { color: var(--dim); font-weight: 500; }
+  .config-bar input, .config-bar select {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.95em;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .config-bar button {
+    background: var(--blue);
+    color: #0a0e14;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.95em;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .config-bar button:hover { opacity: 0.85; }
+  .url-input {
+    font-size: 0.85em;
+    margin-top: 6px;
+  }
+  .url-input label { color: var(--dim); font-weight: 400; }
+  .url-input input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    width: 100%;
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Live Charts ── */
+  .charts-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 28px;
+    width: 100%;
+    max-width: 1800px;
+  }
+  .chart-panel {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    min-width: 0;
+  }
+  .chart-panel:hover {
+    border-color: var(--blue);
+    box-shadow: 0 0 16px var(--glow-blue);
+  }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .chart-header h4 {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 0;
+  }
+  .chart-header .chart-latest {
+    font-size: 1em;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+  }
+  .chart-panel canvas {
+    width: 100%;
+    height: 190px;
+    display: block;
+  }
+  .chart-legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 8px;
+    justify-content: center;
+  }
+  .chart-legend span {
+    font-size: 0.8em;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--dim);
+  }
+  .chart-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<img src="intel_logo_boxed.svg" alt="Intel" style="position:fixed;top:20px;left:75px;height:213px;z-index:100;">
+<img src="mxl_logo.png" alt="MXL" style="position:fixed;top:20px;right:24px;height:80px;z-index:100;opacity:0.85;">
+<img src="mtl_qr_intel_mtl_stylish.png" alt="QR" style="position:fixed;bottom:44px;left:24px;height:240px;z-index:100;opacity:0.9;border-radius:8px;">
+
+<div class="header">
+  <h1>
+    <span class="mtl">Intel Media Transport Library</span>
+    <span class="arrow">&#x27A4;</span>
+    <span class="mxl">Media eXchange Layer</span>
+    <span class="standard">ST 2022-7 Seamless Redundancy</span>
+  </h1>
+  <p class="subtitle">Seamless Protection Switching &mdash; Primary + Redundant ST 2110-20 Paths</p>
+</div>
+
+<div class="page-layout">
+
+<!-- ══════ TX Previews (Left) ══════ -->
+<div class="preview-column">
+  <div class="preview-panel" style="border:2px solid rgba(88,166,255,0.5);box-shadow:0 0 16px rgba(88,166,255,0.15), 0 4px 24px rgba(0,0,0,0.3);">
+    <h3>TX P-Path <span style="color:var(--p-color)">● Primary</span></h3>
+    <div class="thumb-container">
+      <img id="thumb-p-img" alt="P-path preview"
+           src="http://localhost:8083/stream/p"
+           onerror="this.style.display='none'; document.getElementById('thumb-p-placeholder').style.display='block';"
+           onload="this.style.display='block'; document.getElementById('thumb-p-placeholder').style.display='none';">
+      <div id="thumb-p-placeholder" class="thumb-placeholder">
+        No P-path preview.<br>Waiting for TX thumbnails.
+      </div>
+    </div>
+    <div class="thumb-meta">live MJPEG Preview</div>
+  </div>
+  <div class="preview-panel" style="border:2px solid rgba(188,140,255,0.5);box-shadow:0 0 16px rgba(188,140,255,0.15), 0 4px 24px rgba(0,0,0,0.3);">
+    <h3>TX R-Path <span style="color:var(--r-color)">● Redundant</span></h3>
+    <div class="thumb-container">
+      <img id="thumb-r-img" alt="R-path preview"
+           src="http://localhost:8083/stream/r"
+           onerror="this.style.display='none'; document.getElementById('thumb-r-placeholder').style.display='block';"
+           onload="this.style.display='block'; document.getElementById('thumb-r-placeholder').style.display='none';">
+      <div id="thumb-r-placeholder" class="thumb-placeholder">
+        No R-path preview.<br>Waiting for TX thumbnails.
+      </div>
+    </div>
+    <div class="thumb-meta">live MJPEG Preview</div>
+  </div>
+  <!-- <div class="url-input">
+    <label>TX Preview Server:</label>
+    <input id="thumb-tx-url" type="text" value="http://localhost:8083"
+           onchange="var u=this.value.replace(/\/+$/,''); document.getElementById('thumb-p-img').src=u+'/stream/p'; document.getElementById('thumb-r-img').src=u+'/stream/r';">
+  </div> -->
+</div>
+
+<!-- ══════ Main Content ══════ -->
+<div class="main-content">
+
+<div class="status-bar">
+  <span><span class="dot grey" id="dot-influx"></span> InfluxDB</span>
+  <span><span class="dot grey" id="dot-sender"></span> Sender</span>
+  <span><span class="dot grey" id="dot-receiver"></span> Receiver</span>
+  <span><span class="dot grey" id="dot-ctrl"></span> Control</span>
+  <span id="last-update" style="font-family:'JetBrains Mono',monospace;font-size:0.9em;">—</span>
+</div>
+
+<div class="redundancy-banner protected" id="redundancy-banner">
+  <span class="icon" id="banner-icon">🛡️</span>
+  <span class="status-text" id="banner-text">ST 2022-7 Protected — Dual-path active</span>
+</div>
+
+<!-- ══════ Pipeline SVG ══════ -->
+<div class="pipeline-container">
+<svg class="pipeline" viewBox="0 0 1640 510" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <marker id="arrowP" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--p-color)"/>
+    </marker>
+    <marker id="arrowR" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--r-color)"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--green)"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="var(--cyan)"/>
+    </marker>
+    <!-- Gradient for server box fills -->
+    <linearGradient id="serverGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e2838"/>
+      <stop offset="100%" stop-color="#141c28"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── Machine zones ── -->
+  <rect class="machine-zone" x="12" y="12" width="940" height="490"/>
+  <text class="machine-zone-label" x="484" y="44" fill="var(--cyan)" opacity="0.7">Sender Server</text>
+
+  <rect class="machine-zone" x="1010" y="12" width="618" height="490"/>
+  <text class="machine-zone-label" x="1319" y="44" fill="var(--cyan)" opacity="0.7">Receiver Server</text>
+
+  <!-- ═══ NODE: Synth TX P (Primary) ═══ -->
+  <rect class="node-box synth-p" id="box-synth-p" x="40" y="90" width="210" height="110"/>
+  <text class="node-label" x="145" y="122">Synth TX</text>
+  <text class="node-sublabel" x="145" y="142" style="fill:var(--p-color);font-weight:600">P — Primary</text>
+  <text class="node-sublabel" x="145" y="162">239.0.0.1:20000</text>
+  <text class="node-metric" id="m-synth-p-status" x="145" y="186" style="fill:var(--green)">● ACTIVE</text>
+
+  <!-- ═══ NODE: Synth TX R (Redundant) ═══ -->
+  <rect class="node-box synth-r" id="box-synth-r" x="40" y="295" width="210" height="110"/>
+  <text class="node-label" x="145" y="327">Synth TX</text>
+  <text class="node-sublabel" x="145" y="347" style="fill:var(--r-color);font-weight:600">R — Redundant</text>
+  <text class="node-sublabel" x="145" y="367">239.0.0.2:20000</text>
+  <text class="node-metric" id="m-synth-r-status" x="145" y="391" style="fill:var(--green)">● ACTIVE</text>
+
+  <!-- ═══ FLOW: P path ═══ -->
+  <path class="flow-path p-path" id="flow-p"
+        d="M250,145 C340,145 400,145 500,145"/>
+  <line x1="486" y1="145" x2="499" y2="145" stroke="var(--p-color)" stroke-width="3" marker-end="url(#arrowP)"/>
+  <text class="flow-label p-label" id="fl-p-label" x="375" y="136">P: ST2110-20</text>
+  <text class="flow-throughput" id="fl-p-throughput" x="375" y="118" style="fill:var(--p-color)">— Gbps</text>
+  <text class="flow-latency" id="fl-p-latency" x="375" y="164" style="fill:var(--p-color)">—</text>
+  <text class="arrow-label" x="375" y="100" style="fill:var(--p-color)">E810 VF0 → VF1</text>
+  <!-- P particles -->
+  <circle class="particle p-particle" id="p-particle-1" r="5">
+    <animateMotion dur="1.5s" repeatCount="indefinite" begin="0s"
+      path="M250,145 C340,145 400,145 500,145"/>
+  </circle>
+  <circle class="particle p-particle" id="p-particle-2" r="3.5">
+    <animateMotion dur="1.5s" repeatCount="indefinite" begin="0.75s"
+      path="M250,145 C340,145 400,145 500,145"/>
+  </circle>
+
+  <!-- ═══ FLOW: R path ═══ -->
+  <path class="flow-path r-path" id="flow-r"
+        d="M250,350 C340,350 400,350 500,350"/>
+  <line x1="486" y1="350" x2="499" y2="350" stroke="var(--r-color)" stroke-width="3" marker-end="url(#arrowR)"/>
+  <text class="flow-label r-label" id="fl-r-label" x="375" y="341">R: ST2110-20</text>
+  <text class="flow-throughput" id="fl-r-throughput" x="375" y="323" style="fill:var(--r-color)">— Gbps</text>
+  <text class="flow-latency" id="fl-r-latency" x="375" y="369" style="fill:var(--r-color)">—</text>
+  <text class="arrow-label" x="375" y="305" style="fill:var(--r-color)">E810 VF2 → VF3</text>
+  <!-- R particles -->
+  <circle class="particle r-particle" id="r-particle-1" r="5">
+    <animateMotion dur="1.5s" repeatCount="indefinite" begin="0s"
+      path="M250,350 C340,350 400,350 500,350"/>
+  </circle>
+  <circle class="particle r-particle" id="r-particle-2" r="3.5">
+    <animateMotion dur="1.5s" repeatCount="indefinite" begin="0.75s"
+      path="M250,350 C340,350 400,350 500,350"/>
+  </circle>
+
+  <!-- ═══ NODE: MTL RX + MXL Bridge (sender server box) ═══ -->
+  <rect class="server-glow" id="glow-sender" x="492" y="64" width="308" height="392"/>
+  <rect class="server-box" id="box-sender" x="496" y="68" width="300" height="384" fill="url(#serverGrad)"/>
+  <!-- Top half: MTL RX -->
+  <text class="node-label" x="646" y="104" style="font-size:20px">MTL RX</text>
+  <text class="node-sublabel" x="646" y="126">DPDK — ST 2022-7</text>
+  <text class="node-sublabel" x="646" y="148" style="fill:var(--green);font-weight:600">Seamless Dedup</text>
+  <text class="node-metric" id="m-queue-lat" x="646" y="166">—</text>
+  <!-- Divider -->
+  <line x1="510" y1="174" x2="782" y2="174" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+  <!-- Animated arrow: MTL RX → MXL Bridge -->
+  <line x1="646" y1="178" x2="646" y2="258" stroke="var(--cyan)" stroke-width="2" marker-end="url(#arrowCyan)" opacity="0.7"/>
+  <circle class="particle inner-particle" r="3.5">
+    <animateMotion dur="1.2s" repeatCount="indefinite"
+      path="M646,176 L646,260"/>
+  </circle>
+  <circle class="particle inner-particle" r="2.5" opacity="0.6">
+    <animateMotion dur="1.2s" repeatCount="indefinite" begin="0.6s"
+      path="M646,176 L646,260"/>
+  </circle>
+  <!-- Divider 2 -->
+  <line x1="510" y1="268" x2="782" y2="268" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+  <!-- Bottom half: MXL Bridge -->
+  <text class="node-label" x="646" y="296" style="font-size:20px">MTL to MXL Bridge</text>
+  <text class="node-sublabel" x="646" y="318">Zero-Copy Grain Write</text>
+  <text class="node-metric" id="m-bridge-fps" x="646" y="350">— fps</text>
+  <text class="node-metric" id="m-bridge-lat" x="646" y="374">—</text>
+  <!-- Merge dots (where P/R paths enter the box) -->
+  <circle cx="500" cy="145" r="8" fill="var(--p-color)" opacity="0.8" id="merge-dot-p"/>
+  <circle cx="500" cy="350" r="8" fill="var(--r-color)" opacity="0.8" id="merge-dot-r"/>
+  <path d="M500,153 L500,168" stroke="var(--p-color)" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.5"/>
+  <path d="M500,342 L500,168" stroke="var(--r-color)" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.5"/>
+  <text class="node-sublabel" id="m-drops" x="646" y="434" style="fill:var(--dim);font-size:12px">drops: 0</text>
+
+  <!-- ═══ FLOW: RDMA Fabrics ═══ -->
+  <path class="flow-path rdma" id="flow-rdma"
+        d="M796,260 C880,260 950,260 1050,260"/>
+  <line x1="1036" y1="260" x2="1049" y2="260" stroke="var(--green)" stroke-width="3" marker-end="url(#arrowGreen)"/>
+  <text class="flow-label rdma-label" x="920" y="244">RDMA Fabrics</text>
+  <text class="flow-throughput" id="fl-rdma-throughput" x="920" y="224" style="fill:var(--green)">— Gbps</text>
+  <text class="flow-latency" id="fl-rdma-latency" x="920" y="280" style="fill:var(--green)">—</text>
+  <text class="arrow-label" x="920" y="298" style="fill:var(--green)">libfabric verbs</text>
+  <text class="arrow-label" x="920" y="314" style="fill:var(--green)">Intel E810 RoCEv2</text>
+  <!-- RDMA particles -->
+  <circle class="particle rdma-particle" r="5">
+    <animateMotion dur="2s" repeatCount="indefinite" begin="0s"
+      path="M796,260 C880,260 950,260 1050,260"/>
+  </circle>
+  <circle class="particle rdma-particle" r="5">
+    <animateMotion dur="2s" repeatCount="indefinite" begin="0.5s"
+      path="M796,260 C880,260 950,260 1050,260"/>
+  </circle>
+  <circle class="particle rdma-particle" r="3.5">
+    <animateMotion dur="2s" repeatCount="indefinite" begin="1.0s"
+      path="M796,260 C880,260 950,260 1050,260"/>
+  </circle>
+  <circle class="particle rdma-particle" r="3.5">
+    <animateMotion dur="2s" repeatCount="indefinite" begin="1.5s"
+      path="M796,260 C880,260 950,260 1050,260"/>
+  </circle>
+
+  <!-- ═══ NODE: MXL Sink + Consumer (receiver server box) ═══ -->
+  <rect class="server-glow" id="glow-receiver" x="1046" y="74" width="298" height="356"/>
+  <rect class="server-box" id="box-receiver" x="1050" y="78" width="290" height="348" fill="url(#serverGrad)"/>
+  <text class="node-label" x="1195" y="116" style="font-size:20px">MXL Sink</text>
+  <text class="node-sublabel" x="1195" y="138">Fabrics Target</text>
+  <line x1="1064" y1="158" x2="1326" y2="158" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+  <text class="node-label" x="1195" y="188" style="font-size:20px">Consumer</text>
+  <text class="node-sublabel" x="1195" y="210">Grain Read + Thumbnail</text>
+  <text class="node-metric" id="m-recv-events" x="1195" y="244">— fps</text>
+  <text class="node-metric" id="m-recv-consume" x="1195" y="270">—</text>
+  <text class="node-metric" id="m-recv-e2e" x="1195" y="296">—</text>
+  <text class="node-sublabel" x="1195" y="396" style="fill:var(--orange);font-weight:500">MJPEG Preview</text>
+</svg>
+</div>
+
+<!-- ══════ Toggle Switches ══════ -->
+<div class="toggle-panel">
+  <div class="toggle-group">
+    <span class="path-badge p-badge">P</span>
+    <label>Primary Path</label>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-p" checked onchange="togglePath('p', this.checked)">
+      <span class="toggle-slider"></span>
+    </label>
+    <span class="toggle-status on" id="toggle-p-status">ON</span>
+  </div>
+  <div class="toggle-group">
+    <span class="path-badge r-badge">R</span>
+    <label>Redundant Path</label>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-r" checked onchange="togglePath('r', this.checked)">
+      <span class="toggle-slider"></span>
+    </label>
+    <span class="toggle-status on" id="toggle-r-status">ON</span>
+  </div>
+  <div class="toggle-group">
+    <span class="path-badge" style="background:var(--orange);color:#0a0e14;">⚡</span>
+    <label>Pkt Corruption</label>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-corrupt" onchange="togglePath('corrupt', this.checked)">
+      <span class="toggle-slider slider-danger"></span>
+    </label>
+    <span class="toggle-status off" id="toggle-corrupt-status">OFF</span>
+  </div>
+  <div class="toggle-hint">
+    Toggle paths to simulate cable cuts. Corruption drops timestamp-hashed pkts per path (~50% loss).
+  </div>
+</div>
+
+<!-- ══════ Metrics Cards ══════ -->
+<div class="metrics-row">
+  <div class="metric-card">
+    <div class="label">RX Frames/sec</div>
+    <div class="value" id="mc-fps">—</div>
+    <div class="minmax" id="mc-fps-detail"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Queue Latency</div>
+    <div class="value" id="mc-lat-queue">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-queue-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Bridge Latency</div>
+    <div class="value" id="mc-lat-bridge">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-bridge-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">RDMA Transport</div>
+    <div class="value" id="mc-lat-rdma">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-rdma-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Total (Sender)</div>
+    <div class="value" id="mc-lat-total">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-total-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">End-to-End</div>
+    <div class="value" id="mc-lat-e2e">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-e2e-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Consume</div>
+    <div class="value" id="mc-lat-consume">—<span class="unit">µs</span></div>
+    <div class="minmax" id="mc-lat-consume-mm"></div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Drops</div>
+    <div class="value" id="mc-drops" style="color:var(--green)">—</div>
+    <div class="minmax" id="mc-drops-detail"></div>
+  </div>
+  <!-- <div class="metric-card">
+    <div class="label">Zero-Copy</div>
+    <div class="value" id="mc-zerocopy">—<span class="unit">%</span></div>
+  </div> -->
+</div>
+
+<!-- ══════ Live Charts ══════ -->
+<div class="charts-row">
+  <div class="chart-panel">
+    <div class="chart-header">
+      <h4>End-to-End Latency</h4>
+      <span class="chart-latest" id="chart-lat-latest" style="color:var(--cyan)">— µs</span>
+    </div>
+    <canvas id="chart-latency"></canvas>
+    <div class="chart-legend">
+      <span><span class="chart-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span>Avg</span>
+      <span><span class="chart-dot" style="background:var(--orange);box-shadow:0 0 6px var(--orange)"></span>P99</span>
+      <span><span class="chart-dot" style="background:#556070"></span>Min</span>
+    </div>
+  </div>
+  <div class="chart-panel">
+    <div class="chart-header">
+      <h4>NIC Wire Throughput</h4>
+      <span style="display:inline-flex;gap:10px;font-size:0.95em;font-weight:700;font-family:'JetBrains Mono',monospace">
+        <span id="chart-nic-rdma" style="color:#d29922">—</span>
+        <span id="chart-nic-mtl" style="color:#3fb950">—</span>
+        <span id="chart-nic-tx" style="color:#79c0ff">—</span>
+      </span>
+    </div>
+    <canvas id="chart-nic"></canvas>
+    <div class="chart-legend">
+      <span><span class="chart-dot" style="background:var(--orange);box-shadow:0 0 6px var(--orange)"></span>RDMA</span>
+      <span><span class="chart-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>MTL RX (Total)</span>
+      <span><span class="chart-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span>MTL TX (Total)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ Config Bar (scroll down to reach) ══════ -->
+<div class="config-bar" style="margin-top: 80vh;">
+  <label>InfluxDB:</label>
+  <input id="influx-url" type="text" value="http://localhost:8086" size="28"/>
+  <label>Token:</label>
+  <input id="influx-token" type="text" value="mtl-mxl-poc-token" size="16"/>
+  <label>Org:</label>
+  <input id="influx-org" type="text" value="mtl-mxl" size="6"/>
+  <label>Bucket:</label>
+  <input id="influx-bucket" type="text" value="poc" size="5"/>
+  <label>Control:</label>
+  <input id="ctrl-url" type="text" value="http://localhost:8082" size="24"/>
+  <button onclick="startPolling()">Connect</button>
+</div>
+
+</div><!-- .main-content -->
+
+<!-- ══════ RX Preview (Right) ══════ -->
+<div class="preview-column" style="margin-top: 160px;">
+  <div class="preview-panel" style="border:2px solid var(--server-border-active);box-shadow:0 0 24px rgba(92,232,130,0.25), 0 4px 24px rgba(0,0,0,0.3);background:linear-gradient(180deg, #1e2838 0%, #141c28 100%);">
+    <h3>RX Merged Output</h3>
+    <div class="thumb-container">
+      <img id="thumb-img" alt="Stream preview"
+           src="http://localhost:8081/stream"
+           onerror="this.style.display='none'; document.getElementById('thumb-placeholder').style.display='block';"
+           onload="this.style.display='block'; document.getElementById('thumb-placeholder').style.display='none';">
+      <div id="thumb-placeholder" class="thumb-placeholder">
+        No preview available.<br>Waiting for MJPEG from receiver.
+      </div>
+    </div>
+    <div class="thumb-meta" id="thumb-meta">live MJPEG RX Preview</div>
+  </div>
+  <!-- <div class="url-input">
+    <label>MJPEG URL:</label>
+    <input id="thumb-url" type="text" value="http://localhost:8081/stream"
+           onchange="document.getElementById('thumb-img').src = this.value;">
+  </div> -->
+</div>
+
+</div><!-- .page-layout -->
+
+<script>
+/* ══════════════════════════════════════════════════════════
+ *  ST 2022-7 Redundancy Demo — Dashboard Logic (v3)
+ *
+ *  Key change from v2:  metrics are only updated when InfluxDB
+ *  returns a NEW data point (different _time).  If the same
+ *  timestamp is seen twice the display keeps its previous
+ *  values so the user never sees spurious "0" readings.
+ * ══════════════════════════════════════════════════════════ */
+
+let pollTimer = null;
+let ctrlPollTimer = null;
+let prevCounters = {};
+let pathState = { p: true, r: true, corrupt: false };
+
+function getConfig() {
+  return {
+    url:    document.getElementById('influx-url').value.replace(/\/+$/, ''),
+    token:  document.getElementById('influx-token').value,
+    org:    document.getElementById('influx-org').value,
+    bucket: document.getElementById('influx-bucket').value,
+    ctrl:   document.getElementById('ctrl-url').value.replace(/\/+$/, ''),
+  };
+}
+
+/* ── InfluxDB Flux query ── */
+async function fluxQuery(query) {
+  const { url, token, org } = getConfig();
+  const resp = await fetch(`${url}/api/v2/query?org=${encodeURIComponent(org)}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/vnd.flux',
+      'Accept': 'application/csv',
+    },
+    body: query,
+  });
+  if (!resp.ok) throw new Error(`InfluxDB ${resp.status}`);
+  return parseCSV(await resp.text());
+}
+
+function parseCSV(csv) {
+  const rows = [];
+  const blocks = csv.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.trim().split(/\r?\n/);
+    if (lines.length < 2) continue;
+    let headerIdx = 0;
+    while (headerIdx < lines.length && lines[headerIdx].startsWith('#')) headerIdx++;
+    if (headerIdx >= lines.length) continue;
+    const header = lines[headerIdx].split(',');
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      if (lines[i].startsWith('#') || !lines[i].trim()) continue;
+      const cols = lines[i].split(',');
+      const obj = {};
+      for (let j = 0; j < header.length; j++) obj[header[j]] = cols[j];
+      rows.push(obj);
+    }
+  }
+  return rows;
+}
+
+/* ── DOM helpers ── */
+function setDot(id, ok)  { document.getElementById(id).className = 'dot ' + (ok ? 'green' : 'grey'); }
+function setText(id, t)  { const e = document.getElementById(id); if (e) e.textContent = t; }
+function setHTML(id, h)  { const e = document.getElementById(id); if (e) e.innerHTML = h; }
+function setNodeActive(id, active) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (active) el.classList.add('active');
+  else el.classList.remove('active');
+}
+function setGlowActive(id, active) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (active) el.classList.add('active');
+  else el.classList.remove('active');
+}
+
+/* ── Path visual update ── */
+function updatePathVisual(path, enabled) {
+  const flowEl  = document.getElementById(`flow-${path}`);
+  const labelEl = document.getElementById(`fl-${path}-label`);
+  const boxId   = `box-synth-${path}`;
+  const statusId = `m-synth-${path}-status`;
+  const mergeId  = `merge-dot-${path}`;
+
+  if (enabled) {
+    flowEl.classList.remove('disabled');
+    if (labelEl) labelEl.classList.remove('disabled');
+    document.getElementById(boxId).classList.add('active');
+    setText(statusId, '● ACTIVE');
+    document.getElementById(statusId).style.fill = 'var(--green)';
+    document.getElementById(mergeId).setAttribute('opacity', '0.8');
+    document.querySelectorAll(`.${path}-particle`).forEach(p => p.classList.remove('disabled'));
+  } else {
+    flowEl.classList.add('disabled');
+    if (labelEl) labelEl.classList.add('disabled');
+    document.getElementById(boxId).classList.remove('active');
+    setText(statusId, '● BLOCKED');
+    document.getElementById(statusId).style.fill = 'var(--red)';
+    document.getElementById(mergeId).setAttribute('opacity', '0.15');
+    document.querySelectorAll(`.${path}-particle`).forEach(p => p.classList.add('disabled'));
+    setText(`fl-${path}-throughput`, '0.00 Gbps');
+    setText(`fl-${path}-latency`, '—');
+  }
+}
+
+function updateRedundancyBanner() {
+  const banner = document.getElementById('redundancy-banner');
+  const icon   = document.getElementById('banner-icon');
+  const text   = document.getElementById('banner-text');
+  if (pathState.corrupt) {
+    banner.className = 'redundancy-banner degraded';
+    icon.textContent = '⚡';
+    text.textContent = 'Pkt Corruption — timestamp-hashed drops on P & R (ST 2022-7 reconstructs)';
+    text.style.color = 'var(--orange)';
+  } else if (pathState.p && pathState.r) {
+    banner.className = 'redundancy-banner protected';
+    icon.textContent = '🛡️';
+    text.textContent = 'ST 2022-7 Protected — Dual-path active';
+    text.style.color = 'var(--green)';
+  } else if (pathState.p || pathState.r) {
+    const active = pathState.p ? 'Primary (P)' : 'Redundant (R)';
+    const down   = pathState.p ? 'R' : 'P';
+    banner.className = 'redundancy-banner degraded';
+    icon.textContent = '⚠️';
+    text.textContent = `Degraded — ${active} only (${down} path down)`;
+    text.style.color = 'var(--orange)';
+  } else {
+    banner.className = 'redundancy-banner failed';
+    icon.textContent = '🔴';
+    text.textContent = 'No Signal — Both paths down';
+    text.style.color = 'var(--red)';
+  }
+}
+
+/* ── Toggle handler ── */
+async function togglePath(path, enabled) {
+  const { ctrl } = getConfig();
+  try {
+    const resp = await fetch(`${ctrl}/api/set/${path}?enabled=${enabled ? '1' : '0'}`, { method: 'POST' });
+    if (resp.ok) {
+      const data = await resp.json();
+      pathState.p = data.p;
+      pathState.r = data.r;
+      pathState.corrupt = data.corrupt || false;
+    } else {
+      pathState[path] = enabled;
+    }
+  } catch (e) {
+    pathState[path] = enabled;
+    console.warn('Control server error:', e.message);
+  }
+  syncToggleUI();
+}
+
+function syncToggleUI() {
+  ['p', 'r'].forEach(p => {
+    const el = document.getElementById(`toggle-${p}-status`);
+    el.textContent = pathState[p] ? 'ON' : 'OFF';
+    el.className = 'toggle-status ' + (pathState[p] ? 'on' : 'off');
+    document.getElementById(`toggle-${p}`).checked = pathState[p];
+  });
+  const cel = document.getElementById('toggle-corrupt-status');
+  cel.textContent = pathState.corrupt ? 'ON' : 'OFF';
+  cel.className = 'toggle-status ' + (pathState.corrupt ? 'on-danger' : 'off');
+  document.getElementById('toggle-corrupt').checked = pathState.corrupt;
+
+  updatePathVisual('p', pathState.p);
+  updatePathVisual('r', pathState.r);
+  updateRedundancyBanner();
+}
+
+/* ── Poll control server ── */
+async function pollControlServer() {
+  const { ctrl } = getConfig();
+  try {
+    const resp = await fetch(`${ctrl}/api/status`, { signal: AbortSignal.timeout(1500) });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    setDot('dot-ctrl', true);
+    if (data.p !== pathState.p || data.r !== pathState.r || (data.corrupt || false) !== pathState.corrupt) {
+      pathState.p = data.p;
+      pathState.r = data.r;
+      pathState.corrupt = data.corrupt || false;
+      syncToggleUI();
+    }
+  } catch {
+    setDot('dot-ctrl', false);
+  }
+}
+
+/* Throughput is now derived from actual NIC RX counters on the
+ * MTL receiver VFs (mtl_rx_p / mtl_rx_r), reported by the
+ * vf_stats_collector.  No synthetic computation needed — the
+ * VF rx_gbps naturally reflects muting (0), corruption (~50%),
+ * and normal operation (~2.6 Gbps per path). */
+
+function setParticleSpeed(fps) {
+  const dur = fps > 0 ? Math.max(0.3, 2.0 / (fps / 15)) : 3;
+  document.querySelectorAll('.particle animateMotion').forEach(am => {
+    am.setAttribute('dur', dur.toFixed(1) + 's');
+  });
+}
+
+/* ── Main poll: InfluxDB ──
+ *
+ * Metrics display strategy (v3):
+ *   - All values initialise to "—" in the DOM.
+ *   - Counters (FPS, throughput, drops, zerocopy) are ONLY updated
+ *     when InfluxDB returns a data point with a DIFFERENT _time than
+ *     the previously seen one.  If the same timestamp appears again
+ *     (InfluxDB hasn't received new data yet) we skip the entire
+ *     update so the display retains the last good reading.
+ *   - Latencies are only updated when the stage has samples > 0.
+ *   - This eliminates the "0 half the time" problem caused by
+ *     polling faster than the data source writes.
+ */
+async function poll() {
+  const { bucket } = getConfig();
+  try {
+    const countersQ = `
+from(bucket: "${bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_counters")
+  |> last()
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`;
+    const latQ = `
+from(bucket: "${bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_latency")
+  |> last()
+  |> pivot(rowKey: ["_time","stage"], columnKey: ["_field"], valueColumn: "_value")
+`;
+    const nicQ = `
+from(bucket: "${bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "nic_stats")
+  |> last()
+  |> pivot(rowKey: ["_time","entity","iface"], columnKey: ["_field"], valueColumn: "_value")
+`;
+    const [counters, latencies, nicStats] = await Promise.all([
+      fluxQuery(countersQ), fluxQuery(latQ), fluxQuery(nicQ).catch(() => [])
+    ]);
+    setDot('dot-influx', true);
+
+    let senderData = null, receiverData = null;
+    for (const row of counters) {
+      if (row.role === 'sender') senderData = row;
+      if (row.role === 'receiver') receiverData = row;
+    }
+
+    const hasSender = !!senderData;
+    const hasReceiver = !!receiverData;
+    setDot('dot-sender', hasSender);
+    setDot('dot-receiver', hasReceiver);
+    setNodeActive('box-sender', hasSender);
+    setNodeActive('box-receiver', hasReceiver);
+    setGlowActive('glow-sender', hasSender);
+    setGlowActive('glow-receiver', hasReceiver);
+
+    const frameBytes = 4800 * 1080;  // RFC 4175: 4800 bytes/line × 1080
+
+    if (hasSender) {
+      const influxTime = new Date(senderData._time).getTime();
+      const isNewData = influxTime !== prevCounters.sender_influx_time;
+
+      if (isNewData) {
+        const rxf   = parseInt(senderData.rx_frames || '0');
+        const bf    = parseInt(senderData.bridge_frames || '0');
+        const bc    = parseInt(senderData.bridge_copies || '0');
+        const drops = parseInt(senderData.rx_drops || '0');
+        const inc   = parseInt(senderData.rx_incomplete || '0');
+
+        /* FPS requires two successive data points with different
+         * timestamps to compute a delta.  On the very first poll
+         * we store the counters but do NOT update the display
+         * (it stays at "—" until we have a real delta). */
+        if (prevCounters.sender_influx_time) {
+          const dt = (influxTime - prevCounters.sender_influx_time) / 1000;
+          if (dt > 0) {
+            const currentFps = (rxf - (prevCounters.rx_frames || 0)) / dt;
+            const fps = Math.max(0, currentFps);
+
+            setText('mc-fps', fps.toFixed(1));
+            setText('m-bridge-fps', `${fps.toFixed(0)} fps`);
+            setParticleSpeed(fps);
+            /* Throughput labels are updated from actual NIC RX
+             * counters in the nic_stats section below. */
+          }
+        }
+
+        /* Non-delta counters can update on every new data point */
+        const zcPct = bf > 0 ? ((bf - bc) / bf * 100) : 0;
+        setHTML('mc-zerocopy', zcPct.toFixed(0) + '<span class="unit">%</span>');
+        setText('m-drops', `drops: ${drops}  inc: ${inc}`);
+        const dropsEl = document.getElementById('mc-drops');
+        dropsEl.textContent = drops.toString();
+        dropsEl.style.color = drops > 0 ? 'var(--red)' : 'var(--green)';
+        setText('mc-drops-detail', `incomplete: ${inc}`);
+
+        prevCounters.sender_influx_time = influxTime;
+        prevCounters.rx_frames = rxf;
+      }
+      /* else: same timestamp → skip, keep displayed values */
+
+      setNodeActive('box-synth-p', pathState.p && hasSender);
+      setNodeActive('box-synth-r', pathState.r && hasSender);
+    }
+
+    if (hasReceiver) {
+      const recvInfluxTime = new Date(receiverData._time).getTime();
+      const isNewRecvData = recvInfluxTime !== prevCounters.recv_influx_time;
+
+      if (isNewRecvData) {
+        const cf = parseInt(receiverData.consumer_frames || '0');
+
+        if (prevCounters.recv_influx_time) {
+          const dt = (recvInfluxTime - prevCounters.recv_influx_time) / 1000;
+          if (dt > 0) {
+            const rfps = (cf - (prevCounters.consumer_frames || 0)) / dt;
+            setText('m-recv-events', `${Math.max(0, rfps).toFixed(0)} fps`);
+          }
+        }
+
+        prevCounters.recv_influx_time = recvInfluxTime;
+        prevCounters.consumer_frames = cf;
+      }
+    }
+
+    /* Latencies — only update when we have actual samples.
+     * If a stage has no samples in this window, keep the
+     * previous display intact (do not overwrite with 0). */
+    const latMap = {};
+    for (const row of latencies) {
+      if (row.stage) latMap[row.stage] = {
+        min: parseInt(row.min || '0'), max: parseInt(row.max || '0'),
+        avg: parseInt(row.avg || '0'), p99: parseInt(row.p99 || row.max || '0'),
+        samples: parseInt(row.samples || '0'),
+      };
+    }
+
+    function showLat(stage, svgId, cardId, mmId) {
+      const d = latMap[stage];
+      if (!d || !d.samples) return;  // no data → keep previous display
+      if (svgId) setText(svgId, `${d.avg} µs`);
+      if (cardId) setHTML(cardId, `${d.avg}<span class="unit">µs</span>`);
+      if (mmId) setText(mmId, `min ${d.min} / p99 ${d.p99}`);
+    }
+
+    showLat('queue',    'm-queue-lat',     'mc-lat-queue',    'mc-lat-queue-mm');
+    showLat('bridge',   'm-bridge-lat',    'mc-lat-bridge',   'mc-lat-bridge-mm');
+    showLat('rdma',     null,              'mc-lat-rdma',     'mc-lat-rdma-mm');
+    showLat('total',    null,              'mc-lat-total',    'mc-lat-total-mm');
+    showLat('e2e',      null,              'mc-lat-e2e',      'mc-lat-e2e-mm');
+    showLat('consume',  'm-recv-consume',  'mc-lat-consume',  'mc-lat-consume-mm');
+
+    /* Flow path latencies */
+    if (latMap.bridge && latMap.bridge.samples) {
+      if (pathState.p) setText('fl-p-latency', `${latMap.bridge.avg} µs`);
+      if (pathState.r) setText('fl-r-latency', `${latMap.bridge.avg} µs`);
+    }
+    if (latMap.rdma && latMap.rdma.samples) setText('fl-rdma-latency', `${latMap.rdma.avg} µs`);
+    if (latMap.e2e && latMap.e2e.samples) setText('m-recv-e2e', `E2E: ${latMap.e2e.avg} µs`);
+
+    /* NIC / VF wire-level throughput from nic_stats.
+     * MTL RX (Total): sum of all MTL receiver VF RX counters
+     *   — mtl_rx_p (poc P-path RX), mtl_rx_r (poc R-path RX),
+     *     poc14_tx_r (poc_14 14-stream RX VF5 rx_gbps),
+     *     comp_rx_p (poc_8k compositor RX P VF6), comp_rx_r (R VF7),
+     *     sender_8k_rx (poc_8k sender MTL RX VF0@ens255np0).
+     * MTL TX (Total): sum of all synth TX VF TX counters
+     *   — synth_tx_p (poc P-path TX), synth_tx_r (poc R-path TX),
+     *     poc14_tx_p (poc_14 14-stream TX VF4 tx_gbps). */
+    chartState.lastNic.mtl = 0;
+    chartState.lastNic.mtlTx = 0;
+    let nicRxP = 0, nicRxR = 0;
+    for (const row of nicStats) {
+      const role = row.role || '';
+      const txG  = parseFloat(row.tx_gbps || '0');
+      const rxG  = parseFloat(row.rx_gbps || '0');
+      if (role === 'rdma_tx')       chartState.lastNic.rdma = txG;
+      if (role === 'mtl_rx_p')      { nicRxP = rxG; chartState.lastNic.mtl += rxG; }
+      if (role === 'mtl_rx_r')      { nicRxR = rxG; chartState.lastNic.mtl += rxG; }
+      if (role === 'poc14_tx_r')    chartState.lastNic.mtl += rxG;
+      if (role === 'comp_rx_p')     chartState.lastNic.mtl += rxG;
+      if (role === 'comp_rx_r')     chartState.lastNic.mtl += rxG;
+      if (role === 'sender_8k_rx')  chartState.lastNic.mtl += rxG;
+      if (role === 'synth_tx_p')    chartState.lastNic.mtlTx += txG;
+      if (role === 'synth_tx_r')    chartState.lastNic.mtlTx += txG;
+      if (role === 'poc14_tx_p')    chartState.lastNic.mtlTx += txG;
+    }
+    /* RDMA throughput note: The sender writes full frame buffers
+     * over RDMA regardless of frame completeness
+     * (--accept-incomplete), so the NIC counter stays ~2.6 Gbps
+     * even when only one path is up under corruption — it sends
+     * stale data for the missing slices.  No adjustment needed;
+     * the raw NIC counter is the true wire-level throughput. */
+
+    /* Update SVG flow labels with actual NIC-level throughput */
+    if (pathState.p) setText('fl-p-throughput', nicRxP.toFixed(2) + ' Gbps');
+    if (pathState.r) setText('fl-r-throughput', nicRxR.toFixed(2) + ' Gbps');
+    setText('fl-rdma-throughput', chartState.lastNic.rdma.toFixed(2) + ' Gbps');
+
+    /* Push data to live charts */
+    const latSrc = latMap.e2e || latMap.total || null;
+    if (latSrc && latSrc.samples) chartState.lastLat = { avg: latSrc.avg, p99: latSrc.p99, min: latSrc.min };
+    chartPush(chartState.lastLat, chartState.lastNic);
+
+    setText('last-update', 'Updated: ' + new Date().toLocaleTimeString());
+  } catch (e) {
+    setDot('dot-influx', false);
+    setText('last-update', 'Error: ' + e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+ *  Live Sparkline Charts — Throughput & E2E Latency
+ * ══════════════════════════════════════════════════════════ */
+const chartState = {
+  lat: { avg: [], p99: [], min: [] },
+  nic: { rdma: [], mtl: [], mtlTx: [] },
+  maxPts: 90,   /* 90 × 2 s = 3 min rolling window */
+  lastLat: { avg: 0, p99: 0, min: 0 },
+  lastNic: { rdma: 0, mtl: 0, mtlTx: 0 },
+};
+
+function chartPush(lat, nic) {
+  const s = chartState;
+  s.lat.avg.push(lat.avg); s.lat.p99.push(lat.p99); s.lat.min.push(lat.min);
+  s.nic.rdma.push(nic.rdma); s.nic.mtl.push(nic.mtl); s.nic.mtlTx.push(nic.mtlTx);
+  while (s.lat.avg.length > s.maxPts) {
+    s.lat.avg.shift(); s.lat.p99.shift(); s.lat.min.shift();
+    s.nic.rdma.shift(); s.nic.mtl.shift(); s.nic.mtlTx.shift();
+  }
+  drawAllCharts();
+}
+
+function drawAllCharts() {
+  drawChart('chart-latency', [
+    { data: chartState.lat.avg, color: '#79c0ff', glow: 'rgba(121,192,255,0.35)' },
+    { data: chartState.lat.p99, color: '#d29922', glow: 'rgba(210,153,34,0.30)' },
+    { data: chartState.lat.min, color: '#556070', glow: 'rgba(85,96,112,0.20)' },
+  ], 'µs', 'chart-lat-latest', 'var(--cyan)', false);
+  drawChart('chart-nic', [
+    { data: chartState.nic.rdma,  color: '#d29922', glow: 'rgba(210,153,34,0.35)' },
+    { data: chartState.nic.mtl,   color: '#3fb950', glow: 'rgba(63,185,80,0.35)' },
+    { data: chartState.nic.mtlTx, color: '#79c0ff', glow: 'rgba(121,192,255,0.30)' },
+  ], 'Gbps', null);
+  /* Update NIC throughput badges individually */
+  const fmt = v => (v < 10 ? v.toFixed(1) : Math.round(v));
+  const setNic = (id, arr) => {
+    const el = document.getElementById(id);
+    if (el && arr.length) el.textContent = fmt(arr[arr.length - 1]) + ' Gbps';
+  };
+  setNic('chart-nic-rdma', chartState.nic.rdma);
+  setNic('chart-nic-mtl',  chartState.nic.mtl);
+  setNic('chart-nic-tx',   chartState.nic.mtlTx);
+}
+
+function niceStep(maxVal, steps) {
+  if (maxVal <= 0) return 1;
+  const raw = maxVal / steps;
+  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+  const frac = raw / exp;
+  let nice;
+  if (frac <= 1.5) nice = 1;
+  else if (frac <= 3) nice = 2;
+  else if (frac <= 7) nice = 5;
+  else nice = 10;
+  return nice * exp;
+}
+
+function drawChart(canvasId, series, unit, latestId, latestColor, logScale) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (w < 10 || h < 10) return;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const ml = 52, mr = 14, mt = 6, mb = 22;
+  const cw = w - ml - mr, ch = h - mt - mb;
+  const maxPts = chartState.maxPts;
+  const nPts = series[0].data.length;
+  if (nPts < 2) {
+    ctx.fillStyle = '#3a4a5e';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for data\u2026', w / 2, h / 2);
+    return;
+  }
+
+  /* Y-axis auto-range */
+  let yMax = 0, yMinPos = Infinity;
+  for (const s of series)
+    for (const v of s.data) {
+      if (v > yMax) yMax = v;
+      if (v > 0 && v < yMinPos) yMinPos = v;
+    }
+  if (yMax <= 0) yMax = 1;
+  if (yMinPos === Infinity) yMinPos = 1;
+
+  /* yMap: value → Y pixel position */
+  let yMap, gridTicks;  /* gridTicks = array of { val, y } */
+  const gridN = 4;
+
+  if (logScale && yMax > 0) {
+    /* Log scale: grid at powers of 10 spanning data range */
+    const logFloor = Math.floor(Math.log10(Math.max(yMinPos, 0.01)));
+    const logCeil  = Math.ceil(Math.log10(yMax * 1.2));
+    const logMin   = logFloor;
+    const logMax   = Math.max(logCeil, logMin + 1);
+    yMap = (v) => {
+      if (v <= 0) v = Math.pow(10, logMin);
+      const frac = (Math.log10(v) - logMin) / (logMax - logMin);
+      return mt + ch - frac * ch;
+    };
+    gridTicks = [];
+    for (let p = logMin; p <= logMax; p++) {
+      const val = Math.pow(10, p);
+      gridTicks.push({ val, y: yMap(val) });
+    }
+  } else {
+    /* Linear scale */
+    const yStep = niceStep(yMax * 1.1, gridN);
+    const nTicks = Math.max(gridN, Math.ceil((yMax * 1.1) / yStep));
+    yMax = yStep * nTicks;
+    yMap = (v) => mt + ch - (v / yMax) * ch;
+    gridTicks = [];
+    for (let i = 0; i <= nTicks; i++) {
+      const val = yStep * i;
+      gridTicks.push({ val, y: yMap(val) });
+    }
+  }
+
+  const xStep = cw / (maxPts - 1);
+  const offX  = (maxPts - nPts) * xStep;
+
+  /* Grid lines */
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#1a2430';
+  ctx.fillStyle = '#556070';
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  for (const tick of gridTicks) {
+    ctx.beginPath(); ctx.moveTo(ml, tick.y); ctx.lineTo(ml + cw, tick.y); ctx.stroke();
+    ctx.fillText(tick.val < 10 ? tick.val.toFixed(1) : Math.round(tick.val), ml - 6, tick.y + 4);
+  }
+  /* X-axis time ticks */
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#3e4c5e';
+  const totalSec = (nPts - 1) * 2;
+  for (let sec = 0; sec <= totalSec && sec <= (maxPts - 1) * 2; sec += 30) {
+    const idx = nPts - 1 - sec / 2;
+    if (idx < 0) continue;
+    const x = ml + offX + idx * xStep;
+    if (x < ml - 2) continue;
+    ctx.fillText(sec === 0 ? 'now' : `-${sec}s`, x, mt + ch + 16);
+  }
+
+  /* Draw each series (back to front so first series is on top) */
+  for (let si = series.length - 1; si >= 0; si--) {
+    const s = series[si];
+    if (s.data.length < 2) continue;
+
+    /* Build path */
+    ctx.beginPath();
+    for (let i = 0; i < s.data.length; i++) {
+      const x = ml + offX + i * xStep;
+      const y = yMap(s.data[i]);
+      if (i === 0) { ctx.moveTo(x, y); continue; }
+      const px = ml + offX + (i - 1) * xStep;
+      const py = yMap(s.data[i - 1]);
+      const cpx = (px + x) / 2;
+      ctx.bezierCurveTo(cpx, py, cpx, y, x, y);
+    }
+    /* Stroke with glow */
+    ctx.save();
+    ctx.shadowColor = s.glow;
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.restore();
+
+    /* Gradient fill under the curve */
+    const lastX = ml + offX + (s.data.length - 1) * xStep;
+    const firstX = ml + offX;
+    ctx.lineTo(lastX, mt + ch);
+    ctx.lineTo(firstX, mt + ch);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, mt, 0, mt + ch);
+    grad.addColorStop(0, s.color + '22');
+    grad.addColorStop(1, s.color + '03');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    /* Latest-value dot + glow ring */
+    const lx = lastX;
+    const ly = yMap(s.data[s.data.length - 1]);
+    ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = s.color; ctx.fill();
+    ctx.beginPath(); ctx.arc(lx, ly, 7, 0, Math.PI * 2);
+    ctx.fillStyle = s.glow; ctx.fill();
+  }
+
+  /* Update latest value badge */
+  if (latestId && series[0].data.length) {
+    const v = series[0].data[series[0].data.length - 1];
+    const el = document.getElementById(latestId);
+    if (el) {
+      el.textContent = (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ' + unit;
+      el.style.color = latestColor;
+    }
+  }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (ctrlPollTimer) clearInterval(ctrlPollTimer);
+  poll();
+  pollControlServer();
+  pollTimer = setInterval(poll, 2000);
+  ctrlPollTimer = setInterval(pollControlServer, 1000);
+}
+
+/* ── Auto-start: connect to InfluxDB immediately on page load / F5 ── */
+window.addEventListener('load', () => {
+  updatePathVisual('p', true);
+  updatePathVisual('r', true);
+  updateRedundancyBanner();
+  startPolling();
+});
+
+/* ── MJPEG status ── */
+window.addEventListener('load', () => {
+  const img = document.getElementById('thumb-img');
+  img.addEventListener('load', () => {
+    document.getElementById('thumb-status').textContent = '✓ MJPEG stream connected';
+  });
+  img.addEventListener('error', () => {
+    document.getElementById('thumb-status').textContent = '✗ Stream disconnected — check receiver';
+  });
+});
+</script>
+</body>
+</html>

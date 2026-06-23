@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTL-MXL POC — 16-Stream Pipeline</title>
+<style>
+  /* ══════════════════════════════════════════════
+   * CSS Variables & Theme — 4K optimised
+   * ══════════════════════════════════════════════ */
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --card-inner: #1c2129;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --dim: #8b949e;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #79c0ff;
+    --th: 110px;
+    --row-gap: 3px;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(ellipse at 50% 0%, rgba(88,166,255,0.04) 0%, transparent 60%);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 18px;
+    height: 100vh;
+    padding: 6px 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Header
+   * ══════════════════════════════════════════════ */
+  .header {
+    text-align: center;
+    flex-shrink: 0;
+    padding-bottom: 4px;
+  }
+  .header h1 {
+    font-size: 30px;
+    font-weight: 700;
+    color: #f0f6fc;
+    line-height: 1.2;
+  }
+  .header h1 .accent { color: var(--blue); }
+  .header .sub {
+    color: var(--dim);
+    font-size: 14px;
+    margin-top: 2px;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Summary Bar
+   * ══════════════════════════════════════════════ */
+  .summary-bar {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 5px 0;
+    flex-wrap: wrap;
+  }
+  .sum-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 5px 22px;
+    text-align: center;
+    min-width: 110px;
+    transition: border-color 0.3s;
+  }
+  .sum-card:hover { border-color: var(--cyan); }
+  .sum-card .lbl {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--dim);
+    margin-bottom: 2px;
+  }
+  .sum-card .val {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .c-ok   { color: var(--green); }
+  .c-warn { color: var(--orange); }
+  .c-err  { color: var(--red); }
+  .c-blue { color: var(--blue); }
+  .c-purp { color: var(--purple); }
+  .c-dim  { color: var(--dim); }
+
+  .influx-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    margin-right: 4px;
+    vertical-align: middle;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .influx-dot.ok {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+
+  /* ══════════════════════════════════════════════
+   * Config Bar
+   * ══════════════════════════════════════════════ */
+  .config-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 4px 0 2px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    border-top: 1px solid var(--border);
+    margin-top: auto;
+  }
+  .config-bar label { color: var(--dim); }
+  .config-bar input {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .config-bar button {
+    background: var(--blue);
+    color: #000;
+    border: none;
+    border-radius: 5px;
+    padding: 4px 14px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .config-bar button:hover { opacity: 0.85; }
+
+  /* ══════════════════════════════════════════════
+   * Pipeline Grid — 3 outer columns:
+   *   TX thumb | middle-lane | RX thumb
+   * ══════════════════════════════════════════════ */
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    row-gap: var(--row-gap);
+    column-gap: 16px;
+    flex: 1;
+    min-height: 0;
+    align-items: center;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 40px;
+  }
+
+  /* Column headers */
+  .col-hdr {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 3px 0;
+    color: var(--dim);
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1px;
+  }
+  .col-hdr.h-tx { color: var(--blue); border-color: rgba(88,166,255,0.3); }
+  .col-hdr.h-rx { color: var(--purple); border-color: rgba(188,140,255,0.3); }
+
+  /* ══════════════════════════════════════════════
+   * Thumbnails
+   * ══════════════════════════════════════════════ */
+  .thumb-wrap {
+    position: relative;
+    width: calc(var(--th) * 16 / 9);
+    height: var(--th);
+    background: #0a0c10;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1.5px solid var(--border);
+    transition: border-color 0.4s, box-shadow 0.4s;
+    flex-shrink: 0;
+  }
+  .thumb-wrap.active {
+    border-color: var(--green);
+    box-shadow: 0 0 10px rgba(63,185,80,0.18);
+  }
+  .thumb-wrap img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb-ph {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--dim);
+    font-size: 14px;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .thumb-badge {
+    position: absolute;
+    top: 3px;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: var(--mono);
+    background: rgba(0,0,0,0.75);
+    padding: 0 6px;
+    border-radius: 4px;
+    z-index: 2;
+    line-height: 1.5;
+    backdrop-filter: blur(4px);
+  }
+  .thumb-badge.b-tx { left: 3px; color: var(--blue); }
+  .thumb-badge.b-rx { right: 3px; color: var(--purple); }
+
+  /* ══════════════════════════════════════════════
+   * Middle Lane — 5-column sub-grid per stream:
+   *   [Card] [Arrow] [Card] [Arrow] [Card]
+   *   Cards use 1fr to fill available space evenly
+   * ══════════════════════════════════════════════ */
+  .mid-lane {
+    display: grid;
+    grid-template-columns: 40px 1fr 56px 1fr 56px 1fr 40px;
+    align-items: center;
+    gap: 0;
+    transition: opacity 0.4s;
+  }
+  .mid-lane.off { opacity: 0.22; }
+
+  /* ── Animated arrow connectors ── */
+  .arrow-conn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 32px;
+    user-select: none;
+    overflow: hidden;
+  }
+  /* Static arrow line + head */
+  .arrow-conn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    right: 6px;
+    height: 2px;
+    background: var(--dim);
+    opacity: 0.35;
+    transition: background 0.3s, opacity 0.3s;
+  }
+  .arrow-conn::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    width: 0; height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid var(--dim);
+    transform: translateY(-50%);
+    opacity: 0.5;
+    transition: border-left-color 0.3s, opacity 0.3s;
+  }
+  .mid-lane:not(.off) .arrow-conn::before {
+    opacity: 0.5;
+  }
+  .mid-lane:not(.off) .arrow-conn::after {
+    opacity: 0.8;
+  }
+  /* Color arrows — each arrow uses one consistent color including head */
+  .mid-lane:not(.off) .arrow-conn.ac-0::before { background: var(--blue); }
+  .mid-lane:not(.off) .arrow-conn.ac-0::after  { border-left-color: var(--blue); }
+  .mid-lane:not(.off) .arrow-conn.ac-1::before { background: var(--cyan); }
+  .mid-lane:not(.off) .arrow-conn.ac-1::after  { border-left-color: var(--cyan); }
+  .mid-lane:not(.off) .arrow-conn.ac-2::before { background: var(--green); }
+  .mid-lane:not(.off) .arrow-conn.ac-2::after  { border-left-color: var(--green); }
+  .mid-lane:not(.off) .arrow-conn.ac-3::before { background: var(--purple); }
+  .mid-lane:not(.off) .arrow-conn.ac-3::after  { border-left-color: var(--purple); }
+
+  /* ── Animated particles on arrows ── */
+  @keyframes arrowPulse {
+    0%   { left: 2px;  opacity: 0; }
+    10%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { left: calc(100% - 8px); opacity: 0; }
+  }
+  .arrow-dot {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: arrowPulse 1.4s linear infinite;
+    z-index: 1;
+  }
+  .arrow-dot.ad-1 {
+    width: 6px; height: 6px;
+    animation-delay: 0s;
+  }
+  .arrow-dot.ad-2 {
+    width: 4px; height: 4px;
+    animation-delay: -0.7s;
+  }
+  .ac-0 .arrow-dot { background: var(--blue); filter: drop-shadow(0 0 4px var(--blue)); }
+  .ac-1 .arrow-dot { background: var(--cyan); filter: drop-shadow(0 0 4px var(--cyan)); }
+  .ac-2 .arrow-dot { background: var(--green); filter: drop-shadow(0 0 4px var(--green)); }
+  .ac-3 .arrow-dot { background: var(--purple); filter: drop-shadow(0 0 4px var(--purple)); }
+  .mid-lane.off .arrow-dot { display: none; }
+
+  /* ══════════════════════════════════════════════
+   * Stage Cards
+   * ══════════════════════════════════════════════ */
+  .stage-card {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 12px;
+    transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+    min-height: 0;
+    text-align: center;
+  }
+
+  /* ── Active glow per accent ── */
+  .mid-lane:not(.off) .sc-rx {
+    border-color: rgba(88,166,255,0.35);
+    box-shadow: 0 0 8px rgba(88,166,255,0.08);
+  }
+  .mid-lane:not(.off) .sc-bridge {
+    border-color: rgba(63,185,80,0.35);
+    box-shadow: 0 0 8px rgba(63,185,80,0.08);
+  }
+  .mid-lane:not(.off) .sc-sink {
+    border-color: rgba(188,140,255,0.35);
+    box-shadow: 0 0 8px rgba(188,140,255,0.08);
+  }
+
+  /* ── Drop state on bridge card ── */
+  .mid-lane.has-drops .sc-bridge {
+    border-color: var(--orange);
+    box-shadow: 0 0 10px rgba(210,153,34,0.2);
+  }
+
+  /* ── Card header: title + subtitle on one line ── */
+  .sc-hdr {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 3px;
+    line-height: 1.2;
+  }
+  .sc-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .sc-rx   .sc-title { color: var(--blue); }
+  .sc-bridge .sc-title { color: var(--green); }
+  .sc-sink .sc-title { color: var(--purple); }
+  .sc-sub {
+    font-size: 11px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  /* Stream badge inside first card header */
+  .sc-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(88,166,255,0.1);
+    border: 1px solid rgba(88,166,255,0.25);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 700;
+    min-width: 26px;
+    padding: 0 5px;
+    border-radius: 4px;
+    line-height: 1.3;
+  }
+
+  /* ── Metric pills row — horizontal, single line ── */
+  .pill-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--card-inner);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 10px;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 0.3s;
+  }
+  .pill .p-lbl {
+    color: var(--dim);
+    font-size: 12px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .pill .p-val {
+    font-weight: 600;
+  }
+
+  /* Pill value colors by card context */
+  .sc-rx   .pill .p-val { color: var(--cyan); }
+  .sc-bridge .pill .p-val { color: var(--green); }
+  .sc-sink .pill .p-val { color: var(--purple); }
+
+  /* Drops pill special styling */
+  .pill.pill-drops .p-val {
+    color: var(--green);
+    transition: color 0.3s;
+  }
+  .pill.pill-drops.has-drops .p-val {
+    color: var(--red);
+    font-weight: 800;
+  }
+  .pill.pill-drops.has-drops {
+    border-color: var(--red);
+  }
+
+  /* E2E pill stands out */
+  .pill.pill-e2e .p-val {
+    color: var(--cyan);
+    font-weight: 700;
+  }
+
+  /* P99 sub-value inside latency pills */
+  .p-max {
+    font-size: 0.7em;
+    color: var(--dim);
+    font-weight: 400;
+    opacity: 0.75;
+    border-left: 1px solid var(--border);
+    padding-left: 5px;
+    margin-left: 3px;
+  }
+
+  /* ══════════════════════════════════════════════
+   * Responsive sizing
+   * ══════════════════════════════════════════════ */
+  @media (max-height: 1100px) {
+    :root { --row-gap: 2px; }
+    body { padding: 4px 12px; font-size: 16px; }
+    .header h1 { font-size: 24px; }
+    .header .sub { font-size: 12px; }
+    .header { padding-bottom: 2px; }
+    .summary-bar { padding: 3px 0; gap: 8px; }
+    .sum-card { padding: 3px 14px; min-width: 90px; }
+    .sum-card .lbl { font-size: 10px; }
+    .sum-card .val { font-size: 20px; }
+    .config-bar { font-size: 11px; }
+    .config-bar input { font-size: 11px; padding: 2px 4px; }
+    .config-bar button { font-size: 11px; padding: 3px 10px; }
+    .col-hdr { font-size: 11px; padding: 2px 0; }
+    .sc-title { font-size: 11px; }
+    .sc-sub { font-size: 10px; }
+    .sc-badge { font-size: 14px; min-width: 22px; }
+    .pill { font-size: 14px; padding: 1px 8px; gap: 4px; }
+    .pill .p-lbl { font-size: 10px; }
+    .pill-row { gap: 5px; }
+    .stage-card { padding: 3px 8px; }
+    .sc-hdr { margin-bottom: 2px; }
+    .thumb-badge { font-size: 14px; }
+    .mid-lane { grid-template-columns: 30px 1fr 40px 1fr 40px 1fr 30px; }
+    .pipeline-grid { padding: 0 20px; }
+    .p-max { font-size: 0.65em; padding-left: 3px; margin-left: 2px; }
+  }
+  @media (min-height: 1800px) {
+    .header h1 { font-size: 34px; }
+    .header .sub { font-size: 16px; }
+    .sum-card .val { font-size: 28px; }
+    .sum-card .lbl { font-size: 14px; }
+    .pill { font-size: 18px; padding: 3px 12px; }
+    .pill .p-lbl { font-size: 13px; }
+    .sc-title { font-size: 15px; }
+    .sc-badge { font-size: 18px; }
+    .thumb-badge { font-size: 18px; }
+    .stage-card { padding: 7px 14px; }
+    .mid-lane { grid-template-columns: 50px 1fr 68px 1fr 68px 1fr 50px; }
+    .pipeline-grid { padding: 0 60px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <h1><span class="accent">MTL-MXL</span> POC — 16-Stream Pipeline</h1>
+  <div class="sub">ST 2110-20 → MXL Fabrics RDMA &bull; 16&times; 1080p60 non-redundant streams</div>
+</div>
+
+<!-- ── Summary Bar ── -->
+<div class="summary-bar">
+  <div class="sum-card">
+    <div class="lbl"><span class="influx-dot" id="influxDot"></span> Active Streams</div>
+    <div class="val c-ok" id="sumActive">0 / 16</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Avg TX FPS</div>
+    <div class="val c-blue" id="sumTxFps">&mdash;</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Avg RX FPS</div>
+    <div class="val c-purp" id="sumRxFps">&mdash;</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Total Drops</div>
+    <div class="val c-ok" id="sumDrops">0</div>
+  </div>
+  <div class="sum-card">
+    <div class="lbl">Updated</div>
+    <div class="val c-dim" style="font-size:0.75em" id="sumTime">&mdash;</div>
+  </div>
+</div>
+
+<!-- ── Pipeline Grid (populated by JS) ── -->
+<div class="pipeline-grid" id="pipelineGrid"></div>
+
+<!-- ── Config Bar (bottom) ── -->
+<div class="config-bar">
+  <label>TX:</label>
+  <input id="cfgTxHost" value="localhost" style="width:100px">:<input id="cfgTxPort" value="8085" type="number" style="width:48px">
+  <label>RX:</label>
+  <input id="cfgRxHost" value="localhost" style="width:100px">:<input id="cfgRxPort" value="8085" type="number" style="width:48px">
+  <label>Influx:</label>
+  <input id="cfgInfluxHost" value="localhost" style="width:100px">:<input id="cfgInfluxPort" value="8086" type="number" style="width:48px">
+  <label>N:</label>
+  <input id="cfgN" value="14" type="number" style="width:36px" min="1" max="16">
+  <button onclick="applyConfig()">Apply</button>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+ * MTL-MXL POC — 16-Stream Pipeline Dashboard v4
+ * Three-column layout with three distinct stage cards per row
+ * Optimised for 4K: large fonts, horizontal pill metrics
+ * High-performance snapshot scheduler for near-realtime thumbnails
+ * ══════════════════════════════════════════════════════════════ */
+
+const CFG = {
+  txHost: 'localhost',   txPort: 8085,
+  rxHost: 'localhost',   rxPort: 8085,
+  influxHost: 'localhost', influxPort: 8086,
+  numStreams: 14,
+  pollInterval: 2000,
+};
+
+let _snapScheduler = null;
+let _metricsTimer = null;
+let _prev = {};
+
+/* ══════════════════════════════════════════════════════════════
+ * Apply Config
+ * ══════════════════════════════════════════════════════════════ */
+function applyConfig() {
+  CFG.txHost     = document.getElementById('cfgTxHost').value;
+  CFG.txPort     = +document.getElementById('cfgTxPort').value;
+  CFG.rxHost     = document.getElementById('cfgRxHost').value;
+  CFG.rxPort     = +document.getElementById('cfgRxPort').value;
+  CFG.influxHost = document.getElementById('cfgInfluxHost').value;
+  CFG.influxPort = +document.getElementById('cfgInfluxPort').value;
+  CFG.numStreams = +document.getElementById('cfgN').value;
+  _prev = {};
+  sizeThumb();
+  buildPipeline();
+  if (_snapScheduler) _snapScheduler.destroy();
+  _snapScheduler = new SnapshotScheduler();
+  _snapScheduler.start();
+  if (_metricsTimer) clearInterval(_metricsTimer);
+  poll();
+  _metricsTimer = setInterval(poll, CFG.pollInterval);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Responsive thumbnail sizing — target 110-140px
+ * ══════════════════════════════════════════════════════════════ */
+function sizeThumb() {
+  const overhead = 140;
+  const n = CFG.numStreams;
+  const gap = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-gap')) || 3;
+  const avail = window.innerHeight - overhead;
+  const th = Math.max(50, Math.min(140, Math.floor((avail - (n + 1) * gap) / n)));
+  document.documentElement.style.setProperty('--th', th + 'px');
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Build Pipeline Grid
+ * Outer: TX thumb | middle lane (3 cards + 2 arrows) | RX thumb
+ * ══════════════════════════════════════════════════════════════ */
+function buildPipeline() {
+  const grid = document.getElementById('pipelineGrid');
+  let h = '';
+
+  /* Column headers */
+  h += '<div class="col-hdr h-tx">\u25B6 Sender</div>';
+  h += '<div class="col-hdr" style="text-align:center;color:var(--dim)">Pipeline Stages</div>';
+  h += '<div class="col-hdr h-rx">Receiver \u25C0</div>';
+
+  for (let i = 0; i < CFG.numStreams; i++) {
+    const txUrl = `http://${CFG.txHost}:${CFG.txPort}/snapshot/tx/${i}`;
+    const rxUrl = `http://${CFG.rxHost}:${CFG.rxPort}/snapshot/rx/${i}`;
+
+    /* ── TX thumbnail ── */
+    h += `<div class="thumb-wrap" id="tw-tx-${i}">
+      <img id="img-tx-${i}" data-snap-url="${txUrl}" style="display:none" alt="">
+      <div class="thumb-ph" id="ph-tx-${i}">\u2014</div>
+      <span class="thumb-badge b-tx">${i}</span>
+    </div>`;
+
+    /* ── Middle lane: 3 cards + 4 arrows ── */
+    h += `<div class="mid-lane off" id="row-${i}">`;
+
+    /* Arrow 0 — TX thumb → MTL RX */
+    h += '<div class="arrow-conn ac-0"><span class="arrow-dot ad-1"></span><span class="arrow-dot ad-2"></span></div>';
+
+    /* Card 1: MTL RX (blue) */
+    h += `<div class="stage-card sc-rx" id="card-rx-${i}">
+      <div class="sc-hdr">
+        <span class="sc-title">MTL RX</span>
+        <span class="sc-sub">ST 2110 Ingest</span>
+        <span class="sc-badge">${i}</span>
+      </div>
+      <div class="pill-row">
+        <span class="pill"><span class="p-lbl">TX FPS</span><span class="p-val" id="txfps-${i}">\u2014</span></span>
+        <span class="pill"><span class="p-lbl">RX</span><span class="p-val" id="rxus-${i}">\u2014</span><span class="p-max" id="rxmax-${i}"></span></span>
+      </div>
+    </div>`;
+
+    /* Arrow 1 — MTL RX → Bridge */
+    h += '<div class="arrow-conn ac-1"><span class="arrow-dot ad-1"></span><span class="arrow-dot ad-2"></span></div>';
+
+    /* Card 2: Bridge + RDMA (green) */
+    h += `<div class="stage-card sc-bridge" id="card-bridge-${i}">
+      <div class="sc-hdr">
+        <span class="sc-title">MXL Bridge + RDMA</span>
+        <span class="sc-sub">Fabric Transfer</span>
+      </div>
+      <div class="pill-row">
+        <span class="pill"><span class="p-lbl">Bridge</span><span class="p-val" id="bridgeus-${i}">\u2014</span><span class="p-max" id="bridgemax-${i}"></span></span>
+        <span class="pill"><span class="p-lbl">RDMA</span><span class="p-val" id="rdmaus-${i}">\u2014</span><span class="p-max" id="rdmamax-${i}"></span></span>
+        <span class="pill pill-drops" id="pill-drops-${i}"><span class="p-lbl">Drops</span><span class="p-val" id="drops-${i}">0</span></span>
+      </div>
+    </div>`;
+
+    /* Arrow 2 — Bridge → Sink */
+    h += '<div class="arrow-conn ac-2"><span class="arrow-dot ad-1"></span><span class="arrow-dot ad-2"></span></div>';
+
+    /* Card 3: Sink + Consumer (purple) */
+    h += `<div class="stage-card sc-sink" id="card-sink-${i}">
+      <div class="sc-hdr">
+        <span class="sc-title">MXL Sink</span>
+        <span class="sc-sub">Consumer</span>
+      </div>
+      <div class="pill-row">
+        <span class="pill"><span class="p-lbl">RX FPS</span><span class="p-val" id="rxfps-${i}">\u2014</span></span>
+        <span class="pill"><span class="p-lbl">Sink</span><span class="p-val" id="sinkus-${i}">\u2014</span><span class="p-max" id="sinkmax-${i}"></span></span>
+        <span class="pill pill-e2e"><span class="p-lbl">E2E</span><span class="p-val" id="e2eus-${i}">\u2014</span><span class="p-max" id="e2emax-${i}"></span></span>
+      </div>
+    </div>`;
+
+    /* Arrow 3 — Sink → RX thumb */
+    h += '<div class="arrow-conn ac-3"><span class="arrow-dot ad-1"></span><span class="arrow-dot ad-2"></span></div>';
+
+    h += '</div>'; /* close mid-lane */
+
+    /* ── RX thumbnail ── */
+    h += `<div class="thumb-wrap" id="tw-rx-${i}">
+      <img id="img-rx-${i}" data-snap-url="${rxUrl}" style="display:none" alt="">
+      <div class="thumb-ph" id="ph-rx-${i}">\u2014</div>
+      <span class="thumb-badge b-rx">${i}</span>
+    </div>`;
+  }
+
+  grid.innerHTML = h;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * High-Performance Snapshot Scheduler
+ * ──────────────────────────────────────────────────────────────
+ * Centralised, concurrency-controlled image fetcher that
+ * maximises thumbnail refresh rate within browser limits.
+ *
+ * Design:
+ *  - Per-origin connection pool (6 concurrent per host:port,
+ *    matching Chrome/Firefox HTTP/1.1 connection limit)
+ *  - Fair round-robin: every stream gets equal refresh time
+ *  - Zero artificial delay: fetches fire back-to-back
+ *  - Blob-URL double-buffering: flicker-free frame swaps
+ *  - 2 s fetch timeout prevents hung connections from stalling
+ *  - Generation counter enables clean cancellation on config
+ *    changes without dangling async callbacks
+ *  - 250 ms error backoff prevents tight spin loops
+ *
+ * Expected throughput (LAN, 10 KB JPEG, ~40 ms round-trip):
+ *   6 slots × 25 fetches/s ÷ 12 streams ≈ 12.5 fps/stream
+ * ══════════════════════════════════════════════════════════════ */
+class SnapshotScheduler {
+  constructor({ concurrency = 6, timeout = 2000 } = {}) {
+    this._max  = concurrency;  /* max concurrent fetches per origin */
+    this._tout = timeout;      /* per-fetch AbortController timeout */
+    this._gen  = 0;            /* generation for cancellation        */
+    this._q    = new Map();    /* origin → entry[]  (round-robin)    */
+    this._act  = new Map();    /* origin → active count              */
+    this._all  = [];           /* every entry (for cleanup)          */
+  }
+
+  /** Discover all <img data-snap-url> and begin fetching. */
+  start() {
+    this.stop();
+    this._gen++;
+    this._q.clear();
+    this._act.clear();
+    this._all = [];
+
+    document.querySelectorAll('img[data-snap-url]').forEach(img => {
+      const url = img.dataset.snapUrl;
+      if (!url) return;
+      let origin;
+      try { origin = new URL(url).origin; } catch { return; }
+
+      const entry = { img, url, origin, blob: null, ok: false };
+      this._all.push(entry);
+
+      if (!this._q.has(origin)) {
+        this._q.set(origin, []);
+        this._act.set(origin, 0);
+      }
+      this._q.get(origin).push(entry);
+    });
+
+    for (const o of this._q.keys()) this._drain(o);
+  }
+
+  /** Bump generation — all in-flight fetches silently discard. */
+  stop() { this._gen++; }
+
+  /** Stop + release every Blob URL. */
+  destroy() {
+    this.stop();
+    for (const e of this._all) {
+      if (e.blob) { URL.revokeObjectURL(e.blob); e.blob = null; }
+    }
+  }
+
+  /* ── internals ──────────────────────────────── */
+
+  _drain(origin) {
+    const q = this._q.get(origin);
+    while (q && q.length && this._act.get(origin) < this._max) {
+      this._act.set(origin, this._act.get(origin) + 1);
+      this._doFetch(q.shift());
+    }
+  }
+
+  async _doFetch(entry) {
+    const gen = this._gen;
+    const { img, url, origin } = entry;
+
+    try {
+      const ac  = new AbortController();
+      const tid = setTimeout(() => ac.abort(), this._tout);
+
+      const r = await fetch(
+        url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now(),
+        { signal: ac.signal, mode: 'cors' }
+      );
+      clearTimeout(tid);
+      if (gen !== this._gen) return;
+      if (!r.ok) throw new Error(r.status);
+
+      const blob = await r.blob();
+      if (gen !== this._gen) return;
+
+      /* Swap blob URL — flicker-free */
+      const u = URL.createObjectURL(blob);
+      if (entry.blob) URL.revokeObjectURL(entry.blob);
+      entry.blob = u;
+      entry.ok   = true;
+
+      img.src = u;
+      img.style.display = 'block';
+      const ph = img.nextElementSibling;
+      if (ph && ph.classList.contains('thumb-ph')) ph.style.display = 'none';
+      const wrap = img.parentElement;
+      if (wrap) wrap.classList.add('active');
+
+    } catch {
+      /* First failure → show placeholder */
+      if (!entry.ok) {
+        img.style.display = 'none';
+        const ph = img.nextElementSibling;
+        if (ph && ph.classList.contains('thumb-ph')) ph.style.display = 'flex';
+      }
+    } finally {
+      if (gen !== this._gen) return;   /* cancelled — don't re-enqueue */
+      this._act.set(origin, Math.max(0, this._act.get(origin) - 1));
+
+      const q = this._q.get(origin);
+      if (!q) return;
+
+      if (entry.ok) {
+        q.push(entry);                 /* immediate re-enqueue         */
+        this._drain(origin);
+      } else {
+        setTimeout(() => {             /* 250 ms back-off on error     */
+          if (this._gen !== gen) return;
+          q.push(entry);
+          this._drain(origin);
+        }, 250);
+      }
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * InfluxDB — Flux queries (unchanged)
+ * ══════════════════════════════════════════════════════════════ */
+const INFLUX = { org: 'mtl-mxl', bucket: 'poc14', token: 'mtl-mxl-poc-token' };
+
+function influxUrl() {
+  return `http://${CFG.influxHost}:${CFG.influxPort}/api/v2/query?org=${INFLUX.org}`;
+}
+function influxHeaders() {
+  return {
+    'Content-Type': 'application/vnd.flux',
+    'Accept': 'application/csv',
+    'Authorization': `Token ${INFLUX.token}`,
+  };
+}
+
+async function fetchCounters() {
+  const flux = `
+from(bucket: "${INFLUX.bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_counters" and exists r.stream_id)
+  |> last()
+  |> pivot(rowKey:["_time","stream_id","role"], columnKey: ["_field"], valueColumn: "_value")
+`;
+  try {
+    const r = await fetch(influxUrl(), { method: 'POST', headers: influxHeaders(), body: flux });
+    if (!r.ok) return null;
+    return parseCSV(await r.text());
+  } catch { return null; }
+}
+
+async function fetchLatency() {
+  const flux = `
+from(bucket: "${INFLUX.bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_latency" and r._field == "avg" and exists r.stream_id)
+  |> last()
+  |> pivot(rowKey:["_time","stream_id","role"], columnKey: ["stage"], valueColumn: "_value")
+`;
+  try {
+    const r = await fetch(influxUrl(), { method: 'POST', headers: influxHeaders(), body: flux });
+    if (!r.ok) return null;
+    return parseCSV(await r.text());
+  } catch { return null; }
+}
+
+async function fetchLatencyP99() {
+  const flux = `
+from(bucket: "${INFLUX.bucket}")
+  |> range(start: -60s)
+  |> filter(fn: (r) => r._measurement == "poc_latency" and r._field == "p99" and exists r.stream_id)
+  |> last()
+  |> pivot(rowKey:["_time","stream_id","role"], columnKey: ["stage"], valueColumn: "_value")
+`;
+  try {
+    const r = await fetch(influxUrl(), { method: 'POST', headers: influxHeaders(), body: flux });
+    if (!r.ok) return null;
+    return parseCSV(await r.text());
+  } catch { return null; }
+}
+
+function parseCSV(csv) {
+  const lines = csv.trim().split('\n');
+  const out = [];
+  let hdr = null;
+  for (const line of lines) {
+    const clean = line.replace(/\r$/, '');
+    if (clean.startsWith('#') || !clean.trim()) continue;
+    const cols = clean.split(',');
+    if (cols[0] === '' && (cols.includes('stream_id') || cols.includes('role') || cols.includes('_time'))) {
+      hdr = cols.map(c => c.trim());
+      continue;
+    }
+    if (!hdr) continue;
+    if (cols[0] !== '' || cols.length < hdr.length) continue;
+    const obj = {};
+    for (let j = 0; j < hdr.length && j < cols.length; j++) {
+      obj[hdr[j]] = cols[j].trim();
+    }
+    if (obj.stream_id) out.push(obj);
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Update Dashboard — populate cards with FPS + latency
+ * ══════════════════════════════════════════════════════════════ */
+function updateDashboard(counters, latency, latencyP99) {
+  const dot = document.getElementById('influxDot');
+  if (!counters) {
+    dot.classList.remove('ok');
+    document.getElementById('sumTime').textContent = new Date().toLocaleTimeString();
+    return;
+  }
+  dot.classList.add('ok');
+
+  /* Group counters by stream_id */
+  const streams = {};
+  for (const row of counters) {
+    const sid = parseInt(row.stream_id);
+    if (isNaN(sid) || sid >= CFG.numStreams) continue;
+    if (!streams[sid]) streams[sid] = {};
+    const role = (row.role || '').toLowerCase();
+    if (role.includes('sender'))   streams[sid].tx = row;
+    if (role.includes('receiver')) streams[sid].rx = row;
+  }
+
+  /* Group latency by stream_id */
+  const latStreams = {};
+  if (latency) {
+    for (const row of latency) {
+      const sid = parseInt(row.stream_id);
+      if (isNaN(sid) || sid >= CFG.numStreams) continue;
+      if (!latStreams[sid]) latStreams[sid] = {};
+      const role = (row.role || '').toLowerCase();
+      if (role.includes('sender'))   latStreams[sid].tx = row;
+      if (role.includes('receiver')) latStreams[sid].rx = row;
+    }
+  }
+
+  /* Group P99-latency by stream_id */
+  const p99Streams = {};
+  if (latencyP99) {
+    for (const row of latencyP99) {
+      const sid = parseInt(row.stream_id);
+      if (isNaN(sid) || sid >= CFG.numStreams) continue;
+      if (!p99Streams[sid]) p99Streams[sid] = {};
+      const role = (row.role || '').toLowerCase();
+      if (role.includes('sender'))   p99Streams[sid].tx = row;
+      if (role.includes('receiver')) p99Streams[sid].rx = row;
+    }
+  }
+
+  let active = 0, totalDrops = 0;
+  let txFpsSum = 0, txFpsN = 0;
+  let rxFpsSum = 0, rxFpsN = 0;
+
+  for (let i = 0; i < CFG.numStreams; i++) {
+    const s = streams[i] || {};
+    const lat = latStreams[i] || {};
+
+    /* DOM elements */
+    const rowEl       = document.getElementById('row-' + i);
+    const txfpsEl     = document.getElementById('txfps-' + i);
+    const rxfpsEl     = document.getElementById('rxfps-' + i);
+    const rxusEl      = document.getElementById('rxus-' + i);
+    const bridgeusEl  = document.getElementById('bridgeus-' + i);
+    const rdmausEl    = document.getElementById('rdmaus-' + i);
+    const sinkusEl    = document.getElementById('sinkus-' + i);
+    const e2eusEl     = document.getElementById('e2eus-' + i);
+    const dropsEl     = document.getElementById('drops-' + i);
+    const pillDropsEl = document.getElementById('pill-drops-' + i);
+    const rxmaxEl     = document.getElementById('rxmax-' + i);
+    const bridgemaxEl = document.getElementById('bridgemax-' + i);
+    const rdmamaxEl   = document.getElementById('rdmamax-' + i);
+    const sinkmaxEl   = document.getElementById('sinkmax-' + i);
+    const e2emaxEl    = document.getElementById('e2emax-' + i);
+    if (!rowEl) continue;
+
+    let txFps = null, rxFps = null, drops = 0;
+    let hasData = false;
+
+    /* ── Sender counters ── */
+    if (s.tx) {
+      hasData = true;
+      const bf = parseInt(s.tx.bridge_frames || '0');
+      const dr = parseInt(s.tx.rx_drops || '0');
+      const t  = new Date(s.tx._time).getTime();
+      drops += dr;
+      const k = 'tx_' + i;
+      const p = _prev[k];
+      if (p && p.t && t !== p.t) {
+        /* Genuinely new data point — recalculate FPS */
+        const dt = (t - p.t) / 1000;
+        if (dt > 0 && dt < 120) {
+          txFps = Math.max(0, (bf - p.bf) / dt);
+          _prev[k] = { t, bf, fps: txFps };
+        } else {
+          _prev[k] = { t, bf, fps: p.fps || null };
+        }
+      } else if (p) {
+        /* Same timestamp — InfluxDB hasn't written yet; keep last known FPS */
+        txFps = p.fps || null;
+      } else {
+        /* First poll — no previous data; store baseline */
+        _prev[k] = { t, bf, fps: null };
+      }
+    }
+
+    /* ── Receiver counters ── */
+    if (s.rx) {
+      hasData = true;
+      const cf = parseInt(s.rx.consumer_frames || '0');
+      const t  = new Date(s.rx._time).getTime();
+      const k = 'rx_' + i;
+      const p = _prev[k];
+      if (p && p.t && t !== p.t) {
+        const dt = (t - p.t) / 1000;
+        if (dt > 0 && dt < 120) {
+          rxFps = Math.max(0, (cf - p.cf) / dt);
+          _prev[k] = { t, cf, fps: rxFps };
+        } else {
+          _prev[k] = { t, cf, fps: p.fps || null };
+        }
+      } else if (p) {
+        rxFps = p.fps || null;
+      } else {
+        _prev[k] = { t, cf, fps: null };
+      }
+    }
+
+    /* ── Row active / off / drops state ── */
+    if (hasData) {
+      active++;
+      rowEl.classList.remove('off');
+      rowEl.classList.toggle('has-drops', drops > 0);
+    } else {
+      rowEl.classList.add('off');
+      rowEl.classList.remove('has-drops');
+    }
+
+    /* ── FPS pills — only update when we have a value ── */
+    if (txFps !== null) txfpsEl.textContent = txFps.toFixed(1) + ' fps';
+    if (rxFps !== null) rxfpsEl.textContent = rxFps.toFixed(1) + ' fps';
+
+    /* ── Latency pills — retain last known value ── */
+    const txLat = lat.tx || {};
+    const rxLat = lat.rx || {};
+
+    /* MTL RX card: sender queue stage */
+    const rxUs = pickUs(txLat, 'queue', 'mtl_rx_us', 'rx_latency_us');
+    if (rxUs !== null) rxusEl.textContent = fmtUs(rxUs);
+
+    /* Bridge card: sender bridge stage */
+    const bridgeUs = pickUs(txLat, 'bridge', 'bridge_us', 'bridge_latency_us');
+    if (bridgeUs !== null) bridgeusEl.textContent = fmtUs(bridgeUs);
+
+    /* Bridge card: sender rdma stage */
+    const rdmaUs = pickUs(txLat, 'rdma', 'fabric_us', 'rdma_latency_us');
+    if (rdmaUs !== null) rdmausEl.textContent = fmtUs(rdmaUs);
+
+    /* Drops */
+    dropsEl.textContent = drops;
+    pillDropsEl.classList.toggle('has-drops', drops > 0);
+
+    /* Sink card: receiver consume stage */
+    const sinkUs = pickUs(rxLat, 'consume', 'sink_us', 'consume_us', 'consumer_us');
+    if (sinkUs !== null) sinkusEl.textContent = fmtUs(sinkUs);
+
+    /* E2E: receiver e2e stage, fallback to sum */
+    let e2eUs = pickUs(rxLat, 'e2e', 'e2e_us', 'e2e_latency_us');
+    if (e2eUs === null && rxUs !== null && bridgeUs !== null && sinkUs !== null) {
+      e2eUs = rxUs + bridgeUs + sinkUs;
+    }
+    if (e2eUs !== null) e2eusEl.textContent = fmtUs(e2eUs);
+
+    /* ── P99 latency pills ── */
+    const px = p99Streams[i] || {};
+    const txP99 = px.tx || {};
+    const rxP99 = px.rx || {};
+
+    const rxP99Us = pickUs(txP99, 'queue', 'mtl_rx_us', 'rx_latency_us');
+    if (rxP99Us !== null && rxmaxEl) rxmaxEl.textContent = 'P99 ' + fmtUs(rxP99Us);
+
+    const bridgeP99Us = pickUs(txP99, 'bridge', 'bridge_us', 'bridge_latency_us');
+    if (bridgeP99Us !== null && bridgemaxEl) bridgemaxEl.textContent = 'P99 ' + fmtUs(bridgeP99Us);
+
+    const rdmaP99Us = pickUs(txP99, 'rdma', 'fabric_us', 'rdma_latency_us');
+    if (rdmaP99Us !== null && rdmamaxEl) rdmamaxEl.textContent = 'P99 ' + fmtUs(rdmaP99Us);
+
+    const sinkP99Us = pickUs(rxP99, 'consume', 'sink_us', 'consume_us', 'consumer_us');
+    if (sinkP99Us !== null && sinkmaxEl) sinkmaxEl.textContent = 'P99 ' + fmtUs(sinkP99Us);
+
+    let e2eP99Us = pickUs(rxP99, 'e2e', 'e2e_us', 'e2e_latency_us');
+    if (e2eP99Us === null && rxP99Us !== null && bridgeP99Us !== null && sinkP99Us !== null) {
+      e2eP99Us = rxP99Us + bridgeP99Us + sinkP99Us;
+    }
+    if (e2eP99Us !== null && e2emaxEl) e2emaxEl.textContent = 'P99 ' + fmtUs(e2eP99Us);
+
+    /* Aggregation */
+    totalDrops += drops;
+    if (txFps !== null) { txFpsSum += txFps; txFpsN++; }
+    if (rxFps !== null) { rxFpsSum += rxFps; rxFpsN++; }
+  }
+
+  /* ── Summary bar ── */
+  const ael = document.getElementById('sumActive');
+  ael.textContent = active + ' / ' + CFG.numStreams;
+  ael.className = 'val ' + (active >= CFG.numStreams ? 'c-ok' : active > 0 ? 'c-warn' : 'c-err');
+
+  document.getElementById('sumTxFps').textContent =
+    txFpsN > 0 ? (txFpsSum / txFpsN).toFixed(1) : document.getElementById('sumTxFps').textContent;
+  document.getElementById('sumRxFps').textContent =
+    rxFpsN > 0 ? (rxFpsSum / rxFpsN).toFixed(1) : document.getElementById('sumRxFps').textContent;
+
+  const del = document.getElementById('sumDrops');
+  del.textContent = totalDrops;
+  del.className = 'val ' + (totalDrops === 0 ? 'c-ok' : 'c-err');
+
+  document.getElementById('sumTime').textContent = new Date().toLocaleTimeString();
+}
+
+/* ── Helpers ── */
+function pickUs(row, ...keys) {
+  for (const k of keys) {
+    const v = parseFloat(row[k]);
+    if (!isNaN(v)) return Math.round(v);
+  }
+  return null;
+}
+
+function fmtUs(us) {
+  if (us >= 1000000) return (us / 1000000).toFixed(1) + ' s';
+  if (us >= 10000)   return (us / 1000).toFixed(1) + ' ms';
+  if (us >= 1000)    return (us / 1000).toFixed(2) + ' ms';
+  return us + ' \u00B5s';
+}
+
+async function poll() {
+  const [counters, latency, latencyP99] = await Promise.all([fetchCounters(), fetchLatency(), fetchLatencyP99()]);
+  updateDashboard(counters, latency, latencyP99);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Initialization
+ * ══════════════════════════════════════════════════════════════ */
+sizeThumb();
+buildPipeline();
+_snapScheduler = new SnapshotScheduler();
+_snapScheduler.start();
+poll();
+_metricsTimer = setInterval(poll, CFG.pollInterval);
+window.addEventListener('resize', () => { sizeThumb(); });
+</script>
+</body>
+</html>

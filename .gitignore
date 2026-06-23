@@ -53,8 +53,12 @@ dkms.conf
 
 # Ours
 .*
+*.json
 !.github/
 !.github/**
+!.vscode/
+.vscode/*
+!.vscode/mcp.json
 *.log
 *.log_*
 logs_*
@@ -64,11 +68,11 @@ tests/validation/logs
 !ecosystem/**/*.patch
 *.diff
 *.yuv
+*.h264
 *.pcapng
 *.pcap
 *.raw
 *.dat
-*.json
 html/
 test.*
 build/
@@ -110,3 +114,4 @@ openh264*
 level-zero-*
 
 venv*
+.github/mcp/.venv/

@@ -4,14 +4,12 @@
 
 #include "st40_pipeline_rx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
 static const char* st40p_rx_frame_stat_name[ST40P_RX_FRAME_STATUS_MAX] = {
-    "free",
-    "receiving",
-    "ready",
-    "in_user",
+    "free", "receiving", "pending", "ready", "in_user",
 };
 
 static const char* rx_st40p_stat_name(enum st40p_rx_frame_status stat) {
@@ -124,62 +122,119 @@ static int rx_st40p_rtp_ready(void* priv) {
 
   mt_pthread_mutex_lock(&ctx->lock);
 
-  /* complete previous frame if timestamp advanced */
-  if (ctx->inflight_frame && ctx->inflight_rtp_timestamp != rtp_timestamp) {
-    ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
-    notify_frame = true;
-    done_frames[done_count] = ctx->inflight_frame;
-    done_infos[done_count] = &ctx->inflight_frame->frame_info;
-    done_count++;
-    ctx->inflight_frame = NULL;
-  }
-
-  if (!ctx->inflight_frame) {
-    framebuff =
-        rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
-
-    if (!framebuff) {
-      ctx->stat_busy++;
-      ret = -EBUSY;
-      goto out;
-    }
-
-    framebuff->stat = ST40P_RX_FRAME_RECEIVING;
-    frame_info = &framebuff->frame_info;
-    frame_info->meta_num = 0;
-    frame_info->udw_buffer_fill = 0;
-    frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
-    frame_info->seq_discont = false;
-    frame_info->seq_lost = 0;
-    frame_info->rtp_marker = false;
-    frame_info->receive_timestamp = receive_timestamp;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame_info->rtp_timestamp = rtp_timestamp;
-    frame_info->timestamp = rtp_timestamp;
-    frame_info->epoch = 0;
-    ctx->inflight_frame = framebuff;
-    ctx->inflight_rtp_timestamp = rtp_timestamp;
-  } else {
-    framebuff = ctx->inflight_frame;
+  /* Route late packet to pending frame if it matches the pending timestamp */
+  if (ctx->pending_frame && rtp_timestamp == ctx->pending_rtp_timestamp) {
+    framebuff = ctx->pending_frame;
     frame_info = &framebuff->frame_info;
     if (!frame_info->receive_timestamp ||
         (frame_info->receive_timestamp > receive_timestamp))
       frame_info->receive_timestamp = receive_timestamp;
+  } else {
+    /* Handle timestamp change on inflight frame */
+    if (ctx->inflight_frame && ctx->inflight_rtp_timestamp != rtp_timestamp) {
+      if (ctx->ops.port.num_port > 1) {
+        /* Multi-port: inflight → PENDING (wait for late marker from redundant port) */
+        if (ctx->pending_frame) {
+          /* Force-deliver existing pending frame first */
+          ctx->pending_frame->stat = ST40P_RX_FRAME_READY;
+          notify_frame = true;
+          done_frames[done_count] = ctx->pending_frame;
+          done_infos[done_count] = &ctx->pending_frame->frame_info;
+          done_count++;
+        }
+        ctx->inflight_frame->stat = ST40P_RX_FRAME_PENDING;
+        ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
+        ctx->pending_frame = ctx->inflight_frame;
+        ctx->pending_rtp_timestamp = ctx->inflight_rtp_timestamp;
+      } else {
+        /* Single-port: no redundant port → directly READY */
+        ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
+        ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
+        notify_frame = true;
+        done_frames[done_count] = ctx->inflight_frame;
+        done_infos[done_count] = &ctx->inflight_frame->frame_info;
+        done_count++;
+      }
+      ctx->inflight_frame = NULL;
+    }
+
+    if (!ctx->inflight_frame) {
+      framebuff =
+          rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
+
+      if (!framebuff) {
+        ctx->stat_busy++;
+        /* relaxed atomic: written under ctx->lock from tasklet, read from any
+         * thread via st40p_rx_get_session_stats() without locking. */
+        __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
+        ret = -EBUSY;
+        goto out;
+      }
+
+      framebuff->stat = ST40P_RX_FRAME_RECEIVING;
+      frame_info = &framebuff->frame_info;
+      frame_info->meta_num = 0;
+      frame_info->udw_buffer_fill = 0;
+      frame_info->pkts_total = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+      frame_info->seq_discont = false;
+      frame_info->seq_lost = 0;
+      frame_info->rtp_marker = false;
+      frame_info->receive_timestamp = receive_timestamp;
+      frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame_info->rtp_timestamp = rtp_timestamp;
+      frame_info->timestamp = rtp_timestamp;
+      frame_info->epoch = 0;
+      uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+      frame_info->interlaced = (f_bits & 0x2) ? true : false;
+      frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
+      ctx->inflight_frame = framebuff;
+      ctx->inflight_rtp_timestamp = rtp_timestamp;
+    } else {
+      framebuff = ctx->inflight_frame;
+      frame_info = &framebuff->frame_info;
+      if (!frame_info->receive_timestamp ||
+          (frame_info->receive_timestamp > receive_timestamp))
+        frame_info->receive_timestamp = receive_timestamp;
+
+      /* Update field metadata if a later packet carries interlace info */
+      uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
+      bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
+      bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
+      if ((frame_info->interlaced != pkt_interlaced) ||
+          (frame_info->second_field != pkt_second_field)) {
+        frame_info->interlaced = pkt_interlaced;
+        frame_info->second_field = pkt_second_field;
+      }
+    }
   }
 
+  /* per-port sequence tracking */
   if (ctx->last_seq_valid[s_port]) {
     uint16_t expected = (uint16_t)(ctx->last_seq[s_port] + 1);
     if (expected != seq_number) {
-      frame_info->seq_discont = true;
+      frame_info->port_seq_discont[s_port] = true;
       if (mt_seq16_greater(seq_number, expected))
-        frame_info->seq_lost += (uint16_t)(seq_number - expected);
+        frame_info->port_seq_lost[s_port] += (uint16_t)(seq_number - expected);
     }
   }
   ctx->last_seq[s_port] = seq_number;
   ctx->last_seq_valid[s_port] = true;
+
+  /* session-level sequence tracking (merged across all ports) */
+  if (ctx->session_last_seq_valid) {
+    uint16_t expected = (uint16_t)(ctx->session_last_seq + 1);
+    if (expected != seq_number && mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+      frame_info->seq_discont = true;
+      frame_info->seq_lost += (uint16_t)(seq_number - expected);
+    }
+  }
+  if (!ctx->session_last_seq_valid ||
+      mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+    ctx->session_last_seq = seq_number;
+    ctx->session_last_seq_valid = true;
+  }
 
   frame_info->pkts_total++;
   frame_info->pkts_recv[s_port]++;
@@ -220,8 +275,10 @@ static int rx_st40p_rtp_ready(void* priv) {
     meta_entry->udw_offset = frame_info->udw_buffer_fill;
 
     uint32_t total_bits = (3 + udw_words + 1) * 10;
-    /* Match TX padding: floor to bytes then pad to the next 4-byte multiple */
-    uint32_t total_size = total_bits / 8;
+    /* SMPTE ST 2110-40 / RFC 8331 packs the 10-bit fields (DID, SDID, DC,
+     * UDW[], checksum) bit-contiguously. Round the total bit count up to
+     * whole bytes, then 4-byte align per the RFC. */
+    uint32_t total_size = (total_bits + 7) / 8;
     uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
     uint32_t anc_packet_bytes =
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
@@ -277,13 +334,33 @@ static int rx_st40p_rtp_ready(void* priv) {
 
   if (hdr->base.marker) {
     frame_info->rtp_marker = true;
-    framebuff->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-    ctx->inflight_frame = NULL;
+    if (framebuff == ctx->pending_frame) {
+      /* Late marker resolves PENDING → READY */
+      framebuff->stat = ST40P_RX_FRAME_READY;
+      ctx->pending_frame = NULL;
+    } else {
+      /* Normal inflight → READY */
+      framebuff->stat = ST40P_RX_FRAME_READY;
+      ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
+      ctx->inflight_frame = NULL;
+    }
     notify_frame = true;
     done_frames[done_count] = framebuff;
     done_infos[done_count] = frame_info;
     done_count++;
+  }
+
+  /* Assign frame status while still under lock — app thread may read status
+   * after get_frame() returns, so the write must be visible before unlock. */
+  for (int n = 0; n < done_count; n++) {
+    struct st40_frame_info* done_info = done_infos[n];
+    if (done_info) {
+      done_info->status =
+          done_info->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
+      __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+      if (done_info->seq_discont)
+        __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
+    }
   }
 
 out:
@@ -339,6 +416,8 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   if (ops->flags & ST40P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST40_RX_FLAG_DATA_PATH_ONLY;
   if (ops->flags & ST40P_RX_FLAG_ENABLE_RTCP) ops_rx.flags |= ST40_RX_FLAG_ENABLE_RTCP;
+  if (ops->flags & ST40P_RX_FLAG_DISABLE_AUTO_DETECT)
+    ops_rx.flags |= ST40_RX_FLAG_DISABLE_AUTO_DETECT;
 
   ctx->transport = st40_rx_create(impl, &ops_rx);
   if (!ctx->transport) {
@@ -402,10 +481,16 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->pkts_total = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->second_field = false;
+    frame_info->interlaced = false;
     frame_info->priv = framebuff;
 
     dbg("%s(%d), init fb %u\n", __func__, idx, i);
@@ -454,20 +539,7 @@ static int rx_st40p_stat(void* priv) {
   return 0;
 }
 
-static int rx_st40p_get_block_wait(struct st40p_rx_ctx* ctx) {
-  dbg("%s(%d), start\n", __func__, ctx->idx);
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  while (!ctx->block_wake_pending) {
-    int ret = mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                                           ctx->block_timeout_ns);
-    if (ret) break;
-  }
-  ctx->block_wake_pending = false;
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  dbg("%s(%d), end\n", __func__, ctx->idx);
-  return 0;
-}
+/* rx_st40p_get_block_wait inlined into st40p_rx_get_frame; see mt_handle_guard.h */
 
 static int rx_st40p_usdt_dump_frame(struct st40p_rx_ctx* ctx,
                                     struct st40_frame_info* frame_info) {
@@ -503,14 +575,11 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st40p_rx_frame* framebuff;
-  struct st40_frame_info* frame_info;
+  struct st40_frame_info* frame_info = NULL;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -520,7 +589,16 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
       rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
-    rx_st40p_get_block_wait(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    while (!ctx->block_wake_pending &&
+           !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+      int _ret = mt_pthread_cond_timedwait_ns(
+          &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+      if (_ret) break;
+    }
+    ctx->block_wake_pending = false;
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -530,7 +608,7 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST40P_RX_FRAME_IN_USER;
@@ -549,6 +627,8 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
     rx_st40p_usdt_dump_frame(ctx, frame_info);
   }
 
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame_info;
 }
 
@@ -558,16 +638,15 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
   uint16_t meta_num_before_reset = frame_info->meta_num;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   /* reset frame for reuse */
@@ -576,16 +655,52 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->pkts_total = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
   frame_info->seq_discont = false;
   frame_info->seq_lost = 0;
   frame_info->rtp_marker = false;
   frame_info->receive_timestamp = 0;
+  frame_info->second_field = false;
+  frame_info->interlaced = false;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
 
   MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx, meta_num_before_reset);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* frame_info) {
+  struct st40p_rx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st40p_rx_frame* framebuff = frame_info->priv;
+  uint16_t consumer_idx = framebuff->idx;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
+
+  if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
+        framebuff->stat);
+    ret = -EIO;
+    goto out;
+  }
+
+  /* reset frame for reuse without processing */
+  frame_info->meta_num = 0;
+  frame_info->udw_buffer_fill = 0;
+  framebuff->stat = ST40P_RX_FRAME_FREE;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_free(st40p_rx_handle handle) {
@@ -597,12 +712,16 @@ int st40p_rx_free(st40p_rx_handle handle) {
     return -EINVAL;
   }
 
-  impl = ctx->impl;
-
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST40_HANDLE_PIPELINE_RX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
+
+  impl = ctx->impl;
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
@@ -615,6 +734,8 @@ int st40p_rx_free(st40p_rx_handle handle) {
     ctx->transport = NULL;
   }
 
+  ctx->inflight_frame = NULL;
+  ctx->pending_frame = NULL;
   rx_st40p_uinit_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
@@ -666,6 +787,9 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
+  ctx->wake_on_destroy = (void (*)(void*))rx_st40p_block_wake;
+  ctx->session_last_seq_valid = false;
+  ctx->session_last_seq = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     ctx->port_map[i] = MTL_PORT_MAX;
@@ -718,117 +842,118 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
 
 size_t st40p_rx_max_udw_buff_size(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, 0);
 
-  return ctx->ops.max_udw_buff_size;
+  ret = ctx->ops.max_udw_buff_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_get_queue_meta(st40p_rx_handle handle, struct st_queue_meta* meta) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_get_queue_meta(ctx->transport, meta);
+  ret = st40_rx_get_queue_meta(ctx->transport, meta);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats* stats) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_get_session_stats(ctx->transport, stats);
+  ret = st40_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) goto out;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_received =
+      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  stats->common.stat_frames_corrupted =
+      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_reset_session_stats(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_reset_session_stats(ctx->transport);
+  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
+  ret = st40_rx_reset_session_stats(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_update_source(st40p_rx_handle handle, struct st_rx_source_info* src) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  return st40_rx_update_source(ctx->transport, src);
+  ret = st40_rx_update_source(ctx->transport, src);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st40p_rx_wake_block(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   if (ctx->block_get) rx_st40p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st40p_rx_set_block_timeout(st40p_rx_handle handle, uint64_t timedwait_ns) {
   struct st40p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 void* st40p_rx_get_udw_buff_addr(st40p_rx_handle handle, uint16_t idx) {
   struct st40p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %u]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
 
-  return ctx->framebuffs[idx].frame_info.udw_buff_addr;
+  ret_addr = ctx->framebuffs[idx].frame_info.udw_buff_addr;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }

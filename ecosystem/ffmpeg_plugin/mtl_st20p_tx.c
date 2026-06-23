@@ -17,8 +17,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <mtl/st_convert_api.h>
-
 #include "mtl_common.h"
 
 typedef struct mtlSt20pMuxerContext {
@@ -96,15 +94,32 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
       ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       break;
-    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
-                               This is workaround
-                               for Intel(R) Tiber(TM) Broadcast Suite */
-      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    case AV_PIX_FMT_Y210LE:
       ops_tx.input_fmt = ST_FRAME_FMT_Y210;
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       break;
     case AV_PIX_FMT_RGB24:
       ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
       ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
+      break;
+    case AV_PIX_FMT_YUV444P10LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
+      ops_tx.transport_fmt = ST20_FMT_YUV_444_10BIT;
+      break;
+    case AV_PIX_FMT_GBRP10LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+      ops_tx.transport_fmt = ST20_FMT_RGB_10BIT;
+      break;
+    case AV_PIX_FMT_YUV420P:
+      /* MTL-to-MTL passthrough only: YUV420CUSTOM8 sends the planar I420
+       * buffer straight onto the wire as ST20_FMT_YUV_420_8BIT payload
+       * without any conversion (st_frame_fmt_equal_transport() returns true).
+       * The wire bytes are NOT a SMPTE ST 2110-20:2022 §6.2.5 Table 3
+       * pgroup (which mandates 6-octet/4-pixel Y'00-Y'01-Y'10-Y'11-CB'00-CR'00
+       * interleaving), so this format is not interoperable with third-party
+       * ST 2110-20 receivers. Use only for MTL-to-MTL transport. */
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV420CUSTOM8;
+      ops_tx.transport_fmt = ST20_FMT_YUV_420_8BIT;
       break;
     default:
       err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
@@ -160,14 +175,6 @@ static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
   dbg(ctx, "%s(%d), st20p_tx_get_frame: %p\n", __func__, s->idx, frame);
-
-  /* This format is not supported by MTL plugin.
-     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
-  if (s->pixel_format == AV_PIX_FMT_Y210LE) {
-    st20_y210_to_rfc4175_422be10((uint16_t*)pkt->data,
-                                 (struct st20_rfc4175_422_10_pg2_be*)(frame->addr[0]),
-                                 s->width, s->height);
-  }
 
   /* todo: zero copy with external frame mode */
   mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);

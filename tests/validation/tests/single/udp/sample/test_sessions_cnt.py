@@ -5,11 +5,13 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import udp_app
 
+pytestmark = pytest.mark.nightly
+
 
 @pytest.mark.parametrize("sessions_cnt", [1, 2, 5, 7])
 def test_udp_sessions_cnt(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     sessions_cnt,
@@ -22,7 +24,7 @@ def test_udp_sessions_cnt(
     )
 
     udp_app.execute_test_sample(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list,
         test_time=test_time,
         sessions_cnt=sessions_cnt,

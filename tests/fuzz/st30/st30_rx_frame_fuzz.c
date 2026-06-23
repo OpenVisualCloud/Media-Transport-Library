@@ -18,7 +18,12 @@
 
 #include "st20_api.h"
 #include "st2110/st_pkt.h"
-#include "st2110/st_rx_audio_session.h"
+/*
+ * Include the production .c directly so that all static functions become visible.
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_audio_session.c"
 #include "st30_api.h"
 #include "st40_api.h"
 #include "st41_api.h"
@@ -177,7 +182,7 @@ static void st30_fuzz_reset_context(size_t payload_len) {
   g_session.port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   g_session.usdt_dump_fd = -1;
 
-  st_rx_audio_session_fuzz_reset(&g_session);
+  rx_audio_session_reset(&g_session, false);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -205,7 +210,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   size_t payload = pkt_size - sizeof(struct st_rfc3550_audio_hdr);
   st30_fuzz_reset_context(payload);
 
-  st_rx_audio_session_fuzz_handle_pkt(&g_impl, &g_session, mbuf, MTL_SESSION_PORT_P);
+  rx_audio_session_handle_frame_pkt(&g_impl, &g_session, mbuf, MTL_SESSION_PORT_P);
   rte_pktmbuf_free(mbuf);
   return 0;
 }

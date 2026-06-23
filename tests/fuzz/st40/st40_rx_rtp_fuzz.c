@@ -18,7 +18,14 @@
 
 #include "st20_api.h"
 #include "st2110/st_pkt.h"
-#include "st2110/st_rx_ancillary_session.h"
+/*
+ * Include the production .c directly so that all static functions become visible.
+ * Non-static symbols duplicate those in libmtl; the linker flag
+ * --allow-multiple-definition resolves this safely (identical code).
+ * Disable USDT to avoid linker references to probe semaphores.
+ */
+#undef MTL_HAS_USDT
+#include "st2110/st_rx_ancillary_session.c"
 #include "st40_api.h"
 #include "st41_api.h"
 #include "st_api.h"
@@ -136,7 +143,7 @@ static void st40_fuzz_reset_context(void) {
   g_session.ops.name = "st40_rx_fuzz";
   g_session.redundant_error_cnt[MTL_SESSION_PORT_P] = 0;
 
-  st_rx_ancillary_session_fuzz_reset(&g_session);
+  rx_ancillary_session_reset(&g_session, false);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -160,7 +167,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   mbuf->data_len = pkt_size;
   mbuf->pkt_len = pkt_size;
 
-  st_rx_ancillary_session_fuzz_handle_pkt(&g_impl, &g_session, mbuf, MTL_SESSION_PORT_P);
+  rx_ancillary_session_handle_pkt(&g_impl, &g_session, mbuf, MTL_SESSION_PORT_P);
   rte_pktmbuf_free(mbuf);
   return 0;
 }

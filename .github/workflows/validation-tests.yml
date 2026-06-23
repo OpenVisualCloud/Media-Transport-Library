@@ -120,23 +120,21 @@ jobs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
-      - name: 'preparation: Restore valid repository owner and print env'
-        if: always()
-        run: |
-          sudo chown -R "${USER}" "$(pwd)" || true
-          env | grep TEST_ || true
-
-      - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: 'preparation: Clean workspace and checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ inputs.branch-to-checkout }}'
 
+      - name: 'preparation: Print TEST_ environment'
+        if: always()
+        run: env | grep TEST_ || true
+
       - name: 'preparation: Checkout DPDK'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: env.DPDK_REBUILD == 'true'
         with:
           repository: 'DPDK/dpdk'
@@ -202,7 +200,7 @@ jobs:
       PYTEST_RETRIES: '3'
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
@@ -215,12 +213,7 @@ jobs:
           echo "TEST_PORT_P=${TEST_PORT_P}"
           echo "TEST_PORT_R=${TEST_PORT_R}"
 
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-
+      - uses: ./.github/actions/cleanup
       - name: 'preparation: Binding network adapter pf to kernel driver'
         if: inputs.validation-iface-binding != 'bind_pmd'
         run: |
@@ -233,10 +226,6 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
-
-      - name: 'preparation: Start MtlManager at background'
-        run: |
-          sudo MtlManager &
 
       - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/validation
@@ -268,13 +257,7 @@ jobs:
         run: |
           echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-3 }} ==" || ${{ inputs.validation-no-fail-tests }}
 
-      - name: 'cleanup: Kill MtlManager and pytest routines'
-        if: always()
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-
+      - uses: ./.github/actions/cleanup
       - name: 'cleanup: Create archive with logs from execution'
         if: always()
         working-directory: tests/validation
@@ -296,7 +279,7 @@ jobs:
 
       - name: 'cleanup: Validation execution logs'
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: 'validation-execution-logs.tar.gz'
           path: '${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz'

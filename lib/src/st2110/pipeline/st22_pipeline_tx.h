@@ -14,6 +14,7 @@ enum st22p_tx_frame_status {
   ST22P_TX_FRAME_READY,
   ST22P_TX_FRAME_IN_ENCODING, /* for encoding */
   ST22P_TX_FRAME_ENCODED,
+  ST22P_TX_FRAME_DROPPED, /* encoded but arrived too late; recycled in next_frame */
   ST22P_TX_FRAME_IN_TRANSMITTING, /* for transport */
   ST22P_TX_FRAME_STATUS_MAX,
 };
@@ -25,13 +26,18 @@ struct st22p_tx_frame {
   struct st22_encode_frame_meta encode_frame;
   uint16_t idx;
   uint32_t seq_number;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
+/* See st20p_rx_ctx note re: ->transport lifetime; access via MT_HANDLE_GUARD. */
 struct st22p_tx_ctx {
   struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
+  _Atomic uint32_t lc_destroying;
+  _Atomic uint32_t lc_refcnt;
+  void (*wake_on_destroy)(void* self);
   enum st_frame_fmt codestream_fmt;
 
   char ops_name[ST_MAX_NAME_LEN];

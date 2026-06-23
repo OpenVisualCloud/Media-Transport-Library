@@ -313,9 +313,9 @@ static int app_rx_fmd_result(struct st_app_rx_fmd_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received, %d counted errors.\n", __func__, idx,
-           (app_rx_fmd_fps_check(framerate) && (s->errors_count == 0)) ? "OK" : "FAILED",
-           framerate, s->stat_frame_total_received, s->errors_count);
+  notce("%s(%d), %s, fps %f, %d frame received, %d counted errors.\n", __func__, idx,
+        (app_rx_fmd_fps_check(framerate) && (s->errors_count == 0)) ? "OK" : "FAILED",
+        framerate, s->stat_frame_total_received, s->errors_count);
   return 0;
 }
 

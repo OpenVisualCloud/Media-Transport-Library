@@ -1,0 +1,402 @@
+diff --git a/lib/fabrics/ofi/src/internal/CompletionQueue.cpp b/lib/fabrics/ofi/src/internal/CompletionQueue.cpp
+index 1938978..6912e3f 100644
+--- a/lib/fabrics/ofi/src/internal/CompletionQueue.cpp
++++ b/lib/fabrics/ofi/src/internal/CompletionQueue.cpp
+@@ -20,7 +20,7 @@ namespace mxl::lib::fabrics::ofi
+     CompletionQueue::Attributes CompletionQueue::Attributes::defaults()
+     {
+         CompletionQueue::Attributes attr{};
+-        attr.size = 128;                   // increased from 8 to handle burst RDMA_WRITE_WITH_IMM
++        attr.size = 256;                   // increased from 128 to handle deeper pipeline + burst RDMA_WRITE_WITH_IMM
+         attr.waitObject = FI_WAIT_UNSPEC; // TODO: EFA will require no wait object
+         return attr;
+     }
+diff --git a/lib/fabrics/ofi/src/internal/ProtocolEgressRMA.cpp b/lib/fabrics/ofi/src/internal/ProtocolEgressRMA.cpp
+index 41f473a..03b3456 100644
+--- a/lib/fabrics/ofi/src/internal/ProtocolEgressRMA.cpp
++++ b/lib/fabrics/ofi/src/internal/ProtocolEgressRMA.cpp
+@@ -28,7 +28,13 @@ namespace mxl::lib::fabrics::ofi
+         auto localRegion = _localRegions[localIndex % _localRegions.size()].sub(localOffset, localSize);
+         auto remoteRegion = _remoteInfo.remoteRegions[remoteIndex % _remoteInfo.remoteRegions.size()].sub(remoteOffset, remoteSize);
+ 
+-        _pending += ep.write(_token, localRegion, remoteRegion, destAddr, ImmDataGrain{remoteIndex, sliceRange.end()}.data());
++        // Use the actual ring-buffer slot index in the ImmData so the
++        // receiver can identify which region received the write.
++        // Previously this passed remoteIndex directly, whose uint16_t
++        // truncation wraps at 65536 — causing a slot mismatch when the
++        // monotonic grain index exceeds 2^16.
++        auto ringIdx = remoteIndex % _remoteInfo.remoteRegions.size();
++        _pending += ep.write(_token, localRegion, remoteRegion, destAddr, ImmDataGrain{ringIdx, sliceRange.end()}.data());
+     }
+ 
+     void RMAGrainEgressProtocol::processCompletion(Completion::Data const&)
+diff --git a/lib/fabrics/ofi/src/internal/ProtocolIngressRMA.cpp b/lib/fabrics/ofi/src/internal/ProtocolIngressRMA.cpp
+index b47cdb4..47ecdad 100644
+--- a/lib/fabrics/ofi/src/internal/ProtocolIngressRMA.cpp
++++ b/lib/fabrics/ofi/src/internal/ProtocolIngressRMA.cpp
+@@ -30,8 +30,9 @@ namespace mxl::lib::fabrics::ofi
+              * RDMA_WRITE_WITH_IMM operations (e.g. 4K60 grains at
+              * ~16 ms intervals or batched slice transfers) never
+              * find the receive queue empty, which would trigger
+-             * RNR NAKs and QP errors on Intel E810 / irdma.          */
+-            constexpr int kPrePostRecvCount = 64;
++             * RNR NAKs and QP errors on Intel E810 / irdma.
++             * 128 provides 16x headroom over pipeline depth 8.   */
++            constexpr int kPrePostRecvCount = 128;
+             for (int i = 0; i < kPrePostRecvCount; ++i)
+             {
+                 ep.recv(immDataRegion());
+diff --git a/lib/fabrics/ofi/src/internal/RDMInitiator.cpp b/lib/fabrics/ofi/src/internal/RDMInitiator.cpp
+index 574744c..576bb02 100644
+--- a/lib/fabrics/ofi/src/internal/RDMInitiator.cpp
++++ b/lib/fabrics/ofi/src/internal/RDMInitiator.cpp
+@@ -286,13 +286,25 @@ namespace mxl::lib::fabrics::ofi
+         if (auto completion = _endpoint.completionQueue()->readBlocking(timeout); completion)
+         {
+             processCompletion(*completion);
++
++            // Drain any remaining non-blocking entries that arrived
++            // while we were waiting (batch drain, parity with RCInitiator)
++            pollCQ();
+         }
+     }
+ 
+     void RDMInitiator::pollCQ()
+     {
+-        if (auto completion = _endpoint.completionQueue()->read(); completion)
++        // Drain all available CQ entries in a loop (parity with RCInitiator).
++        // Previously only read one entry per call, which caused completions
++        // to back up under burst conditions with EFA/SHM providers.
++        for (;;)
+         {
++            auto completion = _endpoint.completionQueue()->read();
++            if (!completion)
++            {
++                break;
++            }
+             processCompletion(*completion);
+         }
+     }
+diff --git a/lib/fabrics/ofi/src/internal/Region.cpp b/lib/fabrics/ofi/src/internal/Region.cpp
+index 5b9f451..bfe7c80 100644
+--- a/lib/fabrics/ofi/src/internal/Region.cpp
++++ b/lib/fabrics/ofi/src/internal/Region.cpp
+@@ -136,21 +136,40 @@ namespace mxl::lib::fabrics::ofi
+             auto& discreteFlow = static_cast<DiscreteFlowData const&>(flow);
+             std::vector<Region> regions;
+ 
+-            for (std::size_t i = 0; i < discreteFlow.grainCount(); ++i)
++            if (discreteFlow.isPoolMode())
+             {
+-                auto grain = discreteFlow.grainAt(i);
++                // Contiguous pool: one Region per grain pointing into the shared mapping.
++                // The regions MUST still be per-grain because the Fabrics transfer protocol
++                // indexes localRegions[grainIndex % N] and remoteRegions[grainIndex % N].
++                auto const* base = static_cast<uint8_t const*>(discreteFlow.poolBase());
++                auto const stride = discreteFlow.grainStride();
+ 
+-                auto grainInfoBaseAddr = reinterpret_cast<std::uintptr_t>(discreteFlow.grainAt(i));
+-                auto grainInfoSize = sizeof(GrainHeader);
+-                auto grainPayloadSize = grain->header.info.grainSize;
+-
+-                if (flow.flowInfo()->config.common.payloadLocation != MXL_PAYLOAD_LOCATION_HOST_MEMORY)
++                for (std::size_t i = 0; i < discreteFlow.grainCount(); ++i)
+                 {
+-                    throw Exception::make(MXL_ERR_UNKNOWN,
+-                        "GPU memory is not currently supported in the Flow API of MXL. Edit the code below when it is supported");
++                    auto const grainAddr = reinterpret_cast<std::uintptr_t>(base + i * stride);
++                    auto grainPayloadSize = discreteFlow.grainAt(i)->header.info.grainSize;
++                    regions.emplace_back(grainAddr, sizeof(GrainHeader) + grainPayloadSize, Region::Location::host());
+                 }
++            }
++            else
++            {
++                // Legacy per-grain file mode
++                for (std::size_t i = 0; i < discreteFlow.grainCount(); ++i)
++                {
++                    auto grain = discreteFlow.grainAt(i);
+ 
+-                regions.emplace_back(grainInfoBaseAddr, grainInfoSize + grainPayloadSize, Region::Location::host());
++                    auto grainInfoBaseAddr = reinterpret_cast<std::uintptr_t>(discreteFlow.grainAt(i));
++                    auto grainInfoSize = sizeof(GrainHeader);
++                    auto grainPayloadSize = grain->header.info.grainSize;
++
++                    if (flow.flowInfo()->config.common.payloadLocation != MXL_PAYLOAD_LOCATION_HOST_MEMORY)
++                    {
++                        throw Exception::make(MXL_ERR_UNKNOWN,
++                            "GPU memory is not currently supported in the Flow API of MXL. Edit the code below when it is supported");
++                    }
++
++                    regions.emplace_back(grainInfoBaseAddr, grainInfoSize + grainPayloadSize, Region::Location::host());
++                }
+             }
+ 
+             // TODO: Add an utility function to retrieve the number of available planes when alpha support is added.
+diff --git a/lib/internal/include/mxl-internal/DiscreteFlowData.hpp b/lib/internal/include/mxl-internal/DiscreteFlowData.hpp
+index a48e1e6..4469ebc 100644
+--- a/lib/internal/include/mxl-internal/DiscreteFlowData.hpp
++++ b/lib/internal/include/mxl-internal/DiscreteFlowData.hpp
+@@ -13,6 +13,12 @@ namespace mxl::lib
+     ///
+     /// Simple structure holding the shared memory resources of discrete flows.
+     ///
++    /// Supports two grain storage modes:
++    ///  - **Per-grain files** (legacy): each grain backed by a separate mmap'd file
++    ///  - **Contiguous pool** (new): all grains in a single mmap'd file with
++    ///    stride-based addressing.  This dramatically reduces the number of
++    ///    VFIO/DPDK DMA mappings and RDMA memory registrations needed.
++    ///
+     class DiscreteFlowData : public FlowData
+     {
+     public:
+@@ -21,8 +27,28 @@ namespace mxl::lib
+ 
+         std::size_t grainCount() const noexcept;
+ 
++        /// Legacy: add a grain backed by its own file.
+         Grain* emplaceGrain(char const* grainFilePath, std::size_t grainPayloadSize);
+ 
++        /// Contiguous pool: create/open a single backing file for all grains.
++        /// @param poolFilePath  Path to the pool file.
++        /// @param count         Number of grains.
++        /// @param grainPayloadSize  Payload size per grain (0 on open = use file size).
++        void openGrainPool(char const* poolFilePath, std::size_t count, std::size_t grainPayloadSize);
++
++        /// Returns true if grains are stored in the contiguous pool.
++        bool isPoolMode() const noexcept;
++
++        /// Returns the base address of the contiguous pool (nullptr if per-grain mode).
++        void* poolBase() noexcept;
++        void const* poolBase() const noexcept;
++
++        /// Returns the total size of the contiguous pool mapping.
++        std::size_t poolMappedSize() const noexcept;
++
++        /// Returns the stride (bytes between successive grains) in pool mode.
++        std::size_t grainStride() const noexcept;
++
+         Grain* grainAt(std::size_t i) noexcept;
+         Grain const* grainAt(std::size_t i) const noexcept;
+ 
+@@ -30,7 +56,13 @@ namespace mxl::lib
+         mxlGrainInfo const* grainInfoAt(std::size_t i) const noexcept;
+ 
+     private:
++        // Per-grain file mode (legacy)
+         std::vector<SharedMemoryInstance<Grain>> _grains;
++
++        // Contiguous pool mode (new)
++        SharedMemorySegment _pool;
++        std::size_t _poolGrainCount{0};
++        std::size_t _poolGrainStride{0};   // sizeof(Grain) + grainPayloadSize = 8192 + payload
+     };
+ 
+     /**************************************************************************/
+@@ -53,7 +85,7 @@ namespace mxl::lib
+ 
+     inline std::size_t DiscreteFlowData::grainCount() const noexcept
+     {
+-        return _grains.size();
++        return isPoolMode() ? _poolGrainCount : _grains.size();
+     }
+ 
+     inline Grain* DiscreteFlowData::emplaceGrain(char const* grainFilePath, std::size_t grainPayloadSize)
+@@ -74,13 +106,104 @@ namespace mxl::lib
+         return _grains.emplace_back(std::move(grain)).get();
+     }
+ 
++    inline void DiscreteFlowData::openGrainPool(char const* poolFilePath, std::size_t count, std::size_t grainPayloadSize)
++    {
++        // Stride = GrainHeader (8192) + payload — same layout as individual grain files
++        _poolGrainStride = sizeof(Grain) + grainPayloadSize;  // Grain is just { GrainHeader header; }
++
++        // Total pool size: count × stride
++        // But when opening (not creating), grainPayloadSize may be 0 — derive from file
++        auto const mode = this->created() ? AccessMode::CREATE_READ_WRITE : this->accessMode();
++        auto const totalSize = (mode == AccessMode::CREATE_READ_WRITE)
++                                   ? count * _poolGrainStride
++                                   : std::size_t{0};  // let SharedMemorySegment use file size
++
++        _pool = SharedMemorySegment{poolFilePath, mode, totalSize, LockMode::Shared};
++
++        if (mode != AccessMode::CREATE_READ_WRITE)
++        {
++            // Recover stride from mapped size: stride = mappedSize / count
++            _poolGrainStride = _pool.mappedSize() / count;
++        }
++
++        _poolGrainCount = count;
++
++        // Placement-new GrainHeader for each grain slot if creating
++        if (mode == AccessMode::CREATE_READ_WRITE)
++        {
++            auto* base = static_cast<uint8_t*>(_pool.data());
++            for (std::size_t i = 0; i < count; ++i)
++            {
++                auto* grain = reinterpret_cast<Grain*>(base + i * _poolGrainStride);
++                new (&grain->header) GrainHeader{};
++            }
++        }
++        else
++        {
++            // Verify grain version on open
++            for (std::size_t i = 0; i < count; ++i)
++            {
++                auto* grain = grainAt(i);
++                if (grain && grain->header.info.version != GRAIN_HEADER_VERSION)
++                {
++                    throw std::invalid_argument{
++                        fmt::format("Pool grain[{}]: unsupported version {}, expected {}",
++                                    i, grain->header.info.version, GRAIN_HEADER_VERSION)};
++                }
++            }
++        }
++    }
++
++    inline bool DiscreteFlowData::isPoolMode() const noexcept
++    {
++        return _poolGrainCount > 0;
++    }
++
++    inline void* DiscreteFlowData::poolBase() noexcept
++    {
++        return _pool.data();
++    }
++
++    inline void const* DiscreteFlowData::poolBase() const noexcept
++    {
++        return _pool.cdata();
++    }
++
++    inline std::size_t DiscreteFlowData::poolMappedSize() const noexcept
++    {
++        return _pool.mappedSize();
++    }
++
++    inline std::size_t DiscreteFlowData::grainStride() const noexcept
++    {
++        return _poolGrainStride;
++    }
++
+     inline Grain* DiscreteFlowData::grainAt(std::size_t i) noexcept
+     {
++        if (isPoolMode())
++        {
++            if (i < _poolGrainCount && _pool.data() != nullptr)
++            {
++                auto* base = static_cast<uint8_t*>(_pool.data());
++                return reinterpret_cast<Grain*>(base + i * _poolGrainStride);
++            }
++            return nullptr;
++        }
+         return (i < _grains.size()) ? _grains[i].get() : nullptr;
+     }
+ 
+     inline Grain const* DiscreteFlowData::grainAt(std::size_t i) const noexcept
+     {
++        if (isPoolMode())
++        {
++            if (i < _poolGrainCount && _pool.cdata() != nullptr)
++            {
++                auto const* base = static_cast<uint8_t const*>(_pool.cdata());
++                return reinterpret_cast<Grain const*>(base + i * _poolGrainStride);
++            }
++            return nullptr;
++        }
+         return (i < _grains.size()) ? _grains[i].get() : nullptr;
+     }
+ 
+diff --git a/lib/internal/include/mxl-internal/PathUtils.hpp b/lib/internal/include/mxl-internal/PathUtils.hpp
+index 8b924c2..cc62965 100644
+--- a/lib/internal/include/mxl-internal/PathUtils.hpp
++++ b/lib/internal/include/mxl-internal/PathUtils.hpp
+@@ -33,6 +33,9 @@ namespace mxl::lib
+     std::filesystem::path makeGrainDataFilePath(std::filesystem::path const& grainDirectory, unsigned int index);
+     std::filesystem::path makeGrainDataFilePath(std::filesystem::path const& domain, std::string const& uuid, unsigned int index);
+ 
++    std::filesystem::path makeGrainPoolFilePath(std::filesystem::path const& grainDirectory);
++    std::filesystem::path makeGrainPoolFilePath(std::filesystem::path const& domain, std::string const& uuid);
++
+     std::filesystem::path makeChannelDataFilePath(std::filesystem::path const& flowDirectory);
+     std::filesystem::path makeChannelDataFilePath(std::filesystem::path const& domain, std::string const& uuid);
+ 
+@@ -71,4 +74,9 @@ namespace mxl::lib
+     {
+         return makeChannelDataFilePath(makeFlowDirectoryName(domain, uuid));
+     }
++
++    inline std::filesystem::path makeGrainPoolFilePath(std::filesystem::path const& domain, std::string const& uuid)
++    {
++        return makeGrainPoolFilePath(makeGrainDirectoryName(domain, uuid));
++    }
+ }
+diff --git a/lib/internal/src/FlowManager.cpp b/lib/internal/src/FlowManager.cpp
+index 8e54324..0944174 100644
+--- a/lib/internal/src/FlowManager.cpp
++++ b/lib/internal/src/FlowManager.cpp
+@@ -221,13 +221,14 @@ namespace mxl::lib
+             throw std::filesystem::filesystem_error{"Could not create grain directory.", grainDir, std::make_error_code(std::errc::io_error)};
+         }
+ 
++        // Use contiguous pool: single file for all grains
++        auto const poolPath = makeGrainPoolFilePath(grainDir);
++        MXL_TRACE("Creating grain pool: {} ({} grains × {} bytes)", poolPath.string(), grainCount, grainPayloadSize);
++        flowData->openGrainPool(poolPath.string().c_str(), grainCount, grainPayloadSize);
++
+         for (auto i = std::size_t{0}; i < grainCount; ++i)
+         {
+-            auto const grainPath = makeGrainDataFilePath(grainDir, i);
+-            MXL_TRACE("Creating grain: {}", grainPath.string());
+-
+-            // \todo Handle payload stored device memory
+-            auto const grain = flowData->emplaceGrain(grainPath.string().c_str(), grainPayloadSize);
++            auto const grain = flowData->grainAt(i);
+             auto& gInfo = grain->header.info;
+             gInfo.grainSize = grainPayloadSize;
+             gInfo.totalSlices = grainNumOfSlices;
+@@ -369,13 +370,23 @@ namespace mxl::lib
+             auto const grainDir = makeGrainDirectoryName(flowDir);
+             if (exists(grainDir) && is_directory(grainDir))
+             {
+-                // Open each grain with per-item error handling
+-                for (auto i = 0U; i < grainCount; ++i)
++                // Try contiguous pool file first (new format)
++                auto const poolPath = makeGrainPoolFilePath(grainDir);
++                if (exists(poolPath))
++                {
++                    MXL_TRACE("Opening grain pool: {}", poolPath.string());
++                    flowData->openGrainPool(poolPath.string().c_str(), grainCount, /*payloadSize=*/0U);
++                }
++                else
+                 {
+-                    auto const grainPath = makeGrainDataFilePath(grainDir, i).string();
+-                    MXL_TRACE("Opening grain: {}", grainPath);
++                    // Fall back to per-grain files (legacy)
++                    for (auto i = 0U; i < grainCount; ++i)
++                    {
++                        auto const grainPath = makeGrainDataFilePath(grainDir, i).string();
++                        MXL_TRACE("Opening grain: {}", grainPath);
+ 
+-                    flowData->emplaceGrain(grainPath.c_str(), /*payloadSize=*/0U);
++                        flowData->emplaceGrain(grainPath.c_str(), /*payloadSize=*/0U);
++                    }
+                 }
+             }
+             else
+diff --git a/lib/internal/src/PathUtils.cpp b/lib/internal/src/PathUtils.cpp
+index ccb7628..76fe09f 100644
+--- a/lib/internal/src/PathUtils.cpp
++++ b/lib/internal/src/PathUtils.cpp
+@@ -43,6 +43,12 @@ namespace mxl::lib
+         return grainDirectory / fmt::format("{}.{}", GRAIN_DATA_FILE_NAME_STEM, index);
+     }
+ 
++    MXL_EXPORT
++    std::filesystem::path makeGrainPoolFilePath(std::filesystem::path const& grainDirectory)
++    {
++        return grainDirectory / "pool";
++    }
++
+     MXL_EXPORT
+     std::filesystem::path makeChannelDataFilePath(std::filesystem::path const& flowDirectory)
+     {

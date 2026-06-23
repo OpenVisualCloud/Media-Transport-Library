@@ -69,13 +69,19 @@ build_openh264() {
 	wget https://github.com/cisco/openh264/archive/refs/heads/openh264v2.4.0.zip
 	unzip openh264v2.4.0.zip && rm -f openh264v2.4.0.zip
 	cd openh264-openh264v2.4.0
-	make -j "$(nproc)"
-	sudo make install
-	sudo ldconfig
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		make -j "$(nproc)" PREFIX="${MTL_INSTALL_PREFIX}"
+		make install PREFIX="${MTL_INSTALL_PREFIX}"
+	else
+		make -j "$(nproc)"
+		sudo make install
+		sudo ldconfig
+	fi
 	cd ../
 }
 
 build_ffmpeg() {
+	pushd "$script_path"
 	if [ -d "FFmpeg-release-${FFMPEG_VERSION}" ]; then
 		echo "FFmpeg directory already exists. Removing it to ensure a clean build."
 		rm -rf "FFmpeg-release-${FFMPEG_VERSION}"
@@ -84,7 +90,7 @@ build_ffmpeg() {
 	wget "https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/${FFMPEG_VERSION}.zip"
 	unzip "${FFMPEG_VERSION}.zip" && rm -f "${FFMPEG_VERSION}.zip"
 
-	cd "FFmpeg-release-${FFMPEG_VERSION}"
+	pushd "./FFmpeg-release-${FFMPEG_VERSION}"
 	cp -f "$script_path"/mtl_* ./libavdevice/
 
 	for patch_file in "$script_path"/"$FFMPEG_VERSION"/*.patch; do
@@ -101,11 +107,21 @@ build_ffmpeg() {
 		extra_config_flags=""
 	fi
 
-	./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
-	make -j "$(nproc)"
-	sudo make install
-	sudo ldconfig
-	cd ../
+	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		# Ensure FFmpeg can find libraries installed in its own prefix (e.g. openh264)
+		export PKG_CONFIG_PATH="${MTL_INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+		export LD_LIBRARY_PATH="${MTL_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-ldflags="-Wl,-rpath,${MTL_INSTALL_PREFIX}/lib" $extra_config_flags
+		make -j "$(nproc)"
+		make install
+	else
+		./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
+		make -j "$(nproc)"
+		sudo make install
+		sudo ldconfig
+	fi
+	popd
+	popd
 }
 
 build_openh264

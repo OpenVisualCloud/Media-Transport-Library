@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2026 Intel Corporation
 """Excel report generation for MTL nightly test reports."""
 
 from datetime import datetime
 
-import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -14,10 +15,18 @@ COLOR_FAILED = "f8d7da"
 COLOR_SKIPPED = "fff3cd"
 COLOR_SEPARATOR = "e6f2ff"
 COLOR_WHITE = "FFFFFF"
+COLOR_REGRESSION = "e2b3b3"
+COLOR_FIXED = "b3d9b3"
+COLOR_NEW_FAILURE = "f5d6a8"
 
 
 def generate_excel_report(
-    pytest_data, gtest_data, output_file, system_info_list=None, test_metadata=None
+    pytest_data,
+    gtest_data,
+    output_file,
+    system_info_list=None,
+    test_metadata=None,
+    regression_data=None,
 ):
     """Create Excel report with separate sheets for pytest and gtest."""
     wb = Workbook()
@@ -28,6 +37,8 @@ def generate_excel_report(
         _create_pytest_sheet(wb, pytest_data)
     if gtest_data:
         _create_gtest_sheet(wb, gtest_data)
+    if regression_data:
+        _create_regression_sheet(wb, regression_data)
     _create_summary_sheet(wb, pytest_data, gtest_data, system_info_list, test_metadata)
 
     wb.save(output_file)
@@ -244,69 +255,40 @@ def _create_summary_sheet(wb, pytest_data, gtest_data, system_info_list, test_me
 
 def _calculate_statistics(pytest_data, gtest_data):
     """Calculate test statistics from data."""
-    pytest_total = pytest_passed = pytest_failed = pytest_skipped = 0
-    gtest_total = gtest_passed = gtest_failed = gtest_skipped = 0
 
-    if pytest_data:
-        df = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in pytest_data]
-        )
-        pytest_total = df["total"].sum()
-        pytest_passed = df["passed"].sum()
-        pytest_failed = df["failed"].sum()
-        pytest_skipped = df["skipped"].sum()
+    def _suite_stats(data):
+        if not data:
+            return {
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "pass_rate": 0,
+            }
+        passed = sum(d.get("passed", 0) for d in data)
+        failed = sum(d.get("failed", 0) for d in data)
+        return {
+            "total": sum(d.get("total", 0) for d in data),
+            "passed": passed,
+            "failed": failed,
+            "skipped": sum(d.get("skipped", 0) for d in data),
+            "pass_rate": (
+                passed / (passed + failed) * 100 if (passed + failed) > 0 else 0
+            ),
+        }
 
-    if gtest_data:
-        df = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in gtest_data]
-        )
-        gtest_total = df["total"].sum()
-        gtest_passed = df["passed"].sum()
-        gtest_failed = df["failed"].sum()
-        gtest_skipped = df["skipped"].sum()
-
-    pytest_pass_rate = (
-        (pytest_passed / (pytest_passed + pytest_failed) * 100)
-        if (pytest_passed + pytest_failed) > 0
-        else 0
-    )
-    gtest_pass_rate = (
-        (gtest_passed / (gtest_passed + gtest_failed) * 100)
-        if (gtest_passed + gtest_failed) > 0
-        else 0
-    )
-
-    combined_total = pytest_total + gtest_total
-    combined_passed = pytest_passed + gtest_passed
-    combined_failed = pytest_failed + gtest_failed
-    combined_skipped = pytest_skipped + gtest_skipped
-    combined_pass_rate = (
-        (combined_passed / (combined_passed + combined_failed) * 100)
-        if (combined_passed + combined_failed) > 0
-        else 0
-    )
-
+    p = _suite_stats(pytest_data)
+    g = _suite_stats(gtest_data)
+    cp, cf = p["passed"] + g["passed"], p["failed"] + g["failed"]
     return {
-        "pytest": {
-            "total": pytest_total,
-            "passed": pytest_passed,
-            "failed": pytest_failed,
-            "skipped": pytest_skipped,
-            "pass_rate": pytest_pass_rate,
-        },
-        "gtest": {
-            "total": gtest_total,
-            "passed": gtest_passed,
-            "failed": gtest_failed,
-            "skipped": gtest_skipped,
-            "pass_rate": gtest_pass_rate,
-        },
+        "pytest": p,
+        "gtest": g,
         "combined": {
-            "total": combined_total,
-            "passed": combined_passed,
-            "failed": combined_failed,
-            "skipped": combined_skipped,
-            "pass_rate": combined_pass_rate,
+            "total": p["total"] + g["total"],
+            "passed": cp,
+            "failed": cf,
+            "skipped": p["skipped"] + g["skipped"],
+            "pass_rate": cp / (cp + cf) * 100 if (cp + cf) > 0 else 0,
         },
     }
 
@@ -315,49 +297,20 @@ def _build_metadata_section(test_metadata):
     """Build test run metadata section."""
     data = [["Test Run Information"], []]
 
-    if test_metadata.get("pytest_run_number") and test_metadata.get("pytest_branch"):
-        run_date = (
-            test_metadata["pytest_run_date"].split("T")[0]
-            if test_metadata.get("pytest_run_date")
-            else "N/A"
-        )
-        run_time = (
-            test_metadata["pytest_run_date"].split("T")[1].split("Z")[0]
-            if test_metadata.get("pytest_run_date")
-            and "T" in test_metadata["pytest_run_date"]
-            else "N/A"
-        )
-        data.append(
-            [
-                "Pytest Run:",
-                f"#{test_metadata['pytest_run_number']} (branch: {test_metadata['pytest_branch']})",
-            ]
-        )
-        data.append(["Pytest Date:", f"{run_date} {run_time}"])
-        if test_metadata.get("pytest_run_url"):
-            data.append(["Pytest URL:", test_metadata["pytest_run_url"]])
-
-    if test_metadata.get("gtest_run_number") and test_metadata.get("gtest_branch"):
-        run_date = (
-            test_metadata["gtest_run_date"].split("T")[0]
-            if test_metadata.get("gtest_run_date")
-            else "N/A"
-        )
-        run_time = (
-            test_metadata["gtest_run_date"].split("T")[1].split("Z")[0]
-            if test_metadata.get("gtest_run_date")
-            and "T" in test_metadata["gtest_run_date"]
-            else "N/A"
-        )
-        data.append(
-            [
-                "GTest Run:",
-                f"#{test_metadata['gtest_run_number']} (branch: {test_metadata['gtest_branch']})",
-            ]
-        )
-        data.append(["GTest Date:", f"{run_date} {run_time}"])
-        if test_metadata.get("gtest_run_url"):
-            data.append(["GTest URL:", test_metadata["gtest_run_url"]])
+    for prefix, label in [("pytest", "Pytest"), ("gtest", "GTest")]:
+        run_num = test_metadata.get(f"{prefix}_run_number")
+        branch = test_metadata.get(f"{prefix}_branch")
+        if not run_num or not branch:
+            continue
+        raw_date = test_metadata.get(f"{prefix}_run_date", "")
+        parts = raw_date.split("T") if raw_date else []
+        run_date = parts[0] if parts else "N/A"
+        run_time = parts[1].rstrip("Z") if len(parts) > 1 else "N/A"
+        data.append([f"{label} Run:", f"#{run_num} (branch: {branch})"])
+        data.append([f"{label} Date:", f"{run_date} {run_time}"])
+        url = test_metadata.get(f"{prefix}_run_url")
+        if url:
+            data.append([f"{label} URL:", url])
 
     data.extend([[], []])
     return data
@@ -387,10 +340,8 @@ def _add_system_info_section(ws, system_info_list):
     # Headers
     sys_headers = [
         "Hostname",
-        "Platform",
         "CPU",
         "Cores",
-        "RAM",
         "HugePages",
         "OS",
         "Kernel",
@@ -404,16 +355,85 @@ def _add_system_info_section(ws, system_info_list):
         ws.append(
             [
                 sys_info.get("hostname", "unknown"),
-                sys_info.get("platform", "unknown"),
                 sys_info.get("cpu", "unknown"),
                 sys_info.get("cpu_cores", "unknown"),
-                sys_info.get("ram", "unknown"),
                 sys_info.get("hugepages", "unknown"),
                 sys_info.get("os", "unknown"),
                 sys_info.get("kernel", "unknown"),
                 sys_info.get("nics", "unknown"),
             ]
         )
+
+
+def _create_regression_sheet(wb, regression_data):
+    """Create regression analysis sheet."""
+    ws = wb.create_sheet("Regressions")
+
+    sections = [
+        (
+            "REGRESSIONS (previously passed, now failing)",
+            "regressions",
+            COLOR_REGRESSION,
+        ),
+        ("FIXES (previously failing, now passing)", "fixes", COLOR_FIXED),
+        ("NEW FAILURES (not present in baseline)", "new_failures", COLOR_NEW_FAILURE),
+    ]
+
+    coverage = regression_data.get("coverage")
+    if coverage:
+        cur = coverage["current_total"]
+        base = coverage["baseline_total"]
+        delta = cur - base
+        sign = "+" if delta > 0 else ""
+        ws.append(
+            [
+                f"Coverage: current run has {cur} tests, "
+                f"baseline had {base} ({sign}{delta}). "
+                f"{coverage['common']} in common, "
+                f"{coverage['only_in_current']} new in current, "
+                f"{coverage['only_in_baseline']} absent from current."
+            ]
+        )
+        ws.cell(row=ws.max_row, column=1).font = Font(italic=True, color="4a90d9")
+        ws.append([])
+
+    for title, key, color in sections:
+        entries = regression_data.get(key, [])
+        row_start = ws.max_row + 1
+        _add_section_title(
+            ws, f"{title} ({len(entries)})", f"A{row_start}:F{row_start}"
+        )
+        ws.append([])
+
+        headers = ["Platform", "NIC", "Category", "Test Name", "Baseline", "Current"]
+        ws.append(headers)
+        _style_header_row(ws, ws.max_row, len(headers))
+
+        if entries:
+            for e in entries:
+                ws.append(
+                    [
+                        e["platform"],
+                        e["nic"],
+                        e["category"],
+                        e["test_name"],
+                        e.get("baseline_result") or "N/A",
+                        e["current_result"],
+                    ]
+                )
+                row = ws.max_row
+                # Highlight the row with the section color
+                for col in range(1, 7):
+                    ws.cell(row=row, column=col).fill = PatternFill(
+                        start_color=color, end_color=color, fill_type="solid"
+                    )
+        else:
+            ws.append(["No entries"])
+
+        ws.append([])
+        ws.append([])
+
+    _auto_adjust_columns(ws)
 
 
 def _add_section_title(ws, title, merge_range):

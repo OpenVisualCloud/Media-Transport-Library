@@ -4,6 +4,7 @@
 
 #include "st20_pipeline_rx.h"
 
+#include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
@@ -101,6 +102,9 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   }
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    /* relaxed atomic: written from tasklet, read from any thread via
+     * st20p_rx_get_session_stats(); no ordering vs other state required. */
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -174,6 +178,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -292,6 +297,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
+    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
@@ -384,13 +390,12 @@ static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff;
+  struct st20_convert_frame_meta* ret_frame = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, NULL);
+  MTL_MAY_UNUSED(idx);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
@@ -398,7 +403,7 @@ static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    goto out;
   }
 
   framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
@@ -407,7 +412,10 @@ static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->convert_frame;
+  ret_frame = &framebuff->convert_frame;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_frame;
 }
 
 static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta* frame,
@@ -416,16 +424,15 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff = frame->priv;
   uint16_t convert_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
   if (ST20P_RX_FRAME_IN_CONVERTING != framebuff->stat) {
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   dbg("%s(%d), frame %u result %d\n", __func__, idx, convert_idx, result);
@@ -439,7 +446,10 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     rx_st20p_notify_frame_available(ctx);
   }
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 static int rx_st20p_convert_dump(void* priv) {
@@ -818,33 +828,17 @@ static int rx_st20p_usdt_dump_frame(struct st20p_rx_ctx* ctx, struct st_frame* f
   return 0;
 }
 
-static int st20p_rx_get_block_wait(struct st20p_rx_ctx* ctx) {
-  dbg("%s(%d), start\n", __func__, ctx->idx);
-  /* wait on the block cond */
-  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  while (!ctx->block_wake_pending) {
-    int ret = mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                                           ctx->block_timeout_ns);
-    if (ret) break;
-  }
-  ctx->block_wake_pending = false;
-  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  dbg("%s(%d), end\n", __func__, ctx->idx);
-  return 0;
-}
+/* st20p_rx_get_block_wait inlined into st20p_rx_get_frame; see mt_handle_guard.h */
 
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff;
-  struct st_frame* frame;
+  struct st_frame* frame = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, NULL);
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) goto out; /* not ready */
 
   ctx->stat_get_frame_try++;
 
@@ -855,7 +849,16 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
         rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
     if (!framebuff && ctx->block_get) { /* wait here */
       mt_pthread_mutex_unlock(&ctx->lock);
-      st20p_rx_get_block_wait(ctx);
+      mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+      while (!ctx->block_wake_pending &&
+             !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+        int _ret = mt_pthread_cond_timedwait_ns(
+            &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+        if (_ret) break;
+      }
+      ctx->block_wake_pending = false;
+      mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+      if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
       /* get again */
       mt_pthread_mutex_lock(&ctx->lock);
       framebuff =
@@ -864,7 +867,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     /* not any ready frame */
     if (!framebuff) {
       mt_pthread_mutex_unlock(&ctx->lock);
-      return NULL;
+      goto out;
     }
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
   } else {
@@ -872,7 +875,16 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
                                         ST20P_RX_FRAME_CONVERTED);
     if (!framebuff && ctx->block_get) { /* wait here */
       mt_pthread_mutex_unlock(&ctx->lock);
-      st20p_rx_get_block_wait(ctx);
+      mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+      while (!ctx->block_wake_pending &&
+             !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+        int _ret = mt_pthread_cond_timedwait_ns(
+            &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+        if (_ret) break;
+      }
+      ctx->block_wake_pending = false;
+      mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+      if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
       /* get again */
       mt_pthread_mutex_lock(&ctx->lock);
       framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
@@ -881,7 +893,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     /* not any converted frame */
     if (!framebuff) {
       mt_pthread_mutex_unlock(&ctx->lock);
-      return NULL;
+      goto out;
     }
   }
 
@@ -901,6 +913,9 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     frame->user_meta_size = 0;
   }
   ctx->stat_get_frame_succ++;
+  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+  if (frame->status == ST_FRAME_STATUS_CORRUPTED)
+    __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
   MT_USDT_ST20P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED()) {
@@ -912,6 +927,8 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   } else {
     ctx->usdt_frame_cnt = 0;
   }
+out:
+  MT_HANDLE_RELEASE(ctx);
   return frame;
 }
 
@@ -920,16 +937,15 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff = frame->priv;
   uint16_t consumer_idx = framebuff->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
   if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   /* free the frame */
@@ -940,7 +956,36 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   MT_USDT_ST20P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
 
-  return 0;
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st20p_rx_put_frame_abort(st20p_rx_handle handle, struct st_frame* frame) {
+  struct st20p_rx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_rx_frame* framebuff = frame->priv;
+  uint16_t consumer_idx = framebuff->idx;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
+
+  if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
+        framebuff->stat);
+    ret = -EIO;
+    goto out;
+  }
+
+  /* free the frame without processing */
+  st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
+  framebuff->stat = ST20P_RX_FRAME_FREE;
+  dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
@@ -1005,6 +1050,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->dynamic_ext_frame = (ops->flags & ST20P_RX_FLAG_EXT_FRAME) ? true : false;
   ctx->impl = impl;
   ctx->type = MT_ST20_HANDLE_PIPELINE_RX;
+  ctx->wake_on_destroy = (void (*)(void*))rx_st20p_block_wake;
   ctx->dst_size = dst_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
@@ -1068,10 +1114,14 @@ int st20p_rx_free(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+  int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
+                                    MT_ST20_HANDLE_PIPELINE_RX);
+  if (_gd < 0) {
+    if (_gd == -EIO) err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return _gd;
   }
+  if (ctx->wake_on_destroy) ctx->wake_on_destroy(ctx);
+  mt_handle_drain(&ctx->lc_refcnt);
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
@@ -1107,154 +1157,154 @@ int st20p_rx_free(st20p_rx_handle handle) {
 void* st20p_rx_get_fb_addr(st20p_rx_handle handle, uint16_t idx) {
   struct st20p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
+  void* ret_addr = NULL;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return NULL;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, NULL);
 
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
-    return NULL;
+    goto out;
   }
-  if (ctx->derive) return ctx->framebuffs[idx].src.addr;
-  return ctx->framebuffs[idx].dst.addr;
+  if (ctx->derive)
+    ret_addr = ctx->framebuffs[idx].src.addr;
+  else
+    ret_addr = ctx->framebuffs[idx].dst.addr;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret_addr;
 }
 
 size_t st20p_rx_frame_size(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  size_t ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return ctx->dst_size;
+  ret = ctx->dst_size;
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_pcapng_dump(st20p_rx_handle handle, uint32_t max_dump_packets, bool sync,
                          struct st_pcap_dump_meta* meta) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
-  return st20_rx_pcapng_dump(ctx->transport, max_dump_packets, sync, meta);
+  ret = st20_rx_pcapng_dump(ctx->transport, max_dump_packets, sync, meta);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_get_queue_meta(ctx->transport, meta);
+  ret = st20_rx_get_queue_meta(ctx->transport, meta);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_get_sch_idx(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_get_sch_idx(ctx->transport);
+  ret = st20_rx_get_sch_idx(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats* stats) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_get_session_stats(ctx->transport, stats);
+  ret = st20_rx_get_session_stats(ctx->transport, stats);
+  if (ret < 0) goto out;
+  /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
+  stats->common.stat_frames_received =
+      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+  stats->common.stat_frames_dropped =
+      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+  stats->common.stat_frames_corrupted =
+      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+  ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx;
+  int ret;
 
   if (!handle) {
     err("%s, invalid handle %p\n", __func__, handle);
     return -EINVAL;
   }
 
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_reset_session_stats(ctx->transport);
+  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
+  ret = st20_rx_reset_session_stats(ctx->transport);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_update_source(ctx->transport, src);
+  ret = st20_rx_update_source(ctx->transport, src);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_timing_parser_critical(st20p_rx_handle handle,
                                     struct st20_rx_tp_pass* pass) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int ret;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  return st20_rx_timing_parser_critical(ctx->transport, pass);
+  ret = st20_rx_timing_parser_critical(ctx->transport, pass);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
 }
 
 int st20p_rx_wake_block(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
   if (ctx->block_get) rx_st20p_block_wake(ctx);
 
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }
 
 int st20p_rx_set_block_timeout(st20p_rx_handle handle, uint64_t timedwait_ns) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
 
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
   ctx->block_timeout_ns = timedwait_ns;
+  MT_HANDLE_RELEASE(ctx);
   return 0;
 }

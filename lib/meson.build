@@ -89,6 +89,10 @@ endif
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'
   mtl_c_args += ['-Werror']
+else
+  # test-only TX mutation helpers (seq-gap, bad-parity, etc.) are compiled
+  # into the library only for debug builds so the hot path stays clean.
+  mtl_c_args += ['-DMTL_SIMULATE_PACKET_DROPS']
 endif
 mtl_c_args += ['-Wall']
 mtl_c_args += ['-Wunused-parameter']
