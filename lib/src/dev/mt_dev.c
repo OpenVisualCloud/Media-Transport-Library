@@ -1170,6 +1170,20 @@ static int dev_start_port(struct mt_interface* inf) {
     tx_port_conf = inf->dev_info.default_txconf;
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+      bool is_sys_q = false;
+      if (inf->drv_info.drv_type == MT_DRV_IGC) {
+        /* IGC reserves Queue 0 for TSN pacing; other queues are for system/CNI */
+        if (q != 0) is_sys_q = true;
+      } else {
+        /* Standard PMD and Shared TXQ setups reserve Queue 0 for system/CNI */
+        if (q == 0) is_sys_q = true;
+      }
+
+      if (!is_sys_q) {
+        tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+      } else {
+        info("%s(%d), bypass SEND_ON_TIMESTAMP offload for system queue %u\n", __func__, port, q);
+      }
       tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
     }
 #endif
@@ -1506,11 +1520,13 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
 #endif
 }
 
+#if 0
 static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   return mt_get_real_time();
 }
+#endif
 
 static uint64_t ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mtl_init_params* p = mt_get_user_params(impl);
@@ -2195,8 +2211,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       info("%s(%d), use user ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_user;
     } else {
-      info("%s(%d), use mt ptp source\n", __func__, i);
-      inf->ptp_get_time_fn = ptp_from_real_time;
+      info("%s(%d), use raw PTP (NIC PHC) as default mt ptp source\n", __func__, i);
+      inf->ptp_get_time_fn = mt_get_raw_ptp_time;
     }
 
 #ifdef MTL_TXPP_PROBE

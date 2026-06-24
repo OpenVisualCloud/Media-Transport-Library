@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000002 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Thu, 8 May 2025 06:30:00 +0000
+Subject: [PATCH 13/13] ice: e830: use direct MMIO for PHY timer command
+
+E830 has an internal PHY, so ice_ptp_port_cmd_e830() must not use
+the SBQ (sideband queue) path designed for E810's external PHY.
+Replace ice_write_phy_reg_e810_lp() with a direct wr32() to avoid
+ICE_ERR_AQ_ERROR (-100) on PTP clock adjustments.
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/base/ice_ptp_hw.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/ice/base/ice_ptp_hw.c b/drivers/net/intel/ice/base/ice_ptp_hw.c
+--- a/drivers/net/intel/ice/base/ice_ptp_hw.c
++++ b/drivers/net/intel/ice/base/ice_ptp_hw.c
+@@ -5627,8 +5627,10 @@
+ {
+ 	u32 val = ice_ptp_tmr_cmd_to_port_reg(hw, cmd);
+
+-	return ice_write_phy_reg_e810_lp(hw, E830_ETH_GLTSYN_CMD, val,
+-					   lock_sbq);
++	(void)lock_sbq;
++	wr32(hw, E830_ETH_GLTSYN_CMD, val);
++
++	return 0;
+ }
+
+ /**
+--
+2.43.0

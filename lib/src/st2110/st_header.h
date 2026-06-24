@@ -180,7 +180,7 @@ struct st_tx_video_pacing {
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
-  uint64_t ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
+  long double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
