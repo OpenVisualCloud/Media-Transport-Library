@@ -152,10 +152,18 @@ runs:
         USER="${{ steps.shadow-creds.outputs.user }}"
         SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
         echo "::group::Syncing .local_install/ to ${USER}@${IP}"
-        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "mkdir -p ${{ github.workspace }}/.local_install"
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "mkdir -p ${{ github.workspace }}/.local_install ${{ github.workspace }}/script ${{ github.workspace }}/tests"
         rsync -az --delete \
           -e "ssh ${SSH_OPTS[*]}" \
           "${{ github.workspace }}/.local_install/" \
           "${USER}@${IP}:${{ github.workspace }}/.local_install/"
+        rsync -az --delete \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${{ github.workspace }}/script/" \
+          "${USER}@${IP}:${{ github.workspace }}/script/"
+        rsync -az --delete \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${{ github.workspace }}/tests/" \
+          "${USER}@${IP}:${{ github.workspace }}/tests/"
         echo "::endgroup::"
-        echo "::notice::Synced .local_install/ to shadow host ${IP}"
+        echo "::notice::Synced .local_install/, script/, and tests/ to shadow host ${IP}"
