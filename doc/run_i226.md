@@ -31,7 +31,7 @@ Python packages are externally managed, so `python3-pyelftools` and
 
 * Enable IOMMU in BIOS/UEFI.
 * Keep power management conservative for media workloads (avoid deep C-states when possible).
-* Verify kernel command line has IOMMU enabled:
+* Verify that the kernel was booted with IOMMU enabled:
 
 ```bash
 cat /proc/cmdline

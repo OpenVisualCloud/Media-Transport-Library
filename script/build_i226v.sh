@@ -46,17 +46,26 @@ run_as_root() {
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--dpdk-ver)
-		[[ $# -ge 2 ]] || { echo "--dpdk-ver requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--dpdk-ver requires a value" >&2
+			exit 1
+		}
 		DPDK_VER="$2"
 		shift 2
 		;;
 	--dpdk-src-dir)
-		[[ $# -ge 2 ]] || { echo "--dpdk-src-dir requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--dpdk-src-dir requires a value" >&2
+			exit 1
+		}
 		DPDK_SRC_DIR="$2"
 		shift 2
 		;;
 	--buildtype)
-		[[ $# -ge 2 ]] || { echo "--buildtype requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--buildtype requires a value" >&2
+			exit 1
+		}
 		BUILDTYPE="$2"
 		shift 2
 		;;
@@ -81,11 +90,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${BUILDTYPE}" in
-	debug | debugonly | debugoptimized | plain | release) ;;
-	*)
-		echo "Invalid --buildtype '${BUILDTYPE}'" >&2
-		exit 1
-		;;
+debug | debugonly | debugoptimized | plain | release) ;;
+*)
+	echo "Invalid --buildtype '${BUILDTYPE}'" >&2
+	exit 1
+	;;
 esac
 
 if [[ -z "${DPDK_SRC_DIR}" ]]; then
