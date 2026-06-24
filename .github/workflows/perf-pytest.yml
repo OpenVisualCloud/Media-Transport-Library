@@ -79,12 +79,19 @@ jobs:
           source ../.venv/bin/activate
           SHADOW_IP="${{ steps.validate.outputs.shadow_host_ip }}"
           SHADOW_USER="${{ steps.validate.outputs.shadow_host_user }}"
+          SHADOW_PCI=$(ssh -o StrictHostKeyChecking=no "${SHADOW_USER}@${SHADOW_IP}" "lspci -nn" | grep -oE "8086:(1592|12d2|579d|1249)" | head -n 1 || echo "")
+          if [ -z "${SHADOW_PCI}" ]; then
+            SHADOW_PCI="${{ env.PCI_DEVICE }}"
+          else
+            SHADOW_PCI="${SHADOW_PCI},${SHADOW_PCI}"
+          fi
           python3 gen_config.py \
             --session_id "${{ env.SESSION_ID }}" \
             --mtl_path "${{ github.workspace }}" "${{ github.workspace }}" \
-            --pci_device "${{ env.PCI_DEVICE }}" "${{ env.PCI_DEVICE }}" \
+            --pci_device "${SHADOW_PCI}" "${{ env.PCI_DEVICE }}" \
             --ip_address "${SHADOW_IP}" "${{ secrets.PERF_SUT_IP }}" \
             --username "${SHADOW_USER}" \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --test_time "${{ inputs.test_time || '120' }}" \
             --no_capture
       - name: Export workflow tag for PCAP naming
