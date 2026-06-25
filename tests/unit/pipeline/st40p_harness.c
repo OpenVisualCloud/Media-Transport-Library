@@ -159,10 +159,6 @@ ut40p_ctx* ut40p_ctx_create(int num_port, int framebuff_cnt) {
   p->port_id[MTL_SESSION_PORT_R] = 1;
 
   p->ready = true;
-  if (pthread_mutex_init(&p->lock, NULL) != 0) {
-    ut40p_ctx_destroy(ctx);
-    return NULL;
-  }
 
   /* drain any stale mbufs from a previous test */
   ut_ring_drain(g_mock_ring);
@@ -174,7 +170,6 @@ void ut40p_ctx_destroy(ut40p_ctx* ctx) {
   if (!ctx) return;
 
   ut_ring_drain(g_mock_ring);
-  pthread_mutex_destroy(&ctx->pipeline.lock);
 
   if (ctx->udw_buffers) {
     for (int i = 0; i < ctx->framebuff_cnt; i++) free(ctx->udw_buffers[i]);
@@ -373,6 +368,42 @@ struct st40_frame_info* ut40p_get_frame(ut40p_ctx* ctx) {
 
 int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame) {
   return st40p_rx_put_frame(&ctx->pipeline, frame);
+}
+
+/* ── direct frame injector (concurrency tests) ────────────────────────── */
+
+/* Bypass the mbuf assembly path and transition one FREE framebuffer straight to
+ * READY, mirroring the state write rx_st40p_rtp_ready() performs on a completed
+ * frame. Single-producer only (the SPMC concurrency test drives this from one
+ * thread); returns -EBUSY when no FREE slot is available. */
+int ut40p_inject_frame(ut40p_ctx* ctx, enum st_frame_status status, uint32_t timestamp) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  struct st40p_rx_frame* framebuff =
+      rx_st40p_next_available(p, p->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
+  if (!framebuff) return -EBUSY;
+
+  struct st40_frame_info* frame_info = &framebuff->frame_info;
+  frame_info->status = status;
+  frame_info->timestamp = timestamp;
+  frame_info->rtp_timestamp = timestamp;
+  frame_info->meta_num = 0;
+  framebuff->stat = ST40P_RX_FRAME_READY;
+  p->framebuff_producer_idx = rx_st40p_next_idx(p, framebuff->idx);
+  __atomic_fetch_add(&p->stat_frames_received, 1, __ATOMIC_RELAXED);
+  return 0;
+}
+
+int ut40p_frame_idx(const struct st40_frame_info* frame) {
+  const struct st40p_rx_frame* framebuff = frame->priv;
+  return framebuff->idx;
+}
+
+int ut40p_framebuff_cnt(const ut40p_ctx* ctx) {
+  return ctx->framebuff_cnt;
+}
+
+int ut40p_frame_stat(const ut40p_ctx* ctx, int i) {
+  return (int)ctx->framebuffs[i].stat;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */

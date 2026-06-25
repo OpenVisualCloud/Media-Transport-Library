@@ -50,6 +50,15 @@ unit_sources = [
   'pipeline/st20p_test.cpp',
   'pipeline/st30p_harness.c',
   'pipeline/st30p_test.cpp',
+  'pipeline/st30p_tx_harness.c',
+  'pipeline/st30p_concurrency_test.cpp',
+  'pipeline/st40p_tx_harness.c',
+  'pipeline/st40p_concurrency_test.cpp',
+  'pipeline/st20p_tx_harness.c',
+  'pipeline/st20p_concurrency_test.cpp',
+  'pipeline/st22p_harness.c',
+  'pipeline/st22p_tx_harness.c',
+  'pipeline/st22p_concurrency_test.cpp',
   'main.cpp',
 ]
 

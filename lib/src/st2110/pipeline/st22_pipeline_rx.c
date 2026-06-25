@@ -102,13 +102,11 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
 
@@ -122,7 +120,6 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      mt_pthread_mutex_unlock(&ctx->lock);
       return ret;
     }
 
@@ -139,7 +136,6 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      mt_pthread_mutex_unlock(&ctx->lock);
       return ret;
     }
   }
@@ -170,14 +166,12 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     framebuff->stat = ST22P_RX_FRAME_DECODED;
     /* point to next */
     ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-    mt_pthread_mutex_unlock(&ctx->lock);
     rx_st22p_notify_frame_available(ctx);
     return 0;
   }
   framebuff->stat = ST22P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   rx_st22p_decode_notify_frame_ready(ctx);
@@ -237,20 +231,16 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
 
   ctx->stat_decode_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
   if (!framebuff && ctx->decode_block_get) { /* wait here for block mode */
-    mt_pthread_mutex_unlock(&ctx->lock);
     rx_st22p_decode_get_block_wait(ctx);
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
         rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
   }
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     dbg("%s(%d), no ready frame\n", __func__, idx);
     goto out;
   }
@@ -258,7 +248,6 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   framebuff->stat = ST22P_RX_FRAME_IN_DECODING;
   /* point to next */
   ctx->framebuff_decode_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   ctx->stat_decode_get_frame_succ++;
   ret_frame = &framebuff->decode_frame;
@@ -580,11 +569,9 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   if (!framebuff && ctx->block_get) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -592,20 +579,24 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
         rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   }
   /* not any decoded frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST22P_RX_FRAME_IN_USER;
-  /* point to next */
+  /* Claim DECODED->IN_USER atomically so concurrent consumers can't grab the
+   * same slot; on a lost race return NULL and let the caller retry. */
+  {
+    uint32_t expected = ST22P_RX_FRAME_DECODED;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected, ST22P_RX_FRAME_IN_USER,
+                                     false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
+  /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   ctx->stat_get_frame_succ++;
@@ -765,7 +756,6 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   }
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->decode_block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->decode_block_wake_cond);
@@ -846,7 +836,6 @@ int st22p_rx_free(st22p_rx_handle handle) {
   }
   rx_st22p_uinit_dst_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   mt_pthread_mutex_destroy(&ctx->decode_block_wake_mutex);

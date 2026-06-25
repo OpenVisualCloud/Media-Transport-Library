@@ -50,6 +50,35 @@ struct st_frame* ut20p_get_frame(ut20p_ctx* ctx);
 /** Wraps st20p_rx_put_frame(). */
 int ut20p_put_frame(ut20p_ctx* ctx, struct st_frame* frame);
 
+/**
+ * Set framebuffer i directly to READY state, bypassing the normal
+ * inject path.  Used by the concurrent-converter tests which need
+ * frames in READY (not CONVERTED) so that rx_st20p_convert_get_frame
+ * finds them and tries to claim them.
+ */
+void ut20p_set_frame_ready(ut20p_ctx* ctx, int idx);
+
+/** Wraps rx_st20p_convert_get_frame() — the external converter claim. */
+struct st20_convert_frame_meta* ut20p_convert_get_frame(ut20p_ctx* ctx);
+
+/** Wraps rx_st20p_convert_put_frame(). result 0 = success, <0 = fail. */
+int ut20p_convert_put_frame(ut20p_ctx* ctx, struct st20_convert_frame_meta* frame,
+                            int result);
+
+/** Buffer index encoded in a convert-frame meta pointer. */
+int ut20p_convert_frame_idx(const struct st20_convert_frame_meta* meta);
+
+/* ── concurrency-test helpers ─────────────────────────────────────────── */
+
+/** Buffer index that a user-facing frame belongs to. */
+int ut20p_frame_idx(const struct st_frame* frame);
+
+/** Total framebuffer count. */
+int ut20p_framebuff_cnt(const ut20p_ctx* ctx);
+
+/** Raw stat value of framebuffer i (for diagnostics). */
+int ut20p_frame_stat(const ut20p_ctx* ctx, int i);
+
 /* ── stat accessors ───────────────────────────────────────────────── */
 
 uint64_t ut20p_stat_frames_received(const ut20p_ctx* ctx);
