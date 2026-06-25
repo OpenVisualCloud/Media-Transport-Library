@@ -13,7 +13,19 @@ libpthread_dep = cc.find_library('pthread', required : true)
 libdl_dep = cc.find_library('dl', required : true)
 if not is_windows
   dpdk_dep = dependency('libdpdk', version: '>=25.03', required: true)
-  libnuma_dep = cc.find_library('numa', required : true)
+  if is_freebsd
+    # NUMA is optional on FreeBSD
+    libnuma_dep = cc.find_library('numa', required : false)
+    if not libnuma_dep.found()
+      message('libnuma not found on FreeBSD, using single-socket fallback')
+    else
+      add_global_arguments('-DMTL_HAS_NUMA', language : 'c')
+    endif
+  else
+    # NUMA is required on Linux
+    libnuma_dep = cc.find_library('numa', required : true)
+    add_global_arguments('-DMTL_HAS_NUMA', language : 'c')
+  endif
   ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
 jsonc_dep = dependency('json-c', required : true)
@@ -25,21 +37,29 @@ if gpu_direct_dep.found()
 endif
 
 # xdp check
-libxdp_dep = dependency('libxdp', required: false)
-libbpf_dep = dependency('libbpf', required: false)
-if libxdp_dep.found() and libbpf_dep.found()
-  add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'c')
-  set_variable('mtl_has_xdp_backend', true)
-else
-  message('libxdp and libbpf not found, no af_xdp backend')
+if is_freebsd
+  # AF_XDP is Linux-specific, disable for FreeBSD
+  libxdp_dep = []
+  libbpf_dep = []
   set_variable('mtl_has_xdp_backend', false)
+  message('FreeBSD detected: AF_XDP backend disabled (Linux-specific)')
+else
+  libxdp_dep = dependency('libxdp', required: false)
+  libbpf_dep = dependency('libbpf', required: false)
+  if libxdp_dep.found() and libbpf_dep.found()
+    add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'c')
+    set_variable('mtl_has_xdp_backend', true)
+  else
+    message('libxdp and libbpf not found, no af_xdp backend')
+    set_variable('mtl_has_xdp_backend', false)
+  endif
 endif
 
 # usdt check
 mtl_has_usdt = false
 
-# usdt not available in windows
-if not is_windows and get_option('enable_usdt') == true
+# usdt not available in windows or freebsd (FreeBSD has kernel DTrace, not Linux systemtap-sdt-dev dtrace)
+if not is_windows and not is_freebsd and get_option('enable_usdt') == true
   dtrace = find_program('dtrace', required: false)
   if cc.has_header('sys/sdt.h') and dtrace.found()
     mtl_has_usdt = true

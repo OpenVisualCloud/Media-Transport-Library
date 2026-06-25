@@ -7,6 +7,8 @@
 
 #ifdef WINDOWSENV /* Windows */
 #include "win_posix.h"
+#elif defined(__FreeBSD__) /* FreeBSD */
+#include "mt_platform_freebsd.h"
 #else /* Linux */
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -23,12 +25,15 @@
 #include <immintrin.h>
 #endif
 
-#endif /* end of WINDOWSENV */
+#endif /* end of platform selection */
 
+#if !defined(__FreeBSD__) && !defined(WINDOWSENV)
+/* Linux-specific clock definition */
 #ifdef CLOCK_MONOTONIC_RAW
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
 #endif
 
 #ifdef WINDOWSENV
@@ -44,6 +49,8 @@ typedef unsigned long int nfds_t;
 #define MSG_DONTWAIT (0x40)
 #endif
 
+#if !defined(__FreeBSD__)
+/* MT_THREAD_TIMEDWAIT_CLOCK_ID is platform-specific */
 #ifdef WINDOWSENV
 #define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
 #else
@@ -51,13 +58,15 @@ typedef unsigned long int nfds_t;
 #define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_MONOTONIC
 #endif
 
+/* MT_FLOCK_PATH is platform-specific */
 #ifdef WINDOWSENV
 #define MT_FLOCK_PATH "c:/temp/kahawai_lcore.lock"
 #else
 #define MT_FLOCK_PATH "/tmp/kahawai_lcore.lock"
 #endif
+#endif /* !__FreeBSD__ */
 
-#ifndef WINDOWSENV
+#if !defined(__FreeBSD__) && !defined(WINDOWSENV)
 #define MT_ENABLE_P_SHARED /* default enable PTHREAD_PROCESS_SHARED */
 #endif
 

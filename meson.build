@@ -7,6 +7,7 @@ project('mtl', 'c', default_options: ['buildtype=release'],
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
+set_variable('is_freebsd', exec_env == 'freebsd')
 message('BUILD Environment: ' + exec_env)
 
 # enable debug logging

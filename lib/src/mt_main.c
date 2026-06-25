@@ -1330,7 +1330,7 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
 
 int mtl_thread_setname(pthread_t tid, const char* name) {
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
-  rte_thread_t thread_id = {.opaque_id = tid};
+  rte_thread_t thread_id = {.opaque_id = (uintptr_t)tid};
   rte_thread_set_name(thread_id, name);
   return 0;
 #elif WINDOWSENV

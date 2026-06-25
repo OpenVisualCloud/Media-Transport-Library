@@ -18,6 +18,11 @@
 #define SO_COOKIE 57
 #endif
 
+#ifndef SOL_UDP
+/* FreeBSD uses IPPROTO_UDP instead of SOL_UDP */
+#define SOL_UDP IPPROTO_UDP
+#endif
+
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) {
   s->flags |= flag;
 }
@@ -224,8 +229,8 @@ static int udp_cmsg_handle(struct mudp_impl* s, const struct msghdr* msg) {
           dbg("%s(%d), UDP_SEGMENT val %u\n", __func__, idx, val);
           s->gso_segment_sz = val;
         } else {
-          err("%s(%d), unknow cmsg_len %" PRId64 " for UDP_SEGMENT\n", __func__, idx,
-              cmsg->cmsg_len);
+          err("%s(%d), unknow cmsg_len %" PRIu64 " for UDP_SEGMENT\n", __func__, idx,
+              (uint64_t)cmsg->cmsg_len);
           MUDP_ERR_RET(EINVAL);
         }
       }
@@ -1643,10 +1648,14 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
+#endif
           return udp_get_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
+#endif
           return udp_get_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_get_rcvtimeo(s, optval, optlen);
@@ -1681,10 +1690,14 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
+#endif
           return udp_set_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
+#endif
           return udp_set_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_set_rcvtimeo(s, optval, optlen);
@@ -1705,17 +1718,21 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
           return udp_add_membership(s, optval, optlen);
         case IP_DROP_MEMBERSHIP:
           return udp_drop_membership(s, optval, optlen);
+#ifdef IP_PKTINFO
         case IP_PKTINFO:
           info("%s(%d), skip IP_PKTINFO\n", __func__, idx);
           return 0;
+#endif
 #ifdef IP_RECVTOS
         case IP_RECVTOS:
           info("%s(%d), skip IP_RECVTOS\n", __func__, idx);
           return 0;
 #endif
+#ifdef IP_MTU_DISCOVER
         case IP_MTU_DISCOVER:
           info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
           return 0;
+#endif
         case IP_TOS:
           dbg("%s(%d), skip IP_TOS\n", __func__, idx);
           return 0;

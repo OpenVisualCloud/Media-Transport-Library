@@ -21,6 +21,13 @@
 #define UDP_SEGMENT 103 /* Set GSO segmentation size */
 #endif
 
+#ifdef __FreeBSD__
+/* FreeBSD doesn't have SO_BINDTODEVICE - use routing or skip binding */
+#ifndef SO_BINDTODEVICE
+#define SO_BINDTODEVICE 0 /* Dummy value, will be handled below */
+#endif
+#endif
+
 #ifndef WINDOWSENV
 
 static inline int tx_socket_verify_mbuf(struct rte_mbuf* m) {
@@ -136,8 +143,8 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
 
         gso_cnt = 0;
       }
-      write = sendto(fd, payload, payload_len, MSG_DONTWAIT, &t->send_addr,
-                     sizeof(t->send_addr));
+      write = sendto(fd, payload, payload_len, MSG_DONTWAIT,
+                     (const struct sockaddr*)&t->send_addr, sizeof(t->send_addr));
       if (write != payload_len) {
         dbg("%s(%d,%d), sendto fail, len %u send %" PRId64 "\n", __func__, port, fd,
             payload_len, write);
@@ -217,11 +224,18 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread* t) {
 
   /* bind to device */
   const char* if_name = mt_kernel_if_name(entry->parent, port);
+#ifndef __FreeBSD__
   ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, idx, if_name, ret);
     return ret;
   }
+#else
+  /* FreeBSD: SO_BINDTODEVICE not available, rely on routing table */
+  info("%s(%d,%d), FreeBSD: skipping SO_BINDTODEVICE for %s (use routing)\n", __func__,
+       port, idx, if_name);
+  ret = 0; /* Success - FreeBSD handles via routing */
+#endif
 
   if (entry->gso_sz) {
     mudp_init_sockaddr(&t->send_addr, entry->flow.dip_addr, entry->flow.dst_port);
@@ -233,7 +247,8 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread* t) {
     t->msg.msg_controllen = sizeof(t->msg_control);
     struct cmsghdr* cmsg;
     cmsg = CMSG_FIRSTHDR(&t->msg);
-    cmsg->cmsg_level = SOL_UDP;
+    cmsg->cmsg_level =
+        IPPROTO_UDP; /* SOL_UDP is Linux-specific; IPPROTO_UDP is portable */
     cmsg->cmsg_type = UDP_SEGMENT;
     cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
     uint16_t* val_p;
@@ -460,11 +475,18 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
   /* bind to device */
   const char* if_name = mt_kernel_if_name(impl, port);
   info("%s(%d,%d), SO_BINDTODEVICE to %s\n", __func__, port, fd, if_name);
+#ifndef __FreeBSD__
   ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, fd, if_name, ret);
     return ret;
   }
+#else
+  /* FreeBSD: SO_BINDTODEVICE not available, rely on routing table */
+  info("%s(%d,%d), FreeBSD: skipping SO_BINDTODEVICE for %s (use routing)\n", __func__,
+       port, fd, if_name);
+  ret = 0; /* Success - FreeBSD handles via routing */
+#endif
 
   /* bind to port */
   struct sockaddr_in bind_addr;
@@ -514,8 +536,8 @@ static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
   socklen_t addr_in_len = sizeof(addr_in);
 
   t->stat_rx_try++;
-  ssize_t len =
-      recvfrom(fd, payload, entry->pool_element_sz, MSG_DONTWAIT, &addr_in, &addr_in_len);
+  ssize_t len = recvfrom(fd, payload, entry->pool_element_sz, MSG_DONTWAIT,
+                         (struct sockaddr*)&addr_in, &addr_in_len);
   if (len <= 0) {
     return NULL;
   }
