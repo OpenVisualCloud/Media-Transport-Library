@@ -22,7 +22,6 @@ jobs:
         nic:
           - e810
           - e830
-          - e825
           - e835
         dir:
           - cross_app
