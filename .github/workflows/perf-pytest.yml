@@ -85,6 +85,7 @@ jobs:
             --pci_device "${{ env.PCI_DEVICE }}" "${{ env.PCI_DEVICE }}" \
             --ip_address "${SHADOW_IP}" "${{ secrets.PERF_SUT_IP }}" \
             --username "${SHADOW_USER}" \
+            --key_path "/home/$USER/.ssh/id_ed25519" \
             --test_time "${{ inputs.test_time || '120' }}" \
             --no_capture
       - name: Export workflow tag for PCAP naming

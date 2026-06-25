@@ -55,7 +55,9 @@ class Nicctl:
         )
         return self._parse_vf_list(resp.stdout)
 
-    def create_vfs(self, pci_id: str, num_of_vfs: int = 6) -> list:
+    def create_vfs(
+        self, pci_id: str, num_of_vfs: int = 6, trusted: bool = True
+    ) -> list:
         """Create VFs on NIC, idempotently.
 
         If the PF already has at least ``num_of_vfs`` VFs bound to vfio-pci,
@@ -67,6 +69,7 @@ class Nicctl:
 
         :param pci_id: pci_id of the nic adapter
         :param num_of_vfs: minimum number of VFs required
+        :param trusted: whether to create trusted VFs (default True)
         :return: list of VF PCI addresses (existing or freshly created)
         """
         existing = self.vfio_list(pci_id)
@@ -78,8 +81,9 @@ class Nicctl:
                 num_of_vfs,
             )
             return existing
+        cmd = "create_tvf" if trusted else "create_vf"
         self.connection.execute_command(
-            f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}",
+            f"sudo {self.nicctl} {cmd} {pci_id} {num_of_vfs}",
             shell=True,
             timeout=_NICCTL_LONG_TIMEOUT,
         )
@@ -514,11 +518,25 @@ def _cleanup_hugepages(host, host_name: str) -> None:
         logger.warning(f"SysV SHM cleanup on {host_name}: {e}")
 
 
+def _get_dpdk_devbind_path(host) -> str:
+    """Return the correct path of dpdk-devbind.py on the host."""
+    try:
+        from conftest import get_host_mtl_path
+
+        mtl_path = get_host_mtl_path(host)
+    except Exception:
+        mtl_path = ""
+    if mtl_path:
+        return f"{mtl_path}/.local_install/dpdk/bin/dpdk-devbind.py"
+    return "dpdk-devbind.py"
+
+
 def _flr_rebind_vf(host, vf: str, host_name: str) -> bool:
     """Unbind, perform FLR, and rebind a single VF to vfio-pci.
 
     Returns True if the VF ended up bound to vfio-pci.
     """
+    devbind = _get_dpdk_devbind_path(host)
     # Unbind
     host.connection.execute_command(
         f"sudo sh -c \"echo '{vf}' > /sys/bus/pci/devices/{vf}/driver/unbind\" "
@@ -539,12 +557,12 @@ def _flr_rebind_vf(host, vf: str, host_name: str) -> bool:
 
     # Rebind to vfio-pci
     host.connection.execute_command(
-        f"sudo dpdk-devbind.py -b vfio-pci {vf}",
+        f"sudo {devbind} -b vfio-pci {vf}",
         shell=True,
         timeout=30,
     )
     result = host.connection.execute_command(
-        f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
+        f"sudo {devbind} -s | grep '{vf}' | head -1",
         shell=True,
         timeout=15,
     )
@@ -583,12 +601,13 @@ def ensure_vfio_bound(host, host_name: str, vf_list: list) -> bool:
     Returns True if any VF had to be rebound.
     """
     any_rebound = False
+    devbind = _get_dpdk_devbind_path(host)
     for vf in vf_list:
         if not vf:
             continue
         try:
             result = host.connection.execute_command(
-                f"sudo dpdk-devbind.py -s | grep '{vf}' | head -1",
+                f"sudo {devbind} -s | grep '{vf}' | head -1",
                 shell=True,
                 timeout=15,
             )
