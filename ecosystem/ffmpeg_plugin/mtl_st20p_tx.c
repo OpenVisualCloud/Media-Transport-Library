@@ -98,6 +98,14 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       ops_tx.input_fmt = ST_FRAME_FMT_Y210;
       ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       break;
+    case AV_PIX_FMT_YUV422P12LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR12LE;
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_12BIT;
+      break;
+    case AV_PIX_FMT_UYVY422:
+      ops_tx.input_fmt = ST_FRAME_FMT_UYVY;
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_8BIT;
+      break;
     case AV_PIX_FMT_RGB24:
       ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
       ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
@@ -106,9 +114,17 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       ops_tx.input_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
       ops_tx.transport_fmt = ST20_FMT_YUV_444_10BIT;
       break;
+    case AV_PIX_FMT_YUV444P12LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV444PLANAR12LE;
+      ops_tx.transport_fmt = ST20_FMT_YUV_444_12BIT;
+      break;
     case AV_PIX_FMT_GBRP10LE:
       ops_tx.input_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
       ops_tx.transport_fmt = ST20_FMT_RGB_10BIT;
+      break;
+    case AV_PIX_FMT_GBRP12LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_GBRPLANAR12LE;
+      ops_tx.transport_fmt = ST20_FMT_RGB_12BIT;
       break;
     case AV_PIX_FMT_YUV420P:
       /* MTL-to-MTL passthrough only: YUV420CUSTOM8 sends the planar I420
