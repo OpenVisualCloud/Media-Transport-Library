@@ -2,14 +2,14 @@
 # Copyright(c) 2026 Intel Corporation
 """Refactored kernel loopback ST22P JPEG XS test (new RxTxApp API)."""
 import pytest
-from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422p10le
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422rfc10["Penguin_1080p"]],
+    [yuv_files_422p10le["Penguin_1080p"]],
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
