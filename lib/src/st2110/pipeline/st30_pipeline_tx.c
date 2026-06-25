@@ -43,7 +43,7 @@ static struct st30p_tx_frame* tx_st30p_next_available(
 
   for (int idx = 0; idx < ctx->framebuff_cnt; idx++) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
       return framebuff;
     }
   }
@@ -105,7 +105,7 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
    * (put_frame_abort), and read from any thread via st30p_tx_get_session_stats(). */
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame->rtp_timestamp;
-  framebuff->stat = ST30P_TX_FRAME_DROPPED;
+  __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_DROPPED, __ATOMIC_RELEASE);
 
   dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
       " frame %" PRIu64 "\n",
@@ -121,7 +121,7 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  framebuff->stat = ST30P_TX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_FREE, __ATOMIC_RELEASE);
 
   tx_st30p_notify_frame_available(ctx);
 
@@ -160,7 +160,17 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
     return -EBUSY;
   }
 
-  framebuff->stat = ST30P_TX_FRAME_IN_TRANSMITTING;
+  /* Atomically claim READY -> IN_TRANSMITTING.  A concurrent transport thread
+   * may have already taken this slot between the scan and now; on a lost
+   * race return -EBUSY and let the caller (transport loop) retry. */
+  {
+    uint32_t expected_stat = ST30P_TX_FRAME_READY;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected_stat,
+                                     ST30P_TX_FRAME_IN_TRANSMITTING, false,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+      return -EBUSY;
+    }
+  }
   *next_frame_idx = framebuff->idx;
 
   if (ctx->ops.flags & (ST30P_TX_FLAG_USER_PACING)) {
@@ -187,14 +197,15 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
 
-  if (ST30P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+  if (ST30P_TX_FRAME_IN_TRANSMITTING ==
+      __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     ret = 0;
-    framebuff->stat = ST30P_TX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_FREE, __ATOMIC_RELEASE);
     dbg("%s(%d), done_idx %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
-        frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx,
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED), frame_idx);
   }
 
   if (ctx->ops.notify_frame_done &&
@@ -314,7 +325,7 @@ static int tx_st30p_init_fbs(struct st30p_tx_ctx* ctx, struct st30p_tx_ops* ops)
     struct st30p_tx_frame* framebuff = &frames[i];
     struct st30_frame* frame = &framebuff->frame;
 
-    framebuff->stat = ST30P_TX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_FREE, __ATOMIC_RELAXED);
     framebuff->idx = i;
 
     /* addr will be resolved later in tx_st30p_create_transport */
@@ -514,14 +525,14 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
-  framebuff->stat = ST30P_TX_FRAME_READY;
+  __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_READY, __ATOMIC_RELEASE);
   ctx->stat_put_frame++;
   MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->addr);
@@ -540,14 +551,14 @@ int st30p_tx_put_frame_abort(st30p_tx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
-  framebuff->stat = ST30P_TX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST30P_TX_FRAME_FREE, __ATOMIC_RELEASE);
   ctx->stat_drop_frame++;
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);

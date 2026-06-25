@@ -53,7 +53,7 @@ static struct st30p_rx_frame* rx_st30p_next_available(
   /* check ready frame from idx_start */
   while (1) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
       /* find one desired */
       return framebuff;
     }
@@ -94,7 +94,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
   frame->status = meta->status;
-  framebuff->stat = ST30P_RX_FRAME_READY;
+  __atomic_store_n(&framebuff->stat, ST30P_RX_FRAME_READY, __ATOMIC_RELEASE);
   /* point to next */
   ctx->framebuff_producer_idx = rx_st30p_next_idx(ctx, framebuff->idx);
 
@@ -180,7 +180,7 @@ static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops)
     struct st30p_rx_frame* framebuff = &frames[i];
     struct st30_frame* frame = &framebuff->frame;
 
-    framebuff->stat = ST30P_RX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat, ST30P_RX_FRAME_FREE, __ATOMIC_RELAXED);
     framebuff->idx = i;
 
     /* addr will be resolved later in rx_st30p_frame_ready */
@@ -352,16 +352,16 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_RX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame */
   st30_rx_put_framebuff(ctx->transport, frame->addr);
-  framebuff->stat = ST30P_RX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST30P_RX_FRAME_FREE, __ATOMIC_RELEASE);
   ctx->stat_put_frame++;
 
   MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
@@ -381,16 +381,16 @@ int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_RX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame without processing */
   st30_rx_put_framebuff(ctx->transport, frame->addr);
-  framebuff->stat = ST30P_RX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST30P_RX_FRAME_FREE, __ATOMIC_RELEASE);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
   ret = 0;
 out:
