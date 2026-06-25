@@ -12,9 +12,12 @@ Please note that the DPDK dependency remains necessary when utilizing the XDP/ke
 
 ```bash
 sudo apt-get update
-sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev systemtap-sdt-dev llvm clang flex byacc
-sudo pip install pyelftools ninja
+sudo apt-get install git gcc meson ninja-build python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev systemtap-sdt-dev llvm clang flex byacc
 ```
+
+Newer Ubuntu and Debian releases enable Python's externally managed environment
+protection (PEP 668), so prefer the distribution packages above instead of
+installing `pyelftools` or `ninja` with `pip`.
 
 Install below SDL2 packages if you want the display support for RxTxApp.
 
@@ -173,6 +176,61 @@ sudo: ninja: command not found
 ```bash
 cd $mtl_source_code
 ./build.sh
+```
+
+### 3.1. Build flow for Intel I226-V (igc)
+
+Intel I226-V can be used with MTL, but the setup is different from Intel E810-focused
+environments:
+
+* Use the in-tree Linux `igc` driver for normal host networking and PTP validation.
+* Use DPDK `igc` PMD if you plan to run MTL with DPDK backend.
+* Do **not** use `script/build_ice_driver.sh` (that script is only for E810 `ice`).
+
+For I226-V, you can use the dedicated helper script below, which builds DPDK and then
+builds MTL without any E810-specific driver steps:
+
+```bash
+cd $mtl_source_code
+./script/build_i226v.sh
+```
+
+Optional examples:
+
+```bash
+# Build with debug symbols
+./script/build_i226v.sh --buildtype debug
+
+# Use an existing DPDK checkout location
+./script/build_i226v.sh --dpdk-src-dir /opt/src/dpdk-25.11
+
+# Re-clone DPDK source before building
+./script/build_i226v.sh --force-dpdk-reclone
+
+# Build MTL only (assume DPDK already installed)
+./script/build_i226v.sh --skip-dpdk
+```
+
+### 3.2. I226-V (`igc` PMD) notes from DPDK driver guidance
+
+No extra MTL compile-time flag is required specifically for I226-V. The key updates are in
+runtime setup and validation:
+
+* Ensure your DPDK build includes the `igc` PMD and that `libdpdk` is installed correctly.
+* Use `vfio-pci` binding for DPDK datapath runs (kernel `igc` is still fine for non-DPDK paths).
+* Confirm IOMMU and hugepages are enabled before running MTL with DPDK backend.
+
+Typical post-build checks for I226-V:
+
+```bash
+# verify NIC and active kernel driver
+lspci -nn | grep -i -E "ethernet|intel"
+
+# check DPDK sees the device and driver bindings
+sudo dpdk-devbind.py -s
+
+# verify PMD is present in your DPDK test binary
+dpdk-testpmd --help
 ```
 
 ## 4. FAQ
