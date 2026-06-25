@@ -197,12 +197,9 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   /* generate one anc rtp for test purpose */
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
 
-  struct st40_rfc8331_payload_hdr* payload_hdr =
-      (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
                           ? 255
                           : s->st40_source_end - s->st40_frame_cursor;
-  uint16_t check_sum, total_size, payload_len;
   hdr->base.marker = 1;
   hdr->first_hdr_chunk.anc_count = 1;
   hdr->base.payload_type = s->st40_payload_type;
@@ -218,29 +215,20 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   hdr->seq_number_ext = htons((uint16_t)(s->st40_seq_id >> 16));
   s->st40_seq_id++;
   s->st40_rtp_tmstamp++;
-  payload_hdr->first_hdr_chunk.c = 0;
-  payload_hdr->first_hdr_chunk.line_number = 10;
-  payload_hdr->first_hdr_chunk.horizontal_offset = 0;
-  payload_hdr->first_hdr_chunk.s = 0;
-  payload_hdr->first_hdr_chunk.stream_num = 0;
-  payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
-  payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
-  payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-  payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
-  payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
-  for (int i = 0; i < udw_size; i++) {
-    st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
-                 (uint8_t*)&payload_hdr->second_hdr_chunk);
-  }
-  check_sum = st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                               // 10-bit words: DID, SDID, DATA_COUNT
-                                               // + size of buffer with data + checksum
-  total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                   // word of ANC data packet
-  payload_len =
-      sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+
+  struct st40_meta meta = {
+      .c = 0,
+      .line_number = 10,
+      .hori_offset = 0,
+      .s = 0,
+      .stream_num = 0,
+      .did = 0x43,
+      .sdid = 0x02,
+      .udw_size = udw_size,
+  };
+  uint32_t payload_len = 0;
+  st40_rfc8331_encode_packet((uint8_t*)&hdr[1], st40_rfc8331_payload_bytes(udw_size),
+                             &meta, s->st40_frame_cursor, &payload_len);
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
 

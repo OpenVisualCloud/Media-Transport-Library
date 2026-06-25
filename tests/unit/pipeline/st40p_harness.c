@@ -228,13 +228,6 @@ static struct rte_mbuf* make_pipeline_mbuf(uint16_t seq, uint32_t ts, int marker
   return m;
 }
 
-static uint32_t ut40p_anc_payload_bytes(uint16_t udw_size) {
-  uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
-  uint32_t total_size = (total_bits + 7) / 8;
-  total_size = (total_size + 3) & ~0x3U;
-  return sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;
-}
-
 static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marker,
                                             uint16_t dpdk_port_id,
                                             const uint16_t* udw_sizes,
@@ -243,7 +236,7 @@ static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marke
 
   size_t payload_len = 0;
   for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++)
-    payload_len += ut40p_anc_payload_bytes(udw_sizes[anc_idx]);
+    payload_len += st40_rfc8331_payload_bytes(udw_sizes[anc_idx]);
 
   size_t rtp_len = sizeof(struct st40_rfc8331_rtp_hdr) + payload_len;
   size_t total = UT40P_L234_HDR_LEN + rtp_len;
@@ -276,30 +269,20 @@ static struct rte_mbuf* make_multi_anc_mbuf(uint16_t seq, uint32_t ts, int marke
   uint8_t* payload = (uint8_t*)(rtp + 1);
   for (uint8_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
     uint16_t udw_size = udw_sizes[anc_idx];
-    struct st40_rfc8331_payload_hdr* payload_hdr =
-        (struct st40_rfc8331_payload_hdr*)payload;
+    uint8_t udw_buf[256];
+    for (uint16_t udw_idx = 0; udw_idx < udw_size; udw_idx++)
+      udw_buf[udw_idx] = (uint8_t)(((uint16_t)(anc_idx + 1) * 17 + udw_idx) & 0xff);
 
-    payload_hdr->first_hdr_chunk.c = 0;
-    payload_hdr->first_hdr_chunk.line_number = 10 + anc_idx;
-    payload_hdr->first_hdr_chunk.horizontal_offset = 0;
-    payload_hdr->first_hdr_chunk.s = 0;
-    payload_hdr->first_hdr_chunk.stream_num = 0;
-    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x45);
-    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
-    payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-
-    payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
-    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
-
-    uint8_t* udw_dst = (uint8_t*)&payload_hdr->second_hdr_chunk;
-    for (uint16_t udw_idx = 0; udw_idx < udw_size; udw_idx++) {
-      uint8_t v = (uint8_t)(((uint16_t)(anc_idx + 1) * 17 + udw_idx) & 0xff);
-      st40_set_udw(udw_idx + 3, st40_add_parity_bits(v), udw_dst);
-    }
-    uint16_t checksum = st40_calc_checksum(3 + udw_size, udw_dst);
-    st40_set_udw(udw_size + 3, checksum, udw_dst);
-
-    payload += ut40p_anc_payload_bytes(udw_size);
+    struct st40_meta meta = {
+        .line_number = (uint16_t)(10 + anc_idx),
+        .did = 0x45,
+        .sdid = 0x01,
+        .udw_size = udw_size,
+    };
+    uint32_t written = 0;
+    st40_rfc8331_encode_packet(payload, st40_rfc8331_payload_bytes(udw_size), &meta,
+                               udw_buf, &written);
+    payload += written;
   }
 
   m->data_len = total;
