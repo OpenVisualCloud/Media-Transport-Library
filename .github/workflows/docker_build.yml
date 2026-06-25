@@ -76,7 +76,7 @@ jobs:
           driver-opts: memory=14Gib,memory-swap=25Gib,env.BUILDKIT_STEP_LOG_MAX_SIZE=50000000,env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
 
       - name: Login to Docker Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
         id: dockerLoginStep
         continue-on-error: true
@@ -126,7 +126,7 @@ jobs:
         run: echo "VERSION=$(cat VERSION)">> "$GITHUB_OUTPUT"
 
       - name: Login to Docker Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
         id: dockerLoginStep
         continue-on-error: true
