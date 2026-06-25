@@ -19,6 +19,7 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     list(yuv_files.values()),
@@ -26,6 +27,8 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
     ids=list(yuv_files.keys()),
 )
 def test_video_resolutions(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
@@ -70,37 +73,25 @@ def test_video_resolutions(
         duration=3,
         host=host,
     )
+    # media_dir is an absolute path on the (local) target host, so os.path.join
+    # is byte-identical to the prior host.connection.path(...) form here.
+    output_file_path = os.path.join(media_dir, "output_video.yuv")
 
-    tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st20p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
-        format=gst_format,
-        tx_payload_type=112,
-        tx_queues=4,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=host.connection.path(media_dir, "output_video.yuv"),
-        width=video_file["width"],
-        height=video_file["height"],
-        framerate=video_file["fps"],
-        format=gst_format,
-        rx_payload_type=112,
-        rx_queues=4,
+        gst_format=gst_format,
     )
     try:
-        GstreamerApp.execute_test(
+        app.execute_test(
             build=mtl_path,
-            tx_command=tx_config,
-            rx_command=rx_config,
-            input_file=input_file_path,
-            output_file=os.path.join(media_dir, "output_video.yuv"),
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -109,7 +100,4 @@ def test_video_resolutions(
     finally:
         # Remove the video file after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(
-            os.path.join(media_dir, "output_video.yuv"),
-            host=host,
-        )
+        media_create.remove_file(output_file_path, host=host)
