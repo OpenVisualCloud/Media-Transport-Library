@@ -189,6 +189,25 @@ gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
   }
 }
 
+gboolean gst_mtl_common_wait_pending_buffers(gint* pending_buffers, guint timeout_ms,
+                                             guint poll_sleep_us) {
+  gint64 deadline_us;
+
+  if (!pending_buffers) return TRUE;
+  if (g_atomic_int_get(pending_buffers) <= 0) return TRUE;
+  if (!timeout_ms) return FALSE;
+
+  if (!poll_sleep_us) poll_sleep_us = 1000;
+
+  deadline_us = g_get_monotonic_time() + ((gint64)timeout_ms * 1000);
+  while (g_atomic_int_get(pending_buffers) > 0) {
+    if (g_get_monotonic_time() >= deadline_us) return FALSE;
+    g_usleep(poll_sleep_us);
+  }
+
+  return TRUE;
+}
+
 void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
