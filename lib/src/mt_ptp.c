@@ -25,6 +25,14 @@
 #define MT_PTP_DEFAULT_KP 5e-10 /* to be tuned */
 #define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
 
+/* rte_eth_timesync_adjust_freq is available either through the MTL igc patch or
+ * natively from DPDK 24.11 onwards. The runtime decision to use it is gated on
+ * the per-interface MT_IF_FEATURE_TIMESYNC_ADJUST_FREQ capability bit. */
+#if defined(MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ) || \
+    RTE_VERSION >= RTE_VERSION_NUM(24, 11, 0, 0)
+#define MT_PTP_HAS_TIMESYNC_ADJUST_FREQ
+#endif
+
 #ifdef WINDOWSENV
 // clang-format off
 #define be64toh(x) \
@@ -370,7 +378,7 @@ static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delt
   return ret;
 }
 
-#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
+#ifdef MT_PTP_HAS_TIMESYNC_ADJUST_FREQ
 static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
                                            int64_t delta) {
   int ret;
@@ -477,11 +485,11 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_correct) {
   MTL_MAY_UNUSED(error_correct);
 
-#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-  double ppb;
-  enum servo_state state = UNLOCKED;
+#ifdef MT_PTP_HAS_TIMESYNC_ADJUST_FREQ
+  if (mt_if(ptp->impl, ptp->port)->feature & MT_IF_FEATURE_TIMESYNC_ADJUST_FREQ) {
+    double ppb;
+    enum servo_state state = UNLOCKED;
 
-  if (ptp->phc2sys_active) {
     if (!error_correct) {
       ppb = pi_sample(&ptp->servo, -1 * delta, ptp->t2, &state);
 
@@ -505,14 +513,15 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
             err("%s(%d), PHC freqency adjust failed.\n", __func__, ptp->port_id);
           break;
       }
-      phc2sys_adjust(ptp);
     }
+    if (ptp->phc2sys_active) phc2sys_adjust(ptp);
   } else {
     if (!ptp_timesync_adjust_time(ptp, delta))
       dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
           __func__, ptp->port_id, delta, ptp->path_delay);
     else
       err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
+    if (ptp->phc2sys_active) phc2sys_adjust(ptp);
   }
 #else
   if (!ptp_timesync_adjust_time(ptp, delta))
@@ -726,8 +735,9 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         ptp_result_reset(ptp);
       }
       ptp_sync_expect_result(ptp);
-#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-      if (!ptp->phc2sys_active) return -EIO;
+#ifdef MT_PTP_HAS_TIMESYNC_ADJUST_FREQ
+      if (!(mt_if(ptp->impl, ptp->port)->feature & MT_IF_FEATURE_TIMESYNC_ADJUST_FREQ))
+        return -EIO;
 #else
       return -EIO;
 #endif
