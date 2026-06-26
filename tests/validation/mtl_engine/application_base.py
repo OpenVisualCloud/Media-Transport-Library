@@ -38,7 +38,7 @@ def mtl_plugin_check_cmd(plugin_so: str) -> str:
     which in CI points into the cached ``.local_install/plugins`` tree, so a
     locally built (non system-installed) plugin is detected too.
     """
-    return (
+    cmd = (
         f"ldconfig -p 2>/dev/null | grep -q {plugin_so} "
         f"|| test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} "
         f"|| test -f /usr/local/lib64/{plugin_so} "
@@ -48,6 +48,21 @@ def mtl_plugin_check_cmd(plugin_so: str) -> str:
         f"for p in $(grep -F '{plugin_so}' \"$cfg\" 2>/dev/null | grep -oE '/[^\"]+\\.so'); do "
         '[ -f "$p" ] && ok=0 && break; done; [ "$ok" = 0 ]; }'
     )
+    if plugin_so == "libst_plugin_st22_svt_jpeg_xs.so":
+        # Ensure our modern plugin compiled against v0.10.0+ headers does not run
+        # on top of outdated v0.9.0 core library (causes fatal exit code 135 stack segment / alignment fault).
+        cmd += (
+            " && { "
+            "lib_path=$(ldconfig -p 2>/dev/null | grep -oE '/[^[:space:]]*libSvtJpegxs\\.so\\.0' | head -n1); "
+            'if [ -n "$lib_path" ]; then '
+            "if readlink -f \"$lib_path\" | grep -q '0.9.0'; then "
+            "echo 'Outdated libSvtJpegxs.so.0.9.0 core library detected on host! Requires v0.10.0+.' >&2; "
+            "false; "
+            "fi; "
+            "fi; "
+            "}"
+        )
+    return cmd
 
 
 @dataclass
