@@ -135,6 +135,10 @@ runs:
 
         echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,librist,plugins}"
 
+    - name: 'installation: Auto-align SVT-JPEG-XS core and plugin'
+      shell: bash
+      run: bash ${{ github.workspace }}/.github/scripts/align_jpegxs_plugin.sh
+
     - name: Read shadow host credentials
       id: shadow-creds
       if: inputs.shadow_host != ''
