@@ -16,8 +16,8 @@ Signed-off-by: Frank Du <frank.du@intel.com>
 ---
  build.sh                   |   8 ++
  test/rist/meson.build      |  19 +++
- test/rist/test_receive.c   | 245 +++++++++++++++++++++++++++++++++++++
- test/rist/test_send.c      | 236 +++++++++++++++++++++++++++++++++++
+ test/rist/test_receive.c   | 247 +++++++++++++++++++++++++++++++++++++
+ test/rist/test_send.c      | 238 +++++++++++++++++++++++++++++++++++
  test/rist/test_util.c      | 108 ++++++++++++++++
  test/rist/test_util.h      |  65 ++++++++++
  test/rist/ufd_receive.json |  16 +++
@@ -80,7 +80,7 @@ new file mode 100644
 index 0000000..e298a8e
 --- /dev/null
 +++ b/test/rist/test_receive.c
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,247 @@
 +/* SPDX-License-Identifier: BSD-3-Clause
 + * Copyright(c) 2023 Intel Corporation
 + */
@@ -102,6 +102,7 @@ index 0000000..e298a8e
 +  struct rist_peer *r_peer;
 +
 +  pthread_t worker;
++  bool worker_started;
 +
 +  int stat_recv_cnt;
 +  int stat_recv_wrong_cnt;
@@ -277,7 +278,6 @@ index 0000000..e298a8e
 +    apps[i] = app;
 +
 +    app->idx = i;
-+    app->worker = -1;
 +    app->parent = &ctx;
 +
 +    ret = recver_init(&ctx, app);
@@ -287,10 +287,12 @@ index 0000000..e298a8e
 +    }
 +
 +    ret = pthread_create(&app->worker, NULL, recver_worker, app);
-+    if (ret < 0) {
++    if (ret != 0) {
 +      err("%s(%d), worker create fail %d\n", __func__, i, ret);
++      ret = -ret;
 +      goto exit;
 +    }
++    app->worker_started = true;
 +  }
 +
 +  int time_s = 0;
@@ -315,7 +317,7 @@ index 0000000..e298a8e
 +  for (int i = 0; i < sessions; i++) {
 +    struct recv_session_ctx *app = apps[i];
 +    if (app) {
-+      if (app->worker > 0) {
++      if (app->worker_started) {
 +        app->exit = true;
 +        pthread_join(app->worker, NULL);
 +      }
@@ -331,7 +333,7 @@ new file mode 100644
 index 0000000..5b89699
 --- /dev/null
 +++ b/test/rist/test_send.c
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,238 @@
 +/* SPDX-License-Identifier: BSD-3-Clause
 + * Copyright(c) 2023 Intel Corporation
 + */
@@ -355,6 +357,7 @@ index 0000000..5b89699
 +  struct rist_peer *r_peer;
 +
 +  pthread_t worker;
++  bool worker_started;
 +
 +  int stat_send_cnt;
 +};
@@ -519,7 +522,6 @@ index 0000000..5b89699
 +    apps[i] = app;
 +
 +    app->idx = i;
-+    app->worker = -1;
 +    app->parent = &ctx;
 +
 +    ret = sender_init(&ctx, app);
@@ -529,10 +531,12 @@ index 0000000..5b89699
 +    }
 +
 +    ret = pthread_create(&app->worker, NULL, sender_worker, app);
-+    if (ret < 0) {
++    if (ret != 0) {
 +      err("%s(%d), worker create fail %d\n", __func__, i, ret);
++      ret = -ret;
 +      goto exit;
 +    }
++    app->worker_started = true;
 +  }
 +
 +  int time_s = 0;
@@ -557,7 +561,7 @@ index 0000000..5b89699
 +  for (int i = 0; i < sessions; i++) {
 +    struct send_session_ctx *app = apps[i];
 +    if (app) {
-+      if (app->worker > 0) {
++      if (app->worker_started) {
 +        app->exit = true;
 +        pthread_join(app->worker, NULL);
 +      }
