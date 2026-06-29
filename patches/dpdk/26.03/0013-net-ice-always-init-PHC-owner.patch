@@ -1,0 +1,145 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MTL Contributor <noreply@example.com>
+Date: Fri, 3 Jul 2026 00:00:00 +0000
+Subject: [PATCH] net/ice: init PHC owner when enabling timesync on a
+ non-owning port
+
+On multi-port ICE devices (E810/E830), only the PCI function reporting
+func_caps.ts_func_info.src_tmr_owned is allowed to program the shared
+GLTSYN_ENA/GLTSYN_INCVAL registers that start the PHC counter. The
+kernel ice driver initializes that owner unconditionally for every
+function at probe time (ice_ptp_init()), regardless of which port
+userspace later interacts with.
+
+This PMD instead only starts the owner's PHC lazily, inside
+ice_timesync_enable(), gated on hw->func_caps.ts_func_info.src_tmr_owned
+for whichever port the application calls it on. If an application
+enables IEEE1588 timesync only on a non-owning port (e.g. the second
+port of a dual-port card) without also enabling it on the owning port,
+ice_ptp_init_phc()/ice_ptp_write_incval() are never called for anyone,
+the shared GLTSYN counter never starts incrementing, and
+rte_eth_timesync_read_time() on that port always returns 0.
+
+Look up the sibling ethdev on the same physical NIC (same PCI
+domain/bus/device, differing function) that owns the timer and make
+sure it has been started, mirroring what the kernel driver does
+unconditionally at probe time. If the owner port has not been probed
+in this process, log a clear warning explaining why reads will be 0,
+rather than silently returning bogus timestamps.
+
+Signed-off-by: MTL Contributor <noreply@example.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c | 91 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 91 insertions(+)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index 746b1aba..cc1ee7be 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -7051,6 +7051,53 @@ static int ice_ptp_write_init(struct ice_hw *hw)
+ 	return ice_ptp_init_time(hw, ns, true);
+ }
+ 
++/**
++ * ice_timesync_find_src_tmr_owner - find the sibling port owning the PHC
++ * @dev: port requesting the lookup
++ *
++ * On multi-port ICE devices only one PCI function (the one with
++ * func_caps.ts_func_info.src_tmr_owned set) is allowed to program the
++ * GLTSYN_ENA/GLTSYN_INCVAL registers that start the shared PHC counter.
++ * The kernel ice driver initializes that owner unconditionally for every
++ * function at probe time (see ice_ptp_init()), regardless of which port
++ * userspace later touches. This PMD only does so lazily, inside
++ * ice_timesync_enable(), for whichever port the application calls it on.
++ *
++ * Look up the sibling ethdev on the same physical NIC (same PCI
++ * domain/bus/device, different function) that owns the timer, so the
++ * caller can make sure it has been started too.
++ *
++ * Return: the owner's rte_eth_dev, or NULL if it is not probed in this
++ * process.
++ */
++static struct rte_eth_dev *
++ice_timesync_find_src_tmr_owner(struct rte_eth_dev *dev)
++{
++	struct rte_pci_device *pci_dev = ICE_DEV_TO_PCI(dev);
++	uint16_t port_id;
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		struct rte_eth_dev *sibling = &rte_eth_devices[port_id];
++		struct rte_pci_device *sibling_pci;
++		struct ice_hw *sibling_hw;
++
++		if (sibling == dev || !is_ice_supported(sibling))
++			continue;
++
++		sibling_pci = ICE_DEV_TO_PCI(sibling);
++		if (sibling_pci->addr.domain != pci_dev->addr.domain ||
++		    sibling_pci->addr.bus != pci_dev->addr.bus ||
++		    sibling_pci->addr.devid != pci_dev->addr.devid)
++			continue;
++
++		sibling_hw = ICE_DEV_PRIVATE_TO_HW(sibling->data->dev_private);
++		if (sibling_hw->func_caps.ts_func_info.src_tmr_owned)
++			return sibling;
++	}
++
++	return NULL;
++}
++
+ static int
+ ice_timesync_enable(struct rte_eth_dev *dev)
+ {
+@@ -7081,6 +7128,50 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 				"Failed to write PHC increment time value");
+ 			return -1;
+ 		}
++	} else {
++		/*
++		 * This function does not own the shared source timer. Make
++		 * sure the owner has actually been started: unlike the
++		 * kernel driver, this PMD only starts it lazily on whichever
++		 * port ice_timesync_enable() is called for, so enabling
++		 * timesync only on a non-owning port would otherwise leave
++		 * the shared GLTSYN counter never incrementing, and every
++		 * PHC read on this port would return 0.
++		 */
++		struct rte_eth_dev *owner_dev =
++			ice_timesync_find_src_tmr_owner(dev);
++
++		if (!owner_dev) {
++			PMD_DRV_LOG(WARNING,
++				"PHC source timer owner port for %s is not probed in this process; "
++				"PHC reads on this port will return 0 unless the owner port is "
++				"also opened and timesync-enabled",
++				dev->data->name);
++		} else {
++			struct ice_hw *owner_hw =
++				ICE_DEV_PRIVATE_TO_HW(owner_dev->data->dev_private);
++			struct ice_adapter *owner_ad =
++				ICE_DEV_PRIVATE_TO_ADAPTER(owner_dev->data->dev_private);
++
++			if (!owner_ad->ptp_ena) {
++				ret = ice_ptp_init_phc(owner_hw);
++				if (ret) {
++					PMD_DRV_LOG(ERR,
++						"Failed to initialize PHC on owner port %s",
++						owner_dev->data->name);
++					return -1;
++				}
++
++				ret = ice_ptp_write_incval(owner_hw,
++							   ICE_PTP_NOMINAL_INCVAL_E810, true);
++				if (ret) {
++					PMD_DRV_LOG(ERR,
++						"Failed to write PHC increment time value on owner port %s",
++						owner_dev->data->name);
++					return -1;
++				}
++			}
++		}
+ 	}
+ 
+ 	if (!ice_ptp_lock(hw)) {
+-- 
+2.34.1

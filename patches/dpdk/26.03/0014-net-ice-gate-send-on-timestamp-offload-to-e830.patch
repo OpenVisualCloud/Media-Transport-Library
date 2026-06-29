@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MTL Contributor <noreply@example.com>
+Date: Tue, 7 Jul 2026 00:00:00 +0000
+Subject: [PATCH] net/ice: gate SEND_ON_TIMESTAMP offload capability to E830
+
+Only E830 implements the TxPP (Tx packet pacing) launch-time hardware
+that RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP depends on; E810 has no such
+launch-time descriptor engine. ice_dev_info_get() nonetheless
+advertised the offload unconditionally for every ICE part.
+
+Applications that pick a TX pacing mode based on advertised
+capabilities (e.g. preferring launch-time/TSN pacing whenever
+RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP is present) would then select it
+on E810 ports too, where the hardware has no launch-time engine to
+honor the requested timestamp, silently sending packets unpaced
+instead.
+
+Only set the capability bit when hw->phy_model == ICE_PHY_E830.
+
+Signed-off-by: MTL Contributor <noreply@example.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index 0f2e7aee14..030d53aded 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -4568,8 +4568,10 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 			RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO |
+ 			RTE_ETH_TX_OFFLOAD_GRE_TNL_TSO |
+ 			RTE_ETH_TX_OFFLOAD_IPIP_TNL_TSO |
+-			RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO |
+-			RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
++			RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO;
++		if (hw->phy_model == ICE_PHY_E830)
++			dev_info->tx_offload_capa |=
++				RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+ 		dev_info->flow_type_rss_offloads |= ICE_RSS_OFFLOAD_ALL;
+ 	}
+ 
+-- 
+2.43.0

@@ -456,11 +456,6 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (!mt_ptp_is_locked(impl, MTL_PORT_P)) {
-    /* fallback to tsc if ptp is not synced */
-    return video_trs_tsc_tasklet(impl, s, s_port);
-  }
-
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
     tx = video_trs_burst(impl, s, s_port,

@@ -836,7 +836,7 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
 }
 
 static int dev_start_timesync(struct mt_interface* inf) {
-  int ret, i = 0, max_retry = 10;
+  int ret, i = 0, max_retry = 100;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct timespec spec;
@@ -947,6 +947,12 @@ static int dev_config_port(struct mt_interface* inf) {
     port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
 #endif
   }
+
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+  if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+    port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+  }
+#endif
 
   dbg("%s(%d), rss mode %d\n", __func__, port, inf->rss_mode);
   if (mt_has_srss(impl, port)) {
@@ -1162,6 +1168,11 @@ static int dev_start_port(struct mt_interface* inf) {
 
   for (uint16_t q = 0; q < nb_tx_q; q++) {
     tx_port_conf = inf->dev_info.default_txconf;
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+    if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+      tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+    }
+#endif
     ret = rte_eth_tx_queue_setup(port_id, q, nb_tx_desc, socket_id, &tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d for queue %d\n", __func__, port, ret,
@@ -1431,6 +1442,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
         err("%s(%d), rl init fail\n", __func__, port);
         return ret;
       }
+    }
+  } else if (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+    if (!(inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
+      err("%s(%d), this port not support tsn launch time\n", __func__, port);
+      return -EINVAL;
     }
   }
 
@@ -2291,22 +2307,29 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
         ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
-      int* dev_tx_timestamp_dynfield_offset_ptr =
-          dev_info->default_txconf.reserved_ptrs[1];
-      uint64_t* dev_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
-      ret = rte_mbuf_dyn_tx_timestamp_register(dev_tx_timestamp_dynfield_offset_ptr,
-                                               dev_tx_timestamp_dynflag_ptr);
-      if (ret < 0) {
-        err("%s, rte_mbuf_dyn_tx_timestamp_register fail\n", __func__);
-        return ret;
-      }
-
       ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
-      if (ret < 0) return ret;
+      if (ret < 0) {
+        struct rte_mbuf_dynflag dynflag_desc = {0};
+        snprintf(dynflag_desc.name, sizeof(dynflag_desc.name), "%s",
+                 RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME);
+        ret = rte_mbuf_dynflag_register(&dynflag_desc);
+        if (ret < 0) {
+          err("%s, rte_mbuf_dynflag_register for tx timestamp fail\n", __func__);
+          return ret;
+        }
+      }
       inf->tx_launch_time_flag = 1ULL << ret;
 
-      ret = rte_mbuf_dynfield_lookup(RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL);
-      if (ret < 0) return ret;
+      struct rte_mbuf_dynfield dynfield_desc = {0};
+      snprintf(dynfield_desc.name, sizeof(dynfield_desc.name), "%s",
+               RTE_MBUF_DYNFIELD_TIMESTAMP_NAME);
+      dynfield_desc.size = sizeof(rte_mbuf_timestamp_t);
+      dynfield_desc.align = __alignof__(rte_mbuf_timestamp_t);
+      ret = rte_mbuf_dynfield_register(&dynfield_desc);
+      if (ret < 0) {
+        err("%s, rte_mbuf_dynfield_register for tx timestamp fail\n", __func__);
+        return ret;
+      }
       inf->tx_dynfield_offset = ret;
     }
 #endif
