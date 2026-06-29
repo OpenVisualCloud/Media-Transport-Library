@@ -126,7 +126,13 @@ build_ffmpeg() {
 		if [ -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxsenc.c" ] || [ -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxsdec.c" ]; then
 			cp -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
 		fi
-		for patch_file in "${jpegxs_repo}/ffmpeg-plugin/${FFMPEG_VERSION}"/*.patch; do
+
+		local patch_dir="${jpegxs_repo}/ffmpeg-plugin/${FFMPEG_VERSION}"
+		if [ ! -d "$patch_dir" ]; then
+			patch_dir="${jpegxs_repo}/ffmpeg-plugin"
+		fi
+
+		for patch_file in "${patch_dir}"/*.patch; do
 			if [ -f "$patch_file" ]; then
 				echo "Applying SVT-JPEG-XS patch: $(basename "$patch_file")"
 				patch -p1 <"$patch_file"
