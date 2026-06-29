@@ -554,19 +554,6 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   }
 }
 
-static void ptp_delay_req_read_tx_time_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
-  uint64_t tx_ns = 0;
-  int ret;
-
-  ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
-  if (ret >= 0) {
-    ptp->t3 = tx_ns;
-  } else {
-    if (!ptp->t4) rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
-  }
-}
-
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_cnt = 0;
   ptp->expect_result_sum = 0;
@@ -809,11 +796,56 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   return 0;
 }
 
+/* t3 (alarm thread) and t4 (rx thread) can both observe a full cycle; the
+ * single-owner claim lets exactly one consume it so the delta applies once.
+ * result_claimed is reset per cycle in ptp_parse_sync. */
+static void ptp_try_complete_result(struct mt_ptp_impl* ptp) {
+  if (!(ptp->t1 && ptp->t2 && ptp->t3 && ptp->t4)) return;
+  if (rte_atomic32_test_and_set(&ptp->result_claimed)) ptp_parse_result(ptp);
+}
+
+static void ptp_delay_req_read_tx_time_handler(void* param) {
+  struct mt_ptp_impl* ptp = param;
+  uint64_t tx_ns = 0;
+  int ret;
+
+  if (!ptp->t3_pending) return; /* no outstanding delay_req tx timestamp */
+
+  /* a newer delay_req has been sent, abandon this stale read */
+  if (ptp->t3_sequence_id != ptp->t3_pending_seq) {
+    ptp->t3_pending = false;
+    return;
+  }
+
+  ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
+  /* A valid t3 is the local-clock egress time of a delay_req sent after this
+   * cycle's sync, so it must exceed t2; a smaller value is a stale timestamp
+   * latched by an earlier cycle and now drained, so keep polling for the real
+   * one rather than feeding the stale value into the result before lock. */
+  if (ret >= 0 && tx_ns > ptp->t2) {
+    ptp->t3 = tx_ns;
+    ptp->t3_pending = false;
+    MT_USDT_PTP_MSG(ptp->port, 3, ptp->t3);
+    ptp_try_complete_result(ptp);
+    return;
+  }
+
+  if (mt_get_monotonic_time() < ptp->t3_deadline_ns) {
+    rte_eal_alarm_set(MT_PTP_DELAY_REQ_TX_TS_RETRY_US, ptp_delay_req_read_tx_time_handler,
+                      ptp);
+  } else {
+    /* give up on this cycle and drop the partial result so the next sync is clean */
+    ptp->t3_pending = false;
+    ptp->stat_t3_timeout++;
+    ptp_t_result_clear(ptp);
+    ptp_expect_result_clear(ptp);
+  }
+}
+
 static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   enum mtl_port port = ptp->port;
   size_t hdr_offset;
   struct mt_ptp_sync_msg* msg;
-  uint64_t tx_ns = 0;
 
   if (ptp->t3) return; /* t3 already sent */
 
@@ -878,65 +910,35 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     err("%s(%d), tx fail\n", __func__, port);
     return;
   }
-#if MT_PTP_CHECK_HW_SW_DELTA
-  uint64_t burst_time = ptp_get_raw_time(ptp);
-#endif
 
 #if MT_PTP_USE_TX_TIME_STAMP
-  if (ptp->qbv_enabled) {
-    /*
-     * The DELAY_REQ packet will be blocked max 1.2ms by Qbv scheduler.
-     * The Tx timestamp will not be created immediately. So, start an
-     * alarm task to poll the Tx timestamp.
-     */
-    rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
-  } else {
-    /* Wait max 50 us to read TX timestamp. */
-    int max_retry = 50;
-    int ret;
-
-    while (max_retry > 0) {
-      ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
-      if (ret >= 0) {
-#if MT_PTP_CHECK_HW_SW_DELTA
-        info("%s(%d), t3 hw-sw delta %" PRId64 "\n", __func__, ptp->port,
-             tx_ns - burst_time);
-#endif
-        break;
-      }
-
-      mt_delay_us(1);
-      max_retry--;
-    }
-
-    if (max_retry <= 0) {
-      err("%s(%d), read tx reach max retry\n", __func__, port);
-    }
-
-#if MT_PTP_CHECK_TX_TIME_STAMP
-    uint64_t ptp_ns = ptp_timesync_read_time(ptp);
-    uint64_t delta = ptp_ns - tx_ns;
-#define TX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
-    if (unlikely(delta > TX_MAX_DELTA)) {
-      err("%s(%d), tx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, tx_ns,
-          delta);
-      ptp->stat_tx_sync_err++;
-    }
-#endif
-
-    ptp->t3 = tx_ns;
+  /*
+   * The PHY does not produce the tx timestamp until the DELAY_REQ has actually
+   * egressed, which can be delayed by tx queue backlog or the Qbv scheduler (up
+   * to ~1.2ms). Poll it asynchronously via an alarm rather than busy-waiting
+   * here. The deadline must stay well below the minimum PTP sync interval: t3
+   * stays 0 for the whole async window, so the single-outstanding-request
+   * invariant holds only if the read finishes before the next sync. The seq
+   * guard rejects stale alarms but not stale HW-slot contents (see the t3 > t2
+   * check in the read handler).
+   */
+  ptp->t3_pending = true;
+  ptp->t3_pending_seq = ptp->t3_sequence_id;
+  ptp->t3_deadline_ns =
+      mt_get_monotonic_time() + (uint64_t)MT_PTP_DELAY_REQ_TX_TS_DEADLINE_US * 1000;
+  rte_eal_alarm_set(MT_PTP_DELAY_REQ_TX_TS_RETRY_US, ptp_delay_req_read_tx_time_handler,
+                    ptp);
 #else
   ptp->t3 = ptp_get_raw_time(ptp);
-#endif
-    dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
-        ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
-    MT_USDT_PTP_MSG(ptp->port, 3, ptp->t3);
+  dbg("%s(%d), t3 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, port, ptp->t3,
+      ptp->t3_sequence_id, ptp_get_raw_time(ptp));
+  MT_USDT_PTP_MSG(ptp->port, 3, ptp->t3);
 
-    /* all time get */
-    if (ptp->t4 && ptp->t2 && ptp->t1) {
-      ptp_parse_result(ptp);
-    }
+  /* all time get */
+  if (ptp->t4 && ptp->t2 && ptp->t1) {
+    ptp_parse_result(ptp);
   }
+#endif
 }
 
 #if MT_PTP_USE_TX_TIMER
@@ -987,7 +989,12 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 #if MT_PTP_USE_TX_TIMER
   rte_eal_alarm_cancel(ptp_delay_req_handler, ptp);
 #endif
+#if MT_PTP_USE_TX_TIME_STAMP
+  rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler, ptp);
+  ptp->t3_pending = false;
+#endif
   ptp_t_result_clear(ptp);
+  rte_atomic32_clear(&ptp->result_claimed); /* start a new measurement cycle */
   ptp->t2 = rx_ns;
   ptp->t2_sequence_id = msg->hdr.sequence_id;
   ptp->t2_vlan = vlan;
@@ -1088,10 +1095,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
   MT_USDT_PTP_MSG(ptp->port, 4, ptp->t4);
 
-  /* all time get */
-  if (ptp->t3 && ptp->t2 && ptp->t1) {
-    ptp_parse_result(ptp);
-  }
+  ptp_try_complete_result(ptp);
 
   return 0;
 }
@@ -1270,7 +1274,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
-  struct mt_interface* inf = mt_if(impl, port);
 
   ret = mt_macaddr_get(impl, port, &mac);
   if (ret < 0) {
@@ -1310,8 +1313,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   } else {
     ptp->master_addr_mode = MT_PTP_MULTICAST_ADDR;
   }
-  ptp->qbv_enabled =
-      ((ST21_TX_PACING_WAY_TSN == p->pacing) && (MT_DRV_IGC == inf->drv_info.drv_type));
   ptp->locked = false;
   ptp->stat_sync_keep = 0;
 
@@ -1403,8 +1404,8 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 #endif
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
-#ifdef MT_PTP_USE_TX_TIME_STAMP
-  if (ptp->qbv_enabled) rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler, ptp);
+#if MT_PTP_USE_TX_TIME_STAMP
+  rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler, ptp);
 #endif
 
   if (!ptp->active) return 0;
@@ -1534,7 +1535,7 @@ static int ptp_stat(void* priv) {
     notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", port,
            ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
   if (ptp->stat_sync_timeout_err)
-    err("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
+    warn("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
 
   if (ptp->calibrate_t2_t3) {
     notice("PTP(%d): t2_t1_delta_calibrate %d t4_t3_delta_calibrate %d\n", port,
@@ -1545,6 +1546,10 @@ static int ptp_stat(void* priv) {
   if (ptp->stat_t3_sequence_id_mismatch) {
     err("PTP(%d): t3 sequence id mismatch %d\n", port, ptp->stat_t3_sequence_id_mismatch);
     ptp->stat_t3_sequence_id_mismatch = 0;
+  }
+  if (ptp->stat_t3_timeout) {
+    err("PTP(%d): t3 tx timestamp timeout %d\n", port, ptp->stat_t3_timeout);
+    ptp->stat_t3_timeout = 0;
   }
 
   ptp_stat_clear(ptp);

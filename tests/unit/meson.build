@@ -13,7 +13,15 @@ unit_include_dirs = [
 ]
 
 gtest_dep = dependency('gtest', required : true)
+gmock_dep = dependency('gmock', required : true)
 libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true)
+
+# When GPU-direct is enabled, the included production .c files reference
+# gpu_allocate_shared_buffer; link the gpu_direct DSO so --no-undefined passes.
+unit_extra_deps = []
+if gpu_direct_dep.found()
+  unit_extra_deps += gpu_direct_dep
+endif
 
 unit_sources = [
   'common/ut_common.c',
@@ -70,6 +78,11 @@ unit_sources = [
   'pipeline/st22p_tx_harness.c',
   'pipeline/st22p_concurrency_test.cpp',
   'pipeline/st22p_concurrency_stress_test.cpp',
+  'ptp/ptp_harness.c',
+  'ptp/servo_test.cpp',
+  'ptp/adjust_delta_test.cpp',
+  'ptp/delta_math_test.cpp',
+  'ptp/t3_test.cpp',
   'main.cpp',
 ]
 
@@ -78,6 +91,6 @@ executable('UnitTest', unit_sources,
   cpp_args : unit_cpp_args,
   link_args : unit_link_args,
   include_directories : unit_include_dirs,
-  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
-                  usdt_provider_header_dep],
+  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
+                  usdt_provider_header_dep] + unit_extra_deps,
   install : false)

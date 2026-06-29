@@ -200,15 +200,6 @@ struct mt_ptp_impl {
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
   bool no_timesync;
-  /*
-   * The flag indicates Qbv (IEEE 802.1Qbv) traffic shaper
-   * enable.
-   *
-   * The IEEE 802.1Qbv is designed to separate traffics
-   * transmission into different time slices to prevent
-   * traffics transmission interfering.
-   */
-  bool qbv_enabled;
   int64_t no_timesync_delta;
 
   /* for no cni case */
@@ -242,6 +233,14 @@ struct mt_ptp_impl {
   uint64_t t3;
   uint16_t t3_sequence_id;
   uint64_t t4;
+
+  /* async read state for the delay_req tx timestamp (t3) */
+  bool t3_pending;
+  uint16_t t3_pending_seq;
+  uint64_t t3_deadline_ns;
+  /* single-owner claim so t3 and t4 completing on two threads apply the
+   * cycle's result exactly once; reset per cycle in ptp_parse_sync */
+  rte_atomic32_t result_claimed;
 
   bool calibrate_t2_t3; /* for no_timesync case which the t2 and t3 get from tsc */
 
@@ -303,6 +302,7 @@ struct mt_ptp_impl {
   int32_t stat_sync_cnt;
   int32_t stat_t2_t1_delta_calibrate;
   int32_t stat_t4_t3_delta_calibrate;
+  int32_t stat_t3_timeout;
   uint16_t stat_sync_keep;
 };
 
