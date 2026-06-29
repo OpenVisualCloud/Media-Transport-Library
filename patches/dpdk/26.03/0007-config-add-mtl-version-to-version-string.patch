@@ -24,7 +24,7 @@ index 98035c1..7527942 100644
 +++ b/VERSION
 @@ -1 +1 @@
 -26.03.0
-+26.03.90_mtl_
++26.03.91_mtl_
 diff --git a/config/meson.build b/config/meson.build
 index 9ba7b9a..0d59d76 100644
 --- a/config/meson.build
