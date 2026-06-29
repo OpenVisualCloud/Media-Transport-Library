@@ -211,7 +211,7 @@ static int tx_fastmetadata_session_init_pacing(
   pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time; /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
-  info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
+  info("%s[%02d], frame_time %Lf frame_time_sampling %Lf\n", __func__, idx,
        pacing->frame_time, pacing->frame_time_sampling);
   return 0;
 }
@@ -224,9 +224,9 @@ static int tx_fastmetadata_session_init_pacing_epoch(
   return 0;
 }
 
-static inline double tx_fastmetadata_pacing_time(
+static inline uint64_t tx_fastmetadata_pacing_time(
     struct st_tx_fastmetadata_session_pacing* pacing, uint64_t epochs) {
-  return epochs * pacing->frame_time;
+  return nextafterl((long double)epochs * pacing->frame_time, INFINITY);
 }
 
 static inline uint32_t tx_fastmetadata_pacing_time_stamp(
@@ -267,7 +267,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
-  double to_epoch;
+  int64_t to_epoch;
   bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
@@ -300,7 +300,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     }
   }
 
-  to_epoch = tx_fastmetadata_pacing_time(pacing, epochs) - ptp_time;
+  to_epoch = (int64_t)tx_fastmetadata_pacing_time(pacing, epochs) - (int64_t)ptp_time;
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
     s->port_user_stats.common.stat_epoch_mismatch++;
@@ -317,13 +317,13 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   pacing->ptp_time_cursor = tx_fastmetadata_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
-  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %f to_epoch %f\n", __func__,
+  pacing->tsc_time_cursor = (long double)mt_get_tsc(impl) + to_epoch;
+  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %Lf to_epoch %" PRId64 "\n", __func__,
       s->idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
       to_epoch);
 
   if (sync) {
-    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
+    dbg("%s(%d), delay to epoch_time %Lf, cur %" PRIu64 "\n", __func__, s->idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
     mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }

@@ -164,23 +164,23 @@ struct st_frame_trans {
 
 /* timing for pacing */
 struct st_tx_video_pacing {
-  double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;   /* in ns, tr offset time of each frame */
+  long double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  long double tr_offset;   /* in ns, tr offset time of each frame */
   uint32_t vrx;       /* packets unit, VRX start value of each frame */
   uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
-  double frame_time;  /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(90k) */
+  long double frame_time;  /* time of the frame in nanoseconds */
+  long double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
-  double frame_idle_time;
-  double reactive;
+  long double frame_idle_time;
+  long double reactive;
   float pad_interval;           /* padding pkt interval(pkts level) for RL pacing */
   uint32_t rl_rtp_offset_ticks; /* RL-only RTP timestamp shift (media-clk ticks) */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
-  uint64_t ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
+  long double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  long double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
@@ -694,14 +694,14 @@ struct st_rx_video_sessions_mgr {
 };
 
 struct st_tx_audio_session_pacing {
-  double trs;               /* in ns for of 2 consecutive packets */
-  double pkt_time_sampling; /* time of each pkt in sampling */
+  long double trs;               /* in ns for of 2 consecutive packets */
+  long double pkt_time_sampling; /* time of each pkt in sampling */
   uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  uint64_t ptp_time_cursor;
+  long double ptp_time_cursor;
   /* in ns, tsc time cursor for packet pacing */
-  uint64_t tsc_time_cursor;
+  long double tsc_time_cursor;
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   /* sometimes it may reach tx_audio_session_sync_pacing in a late time */
@@ -1004,13 +1004,13 @@ struct st_rx_audio_sessions_mgr {
 };
 
 struct st_tx_ancillary_session_pacing {
-  double frame_time;          /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(90k) */
+  long double frame_time;          /* time of the frame in nanoseconds */
+  long double frame_time_sampling; /* time of the frame in sampling(90k) */
   uint64_t cur_epochs;        /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  uint64_t ptp_time_cursor;
-  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  long double ptp_time_cursor;
+  long double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
 };
@@ -1256,15 +1256,15 @@ struct st_ancillary_transmitter_impl {
 };
 
 struct st_tx_fastmetadata_session_pacing {
-  double frame_time;          /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(90k) */
+  long double frame_time;          /* time of the frame in nanoseconds */
+  long double frame_time_sampling; /* time of the frame in sampling(90k) */
   uint64_t cur_epochs;        /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
-  uint64_t ptp_time_cursor;
-  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  long double ptp_time_cursor;
+  long double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
 };
