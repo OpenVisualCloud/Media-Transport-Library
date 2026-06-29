@@ -57,7 +57,7 @@ static inline uint64_t tai_from_frame_count(struct st_tx_video_pacing* pacing,
    * may truncate to a smaller value. Using nextafter(val, INFINITY) ensures we round
    * up to the next representable double before casting, avoiding jumping between tai in
    * neighboring frames. This caused problems when tai was again changed to frame count */
-  return nextafter(frame_count * pacing->frame_time, INFINITY);
+  return nextafterl((long double)frame_count * pacing->frame_time, INFINITY);
 }
 
 /* transmission start time of the frame */
@@ -517,9 +517,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->trs = frame_time * pacing->reactive / s->st20_total_pkts;
   pacing->frame_idle_time =
       frame_time - pacing->tr_offset - frame_time * pacing->reactive;
-  dbg("%s[%02d], frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
+  dbg("%s[%02d], frame_idle_time %Lf\n", __func__, idx, pacing->frame_idle_time);
   if (pacing->frame_idle_time < 0) {
-    warn("%s[%02d], error frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
+    warn("%s[%02d], error frame_idle_time %Lf\n", __func__, idx, pacing->frame_idle_time);
     pacing->frame_idle_time = 0;
   }
   pacing->max_onward_epochs = (double)NS_PER_S / frame_time; /* 1s */
@@ -606,7 +606,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
   info(
-      "%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms fps %f "
+      "%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f "
       "rl_rtp_adj %u ticks\n",
       __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps),

@@ -215,7 +215,7 @@ static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl* s) {
   dbg("%s[%02d], max_onward_epochs %u max_late_epochs %u\n", __func__, idx,
       pacing->max_onward_epochs, pacing->max_late_epochs);
 
-  info("%s[%02d], trs %f pkt_time_sampling %f\n", __func__, idx, pacing->trs,
+  info("%s[%02d], trs %Lf pkt_time_sampling %Lf\n", __func__, idx, pacing->trs,
        pacing->pkt_time_sampling);
   return 0;
 }
@@ -228,9 +228,9 @@ static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
   return 0;
 }
 
-static inline double tx_audio_pacing_time(struct st_tx_audio_session_pacing* pacing,
+static inline uint64_t tx_audio_pacing_time(struct st_tx_audio_session_pacing* pacing,
                                           uint64_t epochs) {
-  return epochs * pacing->trs;
+  return nextafterl((long double)epochs * pacing->trs, INFINITY);
 }
 
 static inline uint32_t tx_audio_pacing_time_stamp(
@@ -271,7 +271,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
-  double to_epoch;
+  int64_t to_epoch;
   uint64_t ptp_epochs;
   uint64_t diff;
 
@@ -305,15 +305,15 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   if (required_tai) {
-    to_epoch = (double)required_tai - ptp_time;
-    if (to_epoch > NS_PER_S) {
+    to_epoch = (int64_t)required_tai - (int64_t)ptp_time;
+    if (to_epoch > (int64_t)NS_PER_S) {
       dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
           __func__, s->idx, required_tai, ptp_epochs, epochs);
       s->port_user_stats.common.stat_error_user_timestamp++;
       to_epoch = NS_PER_S;  // do our best to slow down
     }
   } else {
-    to_epoch = tx_audio_pacing_time(pacing, epochs) - ptp_time;
+    to_epoch = (int64_t)tx_audio_pacing_time(pacing, epochs) - (int64_t)ptp_time;
   }
 
   if (to_epoch < 0) {
@@ -357,12 +357,12 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
         (rtp_timestamp_delta_us * NS_PER_US) * pacing->pkt_time_sampling / pkt_time;
     pacing->rtp_time_stamp += rtp_timestamp_delta;
   }
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
+  pacing->tsc_time_cursor = (long double)mt_get_tsc(impl) + to_epoch;
   dbg("%s(%d), epochs %" PRIu64 ", rtp_time_stamp %u\n", __func__, s->idx, epochs,
       pacing->rtp_time_stamp);
 
   if (sync) {
-    dbg("%s(%d), delay to epoch_time %" PRIu64 ", cur %" PRIu64 "\n", __func__, s->idx,
+    dbg("%s(%d), delay to epoch_time %Lf, cur %" PRIu64 "\n", __func__, s->idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
     mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
@@ -2204,9 +2204,9 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 
   info("%s(%d), fmt %d channel %u sampling %d ptime %d pt %u\n", __func__, idx, ops->fmt,
        ops->channel, ops->sampling, ops->ptime, ops->payload_type);
-  info("%s(%d), pkt_len %u frame_size %u frames %u fps %f, pacing_way %s\n", __func__,
+  info("%s(%d), pkt_len %u frame_size %u frames %u fps %Lf, pacing_way %s\n", __func__,
        idx, s->pkt_len, s->st30_frame_size, s->st30_frames_cnt,
-       (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
+       (long double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
        audio_pacing_way_name(s->tx_pacing_way));
   return 0;
 }
