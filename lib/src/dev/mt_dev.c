@@ -1403,7 +1403,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   /* pacing select for auto */
   if (ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) {
     auto_detect = true;
-    if (inf->drv_info.rl_type == MT_RL_TYPE_TM) {
+    if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+      info("%s(%d), use tsn as drv support launch time\n", __func__, port);
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
+      return 0;
+    } else if (inf->drv_info.rl_type == MT_RL_TYPE_TM) {
       info("%s(%d), try rl as drv support TM\n", __func__, port);
       inf->tx_pacing_way = ST21_TX_PACING_WAY_RL;
     } else {
@@ -1442,6 +1446,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
         err("%s(%d), rl init fail\n", __func__, port);
         return ret;
       }
+    }
+  } else if (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+    if (!(inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
+      err("%s(%d), this port not support tsn launch time\n", __func__, port);
+      return -EINVAL;
     }
   }
 
@@ -2299,7 +2308,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     /* Detect LaunchTime capability */
     if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP &&
-        ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+        (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way ||
+         ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way)) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
       ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);

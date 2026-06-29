@@ -318,9 +318,9 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   pacing->pacing_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (long double)mt_get_tsc(impl) + to_epoch;
-  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %Lf to_epoch %" PRId64 "\n", __func__,
-      s->idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
-      to_epoch);
+  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %Lf to_epoch %" PRId64 "\n",
+      __func__, s->idx, pacing->cur_epochs, pacing->pacing_time_stamp,
+      pacing->tsc_time_cursor, to_epoch);
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %Lf, cur %" PRIu64 "\n", __func__, s->idx,

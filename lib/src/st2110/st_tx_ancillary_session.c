@@ -402,8 +402,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
 
   pacing->ptp_time_cursor = start_time_tai;
   pacing->tsc_time_cursor = (long double)cur_tsc + (long double)time_to_tx_ns;
-  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %Lf time_to_tx_ns %" PRId64
-      "\n",
+  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %Lf time_to_tx_ns %" PRId64 "\n",
       __func__, s->idx, pacing->cur_epochs, pacing->ptp_time_cursor, time_to_tx_ns);
 
   return 0;

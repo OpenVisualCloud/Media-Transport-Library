@@ -229,7 +229,7 @@ static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
 }
 
 static inline uint64_t tx_audio_pacing_time(struct st_tx_audio_session_pacing* pacing,
-                                          uint64_t epochs) {
+                                            uint64_t epochs) {
   return nextafterl((long double)epochs * pacing->trs, INFINITY);
 }
 
