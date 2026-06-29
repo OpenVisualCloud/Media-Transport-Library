@@ -1,0 +1,54 @@
+From f6165f586a5628b47e5cbb68e53e9f7865ef7088 Mon Sep 17 00:00:00 2001
+From: Soumyadeep Hore <soumyadeep.hore@intel.com>
+Date: Wed, 10 Jun 2026 10:35:10 +0530
+Subject: [PATCH 10/11] net/ice: fix read clock to use PHC hardware time
+
+The ice_read_clock() function was incorrectly using clock_gettime()
+with CLOCK_MONOTONIC_RAW to return system time instead of the actual
+hardware PHC time. This caused txtime scheduling to use a completely
+different time base than the PHC, resulting in all scheduled timestamps
+being interpreted as past time by the hardware.
+
+Replace the system clock read with ice_timesync_read_time() which reads
+the actual PHC register value, ensuring the application can compute
+correct future timestamps relative to the hardware clock.
+
+Fixes: 327fe144ca39 ("net/ice: support clock read")
+Cc: stable@dpdk.org
+Signed-off-by: Soumyadeep Hore <soumyadeep.hore@intel.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index 0f2e7aee14..746b1aba0a 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -7320,16 +7320,16 @@ ice_timesync_disable(struct rte_eth_dev *dev)
+ }
+ 
+ static int
+-ice_read_clock(__rte_unused struct rte_eth_dev *dev, uint64_t *clock)
++ice_read_clock(struct rte_eth_dev *dev, uint64_t *clock)
+ {
+-	struct timespec system_time;
++	struct timespec ts;
++	int ret;
+ 
+-#ifdef RTE_EXEC_ENV_LINUX
+-	clock_gettime(CLOCK_MONOTONIC_RAW, &system_time);
+-#else
+-	clock_gettime(CLOCK_MONOTONIC, &system_time);
+-#endif
+-	*clock = system_time.tv_sec * NSEC_PER_SEC + system_time.tv_nsec;
++	ret = ice_timesync_read_time(dev, &ts);
++	if (ret)
++		return ret;
++
++	*clock = (uint64_t)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+ 
+ 	return 0;
+ }
+-- 
+2.34.1
+
