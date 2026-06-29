@@ -181,6 +181,10 @@ jobs:
           ./build.sh
           sudo ldconfig
 
+      - name: 'installation: Auto-align SVT-JPEG-XS core and plugin'
+        run: |
+          export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
+          bash .github/scripts/setup_environment.sh
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install

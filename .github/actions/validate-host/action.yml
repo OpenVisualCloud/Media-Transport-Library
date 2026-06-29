@@ -102,9 +102,12 @@ runs:
         echo "KAHAWAI_CFG_PATH=${cfg}" >> "$GITHUB_ENV"
         echo "::notice::CI kahawai registry ${cfg} (avcodec from ${plugin_dir})"
 
-    - name: Validate ice drivers
+    - name: 'installation: Auto-align host components (ICE driver & SVT-JPEG-XS)'
       shell: bash
-      run: ${{ github.workspace }}/script/build_ice_driver.sh
+      run: |
+        export SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1
+        export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
+        bash ${{ github.workspace }}/.github/scripts/setup_environment.sh
 
     - name: Configure LD_LIBRARY_PATH, PATH, GST_PLUGIN_PATH
       shell: bash

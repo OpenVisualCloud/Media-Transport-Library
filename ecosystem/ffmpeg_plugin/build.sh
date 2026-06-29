@@ -6,6 +6,7 @@
 set -e
 
 enable_gpu=false
+enable_jpegxs=false
 script_path="$(dirname "$(readlink -f "$0")")"
 VERSIONS_ENV_PATH="$(dirname "$(readlink -qe "${BASH_SOURCE[0]}")")/../../versions.env"
 
@@ -23,17 +24,21 @@ usage() {
 	echo "Options:"
 	echo "  -v <version>    Specify the FFmpeg version to build (default is $FFMPEG_VERSION)"
 	echo "  -g              Enable GPU direct mode during compilation"
+	echo "  -j              Enable SVT-JPEG-XS support during compilation"
 	echo "  -h              Display this help and exit"
 }
 
 # Parse command-line options
-while getopts ":v:hg" opt; do
+while getopts ":v:hgj" opt; do
 	case "${opt}" in
 	v)
 		FFMPEG_VERSION=${OPTARG}
 		;;
 	g)
 		enable_gpu=true
+		;;
+	j)
+		enable_jpegxs=true
 		;;
 	h)
 		usage
@@ -100,22 +105,42 @@ build_ffmpeg() {
 		fi
 	done
 
+	# Use bash array to pass extra configuration flags to avoid shellcheck SC2086 word-splitting warnings.
+	extra_config_flags=()
+
 	if [ "$enable_gpu" = true ]; then
 		echo "Building with MTL_GPU_DIRECT_ENABLED"
-		extra_config_flags="--extra-cflags=-DMTL_GPU_DIRECT_ENABLED"
-	else
-		extra_config_flags=""
+		extra_config_flags+=("--extra-cflags=-DMTL_GPU_DIRECT_ENABLED")
+	fi
+
+	local jpegxs_repo="${SVT_JPEG_XS_REPO:-}"
+	if [ -z "$jpegxs_repo" ]; then
+		if [ -d "${script_path}/../../.github/scripts/SVT-JPEG-XS" ]; then
+			jpegxs_repo="${script_path}/../../.github/scripts/SVT-JPEG-XS"
+		fi
+	fi
+
+	if { [ "${FFMPEG_ENABLE_SVT_JPEG_XS:-0}" == "1" ] || [ "$enable_jpegxs" = true ]; } && [ -d "${jpegxs_repo}" ]; then
+		echo "Integrating SVT-JPEG-XS support into FFmpeg..."
+		cp -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
+		for patch_file in "${jpegxs_repo}/ffmpeg-plugin/${FFMPEG_VERSION}"/*.patch; do
+			if [ -f "$patch_file" ]; then
+				echo "Applying SVT-JPEG-XS patch: $(basename "$patch_file")"
+				patch -p1 <"$patch_file"
+			fi
+		done
+		extra_config_flags+=("--enable-libsvtjpegxs")
 	fi
 
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# Ensure FFmpeg can find libraries installed in its own prefix (e.g. openh264)
 		export PKG_CONFIG_PATH="${MTL_INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 		export LD_LIBRARY_PATH="${MTL_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-ldflags="-Wl,-rpath,${MTL_INSTALL_PREFIX}/lib" $extra_config_flags
+		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-ldflags="-Wl,-rpath,${MTL_INSTALL_PREFIX}/lib" "${extra_config_flags[@]}"
 		make -j "$(nproc)"
 		make install
 	else
-		./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
+		./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl "${extra_config_flags[@]}"
 		make -j "$(nproc)"
 		sudo make install
 		sudo ldconfig
