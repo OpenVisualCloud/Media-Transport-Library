@@ -122,7 +122,10 @@ build_ffmpeg() {
 
 	if { [ "${FFMPEG_ENABLE_SVT_JPEG_XS:-0}" == "1" ] || [ "$enable_jpegxs" = true ]; } && [ -d "${jpegxs_repo}" ]; then
 		echo "Integrating SVT-JPEG-XS support into FFmpeg..."
-		cp -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
+		# copy wrapper files if they exist (not all SVT-JPEG-XS versions package them outside patches, e.g. v0.9.0 handles them fully inside the patches)
+		if [ -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxsenc.c" ] || [ -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxsdec.c" ]; then
+			cp -f "${jpegxs_repo}/ffmpeg-plugin/libsvtjpegxs"* libavcodec/
+		fi
 		for patch_file in "${jpegxs_repo}/ffmpeg-plugin/${FFMPEG_VERSION}"/*.patch; do
 			if [ -f "$patch_file" ]; then
 				echo "Applying SVT-JPEG-XS patch: $(basename "$patch_file")"
