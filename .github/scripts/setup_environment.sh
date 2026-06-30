@@ -493,7 +493,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 		if [ ! -d "${SVT_JPEG_XS_REPO}" ]; then
 			echo "Downloading SVT-JPEG-XS (${SVT_JPEG_XS_VER}) using wget..."
-			wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
+			if ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"; then
+				wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
+			fi
 			mkdir -p "${SVT_JPEG_XS_REPO}"
 			tar -xzf "${setup_script_folder}/SVT-JPEG-XS.tar.gz" -C "${SVT_JPEG_XS_REPO}" --strip-components=1
 			rm -f "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
