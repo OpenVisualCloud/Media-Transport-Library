@@ -710,7 +710,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta);
  * @return
  *   - udw
  */
-uint16_t st40_get_udw(uint32_t idx, uint8_t* data);
+uint16_t st40_get_udw(uint32_t idx, const uint8_t* data);
 
 /**
  * Set udw from for st2110-40(ancillary) payload.
@@ -734,7 +734,67 @@ void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
  * @return
  *   - checksum
  */
-uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data);
+uint16_t st40_calc_checksum(uint32_t data_num, const uint8_t* data);
+
+/**
+ * Wire-aligned byte size of one RFC 8331 ANC data packet inside an RTP
+ * payload (4-byte payload header + 10-bit-packed DID/SDID/DC/UDW[]/checksum,
+ * ceil to whole bytes, then rounded up to a 4-byte boundary).
+ *
+ * @param udw_size
+ *   User Data Word count (0..255, the 8-bit DataCount field).
+ * @return byte count to advance per ANC packet on the wire.
+ */
+uint32_t st40_rfc8331_payload_bytes(uint16_t udw_size);
+
+/**
+ * Byte-swap the first header chunk of an RFC 8331 RTP header in place
+ * between host and network order.
+ */
+void st40_rfc8331_rtp_hdr_bswap(struct st40_rfc8331_rtp_hdr* hdr);
+
+/**
+ * Byte-swap both header chunks of an RFC 8331 payload header in place
+ * between host and network order.
+ */
+void st40_rfc8331_payload_hdr_bswap(struct st40_rfc8331_payload_hdr* hdr);
+
+/**
+ * Result of st40_rfc8331_decode_packet().
+ */
+enum st40_rfc8331_decode_result {
+  ST40_RFC8331_DECODE_OK = 0,
+  ST40_RFC8331_DECODE_SHORT_BUFFER,
+  ST40_RFC8331_DECODE_PARITY_FAIL,
+  ST40_RFC8331_DECODE_CHECKSUM_FAIL,
+};
+
+/**
+ * Decode one wire-order RFC 8331 ANC sub-packet from @p buf (capacity
+ * @p room), write parsed meta to @p meta and up to @p udw_cap stripped
+ * UDW bytes (low 8 bits per word) to @p udw_out.
+ *
+ * On success @p *consumed is set to the number of bytes occupied on the
+ * wire (post 4-byte alignment) so the caller can advance to the next
+ * sub-packet. @p udw_out may be NULL with @p udw_cap == 0 when the
+ * caller only needs meta and size.
+ */
+enum st40_rfc8331_decode_result st40_rfc8331_decode_packet(
+    const uint8_t* buf, uint32_t room, struct st40_meta* meta, uint8_t* udw_out,
+    uint32_t udw_cap, uint32_t* consumed);
+
+/**
+ * Encode one ANC sub-packet at @p buf (capacity @p room) from @p meta and
+ * @p udw_in (meta->udw_size bytes; may be NULL when meta->udw_size == 0).
+ * On success writes wire-order bytes and sets @p *written to the bytes
+ * occupied on the wire.
+ *
+ * @return
+ *   - 0 on success
+ *   - -ENOSPC if @p room is too small for the packet
+ */
+int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_meta* meta,
+                               const uint8_t* udw_in, uint32_t* written);
 
 /**
  * Add parity from st2110-40(ancillary) payload.
