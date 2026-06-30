@@ -18,6 +18,10 @@ PIX_FMTS = [
     "gbrp10le",
     "yuv420p",
     "y210le",
+    "uyvy422",
+    "yuv422p12le",
+    "yuv444p12le",
+    "gbrp12le",
 ]
 
 logger = logging.getLogger(__name__)
