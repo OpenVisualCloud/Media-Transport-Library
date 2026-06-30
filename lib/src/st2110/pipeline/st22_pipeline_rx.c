@@ -221,6 +221,7 @@ static int rx_st22p_decode_set_timeout(void* priv, uint64_t timedwait_ns) {
 static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   struct st22p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
   struct st22p_rx_frame* framebuff;
   struct st22_decode_frame_meta* ret_frame = NULL;
 
@@ -571,6 +572,7 @@ static int rx_st22p_usdt_dump_frame(struct st22p_rx_ctx* ctx, struct st_frame* f
 struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
   struct st22p_rx_frame* framebuff;
   struct st_frame* frame = NULL;
 
@@ -586,11 +588,11 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =

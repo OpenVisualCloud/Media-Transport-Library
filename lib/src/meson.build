@@ -29,6 +29,13 @@ endif
   sources += files('../windows/win_posix.c')
 endif
 
+# Add FreeBSD NUMA stubs if libnuma not available
+if is_freebsd
+  if not libnuma_dep.found()
+    sources += files('mt_numa_freebsd.c')
+  endif
+endif
+
 subdir('datapath')
 subdir('dev')
 subdir('st2110')

@@ -84,6 +84,7 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
                                    struct st40p_tx_frame* framebuff) {
   struct st40_frame_info* frame_info = &framebuff->frame_info;
   uint32_t rtp_ts;
+  MTL_MAY_UNUSED(rtp_ts);
 
   /* prerequisite: both flags must be set */
   if (!(ctx->ops.flags & ST40P_TX_FLAG_DROP_WHEN_LATE) ||
@@ -457,6 +458,7 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
   struct st40p_tx_frame* framebuff;
   struct st40_frame_info* frame_info = NULL;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, NULL);
 
@@ -469,11 +471,11 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st40p_next_available(ctx, ST40P_TX_FRAME_FREE);

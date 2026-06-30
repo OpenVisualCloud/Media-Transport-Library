@@ -97,7 +97,6 @@ TEST_F(St40RxRedundancyTest, MultipleSwitchoversReordered) {
   }
   ASSERT_EQ(unrecovered(), 0u);
 
-  int switchovers = 0;
   constexpr int kLateCount = 2;
 
   /* 5 switchover frames: port 1 first, then port 0 late */
@@ -106,7 +105,6 @@ TEST_F(St40RxRedundancyTest, MultipleSwitchoversReordered) {
     feed_burst(frame_start + kLateCount, kFramePkts - kLateCount, ts, true,
                MTL_SESSION_PORT_R);
     feed_burst(frame_start, kLateCount, ts, false, MTL_SESSION_PORT_P);
-    switchovers++;
     seq += kFramePkts;
     ts += kTsDelta;
   }

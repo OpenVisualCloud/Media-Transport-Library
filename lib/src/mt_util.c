@@ -1093,6 +1093,7 @@ bool mt_file_exists(const char* filename) {
 }
 
 int mt_sysfs_write_uint32(const char* path, uint32_t value) {
+#ifdef __linux__
   int fd = open(path, O_WRONLY);
   if (fd < 0) {
     err("%s, open %s fail %d\n", __func__, path, fd);
@@ -1113,6 +1114,13 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
 
   close(fd);
   return ret;
+#else
+  /* sysfs not available on non-Linux systems */
+  MTL_MAY_UNUSED(path);
+  MTL_MAY_UNUSED(value);
+  warn("%s, sysfs not available on this platform\n", __func__);
+  return -ENOTSUP;
+#endif
 }
 
 #define MT_HASH_KEY_LENGTH (40)

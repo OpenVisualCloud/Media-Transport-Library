@@ -8,6 +8,11 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
+#ifdef __FreeBSD__
+#include <net/route.h>
+#include <sys/sysctl.h>
+#endif
+
 #ifndef WINDOWSENV
 int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
@@ -117,6 +122,37 @@ int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LE
 }
 
 int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
+#ifdef __FreeBSD__
+  /* FreeBSD: Use getifaddrs() to get MAC address */
+  struct ifaddrs *ifap, *ifa;
+  struct sockaddr_dl* sdl;
+  int ret = -ENOENT;
+
+  if (getifaddrs(&ifap) != 0) {
+    err("%s, getifaddrs fail for if %s\n", __func__, if_name);
+    return -errno;
+  }
+
+  for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == NULL) continue;
+    if (ifa->ifa_addr->sa_family != AF_LINK) continue;
+    if (strcmp(ifa->ifa_name, if_name) != 0) continue;
+
+    sdl = (struct sockaddr_dl*)ifa->ifa_addr;
+    if (sdl->sdl_alen == RTE_ETHER_ADDR_LEN) {
+      memcpy(ea->addr_bytes, LLADDR(sdl), RTE_ETHER_ADDR_LEN);
+      ret = 0;
+      break;
+    }
+  }
+
+  freeifaddrs(ifap);
+  if (ret < 0) {
+    err("%s, interface %s not found or no MAC address\n", __func__, if_name);
+  }
+  return ret;
+#else
+  /* Linux: Use SIOCGIFHWADDR ioctl */
   int sock, ret;
   struct ifreq ifr;
 
@@ -138,6 +174,7 @@ int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
 
   close(sock);
   return 0;
+#endif
 }
 
 int mt_socket_set_if_up(const char* if_name) {
@@ -197,6 +234,69 @@ int mt_socket_get_numa(const char* if_name) {
   return numa_node;
 }
 
+#ifdef __FreeBSD__
+/* FreeBSD: SIOCGARP/struct arpreq are not available; use the sysctl routing table. */
+/* Round up sockaddr length to a uint32_t boundary, as required when
+ * walking the packed variable-length sockaddr array in BSD routing messages. */
+/* clang-format off */
+#define SOCKET_ARP_ROUNDUP(a) \
+  ((a) > 0 ? (1 + (((a)-1) | (sizeof(uint32_t) - 1))) : sizeof(uint32_t))
+/* clang-format on */
+
+static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
+                          const char* if_name) {
+  MTL_MAY_UNUSED(sfd);
+  MTL_MAY_UNUSED(if_name);
+
+  int mib[] = {CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO};
+  size_t sz;
+
+  if (sysctl(mib, 6, NULL, &sz, NULL, 0) < 0 || sz == 0) {
+    dbg("%s, sysctl size query fail\n", __func__);
+    return -EIO;
+  }
+
+  char* buf = malloc(sz);
+  if (!buf) return -ENOMEM;
+
+  if (sysctl(mib, 6, buf, &sz, NULL, 0) < 0) {
+    free(buf);
+    return -EIO;
+  }
+
+  int ret = -EIO;
+  char* next = buf;
+  char* lim = buf + sz;
+
+  while (next < lim) {
+    struct rt_msghdr* rtm = (struct rt_msghdr*)next;
+    next += rtm->rtm_msglen;
+    if (rtm->rtm_version != RTM_VERSION) continue;
+    if (!(rtm->rtm_addrs & RTA_DST) || !(rtm->rtm_addrs & RTA_GATEWAY)) continue;
+
+    struct sockaddr* sa = (struct sockaddr*)(rtm + 1);
+    if (sa->sa_family != AF_INET) continue;
+
+    struct sockaddr_in* sin = (struct sockaddr_in*)sa;
+    if (sin->sin_addr.s_addr != ip) continue;
+
+    /* gateway (link-layer address) follows the destination sockaddr */
+    struct sockaddr_dl* sdl =
+        (struct sockaddr_dl*)((char*)sa + SOCKET_ARP_ROUNDUP(sa->sa_len));
+    if (sdl->sdl_family != AF_LINK || sdl->sdl_alen < RTE_ETHER_ADDR_LEN) continue;
+
+    unsigned char* hw_addr = (unsigned char*)LLADDR(sdl);
+    memcpy(ea->addr_bytes, hw_addr, RTE_ETHER_ADDR_LEN);
+    dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, hw_addr[0],
+        hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
+    ret = 0;
+    break;
+  }
+
+  free(buf);
+  return ret;
+}
+#else  /* Linux */
 static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
                           const char* if_name) {
   struct arpreq arp;
@@ -232,6 +332,7 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
 
   return 0;
 }
+#endif /* __FreeBSD__ */
 
 static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
                                   struct rte_ether_addr* ea) {

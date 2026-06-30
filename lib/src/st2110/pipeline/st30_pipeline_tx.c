@@ -81,6 +81,7 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
                                    struct st30p_tx_frame* framebuff) {
   struct st30_frame* frame = &framebuff->frame;
   uint32_t rtp_ts;
+  MTL_MAY_UNUSED(rtp_ts);
 
   /* prerequisite: both flags must be set */
   if (!(ctx->ops.flags & ST30P_TX_FLAG_DROP_WHEN_LATE) ||
@@ -463,6 +464,7 @@ static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx* ctx) {
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
   struct st30p_tx_frame* framebuff;
   struct st30_frame* frame = NULL;
 
@@ -477,11 +479,11 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);

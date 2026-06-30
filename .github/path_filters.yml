@@ -62,3 +62,19 @@ linux_tests: &linux_tests
   - 'tests/validation/**'
   - *ice_build
   - *ubuntu_build
+
+msys2_build:
+  - .github/workflows/msys2_build.yml
+  - 'lib/windows/**'
+  - 'patches/dpdk/**/windows/**'
+  - *src
+  - *build
+
+freebsd_build:
+  - .github/workflows/freebsd_build.yml
+  - 'lib/src/mt_platform_freebsd.h'
+  - 'lib/src/mt_numa_freebsd.c'
+  - 'doc/build_FREEBSD.md'
+  - 'doc/run_FREEBSD.md'
+  - *src
+  - *build

@@ -162,7 +162,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
 
 static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   int ret;
-#ifndef WINDOWSENV
+#if !defined(WINDOWSENV) && !defined(__FreeBSD__)
   struct timex adjtime;
   int sign = 1;
 
@@ -181,7 +181,7 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 
   ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
-#else
+#elif defined(WINDOWSENV)
   FILETIME ft;
   SYSTEMTIME st;
   GetSystemTimePreciseAsFileTime(&ft);
@@ -193,6 +193,9 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   ft.dwHighDateTime = ui.HighPart;
   FileTimeToSystemTime(&ft, &st);
   ret = SetSystemTime(&st) ? 0 : -1;
+#else
+  MTL_MAY_UNUSED(delta);
+  ret = 0;
 #endif
   dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
   if (ret < 0) {
@@ -206,7 +209,7 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
 
 static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
   int ret = -1;
-#ifndef WINDOWSENV
+#if !defined(WINDOWSENV) && !defined(__FreeBSD__)
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
 
@@ -222,13 +225,16 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
   adjfreq.freq =
       (long)(ppb * 65.536); /* 1 ppm = 1000 ppb = 2^16 freq unit (scaled ppm) */
   ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
-#else /* TBD */
+#elif defined(WINDOWSENV) /* TBD */
   uint64_t cur_adj = 0;
   uint64_t time_inc = 0;
   int time_adj_disable = 0;
 
   if ((*win_get_systime_adj)(&cur_adj, &time_inc, &time_adj_disable))
     ret = (*win_set_systime_adj)(cur_adj - ppb / 100, FALSE) ? 0 : -1;
+#else
+  MTL_MAY_UNUSED(ppb);
+  ret = 0;
 #endif
   if (ret < 0) {
     err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
