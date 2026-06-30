@@ -60,6 +60,21 @@ struct st40_frame_info* ut40p_get_frame(ut40p_ctx* ctx);
 /** Return a frame to the pipeline (wraps st40p_rx_put_frame). */
 int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame);
 
+/* ── concurrency-test helpers ─────────────────────────────────────────── */
+
+/** Transition one FREE framebuffer straight to READY (bypasses mbuf assembly).
+ *  Single-producer only; returns -EBUSY when no FREE slot is available. */
+int ut40p_inject_frame(ut40p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
+
+/** Buffer index that a user-facing frame belongs to. */
+int ut40p_frame_idx(const struct st40_frame_info* frame);
+
+/** Total framebuffer count. */
+int ut40p_framebuff_cnt(const ut40p_ctx* ctx);
+
+/** Raw stat value of framebuffer i (for diagnostics). */
+int ut40p_frame_stat(const ut40p_ctx* ctx, int i);
+
 /* ── stat accessors ───────────────────────────────────────────────── */
 
 uint32_t ut40p_stat_busy(const ut40p_ctx* ctx);

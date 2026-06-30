@@ -141,8 +141,6 @@ static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
   rtp_ts = frame->rtp_timestamp;
   framebuff->stat = ST22P_TX_FRAME_DROPPED;
 
-  mt_pthread_mutex_unlock(&ctx->lock);
-
   notice("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64
          "ns), cur %" PRIu64 " frame %" PRIu64 "\n",
          __func__, ctx->idx, framebuff->seq_number, cur_tai - frame_tai, frame_period_ns,
@@ -157,13 +155,10 @@ static bool tx_st22p_if_frame_late(struct st22p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST22P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff->stat = ST22P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   tx_st22p_notify_frame_available(ctx);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -175,7 +170,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st22p_newest_available(ctx, ST22P_TX_FRAME_ENCODED);
     if (!framebuff) break; /* no encoded frame available */
@@ -189,7 +183,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   /* not any encoded frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     /* When drop-when-late is active, ensure the app knows about free slots so it
      * can refill the pipeline promptly after drops freed frames. */
     if (ctx->ops.flags & ST22P_TX_FLAG_DROP_WHEN_LATE) {
@@ -211,7 +204,6 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
         framebuff->idx, meta->timestamp);
   }
   meta->codestream_size = framebuff->dst.data_size;
-  mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
@@ -231,7 +223,6 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST22P_TX_FRAME_FREE;
@@ -241,7 +232,6 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
     err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
         frame_idx);
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
@@ -310,24 +300,19 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
 
   ctx->stat_encode_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_READY);
   if (!framebuff && ctx->encode_block_get) { /* wait here for block mode */
-    mt_pthread_mutex_unlock(&ctx->lock);
     tx_st22p_encode_get_block_wait(ctx);
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_READY);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     dbg("%s(%d), no ready frame\n", __func__, idx);
     goto out;
   }
 
   framebuff->stat = ST22P_TX_FRAME_IN_ENCODING;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
@@ -354,9 +339,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
 
   MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_ENCODING != framebuff->stat) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in encoding %d\n", __func__, idx, encode_idx,
         framebuff->stat);
     ret = -EIO;
@@ -372,12 +355,10 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
          __func__, idx, encode_idx, result, data_size, ST22_ENCODE_MIN_FRAME_SZ,
          max_size);
     framebuff->stat = ST22P_TX_FRAME_FREE;
-    mt_pthread_mutex_unlock(&ctx->lock);
     tx_st22p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_encode_fail);
   } else {
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
-    mt_pthread_mutex_unlock(&ctx->lock);
   }
 
   MT_USDT_ST22P_TX_ENCODE_PUT(idx, framebuff->idx, frame->src->addr[0],
@@ -727,10 +708,8 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -738,19 +717,24 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st22p_next_available(ctx, ST22P_TX_FRAME_FREE);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST22P_TX_FRAME_IN_USER;
+  /* Claim FREE->IN_USER atomically so concurrent producers can't grab the same
+   * slot; on a lost race return NULL and let the caller retry. */
+  {
+    uint32_t expected = ST22P_TX_FRAME_FREE;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected, ST22P_TX_FRAME_IN_USER,
+                                     false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_sequence_number++;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  framebuff->seq_number =
+      __atomic_fetch_add(&ctx->framebuff_sequence_number, 1, __ATOMIC_RELAXED);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   if (ctx->ops.interlaced) { /* init second_field but user still can customize */
@@ -979,7 +963,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->wake_on_destroy = (void (*)(void*))tx_st22p_block_wake_all;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->encode_block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->encode_block_wake_cond);
@@ -1066,7 +1049,6 @@ int st22p_tx_free(st22p_tx_handle handle) {
   }
   tx_st22p_uinit_src_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   mt_pthread_mutex_destroy(&ctx->encode_block_wake_mutex);

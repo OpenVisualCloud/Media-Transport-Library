@@ -51,7 +51,7 @@ static struct st20p_tx_frame* tx_st20p_next_available(
   /* check ready frame from start */
   for (int idx = 0; idx < ctx->framebuff_cnt; idx++) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
       return framebuff;
     }
   }
@@ -66,7 +66,7 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
 
   for (uint16_t idx = 0; idx < ctx->framebuff_cnt; idx++) {
     framebuff = &ctx->framebuffs[idx];
-    if ((desired == framebuff->stat &&
+    if ((desired == __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE) &&
          (!framebuff_newest ||
           !mt_seq32_greater(framebuff->seq_number, framebuff_newest->seq_number)))) {
       framebuff_newest = framebuff;
@@ -79,25 +79,22 @@ static struct st20p_tx_frame* tx_st20p_newest_available(
 /* Check if a CONVERTED frame is late.
  *
  * If late, the sequence is:
- *   1. Park as DROPPED under lock — invisible to both next_frame (CONVERTED) and
+ *   1. Park as DROPPED — invisible to both next_frame (CONVERTED) and
  *      get_frame (FREE), so no other thread can grab the slot while we clean up.
- *   2. Unlock before all callbacks so app callbacks cannot deadlock on ctx->lock.
- *   3. Fire notify_frame_done — app sees the frame and can safely release any
+ *   2. Fire notify_frame_done — app sees the frame and can safely release any
  *      external buffer it owns (EXT_FRAME mode).
- *   4. Fire notify_frame_late + USDT probe.
- *   5. Re-acquire lock, clear ext-buffer pointers on the framebuff so the next
- *      get_frame call receives a clean slot with no stale external pointers.
- *   6. If EXT_FRAME_USER_DONE: advance to IN_USER — app must call
+ *   3. Fire notify_frame_late + USDT probe.
+ *   4. Clear ext-buffer pointers on the framebuff so the next get_frame call
+ *      receives a clean slot with no stale external pointers.
+ *   5. If EXT_FRAME_USER_DONE: advance to IN_USER — app must call
  *      st20p_tx_notify_ext_frame_free to release the slot to FREE.
- *      Otherwise: advance to FREE, unlock, then notify_frame_available —
+ *      Otherwise: advance to FREE, then notify_frame_available —
  *      the slot is immediately visible to get_frame callers.
- *   7. Re-acquire for the caller's do-while loop and return true.
- *
- * Must be called with ctx->lock held. Returns with ctx->lock held. */
+ *   6. Return true so the caller's do-while loop retries. */
 static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
                                    struct st20p_tx_frame* framebuff) {
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
-  uint32_t rtp_ts; /* captured under lock for use in USDT after unlock */
+  uint32_t rtp_ts; /* captured for use in USDT after state transition */
   bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
   /* Park in IN_USER only when user_done flag is set and derive path */
   bool need_in_user = user_done && !framebuff->frame_done_cb_called;
@@ -129,9 +126,7 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
    * (put_frame_abort), and read from any thread via st20p_tx_get_session_stats(). */
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   rtp_ts = frame->rtp_timestamp;
-  framebuff->stat = ST20P_TX_FRAME_DROPPED;
-
-  mt_pthread_mutex_unlock(&ctx->lock);
+  __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_DROPPED, __ATOMIC_RELEASE);
 
   dbg("%s(%d), frame %u drop late by %" PRIu64 "ns (> period %" PRIu64 "ns), cur %" PRIu64
       " frame %" PRIu64 "\n",
@@ -147,18 +142,16 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
   MT_USDT_ST20P_TX_FRAME_DROP(ctx->idx, framebuff->idx, rtp_ts);
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
   /* ext_frame derive: park in IN_USER until app calls
    * st20p_tx_notify_ext_frame_free */
-  framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  __atomic_store_n(&framebuff->stat,
+                   need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE,
+                   __ATOMIC_RELEASE);
 
   if (!need_in_user) {
     tx_st20p_notify_frame_available(ctx);
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   return true; /* frame was dropped, caller should retry */
 }
 
@@ -171,7 +164,6 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   do {
     framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
     if (!framebuff) break; /* no converted frame available */
@@ -184,7 +176,6 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   } while (tx_st20p_if_frame_late(ctx, framebuff));
 
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     /* When drop-when-late is active, ensure the app knows about free slots so it
      * can refill the pipeline promptly after drops freed frames. */
     if (ctx->ops.flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
@@ -194,7 +185,7 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     return -EBUSY;
   }
 
-  framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
+  __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_IN_TRANSMITTING, __ATOMIC_RELEASE);
   *next_frame_idx = framebuff->idx;
 
   frame = tx_st20p_user_frame(ctx, framebuff);
@@ -208,7 +199,6 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->user_meta_size = framebuff->user_meta_data_size;
   }
 
-  mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
       framebuff->idx);
   MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
@@ -236,17 +226,18 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   /* Transition state BEFORE the callback so the app can call
    * st20p_tx_notify_ext_frame_free from within notify_frame_done. */
-  mt_pthread_mutex_lock(&ctx->lock);
-  if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+  if (ST20P_TX_FRAME_IN_TRANSMITTING ==
+      __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     ret = 0;
-    framebuff->stat = need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE;
+    __atomic_store_n(&framebuff->stat,
+                     need_in_user ? ST20P_TX_FRAME_IN_USER : ST20P_TX_FRAME_FREE,
+                     __ATOMIC_RELEASE);
     dbg("%s(%d), frame_idx: %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
-        frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx,
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED), frame_idx);
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
@@ -287,16 +278,22 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
 
   if (!ctx->ready) goto out; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_READY);
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST20P_TX_FRAME_IN_CONVERTING;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  /* Atomically claim READY -> IN_CONVERTING.  A concurrent converter thread
+   * may have already taken this slot between the scan and now; on a lost
+   * race return NULL and let the caller retry on the next invocation. */
+  {
+    uint32_t expected_stat = ST20P_TX_FRAME_READY;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected_stat,
+                                     ST20P_TX_FRAME_IN_CONVERTING, false,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
 
   dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, idx, framebuff->idx,
       framebuff->idx);
@@ -317,11 +314,10 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  if (ST20P_TX_FRAME_IN_CONVERTING != framebuff->stat) {
-    mt_pthread_mutex_unlock(&ctx->lock);
+  if (ST20P_TX_FRAME_IN_CONVERTING !=
+      __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
@@ -330,15 +326,13 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     dbg("%s(%d), frame %u result %d data_size %" PRIu64 ", frame_idx: %u\n", __func__,
         idx, convert_idx, result, data_size, convert_idx);
 
-    framebuff->stat = ST20P_TX_FRAME_FREE;
-    mt_pthread_mutex_unlock(&ctx->lock);
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_FREE, __ATOMIC_RELEASE);
 
     /* notify app can get frame */
     tx_st20p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_convert_fail);
   } else {
-    framebuff->stat = ST20P_TX_FRAME_CONVERTED;
-    mt_pthread_mutex_unlock(&ctx->lock);
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_CONVERTED, __ATOMIC_RELEASE);
   }
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
@@ -520,7 +514,7 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
   ctx->framebuffs = frames;
 
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    frames[i].stat = ST20P_TX_FRAME_FREE;
+    __atomic_store_n(&frames[i].stat, ST20P_TX_FRAME_FREE, __ATOMIC_RELAXED);
     frames[i].idx = i;
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.interlaced = ops->interlaced;
@@ -722,10 +716,8 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
@@ -733,19 +725,24 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
   }
   /* not any free frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
 
-  framebuff->stat = ST20P_TX_FRAME_IN_USER;
+  /* Claim FREE->IN_USER atomically so concurrent producers can't grab the same
+   * slot; on a lost race return NULL and let the caller retry. */
+  {
+    uint32_t expected = ST20P_TX_FRAME_FREE;
+    if (!__atomic_compare_exchange_n(&framebuff->stat, &expected, ST20P_TX_FRAME_IN_USER,
+                                     false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+      goto out;
+  }
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_sequence_number++;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  framebuff->seq_number =
+      __atomic_fetch_add(&ctx->framebuff_sequence_number, 1, __ATOMIC_RELAXED);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   frame = tx_st20p_user_frame(ctx, framebuff);
@@ -771,9 +768,9 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
@@ -790,7 +787,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     if (frame->user_meta_size > framebuff->user_meta_buffer_size) {
       err("%s(%d), frame %u user meta size %" PRId64 " too large\n", __func__, idx,
           producer_idx, frame->user_meta_size);
-      framebuff->stat = ST20P_TX_FRAME_FREE;
+      __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_FREE, __ATOMIC_RELEASE);
       ret = -EIO;
       goto out;
     }
@@ -806,11 +803,11 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
 
   if (ctx->internal_converter) { /* convert internal */
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
-    framebuff->stat = ST20P_TX_FRAME_CONVERTED;
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_CONVERTED, __ATOMIC_RELEASE);
   } else if (ctx->derive) {
-    framebuff->stat = ST20P_TX_FRAME_CONVERTED;
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_CONVERTED, __ATOMIC_RELEASE);
   } else {
-    framebuff->stat = ST20P_TX_FRAME_READY;
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_READY, __ATOMIC_RELEASE);
     st20_convert_notify_frame_ready(ctx->convert_impl);
   }
   ctx->stat_put_frame++;
@@ -842,14 +839,14 @@ int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
 
-  framebuff->stat = ST20P_TX_FRAME_FREE;
+  __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_FREE, __ATOMIC_RELEASE);
   ctx->stat_drop_frame++;
   __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, producer_idx);
@@ -875,9 +872,9 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     goto out;
   }
 
-  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = -EIO;
     goto out;
   }
@@ -902,7 +899,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     framebuff->dst.iova[0] = ext_frame->iova[0];
     framebuff->dst.opaque = ext_frame->opaque;
     framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
-    framebuff->stat = ST20P_TX_FRAME_CONVERTED;
+    __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_CONVERTED, __ATOMIC_RELEASE);
   } else {
     for (int plane = 0; plane < planes; plane++) {
       framebuff->src.addr[plane] = ext_frame->addr[plane];
@@ -921,13 +918,13 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     }
     if (ctx->internal_converter) { /* convert internal */
       ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
-      framebuff->stat = ST20P_TX_FRAME_CONVERTED;
+      __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_CONVERTED, __ATOMIC_RELEASE);
       if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
         ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
         framebuff->frame_done_cb_called = true;
       }
     } else {
-      framebuff->stat = ST20P_TX_FRAME_READY;
+      __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_READY, __ATOMIC_RELEASE);
       st20_convert_notify_frame_ready(ctx->convert_impl);
     }
   }
@@ -967,20 +964,17 @@ int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* fram
     goto out;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
-  if (ST20P_TX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_TX_FRAME_IN_USER != __atomic_load_n(&framebuff->stat, __ATOMIC_ACQUIRE)) {
     /* Frame is not in IN_USER, this happens when the converter already released
      * the ext buffer during put_ext_frame and the frame went CONVERTED -> FREE
      * without the IN_USER step.  Silently succeed so callers can always call
      * this unconditionally from notify_frame_done. */
-    mt_pthread_mutex_unlock(&ctx->lock);
     dbg("%s(%d), frame %u not in_user (stat %d), skip\n", __func__, idx, framebuff->idx,
-        framebuff->stat);
+        (int)__atomic_load_n(&framebuff->stat, __ATOMIC_RELAXED));
     ret = 0;
     goto out;
   }
-  framebuff->stat = ST20P_TX_FRAME_FREE;
-  mt_pthread_mutex_unlock(&ctx->lock);
+  __atomic_store_n(&framebuff->stat, ST20P_TX_FRAME_FREE, __ATOMIC_RELEASE);
 
   tx_st20p_notify_frame_available(ctx);
 
@@ -1043,7 +1037,6 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
@@ -1141,7 +1134,6 @@ int st20p_tx_free(st20p_tx_handle handle) {
 
   tx_st20p_uinit_src_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
