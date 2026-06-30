@@ -274,7 +274,7 @@ static int tx_ancillary_session_init_pacing(struct st_tx_ancillary_session_impl*
   pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time; /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
-  info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
+  info("%s[%02d], frame_time %Lf frame_time_sampling %Lf\n", __func__, idx,
        pacing->frame_time, pacing->frame_time_sampling);
   return 0;
 }
@@ -289,7 +289,7 @@ static int tx_ancillary_session_init_pacing_epoch(
 
 static inline uint64_t tx_ancillary_pacing_time(
     struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
-  return nextafter(epochs * pacing->frame_time, INFINITY);
+  return nextafterl((long double)epochs * pacing->frame_time, INFINITY);
 }
 
 static inline __attribute__((unused)) uint32_t tx_ancillary_pacing_time_stamp(
@@ -401,9 +401,8 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   pacing->ptp_time_cursor = start_time_tai;
-  pacing->tsc_time_cursor = (double)cur_tsc + (double)time_to_tx_ns;
-  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %" PRIu64 " time_to_tx_ns %" PRId64
-      "\n",
+  pacing->tsc_time_cursor = (long double)cur_tsc + (long double)time_to_tx_ns;
+  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %Lf time_to_tx_ns %" PRId64 "\n",
       __func__, s->idx, pacing->cur_epochs, pacing->ptp_time_cursor, time_to_tx_ns);
 
   return 0;
