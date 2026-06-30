@@ -77,6 +77,8 @@
 #define MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT (MTL_BIT32(6))
 /* LaunchTime Tx */
 #define MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP (MTL_BIT32(7))
+/* PHC frequency adjustment via rte_eth_timesync_adjust_freq */
+#define MT_IF_FEATURE_TIMESYNC_ADJUST_FREQ (MTL_BIT32(8))
 
 #define MT_IF_STAT_PORT_CONFIGURED (MTL_BIT32(0))
 #define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
