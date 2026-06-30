@@ -1116,7 +1116,7 @@ int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* 
   struct st22p_tx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st22_tx_update_destination(ctx->transport, dst);
   MT_HANDLE_RELEASE(ctx);
@@ -1126,7 +1126,7 @@ int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* 
 int st22p_tx_wake_block(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   if (ctx->block_get) tx_st22p_block_wake(ctx);
 
@@ -1137,7 +1137,7 @@ int st22p_tx_wake_block(st22p_tx_handle handle) {
 int st22p_tx_set_block_timeout(st22p_tx_handle handle, uint64_t timedwait_ns) {
   struct st22p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);

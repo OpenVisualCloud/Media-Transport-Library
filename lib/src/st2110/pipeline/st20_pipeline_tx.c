@@ -1189,7 +1189,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st20_tx_get_sch_idx(ctx->transport);
   MT_HANDLE_RELEASE(ctx);
@@ -1223,7 +1223,7 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st20_tx_get_session_stats(ctx->transport, stats);
   if (ret < 0) goto out;
@@ -1247,7 +1247,7 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   __atomic_store_n(&ctx->stat_frames_sent, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
@@ -1260,7 +1260,7 @@ int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* 
   struct st20p_tx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st20_tx_update_destination(ctx->transport, dst);
   MT_HANDLE_RELEASE(ctx);
@@ -1270,7 +1270,7 @@ int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* 
 int st20p_tx_wake_block(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   if (ctx->block_get) tx_st20p_block_wake(ctx);
 
@@ -1281,7 +1281,7 @@ int st20p_tx_wake_block(st20p_tx_handle handle) {
 int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns) {
   struct st20p_tx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);
