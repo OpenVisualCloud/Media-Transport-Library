@@ -31,6 +31,7 @@ Contents
    doc/build.md
    Build Guide on Windows <doc/build_WIN.md>
    doc/run.md
+   doc/run_i226.md
    doc/e800_series_drivers.md
    doc/run_WIN.md
    doc/vm.md
@@ -115,4 +116,3 @@ Experimental features
    doc/experimental/af_packet.md
    doc/experimental/af_xdp.md
    doc/experimental/header_split.md
-

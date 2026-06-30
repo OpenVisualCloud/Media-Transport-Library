@@ -13,6 +13,8 @@ The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supp
 
 For Intel® E810 and E830 Series Ethernet Adapter, refer to [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md). For other NICs, you may need to follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
 
+For Intel I226-V on Ubuntu with DPDK-first and AF_XDP fallback flow, see [Run Guide for Intel I226-V](run_i226.md).
+
 ## 3. DPDK PMD Setup
 
 DPDK utilizes the Linux kernel's VFIO module to enable direct NIC hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit).
