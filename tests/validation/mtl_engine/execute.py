@@ -57,7 +57,33 @@ class AsyncProcess:
         self.output = ""
 
 
-def killproc(proc: subprocess.Popen, sigint: bool = False):
+def killproc(proc, sigint: bool = False):
+    is_remote = not hasattr(proc, "poll")
+    if is_remote:
+        import signal
+
+        try:
+            if not proc.running:
+                return
+        except Exception:
+            pass
+        sig = signal.SIGINT if sigint else signal.SIGTERM
+        try:
+            proc.kill(wait=None, with_signal=sig)
+        except Exception:
+            pass
+        time.sleep(5)
+        try:
+            if not proc.running:
+                return
+        except Exception:
+            pass
+        try:
+            proc.kill(wait=None, with_signal=signal.SIGKILL)
+        except Exception:
+            pass
+        return
+
     result = proc.poll()
     if result is not None:
         return result
@@ -175,17 +201,35 @@ def calls(
 def wait(ap: AsyncProcess) -> str:
     try:  # in case of user interrupt
         ap.process.wait()
-        ap.timer.cancel()
+        if ap.timer is not None:
+            ap.timer.cancel()
     except:  # noqa E722
         killproc(ap.process)
         raise
     finally:
-        ap.timer.cancel()
-        ap.timer.join(30)
-        ap.output = ap.reader.join(30)
-        logger.debug(
-            f"Process {ap.process.pid} finished with RC: {ap.process.returncode}"
-        )
+        if ap.timer is not None:
+            ap.timer.cancel()
+            ap.timer.join(30)
+        if ap.reader is not None:
+            ap.output = ap.reader.join(30)
+        else:
+            ap.output = getattr(ap.process, "stdout_text", "")
+
+        try:
+            pid = getattr(ap.process, "pid", "unknown")
+        except Exception:
+            pid = "unknown"
+        rc = None
+        try:
+            rc = getattr(ap.process, "returncode", None)
+        except Exception:
+            pass
+        if rc is None:
+            try:
+                rc = getattr(ap.process, "return_code", "unknown")
+            except Exception:
+                rc = "unknown"
+        logger.debug(f"Process {pid} finished with RC: {rc}")
     return ap.output
 
 
