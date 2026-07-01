@@ -206,6 +206,7 @@ def setup_gstreamer_st20p_tx_pipeline(
     tx_queues: int,
     tx_framebuff_num: int = None,
     tx_fps: int = None,
+    enable_ptp: bool = False,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -254,6 +255,9 @@ def setup_gstreamer_st20p_tx_pipeline(
 
     pipeline_command.extend(["mtl_st20p_tx", f"tx-queues={tx_queues}"])
 
+    if enable_ptp:
+        pipeline_command.append("enable-ptp=true")
+
     if tx_framebuff_num is not None:
         pipeline_command.append(f"tx-framebuff-num={tx_framebuff_num}")
 
@@ -280,6 +284,7 @@ def setup_gstreamer_st20p_rx_pipeline(
     rx_queues: int,
     rx_framebuff_num: int = None,
     rx_fps: int = None,
+    enable_ptp: bool = False,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -304,6 +309,9 @@ def setup_gstreamer_st20p_rx_pipeline(
         f"rx-width={width}",
         f"rx-fps={framerate}",
     ]
+
+    if enable_ptp:
+        pipeline_command.append("enable-ptp=true")
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
