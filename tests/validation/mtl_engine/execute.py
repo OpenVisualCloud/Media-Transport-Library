@@ -215,7 +215,10 @@ def wait(ap: AsyncProcess) -> str:
         else:
             ap.output = getattr(ap.process, "stdout_text", "")
 
-        pid = getattr(ap.process, "pid", "unknown")
+        try:
+            pid = getattr(ap.process, "pid", "unknown")
+        except Exception:
+            pid = "unknown"
         rc = None
         try:
             rc = getattr(ap.process, "returncode", None)
