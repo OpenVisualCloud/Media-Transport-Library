@@ -4,18 +4,22 @@
 
 Wraps the procedural builders and orchestrator in :mod:`mtl_engine.GstreamerApp`,
 which stay the single source of truth for pipeline token lists and pass/fail
-criteria. ``create_command`` materialises the TX/RX gst-launch token lists;
-``execute_test`` delegates to :func:`GstreamerApp.execute_test`.
+criteria. ``create_command`` materialises the TX/RX gst-launch token lists from
+the same UNIVERSAL_PARAMS vocabulary RxTxApp/FFmpeg use (translating to
+GStreamer caps internally); ``execute_test`` delegates the TX+RX run to
+:func:`GstreamerApp.execute_test`.
 
-Because execution is delegated, this adapter intentionally BYPASSES the
-base-class run machinery (netsniff hook, PTP extension, SIGINT->SIGKILL stop
-ladder, ``_output_files`` cleanup, ``interface_setup``). No GStreamer test uses
-those features; the procedural orchestrator owns process lifetime and file
-comparison.
+Execution is delegated because the procedural orchestrator runs a TX+RX pipeline
+pair on a single host and owns md5 output comparison, which the base single-host
+run loop (one ``self.command``) does not model. The adapter still honors the
+shared ``netsniff=`` capture hook so one parametrized test can drive RxTxApp,
+FFmpeg and GStreamer identically. The base PTP extension and SIGINT->SIGKILL
+stop ladder are not reused: GstreamerApp owns process teardown.
 
-``app_path`` is vestigial for GStreamer: ``gst-launch-1.0`` is resolved from
-PATH and the builders hardcode it, so callers pass the MTL build directory as
-``app_path`` purely to satisfy the base constructor.
+``app_path`` is the MTL build directory: ``gst-launch-1.0`` is resolved from
+PATH and the builders hardcode it, so ``app_path`` is used only as the default
+``build`` dir (``--gst-plugin-path``) when a test does not pass ``build=``
+explicitly.
 """
 
 from __future__ import annotations
@@ -25,6 +29,26 @@ from mtl_engine.application_base import Application
 from mtl_engine.config.mappings import APP_NAME_MAP
 
 _ST40P_REDUNDANT_UDP_PORT = 40001
+
+# UNIVERSAL_PARAMS -> GStreamer caps translation. These let a GStreamer adapter
+# be driven by the same ``create_command(**universal_params)`` call that
+# RxTxApp/FFmpeg use, so one parametrized test can target all three frameworks.
+_AUDIO_FORMAT_TO_GST = {"PCM8": "S8", "PCM16": "S16BE", "PCM24": "S24BE"}
+_AUDIO_SAMPLING_TO_HZ = {"44.1kHz": 44100, "48kHz": 48000, "96kHz": 96000}
+# Channel-layout label -> count. Mirrors the RxTxApp channel vocabulary; ``U0N``
+# is "N user channels".
+_AUDIO_CHANNEL_LABEL_TO_COUNT = {
+    "M": 1,
+    "DM": 2,
+    "ST": 2,
+    "LtRt": 2,
+    "51": 6,
+    "71": 8,
+    "222": 24,
+    "SGRP": 4,
+    "U01": 1,
+    "U02": 2,
+}
 
 
 class GStreamer(Application):
@@ -94,9 +118,12 @@ class GStreamer(Application):
         super().set_params(**kwargs)
 
     def _create_command_and_config(self) -> tuple:
-        if "build" not in self._gst:
-            raise ValueError("GStreamer create_command requires a 'build' kwarg")
-        self._build = self._gst["build"]
+        # ``build`` may be supplied explicitly (legacy GStreamer-only tests) or
+        # derived from ``app_path`` (the MTL build dir that ``app_factory``
+        # passes), so the same call used by RxTxApp/FFmpeg works unchanged.
+        self._build = self._gst.get("build") or self.app_path
+        if not self._build:
+            raise ValueError("GStreamer requires a build dir (pass build= or app_path)")
 
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list:
@@ -105,7 +132,7 @@ class GStreamer(Application):
         session_type = self.params["session_type"]
         if session_type == "st20p":
             self._build_st20p(nic_port_list)
-        elif session_type == "st30":
+        elif session_type in ("st30", "st30p"):
             self._build_st30(nic_port_list)
         elif session_type == "st40p":
             self._build_st40p(nic_port_list)
@@ -116,18 +143,58 @@ class GStreamer(Application):
         self._output_file = self.params["output_file"]
         return " ".join(self._rx_command), None
 
+    # ------------------------------------------------ param translation
+    def _resolve_gst_video_format(self) -> str:
+        """GStreamer caps name from ``gst_format`` or universal transport format."""
+        fmt = self._gst.get("gst_format")
+        if fmt:
+            return fmt
+        src = self.params.get("transport_format") or self.params.get("pixel_format")
+        return GstreamerApp.video_format_change(src)
+
+    def _resolve_framerate(self) -> str:
+        """Numeric framerate string (``"p25"`` -> ``"25"``) for the gst builders."""
+        return str(self.extract_framerate(self.params["framerate"]))
+
+    def _resolve_audio_format(self) -> str:
+        """GStreamer audio caps (``S8``/``S16BE``/``S24BE``) from any vocabulary."""
+        fmt = self._gst.get("audio_format") or self.params.get("audio_format")
+        return _AUDIO_FORMAT_TO_GST.get(fmt, fmt)
+
+    def _resolve_audio_channels(self) -> int:
+        ch = self._gst.get("audio_channels", self.params.get("audio_channels"))
+        if isinstance(ch, (list, tuple)):
+            ch = ch[0] if ch else "U02"
+        if isinstance(ch, int):
+            return ch
+        if ch in _AUDIO_CHANNEL_LABEL_TO_COUNT:
+            return _AUDIO_CHANNEL_LABEL_TO_COUNT[ch]
+        return int(ch)
+
+    def _resolve_audio_rate(self) -> int:
+        rate = self._gst.get("audio_rate")
+        if rate is not None:
+            return int(rate)
+        samp = self.params.get("audio_sampling")
+        if isinstance(samp, (int, float)):
+            return int(samp)
+        return _AUDIO_SAMPLING_TO_HZ.get(samp, 48000)
+
     def _build_st20p(self, nic_port_list):
-        gst_format = self._gst["gst_format"]
+        gst_format = self._resolve_gst_video_format()
+        framerate = self._resolve_framerate()
+        enable_ptp = bool(self.params.get("enable_ptp", False))
         self._tx_command = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
             build=self._build,
             nic_port_list=nic_port_list[0],
             input_path=self.params["input_file"],
             width=self.params["width"],
             height=self.params["height"],
-            framerate=self.params["framerate"],
+            framerate=framerate,
             format=gst_format,
             tx_payload_type=self._gst.get("tx_payload_type", 112),
             tx_queues=self._gst.get("tx_queues", 4),
+            enable_ptp=enable_ptp,
         )
         self._rx_command = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
             build=self._build,
@@ -135,16 +202,17 @@ class GStreamer(Application):
             output_path=self.params["output_file"],
             width=self.params["width"],
             height=self.params["height"],
-            framerate=self.params["framerate"],
+            framerate=framerate,
             format=gst_format,
             rx_payload_type=self._gst.get("rx_payload_type", 112),
             rx_queues=self._gst.get("rx_queues", 4),
+            enable_ptp=enable_ptp,
         )
 
     def _build_st30(self, nic_port_list):
-        audio_format = self._gst["audio_format"]
-        channels = self._gst["audio_channels"]
-        sampling = self._gst["audio_rate"]
+        audio_format = self._resolve_audio_format()
+        channels = self._resolve_audio_channels()
+        sampling = self._resolve_audio_rate()
         self._tx_command = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
             build=self._build,
             nic_port_list=nic_port_list[0],
@@ -244,6 +312,8 @@ class GStreamer(Application):
         sleep_interval: int = 4,
         tx_first: bool = False,
         fail_on_error: bool = True,
+        netsniff=None,
+        interface_setup=None,
         skip_file_compare=None,
         log_frame_info: bool = True,
         suppress_fail_logs: bool = False,
@@ -251,16 +321,33 @@ class GStreamer(Application):
     ) -> bool:
         """Delegate execution to :func:`GstreamerApp.execute_test`.
 
-        See the module docstring: this bypasses the base-class run machinery
-        because the procedural orchestrator owns process lifetime and output
-        comparison. ``suppress_fail_logs`` is forwarded so negative/rejection
-        tests can silence the failure log dump they expect.
+        The procedural orchestrator owns process lifetime and md5 output
+        comparison, so this does not reuse the base single-host run loop (which
+        drives only one ``self.command``; GStreamer needs a TX+RX pair on one
+        host). It still honors the common ``netsniff=`` capture hook so a single
+        parametrized test can drive RxTxApp, FFmpeg and GStreamer identically.
+        ``suppress_fail_logs`` is forwarded so negative/rejection tests can
+        silence the failure log dump they expect.
         """
         if not (self._tx_command and self._rx_command):
             raise RuntimeError("create_command() must be called first")
 
         if skip_file_compare is None:
             skip_file_compare = self._gst.get("skip_file_compare", False)
+
+        # Arm a bounded packet capture that overlaps the stream window. The
+        # capture runs in the background for ``test_time`` while GstreamerApp
+        # drives the TX/RX pipelines synchronously. With PTP enabled the plugin
+        # blocks streaming until the clock locks, so the capture window is
+        # extended by the PTP sync budget to overlap the steady-state stream.
+        if netsniff is not None:
+            ptp_budget = (
+                self.params.get("ptp_sync_time", 50)
+                if self.params.get("enable_ptp", False)
+                else 0
+            )
+            self.params["test_time"] = test_time + ptp_budget
+            self._start_netsniff_capture(netsniff)
 
         passed = GstreamerApp.execute_test(
             build=build,
@@ -285,3 +372,7 @@ class GStreamer(Application):
 
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         return self._last_passed
+
+    def _resolve_capture_dst_ip(self):  # type: ignore[override]
+        """Destination IP the GStreamer TX pipeline streams to (for netsniff)."""
+        return ip_pools.rx[0] if ip_pools.rx else None
