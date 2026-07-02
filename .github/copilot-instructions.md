@@ -30,7 +30,7 @@ This is a **client-visible, production repository**. Every change goes through r
 
 - **MCP Server** (`mtl-system-setup`): 35+ tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
 - **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "MTL Validation Setup" (pytest framework prep), "Explore" (read-only Q&A).
-- **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates).
+- **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates); `/mtl-commit` (stage + commit as atomic, well-formed commits — user-triggered, never automatic).
 - **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
 
 ## Agent Routing Matrix
