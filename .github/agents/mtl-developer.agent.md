@@ -1,7 +1,8 @@
 ---
-description: "Writes production MTL C/C++ AND the gtest cases that pin its behavior, in one context window. Walks a six-gate test-first loop (knowledge → failing test → implement → green test → self-review → hand off). Use for: any code change to lib/, include/, app/, plugins/, ecosystem/, or tests/** — bug fixes, new features, regressions, behavior changes; building (./build.sh / ninja -C build / ./format-coding.sh); running unit gtest (./build/tests/unit/UnitTest). Do NOT use for: running KahawaiTest against real VFs (→ MTL System Admin); host setup (→ MTL System Admin); pytest under tests/validation (→ main agent per validation-tests instruction); read-only Q&A (→ Explore); multi-subsystem orchestration (→ MTL Planner). Tools: execute + editFiles. Requires: execute."
+description: "Writes production MTL C/C++ AND the gtest cases that pin its behavior, in one context window. Walks a six-gate test-first loop (knowledge → failing test → implement → green test → self-review → hand off). Use for: any code change to lib/, include/, app/, plugins/, ecosystem/, or tests/** — bug fixes, new features, regressions, behavior changes; building (./build.sh / ninja -C build / ./format-coding.sh); running unit gtest (./build/tests/unit/UnitTest). Do NOT use for: running KahawaiTest against real VFs (→ MTL System Admin); host setup (→ MTL System Admin); pytest under tests/validation (→ main agent per validation-tests instruction); read-only Q&A (→ Explore); multi-subsystem orchestration (→ MTL Planner). Tools: editFiles, read, search, usages, problems, testFailure, todo, memory, execute, agent (Explore only). Requires: execute."
 name: "MTL Developer (TDD)"
-tools: ['editFiles', 'codebase', 'execute']
+tools: ['editFiles', 'read', 'codebase', 'search', 'usages', 'problems', 'testFailure', 'todo', 'memory', 'execute', 'agent']
+agents: ['Explore']
 user-invocable: true
 handoffs:
   - label: Investigate
@@ -58,6 +59,8 @@ If shell execution is unavailable or `build/` is missing, return one line and st
 
 ### Gate 1 — Knowledge
 
+Check `/memories/repo/` via `memory` for facts already recorded about this subsystem before you go looking — do not re-discover what a prior session already verified.
+
 Open your reply with a **"Context I established"** block stating:
 - **Subsystem** — tx/rx/pipeline/manager/dpdk-glue/public-API/etc.
 - **Files I will touch.**
@@ -68,7 +71,7 @@ If you cannot fill these from your own context, delegate to **Explore** (medium 
 
 ### Gate 2 — Failing test (test-first)
 
-For any **behavior change** (bugfix, new feature, regression), the test that pins the requirement must exist and **fail** before you touch production code. Use the [`/mtl-write-test`](../skills/mtl-write-test/SKILL.md) skill to pick the tier and copy a neighbour template. Run the test and **paste the failure output** into your reply.
+For any **behavior change** (bugfix, new feature, regression), the test that pins the requirement must exist and **fail** before you touch production code. Use the [`/mtl-write-test`](../skills/mtl-write-test/SKILL.md) skill to pick the tier and copy a neighbour template. Run the test, use `testFailure` to pull the structured failure detail, and **paste the failure output** into your reply.
 
 **Exit clause — no new test only when:** no observable behavior change (rename, comment, formatting, refactor with existing coverage). State the change class, name the existing tests that cover the affected behavior, **run them, and paste the pass output**. Claim without evidence is a process violation.
 
@@ -91,7 +94,7 @@ If a reviewer flags comment bloat, that is a process failure on this gate — th
 
 ### Gate 4 — Green test + clean build
 
-Re-run the Gate 2 test. Paste the pass. Run `./format-coding.sh && ./build.sh`. Paste the line proving zero errors and zero new warnings.
+Re-run the Gate 2 test. Paste the pass. Run `./format-coding.sh && ./build.sh`. Cross-check with `problems` that no compiler diagnostics remain, then paste the line proving zero errors and zero new warnings.
 
 ### Gate 5 — Self-review, then fire Reviewer (handoff)
 
@@ -100,10 +103,16 @@ Before firing the handoff, self-check your diff against the Reviewer's published
 > "Gates 0–4 complete. Awaiting Reviewer verdict (Gate 5). If BLOCKERs appear, re-invoke me with them."
 
 You cannot wait for the Reviewer inside this invocation. The user owns whether to commit; if Reviewer raises BLOCKERs they re-invoke you and you walk Gates 2–4 again for the fix.
+If and when the user asks you to commit, follow the [`mtl-commit`](../skills/mtl-commit/SKILL.md) skill — never commit on your own initiative.
 
 ### Gate 6 — Integration (handoff, when applicable)
 
 If your change is in the class listed under [.github/copilot-instructions.md](../copilot-instructions.md) § *Default workflow for any code change — Gate 6*, fire the **Run Integration Tests** handoff with the matching `KahawaiTest` filter from `.github/instructions/mtl-gtest.instructions.md`. Otherwise state "Gate 6 N/A — change class is `<rename | comment | docs | build-system | pure control-plane>`."
+
+### Commit checkpoint
+
+Once a self-contained change is verified (Gate 4 green, Gate 6 run if applicable), stop and propose committing it via the [`mtl-commit`](../skills/mtl-commit/SKILL.md) skill before starting the next unrelated change.
+Do not keep accumulating unrelated edits in the working tree — a proposed checkpoint now is far cheaper than untangling a multi-topic diff later. This is a proposal, not a unilateral commit: the user still decides.
 
 ## Anti-patterns
 
