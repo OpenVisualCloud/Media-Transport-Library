@@ -8,13 +8,8 @@ import re
 
 from mtl_engine import udp_app_config
 
-from .const import (
-    LIBRIST_TEST_RECEIVE_EXE,
-    LIBRIST_TEST_SEND_EXE,
-    LOG_FOLDER,
-    UFD_CLIENT_SAMPLE_EXE,
-    UFD_SERVER_SAMPLE_EXE,
-)
+from .const import (LIBRIST_TEST_RECEIVE_EXE, LIBRIST_TEST_SEND_EXE,
+                    LOG_FOLDER, UFD_CLIENT_SAMPLE_EXE, UFD_SERVER_SAMPLE_EXE)
 from .execute import call, log_fail, wait
 
 
@@ -40,8 +35,7 @@ def _resolve_ld_preload(build: str) -> str:
     if os.path.isfile(sys_path):
         return sys_path
     raise EnvironmentError(
-        f"libmtl_udp_preload.so not found. Checked MTL_LD_PRELOAD env, "
-        f"'{li_path}', and '{sys_path}'."
+        f"libmtl_udp_preload.so not found. Checked MTL_LD_PRELOAD env, " f"'{li_path}', and '{sys_path}'."
     )
 
 
@@ -86,10 +80,34 @@ def execute_test_sample(
     save_as_json(config_file=server_config_file, config=server_config)
 
     client_env = os.environ.copy()
-    client_env["MUFD_CFG"] = os.path.join(os.getcwd(), client_config_file)
-
     server_env = os.environ.copy()
-    server_env["MUFD_CFG"] = os.path.join(os.getcwd(), server_config_file)
+
+    if host is not None:
+        # Transfer dynamically generated client and server configs to the remote SUT
+        # using the direct paramiko SFTP client accessible from the SSHConnection object
+        try:
+            host_cwd = build  # e.g., /home/gta/Media-Transport-Library
+            remote_logs_dir = os.path.join(host_cwd, "tests/validation/logs/latest")
+            host.connection.execute_command(f"mkdir -p {remote_logs_dir}")
+
+            remote_client_path = os.path.join(remote_logs_dir, f"{case_id}_client.json")
+            remote_server_path = os.path.join(remote_logs_dir, f"{case_id}_server.json")
+
+            host.connection._connect()
+            sftp = host.connection._connection.open_sftp()
+            sftp.put(client_config_file, remote_client_path)
+            sftp.put(server_config_file, remote_server_path)
+            sftp.close()
+
+            client_env["MUFD_CFG"] = remote_client_path
+            server_env["MUFD_CFG"] = remote_server_path
+        except Exception as e:
+            # Fallback if connection or SFTP issues occur
+            client_env["MUFD_CFG"] = os.path.join(build, "tests/validation", client_config_file)
+            server_env["MUFD_CFG"] = os.path.join(build, "tests/validation", server_config_file)
+    else:
+        client_env["MUFD_CFG"] = os.path.join(os.getcwd(), client_config_file)
+        server_env["MUFD_CFG"] = os.path.join(os.getcwd(), server_config_file)
 
     client_command = f"{UFD_CLIENT_SAMPLE_EXE} --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
     server_command = f"{UFD_SERVER_SAMPLE_EXE} --sessions_cnt {sessions_cnt}"
@@ -101,9 +119,7 @@ def execute_test_sample(
     wait(client_proc)
     wait(server_proc)
 
-    if not check_received_packets(client_proc.output) or not check_received_packets(
-        server_proc.output
-    ):
+    if not check_received_packets(client_proc.output) or not check_received_packets(server_proc.output):
         log_fail("Received less than 99% sent packets")
 
 
@@ -138,19 +154,39 @@ def execute_test_librist(
 
     send_env = os.environ.copy()
     send_env["LD_PRELOAD"] = _resolve_ld_preload(build)
-    send_env["MUFD_CFG"] = os.path.join(os.getcwd(), send_config_file)
-
     receive_env = os.environ.copy()
     receive_env["LD_PRELOAD"] = _resolve_ld_preload(build)
-    receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
+
+    if host is not None:
+        try:
+            host_cwd = build
+            remote_logs_dir = os.path.join(host_cwd, "tests/validation/logs/latest")
+            host.connection.execute_command(f"mkdir -p {remote_logs_dir}")
+
+            remote_send_path = os.path.join(remote_logs_dir, f"{case_id}_send.json")
+            remote_receive_path = os.path.join(remote_logs_dir, f"{case_id}_receive.json")
+
+            host.connection._connect()
+            sftp = host.connection._connection.open_sftp()
+            sftp.put(send_config_file, remote_send_path)
+            sftp.put(receive_config_file, remote_receive_path)
+            sftp.close()
+
+            send_env["MUFD_CFG"] = remote_send_path
+            receive_env["MUFD_CFG"] = remote_receive_path
+        except Exception as e:
+            send_env["MUFD_CFG"] = os.path.join(build, "tests/validation", send_config_file)
+            receive_env["MUFD_CFG"] = os.path.join(build, "tests/validation", receive_config_file)
+    else:
+        send_env["MUFD_CFG"] = os.path.join(os.getcwd(), send_config_file)
+        receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
 
     send_command = (
         f"{LIBRIST_TEST_SEND_EXE} --sleep_us={sleep_us}"
         + f" --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
     receive_command = (
-        f"{LIBRIST_TEST_RECEIVE_EXE}"
-        + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
+        f"{LIBRIST_TEST_RECEIVE_EXE}" + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
@@ -159,9 +195,9 @@ def execute_test_librist(
     wait(send_proc)
     wait(receive_proc)
 
-    if not check_connected_receivers(
-        send_proc.output, sessions_cnt
-    ) or not check_connected_receivers(receive_proc.output, sessions_cnt):
+    if not check_connected_receivers(send_proc.output, sessions_cnt) or not check_connected_receivers(
+        receive_proc.output, sessions_cnt
+    ):
         log_fail("Wrong number of connected receivers")
 
 
