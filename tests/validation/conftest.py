@@ -17,42 +17,26 @@ from common.host_setup import ensure_hugepage_access, ensure_pf_up
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
 from compliance.compliance_client import PcapComplianceClient
-from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
+from create_pcap_file.netsniff import (NetsniffRecorder,
+                                       calculate_packets_per_frame)
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
-from mtl_engine.const import (
-    DPDK_LIB_PATH,
-    FFMPEG_LIB_PATH,
-    FFMPEG_PATH,
-    FRAMES_CAPTURE,
-    GSTREAMER_LIB_PATH,
-    LOG_FOLDER,
-    MTL_LIB_PATH,
-    PERF_LOG_FOLDER,
-    RXTXAPP_PATH,
-    TESTCMD_LVL,
-)
-from mtl_engine.csv_report import (
-    csv_add_test,
-    csv_write_report,
-    get_compliance_result,
-    update_compliance_result,
-)
+from mtl_engine.const import (DPDK_LIB_PATH, FFMPEG_LIB_PATH, FFMPEG_PATH,
+                              FRAMES_CAPTURE, GSTREAMER_LIB_PATH, LOG_FOLDER,
+                              MTL_LIB_PATH, PERF_LOG_FOLDER, RXTXAPP_PATH,
+                              TESTCMD_LVL)
+from mtl_engine.csv_report import (csv_add_test, csv_write_report,
+                                   get_compliance_result,
+                                   update_compliance_result)
 from mtl_engine.execute import kill_stale_processes, log_fail
 from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
-from mtl_engine.stash import (
-    clear_issue,
-    clear_result_log,
-    clear_result_media,
-    clear_result_note,
-    get_issue,
-    get_result_note,
-    remove_result_media,
-)
+from mtl_engine.stash import (clear_issue, clear_result_log,
+                              clear_result_media, clear_result_note, get_issue,
+                              get_result_note, remove_result_media)
 from pytest_mfd_config.models.topology import TopologyModel
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
@@ -285,9 +269,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
         for nic in host.network_interfaces:
             if nic.name == str(sniff_interface):
                 return nic
-        available = [
-            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
-        ]
+        available = [f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces]
         raise RuntimeError(
             f"capture_cfg.sniff_interface={sniff_interface} not found on host {host.name}. "
             f"Available interfaces: {', '.join(available)}"
@@ -301,9 +283,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
     if sniff_pci_device:
         target = str(sniff_pci_device).lower()
 
-        direct_matches = [
-            nic for nic in host.network_interfaces if target == _pci_device_id(nic)
-        ]
+        direct_matches = [nic for nic in host.network_interfaces if target == _pci_device_id(nic)]
         if direct_matches:
             if len(direct_matches) == 1:
                 return direct_matches[0]
@@ -312,19 +292,13 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
             if single_host:
                 return direct_matches[-1]
             vf_pf_indices = _get_active_vf_pf_indices(host)
-            active_pfs = [
-                nic
-                for nic in direct_matches
-                if host.network_interfaces.index(nic) in vf_pf_indices
-            ]
+            active_pfs = [nic for nic in direct_matches if host.network_interfaces.index(nic) in vf_pf_indices]
             inactive_pfs = [nic for nic in direct_matches if nic not in active_pfs]
             if inactive_pfs:
                 return inactive_pfs[0]
             return direct_matches[0]
 
-        available = [
-            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
-        ]
+        available = [f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces]
         raise RuntimeError(
             f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
             f"Available interfaces: {', '.join(available)}"
@@ -337,8 +311,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
         # timing needs them. Capturing the TX/egress PF gives false VRX/Cinst.
         if len(host.network_interfaces) >= 2:
             logger.debug(
-                "Single-host: selecting capture interface %s (receive-side PF, "
-                "topology order)",
+                "Single-host: selecting capture interface %s (receive-side PF, " "topology order)",
                 host.network_interfaces[-1].name,
             )
             return host.network_interfaces[-1]
@@ -366,9 +339,7 @@ def _select_sniff_interface(host, capture_cfg: dict, *, single_host: bool = True
     return host.network_interfaces[0]
 
 
-def _select_sniff_interface_name(
-    host, capture_cfg: dict, *, single_host: bool = True
-) -> str:
+def _select_sniff_interface_name(host, capture_cfg: dict, *, single_host: bool = True) -> str:
     return _select_sniff_interface(host, capture_cfg, single_host=single_host).name
 
 
@@ -394,17 +365,13 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
     """
     for name in patterns:
         try:
-            host.connection.execute_command(
-                f"sudo pkill -TERM -x {name} || true", expected_return_codes=None
-            )
+            host.connection.execute_command(f"sudo pkill -TERM -x {name} || true", expected_return_codes=None)
         except Exception as e:
             logger.debug("pkill -TERM %s: %s", name, e)
     time.sleep(_REAP_GRACE_SEC)
     for name in patterns:
         try:
-            host.connection.execute_command(
-                f"sudo pkill -KILL -x {name} || true", expected_return_codes=None
-            )
+            host.connection.execute_command(f"sudo pkill -KILL -x {name} || true", expected_return_codes=None)
         except Exception as e:
             logger.debug("pkill -KILL %s: %s", name, e)
 
@@ -468,15 +435,10 @@ def _start_capture_phc_sync(host, iface: str):
     # ``-S 0.001`` steps the (free-running) PHC straight onto TAI when the
     # initial offset exceeds 1ms instead of slewing for tens of seconds;
     # once synced the offset stays sub-microsecond so no further steps occur.
-    cmd = (
-        f"sudo phc2sys -s CLOCK_REALTIME -c '{iface}' "
-        f"-O {tai_utc_offset} -S 0.001 -m"
-    )
+    cmd = f"sudo phc2sys -s CLOCK_REALTIME -c '{iface}' " f"-O {tai_utc_offset} -S 0.001 -m"
     logger.info(f"Starting phc2sys to sync capture PHC to TAI: {cmd}")
     try:
-        proc = host.connection.start_process(
-            cmd, stderr_to_stdout=True, output_file=log_path
-        )
+        proc = host.connection.start_process(cmd, stderr_to_stdout=True, output_file=log_path)
     except Exception as e:
         logger.warning("Failed to start phc2sys on %s: %s", iface, e)
         return None
@@ -495,8 +457,7 @@ def _start_capture_phc_sync(host, iface: str):
     # on-wire pacing.
     if not _wait_phc_sync_converged(host, log_path):
         logger.warning(
-            "phc2sys did not converge within %ss on %s; capture timestamps may "
-            "carry a clock offset. log=%s",
+            "phc2sys did not converge within %ss on %s; capture timestamps may " "carry a clock offset. log=%s",
             _PHC_SYNC_TIMEOUT_SEC,
             iface,
             log_path,
@@ -516,9 +477,7 @@ def _wait_phc_sync_converged(host, log_path: str) -> bool:
     while time.monotonic() < deadline:
         time.sleep(1)
         try:
-            out = host.connection.execute_command(
-                f"tail -n 1 '{log_path}'", expected_return_codes=None
-            ).stdout
+            out = host.connection.execute_command(f"tail -n 1 '{log_path}'", expected_return_codes=None).stdout
         except Exception as e:
             logger.debug("reading phc2sys log %s failed: %s", log_path, e)
             continue
@@ -571,9 +530,7 @@ def ptp_sync(request, test_config: dict, hosts):
 
     host = _select_capture_host(hosts)
     is_single_host = len(hosts) == 1
-    capture_iface = _select_sniff_interface_name(
-        host, capture_cfg, single_host=is_single_host
-    )
+    capture_iface = _select_sniff_interface_name(host, capture_cfg, single_host=is_single_host)
 
     # Belt-and-braces: ensure no leftover daemon from a previous test/session
     # is holding a stale PHC handle before we start a new one.
@@ -592,9 +549,7 @@ def ptp_sync(request, test_config: dict, hosts):
     time.sleep(0.2)
     if not ptp4l_process.running:
         _reap_ptp_daemons(host)
-        raise RuntimeError(
-            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
-        )
+        raise RuntimeError(f"Failed to start ptp4l (iface={capture_iface}). log={log_path}")
 
     try:
         yield
@@ -739,10 +694,7 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         skip_redundant = capture_enabled and is_multi_host
         if len(host.network_interfaces) > 1 and not skip_redundant:
             try:
-                if (
-                    int(host.network_interfaces[1].virtualization.get_current_vfs())
-                    == 0
-                ):
+                if int(host.network_interfaces[1].virtualization.get_current_vfs()) == 0:
                     nicctl.create_vfs(
                         host.network_interfaces[1].pci_address.lspci,
                         num_of_vfs=_pool_size(host, 1),
@@ -750,20 +702,14 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
                 vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
                 host.vfs_r = vfs_r
                 ensure_pf_up(host, host.network_interfaces[1].pci_address.lspci)
-                logger.info(
-                    f"Host {host.name}: redundant port VF pool ({len(vfs_r)}): {vfs_r}"
-                )
+                logger.info(f"Host {host.name}: redundant port VF pool ({len(vfs_r)}): {vfs_r}")
             except Exception as e:
-                logger.warning(
-                    f"Host {host.name}: could not setup redundant port VFs: {e}"
-                )
+                logger.warning(f"Host {host.name}: could not setup redundant port VFs: {e}")
 
 
 @pytest.fixture(scope="function")
 def setup_interfaces(hosts, test_config, mtl_path):
-    host_mtl_paths = {
-        h.name: get_host_mtl_path(h, default=mtl_path) for h in hosts.values()
-    }
+    host_mtl_paths = {h.name: get_host_mtl_path(h, default=mtl_path) for h in hosts.values()}
     interface_setup = InterfaceSetup(hosts, mtl_path, host_mtl_paths)
     yield interface_setup
     interface_setup.cleanup()
@@ -857,10 +803,7 @@ def prepare_ramdisk(hosts, test_config):
 
     ramdisks = []
     if capture_cfg.get("enable", False):
-        ramdisks = [
-            Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib)
-            for host in hosts.values()
-        ]
+        ramdisks = [Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib) for host in hosts.values()]
         for ramdisk in ramdisks:
             ramdisk.mount()
     yield
@@ -874,8 +817,7 @@ def media_ramdisk(hosts, test_config):
     ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
     ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
     ramdisks = [
-        Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib)
-        for host in hosts.values()
+        Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib) for host in hosts.values()
     ]
     for ramdisk in ramdisks:
         ramdisk.mount()
@@ -962,9 +904,7 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         yield media_file_info, ramdisk_mountpoint
         return
 
-    ramdisk_media_file_path = output_files.register(
-        os.path.join(ramdisk_mountpoint, media_file_info["filename"])
-    )
+    ramdisk_media_file_path = output_files.register(os.path.join(ramdisk_mountpoint, media_file_info["filename"]))
 
     for host in hosts.values():
         # Per-host media_path from topology extra_info, fall back to test_config
@@ -972,9 +912,7 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         src_media_file_path = os.path.join(media_path, media_file_info["filename"])
         # Probe source existence first so missing assets become SKIPPED rather
         # than ERROR — they are environment/data issues, not test logic bugs.
-        probe = host.connection.execute_command(
-            f"test -f {src_media_file_path}", expected_return_codes=None
-        )
+        probe = host.connection.execute_command(f"test -f {src_media_file_path}", expected_return_codes=None)
         if probe.return_code != 0:
             pytest.skip(f"Media file not present on {host}: {src_media_file_path}")
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
@@ -1010,16 +948,10 @@ def mtl_manager(hosts):
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--keep", help="keep result media files: all, failed, none (default)"
-    )
-    parser.addoption(
-        "--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)"
-    )
+    parser.addoption("--keep", help="keep result media files: all, failed, none (default)")
+    parser.addoption("--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)")
     parser.addoption("--media", help="path to media asset (default /mnt/media)")
-    parser.addoption(
-        "--build", help="path to build (default ../Media-Transport-Library)"
-    )
+    parser.addoption("--build", help="path to build (default ../Media-Transport-Library)")
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")
@@ -1101,9 +1033,7 @@ def collect_platform_config(hosts, log_session):
             config = collect_platform_info(host)
             for save_dir in (latest_path, log_folder):
                 os.makedirs(save_dir, exist_ok=True)
-                per_host_path = os.path.join(
-                    save_dir, f"{host.name}_platform_config.json"
-                )
+                per_host_path = os.path.join(save_dir, f"{host.name}_platform_config.json")
                 with open(per_host_path, "w") as f:
                     json.dump(config, f, indent=4)
                 if is_host_sut(host):
@@ -1115,9 +1045,7 @@ def collect_platform_config(hosts, log_session):
 
 
 @pytest.fixture(scope="function")
-def pcap_capture(
-    request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
-):
+def pcap_capture(request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk):
     """Fixture for capturing pcap files during tests.
 
     Note: This fixture depends on prepare_ramdisk to ensure proper cleanup order.
@@ -1139,10 +1067,7 @@ def pcap_capture(
     is_8k = False
     if media_file:
         media_file_info, _ = media_file
-        if media_file_info and (
-            media_file_info.get("height", 0) >= 4320
-            or media_file_info.get("width", 0) >= 7680
-        ):
+        if media_file_info and (media_file_info.get("height", 0) >= 4320 or media_file_info.get("width", 0) >= 7680):
             is_8k = True
             logger.info(
                 "8K resolution detected. Disabling PCAP capture and compliance check as EBU compliance "
@@ -1158,25 +1083,19 @@ def pcap_capture(
             if media_file_info is None:
                 capture_cfg.setdefault("capture_time", FRAMES_CAPTURE)
             else:
-                capture_cfg["packets_number"] = (
-                    FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
-                )
-                logger.info(
-                    f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
-                )
+                capture_cfg["packets_number"] = FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
+                logger.info(f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames")
         elif "frames_number" in capture_cfg:
             if media_file_info is None:
                 capture_cfg.setdefault("capture_time", FRAMES_CAPTURE)
             else:
-                capture_cfg["packets_number"] = capture_cfg[
-                    "frames_number"
-                ] * calculate_packets_per_frame(media_file_info)
+                capture_cfg["packets_number"] = capture_cfg["frames_number"] * calculate_packets_per_frame(
+                    media_file_info
+                )
                 logger.info(
                     f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
                 )
-        capture_iface = _select_sniff_interface_name(
-            host, capture_cfg, single_host=is_single_host
-        )
+        capture_iface = _select_sniff_interface_name(host, capture_cfg, single_host=is_single_host)
         capturer = NetsniffRecorder(
             host=host,
             test_name=test_name,
@@ -1226,11 +1145,16 @@ def pcap_capture(
                 )
                 if compliance_upl.return_code != 0:
                     logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
+                    if "PCAP file is empty or invalid" in (
+                        compliance_upl.stderr or ""
+                    ) or "PCAP file is empty or invalid" in (compliance_upl.stdout or ""):
+                        update_compliance_result(request.node.nodeid, "Fail")
+                        log_fail(
+                            f"PCAP compliance check failed: Local capture is empty. {compliance_upl.stderr or compliance_upl.stdout}"
+                        )
                 else:
                     uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
-                    logger.debug(
-                        f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}"
-                    )
+                    logger.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
                     uploader = PcapComplianceClient(
                         ebu_ip=ebu_ip,
                         user=ebu_login,
@@ -1245,13 +1169,10 @@ def pcap_capture(
                     else:
                         streams = (report or {}).get("streams") or []
                         if not streams:
-                            # Empty capture — interface may not see VF-to-VF
-                            # loopback traffic.  Not a real failure.
-                            update_compliance_result(request.node.nodeid, "N/A")
-                            logger.warning(
-                                "PCAP compliance check skipped: capture "
-                                "contains no streams (capture interface may "
-                                "not see VF-to-VF loopback traffic)"
+                            update_compliance_result(request.node.nodeid, "Fail")
+                            log_fail(
+                                "PCAP compliance check failed: Capture contains no streams. "
+                                "This indicates that no traffic was recorded on the capture interface."
                             )
                         else:
                             update_compliance_result(request.node.nodeid, "Fail")
@@ -1260,9 +1181,7 @@ def pcap_capture(
 
                 # Remove pcap file after upload to free up ramdisk space
                 try:
-                    capturer.host.connection.execute_command(
-                        f"rm -f '{capturer.pcap_file}'"
-                    )
+                    capturer.host.connection.execute_command(f"rm -f '{capturer.pcap_file}'")
                     logger.debug(f"Removed pcap file: {capturer.pcap_file}")
                 except ConnectionCalledProcessError as e:
                     logger.warning(f"Failed to remove pcap file: {e}")
@@ -1282,9 +1201,7 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     os.makedirs(os.path.join(log_folder, "latest", case_folder), exist_ok=True)
     logfile = os.path.abspath(os.path.join(log_folder, "latest", f"{case_id}.log"))
     fh = logging.FileHandler(logfile)
-    formatter = request.session.config.pluginmanager.get_plugin(
-        "logging-plugin"
-    ).formatter
+    formatter = request.session.config.pluginmanager.get_plugin("logging-plugin").formatter
     format = AmberLogFormatter(formatter)
     fh.setFormatter(format)
     fh.setLevel(logging.DEBUG)
@@ -1464,13 +1381,9 @@ def app_factory(mtl_path):
 
     def factory(application: str):
         if application == "rxtxapp":
-            return RxTxApp(
-                app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
-            )
+            return RxTxApp(app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./")))
         elif application == "ffmpeg":
-            return FFmpeg(
-                app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
-            )
+            return FFmpeg(app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./")))
         else:
             raise ValueError(f"Unknown application: {application}")
 
