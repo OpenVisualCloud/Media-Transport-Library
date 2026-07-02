@@ -11,14 +11,21 @@ being explicitly asked to commit.
 ## Process
 
 1. Run `git status --short` and `git diff --stat`.
-2. **One commit = one logical change.** Split unrelated edits with
+2. **Run `./format-coding.sh` before staging anything.** It runs
+   markdownlint (`MD013` line-length among other rules, config at
+   [.github/linters/.markdown-lint.yml](../../linters/.markdown-lint.yml))
+   alongside clang-format/isort/black/shfmt, and now **fails the script**
+   on any violation `--fix` cannot auto-correct — fix those by hand
+   (rewrap the paragraph; a single `\n` is a soft break, it doesn't
+   change rendering), then re-run until it exits clean.
+3. **One commit = one logical change.** Split unrelated edits with
    `git add -p`. Never bundle drive-by changes into an unrelated fix.
-3. For each commit: stage, draft the message, run `git commit -s`
+4. For each commit: stage, draft the message, run `git commit -s`
    immediately. Do **not** wait for approval; the user reviews `git log`
    and reverts/amends if needed. Print the staged files and final message
    after each commit.
-4. **Always pass `-s`** so a `Signed-off-by:` trailer is added.
-5. Do **not** `git push`. Do **not** use `--no-verify`. Do **not** amend
+5. **Always pass `-s`** so a `Signed-off-by:` trailer is added.
+6. Do **not** `git push`. Do **not** use `--no-verify`. Do **not** amend
    commits that may already be pushed unless explicitly told to.
 
 ## Format
