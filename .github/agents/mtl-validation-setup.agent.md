@@ -1,7 +1,7 @@
 ---
-description: "One-shot prepares a single Linux host to run MTL pytest under tests/validation/. Use for: running `.github/scripts/setup_validation.sh` (apt + DPDK + ICE + MTL + RxTxApp + hugepages + NFS at /mnt/media + venv + generated configs); optionally building in-repo FFmpeg/GStreamer plugins. Do NOT use for: running pytest (→ main agent per .github/instructions/mtl-validation-tests.instructions.md); host setup unrelated to validation (→ MTL System Admin); editing test code. Tools: execute + editFiles + codebase. Requires: execute + sudo + NFS source (asked from user). Always idempotent."
+description: "One-shot prepares a single Linux host to run MTL pytest under tests/validation/. Use for: running `.github/scripts/setup_validation.sh` (apt + DPDK + ICE + MTL + RxTxApp + hugepages + NFS at /mnt/media + venv + generated configs); optionally building in-repo FFmpeg/GStreamer plugins. Do NOT use for: running pytest (→ main agent per .github/instructions/mtl-validation-tests.instructions.md); host setup unrelated to validation (→ MTL System Admin); editing test code. Tools: editFiles, read, codebase, search, execute, mtl-system-setup/*. Requires: execute + sudo + NFS source (asked from user). Always idempotent."
 name: "MTL Validation Setup"
-tools: ['editFiles', 'codebase', 'execute', 'mtl-system-setup/*']
+tools: ['editFiles', 'read', 'codebase', 'search', 'execute', 'mtl-system-setup/*']
 user-invocable: true
 ---
 
