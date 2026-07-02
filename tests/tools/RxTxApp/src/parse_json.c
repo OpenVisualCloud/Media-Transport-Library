@@ -1409,6 +1409,20 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
     fmd->info.fmd_fps = ST_FPS_P25;
   } else if (strcmp(fmd_fps, "p29") == 0) {
     fmd->info.fmd_fps = ST_FPS_P29_97;
+  } else if (strcmp(fmd_fps, "p119") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P119_88;
+  } else if (strcmp(fmd_fps, "p120") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P120;
+  } else if (strcmp(fmd_fps, "p100") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P100;
+  } else if (strcmp(fmd_fps, "p60") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P60;
+  } else if (strcmp(fmd_fps, "p30") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P30;
+  } else if (strcmp(fmd_fps, "p24") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P24;
+  } else if (strcmp(fmd_fps, "p23") == 0) {
+    fmd->info.fmd_fps = ST_FPS_P23_98;
   } else {
     err("%s, invalid fmd fps %s\n", __func__, fmd_fps);
     return -ST_JSON_NOT_VALID;
