@@ -14,6 +14,7 @@ unit_include_dirs = [
 
 gtest_dep = dependency('gtest', required : true)
 libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true)
+unit_libdl_dep = meson.get_compiler('c').find_library('dl', required : true)
 
 unit_sources = [
   'common/ut_common.c',
@@ -50,6 +51,8 @@ unit_sources = [
   'pipeline/st20p_test.cpp',
   'pipeline/st30p_harness.c',
   'pipeline/st30p_test.cpp',
+  'ptp/ptp_harness.c',
+  'ptp/dynfield_rx_timestamp_test.cpp',
   'main.cpp',
 ]
 
@@ -59,5 +62,5 @@ executable('UnitTest', unit_sources,
   link_args : unit_link_args,
   include_directories : unit_include_dirs,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, libpthread_dep,
-                  usdt_provider_header_dep],
+                  unit_libdl_dep, usdt_provider_header_dep],
   install : false)
