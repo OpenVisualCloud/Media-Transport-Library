@@ -5,9 +5,7 @@ from compliance_client import PcapComplianceClient
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Upload a PCAP file to the EBU LIST server."
-    )
+    parser = argparse.ArgumentParser(description="Upload a PCAP file to the EBU LIST server.")
     parser.add_argument(
         "--pcap",
         type=str,
@@ -50,10 +48,15 @@ def upload_pcap(file_path, ip, login, password, proxies):
     if not os.path.isfile(file_path):
         raise Exception(f"File not found: {file_path}")
 
+    # Check if the file is empty or invalid (standard PCAP global header is 24 bytes)
+    if os.path.getsize(file_path) <= 24:
+        raise Exception(
+            f"PCAP file is empty or invalid (size: {os.path.getsize(file_path)} bytes). "
+            f"No network packets were captured."
+        )
+
     # Create the uploader object and upload the PCAP file
-    uploader = PcapComplianceClient(
-        ebu_ip=ip, user=login, password=password, pcap_file=file_path, proxies=proxies
-    )
+    uploader = PcapComplianceClient(ebu_ip=ip, user=login, password=password, pcap_file=file_path, proxies=proxies)
     uuid = uploader.upload_pcap()  # Upload the PCAP file and get the UUID
     return uuid
 

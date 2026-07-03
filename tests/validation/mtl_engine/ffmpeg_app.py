@@ -126,9 +126,7 @@ def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
         if proc_pid and host:
             try:
                 logger.debug(f"{proc_name}: Sending SIGTERM to PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -15 {proc_pid} || true", shell=True
-                )
+                host.connection.execute_command(f"kill -15 {proc_pid} || true", shell=True)
                 time.sleep(1)
             except Exception:
                 pass
@@ -143,9 +141,7 @@ def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
         if proc_pid and host:
             try:
                 logger.warning(f"{proc_name}: Force killing PID {proc_pid}")
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} || true", shell=True
-                )
+                host.connection.execute_command(f"kill -9 {proc_pid} || true", shell=True)
             except Exception:
                 pass
 
@@ -158,9 +154,7 @@ def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
         logger.error(f"{proc_name}: Stop timeout after {timeout}s, forcing SIGKILL")
         if proc_pid and host:
             try:
-                host.connection.execute_command(
-                    f"kill -9 {proc_pid} 2>/dev/null || true"
-                )
+                host.connection.execute_command(f"kill -9 {proc_pid} 2>/dev/null || true")
             except Exception:
                 pass
 
@@ -180,20 +174,14 @@ def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=N
         # Find all processes matching the pattern
         result = host.connection.execute_command(f"pgrep -x '{process_pattern}'")
         if result.return_code == 0 and result.stdout.strip():
-            all_pids = [
-                pid.strip() for pid in result.stdout.strip().split("\n") if pid.strip()
-            ]
+            all_pids = [pid.strip() for pid in result.stdout.strip().split("\n") if pid.strip()]
             orphaned_pids = [pid for pid in all_pids if pid not in exclude_pids_set]
 
             if orphaned_pids:
-                logger.warning(
-                    f"Killing {len(orphaned_pids)} orphaned {process_pattern} process(es): {orphaned_pids}"
-                )
+                logger.warning(f"Killing {len(orphaned_pids)} orphaned {process_pattern} process(es): {orphaned_pids}")
                 for pid in orphaned_pids:
                     try:
-                        host.connection.execute_command(
-                            f"kill -9 {pid} || true", shell=True
-                        )
+                        host.connection.execute_command(f"kill -9 {pid} || true", shell=True)
                     except Exception:
                         pass
             else:
@@ -218,9 +206,7 @@ def kill_orphaned_processes(host, process_pattern="ffmpeg", exclude_pids=None):
     cleanup_thread.join(timeout=3)
 
     if cleanup_thread.is_alive():
-        logger.warning(
-            f"Orphan cleanup for {process_pattern} timeout after 3s, continuing"
-        )
+        logger.warning(f"Orphan cleanup for {process_pattern} timeout after 3s, continuing")
 
 
 def execute_test(
@@ -260,9 +246,9 @@ def execute_test(
     init_retry = 20 if pix_fmt == "yuv422p10le" else 60
     match output_format:
         case "yuv":
-            ffmpeg_rx_f_flag = "-f rawvideo"
+            ffmpeg_rx_f_flag = "-f rawvideo -vframes 10"
         case "h264":
-            ffmpeg_rx_f_flag = "-c:v libopenh264"
+            ffmpeg_rx_f_flag = "-c:v libopenh264 -vframes 10"
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, host, build)
         rx_cmd = (
@@ -284,9 +270,7 @@ def execute_test(
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
-            tx_config_file = generate_rxtxapp_tx_config(
-                nic_port_list[1], video_format, video_url, host, build
-            )
+            tx_config_file = generate_rxtxapp_tx_config(nic_port_list[1], video_format, video_url, host, build)
             tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, host, build)
@@ -315,9 +299,7 @@ def execute_test(
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
-            tx_config_file = generate_rxtxapp_tx_config(
-                nic_port_list[1], video_format, video_url, host, build, True
-            )
+            tx_config_file = generate_rxtxapp_tx_config(nic_port_list[1], video_format, video_url, host, build, True)
             tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
 
     rx_proc = None
@@ -382,9 +364,7 @@ def execute_test(
         case "yuv":
             passed = check_output_video_yuv(output_files[0], host, build, video_url)
         case "h264":
-            passed = check_output_video_h264(
-                output_files[0], video_size, host, build, video_url
-            )
+            passed = check_output_video_h264(output_files[0], video_size, host, build, video_url)
     # Clean up output files after validation (unless caller wants to keep them
     # for follow-up checks like integrity validation).
     if not keep_output:
@@ -415,9 +395,7 @@ def execute_test_rgb24(
     video_size, fps = decode_video_format_16_9(video_format)
     logger.info(f"Creating RX config for RGB24 test with video_format: {video_format}")
     try:
-        rx_config_file = generate_rxtxapp_rx_config(
-            nic_port_list[0], video_format, host, build
-        )
+        rx_config_file = generate_rxtxapp_rx_config(nic_port_list[0], video_format, host, build)
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
         return False
@@ -511,26 +489,20 @@ def execute_test_rgb24_multiple(
         """Check if we've exceeded max runtime."""
         elapsed = time.time() - start_time
         if elapsed > max_runtime:
-            logger.error(
-                f"Test exceeded maximum runtime of {max_runtime}s (elapsed: {elapsed:.1f}s)"
-            )
+            logger.error(f"Test exceeded maximum runtime of {max_runtime}s (elapsed: {elapsed:.1f}s)")
             return True
         return False
 
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
-    logger.info(
-        f"Creating RX config for RGB24 multiple test with video_formats: {video_format_list}"
-    )
+    logger.info(f"Creating RX config for RGB24 multiple test with video_formats: {video_format_list}")
 
     if check_timeout():
         log_fail("Test timeout during initialization")
         return False
 
     try:
-        rx_config_file = generate_rxtxapp_rx_config_multiple(
-            nic_port_list[:2], video_format_list, host, build, True
-        )
+        rx_config_file = generate_rxtxapp_rx_config_multiple(nic_port_list[:2], video_format_list, host, build, True)
         logger.info(f"Successfully created RX config file: {rx_config_file}")
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
@@ -666,9 +638,7 @@ def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
         return False
 
 
-def check_output_video_h264(
-    output_file: str, video_size: str, host, build: str, input_file: str
-):
+def check_output_video_h264(output_file: str, video_size: str, host, build: str, input_file: str):
     # Log input file size
     try:
         input_stat_proc = run(f"stat -c '%s' {input_file}", host=host)
@@ -711,9 +681,7 @@ def check_output_video_h264(
         height = height_match.group(1)
 
         result = codec_name == "h264" and f"{width}x{height}" == video_size
-        logger.info(
-            f"H264 check result: {result} (codec: {codec_name}, size: {width}x{height})"
-        )
+        logger.info(f"H264 check result: {result} (codec: {codec_name}, size: {width}x{height})")
         return result
     else:
         logger.info("H264 check failed")
@@ -731,9 +699,7 @@ def check_output_rgb24(rx_output: str, number_of_sessions: int):
     return ok_cnt == number_of_sessions
 
 
-def create_empty_output_files(
-    output_format: str, number_of_files: int = 1, host=None, build: str = ""
-) -> list:
+def create_empty_output_files(output_format: str, number_of_files: int = 1, host=None, build: str = "") -> list:
     output_files = []
 
     # Create a timestamp for uniqueness
@@ -799,9 +765,7 @@ def generate_rxtxapp_rx_config(
     build: str,
     multiple_sessions: bool = False,
 ) -> str:
-    logger.info(
-        f"Generating RX ST20P config for nic_port: {nic_port}, video_format: {video_format}"
-    )
+    logger.info(f"Generating RX ST20P config for nic_port: {nic_port}, video_format: {video_format}")
 
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_rx)
@@ -857,8 +821,7 @@ def generate_rxtxapp_rx_config_multiple(
     multiple_sessions: bool = False,
 ) -> str:
     logger.info(
-        f"Generating RX ST20P multiple config for nic_ports: {nic_port_list}, "
-        f"video_formats: {video_format_list}"
+        f"Generating RX ST20P multiple config for nic_ports: {nic_port_list}, " f"video_formats: {video_format_list}"
     )
 
     try:
@@ -921,9 +884,7 @@ def generate_rxtxapp_tx_config(
     build: str,
     multiple_sessions: bool = False,
 ) -> str:
-    logger.info(
-        f"Generating TX ST20P config for nic_port: {nic_port}, video_format: {video_format}"
-    )
+    logger.info(f"Generating TX ST20P config for nic_port: {nic_port}, video_format: {video_format}")
 
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_tx)
@@ -988,9 +949,7 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
         else:
             fps = f"p{fps_num}"
 
-        logger.info(
-            f"Decoded: width={width}, height={height}, fps={fps}, interlaced={interlaced}"
-        )
+        logger.info(f"Decoded: width={width}, height={height}, fps={fps}, interlaced={interlaced}")
         return width, height, fps
     else:
         log_fail(f"Invalid video format: {video_format}")
@@ -1021,9 +980,9 @@ def execute_dual_test(
     video_size, fps = decode_video_format_16_9(video_format)
     match output_format:
         case "yuv":
-            ffmpeg_rx_f_flag = "-f rawvideo"
+            ffmpeg_rx_f_flag = "-f rawvideo -vframes 10"
         case "h264":
-            ffmpeg_rx_f_flag = "-c:v libopenh264"
+            ffmpeg_rx_f_flag = "-c:v libopenh264 -vframes 10"
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, rx_host, build)
         rx_cmd = (
@@ -1040,9 +999,7 @@ def execute_dual_test(
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
-            tx_config_file = generate_rxtxapp_tx_config(
-                tx_nic_port_list[0], video_format, video_url, tx_host, build
-            )
+            tx_config_file = generate_rxtxapp_tx_config(tx_nic_port_list[0], video_format, video_url, tx_host, build)
             tx_cmd = f"{RXTXAPP_EXE} --config_file {tx_config_file}"
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, rx_host, build)
@@ -1157,9 +1114,7 @@ def execute_dual_test(
         case "yuv":
             passed = check_output_video_yuv(output_files[0], rx_host, build, video_url)
         case "h264":
-            passed = check_output_video_h264(
-                output_files[0], video_size, rx_host, build, video_url
-            )
+            passed = check_output_video_h264(output_files[0], video_size, rx_host, build, video_url)
     # Clean up output files after validation
     try:
         for output_file in output_files:
@@ -1189,13 +1144,9 @@ def execute_dual_test_rgb24(
     rx_nic_port_list = rx_host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
 
-    logger.info(
-        f"Creating RX config for RGB24 dual test with video_format: {video_format}"
-    )
+    logger.info(f"Creating RX config for RGB24 dual test with video_format: {video_format}")
     try:
-        rx_config_file = generate_rxtxapp_rx_config(
-            rx_nic_port_list[0], video_format, rx_host, build
-        )
+        rx_config_file = generate_rxtxapp_rx_config(rx_nic_port_list[0], video_format, rx_host, build)
         logger.info(f"Successfully created RX config file: {rx_config_file}")
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
@@ -1238,9 +1189,7 @@ def execute_dual_test_rgb24(
             host=tx_host,
             background=True,
         )
-        logger.info(
-            f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
-        )
+        logger.info(f"Waiting for RX process to complete (test_time: {test_time} seconds)...")
         rx_proc.wait()
         logger.info("RX process completed")
 
@@ -1313,9 +1262,7 @@ def execute_dual_test_rgb24_multiple(
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
 
-    logger.info(
-        f"Creating RX config for RGB24 multiple dual test with video_formats: {video_format_list}"
-    )
+    logger.info(f"Creating RX config for RGB24 multiple dual test with video_formats: {video_format_list}")
     try:
         rx_config_file = generate_rxtxapp_rx_config_multiple(
             rx_nic_port_list[:2], video_format_list, rx_host, build, True
