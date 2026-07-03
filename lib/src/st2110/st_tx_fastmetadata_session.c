@@ -399,7 +399,7 @@ static void tx_fastmetadata_session_build_packet(
   struct rte_udp_hdr* udp;
   struct st41_rtp_hdr* rtp;
 
-  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr)) {
+  if (rte_pktmbuf_tailroom(pkt) < sizeof(*hdr)) {
     err("%s: packet is less than fmd hdr size", __func__);
     return;
   }
@@ -435,7 +435,8 @@ static void tx_fastmetadata_session_build_packet(
   uint16_t data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
-  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr) + data_item_length_bytes) {
+  if (rte_pktmbuf_tailroom(pkt) + rte_pktmbuf_data_len(pkt) <
+      sizeof(*hdr) + data_item_length_bytes) {
     err("%s: packet doesn't contain RTP payload", __func__);
     return;
   }
