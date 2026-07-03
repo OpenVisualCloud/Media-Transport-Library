@@ -67,6 +67,8 @@ unit_sources = [
   'session/st40_tx_harness.c',
   'session/st40_tx/pacing_test.cpp',
   'session/st40_tx/rtp_gate_snap_test.cpp',
+  'session/st41_tx_harness.c',
+  'session/st41_tx/build_packet_capacity_test.cpp',
   'session/st30_harness.c',
   'session/st30/redundancy_test.cpp',
   'session/st30/timestamp_test.cpp',
