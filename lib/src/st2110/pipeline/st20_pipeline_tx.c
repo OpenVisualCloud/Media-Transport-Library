@@ -98,6 +98,7 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
                                    struct st20p_tx_frame* framebuff) {
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
   uint32_t rtp_ts; /* captured under lock for use in USDT after unlock */
+  MTL_MAY_UNUSED(rtp_ts);
   bool user_done = ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
   /* Park in IN_USER only when user_done flag is set and derive path */
   bool need_in_user = user_done && !framebuff->frame_done_cb_called;
@@ -713,6 +714,7 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
 struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
   struct st20p_tx_frame* framebuff;
   struct st_frame* frame = NULL;
 
@@ -727,11 +729,11 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);

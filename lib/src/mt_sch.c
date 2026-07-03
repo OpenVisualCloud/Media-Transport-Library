@@ -260,7 +260,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
     info("%s(%d), succ on lcore %u socket %d\n", __func__, idx, sch->lcore,
          mt_sch_socket_id(sch));
   else
-    info("%s(%d), succ on tid %" PRIu64 "\n", __func__, idx, sch->tid);
+    info("%s(%d), succ on tid %" PRIuPTR "\n", __func__, idx, (uintptr_t)sch->tid);
   sch_unlock(sch);
   return 0;
 }

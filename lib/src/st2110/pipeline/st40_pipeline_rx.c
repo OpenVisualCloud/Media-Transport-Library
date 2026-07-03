@@ -574,6 +574,7 @@ static int rx_st40p_usdt_dump_frame(struct st40p_rx_ctx* ctx,
 struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
   struct st40p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
+  MTL_MAY_UNUSED(idx);
   struct st40p_rx_frame* framebuff;
   struct st40_frame_info* frame_info = NULL;
 
@@ -591,14 +592,14 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
     mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&
-           !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       int _ret = mt_pthread_cond_timedwait_ns(
           &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
       if (_ret) break;
     }
     ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -638,6 +639,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
   uint16_t meta_num_before_reset = frame_info->meta_num;
+  MTL_MAY_UNUSED(meta_num_before_reset);
   int ret;
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);

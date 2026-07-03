@@ -561,7 +561,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
         if (impl->dhcp[i])
           err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
       mt_dhcp_uinit(impl);
-      return -ETIME;
+      return -ETIMEDOUT;
     }
   }
 
