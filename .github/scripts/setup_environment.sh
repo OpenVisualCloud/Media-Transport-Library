@@ -487,6 +487,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		if ! ldconfig -p 2>/dev/null | grep -q "libSvtJpegxs.so.0"; then
 			echo "Core SvtJpegxs library not found."
 			need_build=1
+		elif ! pkg-config --atleast-version="${SVT_JPEG_XS_MIN_VER}" SvtJpegxs 2>/dev/null; then
+			echo "Core SvtJpegxs library is outdated (< ${SVT_JPEG_XS_MIN_VER} required by FFmpeg). Rebuilding."
+			need_build=1
 		fi
 
 		export SVT_JPEG_XS_REPO="${setup_script_folder}/SVT-JPEG-XS"
