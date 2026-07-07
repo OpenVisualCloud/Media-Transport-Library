@@ -57,13 +57,6 @@ runs:
         path: .local_install/gstreamer
         fail-on-cache-miss: true
 
-    - name: 'cache: Restore librist'
-      uses: actions/cache/restore@v4
-      with:
-        key: stash-librist-${{ steps.local-checksums.outputs.librist }}
-        path: .local_install/librist
-        fail-on-cache-miss: true
-
     - name: 'cache: Restore plugins'
       uses: actions/cache/restore@v4
       with:
@@ -122,7 +115,6 @@ runs:
         echo "${LI}/mtl/bin" >> "$GITHUB_PATH"
         echo "${LI}/ffmpeg/bin" >> "$GITHUB_PATH"
         echo "${LI}/dpdk/bin" >> "$GITHUB_PATH"
-        echo "${LI}/librist/bin" >> "$GITHUB_PATH"
 
         # GStreamer plugins
         echo "GST_PLUGIN_PATH=${LI}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}" >> "$GITHUB_ENV"
@@ -133,7 +125,7 @@ runs:
         # Refresh linker cache (best-effort)
         sudo ldconfig 2>/dev/null || true
 
-        echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,librist,plugins}"
+        echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,plugins}"
 
     - name: Read shadow host credentials
       id: shadow-creds
