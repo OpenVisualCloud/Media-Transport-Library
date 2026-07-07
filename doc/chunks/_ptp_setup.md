@@ -27,3 +27,5 @@ This project includes built-in support for the Precision Time Protocol (PTP) pro
 To enable this feature in the RxTxApp sample application, use the `--ptp` argument. The control for the built-in PTP feature is the `MTL_FLAG_PTP_ENABLE` flag in the `mtl_init_params` structure.
 
 Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
+
+Note: For Intel® E810 and E830 Series Ethernet Adapters, the built-in PTP relies on the hardware timesync feature of the primary port (port 0) of the NIC. If the primary port is not opened/used by MTL (for example, only a secondary port is passed to `mtl_init`), `--ptp` will not work on the secondary port.
