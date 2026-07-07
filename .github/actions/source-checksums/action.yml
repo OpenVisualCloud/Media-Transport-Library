@@ -1,7 +1,7 @@
 name: Source Checksums
 description: >
   Compute deterministic SHA-256 hashes for each component group.
-  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, librist}.
+  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, plugins}.
   A parent change forces all children to rehash automatically.
 
 outputs:
