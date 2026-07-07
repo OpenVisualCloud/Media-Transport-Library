@@ -104,8 +104,14 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
 } /* namespace */
 
 /* TSN pacing (launch-time offload) is only advertised by PF drivers; this
- * test requires the noctx port pair to be bound as PF, not VF. */
-TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step) {
+ * test requires the noctx port pair to be bound as PF, not VF. The "_pf_"
+ * infix lets run.sh/run_pf.sh select/exclude it with a plain gtest_filter
+ * wildcard instead of parsing the test source.
+ *
+ * TSN launch-time-pacing offload has only been validated on Intel E830 (PCI
+ * device 0x12d2); other NICs may not advertise it or may behave differently.
+ * Run this only on E830 PF ports. */
+TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step_pf_tsn_pacing) {
   RunEpochOnwardRecoveryCase(this, ctx, ST21_TX_PACING_WAY_TSN);
 }
 
