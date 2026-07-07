@@ -1,7 +1,14 @@
 #!/bin/bash
 
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2025 Intel Corporation
+# Copyright 2026 Intel Corporation
+
+# Runs the NoCtxTest cases that require PF ports (name contains "_pf_", e.g.
+# TSN/launch-time-pacing offload -- only advertised by PF drivers, not VF).
+# run.sh excludes these from its VF-based full run; use this script to run
+# just them, against a pair of ports bound as PF to vfio-pci.
+#
+# Most PF-only tests only need a single TX/RX pair, so 2 ports are enough.
 
 : "${EXIT_ON_FAILURE:=1}"
 
@@ -35,24 +42,24 @@ if [ ! -f "$BUILD_PATH" ]; then
 	exit 1
 fi
 
-if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
-	echo "Error: One or more TEST_PORT_X environment variables are not set"
-	echo "TEST_PORT_1=$TEST_PORT_1"
-	echo "TEST_PORT_2=$TEST_PORT_2"
-	echo "TEST_PORT_3=$TEST_PORT_3"
-	echo "TEST_PORT_4=$TEST_PORT_4"
+if [ -z "$TEST_PF_PORT_1" ] || [ -z "$TEST_PF_PORT_2" ]; then
+	echo "Error: TEST_PF_PORT_1/TEST_PF_PORT_2 environment variables are not set"
+	echo "These must be bound to vfio-pci as PFs, not VFs -- TSN/launch-time"
+	echo "pacing offload is only advertised by PF drivers."
+	echo "TEST_PF_PORT_1=$TEST_PF_PORT_1"
+	echo "TEST_PF_PORT_2=$TEST_PF_PORT_2"
 	exit 1
 fi
 
-PORT_LIST="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}"
+PORT_LIST="${TEST_PF_PORT_1},${TEST_PF_PORT_2}"
 
-# PF-only tests (name contains "_pf_", e.g. TSN/launch-time-pacing) can
-# never pass against these VF ports; exclude them explicitly instead of
-# letting them fail for the wrong reason. Run them via run_pf.sh instead.
-GTEST_FILTER="NoCtxTest.${NOCTX_FILTER}*-NoCtxTest.*_pf_*"
-
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="${GTEST_FILTER}" 2>/dev/null |
+test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="NoCtxTest.${NOCTX_FILTER}*_pf_*" 2>/dev/null |
 	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
+
+if [ -z "$test_names" ]; then
+	echo "No PF-only NoCtx tests found (none match *_pf_*)."
+	exit 0
+fi
 
 # Use TMP_FOLDER from environment or fallback to /tmp
 : "${TMP_FOLDER:=/tmp}"
@@ -67,7 +74,7 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 	echo "Checking test: NoCtxTest.$test_name"
 
 	test_count=$((test_count + 1))
-	xml_file="${XML_OUTPUT_DIR}/noctx_${test_count}.xml"
+	xml_file="${XML_OUTPUT_DIR}/noctx_pf_${test_count}.xml"
 
 	if "$BUILD_PATH" \
 		--auto_start_stop \
@@ -87,5 +94,5 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 	sleep 10
 done < <(echo "$test_names")
 
-echo "All noctx tests completed. XML files saved in $XML_OUTPUT_DIR"
+echo "All PF-only noctx tests completed. XML files saved in $XML_OUTPUT_DIR"
 echo "Total test count: $test_count"
