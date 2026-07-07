@@ -1448,6 +1448,15 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       err("%s(%d), this port not support tsn launch time\n", __func__, port);
       return -EINVAL;
     }
+    /* tsn launch time is compared against the phc, the packet timestamp must be
+     * phc-synced: only the built-in ptp service disciplines the phc when PF is used
+     */
+    if (mt_user_ptp_tsc_source(inf->parent) || !mt_user_ptp_service(inf->parent)) {
+      err("%s(%d), tsn pacing requires ptp synced with phc, enable MTL_FLAG_PTP_ENABLE "
+          "(--ptp)\n",
+          __func__, port);
+      return -EINVAL;
+    }
   }
 
   return 0;
