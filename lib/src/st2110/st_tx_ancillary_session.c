@@ -302,6 +302,7 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
   if (!(s->ops.flags & ST40_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) {
     if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
+      s->port_user_stats.common.stat_error_user_timestamp++;
       err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
     }
     return 0;
@@ -345,17 +346,24 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
   if (required_tai) {
     epoch = (required_tai + pacing->frame_time / 2) / pacing->frame_time;
     tx_ancillary_validate_user_timestamp(s, epoch, current_epoch);
+    /* epoch 0 collides with the "unset" sentinel used elsewhere; fall back to
+     * real time rather than honor a rounded-to-zero required_tai */
+    if (!epoch) epoch = current_epoch;
   }
 
   if (current_epoch <= next_free_epoch) {
-    if (next_free_epoch - current_epoch > pacing->max_onward_epochs) {
+    uint64_t onward = next_free_epoch - current_epoch;
+    if (onward > pacing->max_onward_epochs) {
+      /* current time is out of onward range, resync to real time instead of
+       * advancing by one epoch forever */
       dbg("%s(%d), onward range exceeded, next_free_epoch %" PRIu64
           ", current_epoch %" PRIu64 "\n",
           __func__, s->idx, next_free_epoch, current_epoch);
-      s->port_user_stats.common.stat_epoch_onward += (next_free_epoch - current_epoch);
+      s->port_user_stats.common.stat_epoch_onward += onward;
+      if (!required_tai) epoch = current_epoch;
+    } else if (!required_tai) {
+      epoch = next_free_epoch;
     }
-
-    if (!required_tai) epoch = next_free_epoch;
   } else {
     dbg("%s(%d), frame is late, current_epoch %" PRIu64 " next_free_epoch %" PRIu64 "\n",
         __func__, s->idx, current_epoch, next_free_epoch);
@@ -365,7 +373,7 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
       s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
     }
 
-    epoch = current_epoch;
+    if (!required_tai) epoch = current_epoch;
   }
 
   return epoch;

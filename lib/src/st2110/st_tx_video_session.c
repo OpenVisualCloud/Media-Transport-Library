@@ -655,21 +655,23 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
   if (required_tai) {
     frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
     validate_user_timestamp(s, frame_count, frame_count_tai);
+    /* frame_count 0 collides with the "unset" sentinel used elsewhere; fall back to
+     * real time rather than honor a rounded-to-zero required_tai */
+    if (!frame_count) frame_count = frame_count_tai;
   }
 
   if (frame_count_tai <= next_free_frame_slot) {
     /* There is time buffer until the next available frame time window */
-    if (next_free_frame_slot - frame_count_tai > s->pacing.max_onward_epochs) {
-      /* current time is out of onward range, just note this and still move to next free
-       * slot */
+    uint64_t onward = next_free_frame_slot - frame_count_tai;
+    if (onward > s->pacing.max_onward_epochs) {
+      /* current time is out of onward range, resync to real time instead of
+       * advancing by one epoch forever */
       dbg("%s(%d), onward range exceeded, next_free_frame_slot %" PRIu64
           ", frame_count_tai %" PRIu64 "\n",
           __func__, s->idx, next_free_frame_slot, frame_count_tai);
-      s->port_user_stats.common.stat_epoch_onward +=
-          (next_free_frame_slot - frame_count_tai);
-    }
-
-    if (!required_tai) {
+      s->port_user_stats.common.stat_epoch_onward += onward;
+      if (!required_tai) frame_count = frame_count_tai;
+    } else if (!required_tai) {
       frame_count = next_free_frame_slot;
     }
 
@@ -683,7 +685,7 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
       s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
     }
 
-    frame_count = frame_count_tai;
+    if (!required_tai) frame_count = frame_count_tai;
   }
 
   return frame_count;
@@ -1733,6 +1735,7 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) {
     if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+      s->port_user_stats.common.stat_error_user_timestamp++;
       err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
     }
     return 0;
