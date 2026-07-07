@@ -17,7 +17,3 @@ sources += st20_sources
 subdir('noctx')
 sources += noctx_sources
 test_inc = include_directories('.', 'noctx', 'st20')
-
-ufd_sources = files('ufd_test.cpp', 'ufd_loop_test.cpp', 'test_util.cpp')
-
-upl_sources = files('upl_test.cpp', 'upl_loop_test.cpp', 'test_util.cpp')

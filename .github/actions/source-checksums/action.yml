@@ -1,7 +1,7 @@
 name: Source Checksums
 description: >
   Compute deterministic SHA-256 hashes for each component group.
-  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, librist}.
+  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, plugins}.
   A parent change forces all children to rehash automatically.
 
 outputs:
@@ -17,9 +17,6 @@ outputs:
   gstreamer:
     description: 'Hash for GStreamer plugin sources (includes MTL hash)'
     value: ${{ steps.compute.outputs.gstreamer }}
-  librist:
-    description: 'Hash for librist sources (includes MTL hash)'
-    value: ${{ steps.compute.outputs.librist }}
   plugins:
     description: 'Hash for st22 avcodec plugin sources (includes MTL hash)'
     value: ${{ steps.compute.outputs.plugins }}

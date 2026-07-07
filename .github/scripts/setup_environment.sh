@@ -33,7 +33,6 @@ export MTL_INSTALL_PREFIX
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:=0}"
-: "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
@@ -581,17 +580,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem RIST plugin build and install"
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		else
-			bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		fi
-		STEP=$((STEP + 1))
-	fi
-
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem OBS plugin build and install"
 		pushd "${root_folder}/ecosystem/obs_mtl" >/dev/null || exit 1
@@ -740,7 +728,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:GStreamer plugin" \
-		"ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:RIST plugin" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin" \
 		"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin" \

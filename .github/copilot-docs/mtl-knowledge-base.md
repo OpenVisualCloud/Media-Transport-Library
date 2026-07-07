@@ -740,10 +740,8 @@ MTL supports `--proc-type=secondary` for read-only stats access. Full multi-proc
 
 ### Integration Tests (`tests/integration_tests/`)
 
-Three binaries:
+One binary:
 - `KahawaiTest` — main ST2110 tests (links MTL)
-- `KahawaiUfdTest` — UDP file descriptor tests (links MTL)
-- `KahawaiUplTest` — LD_PRELOAD tests (**no** MTL link, standard POSIX sockets)
 
 Architecture: single global `mtl_init()` for entire run (`st_test_ctx()`). Sessions ephemeral per test.
 
@@ -829,5 +827,4 @@ JSON config directories: `loop_json/`, `audio_json/`, `native_af_xdp_json/`, `ke
 - DPDK can't reinit within a process → noctx pattern for isolated tests
 - `cvt_test.cpp` is 4349 lines — add round-trip tests when adding new pixel formats
 - Fuzz harnesses are single-packet — multi-packet protocol bugs uncovered
-- `KahawaiUplTest` uses standard POSIX sockets (validates LD_PRELOAD interception)
 - Test level: CI runs `mandatory`; `all` for thorough local validation

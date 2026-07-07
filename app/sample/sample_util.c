@@ -7,11 +7,6 @@
 #include <getopt.h>
 #include <inttypes.h>
 
-/* include "struct sockaddr_in" define before include mudp_sockfd_api */
-// clang-format off
-#include <mtl/mudp_sockfd_internal.h>
-// clang-format on
-
 enum sample_args_cmd {
   SAMPLE_ARG_UNKNOWN = 0,
 
@@ -683,38 +678,4 @@ void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w
     cr++;
     y1 += 2;
   }
-}
-
-int ufd_override_check(struct st_sample_context* ctx) {
-  struct mufd_override_params override;
-  bool has_override = false;
-
-  memset(&override, 0, sizeof(override));
-  override.log_level = MTL_LOG_LEVEL_INFO;
-  /* check if user has assigned extra arguments */
-  if (ctx->param.log_level != MTL_LOG_LEVEL_INFO) {
-    has_override = true;
-    override.log_level = ctx->param.log_level;
-  }
-  if (ctx->param.flags & MTL_FLAG_UDP_LCORE) {
-    has_override = true;
-    override.lcore_mode = true;
-  }
-  if (ctx->param.flags & MTL_FLAG_SHARED_TX_QUEUE) {
-    has_override = true;
-    override.shared_tx_queue = true;
-  }
-  if (ctx->param.flags & MTL_FLAG_SHARED_RX_QUEUE) {
-    has_override = true;
-    override.shared_tx_queue = true;
-  }
-  if (ctx->param.rss_mode) {
-    has_override = true;
-    override.rss_mode = ctx->param.rss_mode;
-  }
-  if (has_override) {
-    mufd_commit_override_params(&override);
-  }
-
-  return 0;
 }

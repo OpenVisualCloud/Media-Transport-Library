@@ -15,7 +15,7 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 ## 1. Overview
 
-The Media Transport Library(MTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+The Media Transport Library(MTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
 The Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
@@ -24,7 +24,6 @@ If you find value in our project, please consider giving it a star. Your support
 ### 1.1. Features
 
 * Supported data path backend: DPDK PMD, native kernel socket, and AF_XDP with eBPF filter.
-* The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
 * Virtualization support by SR-IOV.
@@ -98,14 +97,7 @@ To run this library on the kernel network stack with the built-in kernel NIC dri
 
 To quickly develop applications based on the Media Transport Library, please refer to section ["ST2110 API" in Design Guide](doc/design.md#6-st2110-api).
 
-## 5. User space LibOS UDP stack guide
-
-MTL has support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
-MTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
-
-To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
-
-## 6. Publication
+## 5. Publication
 
 MHV'23: A Real-time Media Transport Stack Based on Commercial Off-the-shelf Hardware. <https://dl.acm.org/doi/10.1145/3588444.3591002>
 
@@ -113,11 +105,11 @@ Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https
 
 2022 DPDK Userspace Summit: Real-time and low latency media transport stack based on DPDK. <https://www.youtube.com/watch?v=fiiOvHezpBs>
 
-## 7. How to Contribute
+## 6. How to Contribute
 
 We welcome community contributions to the Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
-### 7.1. Fork this repository
+### 6.1. Fork this repository
 
 Before opening a pull request, please follow these steps:
 
@@ -129,11 +121,11 @@ Before opening a pull request, please follow these steps:
 
 If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
 
-### 7.2. Coding style
+### 6.2. Coding style
 
 We use the super-linter action for style checks.
 
-#### 7.2.1. C/C++
+#### 6.2.1. C/C++
 
 For C/C++ coding, you can run the following command to quickly fix the style:
 
@@ -141,7 +133,7 @@ For C/C++ coding, you can run the following command to quickly fix the style:
 ./format-coding.sh
 ```
 
-#### 7.2.2. Python
+#### 6.2.2. Python
 
 For Python, `black` and `isort` formatter is used.
 
@@ -157,7 +149,7 @@ isort python/
 find python/example/ -name "*.py" -exec pylint {} \;
 ```
 
-#### 7.2.3. Others
+#### 6.2.3. Others
 
 For other languages, please check with the following example command inside the Docker container:
 

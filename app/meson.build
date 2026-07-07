@@ -51,7 +51,6 @@ endif
 subdir('tools')
 subdir('sample')
 subdir('perf')
-subdir('udp')
 subdir('v4l2_to_ip')
 
 app_c_args = []
@@ -456,54 +455,6 @@ executable('PerfDma', perf_dma_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, ws2_32_dep]
 )
-
-# UDP sample app
-executable('UdpServerSample', upd_server_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
-)
-
-executable('UdpClientSample', upd_client_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
-)
-
-executable('UfdServerSample', ufd_server_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep],
-  install: true,
-)
-
-executable('UfdClientSample', ufd_client_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep],
-  install: true,
-)
-
-# WA: no socket/poll API for windows
-if not is_windows
-executable('UsocketServerSample', usocket_server_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-
-executable('UsocketClientSample', usocket_client_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-endif
 
 # v4l2 to IP sample app
 if app_has_sdl2 and not is_windows

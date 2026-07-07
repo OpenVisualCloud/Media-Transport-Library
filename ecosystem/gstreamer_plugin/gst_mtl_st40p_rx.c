@@ -51,8 +51,7 @@
  * MTL is a software-based solution optimized for high-throughput, low-latency
  * transmission and reception of media data.
  *
- * It features an efficient user-space LibOS UDP stack specifically crafted for
- * media transport and includes a built-in SMPTE ST 2110-compliant
+ * It includes a built-in SMPTE ST 2110-compliant
  * implementation for Professional Media over Managed IP Networks.
  *
  * This element allows GStreamer pipelines to receive ST2110-40 ancillary data

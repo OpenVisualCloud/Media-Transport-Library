@@ -298,8 +298,6 @@ def log_result_note(note: str):
 _MTL_APP_BASE_NAMES = [
     "RxTxApp",
     "KahawaiTest",
-    "KahawaiUfdTest",
-    "KahawaiUplTest",
     "ffmpeg",
     "gtest.sh",
 ]

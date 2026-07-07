@@ -15,6 +15,3 @@ cc = meson.get_compiler('c')
 
 mtl_dep = dependency('mtl', required : true)
 libdl_dep = cc.find_library('dl', required : true)
-
-# build udp preload
-subdir('udp')

@@ -14,15 +14,9 @@ if [ -d "${mtl_folder}/.local_install" ]; then
 	export LD_LIBRARY_PATH="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu:${mtl_folder}/.local_install/dpdk/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"}"
-	: "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiUfdTest"}"
-	: "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiUplTest"}"
-	: "${MTL_LD_PRELOAD:="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu/libmtl_udp_preload.so"}"
 else
 	# Local mode: use build directory and system-installed libraries
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
-	: "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUfdTest"}"
-	: "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUplTest"}"
-	: "${MTL_LD_PRELOAD:=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so}"
 fi
 
 # sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env
@@ -33,7 +27,6 @@ SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH} PATH=${PATH}"
 : "${TMP_FOLDER:=/tmp/mtl_gtest_$(date +%Y%m%d_%H%M%S)_$$}"
 : "${LOG_FILE:=${TMP_FOLDER}/gtest.log}"
 : "${EXIT_ON_FAILURE:=1}"
-: "${MUFD_CFG:="${mtl_folder}/.github/workflows/upl_gtest.json"}"
 : "${NIGHTLY:=1}"                                                                    # Set to 1 to run full test suite, 0 for quick tests
 : "${TEST_CASE_TIMEOUT:=1800}"                                                       # 30 minutes per test case
 : "${TEST_SIP_SEED:=$((RANDOM))}"                                                    # Seed for generating TEST_P_SIP when not provided
@@ -54,15 +47,11 @@ for dma in "CBDMA" "idxd" "ioatdma"; do
 done
 
 export KAHAWAI_TEST_BINARY
-export KAHAWAI_UFD_TEST_BINARY
-export KAHAWAI_UPL_TEST_BINARY
 export MAX_RETRIES
 export RETRY_DELAY
 export TMP_FOLDER
 export LOG_FILE
 export EXIT_ON_FAILURE
-export MTL_LD_PRELOAD
-export MUFD_CFG
 export NIGHTLY
 export TEST_CASE_TIMEOUT
 export TEST_SIP_SEED
@@ -116,11 +105,6 @@ generate_test_cases() {
 
 	# Nightly additions
 	test_cases["digest_1080p_timeout_interval"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_digest_1080p_timeout_interval.xml --gtest_filter=*digest_1080p_timeout_interval*"
-	test_cases["ufd_basic"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_basic.xml"
-	test_cases["ufd_shared"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --queue_mode shared --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_shared.xml"
-	test_cases["ufd_shared_lcore"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --queue_mode shared --udp_lcore --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_shared_lcore.xml"
-	test_cases["ufd_rss"]="\"${KAHAWAI_UFD_TEST_BINARY}\" --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --rss_mode l3_l4 --gtest_output=xml:${TMP_FOLDER}/gtest_ufd_rss.xml"
-	test_cases["udp_ld_preload"]="LD_PRELOAD=\"${MTL_LD_PRELOAD}\" ${KAHAWAI_UPL_TEST_BINARY} --p_sip ${TEST_P_SIP} --r_sip ${TEST_R_SIP} --gtest_output=xml:${TMP_FOLDER}/gtest_udp_ld_preload.xml"
 	test_cases["Misc"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Misc.xml --gtest_filter=Misc*"
 	test_cases["Main"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Main.xml --gtest_filter=Main*"
 	test_cases["Sch"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Sch.xml --gtest_filter=Sch*"
@@ -219,18 +203,6 @@ bind_driver_to_dpdk() {
 	export TEST_PORT_3
 	export TEST_PORT_4
 
-	if [ ! -f "${mtl_folder}/.github/workflows/upl_gtest_template.json" ]; then
-		echo "Error: Template file not found: ${mtl_folder}/.github/workflows/upl_gtest_template.json"
-		time_taken_by_script
-		exit 1
-	fi
-
-	mkdir -p "$(dirname "$MUFD_CFG")" || true
-	cp -f "${mtl_folder}/.github/workflows/upl_gtest_template.json" "$MUFD_CFG"
-	export MUFD_CFG
-
-	sed -i "s+REPLACE_BY_CICD_TEST_PORT_1+${TEST_PORT_1}+" "$MUFD_CFG"
-	sed -i "s+REPLACE_BY_CICD_TEST_PORT_2+${TEST_PORT_2}+" "$MUFD_CFG"
 	echo "Selected ports: P=$TEST_PORT_1, R=$TEST_PORT_2"
 
 	if ! dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_P" | grep -q "unused=${dma_mechanism}"; then
@@ -274,7 +246,7 @@ reset_ice_driver() {
 kill_test_processes() {
 	# Kill by process group if available
 	pkill -SIGKILL -P $$ 2>/dev/null || true
-	sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest 2>/dev/null || true
+	sudo killall -SIGKILL KahawaiTest 2>/dev/null || true
 	sleep 2
 }
 
@@ -284,8 +256,6 @@ declare -a error_messages=(
 	"Not a directory"
 	"mt_user_params_check, same name for port 1 and 0"
 	"EAL: Cannot use IOVA as"
-	"from LD_PRELOAD cannot be preloaded"
-	"Error: ufd_parse_json, open json file ufd.json fail"
 	"libmtl.so: cannot open shared object file:"
 	"EAL: Cannot set up DMA remapping, error 12 (Cannot allocate memory)"
 	"Error: mt_user_params_check, same name  for port 1 and 0"
@@ -359,15 +329,11 @@ print_configuration() {
 	echo "Configuration:"
 	echo "=========================================="
 	echo "KAHAWAI_TEST_BINARY: $KAHAWAI_TEST_BINARY"
-	echo "KAHAWAI_UFD_TEST_BINARY: $KAHAWAI_UFD_TEST_BINARY"
-	echo "KAHAWAI_UPL_TEST_BINARY: $KAHAWAI_UPL_TEST_BINARY"
 	echo "MAX_RETRIES: $MAX_RETRIES"
 	echo "RETRY_DELAY: $RETRY_DELAY seconds"
 	echo "TMP_FOLDER: $TMP_FOLDER"
 	echo "LOG_FILE: $LOG_FILE"
 	echo "EXIT_ON_FAILURE: $EXIT_ON_FAILURE"
-	echo "MTL_LD_PRELOAD: $MTL_LD_PRELOAD"
-	echo "MUFD_CFG: $MUFD_CFG"
 	echo "NIGHTLY: $NIGHTLY"
 	echo "TEST_CASE_TIMEOUT: $TEST_CASE_TIMEOUT seconds"
 	echo "TEST_SIP_SEED: $TEST_SIP_SEED"

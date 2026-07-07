@@ -1225,8 +1225,6 @@ struct mtl_main_impl {
 
   struct mt_user_info u_info;
 
-  void* mudp_rxq_mgr[MTL_PORT_MAX];
-
   /* cnt for open sessions */
   rte_atomic32_t st20_tx_sessions_cnt;
   rte_atomic32_t st22_tx_sessions_cnt;

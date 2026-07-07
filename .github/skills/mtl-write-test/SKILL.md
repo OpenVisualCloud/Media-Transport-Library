@@ -1,21 +1,19 @@
 ---
 name: mtl-write-test
-description: Author a new MTL test. Use when adding coverage for a bug fix, new feature, regression, or behavior change. Teaches how to pick the right tier (unit / integration / NoCtx / UFD / UPL / pytest single-host / pytest dual-host) and how to write a test that will survive review. Does NOT cover running existing tests, debugging an existing test failure, host setup, or build infrastructure — see the linked instructions for those.
+description: Author a new MTL test. Use when adding coverage for a bug fix, new feature, regression, or behavior change. Teaches how to pick the right tier (unit / integration / NoCtx / pytest single-host / pytest dual-host) and how to write a test that will survive review. Does NOT cover running existing tests, debugging an existing test failure, host setup, or build infrastructure — see the linked instructions for those.
 ---
 
 # Write a new MTL test
 
 The hard part of testing MTL is **picking the right tier** and **asserting the right thing**.
 
-## 1. The seven tiers
+## 1. The five tiers
 
 | Tier | Binary | Hardware | Can observe |
 |---|---|---|---|
 | **Unit gtest** — `tests/unit/` | `UnitTest` (built only with `-Denable_unit_tests=true`; **not** built by `./build.sh`) | None — runs as regular user under ASan | RX-side session logic fed synthetic mbufs at the RFC 4175 / RTP payload layer: frame assembly, bitmap dedup, redundancy merge, stat counters, pipeline accounting |
 | **Integration gtest** — `tests/integration_tests/` | `KahawaiTest` | Real VFs (≥2; ≥4 for redundant cases) | Full session lifecycle, TX+RX through the NIC, every pacing mode, multi-session, callbacks at real timing, SHA digests, DMA, RSS, kernel-socket, AF_XDP, virtio-user |
 | **NoCtx gtest** — `tests/integration_tests/noctx/` | `KahawaiTest --no_ctx` | Real VFs (per-case; redundant cases require ≥4) | Same as integration plus behaviors that depend on `mtl_init()` flags/callbacks the shared test context cannot supply. **One case per process** (DPDK EAL cannot re-init) — runner script enforces this |
-| **UFD gtest** | `KahawaiUfdTest` (separate binary) | Real VFs | The user-space UDP file-descriptor API (`mufd_*`, a socket-like surface over MTL) |
-| **UPL gtest** | `KahawaiUplTest` (separate binary) | Real VFs | The `LD_PRELOAD` UDP shim that accelerates unmodified socket apps |
 | **pytest single-host** — `tests/validation/tests/single/` | RxTxApp / FFmpeg / GStreamer driven through pytest | Full host: VFs, MtlManager, NFS media, plugins, venv, SSH-to-localhost | End-to-end app behavior on one host: CLI flags, config files, real media bytes, PTP convergence |
 | **pytest dual-host** — `tests/validation/tests/dual/` | same apps, two hosts | Two hosts wired together | Real two-machine traffic: cross-host pacing, real switch behavior, no loopback shortcuts |
 
@@ -26,9 +24,8 @@ Per-tier docs you must read before authoring: [tests/unit/README.md](tests/unit/
 1. Two physical hosts required? → **pytest dual-host**.
 2. Real app binary, CLI flag, config file, or media file on disk required? → **pytest single-host**.
 3. `mtl_init()` flags or callbacks the shared context cannot supply (user pacing/timestamp, simulated packet loss, fake PTP)? → **NoCtx**.
-4. Testing the `mufd_*` API or the LD_PRELOAD UDP shim specifically? → **UFD** or **UPL**.
-5. Packet on the wire, scheduler running, qualitative pacing behavior (modes, switches, fallbacks — *not* sub-microsecond accuracy, which is pytest+PTP), real-time callbacks, DMA, RSS, kernel-socket, AF_XDP, virtio-user, or 2+ ports interacting? → **integration**.
-6. Reproducible by feeding synthetic mbufs to a single RX session handler with no scheduler? → **unit**.
+4. Packet on the wire, scheduler running, qualitative pacing behavior (modes, switches, fallbacks — *not* sub-microsecond accuracy, which is pytest+PTP), real-time callbacks, DMA, RSS, kernel-socket, AF_XDP, virtio-user, or 2+ ports interacting? → **integration**.
+5. Reproducible by feeding synthetic mbufs to a single RX session handler with no scheduler? → **unit**.
 
 Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gtest** — pytest is for app behavior, not library bug isolation.
 
@@ -56,9 +53,6 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 - **NoCtx: one case per process.** *Why:* DPDK EAL cannot re-initialise inside the same PID; the fixture refuses and the runner enforces it — never try to "fix" this.
 - **Pacing.** MTL exposes several modes (AUTO, RL, TSC, PTP, TSN, BE, …). If the behavior depends on a mode, set it explicitly or parametrize.
 - **Bound the run.** Pick the shortest duration that surfaces the behavior, and write the math in a comment (e.g. "2 s × 60 fps ≈ 120 frames; expected drop < 1 % surfaces in N frames").
-
-### UFD / UPL
-- Use the existing UFD / UPL test as scaffolding; do not import patterns from the ST 2110 integration tests — the code paths are different.
 
 ### pytest (single-host and dual-host)
 - **No `time.sleep` in tests.** Run duration is owned by the `test_time` fixture and the app harness. Framework code may sleep for synchronisation; test bodies may not.
