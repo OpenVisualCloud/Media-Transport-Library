@@ -10,8 +10,6 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 | Binary | Location | Purpose |
 |--------|----------|---------|
 | `KahawaiTest` | `build/tests/KahawaiTest` | Main integration tests |
-| `KahawaiUfdTest` | `build/tests/KahawaiUfdTest` | User-frame-driver tests |
-| `KahawaiUplTest` | `build/tests/KahawaiUplTest` | UDP preload tests |
 
 ## CLI Flags
 

@@ -127,9 +127,6 @@ runs:
         # GStreamer plugins
         echo "GST_PLUGIN_PATH=${LI}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}" >> "$GITHUB_ENV"
 
-        # ld_preload path for UDP tests
-        echo "MTL_LD_PRELOAD=${LI}/mtl/lib/x86_64-linux-gnu/libmtl_udp_preload.so" >> "$GITHUB_ENV"
-
         # pkg-config for downstream tools
         echo "PKG_CONFIG_PATH=${LI}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${LI}/mtl/lib/x86_64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
 

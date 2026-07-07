@@ -97,7 +97,7 @@
 
 * lib: add DHCP client implementation.
 * ice: update driver to 1.11.14
-* udp: add LD_PRELOAD to support no-code change deployment, see doc/udp.md
+* udp: add LD_PRELOAD to support no-code change deployment.
 * udp: add select/epoll/send_msg/recvmsg support.
 * ecosystem/ffmpeg: add output support.
 * rss: add shared mode support, see mt_shared_rss.h
@@ -131,9 +131,9 @@
 * DPDK: upgrade DPDK version to latest 22.11 for both Windows and Linux.
 * ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
 * mtl_init_params: add gateway and netmask support for wan.
-* udp: introduce a highly efficient udp stack support, see mudp_api.h
-* udp: add POSIX socket compatible(file descriptor) API support, see mudp_sockfd_api.h
-* udp: add sample code, see app/udp
+* udp: introduce a highly efficient udp stack support.
+* udp: add POSIX socket compatible(file descriptor) API support.
+* udp: add sample code.
 * arp: add zero timeout support for UDP stack.
 * mtl_init_params: add multi port support, user can initial MTL instance with up to 8 ports. See tests/script/multi_port_json/ for how to use from RxTxApp.
 * sch/tasklet: add runtime unregister support.

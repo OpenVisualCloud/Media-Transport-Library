@@ -9,9 +9,6 @@
 #include "../mt_socket.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"
-#ifndef WINDOWSENV
-#include "deprecated/mudp_api.h"
-#endif
 
 #define MT_RX_DP_SOCKET_PREFIX "SR_"
 #define MT_TX_DP_SOCKET_PREFIX "SR_"
@@ -22,6 +19,15 @@
 #endif
 
 #ifndef WINDOWSENV
+
+static inline void mt_dp_init_sockaddr(struct sockaddr_in* addr,
+                                       const uint8_t ip[MTL_IP_ADDR_LEN], uint16_t port) {
+  *addr = (struct sockaddr_in){
+      .sin_family = AF_INET,
+      .sin_port = htons(port),
+  };
+  memcpy(&addr->sin_addr.s_addr, ip, MTL_IP_ADDR_LEN);
+}
 
 static inline int tx_socket_verify_mbuf(struct rte_mbuf* m) {
   if (m->nb_segs > 1) {
@@ -63,7 +69,7 @@ static int tx_socket_send_mbuf(struct mt_tx_socket_thread* t, struct rte_mbuf* m
 
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
-  mudp_init_sockaddr(&send_addr, (uint8_t*)&ipv4->dst_addr, ntohs(udp->dst_port));
+  mt_dp_init_sockaddr(&send_addr, (uint8_t*)&ipv4->dst_addr, ntohs(udp->dst_port));
 
   t->stat_tx_try++;
   /* nonblocking */
@@ -224,7 +230,7 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread* t) {
   }
 
   if (entry->gso_sz) {
-    mudp_init_sockaddr(&t->send_addr, entry->flow.dip_addr, entry->flow.dst_port);
+    mt_dp_init_sockaddr(&t->send_addr, entry->flow.dip_addr, entry->flow.dst_port);
     t->msg.msg_namelen = sizeof(t->send_addr);
     t->msg.msg_name = &t->send_addr;
 
@@ -469,9 +475,9 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
   /* bind to port */
   struct sockaddr_in bind_addr;
   if (mt_is_multicast_ip(flow->dip_addr))
-    mudp_init_sockaddr(&bind_addr, flow->dip_addr, flow->dst_port);
+    mt_dp_init_sockaddr(&bind_addr, flow->dip_addr, flow->dst_port);
   else
-    mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
+    mt_dp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
   ret = bind(fd, (const struct sockaddr*)&bind_addr, sizeof(bind_addr));
   if (ret < 0) {
     err("%s(%d,%d), bind to port %u fail %d\n", __func__, port, fd, flow->dst_port, ret);

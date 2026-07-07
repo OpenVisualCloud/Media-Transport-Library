@@ -5,7 +5,6 @@
 #include "mt_main.h"
 
 #include "datapath/mt_queue.h"
-#include "deprecated/udp/udp_rxq.h"
 #include "dev/mt_dev.h"
 #include "mt_admin.h"
 #include "mt_arp.h"
@@ -210,12 +209,6 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = mudp_rxq_init(impl);
-  if (ret < 0) {
-    err("%s, mudp_rxq_init fail %d\n", __func__, ret);
-    return ret;
-  }
-
   ret = pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
   if (ret < 0) {
     err("%s, pthread_create fail %d\n", __func__, ret);
@@ -232,7 +225,6 @@ static int mt_main_free(struct mtl_main_impl* impl) {
     impl->tsc_cal_tid = 0;
   }
 
-  mudp_rxq_uinit(impl);
   mt_ptp_uinit(impl);
   mt_dhcp_uinit(impl);
   mt_config_uinit(impl);

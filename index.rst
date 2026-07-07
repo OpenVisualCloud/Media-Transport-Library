@@ -37,7 +37,6 @@ Contents
    doc/vm_WIN.md
    doc/aws.md
    doc/kernel_socket.md
-   doc/udp.md
    doc/asan.md
    doc/convert.md
    doc/dma.md
@@ -62,7 +61,6 @@ Sample Application
 
    app/sample/README.md
    app/sample/msvc/README.md
-   app/udp/README.md
    app/v4l2_to_ip/README.md
    doc/configuration_guide.md
 
