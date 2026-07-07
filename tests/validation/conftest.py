@@ -398,7 +398,9 @@ def _wait_daemon_dead(host, name: str, timeout_s: float) -> bool:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            res = host.connection.execute_command(f"pgrep -x {name}", expected_return_codes=None)
+            res = host.connection.execute_command(
+                f"pgrep -x {name}", expected_return_codes=None
+            )
         except Exception:
             return True  # cannot probe; don't block the caller forever
         if res.return_code != 0:
@@ -609,30 +611,71 @@ def ptp_sync(request, test_config: dict, hosts):
 
     host = _select_capture_host(hosts)
     is_single_host = len(hosts) == 1
-    capture_iface = _select_sniff_interface_name(
-        host, capture_cfg, single_host=is_single_host
-    )
 
     # Belt-and-braces: ensure no leftover daemon from a previous test/session
     # is holding a stale PHC handle before we start a new one.
     _reap_ptp_daemons(host)
 
-    logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
-    log_path = f"/tmp/ptp4l-{capture_iface}.log"
-    ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
-    ptp4l_process = host.connection.start_process(
-        ptp4l_cmd,
-        stderr_to_stdout=True,
-        output_file=log_path,
-    )
-
-    # Give ptp4l a moment to fail fast (e.g., missing interface).
-    time.sleep(0.2)
-    if not ptp4l_process.running:
-        _reap_ptp_daemons(host)
-        raise RuntimeError(
-            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
+    # Determine interfaces to sync. If we are running a single-host PTP loopback test,
+    # we need to sync BOTH the active ports (TX on primary, RX on redundant) so that
+    # the hardware clocks on both ports are disciplined to the same GM.
+    # Note: Only sync interfaces that are currently in kernel mode (i.e. having active netdevs in /sys/class/net),
+    # otherwise ptp4l will fail to start.
+    interfaces_to_sync = []
+    if is_single_host:
+        # In single-host mode, use both the primary and redundant physical interfaces if available
+        for nic in host.network_interfaces[:2]:
+            try:
+                # Check if the interface is currently in kernel mode
+                check_cmd = f"[ -d /sys/class/net/{nic.name} ]"
+                res = host.connection.execute_command(
+                    check_cmd, expected_return_codes=None
+                )
+                if res.return_code == 0:
+                    interfaces_to_sync.append(nic.name)
+                else:
+                    logger.debug(
+                        f"PTP skip: Interface {nic.name} is not present in /sys/class/net/ (likely bound to DPDK PMD)"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check netdev directories for {nic.name}: {e}"
+                )
+    else:
+        # Multi-host mode: only run on the resolved capture interface
+        capture_iface = _select_sniff_interface_name(
+            host, capture_cfg, single_host=is_single_host
         )
+        try:
+            # Check if the interface is currently in kernel mode
+            check_cmd = f"[ -d /sys/class/net/{capture_iface} ]"
+            res = host.connection.execute_command(check_cmd, expected_return_codes=None)
+            if res.return_code == 0:
+                interfaces_to_sync.append(capture_iface)
+            else:
+                logger.warning(
+                    f"PTP skip: Capture interface {capture_iface} is not present in /sys/class/net/"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to check netdev directories for capture interface {capture_iface}: {e}"
+            )
+
+    ptp4l_processes = []
+    for iface in interfaces_to_sync:
+        logger.info(f"Starting ptp4l for PTP synchronization (iface={iface})")
+        log_path = f"/tmp/ptp4l-{iface}.log"
+        ptp4l_cmd = f"sudo ptp4l -i '{iface}' -s -m -2"
+        ptp4l_process = host.connection.start_process(
+            ptp4l_cmd,
+            stderr_to_stdout=True,
+            output_file=log_path,
+        )
+        time.sleep(0.2)
+        if not ptp4l_process.running:
+            _reap_ptp_daemons(host)
+            raise RuntimeError(f"Failed to start ptp4l (iface={iface}). log={log_path}")
+        ptp4l_processes.append(ptp4l_process)
 
     try:
         yield
@@ -1284,12 +1327,12 @@ def pcap_capture(
                         streams = (report or {}).get("streams") or []
                         if not streams:
                             # Empty capture — interface may not see VF-to-VF
-                            # loopback traffic.  Not a real failure.
-                            update_compliance_result(request.node.nodeid, "N/A")
-                            logger.warning(
-                                "PCAP compliance check skipped: capture "
-                                "contains no streams (capture interface may "
-                                "not see VF-to-VF loopback traffic)"
+                            # loopback traffic. Reject with a test failure so we catch false passes.
+                            update_compliance_result(request.node.nodeid, "Fail")
+                            log_fail(
+                                "PCAP compliance check failed: capture contains no streams. "
+                                "Normally interface may not see VF-to-VF loopback traffic, "
+                                "but empty capture is disallowed for strict validation/compliance."
                             )
                         else:
                             update_compliance_result(request.node.nodeid, "Fail")

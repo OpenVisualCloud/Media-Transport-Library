@@ -382,6 +382,45 @@ class InterfaceSetup:
                 f"Found {len(host.network_interfaces)} interface(s)."
             )
 
+        tx_pci = host.network_interfaces[tx_index].pci_address.lspci
+        rx_pci = host.network_interfaces[rx_index].pci_address.lspci
+
+        # Check IOMMU group of TX and RX PFs.
+        # One PF is bound to PMD (vfio-pci), while the other PF remains bound to the kernel (host for run/VFs).
+        # This is impossible if they share the same IOMMU group because VFIO group viability is violated.
+        try:
+            tx_group = (
+                self.nicctl_objs[host.name]
+                .connection.execute_command(
+                    f"basename $(readlink /sys/bus/pci/devices/{tx_pci}/iommu_group 2>/dev/null) 2>/dev/null"
+                )
+                .stdout
+                or ""
+            ).strip()
+            rx_group = (
+                self.nicctl_objs[host.name]
+                .connection.execute_command(
+                    f"basename $(readlink /sys/bus/pci/devices/{rx_pci}/iommu_group 2>/dev/null) 2>/dev/null"
+                )
+                .stdout
+                or ""
+            ).strip()
+            if tx_group and rx_group and tx_group == rx_group:
+                if (
+                    tx_interface_type.lower() == "pf"
+                    and rx_interface_type.lower() == "vf"
+                ) or (
+                    tx_interface_type.lower() == "vf"
+                    and rx_interface_type.lower() == "pf"
+                ):
+                    pytest.skip(
+                        f"Skipping mixed PF/VF test: PF {tx_pci} and PF {rx_pci} share the same IOMMU group "
+                        f"({tx_group}) "
+                        f"and cannot be bound to different drivers (vfio-pci vs ice) simultaneously."
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to check IOMMU group conflict: {e}")
+
         tx_interface = self._get_single_interface_by_type(
             host, tx_interface_type, tx_index
         )
