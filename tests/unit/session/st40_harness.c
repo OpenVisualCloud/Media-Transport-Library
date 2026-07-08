@@ -572,8 +572,7 @@ int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   pkt->second_hdr_chunk.did = st40_add_parity_bits(did);
   pkt->second_hdr_chunk.sdid = st40_add_parity_bits(sdid);
   pkt->second_hdr_chunk.data_count = st40_add_parity_bits((uint8_t)udw_size);
-  pkt->swapped_first_hdr_chunk = htonl(pkt->swapped_first_hdr_chunk);
-  pkt->swapped_second_hdr_chunk = htonl(pkt->swapped_second_hdr_chunk);
+  st40_rfc8331_payload_hdr_bswap(pkt);
 
   uint8_t* udw_dst = (uint8_t*)&pkt->second_hdr_chunk;
   for (uint16_t i = 0; i < udw_size; i++) {
@@ -602,10 +601,7 @@ int ut40_feed_pkt_anc0(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
 }
 
 static uint32_t ut40_anc_payload_bytes(uint16_t udw_size) {
-  uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
-  uint32_t total_size = (total_bits + 7) / 8;
-  total_size = (total_size + 3) & ~0x3U;
-  return sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;
+  return st40_rfc8331_payload_bytes(udw_size);
 }
 
 int ut40_feed_multi_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
@@ -651,8 +647,7 @@ int ut40_feed_multi_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int mar
     payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x41);
     payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x05);
     payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits((uint8_t)udw_size);
-    payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
-    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(payload_hdr);
 
     uint8_t* udw_dst = (uint8_t*)&payload_hdr->second_hdr_chunk;
     for (uint16_t udw_idx = 0; udw_idx < udw_size; udw_idx++) {
