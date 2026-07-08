@@ -172,8 +172,8 @@ print_summary() {
 			"$CYN" "$CLR" "$s" "${STAGE_RESULT[$s]:-?}" "${STAGE_DURATION[$s]:-?}" >&2
 	done
 	log ""
-	log " RxTxApp        : $([[ -x tests/tools/RxTxApp/build/RxTxApp ]] && echo OK || echo MISSING)"
-	log " MtlManager     : $([[ -x build/manager/MtlManager ]] && echo OK || echo MISSING)"
+	log " RxTxApp        : $(mtl_rxtxapp_present && echo OK || echo MISSING)"
+	log " MtlManager     : $(mtl_manager_present && echo OK || echo MISSING)"
 	if ldconfig -p 2>/dev/null | grep -Eq 'libmtl\.so(\s|$)' || [[ -f /usr/local/lib/x86_64-linux-gnu/libmtl.so || -f /usr/local/lib64/libmtl.so || -f /usr/local/lib/libmtl.so ]]; then
 		log " libmtl.so      : OK"
 	else
@@ -181,7 +181,7 @@ print_summary() {
 	fi
 	log " libdpdk        : $(pkg-config --modversion libdpdk 2>/dev/null || echo MISSING)"
 	log " ice driver     : $(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo MISSING) @ $(modinfo -n ice 2>/dev/null || echo '<none>')"
-	log " hugepages free : $(awk '/HugePages_Free/ {print $2*2 " MiB"}' /proc/meminfo)"
+	log " hugepages free : $(hugepages_free_mb) MiB"
 	if mountpoint -q /mnt/media; then
 		log " /mnt/media     : $(findmnt -no SOURCE /mnt/media) ($(df -h /mnt/media | awk 'NR==2{print $5" used of "$2}'))"
 		log " media files    : $(find /mnt/media -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) entries"
@@ -193,6 +193,23 @@ print_summary() {
 	log " run log        : $RUN_LOG"
 	log "════════════════════════════════════════════════════════════════════"
 	trap_arm
+}
+
+# RxTxApp/MtlManager may live at the legacy in-tree build path or at the
+# .local_install prefix that tests/validation/mtl_engine/const.py::PREFIX
+# actually invokes — accept either so preflight matches what pytest runs.
+mtl_rxtxapp_present() {
+	[[ -x tests/tools/RxTxApp/build/RxTxApp || -x .local_install/mtl/bin/RxTxApp ]]
+}
+
+mtl_manager_present() {
+	[[ -x build/manager/MtlManager || -x .local_install/mtl/bin/MtlManager ]]
+}
+
+# Hugepage size varies by host (2MB vs 1GB default_hugepagesz=1G on the
+# kernel cmdline); HugePages_Free*2 silently under-reports on 1GB-page hosts.
+hugepages_free_mb() {
+	awk '/Hugepagesize:/ {sz=$2} /HugePages_Free:/ {free=$2} END {printf "%d", free*sz/1024}' /proc/meminfo
 }
 
 # ============================================================================
@@ -260,7 +277,7 @@ stage_preflight() {
 		warn "preflight: libmtl.so missing in ld cache"
 		missing=1
 	fi
-	if [[ ! -x build/manager/MtlManager || ! -x tests/tools/RxTxApp/build/RxTxApp ]]; then
+	if ! mtl_manager_present || ! mtl_rxtxapp_present; then
 		warn "preflight: MtlManager or RxTxApp missing"
 		missing=1
 	fi
@@ -269,7 +286,7 @@ stage_preflight() {
 		warn "preflight: out-of-tree ice driver not loaded (path=$ice_path)"
 		missing=1
 	fi
-	free_mb=$(awk '/HugePages_Free/ {print $2*2}' /proc/meminfo)
+	free_mb=$(hugepages_free_mb)
 	if ((free_mb < 1024)); then
 		warn "preflight: hugepages free is ${free_mb} MiB (<1024 MiB)"
 		missing=1
