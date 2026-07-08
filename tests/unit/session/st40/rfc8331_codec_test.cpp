@@ -162,6 +162,21 @@ TEST_F(St40Rfc8331CodecTest, DecodeChecksumFail) {
       ST40_RFC8331_DECODE_CHECKSUM_FAIL);
 }
 
+/* RFC 8331 requires the checksum to be validated regardless of udw_size;
+ * a udw_size=0 sub-packet with a corrupted checksum must still be rejected. */
+TEST_F(St40Rfc8331CodecTest, DecodeChecksumFailZeroUdw) {
+  auto in = make_meta(0x61, 0x02, 0x1AB, 1, 1, 7, 0);
+  std::vector<uint8_t> buf(kBufRoom, 0);
+  uint32_t written = 0;
+  ASSERT_EQ(st40_rfc8331_encode_packet(buf.data(), kBufRoom, &in, nullptr, &written), 0);
+  /* checksum word (idx=3) occupies body-relative bytes 3-4; corrupt the second byte. */
+  buf[8] ^= 0x40;
+  struct st40_meta out {};
+  uint32_t consumed = 0;
+  EXPECT_EQ(st40_rfc8331_decode_packet(buf.data(), written, &out, nullptr, 0, &consumed),
+            ST40_RFC8331_DECODE_CHECKSUM_FAIL);
+}
+
 TEST_F(St40Rfc8331CodecTest, EncodeNoSpace) {
   auto in = make_meta(0x61, 0x02, 0x1AB, 1, 1, 7, 10);
   auto udw = make_udw(10, 6);

@@ -206,81 +206,36 @@ static void rx_anc_slot_parse_pkt(struct st_rx_ancillary_session_impl* s,
       warn("%s(%d), meta slots exhausted at %u\n", __func__, s->idx, slot->meta_num);
       break;
     }
-    if (payload_offset + sizeof(struct st40_rfc8331_payload_hdr) > payload_room) {
-      warn("%s(%d), payload offset %u exceeds room %u\n", __func__, s->idx,
-           payload_offset, payload_room);
-      break;
-    }
 
-    struct st40_rfc8331_payload_hdr* payload_hdr =
-        (struct st40_rfc8331_payload_hdr*)(payload + payload_offset);
-    struct st40_rfc8331_payload_hdr hdr_local = {0};
-    hdr_local.swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
-    hdr_local.swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
-
-    uint16_t udw_words = hdr_local.second_hdr_chunk.data_count & 0xFF;
     struct st40_meta* meta_entry = &slot->meta[slot->meta_num];
-    meta_entry->c = hdr_local.first_hdr_chunk.c;
-    meta_entry->line_number = hdr_local.first_hdr_chunk.line_number;
-    meta_entry->hori_offset = hdr_local.first_hdr_chunk.horizontal_offset;
-    meta_entry->s = hdr_local.first_hdr_chunk.s;
-    meta_entry->stream_num = hdr_local.first_hdr_chunk.stream_num;
-    meta_entry->did = hdr_local.second_hdr_chunk.did & 0xFF;
-    meta_entry->sdid = hdr_local.second_hdr_chunk.sdid & 0xFF;
-    meta_entry->udw_size = udw_words;
-    meta_entry->udw_offset = slot->udw_buffer_fill;
+    uint32_t udw_offset = slot->udw_buffer_fill;
+    uint32_t consumed = 0;
+    enum st40_rfc8331_decode_result ret = st40_rfc8331_decode_packet(
+        payload + payload_offset, payload_room - payload_offset, meta_entry,
+        &slot->udw_buf[udw_offset], (uint32_t)(slot->udw_buf_size - udw_offset),
+        &consumed);
 
-    /* SMPTE ST 2110-40 / RFC 8331 packs the 10-bit fields (DID, SDID, DC,
-     * UDW[], checksum) bit-contiguously. Round the total bit count up to
-     * whole bytes, then 4-byte align per the RFC. */
-    uint32_t total_bits = (3 + udw_words + 1) * 10;
-    uint32_t total_size = (total_bits + 7) / 8;
-    uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
-    uint32_t anc_packet_bytes =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
-    if (payload_offset + anc_packet_bytes > payload_room) {
-      warn("%s(%d), anc bytes %u + offset %u > room %u\n", __func__, s->idx,
-           anc_packet_bytes, payload_offset, payload_room);
+    if (ret == ST40_RFC8331_DECODE_SHORT_BUFFER) {
+      warn("%s(%d), anc payload exceeds available room anc=%u offset=%u room=%u\n",
+           __func__, s->idx, anc_idx, payload_offset, payload_room);
+      s->stat_anc_pkt_parse_err++;
+      break;
+    }
+    if (ret == ST40_RFC8331_DECODE_PARITY_FAIL) {
+      warn("%s(%d), UDW parity fail anc=%u\n", __func__, s->idx, anc_idx);
+      s->stat_anc_pkt_parse_err++;
+      break;
+    }
+    if (ret == ST40_RFC8331_DECODE_CHECKSUM_FAIL) {
+      warn("%s(%d), checksum mismatch anc=%u\n", __func__, s->idx, anc_idx);
+      s->stat_anc_pkt_parse_err++;
       break;
     }
 
-    bool meta_valid = true;
-    if (udw_words > 0) {
-      uint8_t* udw_src = (uint8_t*)&payload_hdr->second_hdr_chunk;
-      uint32_t original_fill = slot->udw_buffer_fill;
-      for (uint16_t udw_idx = 0; udw_idx < udw_words; udw_idx++) {
-        uint16_t udw = st40_get_udw(udw_idx + 3, udw_src);
-        if (!st40_check_parity_bits(udw)) {
-          warn("%s(%d), UDW parity fail anc=%u word=%u\n", __func__, s->idx, anc_idx,
-               udw_idx);
-          meta_valid = false;
-          break;
-        }
-        if (slot->udw_buffer_fill >= slot->udw_buf_size) {
-          warn("%s(%d), UDW buffer overflow anc=%u\n", __func__, s->idx, anc_idx);
-          meta_valid = false;
-          break;
-        }
-        slot->udw_buf[slot->udw_buffer_fill++] = (uint8_t)(udw & 0xFF);
-      }
-      if (meta_valid) {
-        uint16_t cs_udw = st40_get_udw(udw_words + 3, udw_src);
-        uint16_t cs_calc = st40_calc_checksum(3 + udw_words, udw_src);
-        if (cs_udw != cs_calc) {
-          warn("%s(%d), checksum mismatch anc=%u (0x%03x != 0x%03x)\n", __func__, s->idx,
-               anc_idx, cs_udw, cs_calc);
-          meta_valid = false;
-        }
-      }
-      if (!meta_valid) {
-        slot->udw_buffer_fill = original_fill;
-        s->stat_anc_pkt_parse_err++;
-        break;
-      }
-    }
-
+    meta_entry->udw_offset = udw_offset;
+    slot->udw_buffer_fill += meta_entry->udw_size;
     slot->meta_num++;
-    payload_offset += anc_packet_bytes;
+    payload_offset += consumed;
   }
 }
 
