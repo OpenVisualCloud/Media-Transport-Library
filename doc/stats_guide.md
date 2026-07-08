@@ -337,18 +337,17 @@ ST40 anc) a fully-lost frame is absorbed — the delivered frame count drops
 rather than emitting an extra incomplete frame — so under heavy contiguous
 loss `stat_frames_corrupted` is a lower bound on frame-integrity impact.
 
-> **ST40p RX seq stats are bitmap-derived (transport-side).** From the
-> `ST40_TYPE_FRAME_LEVEL` transport refactor onwards, the `seq_lost` /
-> `seq_discont` fields on `st40_frame_info` (and the underlying
+> **ST40p RX seq stats are bitmap-derived (transport-side).** The
+> `seq_lost` / `seq_discont` fields on `st40_frame_info` (and the underlying
 > `st40_rx_frame_meta`) are computed in the RX session from a per-frame
 > 64-bit **session-merged** sequence bitmap. Each accepted packet (after
 > the per-port redundancy filter) flips its bit; at marker time
 > `seq_lost = (max_offset + 1) - popcount(bitmap)`. Packets that arrive on
 > the redundant port and fill a gap left by the primary port flip the same
-> bit, so cross-port redundancy is reflected directly in the count — no more
-> false positive `seq_discont` from cross-port reorder. The `port_seq_lost[]`
-> / `port_seq_discont[]` arrays still report the per-port intra-frame view
-> for observability.
+> bit, so cross-port redundancy is reflected directly in the count — there
+> is no false positive `seq_discont` from cross-port reorder. The
+> `port_seq_lost[]` / `port_seq_discont[]` arrays still report the per-port
+> intra-frame view for observability.
 
 **TX (any type).** `stat_epoch_drop` = app handed frame too late, slots were
 skipped (counter advanced by the number of skipped slots).
