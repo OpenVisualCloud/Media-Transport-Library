@@ -883,9 +883,15 @@ enum st40_rfc8331_decode_result st40_rfc8331_decode_packet(
  * On success writes wire-order bytes and sets @p *written to the bytes
  * occupied on the wire.
  *
+ * Not used by in-tree TX: st_tx_ancillary_session.c needs direct
+ * st40_set_udw()/st40_calc_checksum() access for its TX_ANC_TEST_APPLY_PARITY
+ * test hook, so it builds packets primitive-by-primitive instead. This
+ * function exists for external callers/plugins that don't need that hook.
+ *
  * @return
  *   - 0 on success
  *   - -ENOSPC if @p room is too small for the packet
+ *   - -EINVAL if @p meta->udw_size exceeds the wire field's 8-bit range (255)
  */
 int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_meta* meta,
                                const uint8_t* udw_in, uint32_t* written);
