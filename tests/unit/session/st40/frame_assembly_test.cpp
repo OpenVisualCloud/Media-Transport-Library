@@ -324,6 +324,37 @@ TEST_F(St40RxFrameAssemblyTest, RealAncPayloadDecodedIntoMetaAndBuf) {
   EXPECT_EQ(ut40_stat_anc_pkt_parse_err(ctx_), 0u);
 }
 
+/* Two separate RTP packets (two rx_anc_slot_parse_pkt() calls) contributing
+ * to the same frame: the second packet's meta_entry->udw_offset must reflect
+ * the running slot->udw_buffer_fill left by the first packet, not 0. Each
+ * decode_packet() call writes udw_offset=0 into its own meta struct (it has
+ * no notion of frame-relative offset) — the caller must overwrite it with
+ * the pre-call fill *after* the decode call, since decode_packet() clobbers
+ * whatever was set before it. */
+TEST_F(St40RxFrameAssemblyTest, CrossPacketUdwOffsetThreadsAcrossRtpPackets) {
+  uint8_t udw0[4] = {0x11, 0x22, 0x33, 0x44};
+  uint8_t udw1[6] = {0x55, 0x66, 0x77, 0x88, 0x99, 0xAA};
+
+  ASSERT_EQ(ut40_feed_anc_pkt(ctx_, 0, 1000, 0, MTL_SESSION_PORT_P, 0x41, 0x05, udw0,
+                              sizeof(udw0), -1, false),
+            0);
+  ASSERT_EQ(ut40_feed_anc_pkt(ctx_, 1, 1000, 1, MTL_SESSION_PORT_P, 0x41, 0x05, udw1,
+                              sizeof(udw1), -1, false),
+            0);
+
+  ASSERT_EQ(ut40_captured_count(), 1);
+  ASSERT_EQ(ut40_captured_meta_num(0), 2);
+  EXPECT_EQ(ut40_captured_meta_udw_offset(0, 0), 0u);
+  EXPECT_EQ(ut40_captured_meta_udw_size(0, 0), (int)sizeof(udw0));
+  EXPECT_EQ(ut40_captured_meta_udw_offset(0, 1), sizeof(udw0))
+      << "second RTP packet's meta entry must start where the first left off";
+  EXPECT_EQ(ut40_captured_meta_udw_size(0, 1), (int)sizeof(udw1));
+  EXPECT_EQ(ut40_captured_udw_fill(0), sizeof(udw0) + sizeof(udw1));
+  for (uint32_t i = 0; i < sizeof(udw1); i++)
+    EXPECT_EQ(ut40_captured_udw_byte(0, sizeof(udw0) + i), udw1[i]);
+  EXPECT_EQ(ut40_stat_anc_pkt_parse_err(ctx_), 0u);
+}
+
 /* Multiple ANC data packets carried in a single RTP packet (non-split mode).
  * Validates that rx_anc_slot_parse_pkt() correctly walks the variable-length
  * per-ANC payload stride when the 10-bit UDW packing of one or more blocks
@@ -416,6 +447,19 @@ TEST_F(St40RxFrameAssemblyTest, EmptyAncPacketAccepted) {
   EXPECT_EQ(ut40_captured_meta_udw_size(0, 0), 0);
   EXPECT_EQ(ut40_captured_udw_fill(0), 0u);
   EXPECT_EQ(ut40_stat_anc_pkt_parse_err(ctx_), 0u);
+}
+
+/* RFC 8331 requires the checksum to be validated even when udw_size==0; a
+ * corrupted checksum on an otherwise-empty ANC sub-packet must be rejected,
+ * not silently accepted. */
+TEST_F(St40RxFrameAssemblyTest, ChecksumFailureRecordedForEmptyAncPacket) {
+  int rc = ut40_feed_anc_pkt(ctx_, 0, 1000, 1, MTL_SESSION_PORT_P, 0x41, 0x05, nullptr, 0,
+                             -1, /*corrupt_cs*/ true);
+  ASSERT_EQ(rc, 0);
+  ASSERT_EQ(ut40_captured_count(), 1);
+  EXPECT_EQ(ut40_captured_meta_num(0), 0);
+  EXPECT_EQ(ut40_captured_udw_fill(0), 0u);
+  EXPECT_EQ(ut40_stat_anc_pkt_parse_err(ctx_), 1u);
 }
 
 /* UDW buffer overflow: feeding many large ANC packets eventually overflows
