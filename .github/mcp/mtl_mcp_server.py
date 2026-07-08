@@ -115,6 +115,23 @@ def _save_test_log(name: str, content: str) -> Path:
     return log_path
 
 
+def _summarize_output(name: str, out: str, tail_lines: int = 40) -> str:
+    """Save large command output to a log file, returning a short summary.
+
+    Full build/install output can be thousands of lines — dumping it into a
+    tool result burns context for little benefit. This saves it to disk and
+    returns the log path, total line count (like `wc -l`), and just the
+    tail, so the caller can grep/read the file directly if more is needed.
+    """
+    log_path = _save_test_log(name, out)
+    total_lines = len(out.splitlines())
+    tail = "\n".join(out.splitlines()[-tail_lines:])
+    return (
+        f"- Full log: `{log_path}` ({total_lines} lines)\n"
+        f"### Output (last {tail_lines} lines)\n```\n{tail}\n```"
+    )
+
+
 def _load_versions() -> dict[str, str]:
     """Parse versions.env into a dict."""
     result: dict[str, str] = {}
@@ -788,7 +805,8 @@ def ice_driver_rebuild() -> str:
     )
 
     return (
-        f"## ICE Driver Build\n{out}\n\n## Reload\n{reload_out}\n\n"
+        f"## ICE Driver Build\n{_summarize_output('ice_driver_rebuild', out)}\n\n"
+        f"## Reload\n{reload_out}\n\n"
         "## ⚠ Important: VFs Destroyed\n"
         "The ICE driver reload destroyed all existing VFs.\n"
         "You MUST re-create VFs before running any tests:\n"
@@ -846,7 +864,10 @@ def dpdk_build() -> str:
     ver_after = _run_output(
         "pkg-config --modversion libdpdk 2>/dev/null || echo 'not installed'"
     )
-    return f"## DPDK Build\n{out}\n\n## Result\nInstalled version: {ver_after}"
+    return (
+        f"## DPDK Build\n{_summarize_output('dpdk_build', out)}\n\n"
+        f"## Result\nInstalled version: {ver_after}"
+    )
 
 
 # ===================================================================
@@ -899,7 +920,7 @@ def build_mtl(mode: str = "debugonly") -> str:
     libmtl = _run_output("ldconfig -p 2>/dev/null | grep libmtl || echo 'not found'")
 
     return (
-        f"## MTL Build ({mode})\n{out}\n\n"
+        f"## MTL Build ({mode})\n{_summarize_output('build_mtl', out)}\n\n"
         f"## Artifacts\n- RxTxApp: {rxtxapp}\n- MtlManager: {manager}\n- libmtl: {libmtl}"
     )
 
@@ -1248,7 +1269,7 @@ def build_ffmpeg_plugin() -> str:
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
     )
-    return f"## FFmpeg Plugin Build\n{out}"
+    return f"## FFmpeg Plugin Build\n{_summarize_output('ffmpeg_plugin_build', out)}"
 
 
 @mcp.tool()
@@ -1265,7 +1286,9 @@ def build_gstreamer_plugin() -> str:
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
     )
-    return f"## GStreamer Plugin Build\n{out}"
+    return (
+        f"## GStreamer Plugin Build\n{_summarize_output('gstreamer_plugin_build', out)}"
+    )
 
 
 # ===================================================================
@@ -1291,7 +1314,7 @@ def install_dependencies() -> str:
         "bash .github/scripts/setup_environment.sh",
         timeout=300,
     )
-    return f"## Install Dependencies\n{out}"
+    return f"## Install Dependencies\n{_summarize_output('install_dependencies', out)}"
 
 
 # ===================================================================
@@ -1316,7 +1339,7 @@ def build_ebpf_xdp() -> str:
         "bash .github/scripts/setup_environment.sh",
         timeout=300,
     )
-    return f"## eBPF/XDP Build\n{out}"
+    return f"## eBPF/XDP Build\n{_summarize_output('ebpf_xdp_build', out)}"
 
 
 # ===================================================================
@@ -1495,14 +1518,8 @@ def run_gtest(
     if failures:
         summary += "\n### Failed Tests\n" + "\n".join(f"- {f}" for f in failures)
 
-    # Save full log
-    log_path = _save_test_log("gtest", out)
-    summary += f"\n- Full log: `{log_path}`"
     summary += sim_hint
-
-    # Include last 40 lines for context
-    tail = "\n".join(out.splitlines()[-40:])
-    return f"{summary}\n\n### Output (last 40 lines)\n```\n{tail}\n```"
+    return f"{summary}\n\n{_summarize_output('gtest', out)}"
 
 
 @mcp.tool()
