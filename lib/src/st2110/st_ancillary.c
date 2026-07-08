@@ -209,7 +209,6 @@ void st40_rfc8331_payload_hdr_bswap(struct st40_rfc8331_payload_hdr* hdr) {
 
 int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_meta* meta,
                                const uint8_t* udw_in, uint32_t* written) {
-  /* TX skips this: TX_ANC_TEST_APPLY_PARITY needs direct primitive access. */
   uint16_t udw_size = meta->udw_size;
   if (udw_size > 0xFF) return -EINVAL;
   uint32_t need = st40_rfc8331_payload_bytes(udw_size);

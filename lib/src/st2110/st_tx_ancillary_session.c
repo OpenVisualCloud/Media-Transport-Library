@@ -537,8 +537,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
     pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
 
-    pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
-    pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(pktBuff);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
@@ -549,13 +548,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    /* Compute byte size of 10-bit words
-      (DID, SDID, DC, payload, checksum) and align to 4 */
-    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10; /* words = udw_size + 4 */
-    uint32_t total_size = (total_bits + 7) / 8;              /* ceil(bits/8) */
-    total_size = (total_size + 3) & ~0x3U;                   /* align to 4 bytes */
-    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
-                            total_size; /* Full size of one ANC */
+    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
     if (s->split_payload && size_to_send > s->max_pkt_len) {
       err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
           size_to_send, s->max_pkt_len);
@@ -585,7 +578,7 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
                                            : (idx == anc_count);
   if (!test_no_marker && last_pkt) rtp->base.marker = 1;
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
+  st40_rfc8331_rtp_hdr_bswap(rtp);
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
 
@@ -636,8 +629,7 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
     pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
 
-    pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
-    pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(pktBuff);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
@@ -648,13 +640,7 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    /* Compute byte size of 10-bit words (DID, SDID, DC, payload, checksum)
-       and align to 4 */
-    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
-    uint32_t total_size = (total_bits + 7) / 8;
-    total_size = (total_size + 3) & ~0x3U;
-    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
-                            total_size; /* Full size of one ANC */
+    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
     if (s->split_payload && size_to_send > s->max_pkt_len) {
       err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
           size_to_send, s->max_pkt_len);
@@ -684,7 +670,7 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
                                            : (idx == anc_count);
   if (!test_no_marker && last_pkt) rtp->base.marker = 1;
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
+  st40_rfc8331_rtp_hdr_bswap(rtp);
 
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
@@ -721,7 +707,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     if (s->ops.interlaced) {
       struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
       second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
-      rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
+      st40_rfc8331_rtp_hdr_bswap(rfc8331);
     }
     if (s->ops.interlaced) {
       if (second_field) {
@@ -787,7 +773,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
           second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
-          rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
+          st40_rfc8331_rtp_hdr_bswap(rfc8331);
         }
         if (s->ops.interlaced) {
           if (second_field) {
@@ -801,7 +787,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
                                            ntohl(rtp->base.tmstamp));
       }
       rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
-      rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
+      st40_rfc8331_rtp_hdr_bswap(rtp);
     }
   }
 
