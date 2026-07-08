@@ -55,6 +55,7 @@ from mtl_engine.stash import (
 )
 from pytest_mfd_config.models.topology import TopologyModel
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
+from tests.single.ptp.ptp_helpers import wait_for_ptp4l_foreign_master
 
 logger = logging.getLogger(__name__)
 
@@ -621,10 +622,39 @@ def ptp_sync(request, test_config: dict, hosts):
     # the hardware clocks on both ports are disciplined to the same GM.
     # Note: Only sync interfaces that are currently in kernel mode (i.e. having active netdevs in /sys/class/net),
     # otherwise ptp4l will fail to start.
+    #
+    # Also: some tests (e.g. the "mixed" pf_tx_vf_rx interface_profile) bind an
+    # interface fully to DPDK (as a PF, no VF) from inside the test BODY, which
+    # runs *after* this fixture. At fixture-setup time that interface is still
+    # kernel-bound, so the /sys/class/net check below would pass and we'd start
+    # ptp4l on it -- only for the test body's own bind_pmd() to yank the netdev
+    # away moments later, mid-convergence. ptp4l then faults (link down) and
+    # self-declares grandmaster instead of tracking the real one. Skip syncing
+    # whichever index this test's own interface_profile will bind fully to DPDK.
+    # (Single-host only: the index resolution below only makes sense for the
+    # loopback topology; a mixed profile has never been combined with a
+    # multi-host `hosts` config, and both tx_type/rx_type being "PF" is not a
+    # combination any current test uses -- only one side checked below.)
     interfaces_to_sync = []
     if is_single_host:
+        full_pf_dpdk_index = None
+        callspec = getattr(request.node, "callspec", None)
+        profile = callspec.params.get("interface_profile") if callspec else None
+        if profile and profile.get("mode") == "mixed":
+            tx_index = test_config.get("tx_interface_index", 0)
+            rx_index = test_config.get("rx_interface_index", 1)
+            if profile.get("tx_type", "").upper() == "PF":
+                full_pf_dpdk_index = tx_index
+            elif profile.get("rx_type", "").upper() == "PF":
+                full_pf_dpdk_index = rx_index
+
         # In single-host mode, use both the primary and redundant physical interfaces if available
-        for nic in host.network_interfaces[:2]:
+        for idx, nic in enumerate(host.network_interfaces[:2]):
+            if idx == full_pf_dpdk_index:
+                logger.debug(
+                    f"PTP skip: interface {nic.name} (index {idx}) will be bound fully to DPDK by this test"
+                )
+                continue
             try:
                 # Check if the interface is currently in kernel mode
                 check_cmd = f"[ -d /sys/class/net/{nic.name} ]"
@@ -676,6 +706,21 @@ def ptp_sync(request, test_config: dict, hosts):
             _reap_ptp_daemons(host)
             raise RuntimeError(f"Failed to start ptp4l (iface={iface}). log={log_path}")
         ptp4l_processes.append(ptp4l_process)
+
+    # A hardware PTP clock that never actually locks to a grandmaster (or
+    # never even hears one) free-runs -- exactly the condition that produced
+    # a ~-55.8s packet_ts_vs_rtp_ts offset and VRX compliance failure in the
+    # past (see /memories/repo/ptp_sync_fixture_root_cause.md). Block here,
+    # before the test body/pcap_capture ever touch this clock, so a dead/
+    # unreachable grandmaster surfaces as a fast, clear ERROR. Must reap on
+    # timeout too, else the just-started ptp4l processes are orphaned (same
+    # leak class _reap_ptp_daemons/reap_leaked_phc_daemons exist to prevent).
+    try:
+        for iface in interfaces_to_sync:
+            wait_for_ptp4l_foreign_master(host, f"/tmp/ptp4l-{iface}.log")
+    except Exception:
+        _reap_ptp_daemons(host)
+        raise
 
     try:
         yield
