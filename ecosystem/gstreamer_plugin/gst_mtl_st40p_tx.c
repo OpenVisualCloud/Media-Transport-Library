@@ -651,10 +651,8 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     payload_cursor = (uint8_t*)map_info.data + (buffer_size - bytes_left_to_process);
 
     rfc8331_meta.headers[i] = (struct st40_rfc8331_payload_hdr*)payload_cursor;
-    payload_header.swapped_first_hdr_chunk =
-        ntohl(rfc8331_meta.headers[i]->swapped_first_hdr_chunk);
-    payload_header.swapped_second_hdr_chunk =
-        ntohl(rfc8331_meta.headers[i]->swapped_second_hdr_chunk);
+    payload_header = *rfc8331_meta.headers[i];
+    st40_rfc8331_payload_hdr_bswap(&payload_header);
 
     payload_cursor = (uint8_t*)&rfc8331_meta.headers[i]->swapped_second_hdr_chunk;
     /*
