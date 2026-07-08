@@ -29,6 +29,8 @@ unit_sources = [
   'session/st40/bitmap_test.cpp',
   'session/st40/err_packets_test.cpp',
   'session/st40/frame_assembly_test.cpp',
+  'session/st40/rfc8331_payload_bytes_test.cpp',
+  'session/st40/rfc8331_codec_test.cpp',
   'session/st30_harness.c',
   'session/st30/redundancy_test.cpp',
   'session/st30/timestamp_test.cpp',
