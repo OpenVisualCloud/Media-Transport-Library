@@ -20,16 +20,23 @@ decision logic and domain knowledge that tool descriptions alone don't convey.
 4. If MTL not built or rebuild needed → `build_mtl` or `mtl_clean_rebuild`
 
 ### "Run integration tests"
-1. Verify prerequisites: DPDK installed, VFs bound, MtlManager running
+1. Verify prerequisites **before** the first `run_gtest` call: `dpdk_devbind_status` (ports bound as VFs, not bare PFs — see below), MtlManager running (`manager_start` if not).
 2. `run_gtest` with appropriate `gtest_filter` (e.g. `St20p*`, `St30*`)
 3. If tests segfault → see "Test crashed" below
-4. Report pass/fail counts
+4. If RX session creation fails with multicast-join/IGMP errors → see "Multicast join / IGMP failure" below
+5. Report pass/fail counts
 
 ### "Test crashed / segfault"
 1. **SEGFAULT in `iavf_tm_node_add`** → `ice_driver_status` — almost always stock ICE
 2. **SEGFAULT elsewhere** → `dmesg_tail` for kernel errors
 3. `dpdk_status` → version mismatch?
 4. `mtl_clean_rebuild` → stale build?
+
+### "Multicast join / IGMP failure on RX session creation"
+1. `dpdk_devbind_status` first — check if the port is a bare PF bound to `vfio-pci` with 0 VFs. E810/E830 must always run through VFs (see `nic_bind_pmd`'s own tool description: prefer `nic_create_vf` for E800 series); a bare PF-to-vfio-pci binding causes exactly this symptom.
+2. Fix: `nic_bind_kernel` on the PF, then `nic_create_vf` (use `trusted=true` if the test needs multicast/promiscuous features).
+3. Re-run `run_gtest` with the newly created VF BDFs as `p_port`/`r_port`.
+4. This is an environment issue, not a code regression — confirm by reproducing on one unrelated, already-passing suite (e.g. `St30_rx.create_free_single`) only if you need extra certainty; don't use it as the primary diagnostic path, step 1 above is sufficient and faster.
 
 ### "Build failed"
 1. **Permission errors / CMakeCache.txt** → `mtl_clean_rebuild`
