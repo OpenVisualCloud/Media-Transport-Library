@@ -21,6 +21,23 @@
 /* Number of entries in the redundant-path seq-gap schedule table. */
 #define ST40_SEQ_GAP_SCHEDULE_LEN 8
 
+/**
+ * Corrupt the parity bits of an already-encoded RFC 8331 sub-packet in place,
+ * recomputing the checksum so only parity (not checksum) validation fails on
+ * RX. Operates on the wire buffer alone; unconditional so it can be unit
+ * tested without MTL_SIMULATE_PACKET_DROPS.
+ * @p buf points at the sub-packet's st40_rfc8331_payload_hdr, @p udw_size is
+ * the packet's UDW count.
+ */
+static inline void tx_ancillary_corrupt_parity(uint8_t* buf, uint16_t udw_size) {
+  uint8_t* udw_dst = (uint8_t*)&((struct st40_rfc8331_payload_hdr*)buf)->second_hdr_chunk;
+  /* Top 2 of each 10-bit word are parity (st40_add_parity_bits()); & 0xFF strips them. */
+  for (uint16_t i = 0; i < (uint16_t)(3 + udw_size); i++)
+    st40_set_udw(i, st40_get_udw(i, udw_dst) & 0xFF, udw_dst);
+  uint16_t cksum = st40_calc_checksum(3 + udw_size, udw_dst);
+  st40_set_udw(3 + udw_size, cksum, udw_dst);
+}
+
 /* ------------------------------------------------------------------ */
 #ifdef MTL_SIMULATE_PACKET_DROPS
 /* ========================  DEBUG BUILD  =========================== */
@@ -49,16 +66,14 @@ static inline bool tx_ancillary_test_frame_active(
   } while (0)
 
 /**
- * Return parity-corrupted value when the BAD_PARITY pattern is active,
- * otherwise fall through to st40_add_parity_bits().
+ * Apply tx_ancillary_corrupt_parity() to @p _buf when the BAD_PARITY pattern
+ * is active. No-op otherwise.
  */
-#define TX_ANC_TEST_APPLY_PARITY(_s, _val)                         \
-  do {                                                             \
-    if (tx_ancillary_test_frame_active(_s) &&                      \
-        (_s)->test.pattern == ST40_TX_TEST_BAD_PARITY) {           \
-      uint16_t _stripped = (_val);                                 \
-      return _stripped & 0x3FF; /* strip parity bits to corrupt */ \
-    }                                                              \
+#define TX_ANC_TEST_CORRUPT_PARITY(_s, _buf, _udw_size)           \
+  do {                                                            \
+    if (tx_ancillary_test_frame_active(_s) &&                     \
+        (_s)->test.pattern == ST40_TX_TEST_BAD_PARITY)            \
+      tx_ancillary_corrupt_parity((uint8_t*)(_buf), (_udw_size)); \
   } while (0)
 
 /**
@@ -216,8 +231,8 @@ static inline bool tx_ancillary_test_frame_active(
 #define TX_ANC_TEST_SEQ_STEP(_s, _step) \
   do {                                  \
   } while (0)
-#define TX_ANC_TEST_APPLY_PARITY(_s, _val) \
-  do {                                     \
+#define TX_ANC_TEST_CORRUPT_PARITY(_s, _buf, _udw_size) \
+  do {                                                  \
   } while (0)
 #define TX_ANC_TEST_SEQ_GAP_PLAN(_s) \
   do {                               \
