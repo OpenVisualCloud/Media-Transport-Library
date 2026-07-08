@@ -202,7 +202,7 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
                           ? 255
                           : s->st40_source_end - s->st40_frame_cursor;
-  uint16_t check_sum, total_size, payload_len;
+  uint16_t check_sum, payload_len;
   hdr->base.marker = 1;
   hdr->first_hdr_chunk.anc_count = 1;
   hdr->base.payload_type = s->st40_payload_type;
@@ -226,21 +226,14 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
   payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
   payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-  payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
-  payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+  st40_rfc8331_payload_hdr_bswap(payload_hdr);
   for (int i = 0; i < udw_size; i++) {
     st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
                  (uint8_t*)&payload_hdr->second_hdr_chunk);
   }
   check_sum = st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
   st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                               // 10-bit words: DID, SDID, DATA_COUNT
-                                               // + size of buffer with data + checksum
-  total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                   // word of ANC data packet
-  payload_len =
-      sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+  payload_len = st40_rfc8331_payload_bytes(udw_size);  // Full size of one ANC
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
 

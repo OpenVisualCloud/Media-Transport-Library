@@ -386,14 +386,8 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
 
 static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
     struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
-  gint package_size;
-  gint payload_len;
-
-  package_size = ((WORD_10_BIT_ALIGN + udw_size) * USER_DATA_WORD_BIT_SIZE) / BYTE_SIZE;
-  payload_len = sizeof(struct st40_rfc8331_payload_hdr) -
-                (package_size % WORD_10_BIT_ALIGN) + package_size;
-
-  return (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
+  return (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr +
+                                            st40_rfc8331_payload_bytes(udw_size));
 }
 
 static GstFlowReturn gst_mtl_st40_rx_check_parity(
@@ -446,8 +440,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   for (int i = 0; i < anc_count; i++) {
-    payload_hdr->swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
-    payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+    st40_rfc8331_payload_hdr_bswap(payload_hdr);
     if (gst_mtl_st40_rx_check_parity(payload_hdr) != GST_FLOW_OK) {
       for (int j = 0; j < i; j++) free(anc_data[j]);
       return GST_FLOW_ERROR;
