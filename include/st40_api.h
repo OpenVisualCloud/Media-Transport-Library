@@ -883,10 +883,8 @@ enum st40_rfc8331_decode_result st40_rfc8331_decode_packet(
  * On success writes wire-order bytes and sets @p *written to the bytes
  * occupied on the wire.
  *
- * Not used by in-tree TX: st_tx_ancillary_session.c needs direct
- * st40_set_udw()/st40_calc_checksum() access for its TX_ANC_TEST_APPLY_PARITY
- * test hook, so it builds packets primitive-by-primitive instead. This
- * function exists for external callers/plugins that don't need that hook.
+ * Used by in-tree TX (st_tx_ancillary_session.c) as well as external
+ * callers/plugins.
  *
  * @return
  *   - 0 on success

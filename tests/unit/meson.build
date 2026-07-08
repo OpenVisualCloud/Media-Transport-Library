@@ -18,6 +18,7 @@ libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true
 unit_sources = [
   'common/ut_common.c',
   'session/st40_harness.c',
+  'session/st40_tx_test_harness.c',
   'session/st40/redundancy_test.cpp',
   'session/st40/timestamp_test.cpp',
   'session/st40/header_validation_test.cpp',
@@ -31,6 +32,7 @@ unit_sources = [
   'session/st40/frame_assembly_test.cpp',
   'session/st40/rfc8331_payload_bytes_test.cpp',
   'session/st40/rfc8331_codec_test.cpp',
+  'session/st40/tx_corrupt_parity_test.cpp',
   'session/st30_harness.c',
   'session/st30/redundancy_test.cpp',
   'session/st30/timestamp_test.cpp',

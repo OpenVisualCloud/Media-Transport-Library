@@ -85,12 +85,6 @@ static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl*
   tx_ancillary_seq_advance(s, step);
 }
 
-static inline uint16_t tx_ancillary_apply_parity(
-    struct st_tx_ancillary_session_impl* s __rte_unused, uint16_t value) {
-  TX_ANC_TEST_APPLY_PARITY(s, value);
-  return st40_add_parity_bits(value);
-}
-
 /* Abort the current frame and allow the app to recycle its buffer */
 static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
                                              struct st_tx_ancillary_session_impl* s) {
@@ -520,42 +514,36 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   int anc_idx = s->st40_anc_idx;
   int anc_count = src->meta_num;
   TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
-  int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
     uint16_t udw_size = src->meta[idx].udw_size;
-    total_udw += udw_size;
-    if (!s->split_payload && (total_udw * 10 / 8) > s->max_pkt_len) break;
-    struct st40_rfc8331_payload_hdr* pktBuff =
-        (struct st40_rfc8331_payload_hdr*)(payload);
-    pktBuff->first_hdr_chunk.c = src->meta[idx].c;
-    pktBuff->first_hdr_chunk.line_number = src->meta[idx].line_number;
-    pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
-    pktBuff->first_hdr_chunk.s = src->meta[idx].s;
-    pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = tx_ancillary_apply_parity(s, src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
+    uint32_t used = (uint32_t)(payload - (uint8_t*)&rtp[1]);
+    if (!s->split_payload &&
+        (used + st40_rfc8331_payload_bytes(udw_size)) > s->max_pkt_len)
+      break;
 
-    st40_rfc8331_payload_hdr_bswap(pktBuff);
-    int i = 0;
-    int offset = src->meta[idx].udw_offset;
-    for (; i < udw_size; i++) {
-      st40_set_udw(i + 3, tx_ancillary_apply_parity(s, src->data[offset++]),
-                   (uint8_t*)&pktBuff->second_hdr_chunk);
-    }
-    uint16_t checksum = 0;
-    checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
-    st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
-
-    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
-    if (s->split_payload && size_to_send > s->max_pkt_len) {
-      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
-          size_to_send, s->max_pkt_len);
+    if (used >= s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (used=%u max=%u)\n", __func__, s->idx,
+          used, s->max_pkt_len);
       s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
       return -STI_FRAME_ANC_TOO_LARGE;
     }
-    payload = payload + size_to_send;
+    uint32_t room = s->max_pkt_len - used;
+    uint32_t written = 0;
+    int ret = st40_rfc8331_encode_packet(payload, room, &src->meta[idx],
+                                         &src->data[src->meta[idx].udw_offset], &written);
+    if (ret == -ENOSPC) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          st40_rfc8331_payload_bytes(udw_size), s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    } else if (ret < 0) {
+      err("%s(%d), st40_rfc8331_encode_packet failed %d\n", __func__, s->idx, ret);
+      s->stat_build_ret_code = ret;
+      return ret;
+    }
+    TX_ANC_TEST_CORRUPT_PARITY(s, payload, udw_size);
+    payload += written;
 
     if (s->split_payload) {
       idx++;
@@ -612,42 +600,36 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   struct st40_frame* src = frame_info->addr;
   int anc_count = src->meta_num;
   TX_ANC_TEST_CLAMP_ANC_IDX(s, anc_idx, anc_count);
-  int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
     uint16_t udw_size = src->meta[idx].udw_size;
-    total_udw += udw_size;
-    if (!s->split_payload && (total_udw * 10 / 8) > s->max_pkt_len) break;
-    struct st40_rfc8331_payload_hdr* pktBuff =
-        (struct st40_rfc8331_payload_hdr*)(payload);
-    pktBuff->first_hdr_chunk.c = src->meta[idx].c;
-    pktBuff->first_hdr_chunk.line_number = src->meta[idx].line_number;
-    pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
-    pktBuff->first_hdr_chunk.s = src->meta[idx].s;
-    pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = tx_ancillary_apply_parity(s, src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
+    uint32_t used = (uint32_t)(payload - (uint8_t*)&rtp[1]);
+    if (!s->split_payload &&
+        (used + st40_rfc8331_payload_bytes(udw_size)) > s->max_pkt_len)
+      break;
 
-    st40_rfc8331_payload_hdr_bswap(pktBuff);
-    int i = 0;
-    int offset = src->meta[idx].udw_offset;
-    for (; i < udw_size; i++) {
-      st40_set_udw(i + 3, tx_ancillary_apply_parity(s, src->data[offset++]),
-                   (uint8_t*)&pktBuff->second_hdr_chunk);
-    }
-    uint16_t checksum = 0;
-    checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
-    st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
-
-    uint32_t size_to_send = st40_rfc8331_payload_bytes(udw_size);
-    if (s->split_payload && size_to_send > s->max_pkt_len) {
-      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
-          size_to_send, s->max_pkt_len);
+    if (used >= s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (used=%u max=%u)\n", __func__, s->idx,
+          used, s->max_pkt_len);
       s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
       return -STI_FRAME_ANC_TOO_LARGE;
     }
-    payload = payload + size_to_send;
+    uint32_t room = s->max_pkt_len - used;
+    uint32_t written = 0;
+    int ret = st40_rfc8331_encode_packet(payload, room, &src->meta[idx],
+                                         &src->data[src->meta[idx].udw_offset], &written);
+    if (ret == -ENOSPC) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          st40_rfc8331_payload_bytes(udw_size), s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    } else if (ret < 0) {
+      err("%s(%d), st40_rfc8331_encode_packet failed %d\n", __func__, s->idx, ret);
+      s->stat_build_ret_code = ret;
+      return ret;
+    }
+    TX_ANC_TEST_CORRUPT_PARITY(s, payload, udw_size);
+    payload += written;
 
     if (s->split_payload) {
       idx++;
