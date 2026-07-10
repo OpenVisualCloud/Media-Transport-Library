@@ -1887,6 +1887,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  */
 int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
                                double* trs_ns, uint32_t* vrx_pkts);
+
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *

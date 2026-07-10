@@ -15,10 +15,6 @@
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
-#define MTL_LATENCY_COMPENSATION_PACKET_SHIFT 5
-#define MTL_LATENCY_COMPENSATION_PACKET_SHIFT_MIN_TICK \
-  1 /* at least shift 1 tick for RL pacing */
-
 #ifdef MTL_SIMULATE_PACKET_DROPS
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
                                            struct rte_ipv4_hdr* ipv4,
@@ -531,7 +527,6 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
   /* default VRX compensate as rl accuracy, update later in tv_train_pacing */
   pacing->pad_interval = s->st20_total_pkts;
-  pacing->rl_rtp_offset_ticks = 0; /* set later for RL pacing */
 
   int num_port = s->ops.num_port;
   int ret;
@@ -565,14 +560,6 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     warm_pkts = RTE_MIN(warm_pkts, 128); /* limit to 128 pkts */
   }
   pacing->warm_pkts = warm_pkts;
-
-  /* RL pacing: shift RTP timestamp back by few packets to compensate warm-up pad */
-  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
-    pacing->rl_rtp_offset_ticks =
-        RTE_MAX(MTL_LATENCY_COMPENSATION_PACKET_SHIFT_MIN_TICK,
-                st10_tai_to_media_clk(MTL_LATENCY_COMPENSATION_PACKET_SHIFT * pacing->trs,
-                                      s->fps_tm.sampling_clock_rate));
-  }
 
   /* calculate vrx pkts */
   pacing->vrx = s->st21_vrx_narrow;
@@ -610,12 +597,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
-  info(
-      "%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f "
-      "rl_rtp_adj %u ticks\n",
-      __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
-      pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps),
-      pacing->rl_rtp_offset_ticks);
+  info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
+       __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
+       pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps));
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
     ret = st_video_resolve_pacing_tasklet(s, i);
@@ -767,8 +751,7 @@ static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
     }
     tai_for_rtp_ts += delta_ns;
     pacing->rtp_time_stamp =
-        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
-        pacing->rl_rtp_offset_ticks;
+        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
   }
   dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, pacing->rtp_time_stamp);
 }
@@ -1388,8 +1371,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
-          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
-          s->pacing.rl_rtp_offset_ticks;
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1461,8 +1443,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
-          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
-          s->pacing.rl_rtp_offset_ticks;
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -2762,29 +2743,43 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   return 0;
 }
 
+static int tv_mempool_free_owned(struct rte_mempool** pool) {
+  if (!*pool) return 0;
+  if (rte_mempool_in_use_count(*pool)) {
+    warn("%s, still has mbuf in mempool %s\n", __func__, (*pool)->name);
+    return -EBUSY;
+  }
+
+  mt_mempool_free(*pool);
+  *pool = NULL;
+  return 0;
+}
+
 static int tv_mempool_free(struct st_tx_video_session_impl* s) {
-  int ret;
+  int ret = 0;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    ret = mt_mempool_free(s->mbuf_mempool_chain);
-    if (ret >= 0) s->mbuf_mempool_chain = NULL;
+    if (tv_mempool_free_owned(&s->mbuf_mempool_chain) < 0) ret = -EBUSY;
+  } else {
+    s->mbuf_mempool_chain = NULL;
   }
   if (s->mbuf_mempool_copy_chain && !s->tx_mono_pool) {
-    ret = mt_mempool_free(s->mbuf_mempool_copy_chain);
-    if (ret >= 0) s->mbuf_mempool_copy_chain = NULL;
+    if (tv_mempool_free_owned(&s->mbuf_mempool_copy_chain) < 0) ret = -EBUSY;
+  } else {
+    s->mbuf_mempool_copy_chain = NULL;
   }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i]) {
-      if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool)
-        ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
-      else
-        ret = 0;
-      if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
+      if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool) {
+        if (tv_mempool_free_owned(&s->mbuf_mempool_hdr[i]) < 0) ret = -EBUSY;
+      } else {
+        s->mbuf_mempool_hdr[i] = NULL;
+      }
     }
   }
 
-  return 0;
+  return ret;
 }
 
 static bool tv_has_chain_buf(struct st_tx_video_session_impl* s) {
@@ -2948,27 +2943,55 @@ static int tv_init_packet_ring(struct st_tx_video_sessions_mgr* mgr,
   return 0;
 }
 
-static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
-  int num_port = s->ops.num_port;
+static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, int i) {
+  memset(s->inflight[i], 0, sizeof(s->inflight[i]));
+  memset(s->trs_inflight[i], 0, sizeof(s->trs_inflight[i]));
+  memset(s->trs_inflight2[i], 0, sizeof(s->trs_inflight2[i]));
+  s->inflight_cnt[i] = 0;
+  s->trs_target_tsc[i] = 0;
+  s->trs_inflight_num[i] = 0;
+  s->trs_inflight_idx[i] = 0;
+  s->trs_pad_inflight_num[i] = 0;
+  s->trs_inflight_cnt[i] = 0;
+  s->trs_inflight_num2[i] = 0;
+  s->trs_inflight_idx2[i] = 0;
+  s->trs_inflight_cnt2[i] = 0;
+  s->rl_state[i] = ST_TX_VIDEO_RL_STATE_IDLE;
+  s->stat_trs_ret_code[i] = 0;
+  s->last_burst_succ_time_tsc[i] = 0;
+  s->tx_queue_recovery_pending[i] = false;
+}
 
-  for (int i = 0; i < num_port; i++) {
-    /* free all inflight */
-    if (s->inflight[i][0]) {
-      rte_pktmbuf_free_bulk(&s->inflight[i][0], s->bulk);
-      s->inflight[i][0] = NULL;
-    }
-    if (s->trs_inflight_num[i]) {
-      rte_pktmbuf_free_bulk(&s->trs_inflight[i][s->trs_inflight_idx[i]],
-                            s->trs_inflight_num[i]);
-      s->trs_inflight_num[i] = 0;
-    }
-    if (s->trs_inflight_num2[i]) {
-      rte_pktmbuf_free_bulk(&s->trs_inflight2[i][s->trs_inflight_idx2[i]],
-                            s->trs_inflight_num2[i]);
-      s->trs_inflight_num2[i] = 0;
-    }
+static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) tv_transmitter_port_state_init(s, i);
+}
+
+static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
+  if (s->inflight[i][0]) rte_pktmbuf_free_bulk(s->inflight[i], s->bulk);
+  if (s->trs_inflight_num[i])
+    rte_pktmbuf_free_bulk(&s->trs_inflight[i][s->trs_inflight_idx[i]],
+                          s->trs_inflight_num[i]);
+  if (s->trs_inflight_num2[i])
+    rte_pktmbuf_free_bulk(&s->trs_inflight2[i][s->trs_inflight_idx2[i]],
+                          s->trs_inflight_num2[i]);
+  for (unsigned int j = 0; j < s->trs_pad_inflight_num[i]; j++) {
+    if (s->pad[i][ST20_PKT_TYPE_NORMAL])
+      rte_pktmbuf_free(s->pad[i][ST20_PKT_TYPE_NORMAL]);
   }
 
+  tv_transmitter_port_state_init(s, i);
+}
+
+void st_tx_video_transmitter_state_cleanup(struct st_tx_video_session_impl* s) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) tv_transmitter_port_state_cleanup(s, i);
+}
+
+void st_tx_video_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s,
+                                                enum mtl_session_port port) {
+  tv_transmitter_port_state_cleanup(s, port);
+}
+
+static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
   if (s->packet_ring) {
     mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
@@ -3019,7 +3042,8 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   }
 
   /* free the pool if any in previous session */
-  tv_mempool_free(s);
+  ret = tv_mempool_free(s);
+  if (ret < 0) return ret;
   ret = tv_mempool_init(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), fail %d\n", __func__, idx, ret);
@@ -3179,7 +3203,8 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
 
 static int tv_uinit(struct st_tx_video_session_impl* s) {
   tv_uinit_rtcp(s);
-  /* must uinit hw firstly as frame use shared external buffer */
+  st_tx_video_transmitter_state_cleanup(s);
+  /* Flush submitted extbufs before freeing pools and frames. */
   tv_uinit_hw(s);
   tv_uinit_sw(s);
   return 0;
@@ -3210,6 +3235,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 
   s->impl = impl;
   s->mgr = mgr;
+  tv_transmitter_state_init(s);
   /* mark the queue to fatal error if burst fail exceed tx_hang_detect_time_thresh */
   if (ops->tx_hang_detect_ms)
     s->tx_hang_detect_time_thresh = ops->tx_hang_detect_ms * NS_PER_MS;
@@ -3379,12 +3405,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   mt_stat_u64_init(&s->stat_time);
 
   for (int i = 0; i < num_port; i++) {
-    s->inflight[i][0] = NULL;
-    s->inflight_cnt[i] = 0;
-    s->trs_inflight_num[i] = 0;
-    s->trs_inflight_num2[i] = 0;
-    s->trs_pad_inflight_num[i] = 0;
-    s->trs_target_tsc[i] = 0;
     s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
@@ -4069,6 +4089,14 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
   return 0;
 }
 
+/*
+ * KNOWN LIMITATION (pre-existing since afe8b672, "tx/video: add recovery from
+ * tx burst hang"): this is invoked from the pacing tasklet's thread
+ * (video_trs_tasklet_handler()) and performs blocking work (busy-wait queue
+ * flush, mempool alloc/free), violating the "tasklets never block" rule.
+ * Fixing this properly requires moving queue/mempool replacement to a
+ * dedicated recovery thread; deferred as a follow-up, out of scope here.
+ */
 int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
                               struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port) {
@@ -4092,6 +4120,12 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
     if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
   }
+  /* only reset the failed port's transmitter state; other ports keep their
+   * in-flight packets, rl_state and pending recovery flags untouched */
+  st_tx_video_transmitter_port_state_cleanup(s, s_port);
+  uint64_t recovery_tsc = mt_get_tsc(impl);
+  for (uint8_t i = 0; i < s->ops.num_port; i++)
+    s->last_burst_succ_time_tsc[i] = recovery_tsc;
   /* clean the queue done mbuf */
   mt_txq_done_cleanup(s->queue[s_port]);
 
@@ -4116,6 +4150,12 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   uint16_t queue_id = mt_txq_queue_id(s->queue[s_port]);
   info("%s(%d,%d), new queue_id %u\n", __func__, s_port, idx, queue_id);
 
+  for (uint8_t i = 0; i < s->ops.num_port; i++) {
+    if (i == s_port || !s->queue[i]) continue;
+    struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
+    if (pad) mt_txq_flush(s->queue[i], pad);
+  }
+
   /* cleanup frame manager (only valid for frame-type sessions) */
   if (st20_is_frame_type(s->ops.type)) {
     struct st_frame_trans* frame;
@@ -4132,7 +4172,14 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   }
 
   /* reset mempool */
-  tv_mempool_free(s);
+  ret = tv_mempool_free(s);
+  if (ret < 0) {
+    err("%s(%d,%d), old mempool still in use\n", __func__, s_port, idx);
+    s->port_user_stats.common.stat_unrecoverable_error++;
+    s->active = false;
+    if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
+    return ret;
+  }
   s->recovery_idx++;
   ret = tv_mempool_init(impl, s->mgr, s);
   if (ret < 0) {
