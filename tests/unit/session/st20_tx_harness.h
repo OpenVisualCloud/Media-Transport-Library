@@ -51,6 +51,11 @@ void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns);
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable);
 /* Toggle ST20_TX_FLAG_USER_PACING on the session's ops.flags. */
 void ut_txv_set_user_pacing(ut_txv_ctx* ctx, bool enable);
+/* Media (RTP) sampling clock rate, e.g. 90000 for video. */
+void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate);
+/* Real TAI wall-clock cursor used as the source time for the non-user-
+ * timestamp RTP derivation path in tv_update_rtp_time_stamp(). */
+void ut_txv_set_ptp_time_cursor(ut_txv_ctx* ctx, uint64_t tai_ns);
 
 /* Mocked time sources consumed by tv_sync_pacing() via mt_get_ptp_time()/
  * mt_get_tsc(). Take effect immediately; no auto-advance between calls. */
@@ -71,11 +76,15 @@ int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
+ * above (ptp_time_cursor, sampling_clock_rate). */
+void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
-uint64_t ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
-uint64_t ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
+long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
+long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_onward(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_drop(const ut_txv_ctx* ctx);
@@ -93,6 +102,8 @@ int ut_txv_frame_refcnt(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_port_build(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx);
+/* Result of the last ut_txv_update_rtp_time_stamp() call. */
+uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
 
 #ifdef __cplusplus
 }
