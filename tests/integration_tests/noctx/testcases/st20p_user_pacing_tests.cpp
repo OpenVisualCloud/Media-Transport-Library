@@ -57,6 +57,8 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
       << "st20p_user_pacing did not receive any frames";
   ASSERT_EQ(frameTestStrategy->idx_tx, frameTestStrategy->idx_rx)
       << "TX/RX frame count mismatch";
+  frameTestStrategy->assertTimingWithinBudget();
+  frameTestStrategy->assertRlLatencyWithinBounds();
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
@@ -91,6 +93,8 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
   ASSERT_GE(strategy->idx_tx, jitterMultipliers.size()) << "TX frames below expectation";
   ASSERT_GE(strategy->idx_rx, jitterMultipliers.size()) << "RX frames below expectation";
   ASSERT_EQ(strategy->idx_tx, strategy->idx_rx) << "TX/RX frame count mismatch";
+  strategy->assertTimingWithinBudget();
+  strategy->assertRlLatencyWithinBounds();
 }
 
 TEST_F(NoCtxTest, st20p_exact_user_pacing) {
@@ -148,4 +152,6 @@ TEST_F(NoCtxTest, st20p_exact_user_pacing) {
       << "st20p_exact_user_pacing strategy RX frames below expectation";
   EXPECT_EQ(strategy->idx_tx, strategy->idx_rx)
       << "st20p_exact_user_pacing strategy TX/RX mismatch";
+  strategy->assertTimingWithinBudget();
+  strategy->assertRlLatencyWithinBounds();
 }

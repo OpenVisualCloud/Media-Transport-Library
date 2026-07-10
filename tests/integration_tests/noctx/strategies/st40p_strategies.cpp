@@ -83,8 +83,12 @@ void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_transmit_time_ns) const {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  /* snap-based pacing may place TX slightly after user ts; tolerate modest slop */
-  const int64_t tolerance_ns = 40 * NS_PER_US;
+  /* ST2110-40:2023 6.5 Compatible Transmission Model (the default absent an
+   * explicit TM=LLTM signal, per 7): senders must transmit no later than
+   * T_EPO(j) + T_D, with T_D = 1ms. Unlike ST2110-20/21's Narrow-Sender/VRX
+   * model, ST2110-40 defines no tight rate-limited window for ANC, so a
+   * video-style microsecond tolerance does not apply here. */
+  const int64_t tolerance_ns = 1 * NS_PER_MS;
 
   EXPECT_GE(delta_ns, 0) << "st40p_user_pacing frame " << frame_idx
                          << " arrived before snapped epoch";
