@@ -402,7 +402,7 @@ struct st40_tx_ops {
   /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST40_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
+   * Mandatory for ST40_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
    * packet, And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
@@ -504,7 +504,7 @@ struct st40_rx_ops {
   /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST40_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * Mandatory for ST40_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */

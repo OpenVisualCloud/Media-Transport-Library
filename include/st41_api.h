@@ -218,7 +218,7 @@ struct st41_tx_ops {
   /** Mandatory for ST41_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST41_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
+   * Mandatory for ST41_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
    * packet, And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
@@ -271,7 +271,7 @@ struct st41_rx_ops {
   /** Mandatory. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional. the callback when lib finish the sending of one rtp packet. And only
+   * Mandatory. the callback when lib receive one rtp packet. And only
    * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
   int (*notify_rtp_ready)(void* priv);

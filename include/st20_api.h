@@ -1242,7 +1242,7 @@ struct st20_tx_ops {
    */
   uint16_t rtp_pkt_size;
   /**
-   * Optional for ST20_TYPE_RTP_LEVEL.
+   * Mandatory for ST20_TYPE_RTP_LEVEL.
    * The callback when lib finish the sending of one rtp packet.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
@@ -1366,7 +1366,7 @@ struct st22_tx_ops {
    */
   uint16_t rtp_pkt_size;
   /**
-   * Optional for ST22_TYPE_RTP_LEVEL.
+   * Mandatory for ST22_TYPE_RTP_LEVEL.
    * The callback when lib finish the sending of one rtp packet.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
@@ -1585,7 +1585,7 @@ struct st20_rx_ops {
   /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * Mandatory for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
@@ -1690,7 +1690,7 @@ struct st22_rx_ops {
   /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST22_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * Mandatory for ST22_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */

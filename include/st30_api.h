@@ -423,9 +423,9 @@ struct st30_tx_ops {
   /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST30_TYPE_RTP_LEVEL. the callback when lib finish the sending of one rtp
-   * packet. And only non-block method can be used in this callback as it run from lcore
-   * tasklet routine.
+   * Mandatory for ST30_TYPE_RTP_LEVEL. the callback when lib finish the sending of one
+   * rtp packet. And only non-block method can be used in this callback as it run from
+   * lcore tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
   /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
@@ -518,7 +518,7 @@ struct st30_rx_ops {
   /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * Optional for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * Mandatory for ST30_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
