@@ -9,18 +9,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st40_rx_get_session_stats ut40p_rx_get_session_stats
+#define st40_rx_put_framebuff ut40p_rx_put_framebuff
+#define st40_rx_reset_session_stats ut40p_rx_reset_session_stats
+
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st40_pipeline_rx.c"
 #pragma GCC diagnostic pop
 
+#undef st40_rx_get_session_stats
+#undef st40_rx_put_framebuff
+#undef st40_rx_reset_session_stats
+
 #include "common/ut_common.h"
 
 static int g_put_framebuff_calls;
 static void* g_put_framebuff_last_addr;
 
-int st40_rx_put_framebuff(st40_rx_handle handle, void* frame) {
+int ut40p_rx_put_framebuff(st40_rx_handle handle, void* frame) {
   (void)handle;
   g_put_framebuff_calls++;
   g_put_framebuff_last_addr = frame;
@@ -40,13 +48,13 @@ void ut40p_put_framebuff_reset_spy(void) {
   g_put_framebuff_last_addr = NULL;
 }
 
-int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats) {
+int ut40p_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats) {
   (void)handle;
   if (stats) memset(stats, 0, sizeof(*stats));
   return 0;
 }
 
-int st40_rx_reset_session_stats(st40_rx_handle handle) {
+int ut40p_rx_reset_session_stats(st40_rx_handle handle) {
   (void)handle;
   return 0;
 }
