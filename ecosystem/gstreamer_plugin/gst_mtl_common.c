@@ -632,7 +632,7 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
     GST_INFO("allow-down-ports enabled: MTL_FLAG_ALLOW_DOWN_PORTS set for all ports");
   }
 
-  if (general_args->dma_dev && strlen(general_args->dma_dev)) {
+  if (strlen(general_args->dma_dev)) {
     gchar** dma_tokens = g_strsplit(general_args->dma_dev, ",", MTL_DMA_DEV_MAX + 1);
     gint idx = 0;
 
