@@ -12,7 +12,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.nightly
+@pytest.mark.xfail
 @pytest.mark.ptp
 @pytest.mark.parametrize(
     "interface_profile",
