@@ -37,6 +37,9 @@ typedef struct ut_test_ctx ut_test_ctx;
  * safe to call once per gtest fixture SetUp(). Returns 0 on success. */
 int ut40_init(void);
 
+/* Validate zero-initialized RX ops that only configure the RTP callback. */
+int ut40_ops_check_zero_init_with_rtp_callback(void);
+
 /* Create a context with `num_port` enabled (1 = single-port, 2 = redundant).
  * Caller owns the returned pointer and must free it with ut40_ctx_destroy(). */
 ut_test_ctx* ut40_ctx_create(int num_port);

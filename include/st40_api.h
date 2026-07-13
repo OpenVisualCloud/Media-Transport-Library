@@ -478,9 +478,7 @@ struct st40_rx_ops {
   /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
-  /** Mandatory. Session streaming type, frame or RTP.  Defaults to
-   * ST40_TYPE_RTP_LEVEL for backwards compatibility — existing apps that
-   * pull mbufs via `st40_rx_get_mbuf` keep working unchanged. */
+  /** Mandatory. Session streaming type, frame or RTP. */
   enum st40_type type;
 
   /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the

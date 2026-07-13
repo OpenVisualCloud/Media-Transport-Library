@@ -15,6 +15,10 @@
 
 class St40RxHeaderValidationTest : public St40RxBaseTest {};
 
+TEST_F(St40RxHeaderValidationTest, FrameLevelOpsDoNotInferRtpLevel) {
+  EXPECT_EQ(ut40_ops_check_zero_init_with_rtp_callback(), -EINVAL);
+}
+
 /* Accepted packet must return 0. */
 TEST_F(St40RxHeaderValidationTest, ReturnValueAccepted) {
   int rc = feed(0, 1000, false, MTL_SESSION_PORT_P);
