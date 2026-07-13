@@ -16,6 +16,7 @@
 #ifndef _ST_TX_ANCILLARY_TEST_H
 #define _ST_TX_ANCILLARY_TEST_H
 
+#include "../mt_log.h"
 #include "st_header.h"
 
 /* Number of entries in the redundant-path seq-gap schedule table. */
