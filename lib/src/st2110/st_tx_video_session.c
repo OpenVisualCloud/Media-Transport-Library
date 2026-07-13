@@ -57,14 +57,19 @@ static inline uint64_t tai_from_frame_count(struct st_tx_video_pacing* pacing,
    * may truncate to a smaller value. Using nextafter(val, INFINITY) ensures we round
    * up to the next representable double before casting, avoiding jumping between tai in
    * neighboring frames. This caused problems when tai was again changed to frame count */
-  return nextafterl((long double)frame_count * pacing->frame_time, INFINITY);
+  long double tai = nextafterl((long double)frame_count * pacing->frame_time, INFINITY);
+  if (tai >= UINT64_MAX) return UINT64_MAX;
+  return tai;
 }
 
 /* transmission start time of the frame */
 static inline uint64_t transmission_start_time(struct st_tx_video_pacing* pacing,
                                                uint64_t frame_count) {
-  return tai_from_frame_count(pacing, frame_count) + pacing->tr_offset -
-         (pacing->vrx * pacing->trs);
+  long double start_time = (long double)tai_from_frame_count(pacing, frame_count) +
+                           pacing->tr_offset - (pacing->vrx * pacing->trs);
+  if (start_time <= 0) return 0;
+  if (start_time >= UINT64_MAX) return UINT64_MAX;
+  return start_time;
 }
 
 static inline void pacing_set_mbuf_time_stamp(struct rte_mbuf* mbuf,
@@ -629,18 +634,17 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
 }
 
 static void validate_user_timestamp(struct st_tx_video_session_impl* s,
-                                    uint64_t requested_frame_count,
-                                    uint64_t current_frame_count) {
-  if (requested_frame_count < current_frame_count) {
+                                    uint64_t requested_time, uint64_t current_time,
+                                    uint64_t max_future) {
+  if (requested_time < current_time) {
     s->port_user_stats.common.stat_error_user_timestamp++;
     dbg("%s(%d), user requested transmission time in the past, required_tai %" PRIu64
         ", cur_tai %" PRIu64 "\n",
-        __func__, s->idx, requested_frame_count, current_frame_count);
-  } else if (requested_frame_count >
-             current_frame_count + (NS_PER_S / s->pacing.frame_time)) {
-    dbg("%s(%d), requested frame count %" PRIu64
-        " too far in the future, current frame count %" PRIu64 "\n",
-        __func__, s->idx, requested_frame_count, current_frame_count);
+        __func__, s->idx, requested_time, current_time);
+  } else if (requested_time - current_time > max_future) {
+    dbg("%s(%d), requested time %" PRIu64 " too far in the future, current time %" PRIu64
+        "\n",
+        __func__, s->idx, requested_time, current_time);
     s->port_user_stats.common.stat_error_user_timestamp++;
   }
 }
@@ -649,16 +653,25 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
                                                     uint64_t cur_tai,
                                                     uint64_t required_tai) {
   uint64_t frame_count_tai = cur_tai / s->pacing.frame_time;
-  uint64_t next_free_frame_slot = s->pacing.cur_epochs + 1;
+  uint64_t next_free_frame_slot;
   uint64_t frame_count;
 
   if (required_tai) {
     frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
-    validate_user_timestamp(s, frame_count, frame_count_tai);
+    if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+      validate_user_timestamp(s, required_tai, cur_tai, NS_PER_S);
+    } else {
+      validate_user_timestamp(s, frame_count, frame_count_tai,
+                              NS_PER_S / s->pacing.frame_time);
+    }
     /* frame_count 0 collides with the "unset" sentinel used elsewhere; fall back to
      * real time rather than honor a rounded-to-zero required_tai */
     if (!frame_count) frame_count = frame_count_tai;
+    return frame_count;
   }
+
+  if (s->pacing.cur_epochs == UINT64_MAX) return frame_count_tai;
+  next_free_frame_slot = s->pacing.cur_epochs + 1;
 
   if (frame_count_tai <= next_free_frame_slot) {
     /* There is time buffer until the next available frame time window */
@@ -670,8 +683,8 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
           ", frame_count_tai %" PRIu64 "\n",
           __func__, s->idx, next_free_frame_slot, frame_count_tai);
       s->port_user_stats.common.stat_epoch_onward += onward;
-      if (!required_tai) frame_count = frame_count_tai;
-    } else if (!required_tai) {
+      frame_count = frame_count_tai;
+    } else {
       frame_count = next_free_frame_slot;
     }
 
@@ -685,7 +698,7 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
       s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
     }
 
-    if (!required_tai) frame_count = frame_count_tai;
+    frame_count = frame_count_tai;
   }
 
   return frame_count;
@@ -697,28 +710,27 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t start_time_tai;
-  int64_t time_to_tx_ns;
+  uint64_t time_to_tx_ns;
 
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
 
-  if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+  if ((s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai) {
     start_time_tai = required_tai;
   } else {
     start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
   }
-  time_to_tx_ns = start_time_tai - cur_tai;
-
-  if (time_to_tx_ns < 0) {
-    /* should never happen, but it does. TODO: check why */
-    dbg("%s(%d), negative time_to_tx_ns detected: %ld ns. Current PTP time: %" PRIu64
-        "\n",
-        __func__, s->idx, time_to_tx_ns, cur_tai);
+  if (start_time_tai < cur_tai) {
     time_to_tx_ns = 0;
+  } else {
+    time_to_tx_ns = start_time_tai - cur_tai;
   }
 
   /* tsc_time_cursor is important as it determines when first packet of the frame will be
    * send */
-  pacing->tsc_time_cursor = cur_tsc + time_to_tx_ns;
+  if (time_to_tx_ns > UINT64_MAX - cur_tsc)
+    pacing->tsc_time_cursor = UINT64_MAX;
+  else
+    pacing->tsc_time_cursor = cur_tsc + time_to_tx_ns;
 
   pacing->tsc_time_frame_start = pacing->tsc_time_cursor;
   pacing->ptp_time_cursor = start_time_tai;
@@ -732,7 +744,7 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
-  dbg("%s(%d), trs %f\n", __func__, s->idx, pacing->trs);
+  dbg("%s(%d), trs %Lf\n", __func__, s->idx, pacing->trs);
   return tv_sync_pacing(impl, s, required_tai);
 }
 
@@ -1742,11 +1754,20 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
+    s->port_user_stats.common.stat_error_user_timestamp++;
     err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
         s->idx);
     return 0;  // Return 0 to indicate an invalid timestamp and fallback to default pacing
   } else {
     required_tai = timestamp;
+  }
+
+  if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+    uint64_t cur_tai = mt_get_ptp_time(s->impl, MTL_PORT_P);
+    if (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S) {
+      s->port_user_stats.common.stat_error_user_timestamp++;
+      return 0;
+    }
   }
 
   return required_tai;
@@ -2080,7 +2101,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->port_user_stats.common.stat_exceed_frame_time++;
       rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
+      dbg("%s(%d), frame %d build time out %Lfus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
   }
@@ -2584,7 +2605,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->port_user_stats.common.stat_exceed_frame_time++;
       rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
+      dbg("%s(%d), frame %d build time out %Lfus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
   }

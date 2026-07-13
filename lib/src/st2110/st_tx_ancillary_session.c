@@ -283,7 +283,9 @@ static int tx_ancillary_session_init_pacing_epoch(
 
 static inline uint64_t tx_ancillary_pacing_time(
     struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
-  return nextafterl((long double)epochs * pacing->frame_time, INFINITY);
+  long double tai = nextafterl((long double)epochs * pacing->frame_time, INFINITY);
+  if (tai >= UINT64_MAX) return UINT64_MAX;
+  return tai;
 }
 
 static inline __attribute__((unused)) uint32_t tx_ancillary_pacing_time_stamp(
@@ -298,9 +300,10 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
                                                  enum st10_timestamp_fmt tfmt,
                                                  uint64_t timestamp) {
   uint64_t required_tai = 0;
+  uint64_t cur_tai;
 
   if (!(s->ops.flags & ST40_TX_FLAG_USER_PACING)) return 0;
-  if (!timestamp) {
+  if (!timestamp && tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
       s->port_user_stats.common.stat_error_user_timestamp++;
       err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
@@ -309,29 +312,57 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
   }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (timestamp > 0xFFFFFFFF) {
+    uint64_t current_ticks;
+    uint64_t target_ticks;
+    uint32_t forward;
+
+    if (timestamp > UINT32_MAX) {
       err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
+      s->port_user_stats.common.stat_error_user_timestamp++;
+      return 0;
     }
-    required_tai = st10_media_clk_to_ns((uint32_t)timestamp, 90 * 1000);
+    cur_tai = mt_get_ptp_time(s->mgr->parent, MTL_PORT_P);
+    current_ticks = (cur_tai / NS_PER_S) * ST10_VIDEO_SAMPLING_RATE_90K;
+    current_ticks +=
+        st10_tai_to_media_clk(cur_tai % NS_PER_S, ST10_VIDEO_SAMPLING_RATE_90K);
+
+    forward = (uint32_t)timestamp - (uint32_t)current_ticks;
+    if (forward <= INT32_MAX) {
+      target_ticks = current_ticks + forward;
+    } else {
+      uint64_t backward = (uint64_t)UINT32_MAX - forward + 1;
+      target_ticks = (current_ticks >= backward) ? current_ticks - backward
+                                                 : current_ticks + forward;
+    }
+
+    required_tai = st10_media_clk_to_ns_u64(target_ticks, ST10_VIDEO_SAMPLING_RATE_90K);
   } else {
     required_tai = timestamp;
+    cur_tai = mt_get_ptp_time(s->mgr->parent, MTL_PORT_P);
+  }
+
+  if ((s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) &&
+      (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S)) {
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    return 0;
   }
 
   return required_tai;
 }
 
 static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_impl* s,
-                                                 uint64_t requested_epoch,
-                                                 uint64_t current_epoch) {
-  if (requested_epoch < current_epoch) {
+                                                 uint64_t requested_time,
+                                                 uint64_t current_time,
+                                                 uint64_t max_future) {
+  if (requested_time < current_time) {
     s->port_user_stats.common.stat_error_user_timestamp++;
-    dbg("%s(%d), user requested transmission time in the past, required_epoch %" PRIu64
-        ", cur_epoch %" PRIu64 "\n",
-        __func__, s->idx, requested_epoch, current_epoch);
-  } else if (requested_epoch > current_epoch + (NS_PER_S / s->pacing.frame_time)) {
-    dbg("%s(%d), requested epoch %" PRIu64
-        " too far in the future, current epoch %" PRIu64 "\n",
-        __func__, s->idx, requested_epoch, current_epoch);
+    dbg("%s(%d), user requested transmission time in the past, requested %" PRIu64
+        ", current %" PRIu64 "\n",
+        __func__, s->idx, requested_time, current_time);
+  } else if (requested_time - current_time > max_future) {
+    dbg("%s(%d), requested time %" PRIu64 " too far in the future, current time %" PRIu64
+        "\n",
+        __func__, s->idx, requested_time, current_time);
     s->port_user_stats.common.stat_error_user_timestamp++;
   }
 }
@@ -340,16 +371,26 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
                                                uint64_t cur_tai, uint64_t required_tai) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   uint64_t current_epoch = cur_tai / pacing->frame_time;
-  uint64_t next_free_epoch = pacing->cur_epochs + 1;
-  uint64_t epoch = next_free_epoch;
+  uint64_t next_free_epoch;
+  uint64_t epoch;
 
   if (required_tai) {
     epoch = (required_tai + pacing->frame_time / 2) / pacing->frame_time;
-    tx_ancillary_validate_user_timestamp(s, epoch, current_epoch);
+    if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
+      tx_ancillary_validate_user_timestamp(s, required_tai, cur_tai, NS_PER_S);
+    } else {
+      tx_ancillary_validate_user_timestamp(s, epoch, current_epoch,
+                                           NS_PER_S / pacing->frame_time);
+    }
     /* epoch 0 collides with the "unset" sentinel used elsewhere; fall back to
      * real time rather than honor a rounded-to-zero required_tai */
     if (!epoch) epoch = current_epoch;
+    return epoch;
   }
+
+  if (pacing->cur_epochs == UINT64_MAX) return current_epoch;
+  next_free_epoch = pacing->cur_epochs + 1;
+  epoch = next_free_epoch;
 
   if (current_epoch <= next_free_epoch) {
     uint64_t onward = next_free_epoch - current_epoch;
@@ -360,8 +401,8 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
           ", current_epoch %" PRIu64 "\n",
           __func__, s->idx, next_free_epoch, current_epoch);
       s->port_user_stats.common.stat_epoch_onward += onward;
-      if (!required_tai) epoch = current_epoch;
-    } else if (!required_tai) {
+      epoch = current_epoch;
+    } else {
       epoch = next_free_epoch;
     }
   } else {
@@ -373,7 +414,7 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
       s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
     }
 
-    if (!required_tai) epoch = current_epoch;
+    epoch = current_epoch;
   }
 
   return epoch;
@@ -386,7 +427,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t start_time_tai;
-  int64_t time_to_tx_ns;
+  uint64_t time_to_tx_ns;
 
   pacing->cur_epochs = tx_ancillary_calc_epoch(s, cur_tai, required_tai);
 
@@ -395,16 +436,19 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   } else {
     start_time_tai = tx_ancillary_pacing_time(pacing, pacing->cur_epochs);
   }
-  time_to_tx_ns = (int64_t)start_time_tai - (int64_t)cur_tai;
-  if (time_to_tx_ns < 0) {
-    /* time bigger than the assigned epoch time */
+  if (start_time_tai < cur_tai) {
     s->port_user_stats.common.stat_epoch_mismatch++;
-    time_to_tx_ns = 0; /* send asap */
+    time_to_tx_ns = 0;
+  } else {
+    time_to_tx_ns = start_time_tai - cur_tai;
   }
 
   pacing->ptp_time_cursor = start_time_tai;
-  pacing->tsc_time_cursor = (long double)cur_tsc + (long double)time_to_tx_ns;
-  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %Lf time_to_tx_ns %" PRId64 "\n",
+  if (time_to_tx_ns > UINT64_MAX - cur_tsc)
+    pacing->tsc_time_cursor = UINT64_MAX;
+  else
+    pacing->tsc_time_cursor = cur_tsc + time_to_tx_ns;
+  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %Lf time_to_tx_ns %" PRIu64 "\n",
       __func__, s->idx, pacing->cur_epochs, pacing->ptp_time_cursor, time_to_tx_ns);
 
   return 0;
@@ -962,6 +1006,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
     frame->tc_meta.timestamp = pacing->ptp_time_cursor;
     frame->tc_meta.rtp_timestamp = pacing->rtp_time_stamp;
+    frame->tc_meta.epoch = pacing->cur_epochs;
     /* init to next field */
     if (ops->interlaced) {
       s->second_field = second_field ? false : true;
@@ -975,7 +1020,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     uint64_t delta = target_tsc - cur_tsc;
     // dbg("%s(%d), cur_tsc %"PRIu64" target_tsc %"PRIu64"\n", __func__, idx, cur_tsc,
     // target_tsc);
-    if (likely(delta < NS_PER_S)) {
+    if (likely(delta <= NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;
@@ -1063,6 +1108,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   s->st40_pkt_idx++;
   double pkt_time = pacing->frame_time / RTE_MAX(1, s->st40_total_pkts);
   TX_ANC_TEST_PACING_OVERRIDE(s, pkt_time);
+  /* Session uptime cannot approach the uint64_t nanosecond horizon. */
   pacing->tsc_time_cursor += pkt_time;
   /* keep one RTP timestamp across a multi-packet frame; re-sync after the last pkt */
   s->calculate_time_cursor = s->st40_pkt_idx >= s->st40_total_pkts;
@@ -1166,7 +1212,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     uint64_t delta = target_tsc - cur_tsc;
     // dbg("%s(%d), cur_tsc %"PRIu64" target_tsc %"PRIu64"\n", __func__, idx, cur_tsc,
     // target_tsc);
-    if (likely(delta < NS_PER_S)) {
+    if (likely(delta <= NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;
