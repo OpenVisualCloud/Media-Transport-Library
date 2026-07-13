@@ -1579,7 +1579,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
 
   ret = rx_ancillary_ops_check(ops);
   if (ret < 0) {
-    err("%s, st_rx_audio_ops_check fail %d\n", __func__, ret);
+    err("%s, rx_ancillary_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
 
