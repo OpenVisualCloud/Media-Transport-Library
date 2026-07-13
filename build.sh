@@ -8,7 +8,7 @@ set -e
 user=$(whoami)
 
 function usage() {
-	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing]"
+	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing] [unit]"
 	exit 0
 }
 
@@ -17,6 +17,7 @@ enable_asan=false
 enable_tap=false
 enable_usdt=true
 enable_fuzzing=false
+build_unit=false
 
 : "${MTL_BUILD_ENABLE_ASAN:=false}"
 : "${MTL_BUILD_ENABLE_TAP:=false}"
@@ -67,6 +68,9 @@ while [ $# -gt 0 ]; do
 		enable_fuzzing=true
 		echo "Enable fuzzers"
 		;;
+	"unit")
+		build_unit=true
+		;;
 	*)
 		usage
 		;;
@@ -82,6 +86,22 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
+UNIT_BUILD_DIR=${WORKSPACE}/build_unit
+
+# build and run the unit gtest suite (tests/unit), then exit
+if [ "$build_unit" == "true" ]; then
+	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
+	ninja -C "${UNIT_BUILD_DIR}"
+
+	if [ "$enable_asan" == "true" ]; then
+		ASAN_LIBRARY=$(cc -print-file-name=libasan.so)
+		LD_PRELOAD="${ASAN_LIBRARY}${LD_PRELOAD:+:${LD_PRELOAD}}" \
+			"${UNIT_BUILD_DIR}/tests/unit/UnitTest"
+	else
+		"${UNIT_BUILD_DIR}/tests/unit/UnitTest"
+	fi
+	exit 0
+fi
 
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 	MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
