@@ -122,20 +122,6 @@ gstmtl_st30p_tx = library('gstmtl_st30p_tx',
     c_args: plugin_c_args
 )
 
-# mtl_st40_rx Plugin
-gst_mtl_st40_rx_sources = [
-  'gst_mtl_st40_rx.c'
-]
-
-gst_mtl_st40_rx = library('gstmtl_st40_rx',
-  gst_mtl_st40_rx_sources,
-  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
-  install : true,
-  install_dir : plugins_install_dir,
-  include_directories: inc_dirs,
-  c_args: plugin_c_args
-)
-
 # mtl_st40p_tx Plugin
 gst_mtl_st40p_tx_sources = [
   'gst_mtl_st40p_tx.c'
