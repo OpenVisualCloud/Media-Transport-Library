@@ -73,6 +73,21 @@ int ut40_init(void) {
   return 0;
 }
 
+int ut40_ops_check_zero_init_with_rtp_callback(void) {
+  struct st40_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.num_port = 1;
+  ops.ip_addr[0][0] = 239;
+  ops.ip_addr[0][1] = 1;
+  ops.ip_addr[0][2] = 1;
+  ops.ip_addr[0][3] = 1;
+  ops.rtp_ring_size = UT_RING_SIZE;
+  ops.notify_rtp_ready = ut_notify_rtp_ready;
+
+  return rx_ancillary_ops_check(&ops);
+}
+
 /* ── context create / destroy ─────────────────────────────────────────── */
 
 ut_test_ctx* ut40_ctx_create(int num_port) {

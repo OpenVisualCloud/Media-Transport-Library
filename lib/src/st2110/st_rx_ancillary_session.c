@@ -1470,16 +1470,6 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip = NULL;
 
-  /* Back-compat: enum st40_type mirrors ST30 (FRAME_LEVEL=0). Existing ST40 RX
-   * callers (pipeline RX, RxTxApp, gstreamer plugin) zero-init their ops and
-   * set notify_rtp_ready, expecting legacy RTP_LEVEL behavior. One-time shim
-   * relying on ST40_TYPE_FRAME_LEVEL == 0; drop once all callers set
-   * ops.type explicitly. */
-  if (ops->type == ST40_TYPE_FRAME_LEVEL && !ops->notify_frame_ready &&
-      ops->framebuff_cnt == 0) {
-    ops->type = ST40_TYPE_RTP_LEVEL;
-  }
-
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;

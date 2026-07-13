@@ -143,6 +143,7 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
              anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
   }
+  ops.type = ST40_TYPE_RTP_LEVEL;
   ops.rtp_ring_size = 1024;
   ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.interlaced = anc ? anc->info.interlaced : false;
