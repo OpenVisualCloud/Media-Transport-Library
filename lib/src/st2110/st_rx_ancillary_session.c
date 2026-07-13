@@ -1293,6 +1293,12 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
+  /* rx_anc_slot_parse_pkt sums up to ST40_MAX_META entries of at most 0xFF
+   * (wire 8-bit data_count) bytes each into udw_buffer_fill, then narrows
+   * that running sum into st40_meta.udw_offset (uint16_t). Catch it at
+   * compile time if ST40_MAX_META ever grows enough to overflow that field. */
+  RTE_BUILD_BUG_ON(ST40_MAX_META * 0xFF > UINT16_MAX);
+
   mgr->parent = impl;
   mgr->idx = idx;
 
