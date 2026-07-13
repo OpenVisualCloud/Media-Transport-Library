@@ -10,29 +10,35 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st30_rx_get_session_stats ut30p_rx_get_session_stats
+#define st30_rx_put_framebuff ut30p_rx_put_framebuff
+#define st30_rx_reset_session_stats ut30p_rx_reset_session_stats
+
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st30_pipeline_rx.c"
 #pragma GCC diagnostic pop
 
+#undef st30_rx_get_session_stats
+#undef st30_rx_put_framebuff
+#undef st30_rx_reset_session_stats
+
 #include "common/ut_common.h"
 
-/* libmtl stubs */
-
-int st30_rx_put_framebuff(st30_rx_handle handle, void* frame) {
+int ut30p_rx_put_framebuff(st30_rx_handle handle, void* frame) {
   (void)handle;
   (void)frame;
   return 0;
 }
 
-int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* stats) {
+int ut30p_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* stats) {
   (void)handle;
   if (stats) memset(stats, 0, sizeof(*stats));
   return 0;
 }
 
-int st30_rx_reset_session_stats(st30_rx_handle handle) {
+int ut30p_rx_reset_session_stats(st30_rx_handle handle) {
   (void)handle;
   return 0;
 }

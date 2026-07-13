@@ -18,6 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st20_rx_get_session_stats ut20p_rx_get_session_stats
+#define st20_rx_put_framebuff ut20p_rx_put_framebuff
+#define st20_rx_reset_session_stats ut20p_rx_reset_session_stats
+
 /*
  * Include the production pipeline .c so static rx_st20p_frame_ready()
  * is reachable and the public st20p_rx_* entry points see our private
@@ -29,21 +33,19 @@
 #include "st2110/pipeline/st20_pipeline_rx.c"
 #pragma GCC diagnostic pop
 
+#undef st20_rx_get_session_stats
+#undef st20_rx_put_framebuff
+#undef st20_rx_reset_session_stats
+
 #include "common/ut_common.h"
 
-/*
- * Stubs for libmtl symbols called by the pipeline that would otherwise
- * resolve to the real library (which requires HW/hugepages or a real
- * transport session).  --allow-multiple-definition lets ours win.
- */
-
-int st20_rx_put_framebuff(st20_rx_handle handle, void* frame) {
+int ut20p_rx_put_framebuff(st20_rx_handle handle, void* frame) {
   (void)handle;
   (void)frame; /* transport-side framebuf release is a no-op for the harness */
   return 0;
 }
 
-int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* stats) {
+int ut20p_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* stats) {
   (void)handle;
   /* Return zeroed transport stats; the pipeline overlays its own
    * frame-level counters on top, which is exactly what we want to test. */
@@ -51,7 +53,7 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
   return 0;
 }
 
-int st20_rx_reset_session_stats(st20_rx_handle handle) {
+int ut20p_rx_reset_session_stats(st20_rx_handle handle) {
   (void)handle;
   return 0;
 }
