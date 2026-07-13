@@ -58,6 +58,18 @@ PACING_WAY_CASES = [
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize(
+    "application",
+    [
+        "rxtxapp",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support pacing_way selection"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("interface_type,pacing_way", PACING_WAY_CASES)
 @pytest.mark.parametrize(
     "media_file",
@@ -66,6 +78,7 @@ PACING_WAY_CASES = [
     ids=["ParkJoy_1080p"],
 )
 def test_st20p_pacing_way(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -112,7 +125,7 @@ def test_st20p_pacing_way(
         "test_time": actual_test_time,
     }
 
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
 
     if pacing_way == "tsn" and _is_e810(host):
