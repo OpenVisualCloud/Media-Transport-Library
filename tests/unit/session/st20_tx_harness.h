@@ -24,6 +24,12 @@ extern "C" {
 
 typedef struct ut_txv_ctx ut_txv_ctx;
 
+enum ut_txv_pacing_way {
+  UT_TXV_PACING_RL = 1,
+  UT_TXV_PACING_TSC = 2,
+  UT_TXV_PACING_PTP = 4,
+};
+
 /* Initialise the shared DPDK EAL. Idempotent — safe to call once per gtest
  * fixture SetUp(). Returns 0 on success, < 0 on failure. */
 int ut_txv_init(void);
@@ -59,17 +65,34 @@ uint64_t ut_txv_calc_frame_count_since_epoch(ut_txv_ctx* ctx, uint64_t cur_tai,
 int ut_txv_sync_pacing(ut_txv_ctx* ctx, uint64_t required_tai);
 uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp);
+int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                             uint64_t timestamp, uint64_t* packet_tsc,
+                             uint64_t* packet_ptp);
+int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
+                                    uint64_t delta_ns, int* bursts_before_target,
+                                    int* bursts_at_target);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
-long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
-long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
+uint64_t ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
+uint64_t ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_onward(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_drop(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_error_user_timestamp(const ut_txv_ctx* ctx);
+uint64_t ut_txv_stat_epoch_mismatch(const ut_txv_ctx* ctx);
 int ut_txv_notify_late_calls(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_late_last_delta(const ut_txv_ctx* ctx);
+int ut_txv_get_next_frame_calls(const ut_txv_ctx* ctx);
+int ut_txv_notify_frame_done_calls(const ut_txv_ctx* ctx);
+uint16_t ut_txv_notify_frame_done_idx(const ut_txv_ctx* ctx);
+uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx);
+uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx);
+bool ut_txv_frame_is_waiting(const ut_txv_ctx* ctx);
+int ut_txv_frame_refcnt(const ut_txv_ctx* ctx);
+uint64_t ut_txv_stat_port_build(const ut_txv_ctx* ctx);
+uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx);
+uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx);
 
 #ifdef __cplusplus
 }

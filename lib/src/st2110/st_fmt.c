@@ -928,13 +928,17 @@ uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   return (uint32_t)st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
 }
 
-uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
+uint64_t st10_media_clk_to_ns_u64(uint64_t media_ts, uint32_t sampling_rate) {
   if (!sampling_rate) {
     err("%s, invalid sampling rate\n", __func__);
     return 0;
   }
 
   return st_muldiv_u64_round_closest(media_ts, NS_PER_S, sampling_rate);
+}
+
+uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
+  return st10_media_clk_to_ns_u64(media_ts, sampling_rate);
 }
 
 int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {
