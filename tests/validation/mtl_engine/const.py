@@ -5,6 +5,12 @@ LOG_FOLDER = "logs"
 PERF_LOG_FOLDER = f"{LOG_FOLDER}/performance"
 TESTCMD_LVL = 24  # Custom logging level for test commands
 FRAMES_CAPTURE = 4  # Number of frames to capture for compliance tests
+
+# Intel NIC PCI device IDs (lowercased, vendor-less form of pci_device.device_id)
+E810_DEVICE_ID = "1592"  # Intel E810 Series Ethernet Adapter
+E830_DEVICE_ID = "12d2"  # Intel E830 Series Ethernet Adapter
+E835_DEVICE_ID = "1249"  # Intel E835 Series Ethernet Adapter
+
 PREFIX = ".local_install"
 FFMPEG_PATH = f"{PREFIX}/ffmpeg/bin"
 FFMPEG_EXE = f"{FFMPEG_PATH}/ffmpeg"
