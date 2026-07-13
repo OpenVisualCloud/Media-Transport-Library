@@ -9,18 +9,19 @@ left in kernel mode for netsniff-ng capture.
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
+from mtl_engine.const import E810_DEVICE_ID
 from mtl_engine.media_files import yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
 
-# E810 lacks the TxPP launch-time HW engine and never advertises
-# RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP, so tsn pacing is rejected at
-# mtl_init() time on E810 even on a PF (see doc/design.md#4.3.3).
-E810_DEVICE_ID = "1592"
-
 
 def _is_e810(host) -> bool:
-    """True if the host's first NIC is an Intel E810 Series Ethernet Adapter."""
+    """True if the host's first NIC is an Intel E810 Series Ethernet Adapter.
+
+    E810 lacks the TxPP launch-time HW engine and never advertises
+    RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP, so tsn pacing is rejected at
+    mtl_init() time on E810 even on a PF (see doc/design.md#4.3.3).
+    """
     device_id = str(host.network_interfaces[0].pci_device.device_id).lower()
     return device_id == E810_DEVICE_ID
 
