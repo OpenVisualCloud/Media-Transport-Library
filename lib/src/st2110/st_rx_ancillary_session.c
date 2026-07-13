@@ -1756,28 +1756,31 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
 int st40_rx_put_framebuff(st40_rx_handle handle, void* frame) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct st_rx_ancillary_session_impl* s;
+  int ret;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC) {
-    err("%s, invalid type %d\n", __func__, s_impl->type);
-    return -EIO;
-  }
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_ANC, -EIO);
 
   s = s_impl->impl;
   if (!s->frame_slots) {
     err("%s(%d), session is not in FRAME_LEVEL mode\n", __func__, s->idx);
-    return -EIO;
+    ret = -EIO;
+    goto out;
   }
 
   for (uint16_t i = 0; i < s->frame_slots_cnt; i++) {
     struct st_rx_anc_frame_slot* slot = &s->frame_slots[i];
     if (slot->udw_buf == frame) {
       atomic_store_explicit(&slot->state, ST_RX_ANC_SLOT_FREE, memory_order_seq_cst);
-      return 0;
+      ret = 0;
+      goto out;
     }
   }
 
   err("%s(%d), invalid frame %p\n", __func__, s->idx, frame);
-  return -EIO;
+  ret = -EIO;
+out:
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
 }
 
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
