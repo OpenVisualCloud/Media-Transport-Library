@@ -16,7 +16,7 @@ To install the required GStreamer packages on Ubuntu or Debian, run the followin
 ```bash
 sudo apt update
 
-sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev
+sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 ```
 
 > For MTL installation instructions please refer to  [Build Documentation](../../doc/build.md).
