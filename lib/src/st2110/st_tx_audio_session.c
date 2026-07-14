@@ -244,22 +244,17 @@ static inline uint32_t tx_audio_pacing_time_stamp(
 static uint64_t tx_audio_pacing_required_tai(struct st_tx_audio_session_impl* s,
                                              enum st10_timestamp_fmt tfmt,
                                              uint64_t timestamp) {
-  uint64_t required_tai = 0;
-
   if (!(s->ops.flags & ST30_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (timestamp > 0xFFFFFFFF) {
-      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
-    }
-    required_tai =
-        st10_media_clk_to_ns((uint32_t)timestamp, st30_get_sample_rate(s->ops.sampling));
-  } else {
-    required_tai = timestamp;
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
+        s->idx);
+    return 0; /* invalid timestamp, fallback to default pacing */
   }
 
-  return required_tai;
+  return timestamp;
 }
 
 static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
