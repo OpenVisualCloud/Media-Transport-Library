@@ -42,6 +42,8 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * Flag bit in flags of struct st30_tx_ops.
  * User control the frame pacing by pass a timestamp in st30_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
+ * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
+ * supported for pacing and falls back to the default epoch-based pacing.
  */
 #define ST30_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -259,7 +261,11 @@ struct st30_tx_frame_meta {
   enum st30_sampling sampling;
   /** Session packet time */
   enum st30_ptime ptime;
-  /** Frame timestamp format */
+  /**
+   * Frame timestamp format. When ST30_TX_FLAG_USER_PACING is set, only
+   * ST10_TIMESTAMP_FMT_TAI is honored for pacing; ST10_TIMESTAMP_FMT_MEDIA_CLK
+   * falls back to the default epoch-based pacing.
+   */
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
