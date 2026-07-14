@@ -10,15 +10,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define st30_rx_get_session_stats ut30p_rx_get_session_stats
-#define st30_rx_put_framebuff ut30p_rx_put_framebuff
-#define st30_rx_reset_session_stats ut30p_rx_reset_session_stats
-
 #undef MTL_HAS_USDT
+/*
+ * The pipeline calls transport-layer st30_rx_* entry points that are
+ * also defined for real by st_rx_audio_session.c (pulled into this same
+ * binary via session/st30_harness.c). Redirect them to distinctly named
+ * local stubs at compile time so the two definitions can never collide
+ * as global symbols — relying on the linker's multiple-definition
+ * resolution order is fragile and previously picked the real,
+ * HW-backed symbol here, which dereferenced our fake transport handle
+ * and crashed.
+ */
+#define st30_rx_put_framebuff ut30p_stub_put_framebuff
+#define st30_rx_get_session_stats ut30p_stub_get_session_stats
+#define st30_rx_reset_session_stats ut30p_stub_reset_session_stats
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st30_pipeline_rx.c"
 #pragma GCC diagnostic pop
+#undef st30_rx_put_framebuff
+#undef st30_rx_get_session_stats
+#undef st30_rx_reset_session_stats
 
 #undef st30_rx_get_session_stats
 #undef st30_rx_put_framebuff
@@ -26,19 +38,23 @@
 
 #include "common/ut_common.h"
 
-int ut30p_rx_put_framebuff(st30_rx_handle handle, void* frame) {
+/* libmtl stubs, named distinctly from the real st30_rx_* symbols and
+ * wired in via the #define redirection above. */
+
+int ut30p_stub_put_framebuff(st30_rx_handle handle, void* frame) {
   (void)handle;
   (void)frame;
   return 0;
 }
 
-int ut30p_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* stats) {
+int ut30p_stub_get_session_stats(st30_rx_handle handle,
+                                 struct st30_rx_user_stats* stats) {
   (void)handle;
   if (stats) memset(stats, 0, sizeof(*stats));
   return 0;
 }
 
-int ut30p_rx_reset_session_stats(st30_rx_handle handle) {
+int ut30p_stub_reset_session_stats(st30_rx_handle handle) {
   (void)handle;
   return 0;
 }

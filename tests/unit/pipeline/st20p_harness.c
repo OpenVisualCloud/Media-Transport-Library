@@ -18,34 +18,52 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define st20_rx_get_session_stats ut20p_rx_get_session_stats
-#define st20_rx_put_framebuff ut20p_rx_put_framebuff
-#define st20_rx_reset_session_stats ut20p_rx_reset_session_stats
-
 /*
  * Include the production pipeline .c so static rx_st20p_frame_ready()
  * is reachable and the public st20p_rx_* entry points see our private
  * struct.  Disable USDT to avoid linker references to probe semaphores.
+ *
+ * The pipeline calls transport-layer st20_rx_* entry points that are
+ * also defined for real by st_rx_video_session.c (pulled into this same
+ * binary via session/st20_harness.c). Redirect them to distinctly named
+ * local stubs at compile time so the two definitions can never collide
+ * as global symbols — relying on the linker's multiple-definition
+ * resolution order is fragile and previously picked the real,
+ * HW-backed symbol here, which dereferenced our fake transport handle
+ * and crashed.
  */
+#define st20_rx_put_framebuff ut20p_stub_put_framebuff
+#define st20_rx_get_session_stats ut20p_stub_get_session_stats
+#define st20_rx_reset_session_stats ut20p_stub_reset_session_stats
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st20_pipeline_rx.c"
 #pragma GCC diagnostic pop
+#undef st20_rx_put_framebuff
+#undef st20_rx_get_session_stats
+#undef st20_rx_reset_session_stats
 
 #undef st20_rx_get_session_stats
 #undef st20_rx_put_framebuff
 #undef st20_rx_reset_session_stats
 
 #include "common/ut_common.h"
+/*
+ * Stubs for libmtl symbols called by the pipeline that would otherwise
+ * resolve to the real library (which requires HW/hugepages or a real
+ * transport session). Named distinctly from the real st20_rx_* symbols
+ * and wired in via the #define redirection above.
+ */
 
-int ut20p_rx_put_framebuff(st20_rx_handle handle, void* frame) {
+int ut20p_stub_put_framebuff(st20_rx_handle handle, void* frame) {
   (void)handle;
   (void)frame; /* transport-side framebuf release is a no-op for the harness */
   return 0;
 }
 
-int ut20p_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* stats) {
+int ut20p_stub_get_session_stats(st20_rx_handle handle,
+                                 struct st20_rx_user_stats* stats) {
   (void)handle;
   /* Return zeroed transport stats; the pipeline overlays its own
    * frame-level counters on top, which is exactly what we want to test. */
@@ -53,7 +71,7 @@ int ut20p_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats*
   return 0;
 }
 
-int ut20p_rx_reset_session_stats(st20_rx_handle handle) {
+int ut20p_stub_reset_session_stats(st20_rx_handle handle) {
   (void)handle;
   return 0;
 }
