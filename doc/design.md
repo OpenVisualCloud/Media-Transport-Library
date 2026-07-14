@@ -342,7 +342,27 @@ Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
 
-#### 6.3.1. Ancillary (ST40) pipeline
+#### 6.3.1. Threading model and lock-free assumptions
+
+Each pipeline framebuffer carries a single `_Atomic` status field, and every stage transition (for example `FREE`→`IN_USER`, `READY`→`CONVERTED`, `IN_TRANSMITTING`→`FREE`) is performed with a C11 atomic load/store or compare-exchange rather than a mutex. This lock-free protocol is correct only under the following assumptions, which the get/put API contract implicitly relies on:
+
+- **One application thread per session and per direction.** For a given session, `st*p_tx_get_frame`/`st*p_tx_put_frame`
+  (and, on the receive side, `st*p_rx_get_frame`/`st*p_rx_put_frame`) must be called from the same thread, and each call
+  must be synchronous — it must return before the next get/put is issued. The atomic status field prevents state
+  corruption and double-claim between the application thread and the data-plane thread, but it does **not** make these
+  calls re-entrant or safe to invoke concurrently from multiple application threads. The producer/consumer cursor hints
+  (`framebuff_producer_idx`/`framebuff_consumer_idx`) and the get→process→put handoff assume this single-threaded,
+  sequential usage.
+- **Synchronous lower-layer callbacks.** The transport-layer callbacks driven from the data-plane tasklet — for example
+  `frame_ready`, `packet_convert`, `frame_done`, and `query_ext_frame` — are assumed to run synchronously and to
+  completion within their single owning tasklet thread. Under this assumption each pipeline stage has exactly one
+  producer thread and one consumer thread, so the atomic status field (with acquire/release ordering) is the only
+  cross-thread synchronization required. If any such callback were deferred to another thread or re-entered
+  concurrently, the acquire/release ordering would no longer be sufficient and the lock-free protocol would break.
+
+In short: the atomic status field synchronizes exactly one data-plane (tasklet) thread against one application thread. Multi-threaded or asynchronous use of the get/put APIs, or asynchronous lower-layer callbacks, are outside the model and are not supported.
+
+#### 6.3.2. Ancillary (ST40) pipeline
 
 The same pipeline abstraction is now available for ancillary-only flows through `st40_pipeline_api.h`. It keeps the zero-copy RFC 8331 payload path but hides scheduler registration, frame queues, and pacing details behind the familiar get/put contract so applications only need to implement:
 
