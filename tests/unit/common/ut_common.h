@@ -37,6 +37,14 @@ struct rte_ring* ut_ring_create(const char* name, unsigned int size);
 /** Drain all mbufs from a ring and free them. */
 void ut_ring_drain(struct rte_ring* ring);
 
+/** Register (once) the real DPDK RX-timestamp mbuf dynfield used by
+ *  mt_mbuf_time_stamp()'s HW path. Returns the dynfield offset. */
+int ut_register_hw_rx_timestamp(void);
+
+/** Stamp mbuf's HW RX-timestamp dynfield with a raw nanosecond value. */
+void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
+                              uint64_t raw_ns);
+
 #ifdef __cplusplus
 }
 #endif

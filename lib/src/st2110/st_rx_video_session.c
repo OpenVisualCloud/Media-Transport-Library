@@ -1158,8 +1158,8 @@ static void rv_slice_add(struct st_rx_video_session_impl* s,
 }
 
 static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
-    struct st_rx_video_session_impl* s, uint32_t tmstamp, void* hdr_split_pd,
-    bool* exist_ts) {
+    struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
+    enum mtl_session_port s_port, uint32_t tmstamp, void* hdr_split_pd, bool* exist_ts) {
   int i, slot_idx;
   struct st_rx_video_slot_impl* slot;
 
@@ -1289,7 +1289,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
   frame_info->user_meta_data_size = 0;
   slot->frame = frame_info;
-  slot->timestamp_first_pkt = mtl_ptp_read_time(rv_get_impl(s));
+  slot->timestamp_first_pkt =
+      mt_mbuf_time_stamp(rv_get_impl(s), mbuf, mt_port_logic2phy(s->port_maps, s_port));
 
   s->dma_slot = slot;
 
@@ -1628,7 +1629,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
 
   /* find the target slot by tmstamp */
   bool exist_ts = false;
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
+  struct st_rx_video_slot_impl* slot =
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;
@@ -2060,7 +2062,8 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
 
   /* find the target slot by tmstamp */
   bool exist_ts = false;
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
+  struct st_rx_video_slot_impl* slot =
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;
@@ -2237,7 +2240,8 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
 
   /* find the target slot by tmstamp */
   bool exist_ts = false;
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
+  struct st_rx_video_slot_impl* slot =
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, payload, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;

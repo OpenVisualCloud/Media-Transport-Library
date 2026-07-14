@@ -52,6 +52,8 @@ struct ut20_test_ctx {
   uint8_t bitmaps[ST_VIDEO_RX_REC_NUM_OFO][UT20_MAX_BITMAP_SIZE];
 
   bool hold_frames;
+  struct mt_ptp_impl ptp_storage;
+  uint64_t last_timestamp_first_pkt;
 };
 
 #include "session/st20_harness.h"
@@ -68,9 +70,9 @@ static uint64_t ut20_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static int ut20_notify_frame_ready(void* priv, void* frame,
                                    struct st20_rx_frame_meta* meta) {
-  (void)meta;
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
+  ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
   if (ctx->hold_frames) return 0;
 
   struct st_rx_video_session_impl* s = &ctx->session;
@@ -278,6 +280,19 @@ int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
   return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
 }
 
+int ut20_feed_frame_pkt_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                              enum mtl_session_port port, uint64_t hw_raw_ns) {
+  uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
+  uint16_t ln, lo, ll;
+  pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
+  struct rte_mbuf* m = make_video_mbuf(seq, ts, ln, lo, ll);
+  if (!m) return -1;
+  ut_mbuf_set_hw_timestamp(m, ctx->impl.dynfield_offset, hw_raw_ns);
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
 int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
                             enum mtl_session_port port) {
   uint16_t ln, lo, ll;
@@ -384,6 +399,19 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
     ctx->impl.inf[phy].status |= MT_IF_STAT_PORT_DOWN;
   else
     ctx->impl.inf[phy].status &= ~MT_IF_STAT_PORT_DOWN;
+}
+
+void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port) {
+  enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
+  ctx->impl.dynfield_offset = ut_register_hw_rx_timestamp();
+  ctx->ptp_storage.coefficient = 1.0;
+  ctx->ptp_storage.last_sync_ts = 0;
+  ctx->impl.ptp[phy] = &ctx->ptp_storage;
+  ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+}
+
+uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx) {
+  return ctx->last_timestamp_first_pkt;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */

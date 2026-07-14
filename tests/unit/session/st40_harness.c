@@ -33,6 +33,7 @@ struct ut_test_ctx {
   struct mtl_main_impl impl;
   struct st_rx_ancillary_sessions_mgr mgr;
   struct st_rx_ancillary_session_impl session;
+  struct mt_ptp_impl ptp_storage;
 };
 
 /* pull in the header after the struct definition so types resolve */
@@ -251,6 +252,15 @@ void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc) {
 
 void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
   ctx->session.interlace_auto = enable;
+}
+
+void ut40_ctx_enable_hw_timestamp(ut_test_ctx* ctx, enum mtl_session_port port) {
+  enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
+  ctx->impl.dynfield_offset = ut_register_hw_rx_timestamp();
+  ctx->ptp_storage.coefficient = 1.0;
+  ctx->ptp_storage.last_sync_ts = 0;
+  ctx->impl.ptp[phy] = &ctx->ptp_storage;
+  ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */
@@ -613,6 +623,16 @@ int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
 int ut40_feed_pkt_anc0(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                        enum mtl_session_port port) {
   return ut40_feed_anc_pkt(ctx, seq, ts, marker, port, 0x41, 0x05, NULL, 0, -1, false);
+}
+
+int ut40_feed_pkt_anc0_hw_ts(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                             enum mtl_session_port port, uint64_t hw_raw_ns) {
+  struct rte_mbuf* m = make_anc_mbuf(seq, ts, marker);
+  if (!m) return -1;
+  ut_mbuf_set_hw_timestamp(m, ctx->impl.dynfield_offset, hw_raw_ns);
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  rte_pktmbuf_free(m);
+  return rc;
 }
 
 static uint32_t ut40_anc_payload_bytes(uint16_t udw_size) {

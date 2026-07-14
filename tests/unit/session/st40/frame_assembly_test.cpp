@@ -649,6 +649,21 @@ TEST_F(St40RxFrameAssemblyTest, ReceiveTimestampIsNonZeroAndMonotonic) {
   EXPECT_LT(ut40_captured_timestamp_first_pkt(1), ut40_captured_timestamp_first_pkt(2));
 }
 
+/* timestamp_first_pkt must come from the HW RX-timestamp dynfield
+ * (mt_mbuf_time_stamp) when the interface advertises RX timestamp offload,
+ * not the software PTP clock fallback. */
+TEST_F(St40RxFrameAssemblyTest, ReceiveTimestampSourcedFromHwOffload) {
+  constexpr uint64_t kHwRawNs = 123456789000ull;
+  ut40_ctx_enable_hw_timestamp(ctx_, MTL_SESSION_PORT_P);
+
+  ut40_feed_pkt_anc0_hw_ts(ctx_, 0, 1000, 1, MTL_SESSION_PORT_P, kHwRawNs);
+
+  ASSERT_EQ(ut40_captured_count(), 1);
+  EXPECT_EQ(ut40_captured_timestamp_first_pkt(0), kHwRawNs)
+      << "timestamp_first_pkt must come from the HW RX-timestamp dynfield "
+         "(mt_mbuf_time_stamp), not the SW PTP clock fallback";
+}
+
 /* Regression guard for the unsynchronized frame_slots[].state field: the app
  * thread (st40_rx_put_framebuff) frees slots concurrently with the tasklet
  * thread scanning/assembling. Every fed frame must end up counted exactly

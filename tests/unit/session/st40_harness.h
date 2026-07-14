@@ -101,6 +101,12 @@ void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc);
  * session enforces its configured value. */
 void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable);
 
+/* Enable the HW RX-timestamp offload path on `port`: registers the DPDK
+ * dynfield, installs an identity-mapped PTP correction, and sets
+ * MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP so mt_mbuf_time_stamp() reads the
+ * mbuf dynfield instead of falling back to the software PTP clock. */
+void ut40_ctx_enable_hw_timestamp(ut_test_ctx* ctx, enum mtl_session_port port);
+
 /* Wrapper feeder — drives the production `_handle_mbuf` wrapper instead of
  * the per-packet handler. Use this whenever the test asserts on per-port
  * `err_packets` or per-port `packets`. */
@@ -237,6 +243,12 @@ int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
 /* Framing-only feed: well-formed empty ANC packet (udw_size=0). */
 int ut40_feed_pkt_anc0(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
                        enum mtl_session_port port);
+
+/* Same as ut40_feed_pkt_anc0() but stamps the mbuf's HW RX-timestamp
+ * dynfield with `hw_raw_ns` before feeding it. Requires a prior
+ * ut40_ctx_enable_hw_timestamp(). */
+int ut40_feed_pkt_anc0_hw_ts(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
+                             enum mtl_session_port port, uint64_t hw_raw_ns);
 
 /* Build + feed one RTP packet carrying multiple RFC 8331 ANC data packets
  * (non-split mode), each with its own UDW size from `udw_sizes`. Exercises

@@ -49,6 +49,7 @@ unit_sources = [
   'session/st20/reorder_test.cpp',
   'session/st20/stats_test.cpp',
   'session/st20/err_packets_test.cpp',
+  'session/st20/timestamp_source_test.cpp',
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
   'pipeline/st30p_harness.c',
