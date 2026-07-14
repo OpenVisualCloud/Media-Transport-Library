@@ -65,6 +65,7 @@ struct st20p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
