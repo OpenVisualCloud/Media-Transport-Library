@@ -6,6 +6,7 @@
 
 #include "ut_common.h"
 
+#include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -64,4 +65,17 @@ void ut_ring_drain(struct rte_ring* ring) {
   if (!ring) return;
   struct rte_mbuf* pkt = NULL;
   while (rte_ring_sc_dequeue(ring, (void**)&pkt) == 0) rte_pktmbuf_free(pkt);
+}
+
+/* ── HW RX timestamp mock ─────────────────────────────────────────────── */
+
+int ut_register_hw_rx_timestamp(void) {
+  static int g_offset = -1;
+  if (g_offset < 0 && rte_mbuf_dyn_rx_timestamp_register(&g_offset, NULL) < 0) return -1;
+  return g_offset;
+}
+
+void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
+                              uint64_t raw_ns) {
+  *RTE_MBUF_DYNFIELD(mbuf, dynfield_offset, rte_mbuf_timestamp_t*) = raw_ns;
 }

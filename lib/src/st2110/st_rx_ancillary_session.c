@@ -394,7 +394,8 @@ static int rx_ancillary_session_assemble_pkt(struct mtl_main_impl* impl,
   bool pkt_second_field = pkt_interlaced && (f_bits & 0x1);
   bool marker = hdr->base.marker ? true : false;
   uint16_t len = mbuf->data_len - hdr_offset;
-  uint64_t recv_ts = mtl_ptp_read_time(impl);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  uint64_t recv_ts = mt_mbuf_time_stamp(impl, mbuf, port);
 
   struct st_rx_anc_frame_slot* slot =
       rx_anc_select_slot(impl, s, tmstamp, pkt_interlaced, pkt_second_field, recv_ts);

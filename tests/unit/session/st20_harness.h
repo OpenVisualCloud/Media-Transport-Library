@@ -68,6 +68,12 @@ int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_n
 int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                         enum mtl_session_port port);
 
+/* Same as ut20_feed_frame_pkt() but stamps the mbuf's HW RX-timestamp
+ * dynfield with `hw_raw_ns` before feeding it. Requires a prior
+ * ut20_ctx_enable_hw_timestamp(). */
+int ut20_feed_frame_pkt_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                              enum mtl_session_port port, uint64_t hw_raw_ns);
+
 /* Same as ut20_feed_frame_pkt() but with an explicit RTP sequence number,
  * for tests that need to drive seq independently of pkt_idx (e.g. wrap or
  * threshold tests). */
@@ -108,6 +114,15 @@ void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc);
  * wire: it never receives data and is not charged per-port loss at frame
  * finalisation (see rv_slot_account_per_port_loss). */
 void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool down);
+
+/* Enable the HW RX-timestamp offload path on `port`: registers the DPDK
+ * dynfield, installs an identity-mapped PTP correction, and sets
+ * MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP so mt_mbuf_time_stamp() reads the
+ * mbuf dynfield instead of falling back to the software PTP clock. */
+void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
+
+/* timestamp_first_pkt captured off the most recent delivered frame's meta. */
+uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx);
 
 /* Wrapper feeders — drive the production `_handle_mbuf` wrapper instead
  * of the per-packet handler. Use these (not the direct feeders above)
