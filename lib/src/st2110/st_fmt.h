@@ -39,8 +39,6 @@ const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way);
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm);
 
-uint64_t st10_media_clk_to_ns_u64(uint64_t media_ts, uint32_t sampling_rate);
-
 enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt);
 
 int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,

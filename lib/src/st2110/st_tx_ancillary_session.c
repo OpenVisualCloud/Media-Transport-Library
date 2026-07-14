@@ -300,10 +300,9 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
                                                  enum st10_timestamp_fmt tfmt,
                                                  uint64_t timestamp) {
   uint64_t required_tai = 0;
-  uint64_t cur_tai;
 
   if (!(s->ops.flags & ST40_TX_FLAG_USER_PACING)) return 0;
-  if (!timestamp && tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK) {
+  if (!timestamp) {
     if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
       s->port_user_stats.common.stat_error_user_timestamp++;
       err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
@@ -312,39 +311,19 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
   }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    uint64_t current_ticks;
-    uint64_t target_ticks;
-    uint32_t forward;
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
+        s->idx);
+    return 0; /* invalid timestamp, fallback to default pacing */
+  }
+  required_tai = timestamp;
 
-    if (timestamp > UINT32_MAX) {
-      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
+  if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
+    uint64_t cur_tai = mt_get_ptp_time(s->mgr->parent, MTL_PORT_P);
+    if (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S) {
       s->port_user_stats.common.stat_error_user_timestamp++;
       return 0;
     }
-    cur_tai = mt_get_ptp_time(s->mgr->parent, MTL_PORT_P);
-    current_ticks = (cur_tai / NS_PER_S) * ST10_VIDEO_SAMPLING_RATE_90K;
-    current_ticks +=
-        st10_tai_to_media_clk(cur_tai % NS_PER_S, ST10_VIDEO_SAMPLING_RATE_90K);
-
-    forward = (uint32_t)timestamp - (uint32_t)current_ticks;
-    if (forward <= INT32_MAX) {
-      target_ticks = current_ticks + forward;
-    } else {
-      uint64_t backward = (uint64_t)UINT32_MAX - forward + 1;
-      target_ticks = (current_ticks >= backward) ? current_ticks - backward
-                                                 : current_ticks + forward;
-    }
-
-    required_tai = st10_media_clk_to_ns_u64(target_ticks, ST10_VIDEO_SAMPLING_RATE_90K);
-  } else {
-    required_tai = timestamp;
-    cur_tai = mt_get_ptp_time(s->mgr->parent, MTL_PORT_P);
-  }
-
-  if ((s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) &&
-      (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S)) {
-    s->port_user_stats.common.stat_error_user_timestamp++;
-    return 0;
   }
 
   return required_tai;
