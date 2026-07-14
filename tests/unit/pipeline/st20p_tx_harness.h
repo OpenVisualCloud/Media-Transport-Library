@@ -35,6 +35,16 @@ int ut20p_tx_init(void);
 ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt);
 void ut20p_tx_ctx_destroy(ut20p_tx_ctx* ctx);
 
+/**
+ * Turn on ST20P_TX_FLAG_BLOCK_GET behaviour: init the block cond/mutex, arm the
+ * wake_on_destroy hook, and set the blocking get_frame timeout. Call before any
+ * blocking get_frame. Mirrors the block setup st20p_tx_create() performs.
+ */
+void ut20p_tx_ctx_enable_blocking(ut20p_tx_ctx* ctx, uint64_t timeout_ns);
+
+/** Wake a blocking get_frame sleeper (wraps st20p_tx_wake_block). */
+void ut20p_tx_wake_block(ut20p_tx_ctx* ctx);
+
 int ut20p_tx_framebuff_cnt(const ut20p_tx_ctx* ctx);
 
 /* producer (app) side */

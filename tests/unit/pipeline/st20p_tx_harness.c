@@ -24,6 +24,7 @@ struct ut20p_tx_ctx {
   struct st20p_tx_ctx pipeline;
   struct st20p_tx_frame* framebuffs;
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st20p_tx_harness.h"
@@ -78,8 +79,26 @@ ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt) {
 
 void ut20p_tx_ctx_destroy(ut20p_tx_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut20p_tx_ctx_enable_blocking(ut20p_tx_ctx* ctx, uint64_t timeout_ns) {
+  struct st20p_tx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->wake_on_destroy = (void (*)(void*))tx_st20p_block_wake;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut20p_tx_wake_block(ut20p_tx_ctx* ctx) {
+  st20p_tx_wake_block(&ctx->pipeline);
 }
 
 int ut20p_tx_framebuff_cnt(const ut20p_tx_ctx* ctx) {
