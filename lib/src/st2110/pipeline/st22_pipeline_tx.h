@@ -53,6 +53,7 @@ struct st22p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   struct st22_encode_session_impl* encode_impl;
   /* for ST22_ENCODER_RESP_FLAG_BLOCK_GET */

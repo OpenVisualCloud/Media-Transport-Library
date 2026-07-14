@@ -27,6 +27,7 @@ static inline struct st_frame* tx_st22p_user_frame(struct st22p_tx_ctx* ctx,
 static void tx_st22p_block_wake(struct st22p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  ctx->block_wake_pending = true;
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
@@ -754,9 +755,13 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
-      mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                                   ctx->block_timeout_ns);
+    while (!ctx->block_wake_pending &&
+           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+      int _ret = mt_pthread_cond_timedwait_ns(
+          &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+      if (_ret) break;
+    }
+    ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
     if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */

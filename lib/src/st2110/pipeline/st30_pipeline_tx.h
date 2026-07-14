@@ -60,6 +60,7 @@ struct st30p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   /* get frame stat */
   uint32_t stat_get_frame_try;
