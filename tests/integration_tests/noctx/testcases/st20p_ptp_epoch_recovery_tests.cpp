@@ -54,6 +54,9 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
   ctx->para.ptp_get_time_fn = EpochRecoveryPtpClockNow;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
+  /* TSN launch-time pacing compares against the phc, which only the
+   * built-in ptp service (fed by ptp_get_time_fn above) disciplines. */
+  if (pacing_way == ST21_TX_PACING_WAY_TSN) ctx->para.flags |= MTL_FLAG_PTP_ENABLE;
   /* Shorten the periodic "M T DEV STATE" stat dump (default 10s) so the run
    * below comfortably covers several dumps without needing a long sleep. */
   ctx->para.dump_period_s = 2;
