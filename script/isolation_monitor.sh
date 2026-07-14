@@ -20,10 +20,7 @@ CPU_ARGS=("${@:2}")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT_SCRIPT="${SCRIPT_DIR}/isolation_report.sh"
-LOG_DIR="/tmp/isolation_monitor_$$"
-SUMMARY_CSV="${LOG_DIR}/summary.csv"
-
-mkdir -p "$LOG_DIR"
+LOG_DIR=$(mktemp -d /tmp/isolation_monitor_XXXXXX)
 
 # ── state ──
 ITERATION=0
