@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2025 Intel Corporation
+ * Copyright(c) 2026 Intel Corporation
  *
  * Pin the wire-aligned byte size returned by st40_rfc8331_payload_bytes()
  * against hand-computed RFC 8331 §2.1 values.
