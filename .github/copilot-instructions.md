@@ -43,7 +43,7 @@ Use this table to pick the right subagent. Resolve ambiguity in order:
 | Multi-step work crossing 2+ subsystems (code + host + manager + plugins…) | **MTL Planner** | Decomposes and routes; no execution |
 | Edit any of `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/` | **MTL Developer (TDD)** | Owns code + tests + the six-gate TDD loop in one context window |
 | Build (`./build.sh`, `ninja -C build`, `./format-coding.sh`) | **MTL Developer (TDD)** | Build is Gate 4 of its loop |
-| Run `./build/tests/unit/UnitTest` (unit gtest, no NIC) | **MTL Developer (TDD)** | Test runs are Gate 2 (fail) and Gate 4 (pass) |
+| Run `./build.sh unit` (unit gtest, no NIC) | **MTL Developer (TDD)** | Test runs are Gate 2 (fail) and Gate 4 (pass) |
 | Run `KahawaiTest` (integration gtest, real VFs) | **MTL System Admin** | Only one with `run_gtest` MCP tool; enforced Gate 6 for data-plane changes |
 | Host setup (hugepages, VFs, drivers, MtlManager) | **MTL System Admin** | MCP-only, no shell |
 | Adversarial review of a saved diff | **MTL Reviewer** | Read-only; enforced Gate 5; refuses if diff empty |

@@ -1,5 +1,5 @@
 ---
-description: "Writes production MTL C/C++ AND the gtest cases that pin its behavior, in one context window. Walks a six-gate test-first loop (knowledge → failing test → implement → green test → self-review → hand off). Use for: any code change to lib/, include/, app/, plugins/, ecosystem/, or tests/** — bug fixes, new features, regressions, behavior changes; building (./build.sh / ninja -C build / ./format-coding.sh); running unit gtest (./build/tests/unit/UnitTest). Do NOT use for: running KahawaiTest against real VFs (→ MTL System Admin); host setup (→ MTL System Admin); pytest under tests/validation (→ main agent per validation-tests instruction); read-only Q&A (→ Explore); multi-subsystem orchestration (→ MTL Planner). Tools: editFiles, read, search, usages, problems, testFailure, todo, memory, execute, agent (Explore only). Requires: execute."
+description: "Writes production MTL C/C++ AND the gtest cases that pin its behavior, in one context window. Walks a six-gate test-first loop (knowledge → failing test → implement → green test → self-review → hand off). Use for: any code change to lib/, include/, app/, plugins/, ecosystem/, or tests/** — bug fixes, new features, regressions, behavior changes; building (./build.sh / ninja -C build / ./format-coding.sh); running unit gtest (./build.sh unit). Do NOT use for: running KahawaiTest against real VFs (→ MTL System Admin); host setup (→ MTL System Admin); pytest under tests/validation (→ main agent per validation-tests instruction); read-only Q&A (→ Explore); multi-subsystem orchestration (→ MTL Planner). Tools: editFiles, read, search, usages, problems, testFailure, todo, memory, execute, agent (Explore only). Requires: execute."
 name: "MTL Developer (TDD)"
 tools: ['editFiles', 'read', 'codebase', 'search', 'usages', 'problems', 'testFailure', 'todo', 'memory', 'execute', 'agent']
 agents: ['Explore']
@@ -39,7 +39,7 @@ C coding rules, KB routing, gtest conventions, and the test-tier picker auto-loa
 |---|---|
 | Edit `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/` | Configure host — hugepages, VFs, drivers (delegate to MTL System Admin) |
 | Build (`./build.sh`, `ninja -C build`, `./format-coding.sh`) | Run integration `KahawaiTest` against real VFs (delegate to MTL System Admin) |
-| Run unit gtest (`./build/tests/unit/UnitTest`) | Run pytest under `tests/validation/` (return to main agent) |
+| Run unit gtest (`./build.sh unit`) | Run pytest under `tests/validation/` (return to main agent) |
 
 ## The six-gate loop
 

@@ -36,6 +36,16 @@ in this binary.
 ## Quick start
 
 ```bash
+./build.sh unit
+```
+
+This configures `build_unit/` with `-Denable_unit_tests=true`, builds it,
+and runs `tests/unit/UnitTest` (preloading ASan automatically when combined
+with `debug`, e.g. `./build.sh debug unit`).
+
+To configure/build/run manually, or to filter tests (see below):
+
+```bash
 # 1. configure (one-time)
 meson setup build_unit -Denable_unit_tests=true
 
