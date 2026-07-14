@@ -384,6 +384,8 @@ enum st22p_tx_flag {
   /**
    * User control the frame pacing by pass a timestamp in st_frame,
    * lib will wait until timestamp is reached for each frame.
+   * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
+   * supported for pacing and falls back to the default epoch-based pacing.
    */
   ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
@@ -443,6 +445,8 @@ enum st20p_tx_flag {
    * User control frame transmission time by pass a timestamp in st_frame.timestamp,
    * lib will wait until timestamp is reached for each frame. The time of sending is
    * aligned with virtual receiver read schedule.
+   * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
+   * supported for pacing and falls back to the default epoch-based pacing.
    */
   ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
