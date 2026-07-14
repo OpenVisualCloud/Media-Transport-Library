@@ -6,13 +6,13 @@
 #                    INTRUDER  — should not be on isolated cores
 #
 # Usage:
-#   sudo ./sched_audit.sh [options] [duration_sec] [cpu_spec...]
-#   sudo ./sched_audit.sh 5 2 3      # 5s sample on CPUs 2-3 (range)
-#   sudo ./sched_audit.sh 5 2-7      # 5s sample on CPUs 2-7 (range notation)
-#   sudo ./sched_audit.sh 5 2 5 7    # 5s sample on CPUs 2, 5, 7 (discrete)
-#   sudo ./sched_audit.sh 5 2-4,7    # 5s sample on CPUs 2,3,4,7 (mixed)
-#   sudo ./sched_audit.sh 10         # 10s sample, auto-detect isolated range
-#   sudo ./sched_audit.sh -h         # show help
+#   sudo ./isolation_report.sh [options] [duration_sec] [cpu_spec...]
+#   sudo ./isolation_report.sh 5 2 3      # 5s sample on CPUs 2-3 (range)
+#   sudo ./isolation_report.sh 5 2-7      # 5s sample on CPUs 2-7 (range notation)
+#   sudo ./isolation_report.sh 5 2 5 7    # 5s sample on CPUs 2, 5, 7 (discrete)
+#   sudo ./isolation_report.sh 5 2-4,7    # 5s sample on CPUs 2,3,4,7 (mixed)
+#   sudo ./isolation_report.sh 10         # 10s sample, auto-detect isolated range
+#   sudo ./isolation_report.sh -h         # show help
 
 set -euo pipefail
 
@@ -111,10 +111,12 @@ detect_isolated() {
 
 # Expand a cpulist spec (e.g. "2-4,7,9-11") into a sorted, deduplicated
 # space-separated list of individual CPU numbers.
+# The spec is passed via CPU_SPEC env var (not interpolated into the
+# Python source) to avoid code injection from untrusted input.
 expand_cpulist() {
-	python3 -c "
-import sys
-s='$1'; r=set()
+	CPU_SPEC="$1" python3 -c "
+import os
+s=os.environ['CPU_SPEC']; r=set()
 for p in s.split(','):
     p=p.strip()
     if not p: continue
@@ -157,7 +159,11 @@ else
 	for c in "${CPU_LIST[@]}"; do
 		filter_parts+=("cpu == $c")
 	done
-	BPF_CPU_FILTER=$(IFS='|'; echo "${filter_parts[*]}" | sed 's/|/ || /g')
+	joined=$(
+		IFS='|'
+		echo "${filter_parts[*]}"
+	)
+	BPF_CPU_FILTER=${joined//|/ || }
 fi
 
 S="================================================================"
