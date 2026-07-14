@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2025 Intel Corporation
+ * Copyright(c) 2026 Intel Corporation
  *
  * FRAME_LEVEL transport assembler: dispatch, frame lifecycle, real ANC
  * payload parsing (parity/checksum/stride), and per-frame seq_lost /

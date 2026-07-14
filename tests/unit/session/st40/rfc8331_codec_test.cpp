@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2025 Intel Corporation
+ * Copyright(c) 2026 Intel Corporation
  *
  * Pin st40_rfc8331_encode_packet() / st40_rfc8331_decode_packet() against
  * the RFC 8331 wire format, and the bswap helpers' host/network symmetry.
