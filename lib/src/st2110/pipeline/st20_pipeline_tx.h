@@ -47,7 +47,7 @@ struct st20p_tx_ctx {
 
   st20_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
+  _Atomic uint32_t framebuff_sequence_number;
   struct st20p_tx_frame* framebuffs;
   int usdt_frame_cnt;
 

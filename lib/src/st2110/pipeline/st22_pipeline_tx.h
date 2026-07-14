@@ -45,7 +45,7 @@ struct st22p_tx_ctx {
 
   st22_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
+  _Atomic uint32_t framebuff_sequence_number;
   struct st22p_tx_frame* framebuffs;
 
   /* for ST22P_TX_FLAG_BLOCK_GET */

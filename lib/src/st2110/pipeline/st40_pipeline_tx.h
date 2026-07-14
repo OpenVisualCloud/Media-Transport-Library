@@ -41,7 +41,7 @@ struct st40p_tx_ctx {
 
   st40_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_seq_number;
+  _Atomic uint32_t framebuff_seq_number;
   struct st40p_tx_frame* framebuffs;
   bool ready;
 
