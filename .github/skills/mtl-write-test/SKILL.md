@@ -11,7 +11,7 @@ The hard part of testing MTL is **picking the right tier** and **asserting the r
 
 | Tier | Binary | Hardware | Can observe |
 |---|---|---|---|
-| **Unit gtest** — `tests/unit/` | `UnitTest` (built only with `-Denable_unit_tests=true`; **not** built by `./build.sh`) | None — runs as regular user under ASan | RX-side session logic fed synthetic mbufs at the RFC 4175 / RTP payload layer: frame assembly, bitmap dedup, redundancy merge, stat counters, pipeline accounting |
+| **Unit gtest** — `tests/unit/` | `UnitTest` (built with `-Denable_unit_tests=true`; via `./build.sh unit`) | None — runs as regular user under ASan | RX-side session logic fed synthetic mbufs at the RFC 4175 / RTP payload layer: frame assembly, bitmap dedup, redundancy merge, stat counters, pipeline accounting |
 | **Integration gtest** — `tests/integration_tests/` | `KahawaiTest` | Real VFs (≥2; ≥4 for redundant cases) | Full session lifecycle, TX+RX through the NIC, every pacing mode, multi-session, callbacks at real timing, SHA digests, DMA, RSS, kernel-socket, AF_XDP, virtio-user |
 | **NoCtx gtest** — `tests/integration_tests/noctx/` | `KahawaiTest --no_ctx` | Real VFs (per-case; redundant cases require ≥4) | Same as integration plus behaviors that depend on `mtl_init()` flags/callbacks the shared test context cannot supply. **One case per process** (DPDK EAL cannot re-init) — runner script enforces this |
 | **pytest single-host** — `tests/validation/tests/single/` | RxTxApp / FFmpeg / GStreamer driven through pytest | Full host: VFs, MtlManager, NFS media, plugins, venv, SSH-to-localhost | End-to-end app behavior on one host: CLI flags, config files, real media bytes, PTP convergence |
@@ -67,7 +67,7 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 1. **Pick a neighbour test in the same directory** — closest to your behavior first, else the most recently modified file. Avoid `DISABLED_` cases and any file noticeably older than its siblings. **Copy its conventions, including its marker set** — markers gate CI selection ([tests/validation/pytest.ini](tests/validation/pytest.ini)) and an unmarked or wrongly-marked pytest runs in no job.
 2. **Modify assertions only** until the test encodes your one requirement.
 3. **Register in the build** for gtest tiers (add to the relevant `*_sources` list in the nearest `meson.build`). pytest needs no registration.
-4. **Build:** `./build.sh` for integration binaries; for unit, `meson setup build_unit -Denable_unit_tests=true` once, then `ninja -C build_unit`. See [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
+4. **Build:** `./build.sh` for integration binaries; `./build.sh unit` for the unit suite (builds `build_unit/` and runs `UnitTest`). See [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
 5. **Run** with the binary / pytest invocation from the tier's auto-loaded instructions.
 6. **Confirm** the test fails before the fix (regression) or passes deterministically across 3+ consecutive runs (new coverage).
 
