@@ -44,6 +44,18 @@ struct st40_frame_info* ut40p_get_frame(ut40p_ctx* ctx);
 int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame);
 int ut40p_put_frame_abort(ut40p_ctx* ctx, struct st40_frame_info* frame);
 
+/* ── concurrency-test helpers ─────────────────────────────────────────── */
+
+/** Buffer index that a user-facing frame belongs to. */
+int ut40p_frame_idx(const struct st40_frame_info* frame);
+
+/** Total framebuffer count. */
+int ut40p_framebuff_cnt(const ut40p_ctx* ctx);
+
+/** Raw stat value of framebuffer i (for diagnostics). */
+int ut40p_frame_stat(const ut40p_ctx* ctx, int i);
+
+uint32_t ut40p_stat_drop_frame(const ut40p_ctx* ctx);
 uint64_t ut40p_stat_frames_received(const ut40p_ctx* ctx);
 uint64_t ut40p_stat_frames_dropped(const ut40p_ctx* ctx);
 uint64_t ut40p_stat_frames_corrupted(const ut40p_ctx* ctx);

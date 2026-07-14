@@ -85,18 +85,11 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt) {
   p->ready = true;
   p->transport = (st30_rx_handle)(uintptr_t)0x1;
 
-  if (pthread_mutex_init(&p->lock, NULL) != 0) {
-    free(ctx->framebuffs);
-    free(ctx);
-    return NULL;
-  }
-
   return ctx;
 }
 
 void ut30p_ctx_destroy(ut30p_ctx* ctx) {
   if (!ctx) return;
-  pthread_mutex_destroy(&ctx->pipeline.lock);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -119,6 +112,19 @@ struct st30_frame* ut30p_get_frame(ut30p_ctx* ctx) {
 
 int ut30p_put_frame(ut30p_ctx* ctx, struct st30_frame* frame) {
   return st30p_rx_put_frame(&ctx->pipeline, frame);
+}
+
+int ut30p_frame_idx(const struct st30_frame* frame) {
+  const struct st30p_rx_frame* framebuff = frame->priv;
+  return framebuff->idx;
+}
+
+int ut30p_framebuff_cnt(const ut30p_ctx* ctx) {
+  return ctx->framebuff_cnt;
+}
+
+int ut30p_frame_stat(const ut30p_ctx* ctx, int i) {
+  return (int)ctx->framebuffs[i].stat;
 }
 
 uint64_t ut30p_stat_frames_received(const ut30p_ctx* ctx) {
