@@ -30,7 +30,9 @@ plugins_c_args += ['-Wall']
 plugins_c_args += ['-Wunused-parameter']
 
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
-plugins_c_args += ['-msse4.2']
+if cc.has_argument('-msse4.2')
+  plugins_c_args += ['-msse4.2']
+endif
 
 if is_windows
   ws2_32_dep = cc.find_library('ws2_32', required: true)

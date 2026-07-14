@@ -98,7 +98,9 @@ mtl_c_args += ['-Wall']
 mtl_c_args += ['-Wunused-parameter']
 
 #simd build option, enable sse4.2 default
-mtl_c_args += ['-msse4.2']
+if cc.has_argument('-msse4.2')
+  mtl_c_args += ['-msse4.2']
+endif
 
 # default no asan dep
 asan_dep = []
