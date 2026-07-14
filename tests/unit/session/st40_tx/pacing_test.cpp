@@ -20,19 +20,7 @@ constexpr uint64_t kTargetTai = kCurrentTai + kFramePeriodNs / 2;
 constexpr uint64_t kAlignedTargetTai = kCurrentTai + kFramePeriodNs;
 constexpr uint64_t kPastTai = kCurrentTai - kFramePeriodNs / 2;
 constexpr uint64_t kMediaClockRate = ST10_VIDEO_SAMPLING_RATE_90K;
-constexpr uint64_t kMediaClockModulus = static_cast<uint64_t>(UINT32_MAX) + 1;
 constexpr uint64_t kStaleEpoch = 1000;
-constexpr uint64_t kWrapTestMediaClockEra = 30000;
-constexpr uint64_t kZeroTimestampMediaClockEra = 37300;
-
-constexpr uint64_t MediaClockToNanoseconds(uint64_t ticks) {
-  return (static_cast<__uint128_t>(ticks) * kNanosecondsPerSecond + kMediaClockRate / 2) /
-         kMediaClockRate;
-}
-
-constexpr uint64_t AlignToFrame(uint64_t tai) {
-  return ((tai + kFramePeriodNs / 2) / kFramePeriodNs) * kFramePeriodNs;
-}
 }  // namespace
 
 class St40TxPacingTest : public ::testing::Test {
@@ -406,7 +394,7 @@ TEST_F(St40TxPacingTest, RepeatedEpochMismatchAccumulates) {
   EXPECT_EQ(ut_txa_notify_late_calls(ctx_), 0);
 }
 
-TEST_F(St40TxPacingTest, MediaClockUserPacingAlignsConvertedTimestamp) {
+TEST_F(St40TxPacingTest, MediaClockUserPacingFallsBackToDefaultPacing) {
   ut_txa_set_user_pacing(ctx_, true);
   constexpr uint64_t media_clock_timestamp = 945;
   ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
@@ -415,152 +403,22 @@ TEST_F(St40TxPacingTest, MediaClockUserPacingAlignsConvertedTimestamp) {
 
   uint64_t required_tai = ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
                                                      media_clock_timestamp);
-  ASSERT_EQ(required_tai, MediaClockToNanoseconds(media_clock_timestamp));
+  ASSERT_EQ(required_tai, 0u);
   ASSERT_EQ(ut_txa_sync_pacing(ctx_, required_tai), 0);
 
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kAlignedTargetTai);
-}
-
-TEST_F(St40TxPacingTest, MediaClockExactUserPacingUsesConvertedTimestampVerbatim) {
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_exact_user_pacing(ctx_, true);
-  constexpr uint64_t media_clock_timestamp = 945;
-  ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
-  ut_txa_set_mock_ptp_time(ctx_, kCurrentTai);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
-
-  uint64_t required_tai = ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
-                                                     media_clock_timestamp);
-  ASSERT_EQ(required_tai, MediaClockToNanoseconds(media_clock_timestamp));
-  ASSERT_EQ(ut_txa_sync_pacing(ctx_, required_tai), 0);
-
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), MediaClockToNanoseconds(media_clock_timestamp));
-}
-
-TEST_F(St40TxPacingTest, MediaClockExactTaskletUnwrapsFutureAcrossUint32Wrap) {
-  constexpr uint64_t media_clock_era = kWrapTestMediaClockEra;
-  constexpr uint64_t current_ticks =
-      media_clock_era * kMediaClockModulus + UINT32_MAX - 9;
-  constexpr uint64_t target_ticks = (media_clock_era + 1) * kMediaClockModulus + 5;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t target_tai = MediaClockToNanoseconds(target_ticks);
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_exact_user_pacing(ctx_, true);
-  ut_txa_set_cur_epochs(ctx_, current_tai / kFramePeriodNs);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
-  uint64_t packet_tsc = 0;
-
-  ASSERT_EQ(ut_txa_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 5, &packet_tsc),
-            0);
-
-  EXPECT_EQ(packet_tsc, kCurrentTsc + target_tai - current_tai);
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), target_tai);
-  ExpectNoPacingStats();
-}
-
-TEST_F(St40TxPacingTest, MediaClockAlignedTaskletUnwrapsFutureAcrossUint32Wrap) {
-  constexpr uint64_t media_clock_era = kWrapTestMediaClockEra;
-  constexpr uint64_t current_ticks =
-      media_clock_era * kMediaClockModulus + UINT32_MAX - 9;
-  constexpr uint64_t target_ticks = (media_clock_era + 1) * kMediaClockModulus + 100;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t aligned_target_tai =
-      AlignToFrame(MediaClockToNanoseconds(target_ticks));
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_cur_epochs(ctx_, current_tai / kFramePeriodNs);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
-  uint64_t packet_tsc = 0;
-
-  ASSERT_EQ(
-      ut_txa_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 100, &packet_tsc), 0);
-
-  EXPECT_EQ(packet_tsc, kCurrentTsc + aligned_target_tai - current_tai);
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), aligned_target_tai);
-  ExpectNoPacingStats();
-}
-
-TEST_F(St40TxPacingTest, MediaClockExactTaskletFallsBackForPastWrappedTarget) {
-  constexpr uint64_t media_clock_era = kWrapTestMediaClockEra;
-  constexpr uint64_t current_ticks = (media_clock_era + 1) * kMediaClockModulus + 10;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t fallback_tai = ((current_tai / kFramePeriodNs) + 1) * kFramePeriodNs;
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_exact_user_pacing(ctx_, true);
-  ut_txa_set_cur_epochs(ctx_, current_tai / kFramePeriodNs);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
-  uint64_t packet_tsc = 0;
-
-  ASSERT_EQ(ut_txa_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, UINT32_MAX - 5,
-                                     &packet_tsc),
-            0);
-
-  EXPECT_EQ(packet_tsc, kCurrentTsc + fallback_tai - current_tai);
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), fallback_tai);
+  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kCurrentTai);
   EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
-  EXPECT_EQ(ut_txa_notify_frame_done_epoch(ctx_), fallback_tai / kFramePeriodNs);
-  EXPECT_EQ(ut_txa_notify_frame_done_timestamp(ctx_), fallback_tai);
-  EXPECT_EQ(ut_txa_stat_epoch_mismatch(ctx_), 0u);
-  EXPECT_EQ(ut_txa_stat_epoch_drop(ctx_), 0u);
-  EXPECT_EQ(ut_txa_stat_epoch_onward(ctx_), 0u);
 }
 
-TEST_F(St40TxPacingTest, MediaClockZeroUnwrapsAfterUint32WrapForUserPacing) {
-  constexpr uint64_t media_clock_era = kZeroTimestampMediaClockEra;
-  constexpr uint64_t current_ticks = media_clock_era * kMediaClockModulus + UINT32_MAX;
-  constexpr uint64_t target_ticks = (media_clock_era + 1) * kMediaClockModulus;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t target_tai = MediaClockToNanoseconds(target_ticks);
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
-
-  EXPECT_EQ(ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 0),
-            target_tai);
-  ExpectNoPacingStats();
-}
-
-TEST_F(St40TxPacingTest, MediaClockZeroUnwrapsAfterUint32WrapForExactPacing) {
-  constexpr uint64_t media_clock_era = kZeroTimestampMediaClockEra;
-  constexpr uint64_t current_ticks = media_clock_era * kMediaClockModulus + UINT32_MAX;
-  constexpr uint64_t target_ticks = (media_clock_era + 1) * kMediaClockModulus;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t target_tai = MediaClockToNanoseconds(target_ticks);
+TEST_F(St40TxPacingTest, ExactUnsupportedMediaClockCountsOneError) {
   ut_txa_set_user_pacing(ctx_, true);
   ut_txa_set_exact_user_pacing(ctx_, true);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
+  constexpr uint64_t media_clock_timestamp = 945;
 
-  EXPECT_EQ(ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 0),
-            target_tai);
-  ExpectNoPacingStats();
-}
-
-TEST_F(St40TxPacingTest, MediaClockZeroExactTaskletUsesWrappedFirstPacketTarget) {
-  constexpr uint64_t media_clock_era = kZeroTimestampMediaClockEra;
-  constexpr uint64_t current_ticks = media_clock_era * kMediaClockModulus + UINT32_MAX;
-  constexpr uint64_t target_ticks = (media_clock_era + 1) * kMediaClockModulus;
-  constexpr uint64_t current_tai = MediaClockToNanoseconds(current_ticks);
-  constexpr uint64_t target_tai = MediaClockToNanoseconds(target_ticks);
-  constexpr uint64_t target_epoch = (target_tai + kFramePeriodNs / 2) / kFramePeriodNs;
-  uint64_t packet_tsc = 0;
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_exact_user_pacing(ctx_, true);
-  ut_txa_set_mock_ptp_time(ctx_, current_tai);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
-
-  ASSERT_EQ(ut_txa_prepare_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 0, 1), 0);
-  EXPECT_EQ(ut_txa_step_frame_tasklet(ctx_), 0);
-  EXPECT_EQ(ut_txa_queued_packets(ctx_), 0u);
-  EXPECT_EQ(ut_txa_cur_epochs(ctx_), target_epoch);
-  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc + target_tai - current_tai);
-  EXPECT_EQ(ut_txa_step_frame_tasklet(ctx_), 1);
-  ASSERT_EQ(ut_txa_pop_packet_tsc(ctx_, &packet_tsc), 0);
-  EXPECT_EQ(packet_tsc, kCurrentTsc + target_tai - current_tai);
-  EXPECT_EQ(ut_txa_notify_frame_done_epoch(ctx_), target_epoch);
-  EXPECT_EQ(ut_txa_notify_frame_done_timestamp(ctx_), target_tai);
-  EXPECT_EQ(ut_txa_notify_frame_done_tfmt(ctx_), ST10_TIMESTAMP_FMT_TAI);
-  ExpectNoPacingStats();
+  EXPECT_EQ(ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                       media_clock_timestamp),
+            0u);
+  EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
 }
 
 TEST_F(St40TxPacingTest, ExactTargetOneNanosecondBelowOneSecondWaits) {
@@ -656,25 +514,6 @@ TEST_F(St40TxPacingTest, BackwardExactTargetFallsBackCompletionMetadata) {
   EXPECT_EQ(ut_txa_notify_frame_done_timestamp(ctx_), kCurrentTai);
   EXPECT_EQ(ut_txa_notify_frame_done_rtp_timestamp(ctx_),
             kCurrentTai * kMediaClockRate / kNanosecondsPerSecond);
-  EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
-}
-
-TEST_F(St40TxPacingTest, OversizedMediaClockUserPacingCountsOneError) {
-  ut_txa_set_user_pacing(ctx_, true);
-
-  EXPECT_EQ(ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
-                                       (uint64_t)UINT32_MAX + 1),
-            0u);
-  EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
-}
-
-TEST_F(St40TxPacingTest, OversizedMediaClockExactPacingCountsOneError) {
-  ut_txa_set_user_pacing(ctx_, true);
-  ut_txa_set_exact_user_pacing(ctx_, true);
-
-  EXPECT_EQ(ut_txa_pacing_required_tai(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
-                                       (uint64_t)UINT32_MAX + 1),
-            0u);
   EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
 }
 
