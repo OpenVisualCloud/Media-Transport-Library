@@ -117,8 +117,9 @@ static struct st22p_tx_frame* tx_st22p_claim_available(
 
   while ((framebuff = tx_st22p_next_available(ctx, desired))) {
     uint32_t expected = desired;
-    if (__atomic_compare_exchange_n(&framebuff->stat, &expected, claimed, false,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
+                                                memory_order_acq_rel,
+                                                memory_order_relaxed))
       return framebuff;
   }
 
@@ -210,9 +211,9 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
      * (defensively) another consumer between the scan and here; on a lost race
      * the CAS fails and we rescan. Mirrors the FREE->IN_USER claim. */
     uint32_t expected = ST22P_TX_FRAME_ENCODED;
-    if (__atomic_compare_exchange_n(&framebuff->stat, &expected,
-                                    ST22P_TX_FRAME_IN_TRANSMITTING, false,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+    if (atomic_compare_exchange_strong_explicit(
+            &framebuff->stat, &expected, ST22P_TX_FRAME_IN_TRANSMITTING,
+            memory_order_acq_rel, memory_order_relaxed))
       break; /* claimed */
   }
 
@@ -753,13 +754,14 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
-    framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
+    framebuff =
+        tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   }
   /* not any free frame */
   if (!framebuff) {
@@ -768,7 +770,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
 
   framebuff->frame_done_cb_called = false;
   framebuff->seq_number =
-      __atomic_fetch_add(&ctx->framebuff_sequence_number, 1, __ATOMIC_RELAXED);
+      atomic_fetch_add_explicit(&ctx->framebuff_sequence_number, 1, memory_order_relaxed);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   if (ctx->ops.interlaced) { /* init second_field but user still can customize */

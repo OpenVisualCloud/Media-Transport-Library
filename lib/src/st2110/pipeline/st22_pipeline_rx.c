@@ -106,8 +106,9 @@ static struct st22p_rx_frame* rx_st22p_claim_available(
 
   while ((framebuff = rx_st22p_next_available(ctx, idx_start, desired))) {
     uint32_t expected = desired;
-    if (__atomic_compare_exchange_n(&framebuff->stat, &expected, claimed, false,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
+                                                memory_order_acq_rel,
+                                                memory_order_relaxed))
       return framebuff;
   }
 
@@ -260,8 +261,8 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   if (!framebuff && ctx->decode_block_get) { /* wait here for block mode */
     rx_st22p_decode_get_block_wait(ctx);
     /* get again */
-    framebuff = rx_st22p_claim_available(ctx, ctx->framebuff_decode_idx,
-                                         ST22P_RX_FRAME_READY, ST22P_RX_FRAME_IN_DECODING);
+    framebuff = rx_st22p_claim_available(
+        ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY, ST22P_RX_FRAME_IN_DECODING);
   }
   /* not any ready frame */
   if (!framebuff) {
@@ -599,11 +600,11 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
                                        ST22P_RX_FRAME_DECODED, ST22P_RX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    if (!__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE))
+    if (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire))
       mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                    ctx->block_timeout_ns);
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     framebuff = rx_st22p_claim_available(ctx, ctx->framebuff_consumer_idx,
                                          ST22P_RX_FRAME_DECODED, ST22P_RX_FRAME_IN_USER);
