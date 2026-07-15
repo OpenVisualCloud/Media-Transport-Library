@@ -2,9 +2,11 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
@@ -104,6 +106,63 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
       << ") -- TX pacing never recovered from an epoch initialized ahead of real time";
 }
 
+/* Waits for the first complete RX frame with a generous bound, since real PF
+ * hardware RX flow/ARP establishment latency (not sampling-window size) is
+ * what actually varies run to run -- confirmed via RX_VIDEO_SESSION logging
+ * 0 pkts for the whole run when a fixed pre-sleep was used instead. Once
+ * flowing, discards kWarmupFrames more complete frames, then samples up to
+ * kMaxSampleFrames within a separate, steady-state-only deadline. Returns
+ * the total complete-frame count observed; span_ratios gets one
+ * observed/expected packet-train-span ratio per sampled frame with adequate
+ * st20_rx_tp_meta coverage. */
+int CollectPacingSpanRatios(NoCtxTest::St20pHandlerBundle& bundle, double trs_ns,
+                            std::vector<double>& span_ratios) {
+  constexpr int kWarmupFrames = 5;
+  constexpr int kMaxSampleFrames = 20;
+  st20p_rx_handle rx = bundle.handler->sessionsHandleRx;
+  int complete_frames = 0;
+  int sampled_frames = 0;
+
+  auto first_frame_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (complete_frames == 0 &&
+         std::chrono::steady_clock::now() < first_frame_deadline) {
+    struct st_frame* frame = st20p_rx_get_frame(rx);
+    if (!frame) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      continue;
+    }
+    if (frame->status == ST_FRAME_STATUS_COMPLETE) complete_frames++;
+    st20p_rx_put_frame(rx, frame);
+  }
+
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+  while (sampled_frames < kMaxSampleFrames &&
+         std::chrono::steady_clock::now() < deadline) {
+    struct st_frame* frame = st20p_rx_get_frame(rx);
+    if (!frame) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
+    }
+    if (frame->status != ST_FRAME_STATUS_COMPLETE) {
+      st20p_rx_put_frame(rx, frame);
+      continue;
+    }
+
+    complete_frames++;
+    if (complete_frames > kWarmupFrames) {
+      sampled_frames++;
+      struct st20_rx_tp_meta* tp = frame->tp[MTL_SESSION_PORT_P];
+      if (tp && tp->pkts_cnt >= 2 && tp->pkts_cnt >= frame->pkts_total / 2) {
+        double observed_span_ns = (double)tp->ipt_avg * (tp->pkts_cnt - 1);
+        double expected_span_ns = trs_ns * (tp->pkts_cnt - 1);
+        span_ratios.push_back(observed_span_ns / expected_span_ns);
+      }
+    }
+    st20p_rx_put_frame(rx, frame);
+  }
+  return complete_frames;
+}
+
 } /* namespace */
 
 /* TSN pacing (launch-time offload) is only advertised by PF drivers; this
@@ -123,4 +182,61 @@ TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step_pf_tsn_pacing) {
  * never recovers regardless of pacing way, i.e. this is not a TSN-only bug. */
 TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step_tsc_pacing) {
   RunEpochOnwardRecoveryCase(this, ctx, ST21_TX_PACING_WAY_TSC);
+}
+
+/* Smoke-test: does TSN launch-time pacing actually spread packets across the
+ * frame interval on the wire, instead of merely completing session setup?
+ * Uses E830 PF RX hardware timestamps (st20_rx_tp_meta::ipt_avg, populated by
+ * ST20P_RX_FLAG_TIMING_PARSER_META with MTL_FLAG_ENABLE_HW_TIMESTAMP) so
+ * scheduler/poll jitter on the RX side cannot manufacture apparent spread. */
+TEST_F(NoCtxTest, st20p_tx_packets_are_spread_over_frame_pf_tsn_pacing) {
+  ctx->para.pacing = ST21_TX_PACING_WAY_TSN;
+  ctx->para.flags |= MTL_FLAG_PTP_ENABLE | MTL_FLAG_ENABLE_HW_TIMESTAMP;
+  ctx->para.flags &= ~(MTL_FLAG_PTP_SOURCE_TSC | MTL_FLAG_DEV_AUTO_START_STOP);
+  ctx->handle = mtl_init(&ctx->para);
+  ASSERT_TRUE(ctx->handle != nullptr);
+
+  auto bundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/true, nullptr, [](St20pHandler* handler) {
+        handler->sessionsOpsRx.flags |= ST20P_RX_FLAG_TIMING_PARSER_META;
+      });
+  ASSERT_NE(bundle.handler, nullptr);
+
+  bundle.handler->startSessionTx();
+  mtl_start(ctx->handle);
+
+  double tr_offset_ns = 0, trs_ns = 0;
+  uint32_t vrx_pkts = 0;
+  ASSERT_EQ(st20p_tx_get_pacing_params(bundle.handler->sessionsHandleTx, &tr_offset_ns,
+                                       &trs_ns, &vrx_pkts),
+            0);
+  ASSERT_GT(trs_ns, 0.0);
+
+  std::vector<double> span_ratios;
+  int complete_frames = CollectPacingSpanRatios(bundle, trs_ns, span_ratios);
+
+  bundle.handler->stopSession();
+
+  constexpr int kMinUsableFrames = 15;
+  ASSERT_GE((int)span_ratios.size(), kMinUsableFrames)
+      << "only " << span_ratios.size() << " of " << complete_frames
+      << " complete RX frames had adequate timing-parser packet coverage";
+
+  int in_range = 0;
+  for (double ratio : span_ratios) {
+    if (ratio >= 0.5 && ratio <= 1.5) in_range++;
+  }
+  EXPECT_GE(in_range, (int)(span_ratios.size() * 0.8))
+      << "fewer than 80% of sampled frames show a packet-train span within "
+         "[0.5, 1.5] of the TSN-paced expectation (trs_ns="
+      << trs_ns << ")";
+
+  std::vector<double> sorted_ratios(span_ratios);
+  std::sort(sorted_ratios.begin(), sorted_ratios.end());
+  size_t mid = sorted_ratios.size() / 2;
+  double median = (sorted_ratios.size() % 2)
+                      ? sorted_ratios[mid]
+                      : (sorted_ratios[mid - 1] + sorted_ratios[mid]) / 2.0;
+  EXPECT_GE(median, 0.7);
+  EXPECT_LE(median, 1.3);
 }
