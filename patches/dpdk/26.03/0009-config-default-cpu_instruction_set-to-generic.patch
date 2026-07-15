@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MTL <mtl@example.com>
+Date: Wed, 1 Jul 2026 00:00:00 -0400
+Subject: [PATCH] config: default cpu_instruction_set to generic instead of
+ native
+
+Building DPDK with the implicit 'auto' -> 'native' default bakes the
+build host's full ISA (e.g. AVX-512) into ELF init constructors such as
+dummy_queue_init() in librte_ethdev. Those constructors run at
+dlopen()/exec time, before any of DPDK's own runtime CPU dispatch
+(rte_cpu_get_flag_enabled(), compile_time_cpuflags) can gate on it, so
+a shared library or app built on an AVX-512 host raises SIGILL the
+moment it is loaded on any narrower target CPU -- this hit MTL's
+GStreamer plugins when loaded via gst-inspect-1.0 on a non-AVX-512
+host/VM (see .github/avx512_crash.md).
+
+Default 'auto' to 'generic' (the portable per-arch baseline DPDK
+already supports, e.g. 'corei7' on x86) instead of 'native'. This does
+not remove AVX-512/AVX2 support: DPDK's own runtime CPU dispatch still
+selects those code paths where it explicitly checks for them. Callers
+that want the old native-optimized build can still opt back in with
+-Dcpu_instruction_set=native.
+
+Signed-off-by: MTL <mtl@example.com>
+---
+ config/meson.build | 8 +++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/config/meson.build b/config/meson.build
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -132,7 +132,14 @@ else
+     endif
+     if platform == 'native'
+         if cpu_instruction_set == 'auto'
+-            cpu_instruction_set = 'native'
++            # MTL: default 'auto' to the portable 'generic' baseline rather
++            # than 'native'. -march=native bakes the build host's full ISA
++            # (e.g. AVX-512) into ELF init constructors that run before any
++            # runtime CPU dispatch can gate on it, crashing with SIGILL on
++            # narrower target CPUs. Runtime dispatch still selects AVX2/
++            # AVX-512 code paths where DPDK explicitly checks for them.
++            # Pass -Dcpu_instruction_set=native to opt back in.
++            cpu_instruction_set = 'generic'
+         endif
+     endif
+ endif
+-- 
+2.47.3
