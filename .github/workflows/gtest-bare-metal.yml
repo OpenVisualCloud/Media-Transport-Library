@@ -69,7 +69,6 @@ jobs:
     needs:
       - gtest-check-for-changes
       - build
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     strategy:
       matrix:
         nic:
@@ -80,32 +79,32 @@ jobs:
     runs-on: ${{ matrix.nic }}
     steps:
       - name: Harden Runner
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
       - name: Validate host and download artifacts
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
 
       - name: Check and build ice driver if needed
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: |
           if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
       - name: Run gtest bare metal
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           NIGHTLY: 0
           EXIT_ON_FAILURE: 1

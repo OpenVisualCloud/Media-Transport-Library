@@ -52,7 +52,6 @@ jobs:
     needs:
       - smoke-check-for-changes
       - build
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
       cancel-in-progress: true
@@ -67,25 +66,25 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: 'preparation: Harden Runner'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
         with:
           ref: '${{ github.ref }}'
       - name: 'preparation: Validate host and download artifacts'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
       - name: 'installation: Install pipenv environment'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         working-directory: tests/validation
         id: pipenv-install
         run: |
@@ -93,12 +92,12 @@ jobs:
           source .venv/bin/activate
           pip install -r requirements.txt
       - name: Create session ID
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: |
           runner_name=${{ runner.name }}
           echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
       - name: Set PCI device env variable
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
             echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
@@ -110,7 +109,7 @@ jobs:
             echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         working-directory: tests/validation/configs
         run: |
           python3 gen_config.py \
@@ -124,17 +123,17 @@ jobs:
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
       - name: Export workflow tag for PCAP naming
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         shell: bash
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         timeout-minutes: 60
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
       - name: "upload report"
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         id: upload-report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -142,7 +141,7 @@ jobs:
           path: |
             report.html
       - name: "Add report to summary"
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: |
           {
             echo "## Smoke Tests Report"
