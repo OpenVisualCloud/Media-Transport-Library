@@ -33,7 +33,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
+      changed: ${{ steps.filter.outputs.linux_tests == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -69,7 +69,7 @@ jobs:
     needs:
       - gtest-check-for-changes
       - build
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     strategy:
       matrix:
         nic:
