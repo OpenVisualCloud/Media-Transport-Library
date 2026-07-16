@@ -42,6 +42,7 @@ def test_st20_interfaces_mix_refactored(
     test_time,
     interface_profile,
     test_config,
+    ptp_sync,
     pcap_capture,
     media_file,
     output_files,

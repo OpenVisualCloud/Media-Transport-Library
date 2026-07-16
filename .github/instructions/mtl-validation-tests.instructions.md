@@ -104,6 +104,8 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** Stock kernel ice loaded instead of the MTL out-of-tree patched ice (`versions.env::ICE_VER`). Re-run `setup_validation.sh` — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' tests/tools/RxTxApp/build/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
 | `Permission denied (publickey)` to `root@127.0.0.1` | **(setup)** Pubkey not in `/root/.ssh/authorized_keys`. |
+| `preflight: MtlManager or RxTxApp missing` despite binaries present under `.local_install/mtl/bin/` | **(setup)** Fixed: preflight now checks both the legacy in-tree `build/` path and the `.local_install` prefix that `mtl_engine/const.py::PREFIX` actually invokes. Re-run setup. |
+| `preflight: hugepages free is 64 MiB (<1024 MiB)` on a host with 1GB hugepages configured (`default_hugepagesz=1G` on kernel cmdline) | **(setup)** Fixed: hugepage check now reads `Hugepagesize` from `/proc/meminfo` instead of assuming 2MB pages. Re-run setup. |
 
 **(setup)** = delegate to the `MTL Validation Setup` subagent (it re-runs `setup_validation.sh` idempotently).
 
