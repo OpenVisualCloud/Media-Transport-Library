@@ -47,7 +47,7 @@ Use this table to pick the right subagent. Resolve ambiguity in order:
 | Run `KahawaiTest` (integration gtest, real VFs) | **MTL System Admin** | Only one with `run_gtest` MCP tool; enforced Gate 6 for data-plane changes |
 | Host setup (hugepages, VFs, drivers, MtlManager) | **MTL System Admin** | MCP-only, no shell |
 | Adversarial review of a saved diff | **MTL Reviewer** | Read-only; enforced Gate 5; refuses if diff empty |
-| Prepare pytest under `tests/validation/` (apt, NFS, configs) | **MTL Validation Setup** | Idempotent setup script |
+| Prepare pytest under `tests/validation/` (apt, NFS, configs) | **MTL Validation Setup** | MCP-only, idempotent (`setup_validation_full`) |
 | Run pytest under `tests/validation/` | *main agent* per `.github/instructions/mtl-validation-tests.instructions.md` | Validation Setup refuses by design |
 | Read-only Q&A, code archaeology, "where is X defined?" | **Explore** | Cheap, parallelizable |
 
