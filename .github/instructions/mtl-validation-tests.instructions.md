@@ -12,11 +12,19 @@ Scope: `tests/validation/tests/single/` only. `dual/` needs two hosts, `invalid/
 
 ```bash
 ls tests/validation/configs/{topology,test}_config.yaml \
-   build/manager/MtlManager tests/tools/RxTxApp/build/RxTxApp \
+   .local_install/mtl/bin/{MtlManager,RxTxApp} \
    tests/validation/venv/bin/python3 2>&1
 findmnt -no SOURCE /mnt/media 2>/dev/null || echo NFS_MISSING
 modinfo -n ice    # must be /lib/modules/<kver>/updates/... not /kernel/...
 ```
+
+**Pytest needs `.local_install/mtl/bin/{MtlManager,RxTxApp}`, NOT `build/manager/MtlManager`
+or `tests/tools/RxTxApp/build/RxTxApp`.** `tests/validation/mtl_engine/const.py` hardcodes
+`PREFIX = ".local_install"` — every app path pytest invokes (RxTxApp, MtlManager, ffmpeg,
+gstreamer) resolves under `.local_install/{mtl,ffmpeg,gstreamer}/...`, a separate tree from
+the system-wide `build/` + `/usr/local` install gtest/KahawaiTest uses. Symptom when this is
+missing: the `mtl_manager` fixture errors with "Failed to start MtlManager on host" even
+though gtest works fine and `build/manager/MtlManager` exists.
 
 A probe of pytest-specific setup stages without modifying the host:
 
@@ -24,11 +32,21 @@ A probe of pytest-specific setup stages without modifying the host:
 CHECK_ONLY=1 bash .github/scripts/setup_validation.sh
 ```
 
-Broad host setup is now handled by MCP tool `setup_validation_base`
-(apt/DPDK/ICE/MTL/hugepages/CPU governor/plugins). The script keeps only
-pytest-custom stages (NFS, localhost SSH to root, validation venv, configs).
+Broad host setup — **including the `.local_install` build** — is `setup_environment.sh`
+pointed at the `.local_install` prefix instead of the system-wide one:
 
-Anything missing or wrong → delegate to the `MTL Validation Setup` subagent. Same for runtime
+```bash
+MTL_INSTALL_PREFIX=$PWD/.local_install/mtl SETUP_ENVIRONMENT=1 \
+  SETUP_BUILD_AND_INSTALL_DPDK=1 MTL_BUILD_AND_INSTALL=1 \
+  bash .github/scripts/setup_environment.sh
+```
+
+`setup_validation.sh` (used above for the health-check probe) then handles only the
+pytest-custom stages (NFS, localhost SSH to root, validation venv, configs) on top of that
+build.
+
+Anything missing or wrong → re-run the relevant script above, or `CHECK_ONLY=1 bash
+.github/scripts/setup_validation.sh` to see which stage is failing. Same for runtime
 failures that the table below tags as **(setup)**.
 
 **If `/mnt/media` is not mounted, you MUST tell the setup subagent to ask the user for
@@ -92,7 +110,8 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
 | `RemoteProcessInvalidState: Process is finished` (ffmpeg) | **(setup)** In-repo ffmpeg/libav not installed. |
-| RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run `setup_validation.sh` (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd tests/tools/RxTxApp/build/RxTxApp` has no `not found`. |
+| RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run `setup_validation.sh` (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd .local_install/mtl/bin/RxTxApp` has no `not found`. |
+| `RuntimeError: Failed to start MtlManager on host` (pytest `mtl_manager` fixture, setup error not a test failure) | **(setup)** `.local_install/mtl/bin/MtlManager` missing — the host only has the system-wide gtest build. Run `setup_environment.sh` with `MTL_INSTALL_PREFIX=.local_install/mtl` (see above); `build_mtl`/`dpdk_build` target `build/` + `/usr/local` instead, which pytest doesn't use. |
 | `Media file not present on <host>: /mnt/media/...` (SKIPPED) | **(setup)** NFS empty/unmounted. Setup subagent must ASK user for `NFS_SOURCE`; never skip silently. |
 | `cp: cannot stat /mnt/media/...` | **(setup)** Same — NFS not populated. |
 | `mount: bad option ... mount.<type> helper` | **(setup)** `nfs-common` missing. |
@@ -102,10 +121,11 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. |
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** Stock kernel ice loaded instead of the MTL out-of-tree patched ice (`versions.env::ICE_VER`). Re-run `setup_validation.sh` — the ice stage version-checks and reloads automatically. |
-| RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' tests/tools/RxTxApp/build/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
+| RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
 | `Permission denied (publickey)` to `root@127.0.0.1` | **(setup)** Pubkey not in `/root/.ssh/authorized_keys`. |
 
-**(setup)** = delegate to the `MTL Validation Setup` subagent (it re-runs `setup_validation.sh` idempotently).
+**(setup)** = re-run `setup_environment.sh` (build stage) and/or `setup_validation.sh`
+(pytest-custom stage) — both are idempotent, safe to re-run on an already-prepared host.
 
 If you hit something not in this table: read `logs/latest/*.log` (sudo), match against `mtl_engine/` source, fix the env, **add a row here**.
 

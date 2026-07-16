@@ -5,6 +5,12 @@
             "command": "${workspaceFolder}/.github/mcp/run_server.sh",
             "args": [],
             "env": {}
+        },
+        "mtl-validation-setup": {
+            "type": "stdio",
+            "command": "${workspaceFolder}/.github/mcp/run_validation_server.sh",
+            "args": [],
+            "env": {}
         }
     }
 }

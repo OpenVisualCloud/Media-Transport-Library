@@ -172,14 +172,15 @@ print_summary() {
 			"$CYN" "$CLR" "$s" "${STAGE_RESULT[$s]:-?}" "${STAGE_DURATION[$s]:-?}" >&2
 	done
 	log ""
-	log " RxTxApp        : $([[ -x tests/tools/RxTxApp/build/RxTxApp ]] && echo OK || echo MISSING)"
-	log " MtlManager     : $([[ -x build/manager/MtlManager ]] && echo OK || echo MISSING)"
-	if ldconfig -p 2>/dev/null | grep -Eq 'libmtl\.so(\s|$)' || [[ -f /usr/local/lib/x86_64-linux-gnu/libmtl.so || -f /usr/local/lib64/libmtl.so || -f /usr/local/lib/libmtl.so ]]; then
-		log " libmtl.so      : OK"
-	else
-		log " libmtl.so      : MISSING"
-	fi
-	log " libdpdk        : $(pkg-config --modversion libdpdk 2>/dev/null || echo MISSING)"
+	# Pytest (this framework) hard-requires the .local_install prefix tree —
+	# see tests/validation/mtl_engine/const.py PREFIX=".local_install". This is
+	# SEPARATE from the system-wide build/ + /usr/local tree gtest/KahawaiTest
+	# uses; built via MCP tool setup_validation_base/setup_validation_full.
+	log " .local_install/mtl/bin/RxTxApp    : $([[ -x .local_install/mtl/bin/RxTxApp ]] && echo OK || echo MISSING)"
+	log " .local_install/mtl/bin/MtlManager : $([[ -x .local_install/mtl/bin/MtlManager ]] && echo OK || echo MISSING)"
+	log " .local_install/mtl/lib*/libmtl.so : $([[ -f .local_install/mtl/lib64/libmtl.so || -f .local_install/mtl/lib/x86_64-linux-gnu/libmtl.so ]] && echo OK || echo MISSING)"
+	log " .local_install/ffmpeg/bin/ffmpeg  : $([[ -x .local_install/ffmpeg/bin/ffmpeg ]] && echo OK || echo 'MISSING (only needed for application=ffmpeg tests)')"
+	log " libdpdk (system, for gtest)       : $(pkg-config --modversion libdpdk 2>/dev/null || echo MISSING)"
 	log " ice driver     : $(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo MISSING) @ $(modinfo -n ice 2>/dev/null || echo '<none>')"
 	log " hugepages free : $(awk '/HugePages_Free/ {print $2*2 " MiB"}' /proc/meminfo)"
 	if mountpoint -q /mnt/media; then
@@ -260,8 +261,11 @@ stage_preflight() {
 		warn "preflight: libmtl.so missing in ld cache"
 		missing=1
 	fi
-	if [[ ! -x build/manager/MtlManager || ! -x tests/tools/RxTxApp/build/RxTxApp ]]; then
-		warn "preflight: MtlManager or RxTxApp missing"
+	# NOTE: pytest needs .local_install/mtl/bin/{MtlManager,RxTxApp}, built by
+	# MCP tool setup_validation_base/setup_validation_full — a SEPARATE tree
+	# from build/manager + tests/tools/RxTxApp/build used by gtest/KahawaiTest.
+	if [[ ! -x .local_install/mtl/bin/MtlManager || ! -x .local_install/mtl/bin/RxTxApp ]]; then
+		warn "preflight: .local_install/mtl/bin/{MtlManager,RxTxApp} missing (pytest needs this, not build/manager or tests/tools/RxTxApp/build)"
 		missing=1
 	fi
 	ice_path=$(modinfo -n ice 2>/dev/null || true)

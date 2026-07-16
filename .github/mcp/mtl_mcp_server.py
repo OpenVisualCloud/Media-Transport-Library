@@ -16,22 +16,34 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import textwrap
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mtl_setup_common import (
+    REPO_ROOT,
+    _load_versions,
+    _run,
+    _run_output,
+    _run_rc,
+    _save_test_log,
+    _summarize_output,
+)
+from mtl_setup_common import (
+    cpu_governor_set_and_confirm_performance as _cpu_governor_set_and_confirm_performance,
+)
+from mtl_setup_common import hugepages_get as _hugepages_get_impl
+from mtl_setup_common import hugepages_set as _hugepages_set_impl
+from mtl_setup_common import ice_driver_rebuild as _ice_driver_rebuild_impl
+from mtl_setup_common import ice_driver_status as _ice_driver_status_impl
+from mtl_setup_common import install_dependencies as _install_dependencies_impl
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent.parent  # .github/mcp -> repo root
 NICCTL = REPO_ROOT / "script" / "nicctl.sh"
-VERSIONS_ENV = REPO_ROOT / "versions.env"
 
 mcp = FastMCP(
     "mtl-system-setup",
@@ -54,99 +66,18 @@ mcp = FastMCP(
         • Kernel socket mode: nic_bind_kernel (leave NIC in kernel)
         • Debug crash:        dmesg_tail → ice_driver_status → dpdk_status →
                              log_tail
+
+        Preparing tests/validation/ pytest (a separate .local_install tree)?
+        Use the sibling `mtl-validation-setup` MCP server instead.
     """
     ),
 )
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers local to this server (NIC/VF discovery — not needed by the
+# validation server, so not shared via mtl_setup_common)
 # ---------------------------------------------------------------------------
-def _run(
-    cmd: list[str] | str,
-    *,
-    sudo: bool = False,
-    check: bool = True,
-    timeout: int = 300,
-    cwd: str | Path | None = None,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run a command and return CompletedProcess."""
-    if isinstance(cmd, str):
-        cmd = ["bash", "-c", cmd]
-    if sudo:
-        cmd = ["sudo"] + cmd
-    merged_env = {**os.environ, **(env or {})}
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=check,
-        cwd=cwd or REPO_ROOT,
-        env=merged_env,
-    )
-
-
-def _run_output(cmd: list[str] | str, **kw: Any) -> str:
-    """Run and return combined stdout+stderr, never raising on non-zero rc.
-
-    On timeout, returns whatever output was captured plus a timeout marker.
-    """
-    try:
-        r = _run(cmd, check=False, **kw)
-        out = r.stdout
-        if r.stderr:
-            out += "\n" + r.stderr
-        return out.strip()
-    except subprocess.TimeoutExpired as e:
-        out = (e.stdout or "") + "\n" + (e.stderr or "")
-        out += f"\n\n*** TIMEOUT after {e.timeout}s ***"
-        return out.strip()
-
-
-def _save_test_log(name: str, content: str) -> Path:
-    """Save test output to a timestamped log file under build/logs/."""
-    log_dir = REPO_ROOT / "build" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = log_dir / f"{name}_{ts}.log"
-    log_path.write_text(content)
-    return log_path
-
-
-def _summarize_output(name: str, out: str, tail_lines: int = 40) -> str:
-    """Save large command output to a log file, returning a short summary.
-
-    Full build/install output can be thousands of lines — dumping it into a
-    tool result burns context for little benefit. This saves it to disk and
-    returns the log path, total line count (like `wc -l`), and just the
-    tail, so the caller can grep/read the file directly if more is needed.
-    """
-    log_path = _save_test_log(name, out)
-    total_lines = len(out.splitlines())
-    tail = "\n".join(out.splitlines()[-tail_lines:])
-    return (
-        f"- Full log: `{log_path}` ({total_lines} lines)\n"
-        f"### Output (last {tail_lines} lines)\n```\n{tail}\n```"
-    )
-
-
-def _load_versions() -> dict[str, str]:
-    """Parse versions.env into a dict."""
-    result: dict[str, str] = {}
-    if VERSIONS_ENV.is_file():
-        for line in VERSIONS_ENV.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                # Expand simple ${VAR} references within the file
-                for ref_k, ref_v in result.items():
-                    v = v.replace(f"${{{ref_k}}}", ref_v)
-                result[k.strip()] = v.strip()
-    return result
-
-
 def _validate_bdf(bdf: str) -> str | None:
     """Return error string if BDF is invalid, else None."""
     if not re.match(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d$", bdf):
@@ -206,40 +137,6 @@ def _discover_sriov_intel_pfs() -> list[dict[str, str]]:
             }
         )
     return pfs
-
-
-def _cpu_governor_set_and_confirm_performance() -> str:
-    """Set all CPU scaling governors to performance and confirm status."""
-    set_out = _run_output(
-        "for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; "
-        "do echo performance | sudo tee $cpu; done"
-    )
-    verify_out = _run_output(
-        "for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; "
-        'do printf \'%s=%s\\n\' "$cpu" "$(cat $cpu 2>/dev/null)"; done'
-    )
-
-    total = 0
-    non_perf: list[str] = []
-    for line in verify_out.splitlines():
-        if not line.strip():
-            continue
-        total += 1
-        _, _, gov = line.partition("=")
-        if gov.strip() != "performance":
-            non_perf.append(line)
-
-    status = "PASS" if total > 0 and not non_perf else "FAIL"
-    summary = f"- CPUs checked: {total}\\n- Status: {status}"
-    if non_perf:
-        summary += "\\n- Non-performance entries:\\n" + "\\n".join(non_perf)
-
-    return (
-        "## CPU Governor (set to performance + confirm)\\n"
-        f"{summary}\\n\\n"
-        f"Set output:\\n```\\n{set_out}\\n```\\n\\n"
-        f"Verify output:\\n```\\n{verify_out}\\n```"
-    )
 
 
 # ===================================================================
@@ -387,8 +284,7 @@ def iommu_status() -> str:
 @mcp.tool()
 def hugepages_get() -> str:
     """Get current hugepage status (total, free, size)."""
-    info = _run_output("grep -i huge /proc/meminfo")
-    return f"## Hugepages\n```\n{info}\n```"
+    return _hugepages_get_impl()
 
 
 @mcp.tool()
@@ -400,17 +296,7 @@ def hugepages_set(nr_hugepages: int = 2048, size_kb: int = 2048) -> str:
         nr_hugepages: Number of hugepages to allocate (default 2048).
         size_kb: Hugepage size in KB. Use 2048 for 2MB (default) or 1048576 for 1GB pages.
     """
-    hp_path = f"/sys/kernel/mm/hugepages/hugepages-{size_kb}kB/nr_hugepages"
-    if not Path(hp_path).exists():
-        return (
-            f"Error: hugepage size {size_kb}kB not supported. Available:\n"
-            + _run_output("ls /sys/kernel/mm/hugepages/")
-        )
-
-    _run(f"echo {nr_hugepages} | sudo tee {hp_path}", sudo=False)
-    after = _run_output("grep -i huge /proc/meminfo")
-    total_mb = nr_hugepages * size_kb // 1024
-    return f"Set {nr_hugepages} x {size_kb}kB hugepages ({total_mb} MB total).\n\n```\n{after}\n```"
+    return _hugepages_set_impl(nr_hugepages, size_kb)
 
 
 # ===================================================================
@@ -733,47 +619,7 @@ def ice_driver_status() -> str:
     Check the ICE driver status: loaded version vs required version,
     module path, and whether it's the patched out-of-tree build.
     """
-    vers = _load_versions()
-    want = vers.get("ICE_VER", "unknown")
-
-    live_ver = _run_output(
-        "modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo 'not loaded'"
-    )
-    live_path = _run_output("modinfo -n ice 2>/dev/null || echo 'not found'")
-
-    oot_ko = f"/lib/modules/{_run_output('uname -r')}/updates/drivers/net/ethernet/intel/ice/ice.ko"
-    oot_exists = Path(oot_ko).is_file()
-    oot_ver = ""
-    if oot_exists:
-        oot_ver = _run_output(
-            f"modinfo {oot_ko} 2>/dev/null | awk '/^version:/ {{print $2; exit}}'"
-        )
-
-    is_oot = "updates/" in live_path
-    matches = want in live_ver if live_ver != "not loaded" else False
-
-    status = "OK" if (is_oot and matches) else "ACTION NEEDED"
-
-    return (
-        f"## ICE Driver Status: {status}\n"
-        f"- Required version: {want}\n"
-        f"- Live version: {live_ver}\n"
-        f"- Live module path: {live_path}\n"
-        f"- Out-of-tree module: {'EXISTS' if oot_exists else 'MISSING'} at {oot_ko}\n"
-        f"  - OOT version: {oot_ver or 'N/A'}\n"
-        f"- Using out-of-tree: {'YES' if is_oot else 'NO — stock kernel driver'}\n"
-        + (
-            "\n### Issue\n"
-            "MTL requires the patched out-of-tree ICE driver for rate-limit pacing.\n"
-            "Stock kernel ice does not support the iavf TM virtchnl messages.\n"
-            "Use `ice_driver_rebuild` tool or run:\n"
-            "```\n"
-            "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 bash .github/scripts/setup_environment.sh\n"
-            "```"
-            if not (is_oot and matches)
-            else ""
-        )
-    )
+    return _ice_driver_status_impl()
 
 
 @mcp.tool()
@@ -786,34 +632,7 @@ def ice_driver_rebuild() -> str:
 
     WARNING: This will briefly disconnect NICs using the ice driver.
     """
-    out = _run_output(
-        "SETUP_ENVIRONMENT=0 "
-        "SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 "
-        "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
-        "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
-        "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=600,
-    )
-
-    # Reload
-    reload_out = _run_output(
-        "sudo depmod -a && sudo rmmod irdma 2>/dev/null; "
-        "sudo rmmod ice 2>/dev/null; sudo modprobe ice; "
-        "modinfo ice | head -5"
-    )
-
-    return (
-        f"## ICE Driver Build\n{_summarize_output('ice_driver_rebuild', out)}\n\n"
-        f"## Reload\n{reload_out}\n\n"
-        "## ⚠ Important: VFs Destroyed\n"
-        "The ICE driver reload destroyed all existing VFs.\n"
-        "You MUST re-create VFs before running any tests:\n"
-        "- Use `setup_after_reboot_auto` to re-create VFs on all PFs\n"
-        "- Or use `nic_create_vf` for a specific PF\n"
-        "- Then restart `manager_start` if it was running"
-    )
+    return _ice_driver_rebuild_impl()
 
 
 # ===================================================================
@@ -849,7 +668,7 @@ def dpdk_build() -> str:
 
     Uses the version specified in versions.env. Takes 2-4 minutes on first build.
     """
-    out = _run_output(
+    rc, out = _run_rc(
         "SETUP_ENVIRONMENT=0 "
         "SETUP_BUILD_AND_INSTALL_DPDK=1 "
         "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
@@ -865,7 +684,7 @@ def dpdk_build() -> str:
         "pkg-config --modversion libdpdk 2>/dev/null || echo 'not installed'"
     )
     return (
-        f"## DPDK Build\n{_summarize_output('dpdk_build', out)}\n\n"
+        f"## DPDK Build\n{_summarize_output('dpdk_build', out, rc=rc)}\n\n"
         f"## Result\nInstalled version: {ver_after}"
     )
 
@@ -906,7 +725,7 @@ def build_mtl(mode: str = "debugonly") -> str:
         if stale.is_file():
             _run(["rm", "-rf", str(stale.parent)], sudo=True, check=False)
 
-    out = _run_output(cmd, timeout=600)
+    rc, out = _run_rc(cmd, timeout=600)
 
     # Ensure libraries are in ldcache
     _run(["ldconfig"], sudo=True, check=False)
@@ -920,7 +739,7 @@ def build_mtl(mode: str = "debugonly") -> str:
     libmtl = _run_output("ldconfig -p 2>/dev/null | grep libmtl || echo 'not found'")
 
     return (
-        f"## MTL Build ({mode})\n{_summarize_output('build_mtl', out)}\n\n"
+        f"## MTL Build ({mode})\n{_summarize_output('build_mtl', out, rc=rc)}\n\n"
         f"## Artifacts\n- RxTxApp: {rxtxapp}\n- MtlManager: {manager}\n- libmtl: {libmtl}"
     )
 
@@ -1177,120 +996,6 @@ def setup_for_kernel_mode(nr_hugepages: int = 2048) -> str:
     return "\n\n---\n\n".join(results)
 
 
-@mcp.tool()
-def setup_validation_base(
-    nr_hugepages: int = 2048,
-    build_mode: str = "release",
-    include_ffmpeg_plugin: bool = False,
-    include_gstreamer_plugin: bool = False,
-) -> str:
-    """
-    One-shot broad host setup for validation environments.
-
-    This covers non-pytest-specific responsibilities and is intended to replace
-    generic setup logic in setup_validation.sh:
-    - apt dependencies
-    - DPDK build/install
-    - ICE driver status/rebuild
-    - MTL build
-    - hugepages
-    - CPU governor performance + confirmation
-    - optional FFmpeg/GStreamer plugin builds
-
-    Pytest-specific setup (NFS media mount, localhost root SSH, validation venv,
-    topology/test config generation) remains in setup_validation.sh.
-
-    Args:
-        nr_hugepages: Number of 2MB hugepages (default 2048)
-        build_mode: release/debug/debugonly (default release)
-        include_ffmpeg_plugin: Build FFmpeg plugin (default False)
-        include_gstreamer_plugin: Build GStreamer plugin (default False)
-    """
-    if build_mode not in ("release", "debug", "debugonly"):
-        return (
-            "Error: build_mode must be one of release/debug/debugonly. "
-            f"Got '{build_mode}'."
-        )
-
-    results: list[str] = []
-
-    results.append("## Step 1: Install Dependencies\n" + install_dependencies())
-    results.append("## Step 2: Build DPDK\n" + dpdk_build())
-    ice_status = ice_driver_status()
-    results.append("## Step 3: ICE Driver Status\n" + ice_status)
-
-    if "ACTION NEEDED" in ice_status:
-        results.append("## Step 3b: Rebuild ICE Driver\n" + ice_driver_rebuild())
-
-    results.append("## Step 4: Build MTL\n" + build_mtl(build_mode))
-    results.append("## Step 5: Hugepages\n" + hugepages_set(nr_hugepages))
-    results.append(
-        "## Step 6: CPU Governor\n" + _cpu_governor_set_and_confirm_performance()
-    )
-
-    if include_ffmpeg_plugin:
-        results.append("## Step 7: FFmpeg Plugin\n" + build_ffmpeg_plugin())
-    else:
-        results.append(
-            "## Step 7: FFmpeg Plugin\nSkipped (include_ffmpeg_plugin=False)"
-        )
-
-    if include_gstreamer_plugin:
-        results.append("## Step 8: GStreamer Plugin\n" + build_gstreamer_plugin())
-    else:
-        results.append(
-            "## Step 8: GStreamer Plugin\nSkipped (include_gstreamer_plugin=False)"
-        )
-
-    results.append(
-        "## Next Step\n"
-        "Run pytest-specific setup via .github/scripts/setup_validation.sh "
-        "(NFS/SSH/venv/config stages)."
-    )
-    return "\n\n---\n\n".join(results)
-
-
-# ===================================================================
-# TOOLS — Ecosystem Plugins
-# ===================================================================
-
-
-@mcp.tool()
-def build_ffmpeg_plugin() -> str:
-    """Build the MTL FFmpeg plugin (ecosystem/ffmpeg_plugin)."""
-    build_sh = REPO_ROOT / "ecosystem/ffmpeg_plugin/build.sh"
-    if not build_sh.is_file():
-        return "Error: ecosystem/ffmpeg_plugin/build.sh not found"
-
-    out = _run_output(
-        "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1 "
-        "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=600,
-    )
-    return f"## FFmpeg Plugin Build\n{_summarize_output('ffmpeg_plugin_build', out)}"
-
-
-@mcp.tool()
-def build_gstreamer_plugin() -> str:
-    """Build the MTL GStreamer plugin (ecosystem/gstreamer_plugin)."""
-    build_sh = REPO_ROOT / "ecosystem/gstreamer_plugin/build.sh"
-    if not build_sh.is_file():
-        return "Error: ecosystem/gstreamer_plugin/build.sh not found"
-
-    out = _run_output(
-        "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 "
-        "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=600,
-    )
-    return (
-        f"## GStreamer Plugin Build\n{_summarize_output('gstreamer_plugin_build', out)}"
-    )
-
-
 # ===================================================================
 # TOOLS — Install Dependencies
 # ===================================================================
@@ -1304,17 +1009,7 @@ def install_dependencies() -> str:
     Installs: gcc, meson, libnuma-dev, libjson-c-dev, libpcap-dev,
     libgtest-dev, libssl-dev, systemtap-sdt-dev, clang, etc.
     """
-    out = _run_output(
-        "SETUP_ENVIRONMENT=1 "
-        "SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
-        "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
-        "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
-        "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=300,
-    )
-    return f"## Install Dependencies\n{_summarize_output('install_dependencies', out)}"
+    return _install_dependencies_impl()
 
 
 # ===================================================================
@@ -1329,7 +1024,7 @@ def build_ebpf_xdp() -> str:
 
     This is optional — only needed if using XDP transport instead of DPDK PMD.
     """
-    out = _run_output(
+    rc, out = _run_rc(
         "SETUP_ENVIRONMENT=0 "
         "SETUP_BUILD_AND_INSTALL_DPDK=0 "
         "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
@@ -1339,7 +1034,7 @@ def build_ebpf_xdp() -> str:
         "bash .github/scripts/setup_environment.sh",
         timeout=300,
     )
-    return f"## eBPF/XDP Build\n{_summarize_output('ebpf_xdp_build', out)}"
+    return f"## eBPF/XDP Build\n{_summarize_output('ebpf_xdp_build', out, rc=rc)}"
 
 
 # ===================================================================
