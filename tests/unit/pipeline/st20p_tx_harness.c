@@ -139,6 +139,13 @@ int ut20p_tx_notify_ext_frame_free(ut20p_tx_ctx* ctx, uint16_t idx) {
   return st20p_tx_notify_ext_frame_free(&ctx->pipeline, frame);
 }
 
+void ut20p_tx_set_notify_frame_done(ut20p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st_frame* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
 void ut20p_tx_set_frame_ready(ut20p_tx_ctx* ctx, int idx) {
   __atomic_store_n(&ctx->framebuffs[idx].stat, ST20P_TX_FRAME_READY, __ATOMIC_RELEASE);
 }

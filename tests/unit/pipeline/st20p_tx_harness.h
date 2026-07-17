@@ -71,6 +71,11 @@ void ut20p_tx_ctx_set_manual_release(ut20p_tx_ctx* ctx);
 /** Wraps st20p_tx_notify_ext_frame_free(): IN_USER -> FREE. */
 int ut20p_tx_notify_ext_frame_free(ut20p_tx_ctx* ctx, uint16_t idx);
 
+/** Register ops.notify_frame_done, so frame_done()/if_frame_late() invoke it. */
+void ut20p_tx_set_notify_frame_done(ut20p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st_frame* frame),
+                                    void* priv);
+
 /**
  * Set framebuffer i to READY state (not yet converted), so that
  * tx_st20p_convert_get_frame finds it in the concurrent-converter tests.
