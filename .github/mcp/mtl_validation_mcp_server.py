@@ -52,6 +52,11 @@ mcp = FastMCP(
           CPU governor/plugins into .local_install) + pytest-specific setup
           (NFS media/localhost-root-SSH/venv/configs).
         • Re-run either phase alone: setup_validation_base / setup_validation_pytest.
+        • EBU LIST pcap compliance checking (optional, ask the human first):
+          pass ebu_ip/ebu_user/ebu_password + capture_pci_device (a 2nd NIC
+          PF) to setup_validation_full / setup_validation_pytest. Without
+          these, test_config.yaml's `compliance` stays false and the
+          `pcap_capture` fixture only skips (no capture, no EBU upload).
         """
     ),
 )
@@ -179,6 +184,10 @@ def setup_validation_pytest(
     pf_bdf: str = "",
     test_time: int = 30,
     nfs_persist: bool = False,
+    ebu_ip: str = "",
+    ebu_user: str = "",
+    ebu_password: str = "",
+    capture_pci_device: str = "",
 ) -> str:
     """
     Pytest-specific validation setup: NFS media, localhost root SSH, venv, configs.
@@ -201,6 +210,24 @@ def setup_validation_pytest(
         test_time: test_config.yaml::test_time in seconds (default 30).
         nfs_persist: When True, also add an /etc/fstab entry so the NFS
             mount survives a reboot.
+        ebu_ip: EBU LIST server IP for PCAP compliance analysis (the
+            `pcap_capture` fixture's teardown upload/verdict step). OPTIONAL
+            — only pass this if the human explicitly asked for compliance/
+            EBU checking; never assume or guess an EBU server, ask via
+            askQuestions. Requires ebu_user and ebu_password too.
+        ebu_user: EBU LIST server username. Required together with ebu_ip.
+        ebu_password: EBU LIST server password. Required together with
+            ebu_ip. Passed through the subprocess environment, never placed
+            on a command line, so it won't leak into `ps` output.
+        capture_pci_device: a SECOND NIC PF BDF, different from `pf_bdf`
+            (e.g. '0000:15:00.1' when pf_bdf is '0000:15:00.0' — two ports
+            of the same or a different card), used for netsniff-ng packet
+            capture. Compliance checking needs this in addition to
+            ebu_ip/ebu_user/ebu_password — without a second PF there's no
+            wire capture, and "compliance" in test_config.yaml stays false
+            even with valid EBU credentials. Ask the human for this only
+            when they want compliance checking; probe available PFs first
+            (`nic_discover_pfs`/`system_status`) so you can suggest one.
     """
     env = {
         "TEST_TIME": str(test_time),
@@ -210,9 +237,18 @@ def setup_validation_pytest(
         env["NFS_SOURCE"] = nfs_source
     if pf_bdf:
         env["PCI_DEVICE_BDF"] = pf_bdf
-    env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
+    if ebu_ip:
+        env["EBU_IP"] = ebu_ip
+        env["EBU_USER"] = ebu_user
+        env["EBU_PASSWORD"] = ebu_password
+    if capture_pci_device:
+        env["CAPTURE_PCI_DEVICE"] = capture_pci_device
+    # Pass secrets/inputs through the subprocess environment (not an inline
+    # "VAR=val bash script.sh" command string) so EBU_PASSWORD never appears
+    # in the executed command line / process listing.
     rc, out = _run_rc(
-        f"{env_prefix} bash .github/scripts/setup_validation.sh",
+        "bash .github/scripts/setup_validation.sh",
+        env=env,
         timeout=300,
     )
     return f"## Pytest Validation Setup\n{_summarize_output('setup_validation_pytest', out, tail_lines=60, rc=rc)}"
@@ -227,6 +263,10 @@ def setup_validation_full(
     include_ffmpeg_plugin: bool = True,
     include_gstreamer_plugin: bool = False,
     test_time: int = 30,
+    ebu_ip: str = "",
+    ebu_user: str = "",
+    ebu_password: str = "",
+    capture_pci_device: str = "",
 ) -> str:
     """
     One-shot: take a clean host to "ready to run tests/validation/ pytest".
@@ -251,6 +291,18 @@ def setup_validation_full(
         include_ffmpeg_plugin: Build FFmpeg plugin into .local_install (default True).
         include_gstreamer_plugin: Build GStreamer plugin into .local_install (default False).
         test_time: test_config.yaml::test_time in seconds (default 30).
+        ebu_ip: EBU LIST server IP for PCAP compliance analysis. OPTIONAL —
+            only pass this if the human explicitly asked for compliance/EBU
+            checking; never assume or guess a server, ask via askQuestions.
+            Requires ebu_user and ebu_password too.
+        ebu_user: EBU LIST server username. Required together with ebu_ip.
+        ebu_password: EBU LIST server password. Required together with
+            ebu_ip. Passed through the subprocess environment, never a
+            command line, so it won't leak into `ps` output.
+        capture_pci_device: a SECOND NIC PF BDF (different physical PF than
+            pf_bdf) used for netsniff-ng packet capture. Compliance checking
+            needs this in addition to the ebu_* args — without it,
+            "compliance" stays false even with valid EBU credentials.
     """
     results = [
         "## Phase 1/2: Broad host setup\n"
@@ -267,6 +319,10 @@ def setup_validation_full(
             nfs_source=nfs_source,
             pf_bdf=pf_bdf,
             test_time=test_time,
+            ebu_ip=ebu_ip,
+            ebu_user=ebu_user,
+            ebu_password=ebu_password,
+            capture_pci_device=capture_pci_device,
         )
     )
     results.append(

@@ -48,7 +48,9 @@ build into `.local_install` specifically; they do not touch or replace the syste
 2. **Probe** — `system_status` (or `dpdk_status` + `ice_driver_status` + `hugepages_get`)
    for the broad host state; use `read` to check whether
    `.local_install/mtl/bin/{MtlManager,RxTxApp}`, `tests/validation/configs/{topology,test}_config.yaml`,
-   and `tests/validation/venv/bin/python3` already exist.
+   and `tests/validation/venv/bin/python3` already exist. If `test_config.yaml` exists,
+   also `read` its `compliance:`/`capture_cfg:`/`ebu_server:` keys so you don't re-ask
+   about EBU setup on a host that already has it configured.
 3. **MUST-ASK before running:**
    - **`NFS_SOURCE`** (`host:/export`) — always ask unless the previous summary already
      shows it mounted. Without media almost every `tests/single/` test SKIPs. Never assume
@@ -59,8 +61,22 @@ build into `.local_install` specifically; they do not touch or replace the syste
      plugin by default (`include_ffmpeg_plugin=True`) since most `st20p`/`st22p`/`st30p`
      tests parametrize `application=ffmpeg`. Ask only about GStreamer (default off), or
      if the human wants to skip FFmpeg to save build time.
-4. **Run `setup_validation_full(nfs_source=..., pf_bdf=..., include_ffmpeg_plugin=..., include_gstreamer_plugin=...)`.**
-   Expect several minutes cold (DPDK + MTL + FFmpeg build), seconds warm.
+   - **EBU LIST pcap compliance checking** — always ask once (a yes/no question is
+     enough): "Enable EBU LIST pcap compliance checking? (needs an EBU server IP/user/
+     password and a 2nd NIC PF for capture)". Without it, `test_config.yaml`'s
+     `compliance` stays `false` and the `pcap_capture` fixture silently skips capture
+     entirely — tests still PASS on data-path/integrity but no compliance verdict is
+     ever produced. Default to **no** if the human doesn't answer or has no EBU server;
+     don't nag on repeat runs of an already-configured host (check `compliance:` in the
+     existing `test_config.yaml` first — see step 2). If **yes**:
+     - Ask for `ebu_ip`, `ebu_user`, `ebu_password` (never guess these; there is no lab
+       default). Do not echo the password back in your summary.
+     - Ask which 2nd PF to use for capture (`capture_pci_device`), distinct from the
+       main `pf_bdf` — suggest one from `nic_discover_pfs`/`system_status` if exactly
+       one other candidate exists (e.g. a dual-port card's second port).
+4. **Run `setup_validation_full(nfs_source=..., pf_bdf=..., include_ffmpeg_plugin=..., include_gstreamer_plugin=..., ebu_ip=..., ebu_user=..., ebu_password=..., capture_pci_device=...)`.**
+   Omit the `ebu_*`/`capture_pci_device` args entirely if the human declined compliance
+   checking. Expect several minutes cold (DPDK + MTL + FFmpeg build), seconds warm.
 5. **Report** using the Output format below. Do not run pytest beyond what
    `setup_validation_full`'s own summary implies is ready — handing off to run real tests
    is the main agent's job.
@@ -85,6 +101,7 @@ If a setup symptom isn't fixed by re-running `setup_validation_full`:
 - .local_install: MtlManager=<OK|MISSING>, RxTxApp=<OK|MISSING>, ffmpeg=<OK|MISSING|skipped>
 - NFS: NFS_SOURCE=<value-asked-from-user>, mounted at /mnt/media (<N entries>)
 - venv + configs: <OK|MISSING>
+- EBU compliance: <enabled (ebu_ip=<value>, capture_pci_device=<value>) | declined by user | not asked>
 
 ## Recommended pytest invocation (parent agent)
 cd tests/validation && sudo -E ./venv/bin/python3 -m pytest \
@@ -97,5 +114,5 @@ cd tests/validation && sudo -E ./venv/bin/python3 -m pytest \
 ```
 
 Always include `NFS_SOURCE` verbatim in the summary so the next agent can inherit it
-without re-prompting the user.
+without re-prompting the user. Never include `ebu_password` in the summary.
 
