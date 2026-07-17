@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
+from .pcap_compliance import check_pcap_compliance
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +364,25 @@ class Application(ABC):
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)
-            return self._dispatch_validate(fail_on_error)
+            # Run both dispatches unconditionally so a hard failure in one
+            # never skips the other -- e.g. a real app crash must still be
+            # validated even when the capture also happens to be
+            # non-compliant. Catch each independently, then re-raise once at
+            # the end if either failed and fail_on_error is set (each helper
+            # already records the pytest failure via log_fail internally).
+            compliance_ok, compliance_exc = True, None
+            try:
+                compliance_ok = self._dispatch_compliance_check(netsniff, fail_on_error)
+            except AssertionError as e:
+                compliance_ok, compliance_exc = False, e
+            validate_ok, validate_exc = True, None
+            try:
+                validate_ok = self._dispatch_validate(fail_on_error)
+            except AssertionError as e:
+                validate_ok, validate_exc = False, e
+            if fail_on_error and (compliance_exc or validate_exc):
+                raise compliance_exc or validate_exc
+            return compliance_ok and validate_ok
 
         # Dual-host: 2 bounded procs across 2 hosts.
         if not rx_app.command:
@@ -467,6 +486,40 @@ class Application(ABC):
                 self.get_app_name(),
             )
             return False
+
+    def _dispatch_compliance_check(self, netsniff, fail_on_error: bool) -> bool:
+        """Run the EBU compliance check for a completed netsniff capture, if any.
+
+        Returns True when compliant, not applicable (no netsniff/ebu_server/pcap
+        file), or non-compliant with ``fail_on_error`` False (soft-fail, mirrors
+        :meth:`_dispatch_validate`). Returns False only when non-compliant and
+        ``fail_on_error`` is False. Raises ``AssertionError`` when non-compliant
+        and ``fail_on_error`` is True.
+        """
+        if netsniff is None:
+            return True
+        ebu_server = getattr(netsniff, "ebu_server", None)
+        if not ebu_server or not netsniff.pcap_file:
+            return True
+        try:
+            check_pcap_compliance(
+                netsniff,
+                ebu_server,
+                netsniff.mtl_path,
+                netsniff.test_nodeid,
+                fail_on_error=fail_on_error,
+                allow_gapped=getattr(netsniff, "allow_gapped", False),
+            )
+            return True
+        except AssertionError:
+            if fail_on_error:
+                raise
+            logger.info(
+                "PCAP compliance check failed (fail_on_error=False); continuing"
+            )
+            return False
+        finally:
+            netsniff._compliance_checked = True
 
     def _run_proc_group(
         self,

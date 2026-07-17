@@ -16,7 +16,6 @@ from common.collect_platform_info import collect_platform_info
 from common.host_setup import ensure_hugepage_access, ensure_pf_up
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
-from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
@@ -34,12 +33,7 @@ from mtl_engine.const import (
     RXTXAPP_PATH,
     TESTCMD_LVL,
 )
-from mtl_engine.csv_report import (
-    csv_add_test,
-    csv_write_report,
-    get_compliance_result,
-    update_compliance_result,
-)
+from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
 from mtl_engine.execute import kill_stale_processes, log_fail
 from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.ramdisk import Ramdisk
@@ -1130,10 +1124,15 @@ def pcap_capture(
     to TAI (the RTP media timescale) for the capture window (phc_sync) for the
     absolute-offset check.
     """
-    capture_cfg = test_config.get("capture_cfg", {})
+    capture_cfg = test_config.get("capture_cfg", {}) or {}
     capturer = None
     phc_sync_active = False
     phc_sync_host = None
+    # Compliance is REQUIRED by default for any test that requests this
+    # fixture -- capture_cfg.enable absent or true both mean "on". The only
+    # way to opt out is an explicit `capture_cfg.enable: false` (a deliberate
+    # operator choice, not the absence of setup).
+    capture_disabled = capture_cfg.get("enable") is False
 
     # EBU pcap compliance analyser does not support 8K resolution
     is_8k = False
@@ -1149,7 +1148,8 @@ def pcap_capture(
                 "analyser does not support 8K."
             )
 
-    if capture_cfg and capture_cfg.get("enable") and not is_8k:
+    skip_capture = capture_disabled or is_8k
+    if not skip_capture:
         host = _select_capture_host(hosts)
         is_single_host = len(hosts) == 1
         media_file_info, _ = media_file
@@ -1185,6 +1185,11 @@ def pcap_capture(
             silent=capture_cfg.get("silent", True),
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
+            ebu_server=test_config.get("ebu_server", {}),
+            mtl_path=mtl_path,
+            test_nodeid=request.node.nodeid,
+            allow_gapped=request.node.get_closest_marker("allow_gapped_compliance")
+            is not None,
         )
         # netsniff-ng captures with NIC hardware (on-wire) RX timestamps, which
         # are immune to RX interrupt coalescing (correct ST 2110-21 Cinst/VRX).
@@ -1205,67 +1210,34 @@ def pcap_capture(
     finally:
         if phc_sync_active and phc_sync_host is not None:
             _reap_ptp_daemons(phc_sync_host, patterns=("phc2sys",))
-        # Process compliance check if we have a captured pcap file
-        if capturer and capturer.pcap_file:
+
+        # Safety net: the real upload/poll/verdict runs inside
+        # ApplicationBase.execute_test() (call phase). This only fires if
+        # that dispatch never happened, so a required compliance check can't
+        # be silently skipped. Opt out via capture_cfg.enable: false or is_8k.
+        if not skip_capture and not (capturer and capturer._compliance_checked):
             ebu_server = test_config.get("ebu_server", {})
             if not ebu_server:
-                logger.error("EBU server configuration not found in test_config.yaml")
-            else:
-                ebu_ip = ebu_server.get("ebu_ip", None)
-                ebu_login = ebu_server.get("user", None)
-                ebu_passwd = ebu_server.get("password", None)
-                ebu_proxy = ebu_server.get("proxy", None)
-                proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
-                compliance_upl = capturer.host.connection.execute_command(
-                    "python3 ./tests/validation/compliance/upload_pcap.py"
-                    f" --ip {ebu_ip}"
-                    f" --user {ebu_login}"
-                    f" --password {ebu_passwd}"
-                    f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
-                    cwd=f"{str(mtl_path)}",
+                log_fail(
+                    "Compliance check required (test uses the pcap_capture fixture) "
+                    "but ebu_server is not configured in test_config.yaml -- cannot "
+                    "verify EBU compliance for this test. Configure capture_cfg (a "
+                    "2nd NIC PF for netsniff-ng) and ebu_server, e.g. via the "
+                    "'MTL Validation Setup' agent's capture_pci_device/ebu_ip args, "
+                    "or set capture_cfg.enable: false to explicitly opt out."
                 )
-                if compliance_upl.return_code != 0:
-                    logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
-                else:
-                    uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
-                    logger.debug(
-                        f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}"
-                    )
-                    uploader = PcapComplianceClient(
-                        ebu_ip=ebu_ip,
-                        user=ebu_login,
-                        password=ebu_passwd,
-                        pcap_id=uuid,
-                        proxies={"http": ebu_proxy, "https": ebu_proxy},
-                    )
-                    result, report = uploader.check_compliance()
-                    if result:
-                        update_compliance_result(request.node.nodeid, "Pass")
-                        logger.info("PCAP compliance check passed")
-                    else:
-                        streams = (report or {}).get("streams") or []
-                        if not streams:
-                            # Empty capture — interface may not see VF-to-VF
-                            # loopback traffic.  Not a real failure.
-                            update_compliance_result(request.node.nodeid, "N/A")
-                            logger.warning(
-                                "PCAP compliance check skipped: capture "
-                                "contains no streams (capture interface may "
-                                "not see VF-to-VF loopback traffic)"
-                            )
-                        else:
-                            update_compliance_result(request.node.nodeid, "Fail")
-                            log_fail("PCAP compliance check failed")
-                            logger.info(f"Compliance report: {report}")
-
-                # Remove pcap file after upload to free up ramdisk space
-                try:
-                    capturer.host.connection.execute_command(
-                        f"rm -f '{capturer.pcap_file}'"
-                    )
-                    logger.debug(f"Removed pcap file: {capturer.pcap_file}")
-                except ConnectionCalledProcessError as e:
-                    logger.warning(f"Failed to remove pcap file: {e}")
+            elif not (capturer and capturer.pcap_file):
+                log_fail(
+                    "Compliance check required but PCAP capture failed to produce "
+                    "a file (netsniff-ng did not start) -- cannot verify EBU "
+                    "compliance for this test."
+                )
+            else:
+                log_fail(
+                    "Compliance check required (test uses the pcap_capture fixture) "
+                    "but execute_test() never dispatched it -- ensure the test calls "
+                    "execute_test(netsniff=pcap_capture, ...)."
+                )
 
         # Always ensure the capturer is stopped before fixture cleanup completes.
         # This is critical because prepare_ramdisk unmount happens after this
@@ -1303,10 +1275,12 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     if report["setup"].failed:
         result = fail_test("Setup")
     elif ("call" not in report) or report["call"].failed:
-        result = fail_test("Test")
+        compliance = get_compliance_result(case_id)
+        stage = "Compliance" if compliance == "Fail" else "Test"
+        result = fail_test(stage)
     elif report["call"].passed:
         compliance = get_compliance_result(case_id)
-        if compliance is not None and compliance == "Fail":
+        if compliance == "Fail":
             result = fail_test("Compliance")
         else:
             logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")

@@ -49,6 +49,12 @@ class NetsniffRecorder:
         interface_index (int): Index of the network interface if not specified by interface.
         silent (bool): Whether to run netsniff-ng in silent mode (no stdout) (default: True).
         capture_filter (str): Optional filter to apply to the capture. (default: None)
+        ebu_server (dict): EBU LIST server config for the compliance dispatch in
+            ``execute_test()`` (default: None).
+        mtl_path: MTL build directory path, forwarded to the compliance upload command.
+        test_nodeid (str): pytest node id, used to key the CSV compliance report.
+        allow_gapped (bool): allow ST 2110-21 gapped (not narrow linear) video
+            scheduling to pass compliance instead of failing (default: False).
     """
 
     def __init__(
@@ -62,6 +68,10 @@ class NetsniffRecorder:
         capture_filter: str | None = None,
         packets_capture: int | None = None,
         capture_time: int = 0,
+        ebu_server: dict | None = None,
+        mtl_path=None,
+        test_nodeid: str | None = None,
+        allow_gapped: bool = False,
     ):
         self.host = host
         self.test_name = test_name
@@ -77,6 +87,13 @@ class NetsniffRecorder:
         self.packets_capture = packets_capture
         self.capture_time = capture_time
         self._promisc_was_off = False
+        # EBU LIST pcap-compliance context, consumed by
+        # ``ApplicationBase._dispatch_compliance_check()``.
+        self.ebu_server = ebu_server
+        self.mtl_path = mtl_path
+        self.test_nodeid = test_nodeid
+        self.allow_gapped = allow_gapped
+        self._compliance_checked = False
 
     @staticmethod
     def _sanitize_filename_component(value: str, *, max_len: int = 64) -> str:
