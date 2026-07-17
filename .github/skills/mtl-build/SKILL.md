@@ -22,9 +22,15 @@ Run from the repository root:
 ./format-coding.sh
 ```
 
+- `./format-coding.sh --check` previews changes (non-mutating check/diff
+  mode for every tool, exits 1 if anything would change) instead of writing
+  to disk. Always use this to inspect a formatting change's blast radius
+  before running the real, mutating command on a working tree that has
+  uncommitted work in it.
 - Requires `clang-format-14` (install via `sudo apt install clang-format-14`)
 - **CI rejects improperly formatted code** — always run before committing
-- Formats all C/C++ source files in the repository
+- Formats all C/C++ source files in the repository, plus Python (`isort` then
+  `black`) under `python/` and `tests/`, Markdown, and Shell scripts
 
 ## Verification Checklist
 
