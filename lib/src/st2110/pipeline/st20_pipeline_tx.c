@@ -156,9 +156,11 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
       cur_tai, frame_tai);
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    /* Set before the callback: it may release this slot to FREE, letting a
+     * concurrent get_frame() reset this same flag for the next cycle. */
+    framebuff->frame_done_cb_called = true;
     frame->status = ST_FRAME_STATUS_DROPPED;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
   }
 
   if (ctx->ops.notify_frame_late) ctx->ops.notify_frame_late(ctx->ops.priv, 0);
@@ -278,9 +280,11 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   if (ctx->ops.notify_frame_done &&
       !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    /* Set before the callback: see the matching comment in
+     * tx_st20p_if_frame_late(). */
+    framebuff->frame_done_cb_called = true;
     frame->status = ST_FRAME_STATUS_COMPLETE;
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
   }
   if (ret == 0)
     atomic_fetch_add_explicit(&ctx->stat_frames_sent, 1, memory_order_relaxed);
@@ -375,8 +379,10 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   }
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+    /* Set before the callback: see the matching comment in
+     * tx_st20p_if_frame_late(). */
     framebuff->frame_done_cb_called = true;
+    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
   }
 
   ret = 0;
@@ -973,8 +979,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
       atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_CONVERTED,
                             memory_order_release);
       if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
-        ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+        /* Set before the callback: see the matching comment in
+         * tx_st20p_if_frame_late(). */
         framebuff->frame_done_cb_called = true;
+        ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
       }
     } else {
       atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_READY, memory_order_release);
