@@ -187,7 +187,31 @@
     "tx_queues", "mtl device amount of rx queues",                                         \
         OFFSET(devArgs.tx_queues_cnt[MTL_PORT_P]), AV_OPT_TYPE_INT, {.i64 = 16}, -1,       \
         INT_MAX, ENC                                                                       \
-  }
+  },
+  {"ptp_enable",                                                                       \
+    "enable built-in MTL PTP client and PTP-paced TX",                                  \
+    OFFSET(devArgs.ptp_enable),                                                         \
+    AV_OPT_TYPE_BOOL,                                                                   \
+    {.i64 = 0},                                                                         \
+    0,                                                                                  \
+    1,                                                                                  \
+    ENC},                                                                               \
+  {"ptp_pi",                                                                           \
+    "use PI controller for built-in PTP (PF only)",                                     \
+    OFFSET(devArgs.ptp_pi),                                                             \
+    AV_OPT_TYPE_BOOL,                                                                   \
+    {.i64 = 0},                                                                         \
+    0,                                                                                  \
+    1,                                                                                  \
+    ENC},                                                                               \
+  {"ptp_unicast",                                                                      \
+    "use unicast address for PTP_DELAY_REQ message",                                    \
+    OFFSET(devArgs.ptp_unicast),                                                        \
+    AV_OPT_TYPE_BOOL,                                                                   \
+    {.i64 = 0},                                                                         \
+    0,                                                                                  \
+    1,                                                                                  \
+    ENC}
 
 #define MTL_TX_PORT_ARGS                                                            \
   {"p_tx_ip",          "p tx ip",     OFFSET(portArgs.dip[MTL_SESSION_PORT_P]),     \
@@ -213,6 +237,10 @@ typedef struct StDevArgs {
   int tx_queues_cnt[MTL_PORT_MAX];
   int rx_queues_cnt[MTL_PORT_MAX];
   char* dma_dev;
+  /* PTP hardware timing (built-in MTL PTP client). See MTL_FLAG_PTP_* in mtl_api.h. */
+  int ptp_enable;  /* enable built-in PTP + PTP-paced TX (ST21_TX_PACING_WAY_PTP) */
+  int ptp_pi;      /* use PI controller for built-in PTP (PF only) */
+  int ptp_unicast; /* use unicast address for PTP_DELAY_REQ message */
 } StDevArgs;
 
 typedef struct StTxSessionPortArgs {
