@@ -157,6 +157,30 @@
        AV_OPT_TYPE_STRING,                                                                 \
        {.str = NULL},                                                                      \
        .flags = ENC},                                                                      \
+      {"p2_port",          "mtl port 2 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_2]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p2_sip",           "mtl port 2 local ip",         OFFSET(devArgs.sip[MTL_PORT_2]),  \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p3_port",          "mtl port 3 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_3]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p3_sip",           "mtl port 3 local ip",         OFFSET(devArgs.sip[MTL_PORT_3]),  \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p4_port",          "mtl port 4 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_4]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p4_sip",           "mtl port 4 local ip",         OFFSET(devArgs.sip[MTL_PORT_4]),  \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p5_port",          "mtl port 5 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_5]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p5_sip",           "mtl port 5 local ip",         OFFSET(devArgs.sip[MTL_PORT_5]),  \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p6_port",          "mtl port 6 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_6]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p6_sip",           "mtl port 6 local ip",         OFFSET(devArgs.sip[MTL_PORT_6]),  \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p7_port",          "mtl port 7 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_7]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p7_sip",           "mtl port 7 local ip",         OFFSET(devArgs.sip[MTL_PORT_7]),  \
+        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
       {"r_rx_queues",                                                                      \
