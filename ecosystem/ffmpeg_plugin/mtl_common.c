@@ -22,6 +22,15 @@
 static mtl_handle g_mtl_shared_handle = NULL;
 static int g_mtl_ref_cnt;
 
+/* Logged every time the built-in PTP client receives a valid PTP_DELAY_RESP
+ * from the grandmaster (only fires when MTL_FLAG_PTP_ENABLE is set). priv is
+ * the AVFormatContext passed as mtl_init_params.priv below. */
+static void mtl_ptp_sync_notify_cb(void* priv, struct mtl_ptp_sync_notify_meta* meta) {
+  AVFormatContext* ctx = (AVFormatContext*)priv;
+  info(ctx, "%s, PTP sync: master_utc_offset=%d delta=%" PRId64 "ns\n", __func__,
+       meta->master_utc_offset, meta->delta);
+}
+
 enum st_fps framerate_to_st_fps(AVRational framerate) {
   double fps = (double)framerate.num / (double)framerate.den;
 
@@ -63,6 +72,17 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
   p.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p.flags |= MTL_FLAG_BIND_NUMA;
   p.log_level = MTL_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
+
+  if (args->ptp_enable) {
+    p.flags |= MTL_FLAG_PTP_ENABLE;
+    p.pacing = ST21_TX_PACING_WAY_PTP;
+    if (args->ptp_pi) p.flags |= MTL_FLAG_PTP_PI;
+    if (args->ptp_unicast) p.flags |= MTL_FLAG_PTP_UNICAST_ADDR;
+    p.priv = ctx;
+    p.ptp_sync_notify = mtl_ptp_sync_notify_cb;
+    info(ctx, "%s, PTP enabled (pi=%d unicast=%d)\n", __func__, args->ptp_pi,
+         args->ptp_unicast);
+  }
 
   if (args->dma_dev) {
     char devs[128] = {0};
