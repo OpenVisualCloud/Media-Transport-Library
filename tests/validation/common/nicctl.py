@@ -131,7 +131,19 @@ class Nicctl:
             self._force_pci_reset(pci_id)
 
     def bind_pmd(self, pci_id: str) -> None:
-        """Bind VF to DPDK PMD driver."""
+        """Bind a PF/VF to the DPDK PMD driver (vfio-pci).
+
+        A PF and its VFs can share one IOMMU group. If *pci_id* is a PF that
+        still has VFs (e.g. left over from an earlier VF-mode test reusing
+        session-scoped VFs), binding the bare PF to vfio-pci while its VFs
+        remain kernel-bound leaves the group in a mixed state — DPDK then
+        fails with "VFIO group is not viable", and a later bind_kernel()
+        rebind of the PF in that state has been observed to crash the ice
+        driver on re-probe. Destroy any existing VFs first so the PF's
+        IOMMU group is entirely kernel-owned before the switch.
+        """
+        if self.vfio_list(pci_id):
+            self.disable_vf(pci_id)
         self.connection.execute_command(
             self.nicctl + " bind_pmd " + pci_id,
             shell=True,
