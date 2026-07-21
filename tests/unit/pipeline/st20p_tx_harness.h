@@ -68,6 +68,18 @@ int ut20p_tx_frame_done(ut20p_tx_ctx* ctx, uint16_t idx);
  */
 void ut20p_tx_ctx_set_manual_release(ut20p_tx_ctx* ctx);
 
+/**
+ * Switch the ctx to the internal-converter path (ctx->derive = false, a stub
+ * converter installed): put_ext_frame then converts synchronously and fires
+ * notify_frame_done early with the frame left CONVERTED, never IN_USER. Also
+ * sets ST20P_TX_FLAG_EXT_FRAME. Call before ut20p_tx_get_frame().
+ */
+void ut20p_tx_ctx_set_internal_converter(ut20p_tx_ctx* ctx);
+
+/** Wraps st20p_tx_put_ext_frame(). */
+int ut20p_tx_put_ext_frame(ut20p_tx_ctx* ctx, struct st_frame* frame,
+                           struct st_ext_frame* ext_frame);
+
 /** Wraps st20p_tx_notify_ext_frame_free(): IN_USER -> FREE. */
 int ut20p_tx_notify_ext_frame_free(ut20p_tx_ctx* ctx, uint16_t idx);
 

@@ -1025,15 +1025,19 @@ int st20p_tx_notify_ext_frame_free(st20p_tx_handle handle, struct st_frame* fram
     goto out;
   }
 
+  if (ctx->internal_converter) {
+    /* Internal converter releases the ext buffer synchronously in
+     * put_ext_frame; the frame never parks in IN_USER. Always a no-op. */
+    dbg("%s(%d), frame %u internal converter no-op\n", __func__, idx, framebuff->idx);
+    ret = 0;
+    goto out;
+  }
+
   if (ST20P_TX_FRAME_IN_USER !=
       atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
-    /* Frame is not in IN_USER, this happens when the converter already released
-     * the ext buffer during put_ext_frame and the frame went CONVERTED -> FREE
-     * without the IN_USER step.  Silently succeed so callers can always call
-     * this unconditionally from notify_frame_done. */
-    dbg("%s(%d), frame %u not in_user (stat %d), skip\n", __func__, idx, framebuff->idx,
+    err("%s(%d), frame %u not in_user (stat %d)\n", __func__, idx, framebuff->idx,
         (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
-    ret = 0;
+    ret = -EIO;
     goto out;
   }
   atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_FREE, memory_order_release);

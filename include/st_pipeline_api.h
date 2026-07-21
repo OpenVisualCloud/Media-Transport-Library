@@ -1825,6 +1825,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
  * IN_USER state so the application can safely unmap / release external buffers.
  * Call this function once cleanup is complete to release the slot back to FREE.
  * When ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is not set this is a silent no-op.
+ * When an internal converter is used, notify_frame_done fires before the slot
+ * is ever parked in IN_USER, so this is also always a silent no-op.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
