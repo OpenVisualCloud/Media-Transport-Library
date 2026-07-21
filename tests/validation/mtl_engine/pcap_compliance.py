@@ -112,16 +112,6 @@ def check_pcap_compliance(
                 update_compliance_result(node_id, "Pass")
                 logger.info("PCAP compliance check passed (narrow linear)")
             return
-        streams = (report or {}).get("streams") or []
-        if not streams:
-            # Empty capture -- interface may not see VF-to-VF loopback
-            # traffic. Not a real failure.
-            update_compliance_result(node_id, "N/A")
-            logger.warning(
-                "PCAP compliance check skipped: capture contains no streams "
-                "(capture interface may not see VF-to-VF loopback traffic)"
-            )
-            return
         update_compliance_result(node_id, "Fail")
         logger.info(f"Compliance report: {report}")
         msg = "PCAP compliance check failed"
