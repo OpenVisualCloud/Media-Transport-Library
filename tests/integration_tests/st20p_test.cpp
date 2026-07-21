@@ -2,6 +2,7 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <set>
 #include <thread>
 
 #include "log.h"
@@ -233,6 +234,25 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
   st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
+  return 0;
+}
+
+/* holds the first slot done past notify_frame_done, releasing every other
+ * slot immediately, to prove the two-phase MANUAL_RELEASE contract.
+ * held_frame is written on the pipeline scheduler thread and read from the
+ * test's main thread, so it must be atomic. */
+struct tx_ext_release_ctx {
+  st20p_tx_handle handle;
+  std::atomic<struct st_frame*> held_frame;
+};
+
+static int test_tx_ext_release_frame_done(void* priv, struct st_frame* frame) {
+  auto* s = (tx_ext_release_ctx*)priv;
+
+  struct st_frame* expected = nullptr;
+  if (s->held_frame.compare_exchange_strong(expected, frame)) return 0;
+
+  st20p_tx_notify_ext_frame_free(s->handle, frame);
   return 0;
 }
 
@@ -1651,6 +1671,134 @@ TEST(St20p, transport_yuv422p10le) {
   para.packing = ST20_PACKING_BPM;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+/*
+ * Regression test for ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE's two-phase
+ * release contract: a slot held past notify_frame_done must stay IN_USER
+ * (unreclaimable by st20p_tx_get_frame) until the app explicitly calls
+ * st20p_tx_notify_ext_frame_free() on it.
+ */
+TEST(St20p, tx_ext_frame_manual_release_two_phase) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+    return;
+  }
+
+  const int fb_cnt = 3;
+  const int width = 1920, height = 1080;
+  /* single-plane format equal to the transport format so ctx->derive is true:
+   * frames complete via tx_st20p_frame_done (not the internal-converter early
+   * release in put_ext_frame), which is the path that actually parks IN_USER. */
+  const enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+
+  tx_ext_release_ctx tctx;
+  tctx.handle = nullptr;
+  tctx.held_frame = nullptr;
+
+  struct st20p_tx_ops ops_tx;
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st20p_tx_ext_release_test";
+  ops_tx.priv = &tctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+  ops_tx.width = width;
+  ops_tx.height = height;
+  ops_tx.fps = ST_FPS_P59_94;
+  ops_tx.input_fmt = fmt;
+  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  ops_tx.framebuff_cnt = fb_cnt;
+  ops_tx.flags = ST20P_TX_FLAG_EXT_FRAME | ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE |
+                 ST20P_TX_FLAG_BLOCK_GET;
+  ops_tx.notify_frame_done = test_tx_ext_release_frame_done;
+
+  auto tx_handle = st20p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  tctx.handle = tx_handle;
+
+  ret = st20p_tx_set_block_timeout(tx_handle, NS_PER_S / 5); /* 200ms */
+  EXPECT_EQ(ret, 0);
+
+  size_t frame_size = st_frame_size(fmt, width, height, false);
+  size_t pg_sz = mtl_page_size(st);
+  size_t fb_size = frame_size * fb_cnt;
+  size_t ext_fb_iova_map_sz = mtl_size_page_align(fb_size, pg_sz);
+  size_t fb_size_malloc = ext_fb_iova_map_sz + pg_sz;
+  void* ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
+  ASSERT_TRUE(ext_fb_malloc != NULL);
+  uint8_t* ext_fb = (uint8_t*)MTL_ALIGN((uint64_t)ext_fb_malloc, pg_sz);
+  mtl_iova_t ext_fb_iova = mtl_dma_map(st, ext_fb, ext_fb_iova_map_sz);
+  ASSERT_TRUE(ext_fb_iova != MTL_BAD_IOVA);
+
+  struct st_ext_frame ext_frames[fb_cnt];
+  memset(ext_frames, 0, sizeof(ext_frames));
+  for (int i = 0; i < fb_cnt; i++) {
+    ext_frames[i].addr[0] = ext_fb + i * frame_size;
+    ext_frames[i].iova[0] = ext_fb_iova + i * frame_size;
+    ext_frames[i].linesize[0] = st_frame_least_linesize(fmt, width, 0);
+    ext_frames[i].size = frame_size;
+  }
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+
+  /* prime all fb_cnt slots so each has been claimed exactly once */
+  std::set<struct st_frame*> primed_frames;
+  int ext_idx = 0;
+  struct st_frame* frame;
+  for (int i = 0; i < fb_cnt; i++) {
+    frame = st20p_tx_get_frame(tx_handle);
+    ASSERT_TRUE(frame != NULL);
+    primed_frames.insert(frame);
+    ret = st20p_tx_put_ext_frame(tx_handle, frame, &ext_frames[ext_idx++ % fb_cnt]);
+    EXPECT_GE(ret, 0);
+  }
+  ASSERT_EQ((int)primed_frames.size(), fb_cnt);
+
+  /* steady state: one primed slot gets held forever by notify_frame_done,
+   * so get_frame must never reclaim more than fb_cnt - 1 distinct slots */
+  std::set<struct st_frame*> steady_frames;
+  const int steady_cycles = 30;
+  for (int i = 0; i < steady_cycles; i++) {
+    frame = st20p_tx_get_frame(tx_handle);
+    if (!frame) continue; /* timed out waiting on the held slot, expected */
+    steady_frames.insert(frame);
+    ret = st20p_tx_put_ext_frame(tx_handle, frame, &ext_frames[ext_idx++ % fb_cnt]);
+    EXPECT_GE(ret, 0);
+  }
+
+  ASSERT_TRUE(tctx.held_frame.load() != NULL);
+  EXPECT_EQ((int)steady_frames.size(), fb_cnt - 1);
+  EXPECT_EQ(steady_frames.count(tctx.held_frame.load()), 0u);
+
+  /* explicit release: only now can the held slot be reclaimed */
+  ret = st20p_tx_notify_ext_frame_free(tx_handle, tctx.held_frame.load());
+  EXPECT_GE(ret, 0);
+
+  bool held_reclaimed = false;
+  for (int i = 0; i < steady_cycles && !held_reclaimed; i++) {
+    frame = st20p_tx_get_frame(tx_handle);
+    if (!frame) continue;
+    if (frame == tctx.held_frame.load()) held_reclaimed = true;
+    ret = st20p_tx_put_ext_frame(tx_handle, frame, &ext_frames[ext_idx++ % fb_cnt]);
+    EXPECT_GE(ret, 0);
+  }
+  EXPECT_TRUE(held_reclaimed);
+
+  ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  mtl_dma_unmap(st, ext_fb, ext_fb_iova, ext_fb_iova_map_sz);
+  st_test_free(ext_fb_malloc);
 }
 
 TEST(St20p, tx_put_frame_abort) {
