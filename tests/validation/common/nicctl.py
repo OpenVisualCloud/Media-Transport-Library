@@ -30,6 +30,7 @@ class Nicctl:
         self.connection = host.connection
         self.mtl_path = mtl_path
         self.nicctl = self._nicctl_path
+        self._iommu_group_cache = {}
 
     @property
     def _nicctl_path(self) -> str:
@@ -228,6 +229,17 @@ class Nicctl:
         except Exception as e:
             logger.error("PCI reset of %s failed: %s", pci_id, e)
 
+    def get_iommu_group(self, pci_id: str) -> str:
+        """Return the IOMMU group number *pci_id* belongs to (cached)."""
+        if pci_id not in self._iommu_group_cache:
+            res = self.connection.execute_command(
+                f"readlink -f /sys/bus/pci/devices/{pci_id}/iommu_group",
+                shell=True,
+                timeout=_NICCTL_TIMEOUT,
+            )
+            self._iommu_group_cache[pci_id] = res.stdout.strip().rsplit("/", 1)[-1]
+        return self._iommu_group_cache[pci_id]
+
     def prepare_vfs_for_test(self, nic: NetworkInterface) -> list:
         """Prepare VFs for test."""
         if hasattr(self.host, "vfs") and self.host.vfs:
@@ -243,10 +255,19 @@ class Nicctl:
 
 
 class InterfaceSetup:
-    def __init__(self, hosts, mtl_path, host_mtl_paths=None):
+    def __init__(
+        self,
+        hosts,
+        mtl_path,
+        host_mtl_paths=None,
+        capture_pci=None,
+        capture_host_name=None,
+    ):
         self.hosts = hosts
         self.mtl_path = mtl_path
         self.host_mtl_paths = host_mtl_paths or {}
+        self.capture_pci = capture_pci
+        self.capture_host_name = capture_host_name
         self.nicctl_objs = {
             host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host)
             for host in hosts.values()
@@ -254,6 +275,35 @@ class InterfaceSetup:
         self.customs = []
         self.cleanups = []
         self.ip_cleanups = []  # Track (connection, interface, ip) for cleanup
+
+    def _check_pf_not_capture_group(self, host, index: int) -> None:
+        """Fail the test if the PF at *index* shares an IOMMU group with the
+        capture NIC.
+
+        Binding a PF to vfio-pci for DPDK pulls its whole IOMMU group out of
+        kernel ownership; if that group is shared with the capture NIC's
+        group (common on dual-port cards), netsniff-ng breaks. This is a
+        topology/config problem, not something the test framework should
+        silently work around by picking a different interface - fail loudly
+        and require the user to configure a topology with the capture NIC on
+        an isolated IOMMU group/physical card.
+
+        No-op when no capture PCI address is configured, or when *host* does
+        not own the capture NIC (IOMMU group numbers are only comparable
+        within the same physical machine).
+        """
+        if not self.capture_pci or host.name != self.capture_host_name:
+            return
+        nicctl = self.nicctl_objs[self.capture_host_name]
+        pci_addr = host.network_interfaces[index].pci_address.lspci
+        if nicctl.get_iommu_group(pci_addr) == nicctl.get_iommu_group(self.capture_pci):
+            pytest.fail(
+                f"PF interface at index {index} ({pci_addr}) on host {host.name} "
+                "shares an IOMMU group/physical card with the capture NIC "
+                f"({self.capture_pci}). Configure a topology where the capture "
+                "NIC is on a separate IOMMU group/physical card from any PF "
+                "used by the test."
+            )
 
     def get_test_interfaces(self, interface_type="VF", count=2, host=None) -> dict:
         """
@@ -312,23 +362,18 @@ class InterfaceSetup:
                             interface_type,
                         )
                 elif interface_type.lower() == "pf":
-                    try:
-                        selected_interfaces[host.name] = []
-                        for i in range(count):
-                            self.nicctl_objs[host.name].bind_pmd(
-                                host.network_interfaces[i].pci_address.lspci
-                            )
-                            selected_interfaces[host.name].append(
-                                str(host.network_interfaces[i].pci_address.lspci)
-                            )
-                            self.register_cleanup(
-                                self.nicctl_objs[host.name],
-                                host.network_interfaces[i].pci_address.lspci,
-                                interface_type,
-                            )
-                    except IndexError:
+                    if len(host.network_interfaces) < count:
                         raise Exception(
                             f"Not enough interfaces for test on host {host.name} in topology config."
+                        )
+                    selected_interfaces[host.name] = []
+                    for i in range(count):
+                        self._check_pf_not_capture_group(host, i)
+                        pci_addr = host.network_interfaces[i].pci_address.lspci
+                        self.nicctl_objs[host.name].bind_pmd(pci_addr)
+                        selected_interfaces[host.name].append(str(pci_addr))
+                        self.register_cleanup(
+                            self.nicctl_objs[host.name], pci_addr, interface_type
                         )
                 elif "vfxpf" in interface_type.lower():
                     vfs_count = interface_type.lower().split("vfxpf")[0]
@@ -374,10 +419,17 @@ class InterfaceSetup:
 
         :param tx_interface_type: Type for TX interface (PF or VF)
         :param rx_interface_type: Type for RX interface (PF or VF)
-        :param tx_index: Index of NIC from topology for TX
-        :param rx_index: Index of NIC from topology for RX
+        :param tx_index: Index of NIC from topology for TX. When
+            tx_interface_type is "pf", the test fails if this index shares
+            an IOMMU group with the capture NIC.
+        :param rx_index: Index of NIC from topology for RX (same check as
+            tx_index when rx_interface_type is "pf").
         :return: List with [tx_interface, rx_interface]
-        :raises pytest.skip: If not enough interfaces are configured
+        :raises pytest.skip: If not enough interfaces are configured in topology
+        :raises pytest.fail: If a requested "pf" role's index shares an IOMMU
+            group/physical card with the capture NIC - configure the
+            topology with the capture NIC on an isolated group/card instead
+            of relying on this helper to silently pick a different index.
         """
         host = list(self.hosts.values())[0]
 
@@ -411,6 +463,7 @@ class InterfaceSetup:
         pci_addr = host.network_interfaces[index].pci_address.lspci
 
         if interface_type == "pf":
+            self._check_pf_not_capture_group(host, index)
             nicctl.bind_pmd(pci_addr)
             self.register_cleanup(nicctl, pci_addr, "PF")
             return str(pci_addr)
