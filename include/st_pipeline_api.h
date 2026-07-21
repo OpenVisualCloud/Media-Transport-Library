@@ -902,8 +902,10 @@ struct st20p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib. If ST20P_TX_FLAG_DROP_WHEN_LATE and
+   * ST20P_TX_FLAG_USER_PACING are both enabled, this is also called for a frame dropped
+   * for being late, with frame->status set to ST_FRAME_STATUS_DROPPED; notify_frame_late
+   * fires as well for that same frame, the two callbacks are not mutually exclusive.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
@@ -1083,8 +1085,10 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib. If ST22P_TX_FLAG_DROP_WHEN_LATE and
+   * ST22P_TX_FLAG_USER_PACING are both enabled, this is also called for a frame dropped
+   * for being late, with frame->status set to ST_FRAME_STATUS_DROPPED; notify_frame_late
+   * fires as well for that same frame, the two callbacks are not mutually exclusive.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
