@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
     ],
 )
 @pytest.mark.refactored
+@pytest.mark.rx_side
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_audio_refactored(
     hosts,
@@ -38,7 +39,6 @@ def test_rss_mode_audio_refactored(
     rss_mode,
     test_config,
     media_file,
-    pcap_capture,
     application,
 ):
     """Refactored test for rss mode audio.
@@ -52,7 +52,6 @@ def test_rss_mode_audio_refactored(
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -76,9 +75,21 @@ def test_rss_mode_audio_refactored(
         test_time=test_time,
     )
 
-    application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    application.execute_test(build=mtl_path, test_time=test_time, host=host)
+
+    if test_config.get("integrity_check", True):
+        logger.info("Running audio integrity check...")
+        integrity = FileAudioIntegrityRunner(
+            host=host,
+            test_repo_path=mtl_path,
+            src_url=media_file_path,
+            out_name=out_file_url.name,
+            sample_size=get_sample_size(media_file_info["format"]),
+            out_path=str(out_file_url.parent),
+        )
+        result = integrity.run()
+        if not result:
+            log_fail("Audio integrity check failed")
 
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")

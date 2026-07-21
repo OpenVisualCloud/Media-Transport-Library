@@ -26,6 +26,7 @@ pytestmark = pytest.mark.verified
     indirect=["media_file"],
     ids=list(yuv_files_interlace.keys()),
 )
+@pytest.mark.tx_side
 def test_st20p_interlace(
     application,
     app_factory,
@@ -56,7 +57,7 @@ def test_st20p_interlace(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
-        "test_mode": "unicast",
+        "test_mode": "multicast",
         "interlaced": True,
         "pacing": "linear",
         "tx_no_chain": False,
