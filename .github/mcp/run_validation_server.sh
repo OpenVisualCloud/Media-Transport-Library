@@ -18,9 +18,14 @@ if [[ ! -x "$VENV_DIR/bin/python3" ]]; then
 	python3 -m venv "$VENV_DIR"
 fi
 
+# Repair venv if pip is missing (e.g. venv created before ensurepip was available)
+if ! "$VENV_DIR/bin/python3" -m pip --version >/dev/null 2>&1; then
+	"$VENV_DIR/bin/python3" -m ensurepip --upgrade
+fi
+
 # Install deps if mcp module is missing
 if ! "$VENV_DIR/bin/python3" -c "import mcp" 2>/dev/null; then
-	"$VENV_DIR/bin/pip" install --quiet -r "$REQUIREMENTS"
+	"$VENV_DIR/bin/python3" -m pip install --quiet -r "$REQUIREMENTS"
 fi
 
 exec "$VENV_DIR/bin/python3" "$SERVER"
