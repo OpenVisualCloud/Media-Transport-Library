@@ -758,7 +758,23 @@ def setup_interfaces(hosts, test_config, mtl_path):
     host_mtl_paths = {
         h.name: get_host_mtl_path(h, default=mtl_path) for h in hosts.values()
     }
-    interface_setup = InterfaceSetup(hosts, mtl_path, host_mtl_paths)
+    capture_pci = None
+    capture_host_name = None
+    capture_cfg = test_config.get("capture_cfg", {})
+    if capture_cfg.get("enable"):
+        capture_host = _select_capture_host(hosts)
+        capture_nic = _select_sniff_interface(
+            capture_host, capture_cfg, single_host=len(hosts) == 1
+        )
+        capture_pci = str(capture_nic.pci_address.lspci)
+        capture_host_name = capture_host.name
+    interface_setup = InterfaceSetup(
+        hosts,
+        mtl_path,
+        host_mtl_paths,
+        capture_pci=capture_pci,
+        capture_host_name=capture_host_name,
+    )
     yield interface_setup
     interface_setup.cleanup()
 
