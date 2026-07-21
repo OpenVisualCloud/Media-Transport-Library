@@ -82,6 +82,7 @@ unit_sources = [
   'pipeline/st40p_concurrency_test.cpp',
   'pipeline/st22p_harness.c',
   'pipeline/st22p_tx_harness.c',
+  'pipeline/st22p_tx_drop_when_late_test.cpp',
   'pipeline/st22p_concurrency_test.cpp',
   'pipeline/st22p_concurrency_stress_test.cpp',
   'ptp/ptp_harness.c',
