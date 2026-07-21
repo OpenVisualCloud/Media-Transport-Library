@@ -5,6 +5,7 @@ The Media Transport Library (MTL) Validation Framework provides comprehensive te
 ## Documentation Navigation
 
 🚀 **Quick Setup**: [Validation Quick Start Guide](validation_quickstart.md) - Get running in 3 steps  
+🏗️ **Architecture**: [Validation Design](validation-design.md) - Understand execution, interfaces, clocks, capture, and test oracles
 📁 **Local README**: [tests/validation/README.md](../tests/validation/README.md) - Quick reference and test categories  
 🔧 **Build Guide**: [build.md](build.md) - MTL build instructions  
 
