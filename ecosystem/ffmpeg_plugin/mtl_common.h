@@ -157,30 +157,78 @@
        AV_OPT_TYPE_STRING,                                                                 \
        {.str = NULL},                                                                      \
        .flags = ENC},                                                                      \
-      {"p2_port",          "mtl port 2 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_2]), \
+      {"p2_port",                                                                          \
+       "mtl port 2 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_2]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p2_sip",           "mtl port 2 local ip",         OFFSET(devArgs.sip[MTL_PORT_2]),  \
+      {"p2_sip",                                                                           \
+       "mtl port 2 local ip", OFFSET(devArgs.sip[MTL_PORT_2]),                             \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p3_port",          "mtl port 3 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_3]), \
+      {"p3_port",                                                                          \
+       "mtl port 3 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_3]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p3_sip",           "mtl port 3 local ip",         OFFSET(devArgs.sip[MTL_PORT_3]),  \
+      {"p3_sip",                                                                           \
+       "mtl port 3 local ip", OFFSET(devArgs.sip[MTL_PORT_3]),                             \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p4_port",          "mtl port 4 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_4]), \
+      {"p4_port",                                                                          \
+       "mtl port 4 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_4]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p4_sip",           "mtl port 4 local ip",         OFFSET(devArgs.sip[MTL_PORT_4]),  \
+      {"p4_sip",                                                                           \
+       "mtl port 4 local ip", OFFSET(devArgs.sip[MTL_PORT_4]),                             \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p5_port",          "mtl port 5 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_5]), \
+      {"p5_port",                                                                          \
+       "mtl port 5 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_5]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p5_sip",           "mtl port 5 local ip",         OFFSET(devArgs.sip[MTL_PORT_5]),  \
+      {"p5_sip",                                                                           \
+       "mtl port 5 local ip", OFFSET(devArgs.sip[MTL_PORT_5]),                             \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p6_port",          "mtl port 6 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_6]), \
+      {"p6_port",                                                                          \
+       "mtl port 6 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_6]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p6_sip",           "mtl port 6 local ip",         OFFSET(devArgs.sip[MTL_PORT_6]),  \
+      {"p6_sip",                                                                           \
+       "mtl port 6 local ip", OFFSET(devArgs.sip[MTL_PORT_6]),                             \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p7_port",          "mtl port 7 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_7]), \
+      {"p7_port",                                                                          \
+       "mtl port 7 (additional NIC)", OFFSET(devArgs.port[MTL_PORT_7]),                    \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
-      {"p7_sip",           "mtl port 7 local ip",         OFFSET(devArgs.sip[MTL_PORT_7]),  \
-        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p7_sip",                                                                           \
+       "mtl port 7 local ip", OFFSET(devArgs.sip[MTL_PORT_7]),                             \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"p2_tx_queues",                                                                     \
+       "mtl port 2 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_2]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p2_rx_queues",                                                                     \
+       "mtl port 2 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_2]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p3_tx_queues",                                                                     \
+       "mtl port 3 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_3]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p3_rx_queues",                                                                     \
+       "mtl port 3 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_3]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p4_tx_queues",                                                                     \
+       "mtl port 4 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_4]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p4_rx_queues",                                                                     \
+       "mtl port 4 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_4]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p5_tx_queues",                                                                     \
+       "mtl port 5 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_5]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p5_rx_queues",                                                                     \
+       "mtl port 5 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_5]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p6_tx_queues",                                                                     \
+       "mtl port 6 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_6]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p6_rx_queues",                                                                     \
+       "mtl port 6 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_6]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p7_tx_queues",                                                                     \
+       "mtl port 7 amount of tx queues", OFFSET(devArgs.tx_queues_cnt[MTL_PORT_7]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
+      {"p7_rx_queues",                                                                     \
+       "mtl port 7 amount of rx queues", OFFSET(devArgs.rx_queues_cnt[MTL_PORT_7]),        \
+       AV_OPT_TYPE_INT, {.i64 = 16}, -1, INT_MAX, ENC},                                    \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
       {"r_rx_queues",                                                                      \

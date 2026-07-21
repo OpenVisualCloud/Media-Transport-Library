@@ -107,6 +107,26 @@ Reading from a yuv stream from a local file and sending a ST 2110-20 10-bit YUV4
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -f mtl_st20p -
 ```
 
+### 2.2.1 Additional NIC port options (multi-BDF)
+
+The TX path supports additional NIC bindings beyond primary/redundant by using:
+
+1. `-p2_port` / `-p2_sip`
+1. `-p3_port` / `-p3_sip`
+1. `-p4_port` / `-p4_sip`
+1. `-p5_port` / `-p5_sip`
+1. `-p6_port` / `-p6_sip`
+1. `-p7_port` / `-p7_sip`
+
+Each `*_port` expects a PCI BDF (for example `0000:af:01.2`) and each `*_sip` is the
+source IP bound to that NIC.
+
+Example with two additional NICs:
+
+```bash
+ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p2_port 0000:af:01.2 -p2_sip 192.168.97.3 -p3_port 0000:af:01.3 -p3_sip 192.168.98.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -f mtl_st20p -
+```
+
 ### 2.3. Supported pixel formats
 
 The `mtl_st20p` plugin maps the following FFmpeg `pix_fmt` values to MTL frame
