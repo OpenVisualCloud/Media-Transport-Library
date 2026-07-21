@@ -51,6 +51,19 @@ int OnFrameDone(void* priv, struct st_frame* frame) {
   return 0;
 }
 
+int OnFrameDoneReleaseOnly(void* priv, struct st_frame* frame) {
+  auto* cb = static_cast<CallbackCtx*>(priv);
+  cb->call_count++;
+  ut20p_tx_notify_ext_frame_free(cb->tx_ctx, ut20p_tx_frame_idx(frame));
+  return 0;
+}
+
+int OnFrameDoneCountOnly(void* priv, struct st_frame* frame) {
+  auto* cb = static_cast<CallbackCtx*>(priv);
+  cb->call_count++;
+  return 0;
+}
+
 }  // namespace
 
 TEST(St20PipelineTxExtFrameRelease, DoneNotSkippedAcrossReusedSlot) {
@@ -77,6 +90,10 @@ TEST(St20PipelineTxExtFrameRelease, DoneNotSkippedAcrossReusedSlot) {
   ASSERT_NE(cb_ctx.next_cycle_frame, nullptr)
       << "cycle 2 should have claimed the slot cycle 1's callback just freed";
 
+  int idx0 = ut20p_tx_frame_idx(frame1);
+  ASSERT_EQ(ut20p_tx_frame_stat(ctx, idx0),
+            5 /* IN_USER: reclaimed by cycle 2's get_frame */);
+
   /* cycle 2: put -> next -> done, using the frame claimed from inside cycle
    * 1's callback. This is a genuinely new, fully-transmitted frame and must
    * get its own notify_frame_done call. */
@@ -89,6 +106,86 @@ TEST(St20PipelineTxExtFrameRelease, DoneNotSkippedAcrossReusedSlot) {
       << "cycle 2 completed transmission but notify_frame_done was silently "
          "skipped: frame_done_cb_called was clobbered back to true by cycle "
          "1's post-callback write racing cycle 2's get_frame() reset";
+  EXPECT_EQ(ut20p_tx_frame_stat(ctx, idx0),
+            0 /* FREE: cycle 2 released, nothing reclaims it */);
+
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+TEST(St20PipelineTxExtFrameRelease, NotifyFreeOnNonInUserFrameReturnsError) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_set_manual_release(ctx);
+
+  /* freshly created framebuffer starts FREE, not IN_USER. */
+  EXPECT_LT(ut20p_tx_notify_ext_frame_free(ctx, 0), 0);
+
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+TEST(St20PipelineTxExtFrameRelease, NCycleReuseNoDrift) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_set_manual_release(ctx);
+
+  CallbackCtx cb_ctx;
+  cb_ctx.tx_ctx = ctx;
+  ut20p_tx_set_notify_frame_done(ctx, OnFrameDoneReleaseOnly, &cb_ctx);
+
+  constexpr int kCycles = 5;
+  for (int c = 0; c < kCycles; c++) {
+    struct st_frame* frame = ut20p_tx_get_frame(ctx);
+    ASSERT_NE(frame, nullptr) << "cycle " << c;
+    int idx0 = ut20p_tx_frame_idx(frame);
+
+    ASSERT_EQ(ut20p_tx_put_frame(ctx, frame), 0) << "cycle " << c;
+    uint16_t idx;
+    ASSERT_EQ(ut20p_tx_next_frame(ctx, &idx), 0) << "cycle " << c;
+    ASSERT_EQ(ut20p_tx_frame_done(ctx, idx), 0) << "cycle " << c;
+
+    EXPECT_EQ(cb_ctx.call_count, c + 1) << "cycle " << c;
+    EXPECT_EQ(ut20p_tx_frame_stat(ctx, idx0), 0 /* FREE */) << "cycle " << c;
+  }
+
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+TEST(St20PipelineTxExtFrameRelease, InternalConverterNotifyFreeIsNoOp) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_set_internal_converter(ctx);
+  ut20p_tx_ctx_set_manual_release(ctx);
+
+  CallbackCtx cb_ctx;
+  cb_ctx.tx_ctx = ctx;
+  ut20p_tx_set_notify_frame_done(ctx, OnFrameDoneCountOnly, &cb_ctx);
+
+  struct st_frame* frame = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  int idx0 = ut20p_tx_frame_idx(frame);
+
+  uint8_t buf[256];
+  struct st_ext_frame ext_frame = {};
+  ext_frame.addr[0] = buf;
+  ext_frame.linesize[0] = 128; /* UYVY, 64px * 2 bytes/px */
+  ext_frame.size = sizeof(buf);
+
+  ASSERT_EQ(ut20p_tx_put_ext_frame(ctx, frame, &ext_frame), 0);
+
+  ASSERT_EQ(cb_ctx.call_count, 1)
+      << "internal converter must fire notify_frame_done synchronously inside "
+         "put_ext_frame";
+  ASSERT_EQ(ut20p_tx_frame_stat(ctx, idx0), 3 /* CONVERTED, never parked IN_USER */);
+
+  EXPECT_EQ(ut20p_tx_notify_ext_frame_free(ctx, idx0), 0)
+      << "internal-converter path must be a silent no-op regardless of frame state, "
+         "not -EIO for not being IN_USER";
 
   ut20p_tx_ctx_destroy(ctx);
 }
