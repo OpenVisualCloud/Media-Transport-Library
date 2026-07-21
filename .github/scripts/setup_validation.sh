@@ -40,12 +40,18 @@
 #   EBU_PASSWORD     EBU LIST server password (paired with EBU_IP). Never
 #                    placed on a command line — read from the environment
 #                    only, so it doesn't leak into `ps` output.
-#   CAPTURE_PCI_DEVICE  second NIC PF BDF (different physical PF than
+#   CAPTURE_PCI_DEVICE  dedicated NIC PF BDF (different physical PF/card than
 #                    PCI_DEVICE_BDF, e.g. 0000:15:00.1) used for netsniff-ng
-#                    packet capture. Compliance checking needs this in
-#                    addition to EBU_IP — without a second PF, no wire
-#                    capture is possible and "compliance" stays false even
-#                    with EBU creds set.
+#                    packet capture. Passed to gen_config.py as its own
+#                    --capture_pci_device, kept separate from PCI_DEVICE_BDF
+#                    so PCI_DEVICE_BDF may itself list 1+ DUT PF candidates
+#                    (comma-separated, e.g. two PFs on a second card) without
+#                    disturbing which NIC is used for capture — needed for
+#                    PF-mode DUT tests that require a PF candidate not
+#                    sharing an IOMMU group with the capture NIC. Compliance
+#                    checking needs this in addition to EBU_IP — without a
+#                    capture PF, no wire capture is possible and
+#                    "compliance" stays false even with EBU creds set.
 #   VERBOSE=0        when 1, stream wrapped-command stdout/stderr live; default
 #                    captures it and only prints the tail on failure
 #   CHECK_ONLY=0     when 1, every stage runs probes only and prints
@@ -502,14 +508,18 @@ stage_configs() {
 		return 1
 	}
 
-	# Compliance checking needs a 2nd physical PF for netsniff-ng capture in
-	# addition to EBU creds — pass it as a 2nd comma-separated --pci_device so
-	# gen_config.py's has_sniff (len(pci_devices) >= 2) can go true.
+	# Compliance checking needs a dedicated PF for netsniff-ng capture in
+	# addition to EBU creds — pass it as its own --capture_pci_device so
+	# gen_config.py's has_sniff (bool(capture_pci_device)) can go true.
+	# PCI_DEVICE_BDF may itself be a comma-separated list of 1+ DUT PF
+	# candidates; it is passed through untouched, separate from capture.
+	# --no_capture is forced when CAPTURE_PCI_DEVICE is unset so
+	# gen_config.py's legacy "2nd comma-separated --pci_device entry is the
+	# sniff device" fallback never misfires against a multi-PF DUT list.
 	local pci_device_arg="$PCI_DEVICE_BDF"
-	local capture_flag=(--no_capture)
+	local capture_args=(--no_capture)
 	if [[ -n "$CAPTURE_PCI_DEVICE" ]]; then
-		pci_device_arg="$PCI_DEVICE_BDF,$CAPTURE_PCI_DEVICE"
-		capture_flag=()
+		capture_args=(--capture_pci_device "$CAPTURE_PCI_DEVICE")
 	fi
 
 	local ebu_args=()
@@ -517,29 +527,17 @@ stage_configs() {
 		ebu_args=(--ebu_ip "$EBU_IP" --ebu_user "$EBU_USER" --ebu_password "$EBU_PASSWORD")
 	fi
 
-	log "configs: gen_config.py PCI=$pci_device_arg KEY=$SSH_KEY TEST_TIME=$TEST_TIME$([[ -n "$EBU_IP" ]] && echo " EBU_IP=$EBU_IP")"
+	log "configs: gen_config.py PCI=$pci_device_arg CAPTURE_PCI=${CAPTURE_PCI_DEVICE:-<none>} KEY=$SSH_KEY TEST_TIME=$TEST_TIME$([[ -n "$EBU_IP" ]] && echo " EBU_IP=$EBU_IP")"
+	# gen_config.py resolves each BDF to 'vendor:device' (what the framework's
+	# PCIDevice parser wants, not a bus address) and assigns interface_index
+	# scoped per vendor:device group itself, so no post-hoc patching is
+	# needed here.
 	(cd tests/validation/configs &&
 		"../venv/bin/python3" gen_config.py \
 			--session_id 0 --mtl_path "$repo_root" \
 			--pci_device "$pci_device_arg" --ip_address 127.0.0.1 \
-			--username root --key_path "$SSH_KEY" "${capture_flag[@]}" \
+			--username root --key_path "$SSH_KEY" "${capture_args[@]}" \
 			--media_path /mnt/media --test_time "$TEST_TIME" "${ebu_args[@]}")
-
-	# Patch every generated pci_device (both the topology's network_interfaces
-	# and, when capture is enabled, test_config.yaml's capture_cfg.sniff_pci_device)
-	# from raw BDF to 'vendor:device' — the framework's PCIDevice parser wants
-	# vendor:device, not a bus address (see mtl-validation-tests.instructions.md's
-	# failure table: "capture_cfg.sniff_pci_device=<BDF> not found").
-	local bdf vd
-	IFS=',' read -ra _pci_bdfs <<<"$pci_device_arg"
-	for bdf in "${_pci_bdfs[@]}"; do
-		vd=$(lspci -s "${bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
-		if [[ -n "$vd" ]]; then
-			log "configs: patching $bdf → '$vd' (framework wants vendor:device, not BDF)"
-			sed -i "s|${bdf}|${vd}|g" tests/validation/configs/topology_config.yaml
-			sed -i "s|${bdf}|${vd}|g" tests/validation/configs/test_config.yaml
-		fi
-	done
 }
 
 # ============================================================================

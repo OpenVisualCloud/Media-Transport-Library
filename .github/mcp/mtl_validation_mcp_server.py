@@ -206,7 +206,11 @@ def setup_validation_pytest(
         pf_bdf: NIC PF BDF for the generated topology config, e.g.
             '0000:c9:00.0'. Auto-picked (first Intel E810/E830/E835 PF) if
             empty and there is only one candidate; if multiple PFs are
-            present, ask the human which one to use.
+            present, ask the human which one to use. May be a comma-
+            separated list of multiple DUT PF candidates (e.g.
+            '0000:c9:00.0,0000:c9:00.1' — both ports of a second card) when
+            a PF-mode test needs more than one PF candidate that avoids the
+            capture NIC's IOMMU group; see capture_pci_device.
         test_time: test_config.yaml::test_time in seconds (default 30).
         nfs_persist: When True, also add an /etc/fstab entry so the NFS
             mount survives a reboot.
@@ -228,6 +232,14 @@ def setup_validation_pytest(
             even with valid EBU credentials. Ask the human for this only
             when they want compliance checking; probe available PFs first
             (`nic_discover_pfs`/`system_status`) so you can suggest one.
+            Kept as a dedicated BDF separate from `pf_bdf`'s DUT PF
+            candidate(s) — a PF-mode DUT test that also wants compliance
+            needs a PF candidate not sharing an IOMMU group/physical card
+            with this value; if the host has two 2-port cards, prefer
+            passing both ports of one card as `pf_bdf` and one port of the
+            other card as `capture_pci_device` so PF-mode tests requiring 2
+            isolated DUT PFs (e.g. `get_test_interfaces("PF", count=2)`)
+            have a candidate pair to pick from.
     """
     env = {
         "TEST_TIME": str(test_time),
@@ -302,7 +314,9 @@ def setup_validation_full(
         capture_pci_device: a SECOND NIC PF BDF (different physical PF than
             pf_bdf) used for netsniff-ng packet capture. Compliance checking
             needs this in addition to the ebu_* args — without it,
-            "compliance" stays false even with valid EBU credentials.
+            "compliance" stays false even with valid EBU credentials. See
+            `setup_validation_pytest`'s docstring for the multi-PF-DUT +
+            dedicated-capture-NIC topology this enables.
     """
     results = [
         "## Phase 1/2: Broad host setup\n"
