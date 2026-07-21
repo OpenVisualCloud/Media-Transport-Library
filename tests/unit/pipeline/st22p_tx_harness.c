@@ -25,9 +25,16 @@ struct ut22p_tx_ctx {
   struct st22p_tx_ctx pipeline;
   struct st22p_tx_frame* framebuffs;
   int framebuff_cnt;
+  uint64_t mock_ptp_ns;
 };
 
 #include "pipeline/st22p_tx_harness.h"
+
+static uint64_t ut22p_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
+  (void)port;
+  struct ut22p_tx_ctx* ctx = (struct ut22p_tx_ctx*)impl; /* impl is ctx's first member */
+  return ctx->mock_ptp_ns;
+}
 
 int ut22p_tx_init(void) {
   return ut_eal_init();
@@ -39,6 +46,7 @@ ut22p_tx_ctx* ut22p_tx_ctx_create(int framebuff_cnt) {
 
   ctx->framebuff_cnt = framebuff_cnt;
   ctx->impl.type = MT_HANDLE_MAIN;
+  ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut22p_ptp_time_fn;
 
   ctx->framebuffs = calloc(framebuff_cnt, sizeof(struct st22p_tx_frame));
   if (!ctx->framebuffs) {
@@ -81,6 +89,32 @@ void ut22p_tx_ctx_destroy(ut22p_tx_ctx* ctx) {
 
 int ut22p_tx_framebuff_cnt(const ut22p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
+}
+
+void ut22p_tx_set_ptp_ns(ut22p_tx_ctx* ctx, uint64_t ns) {
+  ctx->mock_ptp_ns = ns;
+}
+
+void ut22p_tx_set_flags(ut22p_tx_ctx* ctx, uint32_t flags) {
+  ctx->pipeline.ops.flags |= flags;
+}
+
+void ut22p_tx_set_fps(ut22p_tx_ctx* ctx, enum st_fps fps) {
+  ctx->pipeline.ops.fps = fps;
+}
+
+void ut22p_tx_set_notify_frame_done(ut22p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st_frame* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
+void ut22p_tx_set_notify_frame_late(ut22p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_late = cb;
+  ctx->pipeline.ops.priv = priv;
 }
 
 struct st_frame* ut22p_tx_get_frame(ut22p_tx_ctx* ctx) {
