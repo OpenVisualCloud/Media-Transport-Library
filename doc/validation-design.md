@@ -319,6 +319,10 @@ The framework assumes more than a normal unit-test runner:
 | FFmpeg/GStreamer validation builds | Required only by their integration tests |
 | PTP grandmaster | Not needed for normal/local-clock tests; required for a meaningful network-PTP synchronization claim |
 
+Rather than satisfying this contract by hand, `.github/scripts/validation_setup.sh`
+discovers (`status`) and prepares (`setup`) it end-to-end — see
+[validation_quickstart.md § Recommended: Automated Setup Script](validation_quickstart.md#recommended-automated-setup-script).
+
 This contract should drive CI host design. A minimal VF functional runner can
 use one SR-IOV-capable card. A runner expected to cover PF mode and EBU packet
 capture needs a kernel-owned capture port in a different IOMMU group—typically

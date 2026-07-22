@@ -35,8 +35,10 @@ The Media Transport Library (MTL) Validation Framework provides comprehensive te
 1. **🏗️ MTL Build**: Ensure MTL and test tools are built  
    👉 **[Complete build instructions](../../doc/validation_framework.md#setup-and-installation)**
 
-2. **⚡ Quick Setup**: Follow 3-step setup process  
-   👉 **[Quick Start Guide](../../doc/validation_quickstart.md)**
+2. **⚡ Automated Setup (recommended)**: Run `.github/scripts/validation_setup.sh setup`
+   (interactive) — handles dependencies, build, hugepages, NFS, SSH, venv, and
+   config generation in one step  
+   👉 **[Quick Start Guide § Recommended: Automated Setup Script](../../doc/validation_quickstart.md#recommended-automated-setup-script)**
 
 3. **🏃 Run Tests**: Execute validation tests
    ```bash

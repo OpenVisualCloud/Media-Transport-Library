@@ -135,6 +135,14 @@ The `tests/` directory contains test implementations organized by scenario type:
 
 ## Setup and Installation
 
+> **Recommended**: run `.github/scripts/validation_setup.sh` instead of the
+> manual steps below — one command handles apt dependencies, ICE driver,
+> DPDK+MTL(+plugin) build, hugepages, CPU governor, NFS mount, SSH, venv, and
+> config generation. See
+> [Quick Start Guide § Recommended: Automated Setup Script](validation_quickstart.md#recommended-automated-setup-script)
+> for commands and flags. The steps below are what that script automates —
+> useful for debugging or customizing one specific stage in isolation.
+
 ### Prerequisites
 
 #### 1. Build Media Transport Library First (CRITICAL)
@@ -433,6 +441,21 @@ To add new functionality to the framework:
 4. Add tests that exercise the new functionality
 
 ## Troubleshooting
+
+### Start here: automated diagnosis
+
+Before working through the manual fixes below, run the discovery report —
+it's read-only and checks most of the items this section covers in one shot
+(kernel/CPU, hugepages, CPU governor, ICE driver, NIC PFs, `.local_install`
+build status, NFS media, venv/configs):
+
+```bash
+./.github/scripts/validation_setup.sh status
+```
+
+If it flags a missing/broken stage, re-run the matching part of setup
+(`./.github/scripts/validation_setup.sh setup --base-only` or `--pytest-only`)
+rather than following the manual steps by hand.
 
 ### Common Issues
 
