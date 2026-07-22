@@ -816,7 +816,8 @@ Markers: `@pytest.mark.smoke`, `@pytest.mark.nightly`, `@pytest.mark.dual`, `@py
 
 Root required. Depends on `mfd-*` Intel-internal packages for SSH/NIC automation.
 
-For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, configs), delegate to the `MTL Validation Setup` subagent (`.github/agents/mtl-validation-setup.agent.md`). For invoking pytest itself and triaging failures, use `.github/instructions/mtl-validation-tests.instructions.md` — it auto-attaches when working under `tests/validation/`.
+For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, configs), call `.github/scripts/validation_setup.sh` (interactive, or `--auto` for scripted use) or the `mtl-validation-setup` MCP tools directly — no dedicated agent; the interactive script prompts for NFS/PF/EBU choices at zero token cost.
+For invoking pytest itself and triaging failures, use `.github/instructions/mtl-validation-tests.instructions.md` — it auto-attaches when working under `tests/validation/`.
 
 ### RxTxApp (`tests/tools/RxTxApp/`)
 Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary, 180 fast-metadata (each direction).

@@ -1,5 +1,5 @@
 ---
-description: "Use when the user asks to run, collect, debug, or diagnose pytest cases under tests/validation/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/validation/logs/. For host setup (build, hugepages, NFS, configs), delegate to the 'MTL Validation Setup' subagent first."
+description: "Use when the user asks to run, collect, debug, or diagnose pytest cases under tests/validation/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/validation/logs/. For host setup (build, hugepages, NFS, configs): call `.github/scripts/validation_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-validation-setup` MCP tools directly — no dedicated agent."
 name: "MTL Validation — Run Tests"
 applyTo: "tests/validation/tests/single/**"
 ---
@@ -105,7 +105,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Run from `tests/validation/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
-| `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `ebu_ip`/`ebu_user`/`ebu_password`/`capture_pci_device` (ask the user first — see `mtl-validation-setup.agent.md`) so `setup_validation.sh` populates `ebu_server`/`capture_cfg` in `test_config.yaml`. |
+| `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `ebu_ip`/`ebu_user`/`ebu_password`/`capture_pci_device` (ask the user first) via `validation_setup.sh setup --ebu-ip=... --ebu-user=...` or the MCP tools, so `setup_validation.sh` populates `ebu_server`/`capture_cfg` in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |

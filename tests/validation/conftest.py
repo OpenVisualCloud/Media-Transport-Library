@@ -1238,8 +1238,9 @@ def pcap_capture(
                     "Compliance check required (test uses the pcap_capture fixture) "
                     "but ebu_server is not configured in test_config.yaml -- cannot "
                     "verify EBU compliance for this test. Configure capture_cfg (a "
-                    "2nd NIC PF for netsniff-ng) and ebu_server, e.g. via the "
-                    "'MTL Validation Setup' agent's capture_pci_device/ebu_ip args, "
+                    "2nd NIC PF for netsniff-ng) and ebu_server, e.g. via "
+                    "'.github/scripts/validation_setup.sh setup --ebu-ip=...' or the "
+                    "mtl-validation-setup MCP tools' capture_pci_device/ebu_ip args, "
                     "or set capture_cfg.enable: false to explicitly opt out."
                 )
             elif not (capturer and capturer.pcap_file):
