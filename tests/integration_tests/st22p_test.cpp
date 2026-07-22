@@ -2,6 +2,8 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <atomic>
+#include <chrono>
 #include <thread>
 
 #include "log.h"
@@ -1554,4 +1556,148 @@ TEST(St22p, rx_put_frame_abort) {
 
   delete test_ctx_tx;
   delete test_ctx_rx;
+}
+
+/* written on the pipeline scheduler thread, read from the test's main thread,
+ * so they must be atomic. */
+struct st22p_tx_drop_late_ctx {
+  std::atomic<int> dropped_done_calls{0};
+  std::atomic<int> complete_done_calls{0};
+  std::atomic<int> late_calls{0};
+  /* total frames that have left the pipeline (transmitted or dropped) */
+  int done_total() const {
+    return dropped_done_calls.load() + complete_done_calls.load();
+  }
+};
+
+static int test_st22p_tx_drop_late_frame_done(void* priv, struct st_frame* frame) {
+  auto* s = (st22p_tx_drop_late_ctx*)priv;
+  if (frame->status == ST_FRAME_STATUS_DROPPED)
+    s->dropped_done_calls++;
+  else if (frame->status == ST_FRAME_STATUS_COMPLETE)
+    s->complete_done_calls++;
+  return 0;
+}
+
+static int test_st22p_tx_drop_late_frame_late(void* priv, uint64_t epoch_skipped) {
+  auto* s = (st22p_tx_drop_late_ctx*)priv;
+  (void)epoch_skipped;
+  s->late_calls++;
+  return 0;
+}
+
+/*
+ * Regression test for ST22P_TX_FLAG_DROP_WHEN_LATE end-to-end: a stale TAI
+ * timestamp forces tx_st22p_if_frame_late() to drop the frame (notify_frame_done
+ * DROPPED + notify_frame_late) and free its slot, while on-time frames transmit
+ * normally with no late notification.
+ */
+TEST(St22p, tx_drop_when_late) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+
+  const int fb_cnt = 4;
+  const int width = 1920, height = 1080;
+  const enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  const enum st_fps fps = ST_FPS_P25;
+
+  st22p_tx_drop_late_ctx dctx;
+
+  struct st22p_tx_ops ops_tx;
+  memset(&ops_tx, 0, sizeof(ops_tx));
+  ops_tx.name = "st22p_tx_drop_when_late_test";
+  ops_tx.priv = &dctx;
+  ops_tx.port.num_port = 1;
+  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
+  ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
+  ops_tx.width = width;
+  ops_tx.height = height;
+  ops_tx.fps = fps;
+  ops_tx.input_fmt = fmt;
+  ops_tx.pack_type = ST22_PACK_CODESTREAM;
+  ops_tx.codec = ST22_CODEC_JPEGXS;
+  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
+  ops_tx.framebuff_cnt = fb_cnt;
+  ops_tx.codestream_size = st_frame_size(fmt, width, height, false) / 8;
+  ops_tx.flags =
+      ST22P_TX_FLAG_BLOCK_GET | ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_DROP_WHEN_LATE;
+  ops_tx.notify_frame_done = test_st22p_tx_drop_late_frame_done;
+  ops_tx.notify_frame_late = test_st22p_tx_drop_late_frame_late;
+
+  auto tx_handle = st22p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+
+  ret = st22p_tx_set_block_timeout(tx_handle, (uint64_t)NS_PER_S * 3);
+  EXPECT_EQ(ret, 0);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(fps));
+
+  /* Produce exactly one frame and block until it leaves the pipeline (either
+   * transmitted or dropped). Keeping a single frame in flight is essential:
+   * tx_st22p_next_frame() always services the NEWEST ENCODED frame, so with
+   * several queued at once the older on-time frames would miss their own TX
+   * window and be dropped too, making the drop count non-deterministic. */
+  auto put_one_and_drain = [&](uint64_t timestamp) -> bool {
+    int done_before = dctx.done_total();
+    struct st_frame* frame = st22p_tx_get_frame(tx_handle);
+    if (!frame) return false;
+    frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    frame->timestamp = timestamp;
+    if (st22p_tx_put_frame(tx_handle, frame) < 0) return false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (dctx.done_total() > done_before) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+  };
+
+  /* Warm-up: the first frames race session negotiation / link-up. Pump on-time
+   * frames one at a time until one actually transmits, proving the datapath is
+   * live, then snapshot the counters so link-up jitter cannot taint the asserts.
+   * The half-second margin keeps a warm-up frame from being ruled late while the
+   * link is still coming up. */
+  bool link_up = false;
+  auto warm_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+  while (std::chrono::steady_clock::now() < warm_deadline) {
+    put_one_and_drain(mtl_ptp_read_time(st) + NS_PER_S / 2);
+    if (dctx.complete_done_calls.load() > 0) {
+      link_up = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(link_up) << "datapath never came up (no frame transmitted)";
+
+  int base_dropped = dctx.dropped_done_calls.load();
+  int base_complete = dctx.complete_done_calls.load();
+  int base_late = dctx.late_calls.load();
+
+  /* Measured phase, datapath already live. On-time frames sit a few periods in
+   * the future so pipeline latency cannot make them late; each must transmit. */
+  const int on_time_cnt = 3;
+  for (int i = 0; i < on_time_cnt; i++) {
+    EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) + frame_period_ns * 4))
+        << "on-time frame " << i << " never completed";
+  }
+
+  /* One clearly-stale frame: tx_st22p_if_frame_late() must drop it
+   * (notify_frame_done DROPPED + notify_frame_late) and free its slot. */
+  EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) - NS_PER_S))
+      << "stale frame never left the pipeline";
+
+  EXPECT_EQ(dctx.dropped_done_calls.load() - base_dropped, 1);
+  EXPECT_EQ(dctx.complete_done_calls.load() - base_complete, on_time_cnt);
+  EXPECT_EQ(dctx.late_calls.load() - base_late, 1);
+
+  ret = st22p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
 }
