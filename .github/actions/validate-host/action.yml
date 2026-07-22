@@ -97,6 +97,10 @@ runs:
 
     - name: 'installation: Auto-align host components (ICE driver & SVT-JPEG-XS)'
       shell: bash
+      env:
+        MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+        PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu/pkgconfig
+        LD_LIBRARY_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu
       run: |
         export SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1
         export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
