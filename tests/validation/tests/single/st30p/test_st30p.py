@@ -47,6 +47,7 @@ _SMOKE_CASE = ("PCM16", "M")
     indirect=["media_file"],
     ids=["PCM8", "PCM24"],
 )
+@pytest.mark.tx_and_rx
 def test_st30p_integrity(
     application,
     app_factory,
@@ -72,7 +73,7 @@ def test_st30p_integrity(
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
-        test_mode="unicast",
+        test_mode="multicast",
         audio_format=media_file_info["format"],
         audio_channels=["U02"],
         audio_sampling="48kHz",
@@ -120,6 +121,7 @@ def test_st30p_integrity(
     ],
     indirect=["media_file"],
 )
+@pytest.mark.tx_and_rx
 def test_st30p_channel(
     application,
     app_factory,
@@ -201,6 +203,7 @@ def test_st30p_channel(
     indirect=["media_file"],
     ids=["PCM8", "PCM16", "PCM24"],
 )
+@pytest.mark.tx_and_rx
 def test_st30p_format(
     application,
     app_factory,
@@ -224,7 +227,7 @@ def test_st30p_format(
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
-        test_mode="unicast",
+        test_mode="multicast",
         audio_format=media_file_info["format"],
         audio_channels=["U02"],
         audio_sampling="48kHz",
@@ -271,6 +274,7 @@ def test_st30p_format(
     ids=["PCM8", "PCM16", "PCM24"],
 )
 @pytest.mark.parametrize("audio_ptime", ["1", "0.12", "0.25", "0.33", "4"])
+@pytest.mark.tx_and_rx
 def test_st30p_ptime(
     application,
     app_factory,
@@ -299,7 +303,7 @@ def test_st30p_ptime(
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
-        test_mode="unicast",
+        test_mode="multicast",
         audio_format=media_file_info["format"],
         audio_channels=["U02"],
         audio_sampling="48kHz",
@@ -347,6 +351,7 @@ def test_st30p_ptime(
     ids=["PCM8", "PCM16", "PCM24"],
 )
 @pytest.mark.parametrize("audio_sampling", ["48kHz", "96kHz"])
+@pytest.mark.tx_and_rx
 def test_st30p_sampling(
     application,
     app_factory,
@@ -371,7 +376,7 @@ def test_st30p_sampling(
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
-        test_mode="unicast",
+        test_mode="multicast",
         audio_format=media_file_info["format"],
         audio_channels=["U02"],
         audio_sampling=audio_sampling,
@@ -419,6 +424,7 @@ def test_st30p_sampling(
     indirect=["media_file"],
     ids=["PCM8", "PCM16", "PCM24"],
 )
+@pytest.mark.tx_side
 def test_st30p_multicast(
     application,
     app_factory,

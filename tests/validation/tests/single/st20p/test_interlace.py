@@ -22,10 +22,24 @@ pytestmark = pytest.mark.verified
 )
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_interlace.values()),
+    [
+        # SD interlaced (480i/576i) streams have too few packets/field for
+        # tv_train_pacing()'s pad_interval>32 heuristic (tuned for HD/UHD) to
+        # ever accept RL hardware pacing -- MTL falls back to TSC (bulk=4)
+        # software pacing, which only achieves ST 2110-21 "wide" VRX/Cinst
+        # compliance, not narrow/narrow_linear. This is expected/acceptable
+        # for these two resolutions; do not use as a template for HD/UHD.
+        (
+            pytest.param(v, marks=pytest.mark.allow_wide_compliance)
+            if v["height"] <= 576
+            else v
+        )
+        for v in yuv_files_interlace.values()
+    ],
     indirect=["media_file"],
     ids=list(yuv_files_interlace.keys()),
 )
+@pytest.mark.tx_side
 def test_st20p_interlace(
     application,
     app_factory,
@@ -56,7 +70,7 @@ def test_st20p_interlace(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
-        "test_mode": "unicast",
+        "test_mode": "multicast",
         "interlaced": True,
         "pacing": "linear",
         "tx_no_chain": False,

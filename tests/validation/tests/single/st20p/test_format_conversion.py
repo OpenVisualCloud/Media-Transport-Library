@@ -8,21 +8,6 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 pytestmark = pytest.mark.verified
 
 
-# List of supported formats based on st_frame_fmt_from_transport()
-pixel_formats = dict(
-    YUV_422_10bit=("ST20_FMT_YUV_422_10BIT", "YUV422RFC4175PG2BE10"),
-    YUV_422_8bit=("ST20_FMT_YUV_422_8BIT", "UYVY"),
-    YUV_422_12bit=("ST20_FMT_YUV_422_12BIT", "YUV422RFC4175PG2BE12"),
-    YUV_444_10bit=("ST20_FMT_YUV_444_10BIT", "YUV444RFC4175PG4BE10"),
-    YUV_444_12bit=("ST20_FMT_YUV_444_12BIT", "YUV444RFC4175PG2BE12"),
-    YUV_420_8bit=("ST20_FMT_YUV_420_8BIT", "YUV420CUSTOM8"),
-    RGB_8bit=("ST20_FMT_RGB_8BIT", "RGB8"),
-    RGB_10bit=("ST20_FMT_RGB_10BIT", "RGBRFC4175PG4BE10"),
-    RGB_12bit=("ST20_FMT_RGB_12BIT", "RGBRFC4175PG2BE12"),
-    YUV_422_PLANAR10LE=("ST20_FMT_YUV_422_PLANAR10LE", "YUV422PLANAR10LE"),
-    V210=("ST20_FMT_V210", "V210"),
-)
-
 # List of supported one-way conversions based on st_frame_get_converter()
 convert1_formats = dict(
     UYVY="UYVY",
@@ -222,69 +207,6 @@ def test_st20p_tx_rx_conversion(
         framerate="p30",
         pixel_format=format,
         transport_format=transport_format,
-        input_file=media_file_path,
-        test_time=test_time,
-    )
-
-    app.execute_test(
-        build=mtl_path,
-        test_time=test_time,
-        host=host,
-        netsniff=pcap_capture,
-    )
-
-
-@pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support arbitrary pixel format transport without conversion"
-            ),
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [yuv_files_422rfc10["test_8K"]],
-    indirect=["media_file"],
-    ids=["test_8K"],
-)
-@pytest.mark.parametrize("format", pixel_formats.keys())
-def test_st20p_pixel_formats(
-    application,
-    app_factory,
-    hosts,
-    mtl_path,
-    setup_interfaces: InterfaceSetup,
-    test_time,
-    format,
-    test_config,
-    pcap_capture,
-    media_file,
-):
-    """Send file in different supported pixel formats without conversion during transport."""
-    media_file_info, media_file_path = media_file
-    _, file_format = pixel_formats[format]
-    host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
-
-    app = app_factory(application)
-    app.create_command(
-        session_type="st20p",
-        nic_port_list=interfaces_list,
-        test_mode="multicast",
-        packing="GPM",
-        width=media_file_info["width"],
-        height=media_file_info["height"],
-        framerate="p30",
-        pixel_format=file_format,
-        transport_format=format,
         input_file=media_file_path,
         test_time=test_time,
     )

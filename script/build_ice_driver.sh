@@ -72,8 +72,13 @@ if [ "$sourced" -eq 0 ]; then
 	fi
 
 	if [ -d "ice-${ICE_VER}" ]; then
-		echo "ice-${ICE_VER} directory already exists, please remove it first"
-		exit 1
+		if [ "${FORCE_ICE_REBUILD:-0}" == "1" ]; then
+			echo "FORCE_ICE_REBUILD=1: removing stale ice-${ICE_VER} directory from a previous build attempt."
+			rm -rf "ice-${ICE_VER}"
+		else
+			echo "ice-${ICE_VER} directory already exists, please remove it first"
+			exit 1
+		fi
 	fi
 
 	tar xvzf "$archive_name"

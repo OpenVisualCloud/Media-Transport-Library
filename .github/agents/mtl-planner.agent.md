@@ -42,7 +42,7 @@ You research the codebase → clarify with the user → capture findings into a 
 - Resolve agent routing from the **Agent Routing Matrix** in [.github/copilot-instructions.md](../copilot-instructions.md). If the matrix is silent, ask the user.
 - Refuse trivially scoped tasks (single-file, single-agent edits) — reply with one line: *"This is a single-agent task — invoke `<agent name>` directly. The Planner is overhead here."*
 - **You may only invoke `Explore` via the `agent` tool, and only during Discovery.**
-  MTL Developer (TDD), MTL Reviewer, MTL System Admin, and MTL Validation Setup are
+  MTL Developer (TDD), MTL Reviewer, and MTL System Admin are
   mechanically off-limits to you (see frontmatter `agents:` allowlist) — they exist
   solely as handoff buttons the **user** clicks. If you find yourself reaching for
   `agent` to call any of them, stop and re-read this rule. Suggesting *"I'll invoke

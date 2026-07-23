@@ -1,5 +1,5 @@
 ---
-description: "Use when the user asks to run, collect, debug, or diagnose pytest cases under tests/validation/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/validation/logs/. For host setup (build, hugepages, NFS, configs), delegate to the 'MTL Validation Setup' subagent first."
+description: "Use when the user asks to run, collect, debug, or diagnose pytest cases under tests/validation/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/validation/logs/. For host setup (build, hugepages, NFS, configs): call `.github/scripts/validation_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-validation-setup` MCP tools directly — no dedicated agent."
 name: "MTL Validation — Run Tests"
 applyTo: "tests/validation/tests/single/**"
 ---
@@ -105,7 +105,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Run from `tests/validation/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
-| `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Add `ebu_server` to `test_config.yaml`. |
+| `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `ebu_ip`/`ebu_user`/`ebu_password`/`capture_pci_device` (ask the user first) via `validation_setup.sh setup --ebu-ip=... --ebu-user=...` or the MCP tools, so `setup_validation.sh` populates `ebu_server`/`capture_cfg` in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
@@ -118,7 +118,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `SSHConnection.__init__() missing … 'password'` | **(setup)** Topology needs `password: ''`. |
 | `Incorrect format … PCIDevice` / `not found on host` | **(setup)** `pci_device` must be `vendor:device`, not BDF. |
 | `TypeError: 'ExtraInfoModel' object is not subscriptable` | **(setup)** Stale `extra_info.custom_interface`. |
-| `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. |
+| `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. `setup_validation.sh`'s `stage_configs` patches this automatically when regenerated; if it's still a raw BDF, the config predates that fix — regenerate via `setup_validation_pytest`/`setup_validation_full`. |
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** Stock kernel ice loaded instead of the MTL out-of-tree patched ice (`versions.env::ICE_VER`). Re-run `setup_validation.sh` — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |

@@ -15,9 +15,49 @@ This quick start guide helps you get the MTL validation framework running with m
    - FFmpeg and GStreamer plugins (required for integration tests)
    - Compatible SSH keys (RSA recommended, not DSA)
 
-## Quick Setup (3 steps)
+## Quick Setup
 
-### 1. Install Dependencies
+### Recommended: Automated Setup Script
+
+Run `.github/scripts/validation_setup.sh` from the repository root. It replaces the
+manual steps below (dependencies, ICE driver, DPDK/MTL build, hugepages, CPU
+governor, NFS mount, SSH, venv, and config generation) with one command:
+
+```bash
+# 1. Check host status first (read-only, no changes made)
+./.github/scripts/validation_setup.sh status
+
+# 2. Interactive setup — asks which PF to use, NFS source, etc.
+./.github/scripts/validation_setup.sh setup
+```
+
+Or fully non-interactive, e.g. for CI:
+
+```bash
+./.github/scripts/validation_setup.sh setup --auto \
+    --pf-bdf=0000:c9:00.0 \
+    --nfs-source=10.0.0.5:/mnt/NFS/mtl_assets/media
+```
+
+When it finishes it prints the ready-to-run `pytest` command, e.g.:
+
+```bash
+cd tests/validation && sudo -E ./venv/bin/python3 -m pytest \
+    --topology_config=configs/topology_config.yaml \
+    --test_config=configs/test_config.yaml \
+    tests/single/st20p/test_input_formats.py --tb=short -v
+```
+
+Run `./.github/scripts/validation_setup.sh -h` for the full flag list
+(`--base-only`, `--pytest-only`, `--check-only`, `--ffmpeg`/`--no-ffmpeg`,
+`--gstreamer`/`--no-gstreamer`, `--ebu-ip`/`--ebu-user` for EBU LIST
+compliance capture, `--nr-hugepages`, `--build-mode`, etc). The manual steps
+below are what this script automates — use them only if you need to debug or
+customize one specific stage.
+
+### Manual Setup (3 steps)
+
+#### 1. Install Dependencies
 **Run in tests/validation directory**:
 ```bash
 cd tests/validation
@@ -27,7 +67,7 @@ pip install -r requirements.txt  # Main framework requirements
 pip install -r common/integrity/requirements.txt  # Integrity test components
 ```
 
-### 2. Configure Environment
+#### 2. Configure Environment
 Update two key files:
 
 **[tests/validation/configs/topology_config.yaml](../tests/validation/configs/topology_config.yaml)**:
@@ -54,7 +94,7 @@ build: /home/gta/Media-Transport-Library/
 mtl_path: /home/gta/Media-Transport-Library/
 ```
 
-### 3. Run Tests
+#### 3. Run Tests
 **Basic smoke test** (must run as root):
 ```bash
 cd tests/validation

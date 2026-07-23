@@ -31,6 +31,27 @@
 #                    auto-picked from first 8086:1592 if unset
 #   SSH_KEY          private key path; auto-picks first ~/.ssh/id_{ed25519,rsa,ecdsa}
 #   TEST_TIME=30     test_config.yaml::test_time
+#   EBU_IP           EBU LIST server IP for PCAP compliance analysis.
+#                    OPTIONAL — only set this if the human explicitly asked
+#                    for compliance/EBU checking (agent must ASK, never
+#                    assume or guess an EBU server). Requires EBU_USER and
+#                    EBU_PASSWORD too; all three are required together.
+#   EBU_USER         EBU LIST server username (paired with EBU_IP).
+#   EBU_PASSWORD     EBU LIST server password (paired with EBU_IP). Never
+#                    placed on a command line — read from the environment
+#                    only, so it doesn't leak into `ps` output.
+#   CAPTURE_PCI_DEVICE  dedicated NIC PF BDF (different physical PF/card than
+#                    PCI_DEVICE_BDF, e.g. 0000:15:00.1) used for netsniff-ng
+#                    packet capture. Passed to gen_config.py as its own
+#                    --capture_pci_device, kept separate from PCI_DEVICE_BDF
+#                    so PCI_DEVICE_BDF may itself list 1+ DUT PF candidates
+#                    (comma-separated, e.g. two PFs on a second card) without
+#                    disturbing which NIC is used for capture — needed for
+#                    PF-mode DUT tests that require a PF candidate not
+#                    sharing an IOMMU group with the capture NIC. Compliance
+#                    checking needs this in addition to EBU_IP — without a
+#                    capture PF, no wire capture is possible and
+#                    "compliance" stays false even with EBU creds set.
 #   VERBOSE=0        when 1, stream wrapped-command stdout/stderr live; default
 #                    captures it and only prints the tail on failure
 #   CHECK_ONLY=0     when 1, every stage runs probes only and prints
@@ -57,6 +78,10 @@ set -uo pipefail # NOTE: no -e; we manage errors per stage
 : "${NFS_PERSIST:=0}"
 : "${NFS_MOUNT_OPTS:=ro,vers=3,nolock,soft,timeo=50,retrans=2}"
 : "${PCI_DEVICE_BDF:=}"
+: "${CAPTURE_PCI_DEVICE:=}"
+: "${EBU_IP:=}"
+: "${EBU_USER:=}"
+: "${EBU_PASSWORD:=}"
 : "${SSH_KEY:=}"
 : "${VERBOSE:=0}"
 : "${CHECK_ONLY:=0}"
@@ -191,6 +216,9 @@ print_summary() {
 	fi
 	log " venv           : $([[ -x tests/validation/venv/bin/python3 ]] && echo OK || echo MISSING)"
 	log " configs        : $([[ -f tests/validation/configs/topology_config.yaml && -f tests/validation/configs/test_config.yaml ]] && echo OK || echo MISSING)"
+	if [[ -f tests/validation/configs/test_config.yaml ]]; then
+		log " compliance     : $(grep -m1 '^compliance:' tests/validation/configs/test_config.yaml | awk '{print $2}')"
+	fi
 	log " run log        : $RUN_LOG"
 	log "════════════════════════════════════════════════════════════════════"
 	trap_arm
@@ -448,8 +476,17 @@ stage_configs() {
 	if [[ -f tests/validation/configs/topology_config.yaml &&
 		-f tests/validation/configs/test_config.yaml ]]; then
 		cur_vd=$(grep -m1 'pci_device:' tests/validation/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
+		local cur_compliance cur_has_capture
+		cur_compliance=$(grep -m1 '^compliance:' tests/validation/configs/test_config.yaml | awk '{print $2}')
+		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/validation/configs/test_config.yaml && echo 1 || echo 0)
 		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
 			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
+			need_regen=1
+		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]]; then
+			warn "configs: EBU_IP provided but compliance not yet enabled in existing config — regenerating"
+			need_regen=1
+		elif [[ -n "$CAPTURE_PCI_DEVICE" && "$cur_has_capture" != "1" ]]; then
+			warn "configs: CAPTURE_PCI_DEVICE provided but capture_cfg missing from existing config — regenerating"
 			need_regen=1
 		elif [[ -n "$detected_vendor_device" ]]; then
 			log "configs: kept (already present, NIC=$cur_vd)"
@@ -470,19 +507,37 @@ stage_configs() {
 		err "configs: SSH_KEY not set (run STAGE_SSH first)"
 		return 1
 	}
-	log "configs: gen_config.py PCI=$PCI_DEVICE_BDF KEY=$SSH_KEY TEST_TIME=$TEST_TIME"
+
+	# Compliance checking needs a dedicated PF for netsniff-ng capture in
+	# addition to EBU creds — pass it as its own --capture_pci_device so
+	# gen_config.py's has_sniff (bool(capture_pci_device)) can go true.
+	# PCI_DEVICE_BDF may itself be a comma-separated list of 1+ DUT PF
+	# candidates; it is passed through untouched, separate from capture.
+	# --no_capture is forced when CAPTURE_PCI_DEVICE is unset so
+	# gen_config.py's legacy "2nd comma-separated --pci_device entry is the
+	# sniff device" fallback never misfires against a multi-PF DUT list.
+	local pci_device_arg="$PCI_DEVICE_BDF"
+	local capture_args=(--no_capture)
+	if [[ -n "$CAPTURE_PCI_DEVICE" ]]; then
+		capture_args=(--capture_pci_device "$CAPTURE_PCI_DEVICE")
+	fi
+
+	local ebu_args=()
+	if [[ -n "$EBU_IP" ]]; then
+		ebu_args=(--ebu_ip "$EBU_IP" --ebu_user "$EBU_USER" --ebu_password "$EBU_PASSWORD")
+	fi
+
+	log "configs: gen_config.py PCI=$pci_device_arg CAPTURE_PCI=${CAPTURE_PCI_DEVICE:-<none>} KEY=$SSH_KEY TEST_TIME=$TEST_TIME$([[ -n "$EBU_IP" ]] && echo " EBU_IP=$EBU_IP")"
+	# gen_config.py resolves each BDF to 'vendor:device' (what the framework's
+	# PCIDevice parser wants, not a bus address) and assigns interface_index
+	# scoped per vendor:device group itself, so no post-hoc patching is
+	# needed here.
 	(cd tests/validation/configs &&
 		"../venv/bin/python3" gen_config.py \
 			--session_id 0 --mtl_path "$repo_root" \
-			--pci_device "$PCI_DEVICE_BDF" --ip_address 127.0.0.1 \
-			--username root --key_path "$SSH_KEY" --no_capture \
-			--media_path /mnt/media --test_time "$TEST_TIME")
-	local vendor_device
-	vendor_device=$(lspci -s "${PCI_DEVICE_BDF#0000:}" -n 2>/dev/null | awk '{print $3}')
-	if [[ -n "$vendor_device" ]]; then
-		log "configs: patching pci_device → '$vendor_device' (framework wants vendor:device, not BDF)"
-		sed -i "s|pci_device:.*|pci_device: '$vendor_device'|" tests/validation/configs/topology_config.yaml
-	fi
+			--pci_device "$pci_device_arg" --ip_address 127.0.0.1 \
+			--username root --key_path "$SSH_KEY" "${capture_args[@]}" \
+			--media_path /mnt/media --test_time "$TEST_TIME" "${ebu_args[@]}")
 }
 
 # ============================================================================
@@ -501,6 +556,7 @@ for v in PREFLIGHT NFS SSH VENV CONFIGS; do
 	fi
 done
 log " inputs         : NFS_SOURCE='${NFS_SOURCE:-<unset>}' PCI=${PCI_DEVICE_BDF:-<auto>} TEST_TIME=$TEST_TIME"
+log " compliance     : EBU_IP=${EBU_IP:-<unset>} CAPTURE_PCI_DEVICE=${CAPTURE_PCI_DEVICE:-<unset>}"
 log " mode           : $([[ "$CHECK_ONLY" == "1" ]] && echo 'CHECK_ONLY=1 (probe only, no install)' || echo install)"
 log " run log        : $RUN_LOG"
 log " expected time  : cold ~1-3 min ; warm <5s ; CHECK_ONLY <2s — agents must NOT time out"

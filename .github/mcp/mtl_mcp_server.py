@@ -55,9 +55,13 @@ mcp = FastMCP(
         Common workflows:
         • First-time setup:  system_status → iommu_status → hugepages_set →
                              nic_create_vf → build_mtl → manager_start
-        • After reboot:      setup_after_reboot_auto (single step — handles
-                             hugepages, VFs, ICE check, and MtlManager)
-        • ICE driver update: ice_driver_rebuild → setup_after_reboot_auto
+        • After reboot:      setup_after_reboot_auto (single step — auto-
+                             rebuilds the ICE driver first if needed, e.g.
+                             after a kernel upgrade, then does hugepages,
+                             VFs, and MtlManager. No separate ice_driver_
+                             rebuild call needed in the common case.)
+        • Force an ICE driver rebuild without touching hugepages/VFs:
+                             ice_driver_rebuild → setup_after_reboot_auto
                              (VFs are destroyed by driver reload!)
         • Run tests:         run_gtest (auto-discovers ports)
         • Build from clean:  mtl_clean_rebuild
@@ -317,10 +321,7 @@ def nic_list() -> str:
             return f"## NIC List\n```\n{out}\n```"
 
     # Fallback to dpdk-devbind
-    out = _run_output(
-        "dpdk-devbind.py -s 2>/dev/null || dpdk-devbind -s 2>/dev/null || echo 'dpdk-devbind not found'"
-    )
-    return f"## NIC Status\n```\n{out}\n```"
+    return dpdk_devbind_status()
 
 
 @mcp.tool()
@@ -515,12 +516,17 @@ def setup_after_reboot_auto(
     Auto-recover host setup after reboot for VF mode.
 
     Steps:
-    1. Ensure hugepages
-    2. Set CPU scaling governor to performance and confirm
-    3. Auto-discover SR-IOV-capable Intel PFs
-    4. Rebind each PF to kernel driver (if needed)
-    5. Create VFs on each PF and bind VFs to vfio-pci
-    6. Report discovered VF BDFs and a suggested test VF pair
+    1. Check the ICE driver; if the stock kernel driver is loaded or the
+       version doesn't match (e.g. after a kernel upgrade), rebuild the
+       patched out-of-tree driver automatically. This destroys any existing
+       VFs, which step 6 below re-creates, so it must run first.
+    2. Ensure hugepages
+    3. Set CPU scaling governor to performance and confirm
+    4. Auto-discover SR-IOV-capable Intel PFs
+    5. Rebind each PF to kernel driver (if needed)
+    6. Create VFs on each PF and bind VFs to vfio-pci
+    7. Start MtlManager
+    8. Report discovered VF BDFs and a suggested test VF pair
 
     Args:
         nr_hugepages: Number of 2MB hugepages (default 2048)
@@ -531,6 +537,16 @@ def setup_after_reboot_auto(
         return f"Error: vf_count must be > 0. Got {vf_count}."
 
     results: list[str] = []
+
+    # Check the ICE driver FIRST: a stock kernel driver causes SEGFAULT in
+    # iavf_tm_node_add, and a rebuild destroys any existing VFs anyway, so
+    # doing this before hugepages/VF creation avoids a wasted VF-creation
+    # pass and a second round-trip through this tool.
+    ice = ice_driver_status()
+    if "ACTION NEEDED" in ice:
+        results.append("## ICE Driver: rebuilding patched out-of-tree module")
+        results.append(ice_driver_rebuild())
+
     results.append(hugepages_set(nr_hugepages))
     results.append(_cpu_governor_set_and_confirm_performance())
 
@@ -559,16 +575,6 @@ def setup_after_reboot_auto(
                 f"- p_port: {unique_vfs[0]}\n"
                 f"- r_port: {unique_vfs[1]}"
             )
-
-    # Check ICE driver — stock kernel driver causes segfaults with TM pacing
-    ice = ice_driver_status()
-    if "ACTION NEEDED" in ice:
-        results.append(
-            "## ⚠ ICE Driver Warning\n" + ice + "\n\n"
-            "Stock kernel ICE driver will cause SEGFAULT in iavf_tm_node_add.\n"
-            "Run `ice_driver_rebuild` to install the patched driver, "
-            "then re-run `setup_after_reboot_auto` to re-create VFs."
-        )
 
     # Start MtlManager (required for lcore allocation in test binaries)
     mgr_result = manager_start()
@@ -883,117 +889,6 @@ def memlock_status() -> str:
             else ""
         )
     )
-
-
-# ===================================================================
-# TOOLS — Full Setup Workflow
-# ===================================================================
-
-
-@mcp.tool()
-def setup_for_vf_mode(
-    pf_bdf: str, nr_hugepages: int = 2048, trusted: bool = False
-) -> str:
-    """
-    One-shot setup for VF mode on a single PF (Intel E810/E830).
-
-    For multi-PF setups or full post-reboot recovery, prefer
-    setup_after_reboot_auto which handles all PFs automatically.
-
-    Steps: hugepages → create VFs → verify VFIO → reminder to start MtlManager.
-    Run this after every reboot.
-
-    Args:
-        pf_bdf: PF BDF to create VFs from, e.g. '0000:af:00.0'
-        nr_hugepages: Number of 2MB hugepages (default 2048 = 4GB)
-        trusted: Create trusted VFs
-    """
-    results: list[str] = []
-
-    # Hugepages
-    results.append(hugepages_set(nr_hugepages))
-
-    # Create VFs
-    results.append(nic_create_vf(pf_bdf, trusted))
-
-    # Reminder
-    results.append(
-        "## Next Steps\n"
-        "1. Note the VF BDFs above — use them in JSON config `interfaces.name`\n"
-        "2. Start MtlManager: use `manager_start` tool or `sudo MtlManager`\n"
-        "3. Run your application, e.g.:\n"
-        "   `./tests/tools/RxTxApp/build/RxTxApp --config_file config/tx_1v.json`"
-    )
-
-    return "\n\n---\n\n".join(results)
-
-
-@mcp.tool()
-def setup_for_pf_mode(pf_bdf: str, nr_hugepages: int = 2048) -> str:
-    """
-    One-shot setup for PF mode (bind PF directly to DPDK PMD).
-
-    Use this for non-E800 series NICs or when VFs are not needed.
-    WARNING: This takes the NIC away from the kernel entirely.
-
-    Args:
-        pf_bdf: PF BDF to bind to DPDK, e.g. '0000:32:00.0'
-        nr_hugepages: Number of 2MB hugepages (default 2048 = 4GB)
-    """
-    results: list[str] = []
-
-    results.append(hugepages_set(nr_hugepages))
-    results.append(nic_bind_pmd(pf_bdf))
-
-    results.append(
-        "## Next Steps\n"
-        f"1. Use PF BDF `{pf_bdf}` directly in JSON config `interfaces.name`\n"
-        "2. Start MtlManager: use `manager_start` tool\n"
-        "3. Run your application"
-    )
-
-    return "\n\n---\n\n".join(results)
-
-
-@mcp.tool()
-def setup_for_kernel_mode(nr_hugepages: int = 2048) -> str:
-    """
-    Setup for kernel socket transport mode (experimental).
-
-    NICs stay bound to kernel driver. MTL uses UDP sockets instead of DPDK PMD.
-    Lower performance but works with any NIC. Hugepages still needed for DPDK internals.
-
-    Args:
-        nr_hugepages: Number of 2MB hugepages (default 2048 = 4GB)
-    """
-    results: list[str] = []
-
-    results.append(hugepages_set(nr_hugepages))
-
-    # Show available kernel interfaces
-    interfaces = _run_output("ip -br link show | grep -v lo")
-    results.append(f"## Available Kernel Interfaces\n```\n{interfaces}\n```")
-
-    results.append(
-        "## Kernel Socket Config\n"
-        "Use the kernel interface name (e.g., `ens801f0`) in JSON config:\n"
-        "```json\n"
-        "{\n"
-        '    "interfaces": [\n'
-        "        {\n"
-        '            "name": "kernel:ens801f0",\n'
-        '            "ip": "192.168.88.80"\n'
-        "        }\n"
-        "    ]\n"
-        "}\n"
-        "```\n\n"
-        "Refer to sample configs:\n"
-        "- TX: tests/tools/RxTxApp/script/kernel_socket_json/tx.json\n"
-        "- RX: tests/tools/RxTxApp/script/kernel_socket_json/rx.json\n\n"
-        "⚠ This is experimental — limited performance and pacing accuracy."
-    )
-
-    return "\n\n---\n\n".join(results)
 
 
 # ===================================================================

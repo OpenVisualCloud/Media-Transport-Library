@@ -75,5 +75,5 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 
 - Run an existing test → [.github/instructions/mtl-gtest.instructions.md](.github/instructions/mtl-gtest.instructions.md) (gtest) or [.github/instructions/mtl-validation-tests.instructions.md](.github/instructions/mtl-validation-tests.instructions.md) (pytest).
 - Build / format → [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
-- Host setup → MTL System Admin agent (gtest) or MTL Validation Setup agent (pytest).
+- Host setup → MTL System Admin agent (gtest) or `.github/scripts/validation_setup.sh`/`mtl-validation-setup` MCP tools directly (pytest, no dedicated agent).
 - TDD discipline + implementation → MTL Developer (TDD) agent (this skill is loaded by Gate 2 of its six-gate loop). Adversarial review → MTL Reviewer agent.

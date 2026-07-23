@@ -28,8 +28,9 @@ This is a **client-visible, production repository**. Every change goes through r
 
 ## Available Tooling
 
-- **MCP Server** (`mtl-system-setup`): 35+ tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
-- **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "MTL Validation Setup" (pytest framework prep), "Explore" (read-only Q&A).
+- **MCP Server** (`mtl-system-setup`): 32 tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
+- **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "Explore" (read-only Q&A).
+  Pytest-environment prep (`tests/validation/`) has no dedicated agent — call `.github/scripts/validation_setup.sh` (interactive or `--auto`) or the `mtl-validation-setup` MCP tools directly; the interactive script already prompts for NFS/PF/EBU choices at zero token cost.
 - **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates); `/mtl-commit` (stage + commit as atomic, well-formed commits — user-triggered, never automatic).
 - **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
 
@@ -47,8 +48,8 @@ Use this table to pick the right subagent. Resolve ambiguity in order:
 | Run `KahawaiTest` (integration gtest, real VFs) | **MTL System Admin** | Only one with `run_gtest` MCP tool; enforced Gate 6 for data-plane changes |
 | Host setup (hugepages, VFs, drivers, MtlManager) | **MTL System Admin** | MCP-only, no shell |
 | Adversarial review of a saved diff | **MTL Reviewer** | Read-only; enforced Gate 5; refuses if diff empty |
-| Prepare pytest under `tests/validation/` (apt, NFS, configs) | **MTL Validation Setup** | MCP-only, idempotent (`setup_validation_full`) |
-| Run pytest under `tests/validation/` | *main agent* per `.github/instructions/mtl-validation-tests.instructions.md` | Validation Setup refuses by design |
+| Prepare or fix pytest under `tests/validation/` (apt, NFS, configs, hugepages, governor) | *main agent*, call `.github/scripts/validation_setup.sh status`/`setup` or the `mtl-validation-setup` MCP tools directly | No dedicated agent — interactive script guides setup (NFS/PF/EBU) at zero token cost |
+| Run pytest under `tests/validation/` | *main agent* per `.github/instructions/mtl-validation-tests.instructions.md` | — |
 | Read-only Q&A, code archaeology, "where is X defined?" | **Explore** | Cheap, parallelizable |
 
 **Capability boundaries** — every agent declares CAN/CANNOT in its body's "Capability contract" section. If a tool the agent needs is unavailable (e.g. shell `execute` disabled), the agent refuses at Gate 0 rather than producing degraded work. When refused, either enable the missing tool or pick a different agent from the matrix.

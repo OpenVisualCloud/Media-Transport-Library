@@ -11,9 +11,7 @@ from mtl_engine.media_files import yuv_files
 logger = logging.getLogger(__name__)
 
 
-def _try_replicas(
-    application, mtl_path, host, test_time, replicas: int, pcap_capture=None
-) -> bool:
+def _try_replicas(application, mtl_path, host, test_time, replicas: int) -> bool:
     """Re-issue create_command with new replicas count and run; return passed bool."""
     application.params["replicas"] = replicas
     # Re-build command/config so the new replicas value lands in the JSON
@@ -23,7 +21,6 @@ def _try_replicas(
         test_time=test_time,
         host=host,
         fail_on_error=False,
-        netsniff=pcap_capture,
     )
 
 
@@ -38,6 +35,7 @@ def _try_replicas(
 )
 @pytest.mark.nightly
 @pytest.mark.refactored
+@pytest.mark.rx_side
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_video_performance_refactored(
     hosts,
@@ -47,7 +45,6 @@ def test_rss_mode_video_performance_refactored(
     rss_mode,
     test_config,
     media_file,
-    pcap_capture,
     application,
 ):
     """Refactored test for rss mode video performance.
@@ -60,7 +57,6 @@ def test_rss_mode_video_performance_refactored(
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
-    :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -86,9 +82,7 @@ def test_rss_mode_video_performance_refactored(
     # Find upper bound: keep doubling until failure
     replicas_b = 1
     while True:
-        passed = _try_replicas(
-            application, mtl_path, host, test_time, replicas_b, pcap_capture
-        )
+        passed = _try_replicas(application, mtl_path, host, test_time, replicas_b)
         if passed:
             logger.info(
                 f"test_rss_mode_video_performance_refactored passed with {replicas_b} replicas"
@@ -111,7 +105,7 @@ def test_rss_mode_video_performance_refactored(
             log_result_note(f"{replicas_a} replicas")
             break
         passed = _try_replicas(
-            application, mtl_path, host, test_time, replicas_midpoint, pcap_capture
+            application, mtl_path, host, test_time, replicas_midpoint
         )
         if passed:
             logger.info(

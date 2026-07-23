@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
+from .pcap_compliance import check_pcap_compliance
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +364,25 @@ class Application(ABC):
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)
-            return self._dispatch_validate(fail_on_error)
+            # Run both dispatches unconditionally so a hard failure in one
+            # never skips the other -- e.g. a real app crash must still be
+            # validated even when the capture also happens to be
+            # non-compliant. Catch each independently, then re-raise once at
+            # the end if either failed and fail_on_error is set (each helper
+            # already records the pytest failure via log_fail internally).
+            compliance_ok, compliance_exc = True, None
+            try:
+                compliance_ok = self._dispatch_compliance_check(netsniff, fail_on_error)
+            except AssertionError as e:
+                compliance_ok, compliance_exc = False, e
+            validate_ok, validate_exc = True, None
+            try:
+                validate_ok = self._dispatch_validate(fail_on_error)
+            except AssertionError as e:
+                validate_ok, validate_exc = False, e
+            if fail_on_error and (compliance_exc or validate_exc):
+                raise compliance_exc or validate_exc
+            return compliance_ok and validate_ok
 
         # Dual-host: 2 bounded procs across 2 hosts.
         if not rx_app.command:
@@ -467,6 +486,70 @@ class Application(ABC):
                 self.get_app_name(),
             )
             return False
+
+    def _dispatch_compliance_check(self, netsniff, fail_on_error: bool) -> bool:
+        """Run the EBU compliance check for a completed netsniff capture, if any.
+
+        A test that requests the ``pcap_capture`` fixture REQUIRES a real
+        compliance verdict unless it explicitly opts out via
+        ``capture_cfg.enable: false`` -- a missing ``ebu_server``/``capture_cfg``
+        or a capture that failed to produce a pcap file are hard compliance
+        failures, never a silent pass. Returns True when compliant or not
+        applicable (``netsniff`` is None -- capture was explicitly disabled, or
+        skipped for an 8K capability limitation). Returns False only when
+        non-compliant/unconfigured and ``fail_on_error`` is False (soft-fail,
+        mirrors :meth:`_dispatch_validate`). Raises ``AssertionError`` when
+        non-compliant/unconfigured and ``fail_on_error`` is True.
+        """
+        if netsniff is None:
+            return True
+        try:
+            ebu_server = getattr(netsniff, "ebu_server", None)
+            if not ebu_server:
+                self._fail_validation(
+                    "Compliance check required (test uses the pcap_capture "
+                    "fixture and did not set capture_cfg.enable: false) but "
+                    "ebu_server is not configured in test_config.yaml -- cannot "
+                    "verify EBU compliance for this test. Configure capture_cfg "
+                    "(a 2nd NIC PF for netsniff-ng) and ebu_server, or set "
+                    "capture_cfg.enable: false to explicitly opt out.",
+                    fail_on_error,
+                )
+            if not netsniff.pcap_file:
+                self._fail_validation(
+                    "Compliance check required but PCAP capture failed to "
+                    "produce a file (netsniff-ng did not start) -- cannot "
+                    "verify EBU compliance for this test.",
+                    fail_on_error,
+                )
+            # params["pacing"] == "wide" (ST21_PACING_WIDE) deliberately widens
+            # MTL's VRX/Cinst tolerance, so EBU LIST legitimately reports "wide"
+            # (not narrow/narrow_linear) compliance for these streams -- that is
+            # the requested behavior, not a pacing defect. Correlate
+            # automatically here so no test needs to set netsniff.allow_wide by
+            # hand; the marker/attribute path stays available for other
+            # legitimate wide cases (e.g. a pacing fallback unrelated to the
+            # configured pacing mode).
+            allow_wide = getattr(netsniff, "allow_wide", False) or (
+                self.params.get("pacing") == "wide"
+            )
+            check_pcap_compliance(
+                netsniff,
+                ebu_server,
+                netsniff.mtl_path,
+                netsniff.test_nodeid,
+                fail_on_error=fail_on_error,
+                allow_wide=allow_wide,
+                expected_packing=self.params.get("packing"),
+            )
+            return True
+        except AssertionError:
+            if fail_on_error:
+                raise
+            logger.info("Compliance check failed (fail_on_error=False); continuing")
+            return False
+        finally:
+            netsniff._compliance_checked = True
 
     def _run_proc_group(
         self,
