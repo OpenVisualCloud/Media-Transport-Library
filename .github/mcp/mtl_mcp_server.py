@@ -1065,6 +1065,19 @@ def run_gtest(
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
         return "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
 
+    # NoCtxTest cases require one KahawaiTest process per test (DPDK EAL
+    # cannot be re-initialised within a single process) plus the --no_ctx /
+    # --no_ctx_tests flags this tool doesn't pass. Running them here would
+    # just fail/hang, so refuse up front and point at the right tool.
+    if (
+        re.search(r"(?:^|[:*])NoCtxTest[.*:]", gtest_filter)
+        or gtest_filter == "NoCtxTest"
+    ):
+        return (
+            "Error: NoCtxTest cases cannot be run via run_gtest (each needs its "
+            "own KahawaiTest process). Use run_noctx_tests instead."
+        )
+
     # Build command as list for safe execution
     cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
     if auto_start_stop:
@@ -1471,15 +1484,23 @@ def log_tail(
     source: str = "mtl_manager",
     lines: int = 50,
     filter_str: str = "",
+    log_path: str = "",
 ) -> str:
     """
     Tail MTL-related log files.
 
     Args:
-        source: Log source — 'mtl_manager', 'dmesg', 'validation', 'syslog'.
+        source: Log source — 'mtl_manager', 'dmesg', 'validation', 'syslog', or
+            'saved' to read one of the full logs saved by build_mtl/dpdk_build/
+            ice_driver_rebuild/install_dependencies/build_ebpf_xdp/run_gtest/
+            run_noctx_tests/run_noctx_pf_tests under build/logs/ (pass its
+            path via log_path).
         lines: Number of lines to show (default 50, max 200).
         filter_str: Optional grep filter (alphanumeric, dots, dashes, colons,
             spaces only — other characters are stripped).
+        log_path: Path to a saved log under build/logs/, as returned by the
+            tools above (e.g. 'build/logs/build_mtl_20260710_090000.log').
+            Required when source='saved'.
     """
     if lines > 200:
         lines = 200
@@ -1489,10 +1510,20 @@ def log_tail(
         "syslog": "/var/log/syslog",
     }
 
-    if source == "dmesg":
+    if source == "saved":
+        if not log_path:
+            return "Error: log_path is required when source='saved'."
+        logs_dir = (REPO_ROOT / "build" / "logs").resolve()
+        candidate = (REPO_ROOT / log_path).resolve()
+        if candidate.parent != logs_dir or not candidate.is_file():
+            return (
+                f"Error: '{log_path}' is not a saved log under build/logs/. "
+                "Use the exact path returned by the tool that produced it."
+            )
+        log_file = str(candidate)
+    elif source == "dmesg":
         return dmesg_tail(lines, filter_str)
-
-    if source == "validation":
+    elif source == "validation":
         # Find latest validation log — resolve and verify it's under REPO_ROOT
         latest = _run_output(
             "ls -t tests/validation/logs/*/output.log 2>/dev/null | head -1",
@@ -1506,7 +1537,10 @@ def log_tail(
     elif source in log_paths:
         log_file = log_paths[source]
     else:
-        return f"Error: unknown source '{source}'. Use: mtl_manager, dmesg, validation, syslog."
+        return (
+            f"Error: unknown source '{source}'. "
+            "Use: mtl_manager, dmesg, validation, syslog, saved."
+        )
 
     cmd = f"sudo tail -n {int(lines)} {log_file}"
     if filter_str:

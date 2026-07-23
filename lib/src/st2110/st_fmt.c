@@ -906,8 +906,8 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
   return (fmt == to_fmt) ? true : false;
 }
 
-static uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
-                                            uint64_t divisor) {
+uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
+                                     uint64_t divisor) {
   /* keep conversions reproducible without relying on floating point */
   __uint128_t product = (__uint128_t)value * multiplier;
   __uint128_t quotient = product / divisor;

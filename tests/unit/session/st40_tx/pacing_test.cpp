@@ -335,7 +335,7 @@ TEST_F(St40TxPacingTest, ExactPastHalfFrameTimestampCountsErrorAndMismatch) {
   EXPECT_EQ(ut_txa_notify_late_calls(ctx_), 0);
 }
 
-TEST_F(St40TxPacingTest, ExactTimestampOneNanosecondPastCountsErrorAndMismatch) {
+TEST_F(St40TxPacingTest, ExactTimestampOneNanosecondPastCountsErrorOnly) {
   ut_txa_set_user_pacing(ctx_, true);
   ut_txa_set_exact_user_pacing(ctx_, true);
   ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
@@ -344,8 +344,11 @@ TEST_F(St40TxPacingTest, ExactTimestampOneNanosecondPastCountsErrorAndMismatch) 
 
   ASSERT_EQ(ut_txa_sync_pacing(ctx_, kCurrentTai - 1), 0);
 
+  /* 1ns is far inside the same 90kHz tick as kCurrentTai, so the media-clock
+   * snap rounds start_time_tai back up to kCurrentTai -- no longer in the
+   * past, so stat_epoch_mismatch does not fire. */
   EXPECT_EQ(ut_txa_stat_error_user_timestamp(ctx_), 1u);
-  EXPECT_EQ(ut_txa_stat_epoch_mismatch(ctx_), 1u);
+  EXPECT_EQ(ut_txa_stat_epoch_mismatch(ctx_), 0u);
   EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txa_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txa_stat_epoch_onward(ctx_), 0u);
@@ -372,7 +375,9 @@ TEST_F(St40TxPacingTest, ExactTimestampOneNanosecondFutureIsValid) {
 
   ASSERT_EQ(ut_txa_sync_pacing(ctx_, kCurrentTai + 1), 0);
 
-  EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc + 1);
+  /* 1ns is far inside the same 90kHz tick as kCurrentTai, so the media-clock
+   * snap rounds it back down to kCurrentTai. */
+  EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc);
   ExpectNoPacingStats();
 }
 

@@ -142,7 +142,7 @@ ut_txv_ctx* ut_txv_create(void) {
   s->mgr = &ctx->mgr;
   s->idx = 0;
   s->active = true;
-  s->pacing.frame_time = NS_PER_MS;
+  s->pacing.frame_time = 1000000.0L; /* 1ms, round number for simple math */
   s->pacing.max_onward_epochs = 3;
   s->fps_tm.sampling_clock_rate = ST10_VIDEO_SAMPLING_RATE_90K;
   s->ops.get_next_frame = ut_txv_get_next_frame;
@@ -182,6 +182,18 @@ void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx) {
 
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+}
+
+void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
+  ctx->session.pacing.warm_pkts = warm_pkts;
+}
+
+void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate) {
+  ctx->session.fps_tm.sampling_clock_rate = sampling_rate;
+}
+
+void ut_txv_set_ptp_time_cursor(ut_txv_ctx* ctx, uint64_t tai_ns) {
+  ctx->session.pacing.ptp_time_cursor = tai_ns;
 }
 
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable) {
@@ -357,18 +369,23 @@ out:
   return ret;
 }
 
+void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp) {
+  tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
+}
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.cur_epochs;
 }
 
-uint64_t ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx) {
-  return (uint64_t)ctx->session.pacing.tsc_time_cursor;
+long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.tsc_time_cursor;
 }
 
-uint64_t ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx) {
-  return (uint64_t)ctx->session.pacing.ptp_time_cursor;
+long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.ptp_time_cursor;
 }
 
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx) {
@@ -437,4 +454,8 @@ uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_exceed_frame_time;
+}
+
+uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.rtp_time_stamp;
 }

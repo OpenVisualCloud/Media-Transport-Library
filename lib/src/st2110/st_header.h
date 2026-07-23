@@ -173,8 +173,7 @@ struct st_tx_video_pacing {
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
   long double frame_idle_time;
   long double reactive;
-  float pad_interval;           /* padding pkt interval(pkts level) for RL pacing */
-  uint32_t rl_rtp_offset_ticks; /* RL-only RTP timestamp shift (media-clk ticks) */
+  float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
@@ -184,6 +183,12 @@ struct st_tx_video_pacing {
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
+};
+
+enum st_tx_video_rl_state {
+  ST_TX_VIDEO_RL_STATE_IDLE = 0,
+  ST_TX_VIDEO_RL_STATE_WAIT_WARMUP,
+  ST_TX_VIDEO_RL_STATE_WAIT_TARGET,
 };
 
 enum st20_packet_type {
@@ -316,7 +321,6 @@ struct st_tx_video_session_impl {
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
-  uint64_t trs_target_ptp[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
@@ -326,9 +330,11 @@ struct st_tx_video_session_impl {
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
   int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */
+  enum st_tx_video_rl_state rl_state[MTL_SESSION_PORT_MAX];
 
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_SESSION_PORT_MAX];
+  bool tx_queue_recovery_pending[MTL_SESSION_PORT_MAX];
   uint64_t tx_hang_detect_time_thresh;
 
   /* frame info */
@@ -1644,6 +1650,20 @@ static inline bool st20_is_frame_type(enum st20_type type) {
     return true;
   else
     return false;
+}
+
+/* Round tai_ns to the ns value its media-clock tick implies, without the
+ * uint32 RTP-wire truncation st10_tai_to_media_clk()/st10_media_clk_to_ns()
+ * apply, so epoch-scale tai_ns snaps to the correct tick instead of
+ * wrapping through a 32-bit tick count. Reuses st_muldiv_u64_round_closest()
+ * (the same round-half-down primitive those two functions use) so the
+ * tie-break rule can never drift out of sync between the two call sites. */
+static inline uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns,
+                                                    uint32_t sampling_rate) {
+  uint64_t tick = st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
+  /* defensive saturate: tai_ns near UINT64_MAX round-trips back past it */
+  if ((__uint128_t)tick * NS_PER_S / sampling_rate >= UINT64_MAX) return UINT64_MAX;
+  return st_muldiv_u64_round_closest(tick, NS_PER_S, sampling_rate);
 }
 
 #endif

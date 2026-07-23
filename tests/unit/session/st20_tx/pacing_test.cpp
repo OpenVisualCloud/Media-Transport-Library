@@ -66,9 +66,11 @@ TEST_F(St20TxSyncPacingTest, NormalCursorDerivation) {
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
 
   EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
-  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai + kReceiverScheduleOffsetNs);
-  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc + kReceiverScheduleOffsetNs);
-  EXPECT_EQ(ut_txv_tsc_time_frame_start(ctx_), kCurrentTsc + kReceiverScheduleOffsetNs);
+  /* kReceiverScheduleOffsetNs (800ns) is less than half a 90kHz tick (~5555ns),
+   * so tv_sync_pacing()'s media-clock snap rounds it back down to kCurrentTai. */
+  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
+  EXPECT_EQ(ut_txv_tsc_time_frame_start(ctx_), kCurrentTsc);
   ExpectNoPacingStats();
 }
 
@@ -113,9 +115,10 @@ TEST_F(St20TxSyncPacingTest, UserPacingAlignsTimestampToReceiverSchedule) {
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, required_tai), 0);
 
   EXPECT_EQ(ut_txv_cur_epochs(ctx_), kAlignedTargetTai / kFramePeriodNs);
-  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kAlignedTargetTai + kReceiverScheduleOffsetNs);
-  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_),
-            kCurrentTsc + kAlignedTargetTai + kReceiverScheduleOffsetNs - kCurrentTai);
+  /* Same sub-tick snap as NormalCursorDerivation: kReceiverScheduleOffsetNs
+   * rounds back down to kAlignedTargetTai. */
+  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kAlignedTargetTai);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc + kAlignedTargetTai - kCurrentTai);
   ExpectNoPacingStats();
 }
 
@@ -295,7 +298,9 @@ TEST_F(St20TxSyncPacingTest, ExactTimestampOneNanosecondFutureIsValid) {
 
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, kCurrentTai + 1), 0);
 
-  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc + 1);
+  /* 1ns is far inside the same 90kHz tick as kCurrentTai, so the media-clock
+   * snap rounds it back down to kCurrentTai. */
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   ExpectNoPacingStats();
 }
 
