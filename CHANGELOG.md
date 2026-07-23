@@ -8,7 +8,7 @@
 * st40: add RX timestamp to st40_frame_info
 * st30: add RX timestamp to st30_frame
 * st20/st30/st40: add TX_FLAG_EXACT_USER_PACING for precise user-controlled pacing
-* st20p: add ST20P_TX_FLAG_DROP_OLD_FRAME to fix buffer overflow in case of epoch drops
+* st20p: add ST20P_TX_FLAG_DROP_WHEN_LATE to fix buffer overflow in case of epoch drops
 * st20: Change ST2022-7 stream class from D to A; update packet detection and slot allocation
 * GStreamer: add ST40 RX plugin, DMA offload, zero-copy for ST20, PTP/redundant support
 * FFmpeg: add redundant mode support

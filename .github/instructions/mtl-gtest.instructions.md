@@ -41,6 +41,14 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 | `Dma*` | DMA engine tests (need --dma_dev) | ~1 min |
 | `Cvt*` | Color conversion tests | ~30s |
 
+## Pipeline TX Flag Semantics
+
+- `*_TX_FLAG_DROP_WHEN_LATE` requires `*_TX_FLAG_USER_PACING`; use a TAI frame timestamp for deterministic late-frame checks.
+- A dropped frame triggers `notify_frame_done` with `ST_FRAME_STATUS_DROPPED` and also triggers `notify_frame_late`; the callbacks are not mutually exclusive.
+- Buffer reclamation does not prove callback completion; synchronize callback observations independently.
+- `*_TX_FLAG_BLOCK_GET` timeouts apply to each `get_frame` wait and must exceed any deliberately scheduled future timestamp.
+- Every frame returned by `get_frame` remains application-owned until it is submitted or released with the matching `put_frame_abort` API.
+
 ## Quick Run (MCP tool preferred)
 
 ```bash

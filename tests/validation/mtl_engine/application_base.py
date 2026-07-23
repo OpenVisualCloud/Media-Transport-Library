@@ -263,6 +263,34 @@ class Application(ABC):
         """Check if a parameter was explicitly provided by the user."""
         return param_name in self._user_provided_params
 
+    def count_tx_dropped_frames(self) -> int:
+        """Total TX frames the MTL pipeline dropped during the last run.
+
+        MTL logs, at every stats interval, a TX pipeline line such as
+        ``TX_st20p(0), frame get try X succ Y, put Z, drop D`` (st20p/st22p/
+        st30p/st40p share the shape). Each interval resets its own counter, so
+        the run total is the sum of the per-interval ``drop`` values. This
+        output is emitted by the library itself, independent of which framework
+        drives it, so the parsing belongs here in the base class rather than in
+        any single adapter.
+
+        Returns the summed drop count, or -1 if no TX pipeline stats line was
+        found in the captured output.
+        """
+        if not self.last_output:
+            return -1
+        pattern = re.compile(
+            r"TX_st\d\dp\(\d+\),\s*frame get try \d+ succ \d+, put \d+, drop (\d+)"
+        )
+        total = 0
+        seen = False
+        for line in self.last_output.split("\n"):
+            m = pattern.search(line)
+            if m:
+                seen = True
+                total += int(m.group(1))
+        return total if seen else -1
+
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Hook method called before execution to perform framework-specific setup.
 

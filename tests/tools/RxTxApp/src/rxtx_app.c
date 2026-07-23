@@ -672,7 +672,8 @@ int main(int argc, char** argv) {
  */
 uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t frame_num,
                           double frame_time, bool restart_base_time) {
-  uint64_t tai_time, offset;
+  uint64_t tai_time;
+  int64_t offset;
 
   if (!user_time) return 0;
 
@@ -693,7 +694,10 @@ uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t fr
     pthread_mutex_unlock(&user_time->base_tai_time_mutex);
   }
   offset = user_time->user_time_offset;
-  tai_time = user_time->base_tai_time + offset + (uint64_t)(frame_time * frame_num);
+  /* offset may be negative to start the pacing clock in the past, presenting
+   * frames late (used by the drop-when-late tests) */
+  tai_time = user_time->base_tai_time + (uint64_t)(frame_time * frame_num);
+  tai_time = (uint64_t)((int64_t)tai_time + offset);
 
   return tai_time;
 }

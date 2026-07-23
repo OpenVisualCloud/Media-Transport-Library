@@ -902,8 +902,10 @@ struct st20p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib. If ST20P_TX_FLAG_DROP_WHEN_LATE and
+   * ST20P_TX_FLAG_USER_PACING are both enabled, this is also called for a frame dropped
+   * for being late, with frame->status set to ST_FRAME_STATUS_DROPPED; notify_frame_late
+   * fires as well for that same frame, the two callbacks are not mutually exclusive.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
@@ -1083,8 +1085,10 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib. If ST22P_TX_FLAG_DROP_WHEN_LATE and
+   * ST22P_TX_FLAG_USER_PACING are both enabled, this is also called for a frame dropped
+   * for being late, with frame->status set to ST_FRAME_STATUS_DROPPED; notify_frame_late
+   * fires as well for that same frame, the two callbacks are not mutually exclusive.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
@@ -1825,6 +1829,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
  * IN_USER state so the application can safely unmap / release external buffers.
  * Call this function once cleanup is complete to release the slot back to FREE.
  * When ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE is not set this is a silent no-op.
+ * When an internal converter is used, notify_frame_done fires before the slot
+ * is ever parked in IN_USER, so this is also always a silent no-op.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.

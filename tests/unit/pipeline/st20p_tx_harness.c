@@ -133,10 +133,50 @@ void ut20p_tx_ctx_set_manual_release(ut20p_tx_ctx* ctx) {
   ctx->pipeline.ops.flags |= ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
 }
 
+static int ut20p_tx_stub_convert(struct st_frame* src, struct st_frame* dst) {
+  MTL_MAY_UNUSED(src);
+  MTL_MAY_UNUSED(dst);
+  return 0;
+}
+
+static struct st_frame_converter ut20p_tx_stub_converter = {
+    .convert_func = ut20p_tx_stub_convert,
+};
+
+void ut20p_tx_ctx_set_internal_converter(ut20p_tx_ctx* ctx) {
+  struct st20p_tx_ctx* p = &ctx->pipeline;
+  const enum st_frame_fmt fmt = ST_FRAME_FMT_UYVY;
+  const uint32_t width = 64, height = 2;
+
+  p->derive = false;
+  p->internal_converter = &ut20p_tx_stub_converter;
+  p->ops.flags |= ST20P_TX_FLAG_EXT_FRAME;
+
+  for (int i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st20p_tx_frame* fb = &ctx->framebuffs[i];
+    fb->src.priv = fb;
+    fb->src.fmt = fmt;
+    fb->src.width = width;
+    fb->src.height = height;
+    fb->src.interlaced = false;
+  }
+}
+
+int ut20p_tx_put_ext_frame(ut20p_tx_ctx* ctx, struct st_frame* frame,
+                           struct st_ext_frame* ext_frame) {
+  return st20p_tx_put_ext_frame(&ctx->pipeline, frame, ext_frame);
+}
+
 int ut20p_tx_notify_ext_frame_free(ut20p_tx_ctx* ctx, uint16_t idx) {
-  /* derive path: the user-facing frame is &dst (dst.priv -> framebuff). */
-  struct st_frame* frame = &ctx->framebuffs[idx].dst;
+  struct st_frame* frame = tx_st20p_user_frame(&ctx->pipeline, &ctx->framebuffs[idx]);
   return st20p_tx_notify_ext_frame_free(&ctx->pipeline, frame);
+}
+
+void ut20p_tx_set_notify_frame_done(ut20p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st_frame* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
 }
 
 void ut20p_tx_set_frame_ready(ut20p_tx_ctx* ctx, int idx) {
