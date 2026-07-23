@@ -129,8 +129,9 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
   uint32_t width = sessionsOpsTx.width;
   uint32_t height = sessionsOpsTx.height;
   enum st20_fmt fmt = (enum st20_fmt)sessionsOpsTx.input_fmt;
+  bool interlaced = sessionsOpsTx.interlaced;
 
-  uint frameSize = st_frame_size((enum st_frame_fmt)fmt, width, height, false);
+  uint frameSize = st_frame_size((enum st_frame_fmt)fmt, width, height, interlaced);
 
   while (!stopFlag) {
     frame = st20p_tx_get_frame(handle);
