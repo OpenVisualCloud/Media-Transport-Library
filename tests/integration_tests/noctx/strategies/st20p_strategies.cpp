@@ -43,8 +43,64 @@ void St20pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
   }
 
+  const uint64_t rtp_timestamp_ns =
+      st10_media_clk_to_ns(static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
+  const int64_t rl_latency_ns =
+      static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_timestamp_ns);
+  recordRlLatencySample(idx_rx, rl_latency_ns);
+
   lastTimestamp = f->timestamp;
   idx_rx++;
+}
+
+void St20pDefaultTimestamp::recordRlLatencySample(uint64_t frame_idx,
+                                                  int64_t latency_ns) {
+  if (frame_idx == 0) {
+    return;
+  }
+
+  rlLatencySampleCount++;
+  rlLatencySumNs += latency_ns;
+
+  if (latency_ns < 0) {
+    rlLatencyNegativeCount++;
+    if (latency_ns < rlLatencyWorstNegativeNs || rlLatencyNegativeCount == 1) {
+      rlLatencyWorstNegativeNs = latency_ns;
+      rlLatencyWorstNegativeFrameIdx = frame_idx;
+    }
+  } else if (latency_ns >= kRlLatencyExcessiveThresholdNs) {
+    rlLatencyExcessiveCount++;
+    if (latency_ns > rlLatencyWorstExcessiveNs || rlLatencyExcessiveCount == 1) {
+      rlLatencyWorstExcessiveNs = latency_ns;
+      rlLatencyWorstExcessiveFrameIdx = frame_idx;
+    }
+  }
+}
+
+void St20pDefaultTimestamp::assertRlLatencyWithinBounds() const {
+  if (rlLatencySampleCount == 0) {
+    return;
+  }
+
+  const int64_t average_latency_ns =
+      rlLatencySumNs / static_cast<int64_t>(rlLatencySampleCount);
+
+  EXPECT_EQ(rlLatencyNegativeCount, 0u)
+      << rlLatencyNegativeCount << " of " << rlLatencySampleCount
+      << " frames (excl. frame 0) had negative RX-timestamp-minus-RTP-timestamp "
+         "latency (worst offender: frame "
+      << rlLatencyWorstNegativeFrameIdx << ", latency_ns=" << rlLatencyWorstNegativeNs
+      << ", average over all " << rlLatencySampleCount << " frames=" << average_latency_ns
+      << "ns) -- a frame cannot be received before its own RTP timestamp";
+
+  EXPECT_EQ(rlLatencyExcessiveCount, 0u)
+      << rlLatencyExcessiveCount << " of " << rlLatencySampleCount
+      << " frames (excl. frame 0) had RX-timestamp-minus-RTP-timestamp latency >= "
+      << kRlLatencyExcessiveThresholdNs / static_cast<int64_t>(NS_PER_US)
+      << "us (worst offender: frame " << rlLatencyWorstExcessiveFrameIdx
+      << ", latency_ns=" << rlLatencyWorstExcessiveNs << ", average over all "
+      << rlLatencySampleCount << " frames=" << average_latency_ns
+      << "ns) -- RL warm-up gating should not delay transmission this far past target";
 }
 
 St20pUserTimestamp::St20pUserTimestamp(St20pHandler* parentHandler,

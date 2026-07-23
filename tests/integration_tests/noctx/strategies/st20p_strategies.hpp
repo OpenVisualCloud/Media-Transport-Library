@@ -18,6 +18,25 @@ class St20pDefaultTimestamp : public FrameTestStrategy {
  public:
   explicit St20pDefaultTimestamp(St20pHandler* parentHandler = nullptr);
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
+
+  /* Same zero-tolerance RX-vs-RTP-timestamp latency check as
+   * St20pUserTimestamp::assertRlLatencyWithinBounds() -- see that method's
+   * docstring for the full rationale. */
+  void assertRlLatencyWithinBounds() const;
+
+ protected:
+  /* Same accounting as St20pUserTimestamp::recordRlLatencySample(); frame 0
+   * is excluded (session warm-up, not steady-state pacing). */
+  void recordRlLatencySample(uint64_t frame_idx, int64_t latency_ns);
+
+  uint64_t rlLatencySampleCount = 0;
+  int64_t rlLatencySumNs = 0;
+  uint64_t rlLatencyNegativeCount = 0;
+  int64_t rlLatencyWorstNegativeNs = 0;
+  uint64_t rlLatencyWorstNegativeFrameIdx = 0;
+  uint64_t rlLatencyExcessiveCount = 0;
+  int64_t rlLatencyWorstExcessiveNs = 0;
+  uint64_t rlLatencyWorstExcessiveFrameIdx = 0;
 };
 
 class St20pUserTimestamp : public FrameTestStrategy {

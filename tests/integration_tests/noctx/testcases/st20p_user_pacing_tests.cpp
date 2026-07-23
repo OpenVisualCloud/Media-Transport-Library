@@ -24,6 +24,7 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
 
   ASSERT_GT(frameTestStrategy->idx_rx, 0u)
       << "st20p_user_pacing did not receive any frames";
+  frameTestStrategy->assertRlLatencyWithinBounds();
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing) {
