@@ -880,6 +880,10 @@ class RxTxApp(Application):
                 if is_tx:
                     session["input_format"] = pixel_format
                     session["st20p_url"] = p("input_file")
+                    if p("user_pacing", False):
+                        session["user_pacing"] = True
+                    if p("drop_when_late", False):
+                        session["drop_when_late"] = True
                 else:
                     session["output_format"] = p("output_pixel_format") or pixel_format
                     session["measure_latency"] = p("measure_latency")
@@ -1001,6 +1005,13 @@ class RxTxApp(Application):
             if st_entry:
                 config["tx_sessions"][0].setdefault(session_type, [])
                 config["tx_sessions"][0][session_type].append(st_entry)
+
+        # Group-level user-pacing clock offset (ns). A negative value starts the
+        # pacing clock in the past so frames are presented late and the
+        # drop-when-late flag must drop them (used by the drop-when-late test).
+        user_time_offset = self.params.get("user_time_offset")
+        if user_time_offset is not None:
+            config["tx_sessions"][0]["user_time_offset"] = int(user_time_offset)
 
         # Populate RX sessions
         if direction in (None, "rx"):

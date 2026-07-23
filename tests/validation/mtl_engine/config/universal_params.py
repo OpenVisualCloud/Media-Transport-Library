@@ -57,6 +57,9 @@ UNIVERSAL_PARAMS = {
     # Quality and encoding parameters
     "pacing": "gap",  # Pacing mode (gap, auto, etc.)
     "packing": "BPM",  # Packing mode
+    "user_pacing": False,  # TX user pacing (app supplies per-frame timestamps)
+    "drop_when_late": False,  # Drop TX frames that miss their pacing window
+    "user_time_offset": None,  # User-pacing clock offset in ns (negative = past)
     "device": "AUTO",  # Device selection
     "codec": "JPEG-XS",  # Codec for compressed formats
     "quality": "speed",  # Quality setting

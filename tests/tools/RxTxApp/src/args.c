@@ -949,7 +949,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->flags |= MTL_FLAG_NO_MULTICAST;
         break;
       case ST_ARG_TX_USER_CLOCK_OFFSET:
-        ctx->user_time.user_time_offset = atoi(optarg);
+        ctx->user_time.user_time_offset = atoll(optarg);
         break;
       case ST_ARG_AUTO_STOP:
         ctx->auto_stop = true;
