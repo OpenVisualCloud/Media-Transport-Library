@@ -703,7 +703,8 @@ static int tx_fastmetadata_session_tasklet_frame(
       if (frame_end_time > pacing->tsc_time_cursor) {
         s->port_user_stats.common.stat_exceed_frame_time++;
         dbg("%s(%d), frame %" PRIu16 " build time out %f us\n", __func__, idx,
-            s->st41_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+            s->st41_frame_idx,
+            (double)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
       }
       s->check_frame_done_time = false;
     }

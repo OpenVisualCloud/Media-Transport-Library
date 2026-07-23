@@ -2,7 +2,6 @@
 # Copyright(c) 2026 Intel Corporation
 
 import pytest
-
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
 from mtl_engine.media_files import yuv_files_422rfc10
