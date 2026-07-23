@@ -273,7 +273,12 @@ stage_preflight() {
 		warn "preflight: out-of-tree ice driver not loaded (path=$ice_path)"
 		missing=1
 	fi
-	free_mb=$(awk '/HugePages_Free/ {print $2*2}' /proc/meminfo)
+	# Free hugepage memory in MiB, derived from the ACTUAL default page size
+	# (Hugepagesize in /proc/meminfo). The old `*2` assumed 2 MiB pages and
+	# misreported hosts booted with default_hugepagesz=1G (e.g. 32 free 1G
+	# pages -> 64 MiB instead of 32768 MiB). Backward compatible: on 2 MiB
+	# default hosts Hugepagesize=2048 kB so the factor is still 2.
+	free_mb=$(awk '/^HugePages_Free:/ {f=$2} /^Hugepagesize:/ {sz=$2} END {print f * (sz/1024)}' /proc/meminfo)
 	if ((free_mb < 1024)); then
 		warn "preflight: hugepages free is ${free_mb} MiB (<1024 MiB)"
 		missing=1
