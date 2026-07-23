@@ -721,7 +721,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         if (frame_end_time > pacing->tsc_time_cursor) {
           s->port_user_stats.common.stat_exceed_frame_time++;
           dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
-              s->st30_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+              s->st30_frame_idx,
+              (uint64_t)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
         }
         s->check_frame_done_time = false;
       }
