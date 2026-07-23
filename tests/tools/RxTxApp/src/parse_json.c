@@ -2907,7 +2907,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse global clock offset options*/
       json_object* pacing_obj = st_json_object_object_get(tx_group, "user_time_offset");
       if (pacing_obj) {
-        ctx->user_time_offset = json_object_get_int(pacing_obj);
+        ctx->user_time_offset = json_object_get_int64(pacing_obj);
       } else {
         ctx->user_time_offset = ST_APP_USER_CLOCK_DEFAULT_OFFSET;
       }

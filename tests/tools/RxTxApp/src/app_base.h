@@ -103,7 +103,8 @@ struct st_display {
 struct st_user_time {
   uint64_t base_tai_time;
   pthread_mutex_t base_tai_time_mutex;
-  uint64_t user_time_offset;
+  /* signed: a negative offset starts the pacing clock in the past */
+  int64_t user_time_offset;
 };
 
 struct st_app_frameinfo {
