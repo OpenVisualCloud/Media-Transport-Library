@@ -26,6 +26,7 @@ gst_dep = dependency('gstreamer-1.0', version : '>=1.19', required : true)
 gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : true)
 gstreamer_video_dep = dependency('gstreamer-video-1.0', required : true)
 gstreamer_audio_dep = dependency('gstreamer-audio-1.0', required : true)
+glib_dep = dependency('glib-2.0', required : true)
 mtl_dep             = dependency('mtl', required : true)
 
 if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0
@@ -149,3 +150,4 @@ gst_mtl_st40p_rx = library('gstmtl_st40p_rx',
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
+

@@ -14,6 +14,21 @@ from .execute import is_process_running, log_fail, run
 
 logger = logging.getLogger(__name__)
 
+# Log markers that prove the ST20P TX zero-copy refcount / finalize grace-period
+# contract was broken. Both MUST be absent from the TX output after a clean
+# shutdown:
+#   - "refcnt not zero": the MTL TX data-plane guard fired because the transport
+#     freed a frame slot whose mbufs were still owned by the NIC, i.e. finalize
+#     tore the session down before the in-flight zero-copy GstBuffers drained
+#     (lib/src/st2110/st_tx_video_session.c).
+#   - "Finalize timeout waiting for pending GstBuffers": the plugin's bounded
+#     grace wait expired with pending_gst_buffers still > 0
+#     (ecosystem/gstreamer_plugin/gst_mtl_st20p_tx.c).
+ST20P_TX_REFCNT_VIOLATION_MARKERS = (
+    "refcnt not zero",
+    "Finalize timeout waiting for pending GstBuffers",
+)
+
 
 def capture_stdout(process, process_name):
     """
@@ -206,6 +221,7 @@ def setup_gstreamer_st20p_tx_pipeline(
     tx_queues: int,
     tx_framebuff_num: int = None,
     tx_fps: int = None,
+    rx_queues: int = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -254,6 +270,12 @@ def setup_gstreamer_st20p_tx_pipeline(
 
     pipeline_command.extend(["mtl_st20p_tx", f"tx-queues={tx_queues}"])
 
+    # A TX-only session needs only a minimal RX queue count (ARP/control); capping
+    # it keeps the VF below the iavf "large VF" queue-pair threshold on PFs that
+    # reject large-VF interrupt mapping.
+    if rx_queues is not None:
+        pipeline_command.append(f"rx-queues={rx_queues}")
+
     if tx_framebuff_num is not None:
         pipeline_command.append(f"tx-framebuff-num={tx_framebuff_num}")
 
@@ -280,6 +302,7 @@ def setup_gstreamer_st20p_rx_pipeline(
     rx_queues: int,
     rx_framebuff_num: int = None,
     rx_fps: int = None,
+    tx_queues: int = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -310,6 +333,11 @@ def setup_gstreamer_st20p_rx_pipeline(
 
     if rx_framebuff_num is not None:
         pipeline_command.append(f"rx-framebuff-num={rx_framebuff_num}")
+
+    # An RX-only session needs only a minimal TX queue count (ARP/control); capping
+    # it keeps the VF below the iavf "large VF" queue-pair threshold.
+    if tx_queues is not None:
+        pipeline_command.append(f"tx-queues={tx_queues}")
 
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 
@@ -1014,6 +1042,98 @@ def compare_files(
     if not suppress_fail_logs:
         log_fail("Comparison of files failed")
     return False
+
+
+def execute_st20p_tx_finalize_grace(
+    build: str,
+    tx_command: list,
+    rx_command: list,
+    host,
+    tx_run_timeout: int = 90,
+    rx_lead_time: int = 4,
+    gst_debug: str = "mtl_st20p_tx:4",
+) -> dict:
+    """Stream a finite ST20P zero-copy clip and drive TX through finalize.
+
+    RX is started first so ARP resolves and TX actually paces frames onto the
+    wire, leaving real in-flight zero-copy frames at end-of-stream. TX then runs
+    until its finite filesrc reaches EOS; gst-launch tears the pipeline down on
+    EOS, which invokes gst_mtl_st20p_tx_finalize() and its pending_gst_buffers
+    grace drain. The captured TX stdout (stderr merged) is returned so the caller
+    can assert the refcount drained cleanly.
+
+    ``GST_DEBUG`` is raised for the plugin category only, so the finalize-timeout
+    warning is visible; the MTL "refcnt not zero" guard is an err() that prints
+    regardless.
+
+    :return: dict with keys ``tx_output`` (str), ``tx_return_code`` (int|None),
+        ``tx_clean_exit`` (bool) and ``violations`` (list[str]).
+    """
+    rx_process = None
+    tx_process = None
+    tx_output = ""
+    tx_return_code = None
+
+    try:
+        logger.info("Starting RX pipeline (receiver / link partner)...")
+        rx_process = run(
+            " ".join(rx_command),
+            cwd=build,
+            timeout=tx_run_timeout + 60,
+            testcmd=True,
+            host=host,
+            background=True,
+        )
+        time.sleep(rx_lead_time)
+
+        tx_cmd = " ".join(tx_command)
+        if gst_debug:
+            tx_cmd = f"GST_DEBUG={gst_debug} {tx_cmd}"
+
+        logger.info("Starting TX pipeline (zero-copy)...")
+        tx_process = run(
+            tx_cmd,
+            cwd=build,
+            timeout=tx_run_timeout + 60,
+            testcmd=True,
+            host=host,
+            background=True,
+        )
+
+        # gst-launch exits 0 only on a clean EOS-driven teardown, which is the
+        # path that runs the finalize grace drain. Wait for that to happen on
+        # its own instead of killing TX.
+        logger.info(f"Waiting up to {tx_run_timeout}s for TX to reach EOS...")
+        try:
+            tx_process.wait(timeout=tx_run_timeout)
+        except Exception as e:
+            logger.warning(f"TX did not exit within {tx_run_timeout}s: {e}")
+
+        tx_return_code = getattr(tx_process, "return_code", None)
+        tx_output = capture_stdout(tx_process, "TX") or ""
+    finally:
+        for proc, name in ((tx_process, "TX"), (rx_process, "RX")):
+            if proc and is_process_running(proc):
+                logger.info(f"Killing leftover {name} process")
+                try:
+                    proc.kill()
+                except Exception as e:
+                    logger.warning(f"Failed to kill {name} process: {e}")
+
+    for line in tx_output.splitlines():
+        logger.info(f"TX Output: {line}")
+
+    violations = [m for m in ST20P_TX_REFCNT_VIOLATION_MARKERS if m in tx_output]
+    logger.info(
+        f"TX finalize result: return_code={tx_return_code} violations={violations}"
+    )
+
+    return {
+        "tx_output": tx_output,
+        "tx_return_code": tx_return_code,
+        "tx_clean_exit": tx_return_code == 0,
+        "violations": violations,
+    }
 
 
 def video_format_change(file_format):
