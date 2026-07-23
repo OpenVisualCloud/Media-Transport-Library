@@ -490,33 +490,63 @@ class Application(ABC):
     def _dispatch_compliance_check(self, netsniff, fail_on_error: bool) -> bool:
         """Run the EBU compliance check for a completed netsniff capture, if any.
 
-        Returns True when compliant, not applicable (no netsniff/ebu_server/pcap
-        file), or non-compliant with ``fail_on_error`` False (soft-fail, mirrors
-        :meth:`_dispatch_validate`). Returns False only when non-compliant and
-        ``fail_on_error`` is False. Raises ``AssertionError`` when non-compliant
-        and ``fail_on_error`` is True.
+        A test that requests the ``pcap_capture`` fixture REQUIRES a real
+        compliance verdict unless it explicitly opts out via
+        ``capture_cfg.enable: false`` -- a missing ``ebu_server``/``capture_cfg``
+        or a capture that failed to produce a pcap file are hard compliance
+        failures, never a silent pass. Returns True when compliant or not
+        applicable (``netsniff`` is None -- capture was explicitly disabled, or
+        skipped for an 8K capability limitation). Returns False only when
+        non-compliant/unconfigured and ``fail_on_error`` is False (soft-fail,
+        mirrors :meth:`_dispatch_validate`). Raises ``AssertionError`` when
+        non-compliant/unconfigured and ``fail_on_error`` is True.
         """
         if netsniff is None:
             return True
-        ebu_server = getattr(netsniff, "ebu_server", None)
-        if not ebu_server or not netsniff.pcap_file:
-            return True
         try:
+            ebu_server = getattr(netsniff, "ebu_server", None)
+            if not ebu_server:
+                self._fail_validation(
+                    "Compliance check required (test uses the pcap_capture "
+                    "fixture and did not set capture_cfg.enable: false) but "
+                    "ebu_server is not configured in test_config.yaml -- cannot "
+                    "verify EBU compliance for this test. Configure capture_cfg "
+                    "(a 2nd NIC PF for netsniff-ng) and ebu_server, or set "
+                    "capture_cfg.enable: false to explicitly opt out.",
+                    fail_on_error,
+                )
+            if not netsniff.pcap_file:
+                self._fail_validation(
+                    "Compliance check required but PCAP capture failed to "
+                    "produce a file (netsniff-ng did not start) -- cannot "
+                    "verify EBU compliance for this test.",
+                    fail_on_error,
+                )
+            # params["pacing"] == "wide" (ST21_PACING_WIDE) deliberately widens
+            # MTL's VRX/Cinst tolerance, so EBU LIST legitimately reports "wide"
+            # (not narrow/narrow_linear) compliance for these streams -- that is
+            # the requested behavior, not a pacing defect. Correlate
+            # automatically here so no test needs to set netsniff.allow_wide by
+            # hand; the marker/attribute path stays available for other
+            # legitimate wide cases (e.g. a pacing fallback unrelated to the
+            # configured pacing mode).
+            allow_wide = getattr(netsniff, "allow_wide", False) or (
+                self.params.get("pacing") == "wide"
+            )
             check_pcap_compliance(
                 netsniff,
                 ebu_server,
                 netsniff.mtl_path,
                 netsniff.test_nodeid,
                 fail_on_error=fail_on_error,
-                allow_gapped=getattr(netsniff, "allow_gapped", False),
+                allow_wide=allow_wide,
+                expected_packing=self.params.get("packing"),
             )
             return True
         except AssertionError:
             if fail_on_error:
                 raise
-            logger.info(
-                "PCAP compliance check failed (fail_on_error=False); continuing"
-            )
+            logger.info("Compliance check failed (fail_on_error=False); continuing")
             return False
         finally:
             netsniff._compliance_checked = True

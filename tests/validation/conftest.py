@@ -1204,7 +1204,7 @@ def pcap_capture(
             ebu_server=test_config.get("ebu_server", {}),
             mtl_path=mtl_path,
             test_nodeid=request.node.nodeid,
-            allow_gapped=request.node.get_closest_marker("allow_gapped_compliance")
+            allow_wide=request.node.get_closest_marker("allow_wide_compliance")
             is not None,
         )
         # netsniff-ng captures with NIC hardware (on-wire) RX timestamps, which
@@ -1227,34 +1227,21 @@ def pcap_capture(
         if phc_sync_active and phc_sync_host is not None:
             _reap_ptp_daemons(phc_sync_host, patterns=("phc2sys",))
 
-        # Safety net: the real upload/poll/verdict runs inside
-        # ApplicationBase.execute_test() (call phase). This only fires if
-        # that dispatch never happened, so a required compliance check can't
-        # be silently skipped. Opt out via capture_cfg.enable: false or is_8k.
+        # Safety net: the real upload/poll/verdict -- and the hard failures for
+        # "no ebu_server configured" / "capture produced no pcap file" -- all
+        # run inside ApplicationBase._dispatch_compliance_check() during the
+        # call phase, which unconditionally marks capturer._compliance_checked
+        # (pass or fail) whenever a real capturer was created. So this only
+        # fires when a test requests the pcap_capture fixture but never calls
+        # execute_test(netsniff=pcap_capture, ...) at all -- a required
+        # compliance check can't be silently skipped by that kind of test bug
+        # either. Opt out via capture_cfg.enable: false (or the built-in 8K skip).
         if not skip_capture and not (capturer and capturer._compliance_checked):
-            ebu_server = test_config.get("ebu_server", {})
-            if not ebu_server:
-                log_fail(
-                    "Compliance check required (test uses the pcap_capture fixture) "
-                    "but ebu_server is not configured in test_config.yaml -- cannot "
-                    "verify EBU compliance for this test. Configure capture_cfg (a "
-                    "2nd NIC PF for netsniff-ng) and ebu_server, e.g. via "
-                    "'.github/scripts/validation_setup.sh setup --ebu-ip=...' or the "
-                    "mtl-validation-setup MCP tools' capture_pci_device/ebu_ip args, "
-                    "or set capture_cfg.enable: false to explicitly opt out."
-                )
-            elif not (capturer and capturer.pcap_file):
-                log_fail(
-                    "Compliance check required but PCAP capture failed to produce "
-                    "a file (netsniff-ng did not start) -- cannot verify EBU "
-                    "compliance for this test."
-                )
-            else:
-                log_fail(
-                    "Compliance check required (test uses the pcap_capture fixture) "
-                    "but execute_test() never dispatched it -- ensure the test calls "
-                    "execute_test(netsniff=pcap_capture, ...)."
-                )
+            log_fail(
+                "Compliance check required (test uses the pcap_capture fixture) "
+                "but execute_test() never dispatched it -- ensure the test calls "
+                "execute_test(netsniff=pcap_capture, ...)."
+            )
 
         # Always ensure the capturer is stopped before fixture cleanup completes.
         # This is critical because prepare_ramdisk unmount happens after this

@@ -53,8 +53,8 @@ class NetsniffRecorder:
             ``execute_test()`` (default: None).
         mtl_path: MTL build directory path, forwarded to the compliance upload command.
         test_nodeid (str): pytest node id, used to key the CSV compliance report.
-        allow_gapped (bool): allow ST 2110-21 gapped (not narrow linear) video
-            scheduling to pass compliance instead of failing (default: False).
+        allow_wide (bool): allow ST 2110-21 'wide' (not narrow/narrow_linear)
+            video VRX/Cinst compliance to pass instead of failing (default: False).
     """
 
     def __init__(
@@ -71,7 +71,7 @@ class NetsniffRecorder:
         ebu_server: dict | None = None,
         mtl_path=None,
         test_nodeid: str | None = None,
-        allow_gapped: bool = False,
+        allow_wide: bool = False,
     ):
         self.host = host
         self.test_name = test_name
@@ -92,7 +92,7 @@ class NetsniffRecorder:
         self.ebu_server = ebu_server
         self.mtl_path = mtl_path
         self.test_nodeid = test_nodeid
-        self.allow_gapped = allow_gapped
+        self.allow_wide = allow_wide
         self._compliance_checked = False
 
     @staticmethod
