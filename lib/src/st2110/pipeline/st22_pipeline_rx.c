@@ -905,7 +905,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta) 
   struct st22p_rx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, -EIO);
 
   ret = st22_rx_get_queue_meta(ctx->transport, meta);
   MT_HANDLE_RELEASE(ctx);
@@ -938,7 +938,7 @@ int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src
 int st22p_rx_wake_block(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, -EIO);
 
   if (ctx->block_get) rx_st22p_block_wake(ctx);
 
@@ -949,7 +949,7 @@ int st22p_rx_wake_block(st22p_rx_handle handle) {
 int st22p_rx_set_block_timeout(st22p_rx_handle handle, uint64_t timedwait_ns) {
   struct st22p_rx_ctx* ctx = handle;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, -EIO);
 
   ctx->block_timeout_ns = timedwait_ns;
   MT_HANDLE_RELEASE(ctx);
