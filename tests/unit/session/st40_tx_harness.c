@@ -144,6 +144,11 @@ int ut_txa_sync_pacing(ut_txa_ctx* ctx, uint64_t required_tai) {
   return tx_ancillary_session_sync_pacing(&ctx->impl, &ctx->session, required_tai);
 }
 
+void ut_txa_update_rtp_time_stamp(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp) {
+  tx_ancillary_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
+}
+
 int ut_txa_prepare_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                  uint64_t timestamp, unsigned int packets) {
   static unsigned int test_idx;
@@ -337,4 +342,8 @@ uint64_t ut_txa_stat_recoverable_error(const ut_txa_ctx* ctx) {
 
 uint64_t ut_txa_stat_unrecoverable_error(const ut_txa_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_unrecoverable_error;
+}
+
+uint32_t ut_txa_rtp_time_stamp(const ut_txa_ctx* ctx) {
+  return ctx->session.pacing.rtp_time_stamp;
 }

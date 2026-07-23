@@ -703,6 +703,15 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   } else {
     start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
   }
+  /* Only the RTP timestamp derived from ptp_time_cursor with no extra offset is
+   * guaranteed to equal start_time_tai's tick; USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH
+   * and rtp_timestamp_delta_us all deliberately decouple the two already. */
+  if (!(s->ops.flags &
+        (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
+      !s->ops.rtp_timestamp_delta_us) {
+    start_time_tai =
+        st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
+  }
   if (start_time_tai < cur_tai) {
     time_to_tx_ns = 0;
   } else {
@@ -1745,7 +1754,9 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
 
   if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
     uint64_t cur_tai = mt_get_ptp_time(s->impl, MTL_PORT_P);
-    if (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S) {
+    long double warm_up_lead_ns = s->pacing.warm_pkts * s->pacing.trs;
+    if (required_tai < cur_tai || required_tai - cur_tai > NS_PER_S ||
+        required_tai - cur_tai < warm_up_lead_ns) {
       s->port_user_stats.common.stat_error_user_timestamp++;
       return 0;
     }

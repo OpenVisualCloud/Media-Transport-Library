@@ -47,6 +47,7 @@ void ut_txv_set_cur_epochs(ut_txv_ctx* ctx, uint64_t cur_epochs);
 void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx);
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns);
+void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts);
 /* Toggle ST20_TX_FLAG_EXACT_USER_PACING on the session's ops.flags. */
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable);
 /* Toggle ST20_TX_FLAG_USER_PACING on the session's ops.flags. */

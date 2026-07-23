@@ -1652,4 +1652,18 @@ static inline bool st20_is_frame_type(enum st20_type type) {
     return false;
 }
 
+/* Round tai_ns to the ns value its media-clock tick implies, without the
+ * uint32 RTP-wire truncation st10_tai_to_media_clk()/st10_media_clk_to_ns()
+ * apply, so epoch-scale tai_ns snaps to the correct tick instead of
+ * wrapping through a 32-bit tick count. Reuses st_muldiv_u64_round_closest()
+ * (the same round-half-down primitive those two functions use) so the
+ * tie-break rule can never drift out of sync between the two call sites. */
+static inline uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns,
+                                                    uint32_t sampling_rate) {
+  uint64_t tick = st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
+  /* defensive saturate: tai_ns near UINT64_MAX round-trips back past it */
+  if ((__uint128_t)tick * NS_PER_S / sampling_rate >= UINT64_MAX) return UINT64_MAX;
+  return st_muldiv_u64_round_closest(tick, NS_PER_S, sampling_rate);
+}
+
 #endif

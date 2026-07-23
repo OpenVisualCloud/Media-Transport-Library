@@ -184,6 +184,10 @@ void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
 }
 
+void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
+  ctx->session.pacing.warm_pkts = warm_pkts;
+}
+
 void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate) {
   ctx->session.fps_tm.sampling_clock_rate = sampling_rate;
 }

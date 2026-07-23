@@ -415,6 +415,12 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   } else {
     start_time_tai = tx_ancillary_pacing_time(pacing, pacing->cur_epochs);
   }
+  /* Only the RTP timestamp derived from ptp_time_cursor is guaranteed to equal
+   * start_time_tai's tick; USER_TIMESTAMP deliberately decouples the two already. */
+  if (!(s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP)) {
+    start_time_tai =
+        st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
+  }
   if (start_time_tai < cur_tai) {
     s->port_user_stats.common.stat_epoch_mismatch++;
     time_to_tx_ns = 0;

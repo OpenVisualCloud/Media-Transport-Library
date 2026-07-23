@@ -46,6 +46,9 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
 
 int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps);
 
+uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
+                                     uint64_t divisor);
+
 static inline void st20_unpack_pg2be_422le10(struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint16_t* cb00, uint16_t* y00,
                                              uint16_t* cr00, uint16_t* y01) {
