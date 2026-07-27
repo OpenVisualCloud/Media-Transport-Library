@@ -1,6 +1,6 @@
 ---
-description: "System setup, host configuration, and test execution for MTL. Covers DPDK, ICE driver, hugepages, VFs, MtlManager, and integration tests. Loaded when working on library code, apps, integration tests, or setup scripts."
-applyTo: "lib/**,app/**,tests/integration_tests/**,.github/scripts/**,.github/mcp/**"
+description: "System setup, host configuration, and test execution for MTL. Covers DPDK, ICE driver, hugepages, VFs, MtlManager, and integration tests. Loaded when working on integration tests or the setup scripts/MCP server that implement these tools."
+applyTo: "tests/integration_tests/**,.github/scripts/**,.github/mcp/**"
 ---
 
 # MTL System Setup — Agent Instructions
@@ -15,9 +15,11 @@ decision logic and domain knowledge that tool descriptions alone don't convey.
 
 ### "User rebooted" / "Setup system"
 1. `system_status` → read the output for what's missing
-2. `setup_after_reboot_auto` → hugepages + CPU governor + VFs on all PFs + MtlManager
-3. If output warns about ICE driver → `ice_driver_rebuild` → `setup_after_reboot_auto` again (VFs destroyed)
-4. If MTL not built or rebuild needed → `build_mtl` or `mtl_clean_rebuild`
+2. `setup_after_reboot_auto` → single call: auto-detects and rebuilds the ICE
+   driver first if needed (e.g. after a kernel upgrade), then hugepages + CPU
+   governor + VFs on all PFs + MtlManager. No separate `ice_driver_rebuild`
+   round-trip needed in the common case — it's handled internally.
+3. If MTL not built or rebuild needed → `build_mtl` or `mtl_clean_rebuild`
 
 ### "Run integration tests"
 1. Verify prerequisites **before** the first `run_gtest` call: `dpdk_devbind_status` (ports bound as VFs, not bare PFs — see below), MtlManager running (`manager_start` if not).

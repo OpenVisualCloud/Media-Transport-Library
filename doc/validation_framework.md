@@ -5,6 +5,7 @@ The Media Transport Library (MTL) Validation Framework provides comprehensive te
 ## Documentation Navigation
 
 🚀 **Quick Setup**: [Validation Quick Start Guide](validation_quickstart.md) - Get running in 3 steps  
+🏗️ **Architecture**: [Validation Design](validation-design.md) - Understand execution, interfaces, clocks, capture, and test oracles
 📁 **Local README**: [tests/validation/README.md](../tests/validation/README.md) - Quick reference and test categories  
 🔧 **Build Guide**: [build.md](build.md) - MTL build instructions  
 
@@ -133,6 +134,14 @@ The `tests/` directory contains test implementations organized by scenario type:
 - **Invalid Tests**: Tests focusing on error handling and edge cases
 
 ## Setup and Installation
+
+> **Recommended**: run `.github/scripts/validation_setup.sh` instead of the
+> manual steps below — one command handles apt dependencies, ICE driver,
+> DPDK+MTL(+plugin) build, hugepages, CPU governor, NFS mount, SSH, venv, and
+> config generation. See
+> [Quick Start Guide § Recommended: Automated Setup Script](validation_quickstart.md#recommended-automated-setup-script)
+> for commands and flags. The steps below are what that script automates —
+> useful for debugging or customizing one specific stage in isolation.
 
 ### Prerequisites
 
@@ -432,6 +441,21 @@ To add new functionality to the framework:
 4. Add tests that exercise the new functionality
 
 ## Troubleshooting
+
+### Start here: automated diagnosis
+
+Before working through the manual fixes below, run the discovery report —
+it's read-only and checks most of the items this section covers in one shot
+(kernel/CPU, hugepages, CPU governor, ICE driver, NIC PFs, `.local_install`
+build status, NFS media, venv/configs):
+
+```bash
+./.github/scripts/validation_setup.sh status
+```
+
+If it flags a missing/broken stage, re-run the matching part of setup
+(`./.github/scripts/validation_setup.sh setup --base-only` or `--pytest-only`)
+rather than following the manual steps by hand.
 
 ### Common Issues
 
