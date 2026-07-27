@@ -29,6 +29,7 @@ from mtl_engine.media_files import anc_files
     indirect=["media_file"],
     ids=["text_p29", "text_p50", "text_p59"],
 )
+@pytest.mark.tx_side
 def test_st40p_basic(
     application,
     app_factory,
@@ -38,7 +39,6 @@ def test_st40p_basic(
     test_time,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Smoke test: TX st40p -> RX st40p over the pipeline ancillary API (unicast)."""
     media_file_info, media_file_path = media_file
@@ -57,9 +57,7 @@ def test_st40p_basic(
         test_time=test_time,
     )
 
-    app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
-    )
+    app.execute_test(build=mtl_path, test_time=test_time, host=host)
 
 
 @pytest.mark.nightly
@@ -85,6 +83,7 @@ def test_st40p_basic(
     indirect=["media_file"],
     ids=["text_p29", "text_p50", "text_p59"],
 )
+@pytest.mark.tx_side
 def test_st40p_multicast_with_compliance(
     application,
     app_factory,
@@ -142,6 +141,7 @@ def test_st40p_multicast_with_compliance(
     indirect=["media_file"],
     ids=["text_p59"],
 )
+@pytest.mark.tx_and_rx
 def test_st40p_rtcp(
     application,
     app_factory,
@@ -151,7 +151,6 @@ def test_st40p_rtcp(
     test_time,
     test_config,
     media_file,
-    pcap_capture,
 ):
     """Verify st40p path accepts the RTCP feedback flag (pipeline-API extra)."""
     media_file_info, media_file_path = media_file
@@ -175,5 +174,4 @@ def test_st40p_rtcp(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
     )

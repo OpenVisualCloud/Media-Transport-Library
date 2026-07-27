@@ -15,6 +15,7 @@ from mtl_engine.media_files import (
 
 @pytest.mark.nightly
 @pytest.mark.refactored
+@pytest.mark.tx_side
 @pytest.mark.parametrize("test_mode", ["multicast", "unicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 4])
@@ -87,5 +88,8 @@ def test_xdp_mode_refactored(
     )
 
     application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture if test_mode == "multicast" else None,
     )

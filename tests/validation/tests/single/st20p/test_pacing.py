@@ -22,6 +22,7 @@ pytestmark = pytest.mark.verified
         ),
     ],
 )
+@pytest.mark.tx_side
 @pytest.mark.parametrize("pacing", ["narrow", "wide", "linear"])
 @pytest.mark.parametrize(
     "media_file",
@@ -64,7 +65,7 @@ def test_st20p_pacing(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
-        "test_mode": "unicast",
+        "test_mode": "multicast",
         "pacing": pacing,
         "test_time": test_time,
     }
