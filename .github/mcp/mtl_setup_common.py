@@ -158,89 +158,39 @@ def _load_versions() -> dict[str, str]:
 # neither duplicates the underlying setup_environment.sh invocation. Each
 # server's own @mcp.tool() (if it exposes one of these directly) is a thin
 # wrapper that just calls the matching function below.
+#
+# The actual host probing/mutation (ICE driver, hugepages, CPU governor, apt
+# deps) lives in .github/scripts/lib/mtl_host_common.sh — a plain bash
+# library also sourced directly by the validation_setup*.sh scripts, so a
+# human running those scripts by hand and this MCP server share exactly one
+# implementation instead of a Python copy and a bash copy drifting apart.
 # ---------------------------------------------------------------------------
+HOST_COMMON_LIB = REPO_ROOT / ".github" / "scripts" / "lib" / "mtl_host_common.sh"
+
+
+def _call_host_lib(func_call: str, **kw: Any) -> tuple[int, str]:
+    """Source mtl_host_common.sh and call one of its mh_* functions."""
+    return _run_rc(f"source {HOST_COMMON_LIB} && {func_call}", **kw)
+
+
 def install_dependencies() -> str:
     """Install system build dependencies (apt packages) for MTL."""
-    rc, out = _run_rc(
-        "SETUP_ENVIRONMENT=1 "
-        "SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
-        "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
-        "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
-        "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=300,
-    )
+    rc, out = _call_host_lib("mh_install_dependencies", timeout=300)
     return f"## Install Dependencies\n{_summarize_output('install_dependencies', out, rc=rc)}"
 
 
 def ice_driver_status() -> str:
     """Check the ICE driver status: loaded version vs required, OOT or stock."""
-    vers = _load_versions()
-    want = vers.get("ICE_VER", "unknown")
-
-    live_ver = _run_output(
-        "modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo 'not loaded'"
-    )
-    live_path = _run_output("modinfo -n ice 2>/dev/null || echo 'not found'")
-
-    oot_ko = f"/lib/modules/{_run_output('uname -r')}/updates/drivers/net/ethernet/intel/ice/ice.ko"
-    oot_exists = Path(oot_ko).is_file()
-    oot_ver = ""
-    if oot_exists:
-        oot_ver = _run_output(
-            f"modinfo {oot_ko} 2>/dev/null | awk '/^version:/ {{print $2; exit}}'"
-        )
-
-    is_oot = "updates/" in live_path
-    matches = want in live_ver if live_ver != "not loaded" else False
-
-    status = "OK" if (is_oot and matches) else "ACTION NEEDED"
-
-    return (
-        f"## ICE Driver Status: {status}\n"
-        f"- Required version: {want}\n"
-        f"- Live version: {live_ver}\n"
-        f"- Live module path: {live_path}\n"
-        f"- Out-of-tree module: {'EXISTS' if oot_exists else 'MISSING'} at {oot_ko}\n"
-        f"  - OOT version: {oot_ver or 'N/A'}\n"
-        f"- Using out-of-tree: {'YES' if is_oot else 'NO — stock kernel driver'}\n"
-        + (
-            "\n### Issue\n"
-            "MTL requires the patched out-of-tree ICE driver for rate-limit pacing.\n"
-            "Stock kernel ice does not support the iavf TM virtchnl messages.\n"
-            "Use `ice_driver_rebuild` tool or run:\n"
-            "```\n"
-            "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 bash .github/scripts/setup_environment.sh\n"
-            "```"
-            if not (is_oot and matches)
-            else ""
-        )
-    )
+    _rc, out = _call_host_lib("mh_ice_driver_status_report")
+    return out
 
 
 def ice_driver_rebuild() -> str:
     """Build and install the patched out-of-tree ICE driver, then reload it."""
-    rc, out = _run_rc(
-        "SETUP_ENVIRONMENT=0 "
-        "SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 "
-        "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
-        "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
-        "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
-        timeout=600,
-    )
-
-    reload_out = _run_output(
-        "sudo depmod -a && sudo rmmod irdma 2>/dev/null; "
-        "sudo rmmod ice 2>/dev/null; sudo modprobe ice; "
-        "modinfo ice | head -5"
-    )
+    rc, out = _call_host_lib("mh_ice_driver_rebuild", timeout=600)
 
     return (
-        f"## ICE Driver Build\n{_summarize_output('ice_driver_rebuild', out, rc=rc)}\n\n"
-        f"## Reload\n{reload_out}\n\n"
+        f"## ICE Driver Build + Reload\n{_summarize_output('ice_driver_rebuild', out, rc=rc)}\n\n"
         "## ⚠ Important: VFs Destroyed\n"
         "The ICE driver reload destroyed all existing VFs.\n"
         "You MUST re-create VFs before running any tests:\n"
@@ -252,50 +202,29 @@ def ice_driver_rebuild() -> str:
 
 def hugepages_get() -> str:
     """Get current hugepage status (total, free, size)."""
-    info = _run_output("grep -i huge /proc/meminfo")
+    _rc, out = _call_host_lib("mh_hugepages_report")
+    info = "\n".join(
+        out.splitlines()[1:]
+    )  # drop the "## Hugepages" header, added below
     return f"## Hugepages\n```\n{info}\n```"
 
 
 def hugepages_set(nr_hugepages: int = 2048, size_kb: int = 2048) -> str:
     """Configure hugepages. Default: 2048 x 2MB = 4GB."""
-    hp_path = f"/sys/kernel/mm/hugepages/hugepages-{size_kb}kB/nr_hugepages"
-    if not Path(hp_path).exists():
-        return (
-            f"Error: hugepage size {size_kb}kB not supported. Available:\n"
-            + _run_output("ls /sys/kernel/mm/hugepages/")
-        )
+    rc, out = _call_host_lib(f"mh_hugepages_set {nr_hugepages} {size_kb}")
+    if rc != 0:
+        return f"Error: hugepage size {size_kb}kB not supported.\n{out}"
 
-    _run(f"echo {nr_hugepages} | sudo tee {hp_path}", sudo=False)
-    after = _run_output("grep -i huge /proc/meminfo")
     total_mb = nr_hugepages * size_kb // 1024
-    return f"Set {nr_hugepages} x {size_kb}kB hugepages ({total_mb} MB total).\n\n```\n{after}\n```"
+    after = hugepages_get()
+    return after.replace(
+        "## Hugepages",
+        f"## Hugepages\nSet {nr_hugepages} x {size_kb}kB hugepages ({total_mb} MB total).",
+        1,
+    )
 
 
 def cpu_governor_set_and_confirm_performance() -> str:
     """Set all CPU scaling governors to performance and confirm status."""
-    _run_output(
-        "for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; "
-        "do echo performance | sudo tee $cpu; done"
-    )
-    verify_out = _run_output(
-        "for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; "
-        'do printf \'%s=%s\\n\' "$cpu" "$(cat $cpu 2>/dev/null)"; done'
-    )
-
-    total = 0
-    non_perf: list[str] = []
-    for line in verify_out.splitlines():
-        if not line.strip():
-            continue
-        total += 1
-        _, _, gov = line.partition("=")
-        if gov.strip() != "performance":
-            non_perf.append(line)
-
-    status = "PASS" if total > 0 and not non_perf else "FAIL"
-    summary = f"- CPUs checked: {total}\n- Status: {status}"
-    if non_perf:
-        # Only worth the tokens when something's actually wrong.
-        summary += "\n- Non-performance entries:\n" + "\n".join(non_perf)
-
-    return f"## CPU Governor (set to performance + confirm)\n{summary}"
+    _rc, out = _call_host_lib("mh_cpu_governor_set_and_confirm_performance")
+    return out
