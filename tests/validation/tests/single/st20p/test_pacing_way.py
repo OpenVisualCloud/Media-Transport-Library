@@ -70,6 +70,7 @@ PACING_WAY_CASES = [
         ),
     ],
 )
+@pytest.mark.tx_side
 @pytest.mark.parametrize("interface_type,pacing_way", PACING_WAY_CASES)
 @pytest.mark.parametrize(
     "media_file",
@@ -104,8 +105,14 @@ def test_st20p_pacing_way(
 
     # ptp and tsn pace against the ptp-synced phc; give PTP convergence
     # (handled internally via enable_ptp) more headroom than the 30s default.
+    # A bare-PF TX interface needs the same headroom: binding TX to a PF
+    # triggers a full port re-link + DDP package reload (~20s+) before
+    # mtl_init() returns, which otherwise leaves too little of the test
+    # window for the RX multicast group to reach steady state (IGMP
+    # query/response) before the compliance capture window closes.
     needs_ptp = pacing_way in ("ptp", "tsn")
-    actual_test_time = max(test_time, 60) if needs_ptp else test_time
+    needs_extra_time = needs_ptp or interface_type == "PF"
+    actual_test_time = max(test_time, 60) if needs_extra_time else test_time
 
     config_params = {
         "session_type": "st20p",
@@ -119,7 +126,7 @@ def test_st20p_pacing_way(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
-        "test_mode": "unicast",
+        "test_mode": "multicast",
         "pacing_way": pacing_way,
         "enable_ptp": needs_ptp,
         "test_time": actual_test_time,

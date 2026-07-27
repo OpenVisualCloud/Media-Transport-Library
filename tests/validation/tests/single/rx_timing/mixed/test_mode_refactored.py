@@ -11,6 +11,7 @@ from mtl_engine.media_files import anc_files, audio_files, yuv_files
 
 @pytest.mark.refactored
 @pytest.mark.nightly
+@pytest.mark.tx_and_rx
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 def test_rx_timing_mode_refactored(
     hosts,
@@ -79,5 +80,8 @@ def test_rx_timing_mode_refactored(
     )
 
     application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture if test_mode == "multicast" else None,
     )
