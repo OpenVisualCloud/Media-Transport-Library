@@ -43,6 +43,13 @@ int ut30p_inject_frame(ut30p_ctx* ctx, enum st_frame_status status, uint32_t tim
 struct st30_frame* ut30p_get_frame(ut30p_ctx* ctx);
 int ut30p_put_frame(ut30p_ctx* ctx, struct st30_frame* frame);
 
+/* Buffer index that a user-facing frame belongs to (for ownership tracking). */
+int ut30p_frame_idx(const struct st30_frame* frame);
+int ut30p_framebuff_cnt(const ut30p_ctx* ctx);
+
+/* Raw stat value of framebuffer i (for diagnostics). */
+int ut30p_frame_stat(const ut30p_ctx* ctx, int i);
+
 uint64_t ut30p_stat_frames_received(const ut30p_ctx* ctx);
 uint64_t ut30p_stat_frames_dropped(const ut30p_ctx* ctx);
 uint64_t ut30p_stat_frames_corrupted(const ut30p_ctx* ctx);

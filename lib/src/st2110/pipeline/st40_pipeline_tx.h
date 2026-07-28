@@ -41,9 +41,8 @@ struct st40p_tx_ctx {
 
   st40_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_seq_number;
+  _Atomic uint32_t framebuff_seq_number;
   struct st40p_tx_frame* framebuffs;
-  pthread_mutex_t lock;
   bool ready;
 
   int frames_per_sec;
@@ -53,6 +52,7 @@ struct st40p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   /* get frame stat */
   uint32_t stat_get_frame_try;
@@ -65,7 +65,7 @@ struct st40p_tx_ctx {
 };
 
 struct st40p_tx_frame {
-  enum st40p_tx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st40_frame_info frame_info;
   uint16_t idx;
   /** Pointer to the main ancillary frame buffer */

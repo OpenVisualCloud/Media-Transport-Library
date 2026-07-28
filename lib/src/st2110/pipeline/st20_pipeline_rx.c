@@ -53,7 +53,7 @@ static struct st20p_rx_frame* rx_st20p_next_available(
   /* check ready frame from idx_start */
   while (1) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
       /* find one desired */
       return framebuff;
     }
@@ -68,6 +68,27 @@ static struct st20p_rx_frame* rx_st20p_next_available(
   return NULL;
 }
 
+/* Scan from idx_start for a framebuff in state `desired` and atomically claim
+ * it by transitioning it to `claimed`. A concurrent thread can win the race on
+ * the scanned candidate between the scan and the claim; on a lost race this
+ * keeps scanning instead of giving up, so the caller only sees NULL once every
+ * slot has genuinely been checked and found unavailable. */
+static struct st20p_rx_frame* rx_st20p_claim_available(
+    struct st20p_rx_ctx* ctx, uint16_t idx_start, enum st20p_rx_frame_status desired,
+    enum st20p_rx_frame_status claimed) {
+  struct st20p_rx_frame* framebuff;
+
+  while ((framebuff = rx_st20p_next_available(ctx, idx_start, desired))) {
+    uint32_t expected = desired;
+    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
+                                                memory_order_acq_rel,
+                                                memory_order_relaxed))
+      return framebuff;
+  }
+
+  return NULL;
+}
+
 static int rx_st20p_packet_convert(void* priv, void* frame,
                                    struct st20_rx_uframe_pg_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
@@ -76,13 +97,13 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   struct st20_rfc4175_422_10_pg2_be* src = meta->payload;
   MTL_MAY_UNUSED(frame);
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (meta->row_number == 0 && meta->row_offset == 0) {
     /* first packet of frame */
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
     if (framebuff) {
-      framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
+      atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_IN_CONVERTING,
+                            memory_order_release);
       framebuff->dst.timestamp = meta->timestamp;
     }
   } else {
@@ -95,7 +116,6 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
         err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
-        mt_pthread_mutex_unlock(&ctx->lock);
         return -EIO;
       }
     }
@@ -104,11 +124,9 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
     rte_atomic32_inc(&ctx->stat_busy);
     /* relaxed atomic: written from tasklet, read from any thread via
      * st20p_rx_get_session_stats(); no ordering vs other state required. */
-    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
-    mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
     return -EBUSY;
   }
-  mt_pthread_mutex_unlock(&ctx->lock);
   if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
     uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
                  framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
@@ -155,7 +173,6 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT) {
     framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
                                         ST20P_RX_FRAME_IN_CONVERTING);
@@ -165,7 +182,6 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
           rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
-        mt_pthread_mutex_unlock(&ctx->lock);
         err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
         return 0; /* surpress the error */
       }
@@ -178,8 +194,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
-    mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
     return -EBUSY;
   }
 
@@ -194,7 +209,6 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      mt_pthread_mutex_unlock(&ctx->lock);
       return ret;
     }
 
@@ -211,7 +225,6 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      mt_pthread_mutex_unlock(&ctx->lock);
       return ret;
     }
   }
@@ -257,18 +270,17 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   /* ask app to consume src frame directly */
   if (ctx->derive || (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT)) {
     if (ctx->derive) framebuff->dst = framebuff->src;
-    framebuff->stat = ST20P_RX_FRAME_CONVERTED;
+    atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_CONVERTED,
+                          memory_order_release);
     /* point to next */
     ctx->framebuff_producer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-    mt_pthread_mutex_unlock(&ctx->lock);
     rx_st20p_notify_frame_available(ctx);
     return 0;
   }
-  framebuff->stat = ST20P_RX_FRAME_READY;
+  atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_READY, memory_order_release);
 
   /* point to next */
   ctx->framebuff_producer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
 
@@ -291,14 +303,12 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
-    mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
     return -EBUSY;
   }
 
@@ -306,7 +316,6 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
   memset(&ext_st, 0, sizeof(ext_st));
   ret = ctx->ops.query_ext_frame(ctx->ops.priv, &ext_st, meta);
   if (ret < 0) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
   /* only 1 plane for no converter mode */
@@ -315,7 +324,6 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
   ext_frame->buf_len = ext_st.size;
   ext_frame->opaque = ext_st.opaque;
   framebuff->src.opaque = ext_st.opaque;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   return 0;
 }
@@ -397,19 +405,19 @@ static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
 
   if (!ctx->ready) goto out; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
+  /* Claim READY -> IN_CONVERTING. rx_st20p_claim_available() retries across the
+   * ring on a lost CAS race, so it only returns NULL once every slot has
+   * actually been checked -- unlike a scan-then-single-CAS-attempt, which could
+   * give up even while other READY frames remain. */
   framebuff =
-      rx_st20p_next_available(ctx, ctx->framebuff_convert_idx, ST20P_RX_FRAME_READY);
+      rx_st20p_claim_available(ctx, ctx->framebuff_convert_idx, ST20P_RX_FRAME_READY,
+                               ST20P_RX_FRAME_IN_CONVERTING);
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
-
-  framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
   /* point to next */
   ctx->framebuff_convert_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   ret_frame = &framebuff->convert_frame;
@@ -428,9 +436,10 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST20P_RX_FRAME_IN_CONVERTING != framebuff->stat) {
+  if (ST20P_RX_FRAME_IN_CONVERTING !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
@@ -439,10 +448,11 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   if (result < 0) {
     /* free the frame */
     st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
-    framebuff->stat = ST20P_RX_FRAME_FREE;
+    atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_FREE, memory_order_release);
     rte_atomic32_inc(&ctx->stat_convert_fail);
   } else {
-    framebuff->stat = ST20P_RX_FRAME_CONVERTED;
+    atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_CONVERTED,
+                          memory_order_release);
     rx_st20p_notify_frame_available(ctx);
   }
 
@@ -665,7 +675,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
   ctx->framebuffs = frames;
 
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    frames[i].stat = ST20P_RX_FRAME_FREE;
+    atomic_store_explicit(&frames[i].stat, ST20P_RX_FRAME_FREE, memory_order_relaxed);
     frames[i].idx = i;
     frames[i].dst.fmt = ops->output_fmt;
     frames[i].dst.interlaced = ops->interlaced;
@@ -777,12 +787,10 @@ static int rx_st20p_stat(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
   producer_stat = framebuff[producer_idx].stat;
   consumer_stat = framebuff[consumer_idx].stat;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   notice("RX_st20p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          rx_st20p_stat_name(producer_stat), consumer_idx,
@@ -842,66 +850,60 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
   if (ctx->internal_converter) { /* convert internal */
-    framebuff =
-        rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
+    /* Claim READY->IN_USER before converting so no other consumer can take this
+     * slot. rx_st20p_claim_available() retries across the ring on a lost CAS
+     * race, so it only returns NULL once every slot has actually been checked. */
+    framebuff = rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                         ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
     if (!framebuff && ctx->block_get) { /* wait here */
-      mt_pthread_mutex_unlock(&ctx->lock);
       mt_pthread_mutex_lock(&ctx->block_wake_mutex);
       while (!ctx->block_wake_pending &&
-             !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+             !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
         int _ret = mt_pthread_cond_timedwait_ns(
             &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
         if (_ret) break;
       }
       ctx->block_wake_pending = false;
       mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-      if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
       /* get again */
-      mt_pthread_mutex_lock(&ctx->lock);
-      framebuff =
-          rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
+      framebuff = rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                           ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
     }
     /* not any ready frame */
     if (!framebuff) {
-      mt_pthread_mutex_unlock(&ctx->lock);
       goto out;
     }
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
   } else {
-    framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                        ST20P_RX_FRAME_CONVERTED);
+    framebuff =
+        rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                 ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
     if (!framebuff && ctx->block_get) { /* wait here */
-      mt_pthread_mutex_unlock(&ctx->lock);
       mt_pthread_mutex_lock(&ctx->block_wake_mutex);
       while (!ctx->block_wake_pending &&
-             !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+             !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
         int _ret = mt_pthread_cond_timedwait_ns(
             &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
         if (_ret) break;
       }
       ctx->block_wake_pending = false;
       mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-      if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
       /* get again */
-      mt_pthread_mutex_lock(&ctx->lock);
-      framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                          ST20P_RX_FRAME_CONVERTED);
+      framebuff =
+          rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                   ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
     }
     /* not any converted frame */
     if (!framebuff) {
-      mt_pthread_mutex_unlock(&ctx->lock);
       goto out;
     }
   }
 
-  framebuff->stat = ST20P_RX_FRAME_IN_USER;
-  /* point to next */
+  /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   frame = &framebuff->dst;
@@ -913,9 +915,9 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     frame->user_meta_size = 0;
   }
   ctx->stat_get_frame_succ++;
-  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+  atomic_fetch_add_explicit(&ctx->stat_frames_received, 1, memory_order_relaxed);
   if (frame->status == ST_FRAME_STATUS_CORRUPTED)
-    __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
+    atomic_fetch_add_explicit(&ctx->stat_frames_corrupted, 1, memory_order_relaxed);
   MT_USDT_ST20P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED()) {
@@ -941,16 +943,17 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame */
   st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
-  framebuff->stat = ST20P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_FREE, memory_order_release);
   ctx->stat_put_frame++;
 
   MT_USDT_ST20P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
@@ -971,16 +974,17 @@ int st20p_rx_put_frame_abort(st20p_rx_handle handle, struct st_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST20P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame without processing */
   st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
-  framebuff->stat = ST20P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_FREE, memory_order_release);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
   ret = 0;
 out:
@@ -1054,7 +1058,6 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->dst_size = dst_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
-  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
@@ -1145,7 +1148,6 @@ int st20p_rx_free(st20p_rx_handle handle) {
   }
   rx_st20p_uinit_dst_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -1235,11 +1237,11 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
   if (ret < 0) goto out;
   /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
   stats->common.stat_frames_received =
-      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_received, memory_order_relaxed);
   stats->common.stat_frames_dropped =
-      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_dropped, memory_order_relaxed);
   stats->common.stat_frames_corrupted =
-      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_corrupted, memory_order_relaxed);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -1257,9 +1259,9 @@ int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, 0);
 
-  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
+  atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_corrupted, 0, memory_order_relaxed);
   ret = st20_rx_reset_session_stats(ctx->transport);
   MT_HANDLE_RELEASE(ctx);
   return ret;

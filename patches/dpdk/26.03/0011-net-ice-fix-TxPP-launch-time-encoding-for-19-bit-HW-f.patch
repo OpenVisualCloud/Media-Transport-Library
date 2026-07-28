@@ -1,0 +1,57 @@
+From a1b2c3d4e5f60718293a4b5c6d7e8f9011223344 Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
+Date: Mon, 22 Jun 2026 12:00:00 +0200
+Subject: [PATCH 11/13] net/ice: fix TxPP launch time encoding for 19-bit HW
+ field
+
+The E830 Tx packet pacing (TxPP) launch-time descriptor stores the launch
+timestamp in the 19-bit ICE_TXTIME_STAMP_M field at 128ns resolution, so the
+hardware comparator wraps naturally at 2^19 * 128ns (~67.11ms).
+
+ice_write_ts_desc() folded the launch time through (txtime % NS_PER_S) before
+the >> 128ns shift. A full second is 7_812_500 units of 128ns, which needs 23
+bits and is not a multiple of the field's 2^19 (524288) range. The modulo
+therefore makes the encoded value jump non-monotonically at every 1-second PHC
+boundary and disagree with the hardware's natural-wrap comparator. The launch
+engine then reads queued descriptors as past-dated, stalls draining the TXTIME
+ring, and the ring-wrap duplicate-descriptor write amplifies the stall into a
+periodic pacing "wedge": the queue intermittently flushes at wire rate instead
+of pacing, producing bursty ~72ns inter-packet gaps and rate drift.
+
+Encode the raw 128ns time and let FIELD_PREP keep the low 19 bits, matching how
+the hardware derives its own current time. This makes hardware pacing
+monostable.
+
+Validated on E830 (single ST2110-20 video session, 1024-entry Tx ring): with
+the modulo encoding 6 of 13 runs wedged into the bursty basin; with this fix
+32 of 32 runs paced cleanly with near-zero drift, across burst sizes 1/4/16.
+A/B controlled on the same NIC in the same session.
+
+Fixes: 0b6ff09a1f19 ("net/intel: support Tx packet pacing for E830")
+Cc: stable@dpdk.org
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/ice_rxtx.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index 40150748d8..cf8d38fff0 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -3082,7 +3082,13 @@ ice_write_ts_desc(struct ci_tx_queue *txq,
+ 		  uint16_t ts_id)
+ {
+ 	uint64_t txtime = *RTE_MBUF_DYNFIELD(tx_pkt, txq->tsq->ts_offset, uint64_t *);
+-	uint32_t tstamp = (uint32_t)(txtime % NS_PER_S) >> ICE_TXTIME_CTX_RESOLUTION_128NS;
++	/* The 19-bit ICE_TXTIME_STAMP_M field wraps naturally at 2^19 * 128ns
++	 * (~67.11ms). Folding through (% NS_PER_S) first does not fit that field
++	 * (a second needs 23 bits) and only injects a misaligned discontinuity at
++	 * every 1-second PHC boundary. Encode the raw 128ns time and let FIELD_PREP
++	 * keep the low 19 bits, matching the hardware's natural-wrap comparator.
++	 */
++	uint32_t tstamp = (uint32_t)(txtime >> ICE_TXTIME_CTX_RESOLUTION_128NS);
+ 	const uint32_t desc_tx_id = (tx_id == 0) ? txq->nb_tx_desc : tx_id;
+ 	__le32 ts_desc = rte_cpu_to_le_32(FIELD_PREP(ICE_TXTIME_TX_DESC_IDX_M, desc_tx_id) |
+ 			FIELD_PREP(ICE_TXTIME_STAMP_M, tstamp));
+-- 
+2.34.1

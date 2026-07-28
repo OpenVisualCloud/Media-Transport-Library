@@ -200,7 +200,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     uint64_t cur_tsc = mt_get_tsc(impl);
     if (cur_tsc < target_tsc) {
       uint64_t delta = target_tsc - cur_tsc;
-      if (likely(delta < NS_PER_S)) {
+      if (likely(delta <= NS_PER_S)) {
         *ret_status = -STI_RLTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
@@ -287,7 +287,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       unsigned int i;
       uint64_t delta = target_tsc - cur_tsc;
 
-      if (likely(delta < NS_PER_S || s->trs_inflight_num2[s_port])) {
+      if (likely(delta <= NS_PER_S || s->trs_inflight_num2[s_port])) {
         s->trs_target_tsc[s_port] = target_tsc;
         s->trs_target_ptp[s_port] = target_ptp;
         /* save it on inflight */
@@ -353,7 +353,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     cur_tsc = mt_get_tsc(impl);
     if (cur_tsc < target_tsc) {
       uint64_t delta = target_tsc - cur_tsc;
-      if (likely(delta < NS_PER_S)) {
+      if (likely(delta <= NS_PER_S)) {
         s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
@@ -412,7 +412,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
       unsigned int i;
       uint64_t delta = target_tsc - cur_tsc;
 
-      if (likely(delta < NS_PER_S)) {
+      if (likely(delta <= NS_PER_S)) {
         s->trs_target_tsc[s_port] = target_tsc;
         /* save it on inflight */
         s->trs_inflight_num[s_port] = valid_bulk;
@@ -455,11 +455,6 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   uint64_t target_ptp;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct mt_interface* inf = mt_if(impl, port);
-
-  if (!mt_ptp_is_locked(impl, MTL_PORT_P)) {
-    /* fallback to tsc if ptp is not synced */
-    return video_trs_tsc_tasklet(impl, s, s_port);
-  }
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
@@ -545,7 +540,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
     if (cur_ptp < target_ptp) {
       uint64_t delta = target_ptp - cur_ptp;
-      if (likely(delta < NS_PER_S)) {
+      if (likely(delta <= NS_PER_S)) {
         s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
@@ -603,7 +598,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     unsigned int i;
     uint64_t delta = target_ptp - cur_ptp;
 
-    if (likely(delta < NS_PER_S)) {
+    if (likely(delta <= NS_PER_S)) {
       s->trs_target_tsc[s_port] = target_ptp;
       /* save it on inflight */
       s->trs_inflight_num[s_port] = valid_bulk;

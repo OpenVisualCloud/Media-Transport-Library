@@ -15,9 +15,11 @@ asserts on production behaviour. The suite covers ST 2110-20 (video),
 ST 2110-30 (audio), ST 2110-40 (ancillary), and the ST 2110-40 pipeline. Tests
 run on any developer laptop in a fraction of a second.
 
-TX paths, DMA, kernel-socket / AF_XDP backends, and multi-process scenarios
-are out of scope — see [`tests/integration_tests/`](../integration_tests/) and
-[`tests/validation/`](../validation/) for those.
+TX packet building/queueing, DMA, kernel-socket / AF_XDP backends, and
+multi-process scenarios are out of scope — see
+[`tests/integration_tests/`](../integration_tests/) and
+[`tests/validation/`](../validation/) for those. TX epoch/pacing *math*
+(`session/st20_tx_harness.c`) is covered here.
 
 ## What makes this different
 

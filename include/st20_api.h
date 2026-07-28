@@ -48,6 +48,8 @@ extern "C" {
  * User control the frame transmission time by passing a timestamp in
  * st20_tx_frame_meta.timestamp, lib will wait until timestamp is reached for each frame.
  * The time of sending is aligned with virtual receiver read schedule.
+ * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
+ * supported for pacing and falls back to the default epoch-based pacing.
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -118,6 +120,8 @@ extern "C" {
  * Flag bit in flags of struct st22_tx_ops.
  * User control the frame pacing by pass a timestamp in st22_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
+ * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
+ * supported for pacing and falls back to the default epoch-based pacing.
  */
 #define ST22_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -407,7 +411,11 @@ struct st20_tx_frame_meta {
   enum st20_fmt fmt;
   /** Second field type indicate for interlaced mode, set by user */
   bool second_field;
-  /** Timestamp format */
+  /**
+   * Timestamp format. When ST20_TX_FLAG_USER_PACING is set, only
+   * ST10_TIMESTAMP_FMT_TAI is honored for pacing; ST10_TIMESTAMP_FMT_MEDIA_CLK
+   * falls back to the default epoch-based pacing.
+   */
   enum st10_timestamp_fmt tfmt;
   /** Timestamp value */
   uint64_t timestamp;

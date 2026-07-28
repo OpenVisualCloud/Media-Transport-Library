@@ -18,7 +18,7 @@ enum st20p_rx_frame_status {
 };
 
 struct st20p_rx_frame {
-  enum st20p_rx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st_frame src; /* before converting */
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
@@ -54,7 +54,6 @@ struct st20p_rx_ctx {
   uint16_t framebuff_convert_idx;
   uint16_t framebuff_consumer_idx;
   struct st20p_rx_frame* framebuffs;
-  pthread_mutex_t lock;
   int usdt_frame_cnt;
 
   /* for ST20P_RX_FLAG_BLOCK_GET */

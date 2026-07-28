@@ -53,7 +53,7 @@ static struct st40p_rx_frame* rx_st40p_next_available(
   /* check ready frame from idx_start */
   while (1) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
       /* find one desired */
       return framebuff;
     }
@@ -68,6 +68,27 @@ static struct st40p_rx_frame* rx_st40p_next_available(
   return NULL;
 }
 
+/* Scan from idx_start for a framebuff in state `desired` and atomically claim
+ * it by transitioning it to `claimed`. A concurrent thread can win the race on
+ * the scanned candidate between the scan and the claim; on a lost race this
+ * keeps scanning instead of giving up, so the caller only sees NULL once every
+ * slot has genuinely been checked and found unavailable. */
+static struct st40p_rx_frame* rx_st40p_claim_available(
+    struct st40p_rx_ctx* ctx, uint16_t idx_start, enum st40p_rx_frame_status desired,
+    enum st40p_rx_frame_status claimed) {
+  struct st40p_rx_frame* framebuff;
+
+  while ((framebuff = rx_st40p_next_available(ctx, idx_start, desired))) {
+    uint32_t expected = desired;
+    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
+                                                memory_order_acq_rel,
+                                                memory_order_relaxed))
+      return framebuff;
+  }
+
+  return NULL;
+}
+
 /* FRAME_LEVEL transport delivery callback.  Transport hands us a fully
  * assembled frame (UDW buffer + meta).  We claim a FREE pipeline framebuff,
  * point it at the transport-owned UDW buffer (zero-copy) and copy meta into
@@ -79,13 +100,11 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
 
   if (!ctx->ready) return -EBUSY;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
   if (!framebuff) {
     ctx->stat_busy++;
-    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
-    mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
     /* returning <0 makes the transport reclaim the slot to FREE */
     return -EBUSY;
   }
@@ -116,12 +135,11 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
   frame_info->epoch = 0;
   frame_info->status = meta->status;
 
-  framebuff->stat = ST40P_RX_FRAME_READY;
+  atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_READY, memory_order_release);
   ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+  atomic_fetch_add_explicit(&ctx->stat_frames_received, 1, memory_order_relaxed);
   if (frame_info->seq_discont)
-    __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
-  mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_corrupted, 1, memory_order_relaxed);
 
   rx_st40p_notify_frame_available(ctx);
   MT_USDT_ST40P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame_info->meta_num);
@@ -205,7 +223,7 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     framebuff = &frames[i];
     frame_info = &framebuff->frame_info;
-    framebuff->stat = ST40P_RX_FRAME_FREE;
+    atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_FREE, memory_order_relaxed);
     framebuff->idx = i;
 
     /* udw_buff_addr is bound at frame_ready time to the transport's pool
@@ -250,12 +268,10 @@ static int rx_st40p_stat(void* priv) {
   enum st40p_rx_frame_status producer_stat;
   enum st40p_rx_frame_status consumer_stat;
 
-  mt_pthread_mutex_lock(&ctx->lock);
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
   producer_stat = framebuff[producer_idx].stat;
   consumer_stat = framebuff[consumer_idx].stat;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   notice("RX_st40p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          rx_st40p_stat_name(producer_stat), consumer_idx,
@@ -320,38 +336,34 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
-  framebuff =
-      rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
+  /* Claim READY->IN_USER. rx_st40p_claim_available() retries across the ring
+   * on a lost CAS race, so it only returns NULL once every slot has actually
+   * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
+   * even while other READY frames remain (spurious failure under contention). */
+  framebuff = rx_st40p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                       ST40P_RX_FRAME_READY, ST40P_RX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&
-           !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       int _ret = mt_pthread_cond_timedwait_ns(
           &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
       if (_ret) break;
     }
     ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
-    framebuff =
-        rx_st40p_next_available(ctx, ctx->framebuff_consumer_idx, ST40P_RX_FRAME_READY);
+    framebuff = rx_st40p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                         ST40P_RX_FRAME_READY, ST40P_RX_FRAME_IN_USER);
   }
 
   /* not any ready frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
-
-  framebuff->stat = ST40P_RX_FRAME_IN_USER;
-  /* point to next */
+  /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   frame_info = &framebuff->frame_info;
   ctx->stat_get_frame_succ++;
@@ -379,9 +391,10 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST40P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
@@ -408,7 +421,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->receive_timestamp = 0;
   frame_info->second_field = false;
   frame_info->interlaced = false;
-  framebuff->stat = ST40P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_FREE, memory_order_release);
   ctx->stat_put_frame++;
 
   MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx, meta_num_before_reset);
@@ -428,9 +441,10 @@ int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* fra
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST40P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
@@ -444,7 +458,7 @@ int st40p_rx_put_frame_abort(st40p_rx_handle handle, struct st40_frame_info* fra
   /* reset frame for reuse without processing */
   frame_info->meta_num = 0;
   frame_info->udw_buffer_fill = 0;
-  framebuff->stat = ST40P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_FREE, memory_order_release);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
   ret = 0;
 out:
@@ -485,7 +499,6 @@ int st40p_rx_free(st40p_rx_handle handle) {
 
   rx_st40p_uinit_fbs(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -540,7 +553,6 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
     ctx->port_id[i] = UINT16_MAX;
   }
 
-  mt_pthread_mutex_init(&ctx->lock, NULL);
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
@@ -621,11 +633,11 @@ int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats
   if (ret < 0) goto out;
   /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
   stats->common.stat_frames_received =
-      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_received, memory_order_relaxed);
   stats->common.stat_frames_dropped =
-      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_dropped, memory_order_relaxed);
   stats->common.stat_frames_corrupted =
-      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_corrupted, memory_order_relaxed);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -643,9 +655,9 @@ int st40p_rx_reset_session_stats(st40p_rx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);
 
-  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
+  atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_corrupted, 0, memory_order_relaxed);
   ret = st40_rx_reset_session_stats(ctx->transport);
   MT_HANDLE_RELEASE(ctx);
   return ret;

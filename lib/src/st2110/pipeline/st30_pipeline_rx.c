@@ -53,7 +53,7 @@ static struct st30p_rx_frame* rx_st30p_next_available(
   /* check ready frame from idx_start */
   while (1) {
     framebuff = &ctx->framebuffs[idx];
-    if (desired == framebuff->stat) {
+    if (desired == atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
       /* find one desired */
       return framebuff;
     }
@@ -68,13 +68,33 @@ static struct st30p_rx_frame* rx_st30p_next_available(
   return NULL;
 }
 
+/* Scan from idx_start for a framebuff in state `desired` and atomically claim
+ * it by transitioning it to `claimed`. A concurrent thread can win the race on
+ * the scanned candidate between the scan and the claim; on a lost race this
+ * keeps scanning instead of giving up, so the caller only sees NULL once every
+ * slot has genuinely been checked and found unavailable. */
+static struct st30p_rx_frame* rx_st30p_claim_available(
+    struct st30p_rx_ctx* ctx, uint16_t idx_start, enum st30p_rx_frame_status desired,
+    enum st30p_rx_frame_status claimed) {
+  struct st30p_rx_frame* framebuff;
+
+  while ((framebuff = rx_st30p_next_available(ctx, idx_start, desired))) {
+    uint32_t expected = desired;
+    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
+                                                memory_order_acq_rel,
+                                                memory_order_relaxed))
+      return framebuff;
+  }
+
+  return NULL;
+}
+
 static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_meta* meta) {
   struct st30p_rx_ctx* ctx = priv;
   struct st30p_rx_frame* framebuff;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st30p_next_available(ctx, ctx->framebuff_producer_idx, ST30P_RX_FRAME_FREE);
 
@@ -83,8 +103,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
     ctx->stat_busy++;
     /* relaxed atomic: written from tasklet, read from any thread via
      * st30p_rx_get_session_stats(); no ordering vs other state required. */
-    __atomic_fetch_add(&ctx->stat_frames_dropped, 1, __ATOMIC_RELAXED);
-    mt_pthread_mutex_unlock(&ctx->lock);
+    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
     return -EBUSY;
   }
 
@@ -96,10 +115,9 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
   frame->status = meta->status;
-  framebuff->stat = ST30P_RX_FRAME_READY;
+  atomic_store_explicit(&framebuff->stat, ST30P_RX_FRAME_READY, memory_order_release);
   /* point to next */
   ctx->framebuff_producer_idx = rx_st30p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u(%p) succ\n", __func__, ctx->idx, framebuff->idx, frame->addr);
   /* notify app to a ready frame */
@@ -183,7 +201,7 @@ static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops)
     struct st30p_rx_frame* framebuff = &frames[i];
     struct st30_frame* frame = &framebuff->frame;
 
-    framebuff->stat = ST30P_RX_FRAME_FREE;
+    atomic_store_explicit(&framebuff->stat, ST30P_RX_FRAME_FREE, memory_order_relaxed);
     framebuff->idx = i;
 
     /* addr will be resolved later in rx_st30p_frame_ready */
@@ -211,12 +229,10 @@ static int rx_st30p_stat(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  mt_pthread_mutex_lock(&ctx->lock);
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
   producer_stat = framebuff[producer_idx].stat;
   consumer_stat = framebuff[consumer_idx].stat;
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   notice("RX_st30p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          rx_st30p_stat_name(producer_stat), consumer_idx,
@@ -297,43 +313,39 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  mt_pthread_mutex_lock(&ctx->lock);
-
-  framebuff =
-      rx_st30p_next_available(ctx, ctx->framebuff_consumer_idx, ST30P_RX_FRAME_READY);
+  /* Claim READY->IN_USER. rx_st30p_claim_available() retries across the ring
+   * on a lost CAS race, so it only returns NULL once every slot has actually
+   * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
+   * even while other READY frames remain (spurious failure under contention). */
+  framebuff = rx_st30p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                       ST30P_RX_FRAME_READY, ST30P_RX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) { /* wait here */
-    mt_pthread_mutex_unlock(&ctx->lock);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&
-           !__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) {
+           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       int _ret = mt_pthread_cond_timedwait_ns(
           &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
       if (_ret) break;
     }
     ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (__atomic_load_n(&ctx->lc_destroying, __ATOMIC_ACQUIRE)) goto out;
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
-    mt_pthread_mutex_lock(&ctx->lock);
-    framebuff =
-        rx_st30p_next_available(ctx, ctx->framebuff_consumer_idx, ST30P_RX_FRAME_READY);
+    framebuff = rx_st30p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                         ST30P_RX_FRAME_READY, ST30P_RX_FRAME_IN_USER);
   }
   /* not any converted frame */
   if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
     goto out;
   }
-
-  framebuff->stat = ST30P_RX_FRAME_IN_USER;
-  /* point to next */
+  /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st30p_next_idx(ctx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
 
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
-  __atomic_fetch_add(&ctx->stat_frames_received, 1, __ATOMIC_RELAXED);
+  atomic_fetch_add_explicit(&ctx->stat_frames_received, 1, memory_order_relaxed);
   if (frame->status == ST_FRAME_STATUS_CORRUPTED)
-    __atomic_fetch_add(&ctx->stat_frames_corrupted, 1, __ATOMIC_RELAXED);
+    atomic_fetch_add_explicit(&ctx->stat_frames_corrupted, 1, memory_order_relaxed);
   MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
   /* check if dump USDT enabled */
@@ -356,16 +368,17 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame */
   st30_rx_put_framebuff(ctx->transport, frame->addr);
-  framebuff->stat = ST30P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST30P_RX_FRAME_FREE, memory_order_release);
   ctx->stat_put_frame++;
 
   MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
@@ -385,16 +398,17 @@ int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, -EIO);
 
-  if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
+  if (ST30P_RX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
-        framebuff->stat);
+        (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed));
     ret = -EIO;
     goto out;
   }
 
   /* free the frame without processing */
   st30_rx_put_framebuff(ctx->transport, frame->addr);
-  framebuff->stat = ST30P_RX_FRAME_FREE;
+  atomic_store_explicit(&framebuff->stat, ST30P_RX_FRAME_FREE, memory_order_release);
   dbg("%s(%d), frame %u aborted\n", __func__, idx, consumer_idx);
   ret = 0;
 out:
@@ -435,7 +449,6 @@ int st30p_rx_free(st30p_rx_handle handle) {
   rx_st30p_uinit_fbs(ctx);
   rx_st30p_usdt_dump_close(ctx);
 
-  mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
@@ -487,7 +500,6 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops) {
   ctx->wake_on_destroy = (void (*)(void*))rx_st30p_block_wake;
   ctx->usdt_dump_fd = -1;
 
-  mt_pthread_mutex_init(&ctx->lock, NULL);
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
@@ -568,11 +580,11 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
   if (ret < 0) goto out;
   /* Overlay pipeline-tracked frame-level counters; transport never sets these. */
   stats->common.stat_frames_received =
-      __atomic_load_n(&ctx->stat_frames_received, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_received, memory_order_relaxed);
   stats->common.stat_frames_dropped =
-      __atomic_load_n(&ctx->stat_frames_dropped, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_dropped, memory_order_relaxed);
   stats->common.stat_frames_corrupted =
-      __atomic_load_n(&ctx->stat_frames_corrupted, __ATOMIC_RELAXED);
+      atomic_load_explicit(&ctx->stat_frames_corrupted, memory_order_relaxed);
   ret = 0;
 out:
   MT_HANDLE_RELEASE(ctx);
@@ -590,9 +602,9 @@ int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST30_HANDLE_PIPELINE_RX, 0);
 
-  __atomic_store_n(&ctx->stat_frames_received, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_dropped, 0, __ATOMIC_RELAXED);
-  __atomic_store_n(&ctx->stat_frames_corrupted, 0, __ATOMIC_RELAXED);
+  atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
+  atomic_store_explicit(&ctx->stat_frames_corrupted, 0, memory_order_relaxed);
   ret = st30_rx_reset_session_stats(ctx->transport);
   MT_HANDLE_RELEASE(ctx);
   return ret;

@@ -115,9 +115,13 @@ formats. The same `-pix_fmt` must be used on TX and RX.
 | `-pix_fmt`    | Wire format                   | ST 2110-20:2022 §6.2 compliant |
 | ------------- | ----------------------------- | ------------------------------ |
 | `yuv422p10le` | YUV 4:2:2 10-bit RFC 4175 PG2BE10 | yes (Table 2)              |
-| `y210le`      | YUV 4:2:2 10-bit RFC 4175 PG2BE10 | yes (Table 2)              |
 | `yuv444p10le` | YUV 4:4:4 10-bit RFC 4175 PG4BE10 | yes (Table 1)              |
-| `gbrp10le`    | RGB 10-bit RFC 4175 PG4BE10       | yes (Table 1)              |
+| `yuv422p12le` | YUV 4:2:2 12-bit RFC 4175 PG2BE12 | yes (Table 2)              |
+| `yuv444p12le` | YUV 4:4:4 12-bit RFC 4175 PG2BE12 | yes (Table 1)              |
+| `y210le`      | YUV 4:2:2 10-bit RFC 4175 PG2BE10 | yes (Table 2)              |
+| `uyvy422`     | YUV 4:2:2 8-bit RFC 4175          | yes (Table 2)              |
+| `gbrp10le`    | RGB 4:4:4 10-bit RFC 4175 PG4BE10 | yes (Table 1)              |
+| `gbrp12le`    | RGB 4:4:4 12-bit RFC 4175 PG2BE12 | yes (Table 1)              |
 | `yuv420p`     | Planar I420 passthrough (`ST_FRAME_FMT_YUV420CUSTOM8`) | **no** — MTL-to-MTL only, not interoperable with third-party receivers |
 
 ## 3. ST22 compressed video run guide

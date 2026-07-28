@@ -20,7 +20,7 @@ enum st20p_tx_frame_status {
 };
 
 struct st20p_tx_frame {
-  enum st20p_tx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st_frame src; /* before converting */
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
@@ -47,9 +47,8 @@ struct st20p_tx_ctx {
 
   st20_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
+  _Atomic uint32_t framebuff_sequence_number;
   struct st20p_tx_frame* framebuffs;
-  pthread_mutex_t lock;
   int usdt_frame_cnt;
 
   struct st20_convert_session_impl* convert_impl;
@@ -66,6 +65,7 @@ struct st20p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;

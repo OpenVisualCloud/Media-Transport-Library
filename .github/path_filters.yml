@@ -8,6 +8,7 @@ src: &src
   - 'gpu_direct/**'
   - 'tests/src/**'
   - 'tests/tools/**'
+  - 'tests/integration_tests/**'
   - tests/meson.build
   - tests/meson_options.txt
   - 'manager/**'
@@ -20,6 +21,7 @@ build: &build
   - VERSION
   - versions.env
   - "script/**"
+  - .github/scripts/setup_environment.sh
 
 docker: &docker
   - docker/**

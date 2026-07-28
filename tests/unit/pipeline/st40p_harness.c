@@ -101,12 +101,6 @@ ut40p_ctx* ut40p_ctx_create(int framebuff_cnt) {
   p->ready = true;
   p->transport = (st40_rx_handle)(uintptr_t)0x1;
 
-  if (mt_pthread_mutex_init(&p->lock, NULL) != 0) {
-    free(ctx->framebuffs);
-    free(ctx);
-    return NULL;
-  }
-
   ut40p_put_framebuff_reset_spy();
 
   return ctx;
@@ -114,7 +108,6 @@ ut40p_ctx* ut40p_ctx_create(int framebuff_cnt) {
 
 void ut40p_ctx_destroy(ut40p_ctx* ctx) {
   if (!ctx) return;
-  pthread_mutex_destroy(&ctx->pipeline.lock);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -143,6 +136,23 @@ int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame) {
 
 int ut40p_put_frame_abort(ut40p_ctx* ctx, struct st40_frame_info* frame) {
   return st40p_rx_put_frame_abort(&ctx->pipeline, frame);
+}
+
+int ut40p_frame_idx(const struct st40_frame_info* frame) {
+  const struct st40p_rx_frame* framebuff = frame->priv;
+  return framebuff->idx;
+}
+
+int ut40p_framebuff_cnt(const ut40p_ctx* ctx) {
+  return ctx->framebuff_cnt;
+}
+
+int ut40p_frame_stat(const ut40p_ctx* ctx, int i) {
+  return (int)ctx->framebuffs[i].stat;
+}
+
+uint32_t ut40p_stat_drop_frame(const ut40p_ctx* ctx) {
+  return ctx->pipeline.stat_drop_frame;
 }
 
 uint64_t ut40p_stat_frames_received(const ut40p_ctx* ctx) {

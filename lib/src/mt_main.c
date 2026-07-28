@@ -1282,10 +1282,12 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
 }
 
 enum mtl_simd_level mtl_get_simd_level(void) {
+#ifdef RTE_ARCH_X86
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VL)) return MTL_SIMD_LEVEL_AVX512;
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2)) return MTL_SIMD_LEVEL_AVX2;
+#endif
   /* no simd */
   return MTL_SIMD_LEVEL_NONE;
 }

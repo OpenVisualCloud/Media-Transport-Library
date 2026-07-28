@@ -53,6 +53,7 @@ decision logic and domain knowledge that tool descriptions alone don't convey.
 - **ldconfig**: Always run after installing DPDK or MTL — libraries won't be found otherwise.
 - **MtlManager**: Must be running for lcore allocation. Start with `manager_start`.
 - **E810 vs E830**: Both supported, same VF workflow. E830 device ID `12d2`, E810 device ID `1592`.
+- **NoCtx `_pf_` tests (TSN/launch-time-pacing)**: only validated on E830 (`12d2`). Not gated by device ID in the test code — check the port's device ID yourself (e.g. `cat /sys/bus/pci/devices/<bdf>/device`) before running `run_pf.sh` / `run_noctx_pf_tests`; expect unrelated failures on E810 or other NICs.
 - **NUMA**: Allocate from the same NUMA node as the NIC for best performance. VFs inherit PF's NUMA node.
 - **VF BDF patterns**: PF `.0` creates VFs at `:01.0-5`, PF `.1` at `:11.0-5`.
 - **versions.env**: Defines `DPDK_VER`, `ICE_VER`, `ICE_DMID`. Patches live in `patches/dpdk/<ver>/`.

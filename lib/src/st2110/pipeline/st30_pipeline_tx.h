@@ -23,7 +23,7 @@ enum st30p_tx_frame_status {
 };
 
 struct st30p_tx_frame {
-  enum st30p_tx_frame_status stat;
+  _Atomic uint32_t stat;
   struct st30_frame frame;
   uint16_t idx;
   uint32_t seq_number;
@@ -45,9 +45,8 @@ struct st30p_tx_ctx {
 
   st30_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_seq_number;
+  _Atomic uint32_t framebuff_seq_number;
   struct st30p_tx_frame* framebuffs;
-  pthread_mutex_t lock;
   bool ready;
 
   /* usdt dump */
@@ -61,6 +60,7 @@ struct st30p_tx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   /* get frame stat */
   uint32_t stat_get_frame_try;

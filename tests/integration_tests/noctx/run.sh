@@ -44,7 +44,14 @@ if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ 
 	exit 1
 fi
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.${NOCTX_FILTER}*" 2>/dev/null |
+PORT_LIST="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}"
+
+# PF-only tests (name contains "_pf_", e.g. TSN/launch-time-pacing) can
+# never pass against these VF ports; exclude them explicitly instead of
+# letting them fail for the wrong reason. Run them via run_pf.sh instead.
+GTEST_FILTER="NoCtxTest.${NOCTX_FILTER}*-NoCtxTest.*_pf_*"
+
+test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="${GTEST_FILTER}" 2>/dev/null |
 	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 # Use TMP_FOLDER from environment or fallback to /tmp
@@ -64,7 +71,7 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 
 	if "$BUILD_PATH" \
 		--auto_start_stop \
-		--port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" \
+		--port_list="${PORT_LIST}" \
 		--gtest_filter="NoCtxTest.$test_name" \
 		--gtest_output="xml:${xml_file}" \
 		--no_ctx_tests; then

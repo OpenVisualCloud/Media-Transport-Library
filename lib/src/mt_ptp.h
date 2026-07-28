@@ -10,6 +10,16 @@
 #define MT_PTP_DELAY_REQ_US (50)
 #define MT_PTP_DELAY_REQ_MONITOR_US (1000 * 1)
 #define MT_PTP_DELAY_STEP_US (10)
+/*
+ * Poll interval and total budget for the async delay_req tx timestamp (t3) read.
+ * Each failed read makes the PMD busy-wait ~10us and log one ERR, so the 200us
+ * interval caps a fully delayed cycle at ~10 polls (~100us busy-wait, <=10 ERR
+ * lines) instead of ~40 at 50us. The added latency on the common path is at most
+ * one interval, negligible against the sync interval. The 2000us budget still
+ * covers the ~1.2ms Qbv egress worst case with margin.
+ */
+#define MT_PTP_DELAY_REQ_TX_TS_RETRY_US (200)
+#define MT_PTP_DELAY_REQ_TX_TS_DEADLINE_US (2000)
 #define MT_PTP_CLOCK_IDENTITY_MAGIC (0xfeff)
 
 #define MT_PTP_STAT_INTERVAL_S (10) /* 10s */
