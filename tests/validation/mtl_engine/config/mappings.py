@@ -78,7 +78,9 @@ RXTXAPP_CMDLINE_PARAM_MAP = {
 # FFmpeg Configuration
 # ============================================================================
 
-# Format conversion mappings for FFmpeg
+# Format conversion mappings for FFmpeg: MTL pixel_format enum name (RxTxApp's
+# input_format / output_format, e.g. from media_files.py's ``file_format``) ->
+# FFmpeg AVPixelFormat name (the mtl_st20p plugin's ``-pix_fmt``).
 FFMPEG_FORMAT_MAP = {
     "YUV422PLANAR10LE": "yuv422p10le",
     "YUV422PLANAR8": "yuv422p",
@@ -87,7 +89,32 @@ FFMPEG_FORMAT_MAP = {
     "RGB24": "rgb24",
     "RGBA": "rgba",
     "YUV422RFC4175PG2BE10": "yuv422p10le",  # RFC4175 to planar 10-bit LE
+    "Y210": "y210le",
+    "UYVY": "uyvy422",
+    "YUV420CUSTOM8": "yuv420p",
+    "YUV422PLANAR12LE": "yuv422p12le",
+    "YUV444PLANAR10LE": "yuv444p10le",
+    "YUV444PLANAR12LE": "yuv444p12le",
+    "GBRPLANAR10LE": "gbrp10le",
+    "GBRPLANAR12LE": "gbrp12le",
 }
+
+
+def ffmpeg_pix_fmt(pixel_format: str) -> str:
+    """Translate an MTL pixel_format enum name to its FFmpeg AVPixelFormat.
+
+    Raises ``ValueError`` naming the unmapped enum instead of silently
+    defaulting -- an unmapped format must never fall through to whatever
+    FFmpeg's ``-pix_fmt`` default happens to be.
+    """
+    try:
+        return FFMPEG_FORMAT_MAP[pixel_format]
+    except KeyError:
+        raise ValueError(
+            f"No FFmpeg AVPixelFormat mapping for pixel_format={pixel_format!r}; "
+            f"add it to FFMPEG_FORMAT_MAP in mtl_engine/config/mappings.py"
+        )
+
 
 # FFmpeg parameter mapping
 # Maps universal params to FFmpeg MTL plugin flags.

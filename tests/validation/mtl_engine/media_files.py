@@ -392,6 +392,89 @@ yuv_files_422p10le = dict(
     },
 )
 
+# st20p input (source) pixel-format sweep assets, keyed by the FFmpeg
+# AVPixelFormat name.  Every entry is a pre-generated 1080p25 raw file that
+# lives on the media share -- tests must never transcode at runtime.
+#
+#   file_format -- RxTxApp pixel_format (MTL input_fmt) enum name
+#   format      -- MTL wire transport (ST20_FMT) the format converts to
+yuv_files_input_formats = {
+    "yuv422p10le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "y210le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_y210le.yuv",
+        "file_format": "Y210",
+        "format": "YUV_422_10bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "uyvy422": {
+        "filename": "Penguin_1920x1080_25fps_30frames_uyvy422.yuv",
+        "file_format": "UYVY",
+        "format": "YUV_422_8bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    # Not an SMPTE ST 2110-20 pgroup -- MTL-to-MTL passthrough only (see
+    # mtl_st20p_tx.c's YUV420CUSTOM8 comment).
+    "yuv420p": {
+        "filename": "Penguin_1920x1080_25fps_30frames_yuv420p.yuv",
+        "file_format": "YUV420CUSTOM8",
+        "format": "YUV_420_8bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "yuv422p12le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_yuv422p12le.yuv",
+        "file_format": "YUV422PLANAR12LE",
+        "format": "YUV_422_12bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "yuv444p10le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_yuv444p10le.yuv",
+        "file_format": "YUV444PLANAR10LE",
+        "format": "YUV_444_10bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "yuv444p12le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_yuv444p12le.yuv",
+        "file_format": "YUV444PLANAR12LE",
+        "format": "YUV_444_12bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "gbrp10le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_gbrp10le.yuv",
+        "file_format": "GBRPLANAR10LE",
+        "format": "RGB_10bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    "gbrp12le": {
+        "filename": "Penguin_1920x1080_25fps_30frames_gbrp12le.yuv",
+        "file_format": "GBRPLANAR12LE",
+        "format": "RGB_12bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+}
+
 yuv_files_interlace = dict(
     Crosswalk_480p={
         "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422.yuv",

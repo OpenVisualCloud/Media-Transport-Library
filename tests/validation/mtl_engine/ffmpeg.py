@@ -27,7 +27,7 @@ from mtl_engine.application_base import (
     ProcSpec,
     mtl_plugin_check_cmd,
 )
-from mtl_engine.config.mappings import APP_NAME_MAP
+from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 
 logger = logging.getLogger(__name__)
@@ -161,8 +161,14 @@ class FFmpeg(Application):
         """
         framerate_token = f"-framerate {framerate} " if framerate is not None else ""
         filter_token = f"{filter_v} " if filter_v else ""
+        # ``-re`` throttles the rawvideo reader to the source framerate. Without
+        # it FFmpeg drains the (ramdisk) file as fast as it can and hands frames
+        # to st20p_tx_put_frame() faster than realtime; MTL then transmits ahead
+        # of the ST 2110-21 epoch (observed: 38.3 ms frame gaps instead of 40 ms,
+        # drifting ~1.7 ms earlier per frame) and VRX goes deeply negative.
+        # RxTxApp gets the same rate limiting implicitly from MTL back-pressure.
         return (
-            f"{FFMPEG_EXE} -stream_loop -1 {framerate_token}"
+            f"{FFMPEG_EXE} -stream_loop -1 -re {framerate_token}"
             f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
             f"-i {video_url} {filter_token}"
             f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
@@ -216,9 +222,34 @@ class FFmpeg(Application):
         output_format = self._ff_params.get("output_format", "yuv")
         multiple = bool(self._ff_params.get("multiple_sessions", False))
         tx_is_ffmpeg = bool(self._ff_params.get("tx_is_ffmpeg", True))
-        pix_fmt = self._ff_params.get("pix_fmt", "yuv422p10le")
 
-        video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
+        # video_size: prefer explicit width/height (the universal params
+        # RxTxApp reads) over video_format, which decode_video_format_16_9
+        # can only derive by assuming a 16:9 aspect ratio.
+        if self.was_user_provided("width") and self.was_user_provided("height"):
+            video_size = f"{self.params['width']}x{self.params['height']}"
+        else:
+            video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
+
+        # fps: prefer explicit framerate over the digits scraped out of
+        # video_format, for the same reason.
+        if self.was_user_provided("framerate"):
+            fps = self.extract_framerate(self.params["framerate"])
+        else:
+            _, fps = ffmpeg_app.decode_video_format_16_9(video_format)
+
+        # pix_fmt: an explicit override (rgb24/st22p modes, or a test that
+        # deliberately mismatches TX/RX) always wins; otherwise derive it from
+        # the universal pixel_format param so callers never have to know
+        # FFmpeg's own AVPixelFormat naming. Only fall back to the historical
+        # yuv422p10le default when neither was given.
+        if "pix_fmt" in self._ff_params:
+            pix_fmt = self._ff_params["pix_fmt"]
+        elif self.was_user_provided("pixel_format"):
+            pix_fmt = ffmpeg_pix_fmt(self.params["pixel_format"])
+        else:
+            pix_fmt = "yuv422p10le"
+
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
 
         # IMPORTANT: -init_retry is an AVOption on the mtl_st20p *demuxer*, so
@@ -230,7 +261,7 @@ class FFmpeg(Application):
         # and the test fails with EIO + 0-byte output for every pix_fmt.
         if not multiple:
             rx_cmd = (
-                f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
+                f"{FFMPEG_EXE} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.rx[0]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
@@ -241,12 +272,12 @@ class FFmpeg(Application):
         else:
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
-                f"-p_port {nic_port_list[0]} "
+                f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 1 "
-                f"-p_port {nic_port_list[0]} "
+                f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
@@ -256,19 +287,23 @@ class FFmpeg(Application):
             )
 
         if tx_is_ffmpeg:
-            # Default source pix_fmt (yuv422p10le) needs an explicit fps filter
-            # to lock the rate; pre-converted sources already carry the right
-            # framerate, so adding the filter would re-time the frames.
-            tx_filter = f"-filter:v fps={fps}" if pix_fmt == "yuv422p10le" else ""
+            # Lock the rate on the rawvideo *demuxer* (-framerate) rather than a
+            # post-hoc "fps" filter, which would add a filtergraph frame copy
+            # to the thread feeding st20p_tx_put_frame() on its 40ms epoch.
+            #
+            # TX must use nic_port_list[0] and RX nic_port_list[1], matching
+            # RxTxApp's convention: the pcap_capture fixture sniffs the second
+            # NIC's PF, so TX must egress a different NIC or netsniff-ng only
+            # sees switch-batched packets, making VRX measurement meaningless.
             self._tx_commands = [
                 self._ffmpeg_st20p_tx_cmd(
                     video_size=video_size,
                     pix_fmt=pix_fmt,
                     video_url=video_url,
-                    port=nic_port_list[1],
+                    port=nic_port_list[0],
                     sip=ip_pools.tx[0],
                     mcast=ip_pools.rx_multicast[0],
-                    filter_v=tx_filter,
+                    framerate=fps,
                 )
             ]
         else:
@@ -466,9 +501,20 @@ class FFmpeg(Application):
             output_format = self._ff_params.get("output_format", "yuv")
             multiple = bool(self._ff_params.get("multiple_sessions", False))
             n = 2 if multiple else 1
-            self._output_files = ffmpeg_app.create_empty_output_files(
-                output_format, n, host, build
-            )
+            # ``output_file`` lets a test place the RX capture on a ramdisk.
+            # The default lands in {build}/tests/ on the root ext4 volume, and
+            # 1080p25 4:2:2 10-bit needs ~130 MB/s sustained; when the disk
+            # cannot keep up the RX FFmpeg stalls, back-pressures MTL's frame
+            # pool and starves the co-resident TX producer, which shows up as
+            # ST 2110-21 pacing failures that have nothing to do with MTL.
+            out_path_param = self.params.get("output_file")
+            if out_path_param and not multiple:
+                self._output_files = [out_path_param]
+                host.connection.path(out_path_param).touch()
+            else:
+                self._output_files = ffmpeg_app.create_empty_output_files(
+                    output_format, n, host, build
+                )
             self.command = self.command.replace("{out0}", self._output_files[0])
             if multiple:
                 self.command = self.command.replace("{out1}", self._output_files[1])
@@ -532,6 +578,7 @@ class FFmpeg(Application):
         test_time: int = 30,
         host=None,
         sleep_interval: int = 5,
+        netsniff=None,
         interface_setup=None,
         fail_on_error: bool = True,
         **extra,
@@ -584,13 +631,38 @@ class FFmpeg(Application):
             sleep_interval=sleep_interval,
             wall_clock_seconds=test_time,
             cleanup_host=host,
+            after_last_start=(self._make_netsniff_hook(netsniff) if netsniff else None),
         )
         # RX is always specs[0] (started first); validation reads its output.
         self._rx_output = specs[0].captured_output
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
-        return self._dispatch_validate(fail_on_error)
+        # Mirror the base class: run both dispatches so a failure in one never
+        # skips the other, then re-raise once if either failed.
+        compliance_ok, compliance_exc = True, None
+        try:
+            compliance_ok = self._dispatch_compliance_check(netsniff, fail_on_error)
+        except AssertionError as e:
+            compliance_ok, compliance_exc = False, e
+        validate_ok, validate_exc = True, None
+        try:
+            validate_ok = self._dispatch_validate(fail_on_error)
+        except AssertionError as e:
+            validate_ok, validate_exc = False, e
+        if fail_on_error and (compliance_exc or validate_exc):
+            raise compliance_exc or validate_exc
+        return compliance_ok and validate_ok
+
+    # ----------------------------------------------------- compliance
+    def _resolve_capture_dst_ip(self):
+        """Destination IP netsniff filters on.
+
+        Every FFmpeg command built here transmits to ``ip_pools.rx_multicast[0]``
+        (see the ``-p_rx_ip`` tokens in the RX/TX builders), so the capture
+        filter target is fixed rather than read back from a config file.
+        """
+        return ip_pools.rx_multicast[0]
 
     # ----------------------------------------------------- validate
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
