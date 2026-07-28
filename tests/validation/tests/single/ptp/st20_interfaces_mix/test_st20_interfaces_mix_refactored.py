@@ -12,7 +12,6 @@ from mtl_engine.media_files import yuv_files_422rfc10
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.xfail
 @pytest.mark.ptp
 @pytest.mark.parametrize(
     "interface_profile",
@@ -42,6 +41,7 @@ def test_st20_interfaces_mix_refactored(
     test_time,
     interface_profile,
     test_config,
+    ptp_sync,
     pcap_capture,
     media_file,
     output_files,
