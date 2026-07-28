@@ -87,9 +87,12 @@ def test_xdp_mode_refactored(
         ],
     )
 
+    if test_mode != "multicast":
+        pcap_capture.skip("unicast xdp mode does not exercise compliance")
+
     application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture if test_mode == "multicast" else None,
+        compliance=pcap_capture,
     )

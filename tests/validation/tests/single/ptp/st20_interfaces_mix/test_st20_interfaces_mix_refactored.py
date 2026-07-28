@@ -94,7 +94,7 @@ def test_st20_interfaces_mix_refactored(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )
 
     if test_config.get("integrity_check", True):

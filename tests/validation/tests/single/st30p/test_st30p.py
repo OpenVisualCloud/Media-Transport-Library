@@ -84,7 +84,7 @@ def test_st30p_integrity(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )
 
     size = calculate_st30p_framebuff_size(
@@ -164,7 +164,7 @@ def test_st30p_channel(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )
 
     if test_config.get("integrity_check", True):
@@ -238,7 +238,7 @@ def test_st30p_format(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
@@ -314,7 +314,7 @@ def test_st30p_ptime(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )
 
     if test_config.get("integrity_check", True):
@@ -387,7 +387,7 @@ def test_st30p_sampling(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )
 
     if test_config.get("integrity_check", True):
@@ -461,5 +461,5 @@ def test_st30p_multicast(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )

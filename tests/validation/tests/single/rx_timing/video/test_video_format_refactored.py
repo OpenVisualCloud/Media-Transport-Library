@@ -63,5 +63,5 @@ def test_rx_timing_video_video_format_refactored(
     )
 
     application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )

@@ -89,7 +89,7 @@ def test_st20p_input_format(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
         fail_on_error=False,
     )
     if not passed:

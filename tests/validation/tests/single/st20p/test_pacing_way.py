@@ -142,11 +142,11 @@ def test_st20p_pacing_way(
             build=mtl_path,
             test_time=actual_test_time,
             host=host,
-            netsniff=pcap_capture,
+            compliance=pcap_capture,
             fail_on_error=False,
         ), "tsn pacing unexpectedly succeeded on E810 (no TxPP launch-time HW)"
         return
 
     app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host, compliance=pcap_capture
     )

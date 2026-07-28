@@ -118,7 +118,7 @@ def test_st40p_multicast_with_compliance(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )
 
 

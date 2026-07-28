@@ -74,5 +74,5 @@ def test_xdp_standard_refactored(
         )
 
     application.execute_test(
-        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
     )
