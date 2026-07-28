@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
-from .pcap_compliance import check_pcap_compliance
+from .pcap_compliance import CAPTURE_SETTLE_TIME, NO_COMPLIANCE, CaptureIntent
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,6 @@ logger = logging.getLogger(__name__)
 # --test_time starts counting.  Shell timeout and Python wait must account
 # for this worst-case delay when PTP is enabled.
 MTL_PTP_INTERNAL_TIMEOUT = 180
-
-# Seconds to let a stream reach steady state before arming the pcap capture.
-# ST 2110-21 conformance is a steady-state measurement, and MTL session/queue
-# init plus PTP epoch alignment take several seconds before the first RTP
-# packet -- arming capture too early pulls startup transients into the
-# compliance window and causes spurious VRX failures.
-CAPTURE_SETTLE_TIME = 12
 
 
 # Encoder name -> MTL st22 plugin shared object, for require_encoder()
@@ -214,31 +207,36 @@ class Application(ABC):
         """Return the destination IP that netsniff should filter on, or ``None``.
 
         Subclasses override this when their config schema exposes the TX
-        destination(s). The default returns ``None``, which causes
-        ``_start_netsniff_capture`` to skip the capture with a warning rather
-        than raising.
+        destination(s). The default returns ``None``, which makes
+        :meth:`ComplianceSession.arm() <mtl_engine.pcap_compliance.ComplianceSession.arm>`
+        skip the capture with a warning rather than raising.
         """
         return None
 
-    def _start_netsniff_capture(self, netsniff) -> None:
-        """Configure ``netsniff`` and start a bounded capture.
+    def capture_intent(self) -> CaptureIntent:
+        """Build the :class:`CaptureIntent` a compliance session needs to arm/evaluate.
 
-        Generic across frameworks: the only app-specific bit is *where* the
-        destination IP comes from, which is delegated to
-        :meth:`_resolve_capture_dst_ip`. The capture window matches the
-        ``test_time`` param so capture and process lifetimes line up.
+        The only seam between an Application and ``pcap_compliance``: this
+        method is the sole place adapter/session state crosses the boundary,
+        so neither side reaches into the other's internals.
         """
-        dst_ip = self._resolve_capture_dst_ip()
-        if not dst_ip:
-            logger.warning("No destination IP available for netsniff capture")
-            return
-        capture_time = self.params.get("test_time", 30)
-        try:
-            netsniff.update_filter(dst_ip=dst_ip)
-            netsniff.capture(capture_time=capture_time)
-            logger.info("Started netsniff-ng capture for destination IP %s", dst_ip)
-        except Exception as e:
-            logger.error("Failed to start netsniff capture: %s", e)
+        ptp_wait = (
+            self.params.get("ptp_sync_time", 50)
+            if self.params.get("enable_ptp", False)
+            else 0
+        )
+        return CaptureIntent(
+            dst_ip=self._resolve_capture_dst_ip(),
+            capture_time=self.params.get("test_time", 30),
+            settle_time=self.params.get("capture_settle_time", CAPTURE_SETTLE_TIME),
+            ptp_wait=ptp_wait,
+            packing=self.params.get("packing"),
+            pacing=self.params.get("pacing"),
+            width=self.params.get("width"),
+            height=self.params.get("height"),
+            transport_format=self.params.get("transport_format"),
+            framerate=self.params.get("framerate"),
+        )
 
     def set_params(self, **kwargs):
         """Set parameters from user input and track which were provided."""
@@ -330,7 +328,7 @@ class Application(ABC):
         rx_app=None,
         sleep_interval: int = 4,
         tx_first: bool = True,
-        netsniff=None,
+        compliance=NO_COMPLIANCE,
         interface_setup=None,
         fail_on_error: bool = True,
     ) -> bool:
@@ -360,6 +358,12 @@ class Application(ABC):
             raise ValueError("rx_app instance required for dual-host execution")
         if not is_dual and not host:
             raise ValueError("host required for single-host execution")
+        if is_dual and compliance is not NO_COMPLIANCE:
+            raise ValueError(
+                "compliance capture is single-host only -- dual-host "
+                "execute_test() never arms or evaluates it. Pass "
+                "compliance=NO_COMPLIANCE (the default) for dual-host tests."
+            )
 
         if not self.command:
             raise RuntimeError("create_command() must be called before execute_test()")
@@ -385,9 +389,12 @@ class Application(ABC):
         wait_timeout += ptp_timeout_budget
         cmd_test_time = effective_test_time + ptp_timeout_budget
 
-        # Build the netsniff hook (single-host only, fired once after the
-        # primary process starts) so the helper stays oblivious to capture.
-        after_first_start = self._make_netsniff_hook(netsniff) if netsniff else None
+        # Fired once after the primary process starts (single-host only) so
+        # the helper stays oblivious to capture; arm() is a no-op when
+        # ``compliance`` is ``NO_COMPLIANCE``. Built once and reused for
+        # evaluate() below so both see the exact same snapshot of self.params
+        # (self.params is mutable and must not be re-read mid-run).
+        intent = self.capture_intent()
 
         if not is_dual:
             specs = [
@@ -403,29 +410,11 @@ class Application(ABC):
                 build=build,
                 test_time=effective_test_time,
                 proc_wait_timeout=wait_timeout,
-                after_first_start=after_first_start,
+                after_first_start=lambda _proc: compliance.arm(intent),
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)
-            # Run both dispatches unconditionally so a hard failure in one
-            # never skips the other -- e.g. a real app crash must still be
-            # validated even when the capture also happens to be
-            # non-compliant. Catch each independently, then re-raise once at
-            # the end if either failed and fail_on_error is set (each helper
-            # already records the pytest failure via log_fail internally).
-            compliance_ok, compliance_exc = True, None
-            try:
-                compliance_ok = self._dispatch_compliance_check(netsniff, fail_on_error)
-            except AssertionError as e:
-                compliance_ok, compliance_exc = False, e
-            validate_ok, validate_exc = True, None
-            try:
-                validate_ok = self._dispatch_validate(fail_on_error)
-            except AssertionError as e:
-                validate_ok, validate_exc = False, e
-            if fail_on_error and (compliance_exc or validate_exc):
-                raise compliance_exc or validate_exc
-            return compliance_ok and validate_ok
+            return self._finalize_run(compliance, intent, fail_on_error)
 
         # Dual-host: 2 bounded procs across 2 hosts.
         if not rx_app.command:
@@ -495,39 +484,6 @@ class Application(ABC):
             self.command = new_cmd
         return effective, MTL_PTP_INTERNAL_TIMEOUT
 
-    def _make_netsniff_hook(self, netsniff) -> Callable:
-        """Return a ``after_first_start`` callback that arms netsniff capture.
-
-        Waits for PTP sync (when enabled) before starting capture so the
-        capture window aligns with the steady-state stream.
-        """
-
-        def _hook(_first_proc) -> None:
-            try:
-                if self.params.get("enable_ptp", False):
-                    ptp_sync_time = self.params.get("ptp_sync_time", 50)
-                    logger.info(
-                        "Waiting %ds for PTP sync before netsniff capture",
-                        ptp_sync_time,
-                    )
-                    time.sleep(ptp_sync_time)
-                # ST 2110-21 is a steady-state conformance measurement. The
-                # first frames of a session carry startup transients (MTL
-                # session/framebuffer init, first-touch page faults on the
-                # source file, producer thread placement) that are not
-                # representative and would otherwise dominate a short capture.
-                settle = self.params.get("capture_settle_time", CAPTURE_SETTLE_TIME)
-                if settle:
-                    logger.info(
-                        "Waiting %ds for stream to settle before capture", settle
-                    )
-                    time.sleep(settle)
-                self._start_netsniff_capture(netsniff)
-            except Exception as e:
-                logger.warning("netsniff capture setup failed: %s", e)
-
-        return _hook
-
     def _dispatch_validate(self, fail_on_error: bool) -> bool:
         """Run :meth:`validate_results` with consistent soft-fail semantics."""
         try:
@@ -541,69 +497,30 @@ class Application(ABC):
             )
             return False
 
-    def _dispatch_compliance_check(self, netsniff, fail_on_error: bool) -> bool:
-        """Run the EBU compliance check for a completed netsniff capture, if any.
+    def _finalize_run(
+        self, compliance, intent: CaptureIntent, fail_on_error: bool
+    ) -> bool:
+        """Evaluate the compliance session and validate_results, run unconditionally.
 
-        A test that requests the ``pcap_capture`` fixture REQUIRES a real
-        compliance verdict unless it explicitly opts out via
-        ``capture_cfg.enable: false`` -- a missing ``ebu_server``/``capture_cfg``
-        or a capture that failed to produce a pcap file are hard compliance
-        failures, never a silent pass. Returns True when compliant or not
-        applicable (``netsniff`` is None -- capture was explicitly disabled, or
-        skipped for an 8K capability limitation). Returns False only when
-        non-compliant/unconfigured and ``fail_on_error`` is False (soft-fail,
-        mirrors :meth:`_dispatch_validate`). Raises ``AssertionError`` when
-        non-compliant/unconfigured and ``fail_on_error`` is True.
+        A hard failure in one must never skip the other -- e.g. a real app
+        crash must still be validated even when the capture also happens to
+        be non-compliant. Each branch is caught independently, then
+        re-raised once at the end if either failed and ``fail_on_error`` is
+        set (each helper already records the pytest failure internally).
         """
-        if netsniff is None:
-            return True
+        compliance_ok, compliance_exc = True, None
         try:
-            ebu_server = getattr(netsniff, "ebu_server", None)
-            if not ebu_server:
-                self._fail_validation(
-                    "Compliance check required (test uses the pcap_capture "
-                    "fixture and did not set capture_cfg.enable: false) but "
-                    "ebu_server is not configured in test_config.yaml -- cannot "
-                    "verify EBU compliance for this test. Configure capture_cfg "
-                    "(a 2nd NIC PF for netsniff-ng) and ebu_server, or set "
-                    "capture_cfg.enable: false to explicitly opt out.",
-                    fail_on_error,
-                )
-            if not netsniff.pcap_file:
-                self._fail_validation(
-                    "Compliance check required but PCAP capture failed to "
-                    "produce a file (netsniff-ng did not start) -- cannot "
-                    "verify EBU compliance for this test.",
-                    fail_on_error,
-                )
-            # params["pacing"] == "wide" (ST21_PACING_WIDE) deliberately widens
-            # MTL's VRX/Cinst tolerance, so EBU LIST legitimately reports "wide"
-            # (not narrow/narrow_linear) compliance for these streams -- that is
-            # the requested behavior, not a pacing defect. Correlate
-            # automatically here so no test needs to set netsniff.allow_wide by
-            # hand; the marker/attribute path stays available for other
-            # legitimate wide cases (e.g. a pacing fallback unrelated to the
-            # configured pacing mode).
-            allow_wide = getattr(netsniff, "allow_wide", False) or (
-                self.params.get("pacing") == "wide"
-            )
-            check_pcap_compliance(
-                netsniff,
-                ebu_server,
-                netsniff.mtl_path,
-                netsniff.test_nodeid,
-                fail_on_error=fail_on_error,
-                allow_wide=allow_wide,
-                expected_packing=self.params.get("packing"),
-            )
-            return True
-        except AssertionError:
-            if fail_on_error:
-                raise
-            logger.info("Compliance check failed (fail_on_error=False); continuing")
-            return False
-        finally:
-            netsniff._compliance_checked = True
+            compliance_ok = compliance.evaluate(intent, fail_on_error)
+        except AssertionError as e:
+            compliance_ok, compliance_exc = False, e
+        validate_ok, validate_exc = True, None
+        try:
+            validate_ok = self._dispatch_validate(fail_on_error)
+        except AssertionError as e:
+            validate_ok, validate_exc = False, e
+        if fail_on_error and (compliance_exc or validate_exc):
+            raise compliance_exc or validate_exc
+        return compliance_ok and validate_ok
 
     def _run_proc_group(
         self,
