@@ -154,7 +154,7 @@ flowchart TD
 
 ## Where to look in tree
 
-- Docs: [doc/design.md](doc/design.md) (ST40 section), [doc/validation_framework.md](doc/validation_framework.md)
+- Docs: [doc/design.md](doc/design.md) (ST40 section), [doc/validation-design.md](doc/validation-design.md)
 - APIs: [include/st40_api.h](include/st40_api.h), [include/st40_pipeline_api.h](include/st40_pipeline_api.h)
 - Plugin: [ecosystem/gstreamer_plugin/gst_mtl_st40p_tx.c](ecosystem/gstreamer_plugin/gst_mtl_st40p_tx.c), [ecosystem/gstreamer_plugin/gst_mtl_st40p_rx.c](ecosystem/gstreamer_plugin/gst_mtl_st40p_rx.c)
 - Pipeline impl: [lib/src/st2110/pipeline/st40_pipeline_tx.c](lib/src/st2110/pipeline/st40_pipeline_tx.c), [lib/src/st2110/pipeline/st40_pipeline_rx.c](lib/src/st2110/pipeline/st40_pipeline_rx.c)
