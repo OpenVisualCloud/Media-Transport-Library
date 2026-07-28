@@ -23,6 +23,16 @@ outputs:
 runs:
   using: composite
   steps:
+    # First, before anything else touches the host: a runner that cannot serve
+    # AF_XDP should fail in seconds, not after a 20-minute setup. Enforced
+    # rather than reported, because a provisioned test host is assumed to have
+    # a working eBPF/XDP stack.
+    - name: 'system: Check eBPF/XDP prerequisites'
+      uses: ./.github/actions/check-ebpf
+      with:
+        mode: all
+        strict: 'true'
+
     - uses: ./.github/actions/cleanup
 
     - name: Compute local source checksums
@@ -112,8 +122,11 @@ runs:
         WS="${{ github.workspace }}"
         LI="${WS}/.local_install"
 
-        # Shared libraries: DPDK + MTL + FFmpeg
-        echo "LD_LIBRARY_PATH=${LI}/dpdk/lib/x86_64-linux-gnu:${LI}/mtl/lib/x86_64-linux-gnu:${LI}/ffmpeg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        # Shared libraries: DPDK + MTL + FFmpeg, and the GStreamer plugin
+        # directory itself -- the plugins there link against their own
+        # libgstmtl_common.so, which lives beside them and is not installed
+        # system-wide, so GST_PLUGIN_PATH alone leaves every one unloadable.
+        echo "LD_LIBRARY_PATH=${LI}/dpdk/lib/x86_64-linux-gnu:${LI}/mtl/lib/x86_64-linux-gnu:${LI}/ffmpeg/lib:${LI}/gstreamer/gstreamer-1.0${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
         # Binaries on PATH
         echo "${LI}/mtl/bin" >> "$GITHUB_PATH"

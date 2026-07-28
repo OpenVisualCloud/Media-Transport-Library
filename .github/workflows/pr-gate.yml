@@ -1,0 +1,73 @@
+name: PR Gate
+
+# Shared entry gate for the bare-metal test workflows. smoke-tests and
+# gtest-bare-metal both opened with the same two jobs -- decide whether the
+# change touches anything testable, then wait for the Build workflow that
+# produces the artifacts they consume. Keeping one copy means the two cannot
+# drift apart, which is how the filters and the check name they wait for
+# stopped matching in the first place.
+
+on:
+  workflow_call:
+    inputs:
+      wait_for_build:
+        description: Wait for the Build workflow to publish its artifacts.
+        type: boolean
+        required: false
+        default: true
+      wait_timeout:
+        description: Seconds to wait for the Build workflow.
+        type: number
+        required: false
+        default: 900
+    outputs:
+      changed:
+        description: Whether the change touches code these tests cover.
+        value: ${{ jobs.check-for-changes.outputs.changed }}
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+jobs:
+  check-for-changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.linux_tests == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Clean workspace and checkout
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: .github/path_filters.yml
+
+  wait-for-build:
+    needs: check-for-changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        if: ${{ needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Wait for Build workflow
+        if: ${{ inputs.wait_for_build && needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: build
+          timeout: ${{ inputs.wait_timeout }}

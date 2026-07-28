@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+#
+# Entry points that CI and developers share, so a local run and a runner run
+# invoke exactly the same command. Install with:
+#   go install github.com/go-task/task/v3/cmd/task@latest
+# or see https://taskfile.dev/installation/
+#
+#   task --list
+
+version: '3'
+
+vars:
+  EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
+  CI_LOCAL: '{{.TASKFILE_DIR}}/.github/ci-local'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  ebpf:check:
+    desc: Verify eBPF/XDP prerequisites and pinned versions; fail if missing
+    summary: |
+      Runs script/build_ebpf_xdp.sh --check --strict.
+
+      Meant to run first in any job that will later touch DPDK or AF_XDP, so
+      the job dies in seconds instead of failing inside a pkg-config call
+      minutes later. Vars: MODE (build|runtime|all), REQUIRE_XDP (0|1).
+    vars:
+      MODE: '{{.MODE | default "all"}}'
+      REQUIRE_XDP: '{{.REQUIRE_XDP | default "0"}}'
+    cmds:
+      - >-
+        bash {{.EBPF_SCRIPT}} --check --mode {{.MODE}} --strict
+        {{if eq .REQUIRE_XDP "1"}}--require-xdp{{end}}
+
+  ebpf:report:
+    desc: Same checks as ebpf:check, but never fails the caller
+    cmds:
+      - bash {{.EBPF_SCRIPT}} --check --mode all
+
+  ebpf:install:
+    desc: Build and install xdp-tools + libbpf at the versions in versions.env
+    cmds:
+      - bash {{.EBPF_SCRIPT}}
+
+  ci:test-pr:
+    desc: Run the whole PR pipeline locally (build + pr-gate + validate-host matrix)
+    cmds:
+      - '{{.CI_LOCAL}}/test-pr-locally.sh {{.CLI_ARGS}}'
+
+  ci:build:
+    desc: Run the build workflow job locally in a container
+    cmds:
+      - '{{.CI_LOCAL}}/run-job.sh build {{.CLI_ARGS}}'
+
+  ci:validate-host:
+    desc: Run the validate-host action locally against a simulated bare-metal runner
+    vars:
+      NIC: '{{.NIC | default "e810"}}'
+    cmds:
+      - '{{.CI_LOCAL}}/run-job.sh validate-host --nic {{.NIC}} {{.CLI_ARGS}}'

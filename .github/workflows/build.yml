@@ -92,6 +92,14 @@ jobs:
       - name: Checkout MTL
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
 
+      # Before anything expensive: this runner is long-lived, and a missing
+      # libelf otherwise surfaces as a pkg-config failure deep inside the build.
+      - name: 'system: Check eBPF/XDP prerequisites'
+        uses: ./.github/actions/check-ebpf
+        with:
+          mode: build
+          strict: 'true'
+
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache
         uses: actions/cache@v4

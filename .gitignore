@@ -115,3 +115,6 @@ level-zero-*
 
 venv*
 .github/mcp/.venv/
+
+# Local CI reproduction (.github/ci-local)
+.ci-local/
