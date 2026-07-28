@@ -1,331 +1,340 @@
 # MTL Pytest Validation Architecture
 
-This document is the architectural introduction to `tests/validation/`. It is
-for developers who understand MTL and ST 2110, but are new to the Python test
-framework.
+Architectural map of `tests/validation/` for developers who know MTL and
+ST 2110 but not this framework. For install/run commands see
+[validation_quickstart.md](validation_quickstart.md).
 
-For installation and commands, see [validation_framework.md](validation_framework.md)
-and [validation_quickstart.md](validation_quickstart.md).
+Terms used throughout: **RxTxApp** is MTL's reference TX/RX sample
+application; **MtlManager** is the privileged helper daemon MTL apps connect
+to; **mfd** is the Intel `mfd-*` test library family that abstracts host
+access ([§6](#6-remote-proofing-the-mfd-abstraction)); **PF/VF** are SR-IOV physical/virtual functions; **PHC** is the
+NIC's PTP Hardware Clock; **EBU LIST** is the external open-source ST 2110
+analyser used for compliance verdicts ([§5.3](#53-packet-compliance)); **SUT** is the system under
+test.
 
-## 1. Purpose
+## 1. Map of the code
 
-The validation framework tests MTL as an application stack on real hosts and
-NICs. It complements C/C++ unit and integration tests by running complete media
-flows through RxTxApp, FFmpeg, or GStreamer.
+| Group            | Path                                                                                                   | Owns                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Harness**      | `conftest.py` (~1.4k lines)                                                                            | Every fixture: topology load, host prep, VF pools, media staging, capture, clocks, logging, cleanup         |
+| **Host control** | `common/nicctl.py`, `common/host_setup.py`                                                             | `Nicctl` (VF create/bind), `InterfaceSetup` (per-test interface allocation), hugepages, PF up, CPU governor |
+| **Adapters**     | `mtl_engine/application_base.py`, `rxtxapp.py`, `ffmpeg.py`                                            | `Application` ABC + its two concrete subclasses: command building, process lifecycle, result validation     |
+| **Parameters**   | `mtl_engine/config/universal_params.py`, `rxtxapp_config.py`                                           | The single vocabulary of test knobs, and the RxTxApp JSON config template                                   |
+| **Media**        | `mtl_engine/media_files.py`, `media_creator.py`, `ramdisk.py`                                          | Curated asset registry with metadata; synthetic asset generation; tmpfs staging                             |
+| **Capture**      | `create_pcap_file/netsniff.py`, `mtl_engine/pcap_compliance.py`                                        | `NetsniffRecorder` (capture only) and `ComplianceSession` (capture lifecycle + EBU verdict)                 |
+| **EBU client**   | `compliance/compliance_client.py`, `upload_pcap.py`                                                    | HTTP upload/poll against the EBU LIST analyser                                                              |
+| **Integrity**    | `mtl_engine/integrity_session.py`, `mtl_engine/integrity.py`, `common/integrity/`                      | Frame/sample-exact comparison of source vs received media                                                   |
+| **Reporting**    | `mtl_engine/csv_report.py`, `stash.py`, `common/collect_platform_info.py`, `common/generate_report.py` | CSV rows, per-test issue/result stash, platform snapshot, performance reports                               |
+| **Tests**        | `tests/single/`, `tests/dual/`                                                                         | Scenario intent only ([§3](#3-what-a-test-case-owns))                                                       |
+| **Legacy**       | `mtl_engine/RxTxApp.py`, `ffmpeg_app.py`, `GstreamerApp.py`                                            | Pre-adapter procedural modules ([§2.3](#23-legacy-modules))                                                 |
 
-A test may apply several independent oracles:
+## 2. Application adapters
 
-| Oracle | What it proves |
-|---|---|
-| Application result | The process completed and its application-specific log/result checks passed |
-| Media integrity | Received video or audio matches the source; enabled explicitly by tests that implement an integrity check |
-| Packet compliance | A captured stream passes EBU LIST analysis, including the expected ST 2110-21 schedule |
-| Performance | A workload sustains the requested session count, frame rate, or capacity target |
+### 2.1 Adapters are independent, not a shared inheritance ladder
 
-Passing one oracle does not imply that the others ran. Tests select the checks
-that are meaningful for their scenario.
+`Application` (in `application_base.py`) is an ABC owning everything
+**application-agnostic**: parameter storage, process start/stop ladders,
+timeout budgeting, the PTP startup allowance, and post-run oracle dispatch.
+It knows nothing about RxTxApp's JSON schema or FFmpeg's argv.
 
-## 2. Architectural model
+Each adapter implements four abstract methods and nothing more:
+`get_app_name()`, `get_executable_name()`, `_create_command_and_config()`
+(turn `self.params` into `(command, config_dict|None)`), and
+`validate_results(fail_on_error)` (the application-level oracle, [§5.1](#51-application-result)).
+
+`RxTxApp` and `FFmpeg` are therefore **siblings, not variants**. They share
+lifecycle, not behaviour: RxTxApp emits a JSON config plus one process;
+FFmpeg emits argv only and runs an RX process plus N TX processes. Neither
+can see the other's internals, and a third adapter can be added by
+implementing the four methods without touching the existing ones.
+
+### 2.2 One execution path, two topologies
+
+`execute_test()` is the single entry point. Three of its steps encode
+invariants that are not obvious from the source:
+
+1. It builds a `CaptureIntent` (the immutable snapshot of what MTL was told
+   to transmit, later compared against the analyser report) **once** —
+   `self.params` is mutable and must not be re-read later in the run.
+2. `_run_proc_group()` starts each `ProcSpec` (one process's argv, log path,
+   and whether it self-terminates) in order and fires the
+   `after_first_start` / `after_last_start` hooks that arm capture.
+   Unbounded processes are stopped with a **SIGINT → SIGKILL** ladder;
+   SIGINT first so DPDK can run `rte_eal_cleanup` and release its VFIO
+   group file descriptor.
+3. `_finalize_run()` runs the compliance verdict and `validate_results()`
+   **independently** — a crash must still be validated even when the
+   capture is also non-compliant — then re-raises once at the end.
+
+Where an adapter genuinely differs it overrides a concrete method and says
+why in a comment. `FFmpeg.execute_test()` is a full override because
+FFmpeg's traffic only flows once the *last* process is up, so it arms
+capture on `after_last_start` rather than `after_first_start`.
+
+Dual-host runs a TX process on one host and an RX process on another and
+validates both applications. It does **not** capture packets; requesting
+compliance on a dual-host run raises immediately rather than silently
+skipping.
+
+### 2.3 Legacy modules
+
+`RxTxApp.py`, `ffmpeg_app.py`, and `GstreamerApp.py` predate the adapter
+model and are procedural (module-level functions, no `Application`
+subclass). Migration is **unfinished**, so they are far from dead:
+
+* `RxTxApp.py` — still the backend for all of `tests/dual/st20p|st30p|st40/`
+  and `tests/single/performance/` (28 importing test files). Note the
+  capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is the modern
+  adapter.
+* `ffmpeg_app.py` — command builders still called by the modern `ffmpeg.py`;
+  its validation logic is not reused.
+* `GstreamerApp.py` — the only GStreamer path; no GStreamer adapter yet.
+
+Do not extend these, and do not add a 29th `RxTxApp.py` importer. New work
+goes through `Application`.
+
+## 3. What a test case owns
+
+A test case is a **declaration of intent**, not a script. It should contain
+only: markers (suite + side classification, [§5.4](#54-compliance-is-a-tx-side-oracle-only)); `parametrize` over the
+dimension under test with `media_file` requested indirectly; fixture
+requests; a `config_params` dict built from media metadata and the
+parametrized dimension; `create_command()` then `execute_test()`; and any
+*extra* oracle the scenario needs.
+
+Everything else — VF creation, hugepages, IP allocation, media staging,
+capture arming, process reaping, log capture, CSV rows — belongs to fixtures
+and the adapter. A test that pokes at NIC state, sleeps to wait for a
+process, or removes its own files is doing framework work in the wrong
+place.
+
+Authoring rules are enforced by
+[mtl-validation-authoring.instructions.md](../.github/instructions/mtl-validation-authoring.instructions.md).
+
+## 4. Inputs: configuration, fixtures, and media
+
+### 4.1 The two config files
+
+| File                           | Answers                                                                                                                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configs/topology_config.yaml` | *What hardware exists* — hosts, roles (`sut`/`client`), their NICs by `pci_device` + `interface_index`, SSH connection details, per-host `extra_info` (`mtl_path`, `media_path`)       |
+| `configs/test_config.yaml`     | *How this run behaves* — `session_id` (drives IP subnets), default `test_time`, ramdisk sizes, `capture_cfg` (enable, pcap dir, sniff NIC, `phc_sync`), `ebu_server`, `interface_type` |
+
+`configs/gen_config.py` generates both from CLI arguments and resolves a BDF
+to `vendor:device`. `configs/examples/` holds minimal variants and
+`configs/README.md` documents every key.
+
+### 4.2 Fixture layers
+
+`topology`, `test_config`, and `hosts` come from the `pytest-mfd-config`
+plugin and are the root of everything else. Arrows below are real fixture
+arguments; note that `nic_port_list` and `setup_interfaces` are
+**independent** — tests request each directly.
 
 ```mermaid
-flowchart LR
-    C[Topology and test YAML] --> P[pytest fixtures]
-    T[Test case] --> A[Application adapter]
-    P --> I[Interface and host setup]
-    P --> A
-    P --> N[Packet capture]
-    I --> D[MTL DUT processes]
-    A --> D
-    D --> V[Application validation]
-    D --> M[Received media]
-    N --> E[EBU LIST]
-    M --> G[Integrity check]
-    V --> R[Test result and reports]
-    E --> R
-    G --> R
+flowchart TD
+    A[topology / test_config / hosts<br/><i>pytest-mfd-config</i>] --> B[nic_port_list<br/>session VF pool -> host.vfs]
+    A --> C[setup_interfaces<br/>InterfaceSetup, per test]
+    A --> D[media_ramdisk / prepare_ramdisk<br/>tmpfs for media and pcaps]
+    A --> E[mtl_manager<br/>MtlManager per host]
+    A --> F[ptp_sync<br/>only for @pytest.mark.ptp]
+    D --> G[media_file<br/>stage asset to ramdisk]
+    G --> H[pcap_capture<br/>ComplianceSession]
+    F --> H
+    D --> H
 ```
 
-The main layers are:
-
-| Layer | Responsibility |
-|---|---|
-| `configs/` | Describes hosts, NIC inventory, paths, capture policy, and external services |
-| `conftest.py` | Owns pytest lifecycle: topology loading, host preparation, VF pools, capture, clock helpers, cleanup, and reporting |
-| `common/` | Host-facing helpers such as NIC control, media integrity, and platform collection |
-| `mtl_engine/` | Application-independent execution plus adapters for RxTxApp and ecosystem applications |
-| `create_pcap_file/` and `compliance/` | Capture orchestration and EBU LIST integration |
-| `tests/single/` | End-to-end flows on one host |
-| `tests/dual/` | End-to-end flows split across hosts |
-
-The framework is adapter-based. A test chooses an application, builds its
-command/configuration through an adapter, and calls `execute_test()`. The base
-application layer starts bounded processes and delegates result validation to
-the selected adapter. RxTxApp, FFmpeg, and GStreamer therefore share test
-lifecycle and reporting while retaining application-specific configuration and
-oracles.
-
-## 3. Test lifecycle
-
-A typical test follows this sequence:
-
-1. **Load configuration.** `topology_config.yaml` becomes the host/NIC model;
-   `test_config.yaml` supplies paths and policies.
-2. **Prepare the host.** Fixtures ensure required host state and, when needed,
-   create reusable VF pools.
-3. **Allocate interfaces.** `InterfaceSetup` returns VF, PF, mixed, or
-   kernel-socket endpoints appropriate for the test.
-4. **Create the application.** The test supplies media, network, session, and
-   timing parameters to an application adapter.
-5. **Execute the flow.** The adapter writes any generated configuration,
-   starts one process (single-host) or a TX/RX pair (dual-host), and enforces
-   timeouts.
-6. **Evaluate selected oracles.** Application output is always validated by
-   the adapter. Integrity and packet compliance run only when the test requests
-   and configures them.
-7. **Clean up.** Per-test PF bindings, addresses, capture processes, output
-   files, and clock helpers are released. Session-scoped VF pools remain for
-   reuse.
-
-Tests should express media behavior and expected results. Hardware ownership,
-process lifetime, and cleanup belong in fixtures and framework helpers.
-
-## 4. Topology and interface ownership
-
-### Single-host topology
-
-TX and RX run on the same host. The framework convention is:
-
-- `network_interfaces[0]`: primary/TX side;
-- `network_interfaces[1]`: redundant or RX side.
-
-Several fixtures rely on this ordering. Extra interfaces should be appended,
-not inserted before the primary pair. When capture is auto-selected, the
-single-host heuristic chooses the highest-index interface as the receive-side
-capture port. Hosts with more complex NIC layouts should configure
-`capture_cfg.sniff_interface` explicitly rather than rely on this heuristic.
-
-### Dual-host topology
-
-TX and RX applications run on different hosts. The capture host is the host
-named `client`, when present, otherwise the first configured host. Automatic
-capture selection prefers a kernel PF without active VFs.
-
-The generic application executor validates both applications in dual-host
-mode. Packet-capture dispatch is currently integrated into its single-host
-execution path; dual-host tests must not assume that passing the application
-pair also ran EBU compliance.
-
-### VF mode
-
-VF is the default interface mode. The framework creates a session-scoped pool
-of SR-IOV VFs (normally up to six per participating PF), binds them for DPDK,
-and reuses them across tests. Reuse avoids repeated SR-IOV/VFIO teardown and
-keeps the suite practical and stable.
-
-### PF mode
-
-PF mode binds the selected physical port directly to `vfio-pci`. Before doing
-so, existing VFs on that PF are removed. The PF is rebound to its kernel driver
-during per-test cleanup.
-
-When capture is enabled, the capture port must remain kernel-owned for
-`netsniff-ng`. A PF used by DPDK cannot share an IOMMU group with that capture
-port. `InterfaceSetup` reads IOMMU groups from sysfs and excludes conflicting
-PFs. If no usable PF remains, the test **fails** (not skips): a PF test
-explicitly requesting capture is asserting the host has the hardware to
-support it, so a missing second card is a host-configuration defect the run
-should surface, not silently hide behind a SKIPPED result.
-
-On common dual-port E810/E830 systems, both ports of one card may share an
-IOMMU group. Such a host needs a second physical card (or otherwise genuinely
-separate IOMMU group) to run **PF mode and kernel packet capture together**.
-This is a conditional requirement, not a requirement for VF tests or PF tests
-with capture disabled.
-
-### Mixed and kernel modes
-
-The framework also supports scenarios where TX and RX use different interface
-types and hybrid PMD/kernel-socket tests. These require multiple topology
-interfaces and leave the kernel endpoint kernel-owned.
-
-## 5. Clock model
-
-Three independent settings are easy to confuse:
-
-| Mechanism | Owner | Purpose | External PTP grandmaster |
-|---|---|---|---|
-| Default application clock | MTL application | Normal media execution without `enable_ptp` | Not required by the framework |
-| `enable_ptp=True` | MTL application | Requests MTL's PTP/PHC path and adds startup time for synchronization | Required if the test intends to prove synchronization to network PTP time |
-| `@pytest.mark.ptp` | pytest fixture | Starts slave-only `ptp4l` on the capture interface and prevents `phc2sys` from competing for that PHC | Required for actual lock; the fixture currently checks process startup, not lock state |
-| `capture_cfg.phc_sync` | Capture fixture | Disciplines the capture NIC PHC from `CLOCK_REALTIME` plus the kernel TAI-UTC offset | Not required |
-
-### Normal and compliance tests
-
-Most tests do not start a PTP daemon and do not require a grandmaster. For
-ST 2110-21 capture analysis, the framework instead aligns the **capture PHC**
-to TAI locally:
-
-1. `CLOCK_REALTIME` supplies UTC;
-2. the live kernel `CLOCK_TAI - CLOCK_REALTIME` offset supplies leap seconds;
-3. `phc2sys` disciplines the capture PHC to that TAI value;
-4. capture waits for convergence before recording packets.
-
-This clock path exists only to give hardware capture timestamps the correct
-absolute timebase. It does not synchronize the DUT or prove network PTP lock.
-The host must have a valid kernel TAI-UTC offset; the framework warns, but does
-not stop, if the offset is zero.
-
-### PTP tests
-
-`enable_ptp` is an application option. The `ptp` pytest marker is fixture
-policy. They are independent and must be selected deliberately by the test.
-
-For a test that claims PTP synchronization, the network must provide a
-compatible grandmaster and the test should verify lock or offset explicitly.
-The current `ptp` fixture starts `ptp4l` in slave-only mode and verifies only
-that it stays running. Therefore the marker alone is not a PTP conformance
-oracle.
-
-When the capture PHC is already disciplined by external PTP, set
-`capture_cfg.phc_sync: false`; otherwise the local `phc2sys` helper would
-compete for the same clock. Marked PTP tests suppress this helper automatically.
-
-All `ptp4l` and `phc2sys` processes are reaped by process name at test/session
-boundaries. This is required because the SSH/sudo wrapper process is not the
-actual daemon and killing only the wrapper can leak clock owners into later
-NIC reconfiguration.
-
-## 6. Packet capture and compliance
-
-Packet capture uses a kernel-owned NIC and `netsniff-ng`. The framework relies
-on hardware RX timestamps and writes nanosecond pcap files so packet spacing is
-not reduced to interrupt-delivery timing.
-
-Capture-interface selection uses this priority:
-
-1. explicit `sniff_interface`;
-2. explicit `sniff_interface_index`;
-3. explicit `sniff_pci_device`;
-4. topology heuristic.
-
-Explicit selection is recommended in CI because it documents physical wiring
-and avoids ambiguity when DUT and capture cards are both present.
-
-A test using the `pcap_capture` fixture treats capture as enabled unless
-`capture_cfg.enable: false` is explicit. Capture is also disabled for 8K media,
-which the configured EBU analyser does not support.
-
-For single-host `Application.execute_test()` flows, capture is started after
-the application begins (and after the configured PTP startup allowance). The
-completed pcap is uploaded to EBU LIST. The result is recorded separately from
-the application result:
-
-- a non-compliant stream fails the test;
-- gapped ST 2110-21 video fails unless the test has
-  `allow_gapped_compliance`;
-- an analysis containing no streams is currently recorded as N/A;
-- missing EBU configuration, a missing pcap, or failure to dispatch the
-  required check is detected by fixture teardown and fails the test.
-
-A non-zero upload command currently logs an error and returns without a hard
-failure. This is a known limitation: CI must also monitor upload/connectivity
-errors until the compliance client makes that path fail closed.
-
-### Compliance scope: TX-side tests only
-
-EBU LIST compliance measures the on-wire pacing quality (VRX/Cinst, ST
-2110-21 gapped/linear scheduling) of what the TX side actually put on the
-wire. It says nothing about how the RX side subsequently processes that
-traffic. Consequently, `pcap_capture` must only be used by tests whose
-parametrized dimension or feature under test is TX-side: pacing mode,
-packing, transport/pixel format, ptime/sampling, interlace scheduling.
-
-Tests that parametrize a purely RX-side feature must not use `pcap_capture`:
-repeating the same compliance check across `rss_mode` values, for example, is
-wasted CI time and capture-analyser load, because RSS only changes how the
-NIC distributes *received* packets to RX queues and cannot change what the TX
-side transmits. The compliance verdict would be identical (modulo noise) for
-every `rss_mode` value, so the check adds no signal.
-
-### Test classification: `tx_side` / `rx_side` / `tx_and_rx` markers
-
-Every test should carry one of these markers to make its intended scope
-explicit and reviewable:
-
-- `tx_side`: validates a TX-side property (pacing, packing, transport
-  format, on-wire cadence). May use `pcap_capture`.
-- `rx_side`: validates a purely RX-side property (RSS queue distribution,
-  RX timing-parser analysis). Must not use `pcap_capture`.
-- `tx_and_rx`: validates both a TX-side property (compliance) and an
-  RX-side property (media integrity, or an RX-only feature flag) in the
-  same test.
-
-This classification is about which property the test *validates*, not the
-data flow of a single loopback run (nearly every single-host test carries
-traffic in both directions). A test that only checks the process exit code
-for an RX-side-only parametrization is still `rx_side`, not `tx_and_rx`.
-
-## 7. Test oracles and reporting
-
-### Application validation
-
-Every application adapter owns its functional oracle. For RxTxApp this
-includes process return status and session-specific result/log tokens. FFmpeg
-and GStreamer use their own adapter rules. This proves application-level
-operation, not payload identity or standards compliance.
-
-### Media integrity
-
-Integrity is test-owned, not a universal postcondition. Tests that need it run
-the video/audio integrity helpers against source and received files. Some of
-those tests consult `test_config.integrity_check` (defaulting to true when the
-key is absent); many tests do not implement an integrity step at all.
-
-### Packet compliance
-
-Compliance is independent of media integrity. It checks the captured network
-stream through EBU LIST and records a compliance result in the CSV/reporting
-state. It does not compare decoded media content.
-
-### Performance
-
-Performance tests use the same application validation but may set
-`fail_on_error=False` for intermediate capacity-search iterations. Their
-result is the sustainable workload or frame-rate target, not merely process
-survival.
-
-Pytest markers (`smoke`, `nightly`, `dual`, `ptp`, `performance`, and others)
-select suites or fixture policy. They do not add an oracle unless the marker is
-explicitly consumed by framework code. `tx_side`/`rx_side`/`tx_and_rx` (§6) are
-an exception in intent, though not enforced by fixture code today: they
-document test scope and should be checked in review, e.g. by rejecting a new
-`rx_side` test that also requests `pcap_capture`.
-
-## 8. Environment contract
-
-The framework assumes more than a normal unit-test runner:
-
-| Requirement | Framework behavior |
-|---|---|
-| Root-capable host access | Required for NIC, VFIO, capture, clock, and hugepage operations; not checked up front |
-| Validation build in `.local_install` | Application and library paths are resolved from this separate validation install tree |
-| Hugepages and supported NICs | Prepared/checked by host fixtures when the relevant interface fixtures are used |
-| SR-IOV | Required for VF-mode tests |
-| Kernel capture interface | Required when packet capture is enabled |
-| Separate IOMMU group | Enforced for PF-mode DUT plus kernel capture; test fails if unavailable |
-| Correct topology order/wiring | Operational convention; automatic selection cannot verify the cable or switch |
-| Media assets | Tests requiring absent assets skip or fail according to their fixture |
-| EBU LIST service | Required for compliance-enabled tests |
-| FFmpeg/GStreamer validation builds | Required only by their integration tests |
-| PTP grandmaster | Not needed for normal/local-clock tests; required for a meaningful network-PTP synchronization claim |
-
-Rather than satisfying this contract by hand, `.github/scripts/validation_setup.sh`
-discovers (`status`) and prepares (`setup`) it end-to-end — see
-[validation_quickstart.md § Recommended: Automated Setup Script](validation_quickstart.md#recommended-automated-setup-script).
-
-This contract should drive CI host design. A minimal VF functional runner can
-use one SR-IOV-capable card. A runner expected to cover PF mode and EBU packet
-capture needs a kernel-owned capture port in a different IOMMU group—typically
-a second card. A runner expected to validate network PTP additionally needs a
-grandmaster and a test oracle that confirms lock/offset, not only a running
-`ptp4l` process.
+Key policies encoded in fixtures, not in tests:
+
+* **Session-scoped VF pool.** `nic_port_list` creates up to six VFs per
+  participating PF once and stores them on `host.vfs` / `host.vfs_r`. Reuse
+  is deliberate: repeated SR-IOV teardown is slow and can hang on a held
+  VFIO group.
+* **Per-test allocation.** `setup_interfaces` yields an `InterfaceSetup`;
+  tests request `"VF"`, `"PF"`, `"VFxPF"`, mixed TX/RX types, or a
+  PMD+kernel-socket pair. Its `cleanup()` releases only what that test
+  created and rebinds PFs to the kernel driver.
+* **Autouse hygiene.** Stray `ptp4l`/`phc2sys` daemons are reaped, stale
+  DPDK processes holding `/dev/vfio/*` are killed, hugepage mappings are
+  wiped, and libraries are `ldconfig`-registered — all before the first
+  test.
+* **Cleanup is a fixture responsibility.** `output_files.register(path)` is
+  how a test asks for a file to be removed; `--keep all|failed|none`
+  controls retention.
+
+### 4.3 Media assets and NFS
+
+Assets live on a shared mount (conventionally NFS at `/mnt/media`), pointed
+to by `test_config.media_path` or a per-host `extra_info.media_path`. The
+framework treats it as an ordinary path — the OS mount abstracts NFS away,
+so remote and local hosts resolve the same string.
+
+`media_files.py` is the registry: each entry carries `filename`, `width`,
+`height`, `fps`, `file_format` (pixel format) and `format` (transport
+format). NTSC rates are stored **as rational strings** (`"5994/100"`) and
+truncated for the `pXX` label by `parse_fps_to_pformat()` (`→ "p59"`), which
+matters when comparing against external analysers reporting the exact
+rational.
+
+The `media_file` fixture copies the requested asset from the shared mount
+into the tmpfs ramdisk (so disk I/O is never the bottleneck) and returns
+`(info_dict, staged_path)`. A **missing source asset skips** the test — an
+environment gap, not a product defect. A failed copy **fails**.
+
+## 5. Oracles: what actually proves a pass
+
+Passing one oracle does not imply another ran. Tests opt in.
+
+| Oracle             | Code                                                    | Proves                                                             |
+| ------------------ | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| Application result | `validate_results()` per adapter                        | The process ran and its own log/result markers are good            |
+| Media integrity    | `mtl_engine/integrity_session.py` + `common/integrity/` | Received payload matches the source                                |
+| Packet compliance  | `mtl_engine/pcap_compliance.py` + `compliance/`         | The transmitted stream is valid ST 2110 with the expected schedule |
+| Performance        | `mtl_engine/performance_monitoring.py`                  | A workload sustains a target session count or frame rate           |
+| Reporting          | `csv_report.py`, `stash.py`                             | Not an oracle — the record of the above                            |
+
+### 5.1 Application result
+
+Adapter-owned. RxTxApp parses per-session-type result markers from stdout;
+FFmpeg checks mode-specific output (frame counts, file sizes). This proves
+operation, not payload identity or standards conformance.
+
+### 5.2 Media integrity
+
+Test-owned and explicit. `mtl_engine/integrity.py` provides direct
+comparisons (`check_st20p_integrity` hashes each frame,
+`check_st30p_integrity` compares audio buffers) plus the size calculators
+they need. The `common/integrity/` runners wrap the same idea for file and
+streaming modes. Some tests gate this on `test_config.integrity_check`; many
+implement no integrity step at all.
+
+### 5.3 Packet compliance
+
+`ComplianceSession` owns one capture and one verdict for one test:
+`enabled` / `skip(reason)` / `arm(intent)` / `evaluate(intent)` / `close()`.
+`NO_COMPLIANCE` is the null-object stand-in, so no caller needs a `None`
+check. `NetsniffRecorder` underneath is capture-only and holds no compliance
+state.
+
+Capture uses a kernel-owned NIC via `netsniff-ng` with hardware RX
+timestamps into nanosecond pcaps, so packet spacing reflects the wire and
+not interrupt delivery. Interface selection priority: explicit
+`sniff_interface` → `sniff_interface_index` → `sniff_pci_device` → topology
+heuristic. Prefer explicit in CI; it documents the wiring.
+
+`evaluate()` uploads the pcap to EBU LIST and fails the test when the report
+disagrees with the `CaptureIntent` — ST 2110-21 schedule (narrow or
+narrow_linear unless `allow_wide_compliance`), packing mode, resolution,
+sampling + colour depth, and frame rate. A failed upload or an unparseable
+response fails the test; it never silently passes. Capture is disabled for
+8K, which the analyser does not support. A test that requests `pcap_capture`
+but never dispatches it fails in teardown.
+
+### 5.4 Compliance is a TX-side oracle only
+
+EBU LIST measures what the TX side put on the wire and says nothing about
+how RX processes that traffic. So `pcap_capture` belongs only to tests whose
+parametrized dimension is TX-side. Parametrizing a purely RX-side feature
+(e.g. `rss_mode`) over compliance is wasted CI time and analyser load — the
+verdict is identical for every value.
+
+This is why every test carries exactly one of `tx_side` / `rx_side` /
+`tx_and_rx`, describing the property it *validates* rather than the data
+flow (nearly every single-host test loops traffic both ways). `rx_side`
+tests must not request `pcap_capture`. Not enforced by fixture code today;
+enforce it in review.
+
+## 6. Remote-proofing: the `mfd` abstraction
+
+Nothing in the framework shells out directly. Every command goes through a
+host object supplied by the `pytest-mfd-config` plugin — see the harness
+instructions for the exact call surface.
+
+| Package               | Provides                                                                         |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `pytest-mfd-config`   | The `topology`, `test_config`, and `hosts` fixtures; `TopologyModel`             |
+| `mfd-connect`         | `SSHConnection` / `LocalConnection`, `execute_command`, `start_process`, `path`  |
+| `mfd-network-adapter` | `NetworkInterface`: `.name`, `.pci_address`, `.virtualization.get_current_vfs()` |
+| `mfd-common-libs`     | Structured logging levels (`TEST_FAIL`, `TEST_INFO`, `TEST_PASS`)                |
+
+This is what makes the design **remote-proof**: swapping
+`connection_type: LocalConnection` for `SSHConnection` in
+`topology_config.yaml` moves an entire suite to another machine with zero
+test edits, and dual-host tests are just two host objects instead of one.
+The corollary is a discipline: **never use `subprocess` or a hardcoded
+interface name.** Either silently breaks the moment the host is not local.
+
+`host.topology.role` (`sut` vs `client`) is how dual-host tests and capture
+selection decide which machine does what.
+
+## 7. Topology and interface rules
+
+**Single-host ordering convention:** `network_interfaces[0]` is primary/TX,
+`network_interfaces[1]` is redundant/RX. Several fixtures depend on this;
+append extra interfaces, never insert before the primary pair. Auto-selected
+capture takes the highest-index interface — configure
+`capture_cfg.sniff_interface` explicitly on hosts with more complex layouts.
+
+**Dual-host:** the capture host is the one named `client` when present,
+otherwise the first host; auto-selection prefers a kernel PF with no active
+VFs.
+
+**VF mode** (the default) uses the session pool described in [§4.2](#42-fixture-layers). **PF
+mode** binds the physical port to `vfio-pci`, removing existing VFs first,
+and rebinds to the kernel driver during cleanup.
+
+**PF mode plus capture requires separate IOMMU groups.** The capture port
+must stay kernel-owned, so a DPDK-bound PF may not share its IOMMU group.
+`InterfaceSetup._check_pf_not_capture_group()` compares the requested PF's
+group against the capture NIC's and calls `pytest.fail()` on a match — it
+does not fall back to another PF. This **fails rather than skips** because a
+PF test that asked for capture is asserting the host has the hardware. On
+common dual-port E810/E830 systems both ports share one group, so this
+combination needs a second physical card.
+
+## 8. Clock model
+
+Four independent mechanisms, easily confused:
+
+| Mechanism                 | Owner           | Purpose                                                                   | Needs a grandmaster              |
+| ------------------------- | --------------- | ------------------------------------------------------------------------- | -------------------------------- |
+| Default application clock | MTL app         | Normal execution                                                          | No                               |
+| `enable_ptp=True`         | MTL app         | Requests MTL's PTP/PHC path, adds startup time                            | Only to *prove* network-PTP sync |
+| `@pytest.mark.ptp`        | Fixture         | Runs slave-only `ptp4l` on the capture NIC and suppresses `phc2sys` there | Yes, for real lock               |
+| `capture_cfg.phc_sync`    | Capture fixture | Disciplines the capture PHC from `CLOCK_REALTIME` + kernel TAI-UTC offset | No                               |
+
+For ordinary compliance runs no PTP daemon is involved: the framework gives
+capture timestamps a correct absolute timebase locally (UTC from
+`CLOCK_REALTIME`, leap seconds from the live `CLOCK_TAI − CLOCK_REALTIME`
+offset, `phc2sys` onto the capture PHC). This does not synchronise the DUT
+and does not prove network PTP lock.
+
+Two traps. The `ptp_sync` fixture checks once at startup that `ptp4l`
+launched and never re-checks, so **[the `@pytest.mark.ptp` marker](#8-clock-model) is not a PTP
+conformance oracle** — a test claiming synchronisation must check lock or
+offset itself. The fixture also early-returns when `capture_cfg.enable` is
+falsy, making the marker a no-op with capture disabled.
+
+All `ptp4l`/`phc2sys` processes are reaped by **process name** at test and
+session boundaries. The SSH/sudo wrapper is not the daemon, so killing only
+the wrapper leaks a clock owner into later NIC reconfiguration.
+
+## 9. Environment contract
+
+| Requirement               | Behaviour when unmet                                                     |
+| ------------------------- | ------------------------------------------------------------------------ |
+| Root-capable host access  | Needed for NIC/VFIO/capture/clock/hugepages; not pre-checked             |
+| Build in `.local_install` | All app paths resolve here, **not** `build/` — see `mtl_engine/const.py` |
+| Hugepages, supported NIC  | Prepared by host fixtures                                                |
+| SR-IOV                    | Required for VF mode                                                     |
+| Kernel-owned capture NIC  | Required when capture is enabled                                         |
+| Separate IOMMU group      | Enforced for PF mode + capture; test fails                               |
+| Topology order/wiring     | Convention; auto-selection cannot verify a cable                         |
+| Media assets              | Missing asset skips the test                                             |
+| EBU LIST service          | Required for compliance-enabled tests                                    |
+| FFmpeg/GStreamer builds   | Required only by their tests                                             |
+| PTP grandmaster           | Only for a real network-PTP claim                                        |
+
+`.github/scripts/validation_setup.sh` discovers (`status`) and prepares
+(`setup`) this contract end-to-end — see
+[validation_quickstart.md](validation_quickstart.md#recommended-automated-setup-script).

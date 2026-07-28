@@ -11,6 +11,9 @@ pixel format round-trips intact, latency stays bounded). It must not be written
 against one framework's mechanics. Follow this paradigm — [test_fps.py](../../tests/validation/tests/single/st20p/test_fps.py)
 is the reference.
 
+Architecture: [doc/validation-design.md](../../doc/validation-design.md) §3, §5.
+Running and debugging: [mtl-validation-tests.instructions.md](mtl-validation-tests.instructions.md).
+
 ## 1. Parametrize by `application`
 
 ```python
