@@ -89,7 +89,7 @@ def test_st20p_422p10le(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )
 
 
@@ -152,7 +152,7 @@ def test_st20p_convert_on_rx(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )
 
 
@@ -215,5 +215,5 @@ def test_st20p_tx_rx_conversion(
         build=mtl_path,
         test_time=test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )

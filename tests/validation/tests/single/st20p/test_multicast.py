@@ -79,5 +79,5 @@ def test_st20p_multicast(
         build=mtl_path,
         test_time=actual_test_time,
         host=host,
-        netsniff=pcap_capture,
+        compliance=pcap_capture,
     )

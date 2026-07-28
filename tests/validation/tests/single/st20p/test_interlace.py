@@ -81,5 +81,5 @@ def test_st20p_interlace(
     app.create_command(**config_params)
     actual_test_time = max(test_time, 10)
     app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host, compliance=pcap_capture
     )
