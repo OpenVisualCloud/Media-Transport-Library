@@ -1,6 +1,6 @@
-# ST40 Ancillary Validation Updates
+# ST40 Ancillary Acceptance Tests Updates
 
-This note captures all recent ST40/ST40p feature changes and the accompanying validation coverage. It is intentionally verbose so reviewers and CI users can see what changed, how to exercise it, and what signals to look for.
+This note captures all recent ST40/ST40p feature changes and the accompanying acceptance_tests coverage. It is intentionally verbose so reviewers and CI users can see what changed, how to exercise it, and what signals to look for.
 
 ## What changed (feature highlights)
 
@@ -13,7 +13,7 @@ This note captures all recent ST40/ST40p feature changes and the accompanying va
 The `interlaced` field in RX ops serves as the initial value before the first F bits arrive. Set `ST40P_RX_FLAG_DISABLE_AUTO_DETECT` (or `rx-disable-auto-detect=true` in GStreamer) to skip auto-detection and use the `interlaced` field as-is (`interlaced=true` forces interlaced mode, `interlaced=false` forces progressive mode).
 - **Auto-detect reset on discontinuity:** A sequence gap (`seq_discont>0`) clears the interlace detection state; RX re-learns cadence from subsequent F bits and continues logging `second_field`/`interlaced` per field.
 - **Warnings when cadence is unknown:** Pipeline RX and the GStreamer RX plugin log auto-detect status on attach.
-- **Integration safety nets:** New noctx integration tests for ST40 interlaced flows, and expanded GStreamer validation tests across single-host and dual-host (VF/VF) paths.
+- **Integration safety nets:** New noctx integration tests for ST40 interlaced flows, and expanded GStreamer acceptance_tests coverage across single-host and dual-host (VF/VF) paths.
 
 ## Data path (split ANC per RTP)
 
@@ -77,9 +77,9 @@ flowchart LR
 
 ## Test coverage (what now runs)
 
-### Validation (GStreamer, single host VF→VF)
+### Acceptance Tests (GStreamer, single host VF→VF)
 
-- **Throughput/fidelity sweeps:** [tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py](tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py)
+- **Throughput/fidelity sweeps:** [tests/acceptance/tests/single/gstreamer/anc_format/test_anc_format.py](tests/acceptance/tests/single/gstreamer/anc_format/test_anc_format.py)
   - `test_st40p_fps_size` — sweeps fps ∈ {24,25,30,50,60,100,120} and payload sizes 10/100 KB at framebuff=3. Verifies byte-for-byte capture and ensures frame-info summaries are emitted for every matrix point.
   - `test_st40p_framebuff` — holds fps=60, payload=100 KB, sweeps framebuff ∈ {1,3,6,12}; checks RX stability vs buffer depth and logs frame-info for each run.
   - `test_st40p_format_8331` — RFC8331 pseudo payload mode across fps and framebuff sweeps with metadata capture enabled; confirms DID/SDID handling while frame-info shows packet/marker continuity.
@@ -154,12 +154,12 @@ flowchart TD
 
 ## Where to look in tree
 
-- Docs: [doc/design.md](doc/design.md) (ST40 section), [doc/validation-design.md](doc/validation-design.md)
+- Docs: [doc/design.md](doc/design.md) (ST40 section), [doc/acceptance-design.md](doc/acceptance-design.md)
 - APIs: [include/st40_api.h](include/st40_api.h), [include/st40_pipeline_api.h](include/st40_pipeline_api.h)
 - Plugin: [ecosystem/gstreamer_plugin/gst_mtl_st40p_tx.c](ecosystem/gstreamer_plugin/gst_mtl_st40p_tx.c), [ecosystem/gstreamer_plugin/gst_mtl_st40p_rx.c](ecosystem/gstreamer_plugin/gst_mtl_st40p_rx.c)
 - Pipeline impl: [lib/src/st2110/pipeline/st40_pipeline_tx.c](lib/src/st2110/pipeline/st40_pipeline_tx.c), [lib/src/st2110/pipeline/st40_pipeline_rx.c](lib/src/st2110/pipeline/st40_pipeline_rx.c)
 - Tests:
-  - [tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py](tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py)
-  - [tests/validation/tests/dual/gstreamer/anc_format/test_anc_format_dual.py](tests/validation/tests/dual/gstreamer/anc_format/test_anc_format_dual.py)
+  - [tests/acceptance/tests/single/gstreamer/anc_format/test_anc_format.py](tests/acceptance/tests/single/gstreamer/anc_format/test_anc_format.py)
+  - [tests/acceptance/tests/dual/gstreamer/anc_format/test_anc_format_dual.py](tests/acceptance/tests/dual/gstreamer/anc_format/test_anc_format_dual.py)
   - [tests/integration_tests/noctx/testcases/st40i_tests.cpp](tests/integration_tests/noctx/testcases/st40i_tests.cpp)
   - [tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp](tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp)

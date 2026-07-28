@@ -55,14 +55,14 @@ jobs:
         run: |
           echo "MTL source: ${{ inputs.branch }}"
           echo "Test framework: ${{ github.sha }} (${{ github.ref_name }})"
-          git checkout ${{ github.sha }} -- tests/validation/ .github/
+          git checkout ${{ github.sha }} -- tests/acceptance/ .github/
       - name: 'preparation: Validate host and download artifacts'
         id: validate
         uses: ./.github/actions/validate-host
         with:
           shadow_host: '${{ secrets.SHADOW_HOST }}'
       - name: Install pytest dependencies
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           python3 -m venv ./.venv
           source ./.venv/bin/activate
@@ -74,7 +74,7 @@ jobs:
       - name: Set PCI device
         run: echo "PCI_DEVICE=${{ secrets.PERF_PCI_DEVICE || '8086:12d2,8086:12d2' }}" >> "$GITHUB_ENV"
       - name: Generate pytest configuration files
-        working-directory: ./tests/validation/configs
+        working-directory: ./tests/acceptance/configs
         run: |
           source ../.venv/bin/activate
           SHADOW_IP="${{ steps.validate.outputs.shadow_host_ip }}"
@@ -91,7 +91,7 @@ jobs:
       - name: Export workflow tag for PCAP naming
         run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
       - name: Run performance tests
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           ./.venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
@@ -105,7 +105,7 @@ jobs:
             "./tests/dual/performance"
       - name: Generate performance report
         if: always()
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           if [ -d logs/performance ]; then
             ./.venv/bin/python3 common/generate_report.py \
@@ -120,8 +120,8 @@ jobs:
         with:
           name: "perf-test-report-${{ runner.name }}-${{ env.CURRENT_DATE }}"
           path: |
-            ./tests/validation/report.html
-            ./tests/validation/performance_report.html
+            ./tests/acceptance/report.html
+            ./tests/acceptance/performance_report.html
       - name: Clean up
         if: always()
         uses: ./.github/actions/cleanup

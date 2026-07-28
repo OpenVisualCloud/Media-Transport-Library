@@ -57,7 +57,7 @@ jobs:
         uses: ./.github/actions/cleanup
 
       - name: 'installation: Install pipenv environment'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         id: pipenv-install
         run: |
           python3 -m venv .venv
@@ -79,7 +79,7 @@ jobs:
             echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
-        working-directory: tests/validation/configs
+        working-directory: tests/acceptance/configs
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
@@ -96,7 +96,7 @@ jobs:
         run: |
           echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           .venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
@@ -122,7 +122,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
-          path: ./tests/validation/report.html
+          path: ./tests/acceptance/report.html
 
       - name: 'cleanup: Kill test processes'
         if: always()

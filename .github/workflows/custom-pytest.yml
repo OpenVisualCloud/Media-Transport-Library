@@ -20,7 +20,7 @@ on:
         required: false
         type: string
       dir:
-        description: 'Directory (subdirectory of tests/validation) or a specific test path'
+        description: 'Directory (subdirectory of tests/acceptance) or a specific test path'
         required: true
         type: string
         default: tests
@@ -66,7 +66,7 @@ jobs:
         with:
           shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || secrets.SHADOW_HOST) || '' }}
       - name: Install pytest dependencies
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           python3 -m venv ./.venv
           source ./.venv/bin/activate
@@ -87,7 +87,7 @@ jobs:
             echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
           fi
       - name: Generate pytest configuration files
-        working-directory: ./tests/validation/configs
+        working-directory: ./tests/acceptance/configs
         run: |
           python3 gen_config.py \
             --session_id "${{ env.SESSION_ID }}" \
@@ -108,7 +108,7 @@ jobs:
         uses: ./.github/actions/cleanup
 
       - name: Run tests
-        working-directory: ./tests/validation
+        working-directory: ./tests/acceptance
         run: |
           ./.venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
@@ -125,7 +125,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: "custom-test-report-${{ env.CURRENT_DATE }}"
-          path: ./tests/validation/report.html
+          path: ./tests/acceptance/report.html
 
       - name: 'cleanup: Kill test processes'
         if: always()

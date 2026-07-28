@@ -3,41 +3,41 @@
 # Copyright 2026 Intel Corporation
 #
 # Read-only discovery helpers for preparing a host to run
-# tests/validation/tests/single/ pytest.
+# tests/acceptance/tests/single/ pytest.
 #
 # This file defines no side effects — every vd_* function only reads system
 # state (sysfs/procfs/pkg-config/etc.) and either prints a report or returns
 # data on stdout for a caller to parse. It is meant to be `source`d by:
-#   - validation_setup.sh (the interactive/auto CLI entry point)
-#   - validation_setup_base.sh (broad host setup, for before/after checks)
-#   - the mtl-validation-setup MCP server (via mtl_setup_common.py), so the
+#   - acceptance_setup.sh (the interactive/auto CLI entry point)
+#   - acceptance_setup_base.sh (broad host setup, for before/after checks)
+#   - the mtl-acceptance-setup MCP server (via mtl_setup_common.py), so the
 #     shell script and the MCP tool report identical status instead of two
 #     hand-maintained copies of the same probing logic.
 #
 # Usage: source this file, then call the vd_* functions. It can also be run
-# directly as `bash mtl_validation_discover.sh` to print the full report.
+# directly as `bash mtl_acceptance_discover.sh` to print the full report.
 
 # Guard against double-sourcing.
-if [[ -n "${_MTL_VALIDATION_DISCOVER_SH_:-}" ]]; then
+if [[ -n "${_MTL_ACCEPTANCE_DISCOVER_SH_:-}" ]]; then
 	# shellcheck disable=SC2317 # exit is reached when run directly, not sourced
 	return 0 2>/dev/null || exit 0
 fi
-_MTL_VALIDATION_DISCOVER_SH_=1
+_MTL_ACCEPTANCE_DISCOVER_SH_=1
 
 VD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VD_REPO_ROOT="$(cd "$VD_LIB_DIR/../../.." && pwd)"
 VD_LOCAL_PREFIX_DEFAULT="$VD_REPO_ROOT/.local_install/mtl"
 
-# Generic (non-validation-specific) host helpers — hugepages, CPU governor,
+# Generic (non-acceptance-specific) host helpers — hugepages, CPU governor,
 # ICE driver — shared with the mtl-system-setup MCP server's Python code, so
 # there is exactly one implementation of each.
 # shellcheck source=mtl_host_common.sh disable=SC1091
 source "$VD_LIB_DIR/mtl_host_common.sh"
 
 # Intel E810/E830/E825/E835 PCI vendor:device IDs — matches the vendor/device
-# check already used by .github/scripts/setup_validation.sh's preflight stage
+# check already used by .github/scripts/setup_acceptance.sh's preflight stage
 # and gen_config.py's PF autodetection, so all three agree on what a valid
-# validation PF looks like.
+# acceptance-tests PF looks like.
 VD_INTEL_NIC_VENDOR_DEVICE_RE='8086:(1592|12d2|579d|1249)'
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ vd_report_ice_driver() {
 	echo "- Live version: $(vd_ice_live_version)"
 	echo "- Live module path: $(mh_ice_live_path)"
 	if [[ "$status" != "OK" ]]; then
-		echo "- Fix: run 'validation_setup.sh setup --base-only' (auto-detects and"
+		echo "- Fix: run 'acceptance_setup.sh setup --base-only' (auto-detects and"
 		echo "       rebuilds if needed) or 'SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 bash .github/scripts/setup_environment.sh'"
 	fi
 }
@@ -185,9 +185,9 @@ vd_report_nfs() {
 # ---------------------------------------------------------------------------
 vd_report_venv_configs() {
 	echo "## Pytest venv / configs"
-	echo "- tests/validation/venv: $([[ -x "$VD_REPO_ROOT/tests/validation/venv/bin/python3" ]] && echo OK || echo MISSING)"
-	local topo="$VD_REPO_ROOT/tests/validation/configs/topology_config.yaml"
-	local tcfg="$VD_REPO_ROOT/tests/validation/configs/test_config.yaml"
+	echo "- tests/acceptance/venv: $([[ -x "$VD_REPO_ROOT/tests/acceptance/venv/bin/python3" ]] && echo OK || echo MISSING)"
+	local topo="$VD_REPO_ROOT/tests/acceptance/configs/topology_config.yaml"
+	local tcfg="$VD_REPO_ROOT/tests/acceptance/configs/test_config.yaml"
 	echo "- topology_config.yaml: $([[ -f "$topo" ]] && echo OK || echo MISSING)"
 	echo "- test_config.yaml: $([[ -f "$tcfg" ]] && echo OK || echo MISSING)"
 	if [[ -f "$tcfg" ]]; then
@@ -217,7 +217,7 @@ vd_full_report() {
 	vd_report_venv_configs
 }
 
-# Allow `bash mtl_validation_discover.sh` to print the full report directly.
+# Allow `bash mtl_acceptance_discover.sh` to print the full report directly.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	vd_full_report "$@"
 fi

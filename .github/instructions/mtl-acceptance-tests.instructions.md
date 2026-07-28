@@ -1,17 +1,17 @@
 ---
-description: "Use when the user asks to RUN, collect, debug, or diagnose pytest cases under tests/validation/tests/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/validation/logs/. For AUTHORING new cases see mtl-validation-authoring.instructions.md. For host setup (build, hugepages, NFS, configs): call `.github/scripts/validation_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-validation-setup` MCP tools directly — no dedicated agent."
-name: "MTL Validation — Run Tests"
-applyTo: "tests/validation/tests/single/**"
+description: "Use when the user asks to RUN, collect, debug, or diagnose pytest cases under tests/acceptance/tests/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/acceptance/logs/. For AUTHORING new cases see mtl-acceptance-authoring.instructions.md. For host setup (build, hugepages, NFS, configs): call `.github/scripts/acceptance_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-acceptance-setup` MCP tools directly — no dedicated agent."
+name: "MTL Acceptance Tests — Run Tests"
+applyTo: "tests/acceptance/tests/single/**"
 ---
 
 # Running MTL Validation pytest
 
-Scope: `tests/validation/tests/single/` only. `dual/` needs two hosts.
+Scope: `tests/acceptance/tests/single/` only. `dual/` needs two hosts.
 
 ## Health check first
 
 ```bash
-./.github/scripts/validation_setup.sh status    # read-only; names the broken stage
+./.github/scripts/acceptance_setup.sh status    # read-only; names the broken stage
 ```
 
 This covers kernel/CPU, hugepages, governor, ICE driver, NIC PFs,
@@ -19,10 +19,10 @@ This covers kernel/CPU, hugepages, governor, ICE driver, NIC PFs,
 `setup --base-only` (build/driver/hugepages) or `setup --pytest-only`
 (NFS, SSH, venv, configs); both are idempotent. Rows tagged **(setup)** below
 are all fixed this way. Full reference:
-[validation_quickstart.md](../../doc/validation_quickstart.md).
+[acceptance_quickstart.md](../../doc/acceptance_quickstart.md).
 
 **Pytest needs `.local_install/mtl/bin/{MtlManager,RxTxApp}`, NOT `build/manager/MtlManager`
-or `tests/tools/RxTxApp/build/RxTxApp`.** `tests/validation/mtl_engine/const.py` hardcodes
+or `tests/tools/RxTxApp/build/RxTxApp`.** `tests/acceptance/mtl_engine/const.py` hardcodes
 `PREFIX = ".local_install"` — every app path pytest invokes (RxTxApp, MtlManager, ffmpeg,
 gstreamer) resolves under `.local_install/{mtl,ffmpeg,gstreamer}/...`, a separate tree from
 the system-wide `build/` + `/usr/local` install gtest/KahawaiTest uses. Symptom when this is
@@ -38,7 +38,7 @@ Some failure rows below assume `gdb` is installed (`sudo apt install -y gdb`).
 
 ## Hard rules
 
-- Invoke as `sudo -E ./venv/bin/python3 -m pytest …` from `tests/validation/`. System python lacks `pytest_mfd_config` etc.
+- Invoke as `sudo -E ./venv/bin/python3 -m pytest …` from `tests/acceptance/`. System python lacks `pytest_mfd_config` etc.
 - Always pass `--topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml`.
 - Tests run as **root over SSH-to-localhost** even on a single host.
 - Never edit `conftest.py`, `common/`, or `mtl_engine/` to "fix" a test — fix the env/config.
@@ -46,7 +46,7 @@ Some failure rows below assume `gdb` is installed (`sudo apt install -y gdb`).
 ## Selectors
 
 ```bash
-cd tests/validation
+cd tests/acceptance
 PY="sudo -E ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml"
 
 $PY -m smoke -v                                              # marker
@@ -59,7 +59,7 @@ $PY <selector> --collect-only -q                             # dry run
 
 Selection markers: `smoke` (smallest), `nightly` (bulk single-host), `performance` (long,
 hardware-bound). The full marker set and its authoring rules live in
-[mtl-validation-authoring.instructions.md](mtl-validation-authoring.instructions.md#markers).
+[mtl-acceptance-authoring.instructions.md](mtl-acceptance-authoring.instructions.md#markers).
 
 ## Backend per category
 
@@ -72,12 +72,12 @@ hardware-bound). The full marker set and its authoring rules live in
 
 ## Logs
 
-`tests/validation/logs/<UTC>/` (root-owned), with `logs/latest` symlink. Per-test `.log` files plus
+`tests/acceptance/logs/<UTC>/` (root-owned), with `logs/latest` symlink. Per-test `.log` files plus
 MtlManager + RxTxApp/ffmpeg/gst output and rendered JSON configs.
 
 ```bash
 sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
-  tests/validation/logs/latest/*.log | head -40
+  tests/acceptance/logs/latest/*.log | head -40
 ```
 
 ## Failure → fix
@@ -85,7 +85,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | Symptom | Fix |
 |---|---|
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
-| `unrecognized arguments: --topology_config` | Run from `tests/validation/` (local `conftest.py` registers the plugin). |
+| `unrecognized arguments: --topology_config` | Run from `tests/acceptance/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
 | `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `--ebu-ip=`/`--ebu-user=`/`--ebu-password=`/`--capture-pci-device=` (ask the user first) so `ebu_server`/`capture_cfg` get populated in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
@@ -93,20 +93,20 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
 | `RemoteProcessInvalidState: Process is finished` (ffmpeg) | **(setup)** In-repo ffmpeg/libav not installed. |
 | RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run setup (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd .local_install/mtl/bin/RxTxApp` has no `not found`. |
-| `RuntimeError: Failed to start MtlManager on host` (pytest `mtl_manager` fixture, setup error not a test failure) | **(setup)** `.local_install/mtl/bin/MtlManager` missing — the host only has the system-wide gtest build. Run `validation_setup.sh setup --base-only`; the `build_mtl`/`dpdk_build` MCP tools target `build/` + `/usr/local` instead, which pytest doesn't use. |
+| `RuntimeError: Failed to start MtlManager on host` (pytest `mtl_manager` fixture, setup error not a test failure) | **(setup)** `.local_install/mtl/bin/MtlManager` missing — the host only has the system-wide gtest build. Run `acceptance_setup.sh setup --base-only`; the `build_mtl`/`dpdk_build` MCP tools target `build/` + `/usr/local` instead, which pytest doesn't use. |
 | `Media file not present on <host>: /mnt/media/...` (SKIPPED) | **(setup)** NFS empty/unmounted. ASK the user for the NFS source; never skip silently. |
 | `cp: cannot stat /mnt/media/...` | **(setup)** Same — NFS not populated. |
 | `mount: bad option ... mount.<type> helper` | **(setup)** `nfs-common` missing. |
 | `SSHConnection.__init__() missing … 'password'` | **(setup)** Topology needs `password: ''`. |
 | `Incorrect format … PCIDevice` / `not found on host` | **(setup)** `pci_device` must be `vendor:device`, not BDF. |
 | `TypeError: 'ExtraInfoModel' object is not subscriptable` | **(setup)** Stale `extra_info.custom_interface`. |
-| `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. Config generation patches this automatically; if it's still a raw BDF the config predates that fix, so regenerate it with `validation_setup.sh setup --pytest-only`. |
+| `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. Config generation patches this automatically; if it's still a raw BDF the config predates that fix, so regenerate it with `acceptance_setup.sh setup --pytest-only`. |
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** Stock kernel ice loaded instead of the MTL out-of-tree patched ice (`versions.env::ICE_VER`). Re-run setup — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
 | `Permission denied (publickey)` to `root@127.0.0.1` | **(setup)** Pubkey not in `/root/.ssh/authorized_keys`. |
 
-**(setup)** = re-run `.github/scripts/validation_setup.sh setup` — `--base-only` for
+**(setup)** = re-run `.github/scripts/acceptance_setup.sh setup` — `--base-only` for
 build/driver/hugepage problems, `--pytest-only` for NFS/SSH/venv/config problems. Both are
 idempotent and safe to re-run on an already-prepared host.
 
@@ -118,7 +118,7 @@ Selector + counts (`X passed, Y failed, Z skipped`); for each FAIL/ERROR: 1-line
 
 ## See also
 
-Authoring new cases: [mtl-validation-authoring.instructions.md](mtl-validation-authoring.instructions.md) ·
-Architecture: [validation-design.md](../../doc/validation-design.md) ·
-Setup, configuration, troubleshooting: [validation_quickstart.md](../../doc/validation_quickstart.md) ·
-[tests/validation/README.md](../../tests/validation/README.md)
+Authoring new cases: [mtl-acceptance-authoring.instructions.md](mtl-acceptance-authoring.instructions.md) ·
+Architecture: [acceptance-design.md](../../doc/acceptance-design.md) ·
+Setup, configuration, troubleshooting: [acceptance_quickstart.md](../../doc/acceptance_quickstart.md) ·
+[tests/acceptance/README.md](../../tests/acceptance/README.md)

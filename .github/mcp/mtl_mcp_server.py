@@ -71,8 +71,8 @@ mcp = FastMCP(
         • Debug crash:        dmesg_tail → ice_driver_status → dpdk_status →
                              log_tail
 
-        Preparing tests/validation/ pytest (a separate .local_install tree)?
-        Use the sibling `mtl-validation-setup` MCP server instead.
+        Preparing tests/acceptance/ pytest (a separate .local_install tree)?
+        Use the sibling `mtl-acceptance-setup` MCP server instead.
     """
     ),
 )
@@ -80,7 +80,7 @@ mcp = FastMCP(
 
 # ---------------------------------------------------------------------------
 # Helpers local to this server (NIC/VF discovery — not needed by the
-# validation server, so not shared via mtl_setup_common)
+# acceptance-tests server, so not shared via mtl_setup_common)
 # ---------------------------------------------------------------------------
 def _validate_bdf(bdf: str) -> str | None:
     """Return error string if BDF is invalid, else None."""
@@ -1476,7 +1476,7 @@ def log_tail(
     Tail MTL-related log files.
 
     Args:
-        source: Log source — 'mtl_manager', 'dmesg', 'validation', 'syslog'.
+        source: Log source — 'mtl_manager', 'dmesg', 'acceptance_tests', 'syslog'.
         lines: Number of lines to show (default 50, max 200).
         filter_str: Optional grep filter (alphanumeric, dots, dashes, colons,
             spaces only — other characters are stripped).
@@ -1492,21 +1492,21 @@ def log_tail(
     if source == "dmesg":
         return dmesg_tail(lines, filter_str)
 
-    if source == "validation":
-        # Find latest validation log — resolve and verify it's under REPO_ROOT
+    if source == "acceptance_tests":
+        # Find latest acceptance_tests log — resolve and verify it's under REPO_ROOT
         latest = _run_output(
-            "ls -t tests/validation/logs/*/output.log 2>/dev/null | head -1",
+            "ls -t tests/acceptance/logs/*/output.log 2>/dev/null | head -1",
             cwd=REPO_ROOT,
         )
         if not latest or "No such file" in latest:
-            return "No validation logs found at tests/validation/logs/"
+            return "No acceptance_tests logs found at tests/acceptance/logs/"
         log_file = os.path.realpath(os.path.join(str(REPO_ROOT), latest.strip()))
         if not log_file.startswith(str(REPO_ROOT)):
-            return "Error: validation log path resolved outside repository."
+            return "Error: acceptance_tests log path resolved outside repository."
     elif source in log_paths:
         log_file = log_paths[source]
     else:
-        return f"Error: unknown source '{source}'. Use: mtl_manager, dmesg, validation, syslog."
+        return f"Error: unknown source '{source}'. Use: mtl_manager, dmesg, acceptance_tests, syslog."
 
     cmd = f"sudo tail -n {int(lines)} {log_file}"
     if filter_str:

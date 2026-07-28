@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Broad host setup for tests/validation/ pytest — builds the SEPARATE
-# `.local_install` tree (see tests/validation/mtl_engine/const.py PREFIX)
+# Broad host setup for tests/acceptance/ pytest — builds the SEPARATE
+# `.local_install` tree (see tests/acceptance/mtl_engine/const.py PREFIX)
 # that RxTxApp/MtlManager/ffmpeg/gstreamer under pytest resolve against.
 # This tree is independent from the system-wide build/ + /usr/local install
 # used by gtest/KahawaiTest (that one is handled by the mtl-system-setup
 # scripts/MCP server instead).
 #
 # This is the standalone-script equivalent of the (now legacy) MCP tool
-# `setup_validation_base`. It is called by:
-#   - validation_setup.sh (interactive/auto top-level entry point)
-#   - the mtl-validation-setup MCP server (mtl_validation_mcp_server.py),
+# `setup_acceptance_tests_base`. It is called by:
+#   - acceptance_setup.sh (interactive/auto top-level entry point)
+#   - the mtl-acceptance-setup MCP server (mtl_acceptance_mcp_server.py),
 #     so the MCP tool and a human running this by hand share one
 #     implementation instead of two.
 #
@@ -35,8 +35,8 @@ set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
-# shellcheck source=lib/mtl_validation_discover.sh disable=SC1091
-source "$repo_root/.github/scripts/lib/mtl_validation_discover.sh"
+# shellcheck source=lib/mtl_acceptance_discover.sh disable=SC1091
+source "$repo_root/.github/scripts/lib/mtl_acceptance_discover.sh"
 
 : "${NR_HUGEPAGES:=2048}"
 : "${BUILD_MODE:=release}"
@@ -50,9 +50,9 @@ CYN=$'\033[1;36m'
 GRN=$'\033[1;32m'
 RED=$'\033[1;31m'
 CLR=$'\033[0m'
-log() { printf '%s[validation_setup_base]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
-ok() { printf '%s[validation_setup_base] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
-err() { printf '%s[validation_setup_base] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
+log() { printf '%s[acceptance_setup_base]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
+ok() { printf '%s[acceptance_setup_base] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
+err() { printf '%s[acceptance_setup_base] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
 
 case "$BUILD_MODE" in
 release | debug | debugonly) ;;
@@ -63,7 +63,7 @@ release | debug | debugonly) ;;
 esac
 
 log "════════════════════════════════════════════════════════════════════"
-log " Broad validation host setup"
+log " Broad acceptance_tests host setup"
 log "   local prefix          : $LOCAL_PREFIX"
 log "   build mode            : $BUILD_MODE"
 log "   nr_hugepages           : $NR_HUGEPAGES"
@@ -136,7 +136,7 @@ else
 fi
 
 log "════════════════════════════════════════════════════════════════════"
-ok "Broad validation host setup complete"
-log "Next: run .github/scripts/setup_validation.sh (NFS/SSH/venv/configs),"
-log "      or 'validation_setup.sh setup' to do both interactively."
+ok "Broad acceptance_tests host setup complete"
+log "Next: run .github/scripts/setup_acceptance.sh (NFS/SSH/venv/configs),"
+log "      or 'acceptance_setup.sh setup' to do both interactively."
 log "════════════════════════════════════════════════════════════════════"

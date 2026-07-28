@@ -630,7 +630,7 @@ def mtl_path(test_config: dict) -> str:
         if host_paths:
             mtl_path = next(iter(host_paths.values()))
         else:
-            # conftest.py is at <mtl_root>/tests/validation/conftest.py
+            # conftest.py is at <mtl_root>/tests/acceptance/conftest.py
             mtl_path = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )  # …/Media-Transport-Library

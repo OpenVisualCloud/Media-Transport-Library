@@ -8,8 +8,8 @@ backends — plus performance sweeps and EBU LIST compliance verdicts.
 
 ```bash
 # From the repository root: one-command host setup
-./.github/scripts/validation_setup.sh status   # read-only probe
-./.github/scripts/validation_setup.sh setup    # interactive setup
+./.github/scripts/acceptance_setup.sh status   # read-only probe
+./.github/scripts/acceptance_setup.sh setup    # interactive setup
 
 # Then, from this directory:
 sudo -E ./venv/bin/python3 -m pytest \
@@ -20,7 +20,7 @@ sudo -E ./venv/bin/python3 -m pytest \
 
 Must run as root, from this directory, with the venv interpreter. Full
 instructions, configuration reference, and troubleshooting:
-[doc/validation_quickstart.md](../../doc/validation_quickstart.md).
+[doc/acceptance_quickstart.md](../../doc/acceptance_quickstart.md).
 
 ## Layout
 
@@ -37,12 +37,12 @@ instructions, configuration reference, and troubleshooting:
 
 Suite markers: `smoke`, `nightly`, `performance`, `base_performance`, `dual`,
 `ptp`. Other markers describe a test rather than select it — see
-[doc/validation_quickstart.md § Markers](../../doc/validation_quickstart.md#markers)
+[doc/acceptance_quickstart.md § Markers](../../doc/acceptance_quickstart.md#markers)
 and `pytest.ini` for the authoritative list.
 
 ## Further reading
 
-- [Setup and run](../../doc/validation_quickstart.md)
-- [Architecture](../../doc/validation-design.md) — modules, adapters,
+- [Setup and run](../../doc/acceptance_quickstart.md)
+- [Architecture](../../doc/acceptance-design.md) — modules, adapters,
   fixtures, oracles, clock model
 - [Build guide](../../doc/build.md)

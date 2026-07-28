@@ -1,18 +1,18 @@
 ---
-description: "Use when authoring or refactoring pytest cases under tests/validation/tests/** or the shared engine under tests/validation/mtl_engine/**. Defines the functionality-first paradigm: tests verify a behavior (not a framework), parametrize by application, push shared/library-level logic into the Application base class, and keep app-specific translation in each adapter via universal params."
-name: "MTL Validation — Test Authoring Paradigm"
-applyTo: "tests/validation/tests/**,tests/validation/mtl_engine/**"
+description: "Use when authoring or refactoring pytest cases under tests/acceptance/tests/** or the shared engine under tests/acceptance/mtl_engine/**. Defines the functionality-first paradigm: tests verify a behavior (not a framework), parametrize by application, push shared/library-level logic into the Application base class, and keep app-specific translation in each adapter via universal params."
+name: "MTL Acceptance — Test Authoring Paradigm"
+applyTo: "tests/acceptance/tests/**,tests/acceptance/mtl_engine/**"
 ---
 
-# Authoring MTL validation tests: test the functionality, not the framework
+# Authoring MTL acceptance tests: test the functionality, not the framework
 
-A validation test verifies an MTL **behavior** (a frame rate is honored, a
+A acceptance test verifies an MTL **behavior** (a frame rate is honored, a
 pixel format round-trips intact, latency stays bounded). It must not be written
-against one framework's mechanics. Follow this paradigm — [test_fps.py](../../tests/validation/tests/single/st20p/test_fps.py)
+against one framework's mechanics. Follow this paradigm — [test_fps.py](../../tests/acceptance/tests/single/st20p/test_fps.py)
 is the reference.
 
-Architecture: [doc/validation-design.md](../../doc/validation-design.md) §3, §5.
-Running and debugging: [mtl-validation-tests.instructions.md](mtl-validation-tests.instructions.md).
+Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §3, §5.
+Running and debugging: [mtl-acceptance-tests.instructions.md](mtl-acceptance-tests.instructions.md).
 
 ## 1. Parametrize by `application`
 
@@ -34,7 +34,7 @@ Tests pass framework-neutral `config_params`; each adapter translates them.
 When a feature needs a new knob:
 
 - add it to `UNIVERSAL_PARAMS` in
-  [config/universal_params.py](../../tests/validation/mtl_engine/config/universal_params.py)
+  [config/universal_params.py](../../tests/acceptance/mtl_engine/config/universal_params.py)
   (else `set_params` raises `Unknown parameter`);
 - wire the translation in each adapter's config/command builder
   (`rxtxapp.py`, `ffmpeg.py`, `GstreamerApp.py`) — only in the ones that
@@ -45,7 +45,7 @@ Never hardcode a framework's config shape (JSON keys, CLI flags) in the test.
 ## 3. Push shared logic into the `Application` base class
 
 Anything not specific to one adapter lives in
-[application_base.py](../../tests/validation/mtl_engine/application_base.py),
+[application_base.py](../../tests/acceptance/mtl_engine/application_base.py),
 so every framework reuses it. In particular, **output emitted by libmtl itself
 is framework-agnostic** — the library prints the same session statistics no
 matter which application drives it, so parse it in the base class, not in a

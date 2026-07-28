@@ -93,12 +93,12 @@ fuzzer works the same way:
 
 ### Pytest integration
 
-The validation suite drives every fuzz target with long-running libFuzzer passes and
+The acceptance_tests suite drives every fuzz target with long-running libFuzzer passes and
 streams the combined libFuzzer/MTL output into
-`tests/validation/logs/latest/pytest.log`. Execute:
+`tests/acceptance/logs/latest/pytest.log`. Execute:
 
 ```sh
-pytest tests/validation/fuzzing/test_fuzzing.py -k fuzz
+pytest tests/acceptance/fuzzing/test_fuzzing.py -k fuzz
 ```
 
 Each test carries `@pytest.mark.nightly` and runs `-runs=500000` iterations by default

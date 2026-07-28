@@ -2,23 +2,23 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# One-shot pytest-specific preparation for tests/validation/.
+# One-shot pytest-specific preparation for tests/acceptance/.
 #
 # Broad host setup (apt, DPDK, ICE, MTL build, hugepages, CPU governor,
-# optional plugins) is handled by MCP tool setup_validation_base.
+# optional plugins) is handled by MCP tool setup_acceptance_tests_base.
 #
 # This script intentionally keeps only pytest-custom responsibilities.
 # Idempotent. Each stage is independent: probe -> install if missing -> verify.
 # Stage failures print stage name, last command, last 20 lines of stderr, and a
 # pointer to the failure-table row in
-# .github/instructions/mtl-validation-tests.instructions.md.
+# .github/instructions/mtl-acceptance-tests.instructions.md.
 #
 # == Stages (default = ON unless noted) ===========================================
 #   STAGE_PREFLIGHT=1   sanity checks and broad-prereq verification (no installs)
 #   STAGE_NFS=1         MANDATORY when /mnt/media empty -> needs NFS_SOURCE
 #   STAGE_SSH=1         passwordless ssh-to-root from invoking user
-#   STAGE_VENV=1        tests/validation/venv + pip install requirements
-#   STAGE_CONFIGS=1     tests/validation/configs/{topology,test}_config.yaml
+#   STAGE_VENV=1        tests/acceptance/venv + pip install requirements
+#   STAGE_CONFIGS=1     tests/acceptance/configs/{topology,test}_config.yaml
 #
 # == Inputs (env vars) ============================================================
 #   NFS_SOURCE       host:/export, e.g. 10.123.232.121:/mnt/NFS/mtl_assets/media
@@ -90,7 +90,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
 
 # -------------------- run-log tee --------------------
-RUN_LOG="/tmp/setup_validation-$(date -u +%Y%m%dT%H%M%SZ).log"
+RUN_LOG="/tmp/setup_acceptance-$(date -u +%Y%m%dT%H%M%SZ).log"
 exec > >(tee -a "$RUN_LOG") 2>&1
 
 # -------------------- pretty output --------------------
@@ -99,10 +99,10 @@ YEL=$'\033[1;33m'
 CYN=$'\033[1;36m'
 GRN=$'\033[1;32m'
 CLR=$'\033[0m'
-log() { printf '%s[setup_validation]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
-warn() { printf '%s[setup_validation] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
-ok() { printf '%s[setup_validation] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
-err() { printf '%s[setup_validation] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
+log() { printf '%s[setup_acceptance]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
+warn() { printf '%s[setup_acceptance] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
+ok() { printf '%s[setup_acceptance] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
+err() { printf '%s[setup_acceptance] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
 
 invoking_user="${SUDO_USER:-$USER}"
 invoking_home=$(getent passwd "$invoking_user" | cut -d: -f6)
@@ -167,7 +167,7 @@ run_stage() {
 		STAGE_RESULT[$name]=fail
 		err "$name : EXIT $rc after ${dt}s"
 		err "  hint: see failure table key '$hint_key' in"
-		err "        .github/instructions/mtl-validation-tests.instructions.md"
+		err "        .github/instructions/mtl-acceptance-tests.instructions.md"
 		err "  last command : $LAST_CMD  (line $LAST_LINE)"
 		err "  last 30 lines of stage output (full: $out_file ; run log: $RUN_LOG):"
 		tail -n 30 "$out_file" | sed 's/^/    | /' >&2
@@ -193,14 +193,14 @@ print_summary() {
 	log " ─────             ──────          ────"
 	local s
 	for s in "${STAGE_ORDER[@]}"; do
-		printf '%s[setup_validation]%s  %-16s  %-14s  %ss\n' \
+		printf '%s[setup_acceptance]%s  %-16s  %-14s  %ss\n' \
 			"$CYN" "$CLR" "$s" "${STAGE_RESULT[$s]:-?}" "${STAGE_DURATION[$s]:-?}" >&2
 	done
 	log ""
 	# Pytest (this framework) hard-requires the .local_install prefix tree —
-	# see tests/validation/mtl_engine/const.py PREFIX=".local_install". This is
+	# see tests/acceptance/mtl_engine/const.py PREFIX=".local_install". This is
 	# SEPARATE from the system-wide build/ + /usr/local tree gtest/KahawaiTest
-	# uses; built via MCP tool setup_validation_base/setup_validation_full.
+	# uses; built via MCP tool setup_acceptance_tests_base/setup_acceptance_tests_full.
 	log " .local_install/mtl/bin/RxTxApp    : $([[ -x .local_install/mtl/bin/RxTxApp ]] && echo OK || echo MISSING)"
 	log " .local_install/mtl/bin/MtlManager : $([[ -x .local_install/mtl/bin/MtlManager ]] && echo OK || echo MISSING)"
 	log " .local_install/mtl/lib*/libmtl.so : $([[ -f .local_install/mtl/lib64/libmtl.so || -f .local_install/mtl/lib/x86_64-linux-gnu/libmtl.so ]] && echo OK || echo MISSING)"
@@ -214,10 +214,10 @@ print_summary() {
 	else
 		log " /mnt/media     : NOT MOUNTED"
 	fi
-	log " venv           : $([[ -x tests/validation/venv/bin/python3 ]] && echo OK || echo MISSING)"
-	log " configs        : $([[ -f tests/validation/configs/topology_config.yaml && -f tests/validation/configs/test_config.yaml ]] && echo OK || echo MISSING)"
-	if [[ -f tests/validation/configs/test_config.yaml ]]; then
-		log " compliance     : $(grep -m1 '^compliance:' tests/validation/configs/test_config.yaml | awk '{print $2}')"
+	log " venv           : $([[ -x tests/acceptance/venv/bin/python3 ]] && echo OK || echo MISSING)"
+	log " configs        : $([[ -f tests/acceptance/configs/topology_config.yaml && -f tests/acceptance/configs/test_config.yaml ]] && echo OK || echo MISSING)"
+	if [[ -f tests/acceptance/configs/test_config.yaml ]]; then
+		log " compliance     : $(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')"
 	fi
 	log " run log        : $RUN_LOG"
 	log "════════════════════════════════════════════════════════════════════"
@@ -274,7 +274,7 @@ stage_preflight() {
 		fi
 	fi
 
-	# Broad setup must be done via MCP tool setup_validation_base.
+	# Broad setup must be done via MCP tool setup_acceptance_tests_base.
 	local missing=0 free_mb governor ice_path mtl_found=0
 	if ! pkg-config --exists libdpdk 2>/dev/null; then
 		warn "preflight: libdpdk missing"
@@ -290,7 +290,7 @@ stage_preflight() {
 		missing=1
 	fi
 	# NOTE: pytest needs .local_install/mtl/bin/{MtlManager,RxTxApp}, built by
-	# MCP tool setup_validation_base/setup_validation_full — a SEPARATE tree
+	# MCP tool setup_acceptance_tests_base/setup_acceptance_tests_full — a SEPARATE tree
 	# from build/manager + tests/tools/RxTxApp/build used by gtest/KahawaiTest.
 	if [[ ! -x .local_install/mtl/bin/MtlManager || ! -x .local_install/mtl/bin/RxTxApp ]]; then
 		warn "preflight: .local_install/mtl/bin/{MtlManager,RxTxApp} missing (pytest needs this, not build/manager or tests/tools/RxTxApp/build)"
@@ -314,7 +314,7 @@ stage_preflight() {
 
 	if ((missing)); then
 		err "preflight: broad host prerequisites are missing"
-		err "run MCP tool setup_validation_base first, then rerun this script"
+		err "run MCP tool setup_acceptance_tests_base first, then rerun this script"
 		return 1
 	fi
 
@@ -349,16 +349,16 @@ stage_nfs() {
 	if [[ -z "$NFS_SOURCE" ]]; then
 		cat >&2 <<'EOF'
 
-[setup_validation] FAIL: STAGE_NFS=1 but NFS_SOURCE is empty.
+[setup_acceptance] FAIL: STAGE_NFS=1 but NFS_SOURCE is empty.
 
   /mnt/media must contain the SMPTE reference YUV / WAV / PCM media used by
-  almost every test under tests/validation/tests/single/. Without it nearly
+  almost every test under tests/acceptance/tests/single/. Without it nearly
   all tests SKIP with "Media file not present".
 
   Re-run with NFS_SOURCE=<host>:<export>, e.g.
 
       NFS_SOURCE=10.123.232.121:/mnt/NFS/mtl_assets/media \
-        bash .github/scripts/setup_validation.sh
+        bash .github/scripts/setup_acceptance.sh
 
   (The address above is only a known lab default — confirm with the human
   operator. Every host has a different storage server. Never assume.)
@@ -441,7 +441,7 @@ stage_ssh() {
 }
 
 stage_venv() {
-	local venv=tests/validation/venv
+	local venv=tests/acceptance/venv
 	if [[ -x "$venv/bin/python3" ]] &&
 		"$venv/bin/python3" -c 'import pytest, pytest_mfd_config' 2>/dev/null; then
 		log "venv: $venv present and pytest_mfd_config importable"
@@ -454,9 +454,9 @@ stage_venv() {
 	fi
 	log "venv: pip install requirements (quiet)"
 	"$venv/bin/pip" install -q --upgrade pip
-	"$venv/bin/pip" install -q -r tests/validation/requirements.txt
-	if [[ -f tests/validation/common/integrity/requirements.txt ]]; then
-		"$venv/bin/pip" install -q -r tests/validation/common/integrity/requirements.txt ||
+	"$venv/bin/pip" install -q -r tests/acceptance/requirements.txt
+	if [[ -f tests/acceptance/common/integrity/requirements.txt ]]; then
+		"$venv/bin/pip" install -q -r tests/acceptance/common/integrity/requirements.txt ||
 			warn "venv: integrity extras failed (non-fatal)"
 	fi
 	"$venv/bin/python3" -c 'import pytest, pytest_mfd_config' ||
@@ -473,12 +473,12 @@ stage_configs() {
 		detected_vendor_device=$(lspci -s "${detected_bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
 	fi
 
-	if [[ -f tests/validation/configs/topology_config.yaml &&
-		-f tests/validation/configs/test_config.yaml ]]; then
-		cur_vd=$(grep -m1 'pci_device:' tests/validation/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
+	if [[ -f tests/acceptance/configs/topology_config.yaml &&
+		-f tests/acceptance/configs/test_config.yaml ]]; then
+		cur_vd=$(grep -m1 'pci_device:' tests/acceptance/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
 		local cur_compliance cur_has_capture
-		cur_compliance=$(grep -m1 '^compliance:' tests/validation/configs/test_config.yaml | awk '{print $2}')
-		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/validation/configs/test_config.yaml && echo 1 || echo 0)
+		cur_compliance=$(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')
+		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/acceptance/configs/test_config.yaml && echo 1 || echo 0)
 		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
 			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
 			need_regen=1
@@ -532,7 +532,7 @@ stage_configs() {
 	# PCIDevice parser wants, not a bus address) and assigns interface_index
 	# scoped per vendor:device group itself, so no post-hoc patching is
 	# needed here.
-	(cd tests/validation/configs &&
+	(cd tests/acceptance/configs &&
 		"../venv/bin/python3" gen_config.py \
 			--session_id 0 --mtl_path "$repo_root" \
 			--pci_device "$pci_device_arg" --ip_address 127.0.0.1 \
@@ -544,7 +544,7 @@ stage_configs() {
 # BANNER
 # ============================================================================
 log "════════════════════════════════════════════════════════════════════"
-log " MTL validation host preparation"
+log " MTL acceptance_tests host preparation"
 log "════════════════════════════════════════════════════════════════════"
 log " stages enabled :"
 for v in PREFLIGHT NFS SSH VENV CONFIGS; do
@@ -560,7 +560,7 @@ log " compliance     : EBU_IP=${EBU_IP:-<unset>} CAPTURE_PCI_DEVICE=${CAPTURE_PC
 log " mode           : $([[ "$CHECK_ONLY" == "1" ]] && echo 'CHECK_ONLY=1 (probe only, no install)' || echo install)"
 log " run log        : $RUN_LOG"
 log " expected time  : cold ~1-3 min ; warm <5s ; CHECK_ONLY <2s — agents must NOT time out"
-log " note           : broad host setup is done by MCP tool setup_validation_base"
+log " note           : broad host setup is done by MCP tool setup_acceptance_tests_base"
 log "════════════════════════════════════════════════════════════════════"
 
 # Warn about NFS upfront, before slow stages run.
@@ -583,7 +583,7 @@ if [[ "$STAGE_CONFIGS" == "1" ]]; then run_stage configs "configs" stage_configs
 print_summary
 
 log ""
-log "Next: cd tests/validation && sudo -E ./venv/bin/python3 -m pytest \\"
+log "Next: cd tests/acceptance && sudo -E ./venv/bin/python3 -m pytest \\"
 log "        --topology_config=configs/topology_config.yaml \\"
 log "        --test_config=configs/test_config.yaml \\"
 log "        \"tests/single/st20p/fps/test_fps.py::test_fps[|fps = p50|-ParkJoy_1080p]\" \\"

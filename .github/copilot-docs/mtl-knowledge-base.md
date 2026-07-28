@@ -735,7 +735,7 @@ MTL supports `--proc-type=secondary` for read-only stats access. Full multi-proc
 |-------|-----------|----------|------|-------|
 | Integration (gtest) | Google Test | C++ | Internal APIs via loopback | Minutes |
 | Fuzz | LLVM libFuzzer | C | RX packet parsers | Hours |
-| Validation (pytest) | pytest | Python | E2E via RxTxApp/FFmpeg/GStreamer | 10s of minutes |
+| Acceptance Tests (pytest) | pytest | Python | E2E via RxTxApp/FFmpeg/GStreamer | 10s of minutes |
 | Shell scripts | bash | Shell | JSON-driven loopback scenarios | Minutes each |
 
 ### Integration Tests (`tests/integration_tests/`)
@@ -799,16 +799,16 @@ ninja -C build_fuzz
 ./build_fuzz/tests/fuzz/st20_rx_frame_fuzz corpus/st20
 ```
 
-### Validation Tests (`tests/validation/`)
+### Acceptance Tests (`tests/acceptance/`)
 E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.
 
 Config: `topology_config.yaml` (hosts, PCI BDFs) + `test_config.yaml` (session_id, paths)
 
-Setup: `.github/scripts/setup_validation.sh` stage functions must run in the parent shell; `stage_ssh` exports `SSH_KEY` for `stage_configs`.
+Setup: `.github/scripts/setup_acceptance.sh` stage functions must run in the parent shell; `stage_ssh` exports `SSH_KEY` for `stage_configs`.
 
 Setup gotcha: `pkg-config --exists libdpdk` is not enough; warm DPDK setup must also refresh/verify `ldconfig` or RxTxApp can fail with exit 127 and missing `librte_*.so.26`.
 
-Shell gotcha: in `setup_validation.sh` (`set -o pipefail`), avoid `producer | grep -q pattern` readiness probes; early `grep -q` exit can SIGPIPE the producer and make a true match look false. Capture output once or use non-early-exit matching.
+Shell gotcha: in `setup_acceptance.sh` (`set -o pipefail`), avoid `producer | grep -q pattern` readiness probes; early `grep -q` exit can SIGPIPE the producer and make a true match look false. Capture output once or use non-early-exit matching.
 
 Validation methods: log parsing, FPS check, MD5 per-frame integrity, EBU LIST compliance (optional)
 
@@ -816,8 +816,8 @@ Markers: `@pytest.mark.smoke`, `@pytest.mark.nightly`, `@pytest.mark.dual`, `@py
 
 Root required. Depends on `mfd-*` Intel-internal packages for SSH/NIC automation.
 
-For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, configs), call `.github/scripts/validation_setup.sh` (interactive, or `--auto` for scripted use) or the `mtl-validation-setup` MCP tools directly — no dedicated agent; the interactive script prompts for NFS/PF/EBU choices at zero token cost.
-For invoking pytest itself and triaging failures, use `.github/instructions/mtl-validation-tests.instructions.md` — it auto-attaches when working under `tests/validation/`.
+For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, configs), call `.github/scripts/acceptance_setup.sh` (interactive, or `--auto` for scripted use) or the `mtl-acceptance-setup` MCP tools directly — no dedicated agent; the interactive script prompts for NFS/PF/EBU choices at zero token cost.
+For invoking pytest itself and triaging failures, use `.github/instructions/mtl-acceptance-tests.instructions.md` — it auto-attaches when working under `tests/acceptance/`.
 
 ### RxTxApp (`tests/tools/RxTxApp/`)
 Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary, 180 fast-metadata (each direction).

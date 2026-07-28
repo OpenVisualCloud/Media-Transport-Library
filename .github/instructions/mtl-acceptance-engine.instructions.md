@@ -1,12 +1,12 @@
 ---
-description: "Use when editing the validation execution engine under tests/validation/mtl_engine/ — the Application ABC and its RxTxApp/FFmpeg adapters, the UNIVERSAL_PARAMS vocabulary, media registry, compliance session, integrity helpers, and reporting. Covers which module owns what, the adapter contract, and the legacy modules not to extend."
-name: "MTL Validation — Engine & Adapters"
-applyTo: "tests/validation/mtl_engine/**"
+description: "Use when editing the acceptance_tests execution engine under tests/acceptance/mtl_engine/ — the Application ABC and its RxTxApp/FFmpeg adapters, the UNIVERSAL_PARAMS vocabulary, media registry, compliance session, integrity helpers, and reporting. Covers which module owns what, the adapter contract, and the legacy modules not to extend."
+name: "MTL Acceptance Tests — Engine & Adapters"
+applyTo: "tests/acceptance/mtl_engine/**"
 ---
 
-# Editing `tests/validation/mtl_engine/`
+# Editing `tests/acceptance/mtl_engine/`
 
-Architecture: [doc/validation-design.md](../../doc/validation-design.md) §2, §5.
+Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §5.
 
 ## Module ownership — put the code in the right file
 
@@ -69,4 +69,4 @@ the capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is modern.
 ## Before handing back
 
 Run the checks in
-[mtl-validation-harness.instructions.md](mtl-validation-harness.instructions.md#before-handing-back).
+[mtl-acceptance-harness.instructions.md](mtl-acceptance-harness.instructions.md#before-handing-back).
