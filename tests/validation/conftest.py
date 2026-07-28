@@ -34,8 +34,9 @@ from mtl_engine.const import (
     TESTCMD_LVL,
 )
 from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
-from mtl_engine.execute import kill_stale_processes, log_fail
+from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
+from mtl_engine.pcap_compliance import NO_COMPLIANCE, ComplianceSession
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -1128,7 +1129,14 @@ def collect_platform_config(hosts, log_session):
 def pcap_capture(
     request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
 ):
-    """Fixture for capturing pcap files during tests.
+    """Fixture for capturing pcap files and running the EBU compliance verdict.
+
+    Yields a :class:`~mtl_engine.pcap_compliance.ComplianceSession` (or
+    :data:`~mtl_engine.pcap_compliance.NO_COMPLIANCE` when capture is
+    disabled/skipped) -- the single entry point for the whole capture +
+    compliance lifecycle. Tests pass it to ``execute_test(compliance=...)``;
+    everything else (arming the capture, running the EBU verdict, enforcing
+    it was actually dispatched) lives on the session object.
 
     Note: This fixture depends on prepare_ramdisk to ensure proper cleanup order.
     The capturer process must be stopped BEFORE the ramdisk is unmounted,
@@ -1141,13 +1149,14 @@ def pcap_capture(
     absolute-offset check.
     """
     capture_cfg = test_config.get("capture_cfg", {}) or {}
-    capturer = None
+    session = NO_COMPLIANCE
     phc_sync_active = False
     phc_sync_host = None
     # Compliance is REQUIRED by default for any test that requests this
     # fixture -- capture_cfg.enable absent or true both mean "on". The only
-    # way to opt out is an explicit `capture_cfg.enable: false` (a deliberate
-    # operator choice, not the absence of setup).
+    # way to opt out via config is an explicit `capture_cfg.enable: false` (a
+    # deliberate operator choice, not the absence of setup); tests can also
+    # opt out at runtime via ``pcap_capture.skip(reason)``.
     capture_disabled = capture_cfg.get("enable") is False
 
     # EBU pcap compliance analyser does not support 8K resolution
@@ -1201,9 +1210,12 @@ def pcap_capture(
             silent=capture_cfg.get("silent", True),
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
+        )
+        session = ComplianceSession(
+            recorder=capturer,
             ebu_server=test_config.get("ebu_server", {}),
             mtl_path=mtl_path,
-            test_nodeid=request.node.nodeid,
+            node_id=request.node.nodeid,
             allow_wide=request.node.get_closest_marker("allow_wide_compliance")
             is not None,
         )
@@ -1222,32 +1234,17 @@ def pcap_capture(
                 phc_sync_active = True
                 phc_sync_host = host
     try:
-        yield capturer
+        yield session
     finally:
         if phc_sync_active and phc_sync_host is not None:
             _reap_ptp_daemons(phc_sync_host, patterns=("phc2sys",))
 
-        # Safety net: the real upload/poll/verdict -- and the hard failures for
-        # "no ebu_server configured" / "capture produced no pcap file" -- all
-        # run inside ApplicationBase._dispatch_compliance_check() during the
-        # call phase, which unconditionally marks capturer._compliance_checked
-        # (pass or fail) whenever a real capturer was created. So this only
-        # fires when a test requests the pcap_capture fixture but never calls
-        # execute_test(netsniff=pcap_capture, ...) at all -- a required
-        # compliance check can't be silently skipped by that kind of test bug
-        # either. Opt out via capture_cfg.enable: false (or the built-in 8K skip).
-        if not skip_capture and not (capturer and capturer._compliance_checked):
-            log_fail(
-                "Compliance check required (test uses the pcap_capture fixture) "
-                "but execute_test() never dispatched it -- ensure the test calls "
-                "execute_test(netsniff=pcap_capture, ...)."
-            )
-
-        # Always ensure the capturer is stopped before fixture cleanup completes.
-        # This is critical because prepare_ramdisk unmount happens after this
-        # fixture and will fail if the capturer is still holding the pcap dir.
-        if capturer:
-            capturer.stop()
+        # session.close() stops the capture and, for a real session (not
+        # NO_COMPLIANCE), enforces that evaluate()/skip() ran during the call
+        # phase -- the real upload/poll/verdict already happened there; this
+        # only catches a test that requested the fixture but never dispatched
+        # it at all.
+        session.close()
 
 
 @pytest.fixture(scope="function", autouse=True)

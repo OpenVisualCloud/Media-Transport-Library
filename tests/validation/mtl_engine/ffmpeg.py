@@ -29,6 +29,7 @@ from mtl_engine.application_base import (
 )
 from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
+from mtl_engine.pcap_compliance import NO_COMPLIANCE
 
 logger = logging.getLogger(__name__)
 
@@ -578,7 +579,7 @@ class FFmpeg(Application):
         test_time: int = 30,
         host=None,
         sleep_interval: int = 5,
-        netsniff=None,
+        compliance=NO_COMPLIANCE,
         interface_setup=None,
         fail_on_error: bool = True,
         **extra,
@@ -624,6 +625,13 @@ class FFmpeg(Application):
                 ProcSpec(cmd=tx_cmd, host=host, label=f"TX{idx}", bounded=False)
             )
 
+        # FFmpeg starts RX first and TX second; traffic (and thus the pcap
+        # capture) only flows once TX is up, unlike the base class default
+        # where the single process IS the traffic source -- so this arms
+        # after_last_start instead of after_first_start. Built once and
+        # reused for _finalize_run()'s evaluate() call so both see the exact
+        # same snapshot of self.params.
+        intent = self.capture_intent()
         self._run_proc_group(
             specs,
             build=build,
@@ -631,28 +639,14 @@ class FFmpeg(Application):
             sleep_interval=sleep_interval,
             wall_clock_seconds=test_time,
             cleanup_host=host,
-            after_last_start=(self._make_netsniff_hook(netsniff) if netsniff else None),
+            after_last_start=lambda _proc: compliance.arm(intent),
         )
         # RX is always specs[0] (started first); validation reads its output.
         self._rx_output = specs[0].captured_output
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
-        # Mirror the base class: run both dispatches so a failure in one never
-        # skips the other, then re-raise once if either failed.
-        compliance_ok, compliance_exc = True, None
-        try:
-            compliance_ok = self._dispatch_compliance_check(netsniff, fail_on_error)
-        except AssertionError as e:
-            compliance_ok, compliance_exc = False, e
-        validate_ok, validate_exc = True, None
-        try:
-            validate_ok = self._dispatch_validate(fail_on_error)
-        except AssertionError as e:
-            validate_ok, validate_exc = False, e
-        if fail_on_error and (compliance_exc or validate_exc):
-            raise compliance_exc or validate_exc
-        return compliance_ok and validate_ok
+        return self._finalize_run(compliance, intent, fail_on_error)
 
     # ----------------------------------------------------- compliance
     def _resolve_capture_dst_ip(self):
