@@ -2,6 +2,7 @@
 # Copyright 2025 Intel Corporation
 import datetime
 import logging
+import math
 import os
 import re
 from time import sleep
@@ -16,21 +17,67 @@ from mfd_connect.exceptions import (
 logger = logging.getLogger(__name__)
 STARTUP_WAIT = 2  # Default wait time after starting the process
 
+# pgroup size (octets) and coverage (pixels) per sampling system and bit depth,
+# from SMPTE ST 2110-20:2022 tables 1 (4:4:4), 2 (4:2:2) and 3 (4:2:0). Keyed by
+# the MTL transport-format name used in mtl_engine.media_files ("format").
+# RGB/XYZ/ICtCp share the 4:4:4 geometry, so they map onto the same rows.
+_PGROUP_444 = {8: (3, 1), 10: (15, 4), 12: (9, 2), 16: (6, 1)}
+_PGROUPS = {
+    "YUV_422": {8: (4, 2), 10: (5, 2), 12: (6, 2), 16: (8, 2)},
+    "YUV_420": {8: (6, 4), 10: (15, 8), 12: (9, 4)},
+    "YUV_444": _PGROUP_444,
+    "RGB": _PGROUP_444,
+}
+_DEFAULT_PGROUP = (5, 2)  # 4:2:2 10-bit
+_BPM_PAYLOAD_SIZE = 1260  # ST_VIDEO_BPM_SIZE in lib/src/st2110/st_header.h
+
+
+def _pgroup_for(transport_format: str | None) -> tuple[int, int]:
+    """Return ``(pgroup_size, pgroup_coverage)`` for an MTL transport format.
+
+    Falls back to the 4:2:2 10-bit pgroup for unknown/absent formats so callers
+    keep the historical behaviour rather than crashing.
+    """
+    if not transport_format:
+        return _DEFAULT_PGROUP
+    sampling, _, depth_field = transport_format.rpartition("_")
+    try:
+        depth = int(depth_field.removesuffix("bit"))
+    except ValueError:
+        return _DEFAULT_PGROUP
+    return _PGROUPS.get(sampling, {}).get(depth, _DEFAULT_PGROUP)
+
 
 def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
-    # Simplified calculation for the number of packets per frame
-    # Supported only 4:2:2 format or audio formats assuming 1 packet per 1ms
+    # Simplified calculation for the number of packets per frame: how many
+    # whole pgroups fit in one packet payload, and therefore how many packets
+    # a full frame of pixels needs. Audio formats assume 1 packet per 1ms.
     packets = 1000
     if not media_file_info:
         raise ValueError("Missing media file info; cannot calculate packets per frame.")
     if "width" in media_file_info and "height" in media_file_info:
-        pgroupsize = 5
-        pgroupcoverage = 2
+        # A wrong pgroup here under-counts packets for the denser samplings
+        # (4:4:4 10-bit needs ~3x the packets of 4:2:2 10-bit), which truncates
+        # the capture to a fraction of a frame and makes EBU LIST report the
+        # stream as "unknown media_type" instead of analysing it.
+        pgroupsize, pgroupcoverage = _pgroup_for(media_file_info.get("format"))
         headersize = 74  # Ethernet + IP + UDP + RTP headers
         packets = 1 + int(
             (media_file_info["width"] * media_file_info["height"])
             / (int((mtu - headersize) / pgroupsize) * pgroupcoverage)
         )
+        # MTL's default packing is BPM, which uses a fixed 1260-octet payload
+        # (ST_VIDEO_BPM_SIZE) rather than filling the MTU, so it needs more
+        # packets per frame than the estimate above. Under-capturing truncates
+        # the frame and makes EBU LIST misjudge (or fail to classify) the
+        # stream, so size the capture for the larger of the two.
+        frame_size = (
+            media_file_info["width"]
+            * media_file_info["height"]
+            // pgroupcoverage
+            * pgroupsize
+        )
+        packets = max(packets, math.ceil(frame_size / _BPM_PAYLOAD_SIZE))
     return packets
 
 
