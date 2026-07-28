@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 """
-MCP Server for preparing a host to run MTL's tests/validation/ pytest suite.
+MCP Server for preparing a host to run MTL's tests/acceptance/ pytest suite.
 
 Split out from mtl_mcp_server.py (the system-wide/gtest server) so that any
 caller's tool-schema footprint for pytest-environment prep only covers the
@@ -11,7 +11,7 @@ wildcard pulling in ~30 tools' worth of unrelated (VF/driver/gtest) schemas
 on every turn. Shared build/summarization logic lives in mtl_setup_common.py
 so neither server duplicates it.
 
-tests/validation/mtl_engine/const.py hardcodes PREFIX = ".local_install" —
+tests/acceptance/mtl_engine/const.py hardcodes PREFIX = ".local_install" —
 every app path the pytest framework invokes (RxTxApp, MtlManager, ffmpeg,
 gstreamer) resolves under <repo>/.local_install/{mtl,ffmpeg,gstreamer}/...,
 a tree entirely separate from the system-wide build/ + /usr/local install
@@ -19,7 +19,7 @@ mtl_mcp_server.py's build_mtl/dpdk_build produce for gtest/KahawaiTest.
 
 Usage:
     pip install -r requirements.txt
-    python mtl_validation_mcp_server.py
+    python mtl_acceptance_mcp_server.py
 """
 
 from __future__ import annotations
@@ -29,38 +29,38 @@ import textwrap
 from mcp.server.fastmcp import FastMCP
 from mtl_setup_common import REPO_ROOT, _run_rc, _summarize_output
 
-VALIDATION_SETUP_BASE_SH = (
-    REPO_ROOT / ".github" / "scripts" / "validation_setup_base.sh"
+ACCEPTANCE_SETUP_BASE_SH = (
+    REPO_ROOT / ".github" / "scripts" / "acceptance_setup_base.sh"
 )
-VALIDATION_SETUP_SH = REPO_ROOT / ".github" / "scripts" / "validation_setup.sh"
-VALIDATION_DISCOVER_LIB = (
-    REPO_ROOT / ".github" / "scripts" / "lib" / "mtl_validation_discover.sh"
+ACCEPTANCE_SETUP_SH = REPO_ROOT / ".github" / "scripts" / "acceptance_setup.sh"
+ACCEPTANCE_DISCOVER_LIB = (
+    REPO_ROOT / ".github" / "scripts" / "lib" / "mtl_acceptance_discover.sh"
 )
 
 mcp = FastMCP(
-    "mtl-validation-setup",
+    "mtl-acceptance-setup",
     instructions=textwrap.dedent(
         """\
-        MTL Validation Setup MCP Server — takes a host to "ready to run
-        tests/validation/tests/single/ pytest".
+        MTL Acceptance Tests Setup MCP Server — takes a host to "ready to run
+        tests/acceptance/tests/single/ pytest".
 
         All setup logic lives in standalone, human-runnable scripts under
-        .github/scripts/ (validation_setup.sh, validation_setup_base.sh,
-        lib/mtl_validation_discover.sh, lib/mtl_host_common.sh) — this
+        .github/scripts/ (acceptance_setup.sh, acceptance_setup_base.sh,
+        lib/mtl_acceptance_discover.sh, lib/mtl_host_common.sh) — this
         server is a thin wrapper so a human can do the same setup by hand,
-        with no AI/MCP involved, via `.github/scripts/validation_setup.sh`.
+        with no AI/MCP involved, via `.github/scripts/acceptance_setup.sh`.
 
         Common workflow:
         • Discover host state first: discover_status() (full report) or
           discover_pfs() (NIC PF table only) — read-only, no changes made.
-        • Clean or partially-prepared host: setup_validation_full(nfs_source=...,
+        • Clean or partially-prepared host: setup_acceptance_tests_full(nfs_source=...,
           pf_bdf=...) — one-shot broad host setup (apt/DPDK/ICE/MTL/hugepages/
           CPU governor/plugins into .local_install) + pytest-specific setup
           (NFS media/localhost-root-SSH/venv/configs).
-        • Re-run either phase alone: setup_validation_base / setup_validation_pytest.
+        • Re-run either phase alone: setup_acceptance_tests_base / setup_acceptance_tests_pytest.
         • EBU LIST pcap compliance checking (optional, ask the human first):
           pass ebu_ip/ebu_user/ebu_password + capture_pci_device (a 2nd NIC
-          PF) to setup_validation_full / setup_validation_pytest. Without
+          PF) to setup_acceptance_tests_full / setup_acceptance_tests_pytest. Without
           these, test_config.yaml's `compliance` stays false and the
           `pcap_capture` fixture only skips (no capture, no EBU upload).
         """
@@ -75,14 +75,14 @@ def discover_status() -> str:
     driver, candidate NIC PFs, .local_install build artifacts, NFS media,
     and pytest venv/configs.
 
-    Thin wrapper around `validation_setup.sh status` (same report a human
+    Thin wrapper around `acceptance_setup.sh status` (same report a human
     gets running that script by hand, or `bash
-    .github/scripts/lib/mtl_validation_discover.sh`). Call this first —
-    before `setup_validation_base`/`setup_validation_pytest` — to decide
+    .github/scripts/lib/mtl_acceptance_discover.sh`). Call this first —
+    before `setup_acceptance_tests_base`/`setup_acceptance_tests_pytest` — to decide
     what's actually missing, and to pick a `pf_bdf` for
-    `setup_validation_pytest`/`setup_validation_full`.
+    `setup_acceptance_tests_pytest`/`setup_acceptance_tests_full`.
     """
-    rc, out = _run_rc(f"bash {VALIDATION_SETUP_SH} status")
+    rc, out = _run_rc(f"bash {ACCEPTANCE_SETUP_SH} status")
     return out if rc == 0 else f"Error (exit {rc}):\n{out}"
 
 
@@ -94,21 +94,21 @@ def discover_pfs() -> str:
     VF counts). Ask the human which one to use whenever more than one is
     listed — never guess.
     """
-    rc, out = _run_rc(f"source {VALIDATION_DISCOVER_LIB} && vd_report_pfs")
+    rc, out = _run_rc(f"source {ACCEPTANCE_DISCOVER_LIB} && vd_report_pfs")
     return out if rc == 0 else f"Error (exit {rc}):\n{out}"
 
 
 @mcp.tool()
-def setup_validation_base(
+def setup_acceptance_tests_base(
     nr_hugepages: int = 2048,
     build_mode: str = "release",
     include_ffmpeg_plugin: bool = False,
     include_gstreamer_plugin: bool = False,
 ) -> str:
     """
-    One-shot broad host setup for validation environments.
+    One-shot broad host setup for acceptance_tests environments.
 
-    IMPORTANT: tests/validation/mtl_engine/const.py hardcodes
+    IMPORTANT: tests/acceptance/mtl_engine/const.py hardcodes
     PREFIX = ".local_install" — every app path (RxTxApp, MtlManager, ffmpeg,
     gstreamer) the pytest framework invokes is resolved under
     ``<repo>/.local_install/{mtl,ffmpeg,gstreamer}/...``. This is a SEPARATE,
@@ -121,7 +121,7 @@ def setup_validation_base(
     system-wide one.
 
     This covers non-pytest-specific responsibilities and is intended to replace
-    generic setup logic in setup_validation.sh:
+    generic setup logic in setup_acceptance.sh:
     - apt dependencies
     - DPDK build/install (into .local_install/dpdk)
     - ICE driver status/rebuild (system-wide — it's a kernel module, no prefix)
@@ -130,8 +130,8 @@ def setup_validation_base(
     - CPU governor performance + confirmation
     - optional FFmpeg/GStreamer plugin builds (into .local_install/{ffmpeg,gstreamer})
 
-    Pytest-specific setup (NFS media mount, localhost root SSH, validation venv,
-    topology/test config generation) remains in setup_validation.sh.
+    Pytest-specific setup (NFS media mount, localhost root SSH, acceptance_tests venv,
+    topology/test config generation) remains in setup_acceptance.sh.
 
     Args:
         nr_hugepages: Number of 2MB hugepages (default 2048)
@@ -162,12 +162,12 @@ def setup_validation_base(
         "INCLUDE_GSTREAMER_PLUGIN": "1" if include_gstreamer_plugin else "0",
         "LOCAL_PREFIX": str(local_prefix),
     }
-    # This tool is now a thin wrapper around validation_setup_base.sh, the
+    # This tool is now a thin wrapper around acceptance_setup_base.sh, the
     # standalone script a human can run by hand for the same broad-setup
     # phase (apt/ICE/DPDK/MTL/hugepages/governor) — see that script's header
     # for the stage-by-stage breakdown. Single implementation, two callers.
     rc, out = _run_rc(
-        f"bash {VALIDATION_SETUP_BASE_SH}",
+        f"bash {ACCEPTANCE_SETUP_BASE_SH}",
         env=env,
         timeout=build_timeout,
     )
@@ -179,20 +179,20 @@ def setup_validation_base(
     build_rc = rc if (manager_ok and rxtxapp_ok) else 1
 
     result = (
-        f"## Broad Validation Host Setup\n{_summarize_output('setup_validation_base', out, rc=build_rc)}"
+        f"## Broad Acceptance Tests Host Setup\n{_summarize_output('setup_acceptance_tests_base', out, rc=build_rc)}"
         f"\n\n### Artifacts\n- {local_prefix}/bin/MtlManager: "
         + ("OK" if manager_ok else "MISSING")
         + f"\n- {local_prefix}/bin/RxTxApp: "
         + ("OK" if rxtxapp_ok else "MISSING")
         + "\n\n## Next Step\n"
-        "Run `setup_validation_pytest` (NFS/SSH/venv/config stages), or call "
-        "`setup_validation_full` next time to do both in one shot."
+        "Run `setup_acceptance_tests_pytest` (NFS/SSH/venv/config stages), or call "
+        "`setup_acceptance_tests_full` next time to do both in one shot."
     )
     return result
 
 
 @mcp.tool()
-def setup_validation_pytest(
+def setup_acceptance_tests_pytest(
     nfs_source: str = "",
     pf_bdf: str = "",
     test_time: int = 30,
@@ -203,11 +203,11 @@ def setup_validation_pytest(
     capture_pci_device: str = "",
 ) -> str:
     """
-    Pytest-specific validation setup: NFS media, localhost root SSH, venv, configs.
+    Pytest-specific acceptance_tests setup: NFS media, localhost root SSH, venv, configs.
 
-    Thin wrapper around `.github/scripts/setup_validation.sh` (idempotent —
-    safe to re-run). Does NOT build anything — call `setup_validation_base`
-    (or `setup_validation_full`) first if `.local_install/mtl/bin/{MtlManager,
+    Thin wrapper around `.github/scripts/setup_acceptance.sh` (idempotent —
+    safe to re-run). Does NOT build anything — call `setup_acceptance_tests_base`
+    (or `setup_acceptance_tests_full`) first if `.local_install/mtl/bin/{MtlManager,
     RxTxApp}` don't exist yet.
 
     Args:
@@ -272,15 +272,18 @@ def setup_validation_pytest(
     # "VAR=val bash script.sh" command string) so EBU_PASSWORD never appears
     # in the executed command line / process listing.
     rc, out = _run_rc(
-        "bash .github/scripts/setup_validation.sh",
+        "bash .github/scripts/setup_acceptance.sh",
         env=env,
         timeout=300,
     )
-    return f"## Pytest Validation Setup\n{_summarize_output('setup_validation_pytest', out, tail_lines=60, rc=rc)}"
+    summary = _summarize_output(
+        "setup_acceptance_tests_pytest", out, tail_lines=60, rc=rc
+    )
+    return f"## Pytest Acceptance Tests Setup\n{summary}"
 
 
 @mcp.tool()
-def setup_validation_full(
+def setup_acceptance_tests_full(
     nfs_source: str = "",
     pf_bdf: str = "",
     nr_hugepages: int = 2048,
@@ -294,14 +297,14 @@ def setup_validation_full(
     capture_pci_device: str = "",
 ) -> str:
     """
-    One-shot: take a clean host to "ready to run tests/validation/ pytest".
+    One-shot: take a clean host to "ready to run tests/acceptance/ pytest".
 
-    Runs `setup_validation_base` (apt, DPDK, ICE, MTL, hugepages, CPU governor
+    Runs `setup_acceptance_tests_base` (apt, DPDK, ICE, MTL, hugepages, CPU governor
     — all into .local_install/mtl, plus optional ffmpeg/gstreamer plugins)
-    then `setup_validation_pytest` (NFS, SSH, venv, configs). Idempotent —
+    then `setup_acceptance_tests_pytest` (NFS, SSH, venv, configs). Idempotent —
     safe to re-run on an already-prepared host (fast no-op on each stage).
 
-    `include_ffmpeg_plugin` defaults to True here (unlike `setup_validation_base`)
+    `include_ffmpeg_plugin` defaults to True here (unlike `setup_acceptance_tests_base`)
     because most test_single/st20p/... tests parametrize over both
     application=rxtxapp and application=ffmpeg.
 
@@ -328,12 +331,12 @@ def setup_validation_full(
             pf_bdf) used for netsniff-ng packet capture. Compliance checking
             needs this in addition to the ebu_* args — without it,
             "compliance" stays false even with valid EBU credentials. See
-            `setup_validation_pytest`'s docstring for the multi-PF-DUT +
+            `setup_acceptance_tests_pytest`'s docstring for the multi-PF-DUT +
             dedicated-capture-NIC topology this enables.
     """
     results = [
         "## Phase 1/2: Broad host setup\n"
-        + setup_validation_base(
+        + setup_acceptance_tests_base(
             nr_hugepages=nr_hugepages,
             build_mode=build_mode,
             include_ffmpeg_plugin=include_ffmpeg_plugin,
@@ -342,7 +345,7 @@ def setup_validation_full(
     ]
     results.append(
         "## Phase 2/2: Pytest-specific setup\n"
-        + setup_validation_pytest(
+        + setup_acceptance_tests_pytest(
             nfs_source=nfs_source,
             pf_bdf=pf_bdf,
             test_time=test_time,
@@ -354,7 +357,7 @@ def setup_validation_full(
     )
     results.append(
         "## Ready\n"
-        "Run e.g.:\n```\ncd tests/validation && sudo -E ./venv/bin/python3 -m pytest "
+        "Run e.g.:\n```\ncd tests/acceptance && sudo -E ./venv/bin/python3 -m pytest "
         "--topology_config=configs/topology_config.yaml "
         "--test_config=configs/test_config.yaml "
         "tests/single/st20p/test_input_formats.py --tb=short -v\n```"

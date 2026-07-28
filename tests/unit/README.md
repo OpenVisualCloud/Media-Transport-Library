@@ -18,7 +18,7 @@ run on any developer laptop in a fraction of a second.
 TX packet building/queueing, DMA, kernel-socket / AF_XDP backends, and
 multi-process scenarios are out of scope — see
 [`tests/integration_tests/`](../integration_tests/) and
-[`tests/validation/`](../validation/) for those. TX epoch/pacing *math*
+[`tests/acceptance/`](../acceptance/) for those. TX epoch/pacing *math*
 (`session/st20_tx_harness.c`) is covered here.
 
 ## What makes this different

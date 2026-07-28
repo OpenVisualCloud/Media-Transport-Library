@@ -2,16 +2,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Bootstrap wrapper for the MTL Validation Setup MCP server.
+# Bootstrap wrapper for the MTL Acceptance Tests Setup MCP server.
 # Shares the venv with run_server.sh (same dependency: the `mcp` package).
-# Called by .vscode/mcp.json — do not invoke mtl_validation_mcp_server.py directly.
+# Called by .vscode/mcp.json — do not invoke mtl_acceptance_mcp_server.py directly.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
-SERVER="$SCRIPT_DIR/mtl_validation_mcp_server.py"
+SERVER="$SCRIPT_DIR/mtl_acceptance_mcp_server.py"
 
 # Create venv if missing
 if [[ ! -x "$VENV_DIR/bin/python3" ]]; then

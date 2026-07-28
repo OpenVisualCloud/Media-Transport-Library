@@ -3,7 +3,7 @@
 """EBU LIST pcap-compliance capture + upload/poll/verdict, owned by one
 ``ComplianceSession`` object.
 
-The ``pcap_capture`` fixture (tests/validation/conftest.py) is the single
+The ``pcap_capture`` fixture (tests/acceptance/conftest.py) is the single
 entry point: it builds the underlying ``NetsniffRecorder`` and wraps it in a
 ``ComplianceSession``, which then owns the whole lifecycle -- arming the
 capture, running the EBU verdict, and enforcing that a test which requested
@@ -286,7 +286,7 @@ class ComplianceCheck(Protocol):
 class ComplianceSession:
     """Owns one capture and its EBU LIST compliance verdict for one test.
 
-    Created only by the ``pcap_capture`` fixture (tests/validation/conftest.py),
+    Created only by the ``pcap_capture`` fixture (tests/acceptance/conftest.py),
     which builds the underlying ``NetsniffRecorder`` and this wrapper
     together. Tests that don't want compliance checking get ``NO_COMPLIANCE``
     instead, a no-op stand-in sharing this class's public surface
@@ -487,7 +487,7 @@ class ComplianceSession:
         proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
         try:
             compliance_upl = capturer.host.connection.execute_command(
-                "python3 ./tests/validation/compliance/upload_pcap.py"
+                "python3 ./tests/acceptance/compliance/upload_pcap.py"
                 f" --ip {ebu_ip}"
                 f" --user {ebu_login}"
                 f" --password {ebu_passwd}"

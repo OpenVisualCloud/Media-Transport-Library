@@ -6,9 +6,9 @@
             "args": [],
             "env": {}
         },
-        "mtl-validation-setup": {
+        "mtl-acceptance-setup": {
             "type": "stdio",
-            "command": "${workspaceFolder}/.github/mcp/run_validation_server.sh",
+            "command": "${workspaceFolder}/.github/mcp/run_acceptance_server.sh",
             "args": [],
             "env": {}
         }

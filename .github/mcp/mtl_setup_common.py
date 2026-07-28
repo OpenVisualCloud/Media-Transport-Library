@@ -5,7 +5,7 @@
 Shared implementation helpers for the MTL MCP servers.
 
 Both `mtl_mcp_server.py` (system-wide host setup, driver management, gtest)
-and `mtl_validation_mcp_server.py` (tests/validation/ pytest environment,
+and `mtl_acceptance_mcp_server.py` (tests/acceptance/ pytest environment,
 built on the separate `.local_install` tree) shell out to the same
 `.github/scripts/setup_environment.sh` and need the same output-summarization
 behavior. Splitting the servers by MCP tool namespace (so each agent's
@@ -161,7 +161,7 @@ def _load_versions() -> dict[str, str]:
 #
 # The actual host probing/mutation (ICE driver, hugepages, CPU governor, apt
 # deps) lives in .github/scripts/lib/mtl_host_common.sh — a plain bash
-# library also sourced directly by the validation_setup*.sh scripts, so a
+# library also sourced directly by the acceptance_setup*.sh scripts, so a
 # human running those scripts by hand and this MCP server share exactly one
 # implementation instead of a Python copy and a bash copy drifting apart.
 # ---------------------------------------------------------------------------

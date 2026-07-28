@@ -124,7 +124,7 @@ TestBody, need 4 ports for redundant test, skipping
 - CI uses MAX_RETRIES=2 with RETRY_DELAY=20s.
 - If a test fails consistently across retries, it's a real issue.
 
-## Validation Tests (pytest)
+## Acceptance Tests (pytest)
 
-For the pytest-based validation framework under `tests/validation/tests/single/`, see
-`.github/instructions/mtl-validation-tests.instructions.md`.
+For the pytest-based acceptance_tests framework under `tests/acceptance/tests/single/`, see
+`.github/instructions/mtl-acceptance-tests.instructions.md`.

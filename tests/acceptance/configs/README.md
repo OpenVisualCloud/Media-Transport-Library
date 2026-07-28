@@ -10,7 +10,7 @@ This directory contains configuration files for the Media Transport Library vali
 
 ### [`test_config.yaml`](test_config.yaml)
 
-**File Location**: `tests/validation/configs/test_config.yaml`
+**File Location**: `tests/acceptance/configs/test_config.yaml`
 
 This file contains general test environment settings:
 
@@ -86,7 +86,7 @@ Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
 
 ### [`topology_config.yaml`](topology_config.yaml)
 
-**File Location**: `tests/validation/configs/topology_config.yaml`
+**File Location**: `tests/acceptance/configs/topology_config.yaml`
 
 This file defines the network topology for testing:
 
@@ -164,7 +164,7 @@ Here are practical examples of how to use these configuration files:
 
 ```bash
 # Navigate to validation directory
-cd tests/validation
+cd tests/acceptance
 
 # Activate virtual environment
 source venv/bin/activate
@@ -223,7 +223,7 @@ cat configs/test_config.yaml
 cat configs/topology_config.yaml
 
 # 4. Run tests
-cd tests/validation
+cd tests/acceptance
 source venv/bin/activate
 sudo ./venv/bin/python3 -m pytest \
   --topology_config=configs/topology_config.yaml \

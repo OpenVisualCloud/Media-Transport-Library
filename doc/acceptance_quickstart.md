@@ -1,15 +1,15 @@
-# MTL Validation — Setup and Run
+# MTL Acceptance Tests — Setup and Run
 
-Everything needed to get `tests/validation/` pytest running, and to fix it
+Everything needed to get `tests/acceptance/` pytest running, and to fix it
 when it breaks. For *how the framework is built* see
-[validation-design.md](validation-design.md); for MTL itself see
+[acceptance-design.md](acceptance-design.md); for MTL itself see
 [build.md](build.md) and [run.md](run.md).
 
 ## The `.local_install` rule — read this first
 
 Pytest resolves **every** binary it launches under `.local_install/`, a tree
 separate from the `build/` + `/usr/local` install that gtest/KahawaiTest
-uses. This is hardcoded in `tests/validation/mtl_engine/const.py`
+uses. This is hardcoded in `tests/acceptance/mtl_engine/const.py`
 (`PREFIX = ".local_install"`) and is the single most common reason a host
 "with MTL built" still cannot run a test.
 
@@ -38,21 +38,21 @@ gtest runs fine.
 
 ## Recommended: automated setup
 
-`.github/scripts/validation_setup.sh` is the single entry point. It composes
-`validation_setup_base.sh` (apt, ICE driver, DPDK, MTL + plugins into
-`.local_install`, hugepages, CPU governor) and `setup_validation.sh` (NFS
+`.github/scripts/acceptance_setup.sh` is the single entry point. It composes
+`acceptance_setup_base.sh` (apt, ICE driver, DPDK, MTL + plugins into
+`.local_install`, hugepages, CPU governor) and `setup_acceptance.sh` (NFS
 media, localhost root SSH, venv, generated configs). No agent or MCP client
 is required.
 
 ```bash
-./.github/scripts/validation_setup.sh status   # read-only probe, changes nothing
-./.github/scripts/validation_setup.sh setup    # interactive: asks PF, NFS source, EBU
+./.github/scripts/acceptance_setup.sh status   # read-only probe, changes nothing
+./.github/scripts/acceptance_setup.sh setup    # interactive: asks PF, NFS source, EBU
 ```
 
 Non-interactive, e.g. for CI:
 
 ```bash
-./.github/scripts/validation_setup.sh setup --auto \
+./.github/scripts/acceptance_setup.sh setup --auto \
     --pf-bdf=0000:c9:00.0 \
     --nfs-source=10.0.0.5:/mnt/NFS/mtl_assets/media
 ```
@@ -74,7 +74,7 @@ of it.
 ### Python environment
 
 ```bash
-cd tests/validation
+cd tests/acceptance
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -141,7 +141,7 @@ Production hosts mount an NFS share at `media_path`. Tests **skip** rather
 than fail when an asset is missing. To generate a local set instead:
 
 ```bash
-cd tests/validation/common
+cd tests/acceptance/common
 ./gen_frames.sh
 ```
 
@@ -154,10 +154,10 @@ into `/tmp`.
 
 ## Running tests
 
-Run from `tests/validation/`, as root, using the venv interpreter:
+Run from `tests/acceptance/`, as root, using the venv interpreter:
 
 ```bash
-cd tests/validation
+cd tests/acceptance
 sudo -E ./venv/bin/python3 -m pytest \
     --topology_config=configs/topology_config.yaml \
     --test_config=configs/test_config.yaml \
@@ -212,7 +212,7 @@ test validates, and therefore whether a compliance verdict is meaningful),
 
 ### Output
 
-Logs land in `tests/validation/logs/<UTC-timestamp>/` (root-owned) with a
+Logs land in `tests/acceptance/logs/<UTC-timestamp>/` (root-owned) with a
 `logs/latest` symlink — per-test logs plus MtlManager and application output
 and the rendered JSON configs.
 
@@ -234,7 +234,7 @@ A performance report across timestamped log directories:
 
 ## Troubleshooting
 
-Start with `./.github/scripts/validation_setup.sh status` — it checks kernel,
+Start with `./.github/scripts/acceptance_setup.sh status` — it checks kernel,
 hugepages, governor, ICE driver, NIC PFs, `.local_install` build state, NFS,
 venv, and configs in one read-only pass, and usually names the broken stage
 directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
@@ -242,7 +242,7 @@ directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
 | Symptom | Cause and fix |
 |---|---|
 | `No module named pytest` | Used `sudo python3`. Use `sudo -E ./venv/bin/python3`. |
-| `unrecognized arguments: --topology_config` | Not in `tests/validation/`. |
+| `unrecognized arguments: --topology_config` | Not in `tests/acceptance/`. |
 | `Failed to start MtlManager on host` | `.local_install` tree missing — re-run setup. A system-wide `build/` install does not count. |
 | `RxTxApp: command not found` | Same cause: build into `.local_install`, not `tests/tools/RxTxApp/build/`. |
 | `error while loading shared libraries: librte_*.so` | Stale linker cache. `sudo ldconfig`, then check `ldd .local_install/mtl/bin/RxTxApp`. |
@@ -262,7 +262,7 @@ capture a backtrace (`coredumpctl gdb RxTxApp`) and report it rather than
 working around it.
 
 The exhaustive symptom table, kept in sync with the engine source, is in
-[mtl-validation-tests.instructions.md](../.github/instructions/mtl-validation-tests.instructions.md).
+[mtl-acceptance-tests.instructions.md](../.github/instructions/mtl-acceptance-tests.instructions.md).
 
 ## Verified test criteria
 
@@ -281,11 +281,11 @@ test may carry it only when all three hold:
 
 ## See also
 
-- [validation-design.md](validation-design.md) — architecture: modules,
+- [acceptance-design.md](acceptance-design.md) — architecture: modules,
   adapters, fixtures, oracles, clock model
 - Agent instructions for changing the framework:
-  [running tests](../.github/instructions/mtl-validation-tests.instructions.md),
-  [authoring tests](../.github/instructions/mtl-validation-authoring.instructions.md),
-  [engine](../.github/instructions/mtl-validation-engine.instructions.md),
-  [harness](../.github/instructions/mtl-validation-harness.instructions.md)
+  [running tests](../.github/instructions/mtl-acceptance-tests.instructions.md),
+  [authoring tests](../.github/instructions/mtl-acceptance-authoring.instructions.md),
+  [engine](../.github/instructions/mtl-acceptance-engine.instructions.md),
+  [harness](../.github/instructions/mtl-acceptance-harness.instructions.md)
 - [build.md](build.md), [run.md](run.md), [configuration_guide.md](configuration_guide.md)

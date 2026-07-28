@@ -186,7 +186,7 @@ jobs:
           export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
           bash .github/scripts/setup_environment.sh
       - name: 'installation: Install pipenv environment'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         id: pipenv-install
         run: |
           python3 -m pip install pipenv
@@ -232,7 +232,7 @@ jobs:
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
 
       - name: 'execution: Run validation-bare-metal tests in pipenv environment'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         run: |
           . "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
         env:
@@ -245,26 +245,26 @@ jobs:
 
       - name: 'execution: Run validation-pre-release-1 in pipenv environment'
         if: inputs.validation-pre-release-1 != 'NONE'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         run: |
           echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-1 }} ==" || ${{ inputs.validation-no-fail-tests }}
 
       - name: 'execution: Run validation-pre-release-2 in pipenv environment'
         if: inputs.validation-pre-release-2 != 'NONE'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         run: |
           echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-2 }} ==" || ${{ inputs.validation-no-fail-tests }}
 
       - name: 'execution: Run validation-pre-release-3 in pipenv environment'
         if: inputs.validation-pre-release-3 != 'NONE'
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         run: |
           echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-3 }} ==" || ${{ inputs.validation-no-fail-tests }}
 
       - uses: ./.github/actions/cleanup
       - name: 'cleanup: Create archive with logs from execution'
         if: always()
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         run: |
           sudo tar -czf "validation-execution-logs.tar.gz" "./logs"
           sudo rm -rf "./logs"
@@ -286,7 +286,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: 'validation-execution-logs.tar.gz'
-          path: '${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz'
+          path: '${{ github.workspace }}/tests/acceptance/validation-execution-logs.tar.gz'
 
       - name: 'cleanup: Generate runner summary'
         if: always()

@@ -86,7 +86,7 @@ jobs:
 
       - name: 'installation: Install pipenv environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        working-directory: tests/validation
+        working-directory: tests/acceptance
         id: pipenv-install
         run: |
           python3 -m venv .venv
@@ -111,7 +111,7 @@ jobs:
           fi
       - name: Generate test framework config files
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        working-directory: tests/validation/configs
+        working-directory: tests/acceptance/configs
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
@@ -132,7 +132,7 @@ jobs:
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         timeout-minutes: 60
         run: |
-          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
+          tests/acceptance/.venv/bin/python3 -m pytest --topology_config=tests/acceptance/configs/topology_config.yaml --test_config=tests/acceptance/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
       - name: "upload report"
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         id: upload-report

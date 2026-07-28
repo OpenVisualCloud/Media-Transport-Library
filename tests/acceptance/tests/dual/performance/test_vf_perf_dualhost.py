@@ -366,7 +366,7 @@ def _run_iteration(
     c_tag = "_sc" if single_core else "_mc"
     d_tag = "_dma" if use_dma else ""
     companion_log = (
-        f"{build_companion}/tests/validation/logs/performance/"
+        f"{build_companion}/tests/acceptance/logs/performance/"
         f"{direction}{r_tag}{c_tag}_fps{fps}_{num_sessions}s{d_tag}"
         f"_{companion_dir}_companion.log"
     )

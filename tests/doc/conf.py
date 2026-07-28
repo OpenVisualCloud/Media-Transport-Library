@@ -18,9 +18,9 @@ release = "24.11"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 # Add paths to Python test modules
-sys.path.insert(0, os.path.abspath("../validation"))
-sys.path.insert(0, os.path.abspath("../validation/tests"))
-sys.path.insert(0, os.path.abspath("../validation/common"))
+sys.path.insert(0, os.path.abspath("../acceptance"))
+sys.path.insert(0, os.path.abspath("../acceptance/tests"))
+sys.path.insert(0, os.path.abspath("../acceptance/common"))
 
 extensions = [
     "sphinx.ext.autodoc",  # Auto-generate documentation from docstrings

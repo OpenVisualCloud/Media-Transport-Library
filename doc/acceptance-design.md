@@ -1,8 +1,8 @@
-# MTL Pytest Validation Architecture
+# MTL Acceptance Tests Architecture
 
-Architectural map of `tests/validation/` for developers who know MTL and
+Architectural map of `tests/acceptance/` for developers who know MTL and
 ST 2110 but not this framework. For install/run commands see
-[validation_quickstart.md](validation_quickstart.md).
+[acceptance_quickstart.md](acceptance_quickstart.md).
 
 Terms used throughout: **RxTxApp** is MTL's reference TX/RX sample
 application; **MtlManager** is the privileged helper daemon MTL apps connect
@@ -109,7 +109,7 @@ process, or removes its own files is doing framework work in the wrong
 place.
 
 Authoring rules are enforced by
-[mtl-validation-authoring.instructions.md](../.github/instructions/mtl-validation-authoring.instructions.md).
+[mtl-acceptance-authoring.instructions.md](../.github/instructions/mtl-acceptance-authoring.instructions.md).
 
 ## 4. Inputs: configuration, fixtures, and media
 
@@ -335,6 +335,6 @@ the wrapper leaks a clock owner into later NIC reconfiguration.
 | FFmpeg/GStreamer builds   | Required only by their tests                                             |
 | PTP grandmaster           | Only for a real network-PTP claim                                        |
 
-`.github/scripts/validation_setup.sh` discovers (`status`) and prepares
+`.github/scripts/acceptance_setup.sh` discovers (`status`) and prepares
 (`setup`) this contract end-to-end — see
-[validation_quickstart.md](validation_quickstart.md#recommended-automated-setup-script).
+[acceptance_quickstart.md](acceptance_quickstart.md#recommended-automated-setup-script).

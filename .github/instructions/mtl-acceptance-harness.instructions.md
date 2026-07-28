@@ -1,12 +1,12 @@
 ---
-description: "Use when editing the validation harness — tests/validation/conftest.py fixtures, configs/ YAML schema and gen_config.py, common/ host control (nicctl, host_setup, integrity runners, platform info), create_pcap_file/ capture, and compliance/ EBU client. Covers fixture scoping rules, VF pool lifecycle, the mfd remote-execution contract, and cleanup discipline."
-name: "MTL Validation — Harness & Host Control"
-applyTo: "tests/validation/conftest.py,tests/validation/configs/**,tests/validation/common/**,tests/validation/create_pcap_file/**,tests/validation/compliance/**"
+description: "Use when editing the acceptance_tests harness — tests/acceptance/conftest.py fixtures, configs/ YAML schema and gen_config.py, common/ host control (nicctl, host_setup, integrity runners, platform info), create_pcap_file/ capture, and compliance/ EBU client. Covers fixture scoping rules, VF pool lifecycle, the mfd remote-execution contract, and cleanup discipline."
+name: "MTL Acceptance Tests — Harness & Host Control"
+applyTo: "tests/acceptance/conftest.py,tests/acceptance/configs/**,tests/acceptance/common/**,tests/acceptance/create_pcap_file/**,tests/acceptance/compliance/**"
 ---
 
 # Editing the validation harness
 
-Architecture: [doc/validation-design.md](../../doc/validation-design.md) §4, §6, §7, §8.
+Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §4, §6, §7, §8.
 `mfd` = the Intel `mfd-*` test library family that abstracts host access.
 
 ## The mfd contract — this is what makes tests remote-proof
@@ -86,7 +86,7 @@ in the same change:
 2. `configs/gen_config.py`;
 3. `configs/examples/`;
 4. `configs/README.md`;
-5. [doc/validation-design.md](../../doc/validation-design.md) §4.1 if the key
+5. [doc/acceptance-design.md](../../doc/acceptance-design.md) §4.1 if the key
    is architecturally significant.
 
 ## Capture and compliance split
@@ -99,7 +99,7 @@ the HTTP client lives in `compliance/`.
 ## Before handing back
 
 ```bash
-cd "$(git rev-parse --show-toplevel)/tests/validation" && \
+cd "$(git rev-parse --show-toplevel)/tests/acceptance" && \
   ./venv/bin/python3 -m pytest tests/single --collect-only -q | tail -1
 cd "$(git rev-parse --show-toplevel)" && ./format-coding.sh
 ```

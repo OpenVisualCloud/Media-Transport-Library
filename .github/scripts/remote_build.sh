@@ -25,7 +25,7 @@ export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${ECOSYSTEM_BUILD_AND_INSTALL_F
 export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:-1}
 export TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET=${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:-1}
 # Capture PHC is disciplined to TAI at runtime via phc2sys -O <live_offset>
-# (tests/validation conftest), so the kernel TAI offset is left untouched.
+# (tests/acceptance conftest), so the kernel TAI offset is left untouched.
 export TOOLS_RUN_SET_TAI_OFFSET=${TOOLS_RUN_SET_TAI_OFFSET:-0}
 
 # ── Sync repo ──

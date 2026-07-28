@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Generic, non-validation-specific host setup/discovery helpers shared by
+# Generic, non-acceptance-specific host setup/discovery helpers shared by
 # BOTH the system-wide setup path (mtl-system-setup MCP server, used for
-# gtest/KahawaiTest/VFs) and the tests/validation/ pytest setup path
-# (mtl-validation-setup MCP server + validation_setup*.sh). Nothing in this
+# gtest/KahawaiTest/VFs) and the tests/acceptance/ pytest setup path
+# (mtl-acceptance-setup MCP server + acceptance_setup*.sh). Nothing in this
 # file assumes a `.local_install` prefix or pytest-specific config — that
-# lives in lib/mtl_validation_discover.sh instead.
+# lives in lib/mtl_acceptance_discover.sh instead.
 #
 # Functions here are the single implementation of "is the ICE driver OK?",
 # "set hugepages", "set CPU governor to performance", "apt dependencies" —
 # both mtl_setup_common.py (Python, shared by both MCP servers) and the
-# validation shell scripts source/shell out to these instead of each
+# acceptance-tests shell scripts source/shell out to these instead of each
 # hand-rolling their own copy.
 #
 # Usage: source this file, then call the mh_* functions.

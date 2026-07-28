@@ -3,22 +3,22 @@
 # Copyright 2026 Intel Corporation
 #
 # Top-level entry point to take a host to "ready to run
-# tests/validation/tests/single/ pytest" — with NO agent/MCP/AI required.
+# tests/acceptance/tests/single/ pytest" — with NO agent/MCP/AI required.
 #
 # Usage:
-#   validation_setup.sh status                 # discovery only, no changes
-#   validation_setup.sh setup                   # interactive: discover, ask, apply
-#   validation_setup.sh setup --auto [flags]    # non-interactive (CI / MCP use)
-#   validation_setup.sh setup --base-only ...   # only the broad host-setup phase
-#   validation_setup.sh setup --pytest-only ... # only the pytest-specific phase
+#   acceptance_setup.sh status                 # discovery only, no changes
+#   acceptance_setup.sh setup                   # interactive: discover, ask, apply
+#   acceptance_setup.sh setup --auto [flags]    # non-interactive (CI / MCP use)
+#   acceptance_setup.sh setup --base-only ...   # only the broad host-setup phase
+#   acceptance_setup.sh setup --pytest-only ... # only the pytest-specific phase
 #
 # This script is the single source of truth for the workflow the
-# "mtl-validation-setup" MCP server used to perform conversationally.
+# "mtl-acceptance-setup" MCP server used to perform conversationally.
 # It composes two existing, independently runnable pieces:
-#   1. validation_setup_base.sh   — apt/ICE/DPDK/MTL(+plugins)/hugepages/governor
-#   2. setup_validation.sh        — NFS media/localhost root SSH/venv/configs
+#   1. acceptance_setup_base.sh   — apt/ICE/DPDK/MTL(+plugins)/hugepages/governor
+#   2. setup_acceptance.sh        — NFS media/localhost root SSH/venv/configs
 # Discovery (read-only status probing) lives in
-# lib/mtl_validation_discover.sh and is shared by both phases and by this
+# lib/mtl_acceptance_discover.sh and is shared by both phases and by this
 # script, so there is exactly one implementation of "is the ICE driver OK?",
 # "which PFs exist?", etc. The MCP server shells out to this same script
 # instead of re-implementing any of this logic in Python.
@@ -29,24 +29,24 @@ set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root" || exit 1
-# shellcheck source=lib/mtl_validation_discover.sh disable=SC1091
-source "$repo_root/.github/scripts/lib/mtl_validation_discover.sh"
+# shellcheck source=lib/mtl_acceptance_discover.sh disable=SC1091
+source "$repo_root/.github/scripts/lib/mtl_acceptance_discover.sh"
 
 CYN=$'\033[1;36m'
 GRN=$'\033[1;32m'
 YEL=$'\033[1;33m'
 RED=$'\033[1;31m'
 CLR=$'\033[0m'
-log() { printf '%s[validation_setup]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
-warn() { printf '%s[validation_setup] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
-err() { printf '%s[validation_setup] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
-ok() { printf '%s[validation_setup] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
+log() { printf '%s[acceptance_setup]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
+warn() { printf '%s[acceptance_setup] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
+err() { printf '%s[acceptance_setup] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
+ok() { printf '%s[acceptance_setup] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
 
 usage() {
 	cat <<'EOF'
 Usage:
-  validation_setup.sh status                    Discovery-only report, no changes.
-  validation_setup.sh setup [flags]              Interactive by default (tty); add
+  acceptance_setup.sh status                    Discovery-only report, no changes.
+  acceptance_setup.sh setup [flags]              Interactive by default (tty); add
                                                   --auto for non-interactive use.
 
 Flags for 'setup' (all optional; interactive mode prompts for anything unset):
@@ -73,15 +73,15 @@ Flags for 'setup' (all optional; interactive mode prompts for anything unset):
                               netsniff-ng packet capture; required for compliance.
   --check-only               Probe-only for the pytest-specific stages; makes no
                               changes (passed through as CHECK_ONLY to
-                              setup_validation.sh).
+                              setup_acceptance.sh).
   -h, --help                 Show this help.
 
 Examples:
   # Human, fully interactive, asked for everything:
-  .github/scripts/validation_setup.sh setup
+  .github/scripts/acceptance_setup.sh setup
 
   # CI / MCP server, fully scripted:
-  .github/scripts/validation_setup.sh setup --auto \
+  .github/scripts/acceptance_setup.sh setup --auto \
       --nfs-source=10.0.0.5:/mnt/NFS/mtl_assets/media --pf-bdf=0000:c9:00.0
 EOF
 }
@@ -181,7 +181,7 @@ if [[ "$AUTO" == "0" && -t 0 ]]; then
 fi
 
 log "════════════════════════════════════════════════════════════════════"
-log " MTL validation host setup — current status"
+log " MTL acceptance_tests host setup — current status"
 log "════════════════════════════════════════════════════════════════════"
 vd_full_report >&2
 log "════════════════════════════════════════════════════════════════════"
@@ -310,7 +310,7 @@ if [[ "$PYTEST_ONLY" != "1" ]]; then
 		BUILD_MODE="$BUILD_MODE" \
 		INCLUDE_FFMPEG_PLUGIN="$INCLUDE_FFMPEG" \
 		INCLUDE_GSTREAMER_PLUGIN="$INCLUDE_GSTREAMER" \
-		bash "$repo_root/.github/scripts/validation_setup_base.sh" || rc=$?
+		bash "$repo_root/.github/scripts/acceptance_setup_base.sh" || rc=$?
 	if [[ "$rc" != "0" ]]; then
 		err "broad host setup failed (exit $rc)"
 		exit "$rc"
@@ -327,7 +327,7 @@ if [[ "$BASE_ONLY" != "1" ]]; then
 	[[ -n "$PF_BDF" ]] && env_args+=(PCI_DEVICE_BDF="$PF_BDF")
 	[[ -n "$EBU_IP" ]] && env_args+=(EBU_IP="$EBU_IP" EBU_USER="$EBU_USER" EBU_PASSWORD="$EBU_PASSWORD")
 	[[ -n "$CAPTURE_PCI_DEVICE" ]] && env_args+=(CAPTURE_PCI_DEVICE="$CAPTURE_PCI_DEVICE")
-	env "${env_args[@]}" bash "$repo_root/.github/scripts/setup_validation.sh" || rc=$?
+	env "${env_args[@]}" bash "$repo_root/.github/scripts/setup_acceptance.sh" || rc=$?
 	if [[ "$rc" != "0" ]]; then
 		err "pytest-specific setup failed (exit $rc)"
 		exit "$rc"
@@ -335,9 +335,9 @@ if [[ "$BASE_ONLY" != "1" ]]; then
 fi
 
 echo >&2
-ok "Validation host setup complete"
+ok "Acceptance tests host setup complete"
 log "Run e.g.:"
-log "  cd tests/validation && sudo -E ./venv/bin/python3 -m pytest \\"
+log "  cd tests/acceptance && sudo -E ./venv/bin/python3 -m pytest \\"
 log "    --topology_config=configs/topology_config.yaml \\"
 log "    --test_config=configs/test_config.yaml \\"
 log "    tests/single/st20p/test_input_formats.py --tb=short -v"
