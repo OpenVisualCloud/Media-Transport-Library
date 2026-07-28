@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 # for this worst-case delay when PTP is enabled.
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
+# Seconds to let a stream reach steady state before arming the pcap capture.
+# ST 2110-21 conformance is a steady-state measurement, and MTL session/queue
+# init plus PTP epoch alignment take several seconds before the first RTP
+# packet -- arming capture too early pulls startup transients into the
+# compliance window and causes spurious VRX failures.
+CAPTURE_SETTLE_TIME = 12
+
 
 # Encoder name -> MTL st22 plugin shared object, for require_encoder()
 # pre-flight checks shared across framework adapters.
@@ -137,6 +144,14 @@ class Application(ABC):
 
         This method handles common setup, then delegates to the framework-specific
         _create_command_and_config() abstract method.
+
+        st20p universal parameter contract: every adapter's ``session_type=
+        "st20p"`` path must honor ``width``, ``height``, ``framerate``,
+        ``pixel_format``, ``transport_format``, ``input_file``, ``output_file``,
+        ``packing``, ``test_mode``, ``test_time`` and ``keep_output`` with the
+        same meaning. This is what lets a test sweep formats with one
+        ``create_command(...)`` call shared across every app, instead of a
+        per-app translation layer in the test body.
 
         Args:
             **kwargs: Universal parameters to set before building command
@@ -496,6 +511,17 @@ class Application(ABC):
                         ptp_sync_time,
                     )
                     time.sleep(ptp_sync_time)
+                # ST 2110-21 is a steady-state conformance measurement. The
+                # first frames of a session carry startup transients (MTL
+                # session/framebuffer init, first-touch page faults on the
+                # source file, producer thread placement) that are not
+                # representative and would otherwise dominate a short capture.
+                settle = self.params.get("capture_settle_time", CAPTURE_SETTLE_TIME)
+                if settle:
+                    logger.info(
+                        "Waiting %ds for stream to settle before capture", settle
+                    )
+                    time.sleep(settle)
                 self._start_netsniff_capture(netsniff)
             except Exception as e:
                 logger.warning("netsniff capture setup failed: %s", e)
@@ -590,6 +616,7 @@ class Application(ABC):
         proc_wait_timeout: Optional[float] = None,
         cleanup_host=None,
         after_first_start: Optional[Callable] = None,
+        after_last_start: Optional[Callable] = None,
     ) -> list[ProcSpec]:
         """Start a group of processes, wait, stop, capture stdout. Generic.
 
@@ -608,7 +635,11 @@ class Application(ABC):
 
         ``after_first_start(first_proc)`` runs once after the first spec
         starts — used to arm netsniff capture without the helper having to
-        know about it.
+        know about it. ``after_last_start(last_proc)`` is the same hook for
+        frameworks whose traffic only flows once *every* spec is up (FFmpeg
+        starts RX first, TX second). Both hooks may block; the wall-clock
+        wait below subtracts the time they consumed so the total run length
+        stays ``wall_clock_seconds``.
 
         Side effects on ``self``: ``self._process`` is set to the first
         spec's process while the group runs (so legacy hooks that introspect
@@ -616,6 +647,7 @@ class Application(ABC):
         """
         framework_name = self.get_app_name()
         try:
+            started_at = time.time()
             for idx, spec in enumerate(specs):
                 if idx and sleep_interval:
                     time.sleep(sleep_interval)
@@ -628,14 +660,18 @@ class Application(ABC):
                     self._host = spec.host
                     if after_first_start is not None:
                         after_first_start(spec.proc)
+            if after_last_start is not None:
+                after_last_start(specs[-1].proc)
 
             if wall_clock_seconds is not None:
+                remaining = max(0.0, wall_clock_seconds - (time.time() - started_at))
                 logger.info(
-                    "[%s] Running for %ds (wall clock)",
+                    "[%s] Running for %ds (wall clock), %.1fs remaining",
                     framework_name,
                     wall_clock_seconds,
+                    remaining,
                 )
-                time.sleep(wall_clock_seconds)
+                time.sleep(remaining)
             else:
                 for spec in specs:
                     if not spec.bounded:
