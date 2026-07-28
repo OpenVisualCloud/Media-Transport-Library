@@ -369,14 +369,21 @@ def build_ffmpeg_plugin() -> str:
     if not build_sh.is_file():
         return "Error: ecosystem/ffmpeg_plugin/build.sh not found"
 
+    # Without MTL_INSTALL_PREFIX, setup_environment.sh falls back to
+    # `sudo make install` (system-wide), leaving .local_install/ffmpeg --
+    # the binary pytest actually invokes -- stale.
+    local_prefix = REPO_ROOT / ".local_install" / "mtl"
     rc, out = _run_rc(
         "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1 "
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
         "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
+        f"MTL_INSTALL_PREFIX={local_prefix} "
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
     )
-    return f"## FFmpeg Plugin Build\n{_summarize_output('ffmpeg_plugin_build', out, rc=rc)}"
+    ffmpeg_ok = (REPO_ROOT / ".local_install/ffmpeg/bin/ffmpeg").is_file()
+    build_rc = rc if ffmpeg_ok else 1
+    return f"## FFmpeg Plugin Build\n{_summarize_output('ffmpeg_plugin_build', out, rc=build_rc)}"
 
 
 @mcp.tool()
@@ -386,10 +393,13 @@ def build_gstreamer_plugin() -> str:
     if not build_sh.is_file():
         return "Error: ecosystem/gstreamer_plugin/build.sh not found"
 
+    # See build_ffmpeg_plugin() above -- same MTL_INSTALL_PREFIX requirement.
+    local_prefix = REPO_ROOT / ".local_install" / "mtl"
     rc, out = _run_rc(
         "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 "
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
         "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
+        f"MTL_INSTALL_PREFIX={local_prefix} "
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
     )
