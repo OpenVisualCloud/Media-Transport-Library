@@ -2,6 +2,10 @@
 
 The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
 
+## Network Security
+
+Deploy RTP/UDP receivers on trusted media networks and restrict ingress with VLANs or firewall rules. MTL validates received packet fields, but network isolation limits exposure to malformed or unauthorized traffic.
+
 ## 1. IOMMU Setup
 
 ### 1.1. [IOMMU Setup](chunks/_iommu_setup.md)

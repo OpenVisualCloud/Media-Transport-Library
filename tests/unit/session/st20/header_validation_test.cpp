@@ -73,3 +73,21 @@ TEST_F(St20RxHeaderValidationTest, WrongInterlaceDropped) {
   EXPECT_EQ(rc, -EINVAL);
   EXPECT_EQ(wrong_interlace(), 1u);
 }
+
+TEST_F(St20RxHeaderValidationTest, FinalRowContinuationPastFrameDropped) {
+  ut20_ctx_set_linesize(ctx_, 48);
+
+  int rc = ut20_feed_continuation_pkt(ctx_, 0, 1000, 1, 0, 12, 12, MTL_SESSION_PORT_P);
+
+  EXPECT_LT(rc, 0);
+  EXPECT_EQ(ut20_stat_offset_dropped(ctx_), 1u);
+}
+
+TEST_F(St20RxHeaderValidationTest, PaddedLineContinuationAccepted) {
+  ut20_ctx_set_linesize(ctx_, 48);
+
+  int rc = ut20_feed_continuation_pkt(ctx_, 0, 1000, 0, 0, 12, 12, MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(rc, 0);
+  EXPECT_EQ(ut20_stat_offset_dropped(ctx_), 0u);
+}
