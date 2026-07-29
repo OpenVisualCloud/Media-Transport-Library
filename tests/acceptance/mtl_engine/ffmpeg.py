@@ -29,6 +29,7 @@ from mtl_engine.application_base import (
 )
 from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
+from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.pcap_compliance import NO_COMPLIANCE
 
 logger = logging.getLogger(__name__)
@@ -580,6 +581,7 @@ class FFmpeg(Application):
         host=None,
         sleep_interval: int = 5,
         compliance=NO_COMPLIANCE,
+        integrity=NO_INTEGRITY,
         interface_setup=None,
         fail_on_error: bool = True,
         **extra,
@@ -646,7 +648,15 @@ class FFmpeg(Application):
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
-        return self._finalize_run(compliance, intent, fail_on_error)
+        integrity_intent = self.integrity_intent(build, host)
+
+        return self._finalize_run(
+            compliance,
+            intent,
+            fail_on_error,
+            integrity=integrity,
+            integrity_intent=integrity_intent,
+        )
 
     # ----------------------------------------------------- compliance
     def _resolve_capture_dst_ip(self):

@@ -36,6 +36,7 @@ from mtl_engine.const import (
 from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
 from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
+from mtl_engine.integrity_session import IntegritySession
 from mtl_engine.pcap_compliance import NO_COMPLIANCE, ComplianceSession
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
@@ -1245,6 +1246,26 @@ def pcap_capture(
         # only catches a test that requested the fixture but never dispatched
         # it at all.
         session.close()
+
+
+@pytest.fixture(scope="function")
+def media_integrity():
+    """Fixture for post-run RX/TX content-integrity checking (video or audio).
+
+    Yields a :class:`~mtl_engine.integrity_session.IntegritySession`. Tests
+    pass it to ``execute_test(integrity=media_integrity)``; the session
+    picks ``FileVideoIntegrityRunner`` or ``FileAudioIntegrityRunner``
+    (whichever the app's ``session_type`` selects) against the app's own
+    tracked ``output_file``/``input_file`` right before
+    ``Application._cleanup_output_files()`` removes the RX file -- so no
+    ``keep_output=True`` is needed just to survive to this check.
+    """
+    session = IntegritySession()
+    yield session
+    # session.close() enforces that evaluate()/skip() ran during the call
+    # phase -- catches a test that requested the fixture but never
+    # dispatched it at all.
+    session.close()
 
 
 @pytest.fixture(scope="function", autouse=True)

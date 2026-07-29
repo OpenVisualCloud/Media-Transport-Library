@@ -14,7 +14,12 @@ pytestmark = pytest.mark.verified
     "application",
     [
         "rxtxapp",
-        "ffmpeg",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support rfc format, source files need to be changed"
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -35,10 +40,13 @@ def test_st20p_resolutions(
     test_config,
     test_time,
     pcap_capture,
+    output_files,
+    media_integrity,
     media_file,
 ):
     """Test different video resolutions."""
     media_file_info, media_file_path = media_file
+    rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
@@ -55,26 +63,15 @@ def test_st20p_resolutions(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
+        "output_file": rx_output,
         "test_mode": "multicast",
         "test_time": test_time,
     }
 
-    height = media_file_info.get("height", 0)
-
-    if height >= 2160:
-        config_params.update(
-            {"pacing": "linear", "packing": "GPM_SL", "tx_no_chain": True}
-        )
-    elif height >= 1080:
-        config_params.update({"pacing": "wide", "packing": "GPM", "tx_no_chain": False})
-    else:
-        config_params.update(
-            {"pacing": "narrow", "packing": "GPM", "tx_no_chain": False}
-        )
-
     app = app_factory(application)
     app.create_command(**config_params)
 
+    height = media_file_info.get("height", 0)
     actual_test_time = test_time
     if height >= 2160:
         actual_test_time = max(test_time, 15)
@@ -88,4 +85,5 @@ def test_st20p_resolutions(
         test_time=actual_test_time,
         host=host,
         compliance=pcap_capture,
+        integrity=media_integrity,
     )

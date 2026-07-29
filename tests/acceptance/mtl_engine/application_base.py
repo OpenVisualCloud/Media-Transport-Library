@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
+from .integrity_session import NO_INTEGRITY, IntegrityIntent
 from .pcap_compliance import CAPTURE_SETTLE_TIME, NO_COMPLIANCE, CaptureIntent
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,34 @@ class Application(ABC):
             framerate=self.params.get("framerate"),
         )
 
+    def integrity_intent(self, test_repo_path: str, host) -> IntegrityIntent:
+        """Build the :class:`IntegrityIntent` an ``IntegritySession`` needs to evaluate.
+
+        Mirrors :meth:`capture_intent` -- the sole seam between an
+        Application and ``mtl_engine.integrity_session``. Reads
+        ``input_file``/``output_file`` directly from ``self.params`` rather
+        than ``self._output_files`` so it works identically for every
+        adapter, including RxTxApp, which never populates
+        ``self._output_files`` (it has no auto-cleanup to avoid). Populates
+        both the video and audio field groups unconditionally -- cheap, and
+        ``IntegritySession`` only reads the group ``kind`` selects.
+        """
+        kind = "audio" if self.params.get("session_type") == "st30p" else "video"
+        return IntegrityIntent(
+            host=host,
+            test_repo_path=test_repo_path,
+            src_url=self.params.get("input_file"),
+            out_url=self.params.get("output_file"),
+            kind=kind,
+            width=self.params.get("width"),
+            height=self.params.get("height"),
+            file_format=self.params.get("pixel_format"),
+            audio_format=self.params.get("audio_format"),
+            audio_channels=self.params.get("audio_channels"),
+            audio_sampling=self.params.get("audio_sampling"),
+            audio_ptime=self.params.get("audio_ptime"),
+        )
+
     def set_params(self, **kwargs):
         """Set parameters from user input and track which were provided."""
         self._user_provided_params = set(kwargs.keys())
@@ -329,6 +358,7 @@ class Application(ABC):
         sleep_interval: int = 4,
         tx_first: bool = True,
         compliance=NO_COMPLIANCE,
+        integrity=NO_INTEGRITY,
         interface_setup=None,
         fail_on_error: bool = True,
     ) -> bool:
@@ -364,6 +394,12 @@ class Application(ABC):
                 "execute_test() never arms or evaluates it. Pass "
                 "compliance=NO_COMPLIANCE (the default) for dual-host tests."
             )
+        if is_dual and integrity is not NO_INTEGRITY:
+            raise ValueError(
+                "integrity checking via execute_test() is single-host only -- "
+                "dual-host execute_test() never evaluates it. Pass "
+                "integrity=NO_INTEGRITY (the default) for dual-host tests."
+            )
 
         if not self.command:
             raise RuntimeError("create_command() must be called before execute_test()")
@@ -395,6 +431,7 @@ class Application(ABC):
         # evaluate() below so both see the exact same snapshot of self.params
         # (self.params is mutable and must not be re-read mid-run).
         intent = self.capture_intent()
+        integrity_intent = self.integrity_intent(build, host)
 
         if not is_dual:
             specs = [
@@ -414,7 +451,13 @@ class Application(ABC):
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)
-            return self._finalize_run(compliance, intent, fail_on_error)
+            return self._finalize_run(
+                compliance,
+                intent,
+                fail_on_error,
+                integrity=integrity,
+                integrity_intent=integrity_intent,
+            )
 
         # Dual-host: 2 bounded procs across 2 hosts.
         if not rx_app.command:
@@ -498,29 +541,46 @@ class Application(ABC):
             return False
 
     def _finalize_run(
-        self, compliance, intent: CaptureIntent, fail_on_error: bool
+        self,
+        compliance,
+        intent: CaptureIntent,
+        fail_on_error: bool,
+        *,
+        integrity=NO_INTEGRITY,
+        integrity_intent: Optional[IntegrityIntent] = None,
     ) -> bool:
-        """Evaluate the compliance session and validate_results, run unconditionally.
+        """Evaluate compliance, integrity and validate_results, run unconditionally.
 
-        A hard failure in one must never skip the other -- e.g. a real app
+        A hard failure in one must never skip the others -- e.g. a real app
         crash must still be validated even when the capture also happens to
         be non-compliant. Each branch is caught independently, then
-        re-raised once at the end if either failed and ``fail_on_error`` is
-        set (each helper already records the pytest failure internally).
+        re-raised once at the end if any failed and ``fail_on_error`` is set
+        (each helper already records the pytest failure internally).
+
+        Integrity is evaluated *before* ``_dispatch_validate`` deliberately:
+        FFmpeg's ``validate_results()`` deletes the tracked RX output file
+        (via ``_cleanup_output_files``) once its own check is done, so the
+        integrity verdict must consume the file first -- this is what lets
+        callers drop ``keep_output=True``.
         """
         compliance_ok, compliance_exc = True, None
         try:
             compliance_ok = compliance.evaluate(intent, fail_on_error)
         except AssertionError as e:
             compliance_ok, compliance_exc = False, e
+        integrity_ok, integrity_exc = True, None
+        try:
+            integrity_ok = integrity.evaluate(integrity_intent, fail_on_error)
+        except AssertionError as e:
+            integrity_ok, integrity_exc = False, e
         validate_ok, validate_exc = True, None
         try:
             validate_ok = self._dispatch_validate(fail_on_error)
         except AssertionError as e:
             validate_ok, validate_exc = False, e
-        if fail_on_error and (compliance_exc or validate_exc):
-            raise compliance_exc or validate_exc
-        return compliance_ok and validate_ok
+        if fail_on_error and (compliance_exc or integrity_exc or validate_exc):
+            raise compliance_exc or integrity_exc or validate_exc
+        return compliance_ok and integrity_ok and validate_ok
 
     def _run_proc_group(
         self,

@@ -1,24 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
-import logging
 from pathlib import Path
 
 import pytest
-from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from common.nicctl import InterfaceSetup
 from mtl_engine.const import LOG_FOLDER
-from mtl_engine.execute import log_fail
-from mtl_engine.integrity import (
-    calculate_st30p_framebuff_size,
-    check_st30p_integrity,
-    get_channel_number,
-    get_sample_number,
-    get_sample_size,
-)
 from mtl_engine.media_files import audio_files
-
-logger = logging.getLogger(__name__)
 
 _AUDIO_FORMATS = ["PCM8", "PCM16", "PCM24"]
 _AUDIO_CHANNELS = ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
@@ -58,6 +46,8 @@ def test_st30p_integrity(
     test_config,
     media_file,
     pcap_capture,
+    output_files,
+    media_integrity,
 ):
     """Test st30p audio integrity (bit-exact comparison)."""
     media_file_info, media_file_path = media_file
@@ -66,7 +56,7 @@ def test_st30p_integrity(
     )
     log_dir = Path.cwd() / LOG_FOLDER / "latest"
     log_dir.mkdir(parents=True, exist_ok=True)
-    out_file_url = str(log_dir / "out.wav")
+    out_file_url = output_files.register(str(log_dir / "out.wav"))
     host = list(hosts.values())[0]
 
     app = app_factory(application)
@@ -84,19 +74,12 @@ def test_st30p_integrity(
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )
-
-    size = calculate_st30p_framebuff_size(
-        format=media_file_info["format"], ptime="1", sampling="48kHz", channel="U02"
-    )
-    result = check_st30p_integrity(
-        src_url=media_file_path, out_url=out_file_url, size=size
-    )
-    if result:
-        logger.info("INTEGRITY PASS")
-    else:
-        log_fail("INTEGRITY FAIL")
 
 
 @pytest.mark.nightly
@@ -133,6 +116,8 @@ def test_st30p_channel(
     test_config,
     pcap_capture,
     media_file,
+    output_files,
+    media_integrity,
 ):
     """Test st30p with different audio channel configurations."""
     media_file_info, media_file_path = media_file
@@ -144,7 +129,9 @@ def test_st30p_channel(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
+    out_file_url = output_files.register(
+        str(host.connection.path(media_file_path).parent / "out.pcm")
+    )
 
     app = app_factory(application)
     app.create_command(
@@ -156,7 +143,7 @@ def test_st30p_channel(
         audio_sampling="48kHz",
         audio_ptime="1",
         input_file=media_file_path,
-        output_file=str(out_file_url),
+        output_file=out_file_url,
         test_time=test_time,
     )
 
@@ -165,23 +152,8 @@ def test_st30p_channel(
         test_time=test_time,
         host=host,
         compliance=pcap_capture,
+        integrity=media_integrity,
     )
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            channel_num=get_channel_number(audio_channel),
-            sample_size=get_sample_size(media_file_info["format"]),
-            out_path=str(out_file_url.parent),
-            delete_file=True,
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
 
 
 @pytest.mark.smoke
@@ -214,6 +186,8 @@ def test_st30p_format(
     test_config,
     media_file,
     pcap_capture,
+    output_files,
+    media_integrity,
 ):
     """Test st30p with different audio formats (PCM8, PCM16, PCM24)."""
     media_file_info, media_file_path = media_file
@@ -221,7 +195,9 @@ def test_st30p_format(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
+    out_file_url = output_files.register(
+        str(host.connection.path(media_file_path).parent / "out.pcm")
+    )
 
     app = app_factory(application)
     app.create_command(
@@ -233,26 +209,17 @@ def test_st30p_format(
         audio_sampling="48kHz",
         audio_ptime="1",
         input_file=media_file_path,
-        output_file=str(out_file_url),
+        output_file=out_file_url,
         test_time=test_time,
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            sample_size=get_sample_size(media_file_info["format"]),
-            out_path=str(out_file_url.parent),
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
 
 
 @pytest.mark.nightly
@@ -286,6 +253,8 @@ def test_st30p_ptime(
     test_config,
     media_file,
     pcap_capture,
+    output_files,
+    media_integrity,
 ):
     """Test st30p with different ptime values."""
     # FFmpeg mtl_st30p plugin only supports ptime "1ms" and "125us".
@@ -297,7 +266,9 @@ def test_st30p_ptime(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
+    out_file_url = output_files.register(
+        str(host.connection.path(media_file_path).parent / "out.pcm")
+    )
 
     app = app_factory(application)
     app.create_command(
@@ -309,27 +280,17 @@ def test_st30p_ptime(
         audio_sampling="48kHz",
         audio_ptime=audio_ptime,
         input_file=media_file_path,
-        output_file=str(out_file_url),
+        output_file=out_file_url,
         test_time=test_time,
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            sample_size=get_sample_size(media_file_info["format"]),
-            out_path=str(out_file_url.parent),
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
 
 
 @pytest.mark.nightly
@@ -363,6 +324,8 @@ def test_st30p_sampling(
     test_config,
     media_file,
     pcap_capture,
+    output_files,
+    media_integrity,
 ):
     """Test st30p with different sampling rates."""
     media_file_info, media_file_path = media_file
@@ -370,7 +333,9 @@ def test_st30p_sampling(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
+    out_file_url = output_files.register(
+        str(host.connection.path(media_file_path).parent / "out.pcm")
+    )
 
     app = app_factory(application)
     app.create_command(
@@ -382,28 +347,17 @@ def test_st30p_sampling(
         audio_sampling=audio_sampling,
         audio_ptime="1",
         input_file=media_file_path,
-        output_file=str(out_file_url),
+        output_file=out_file_url,
         test_time=test_time,
     )
 
     app.execute_test(
-        build=mtl_path, test_time=test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            sample_size=get_sample_size(media_file_info["format"]),
-            sample_num=get_sample_number(audio_sampling, "1"),
-            out_path=str(out_file_url.parent),
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
 
 
 @pytest.mark.nightly

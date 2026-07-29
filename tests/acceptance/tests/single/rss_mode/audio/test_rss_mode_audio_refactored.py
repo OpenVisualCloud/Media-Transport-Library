@@ -1,15 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-import logging
-
 import pytest
-from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from common.nicctl import InterfaceSetup
-from mtl_engine.execute import log_fail
-from mtl_engine.integrity import get_sample_size
 from mtl_engine.media_files import audio_files
-
-logger = logging.getLogger(__name__)
 
 
 @pytest.mark.nightly
@@ -40,6 +33,8 @@ def test_rss_mode_audio_refactored(
     test_config,
     media_file,
     application,
+    output_files,
+    media_integrity,
 ):
     """Refactored test for rss mode audio.
 
@@ -59,7 +54,9 @@ def test_rss_mode_audio_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
+    out_file_url = output_files.register(
+        str(host.connection.path(media_file_path).parent / "out.pcm")
+    )
 
     application.create_command(
         session_type="st30p",
@@ -70,37 +67,11 @@ def test_rss_mode_audio_refactored(
         audio_sampling="48kHz",
         audio_ptime="1",
         input_file=media_file_path,
-        output_file=str(out_file_url),
+        output_file=out_file_url,
         rss_mode=rss_mode,
         test_time=test_time,
     )
 
-    application.execute_test(build=mtl_path, test_time=test_time, host=host)
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            sample_size=get_sample_size(media_file_info["format"]),
-            out_path=str(out_file_url.parent),
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running audio integrity check...")
-        integrity = FileAudioIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_file_url.name,
-            sample_size=get_sample_size(media_file_info["format"]),
-            out_path=str(out_file_url.parent),
-        )
-        result = integrity.run()
-        if not result:
-            log_fail("Audio integrity check failed")
+    application.execute_test(
+        build=mtl_path, test_time=test_time, host=host, integrity=media_integrity
+    )

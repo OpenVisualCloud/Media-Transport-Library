@@ -4,7 +4,7 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = pytest.mark.verified
 
@@ -20,12 +20,11 @@ pytestmark = pytest.mark.verified
 @pytest.mark.parametrize(
     "media_file",
     [
-        yuv_files_422rfc10["Crosswalk_720p"],
-        yuv_files_422rfc10["ParkJoy_1080p"],
-        yuv_files_422rfc10["Pedestrian_4K"],
+        yuv_files_422p10le["Penguin_720p"],
+        yuv_files_422p10le["Penguin_1080p"],
     ],
     indirect=["media_file"],
-    ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
+    ids=["Penguin_720p", "Penguin_1080p"],
 )
 def test_st20p_multicast(
     application,
@@ -36,10 +35,13 @@ def test_st20p_multicast(
     test_config,
     test_time,
     pcap_capture,
+    output_files,
+    media_integrity,
     media_file,
 ):
     """Test multicast transmission mode."""
     media_file_info, media_file_path = media_file
+    rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
@@ -56,21 +58,17 @@ def test_st20p_multicast(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
+        "output_file": rx_output,
         "test_mode": "multicast",
         "test_time": test_time,
     }
 
     height = media_file_info.get("height", 0)
     if height >= 2160:
-        config_params.update(
-            {"pacing": "linear", "packing": "GPM_SL", "tx_no_chain": True}
-        )
         actual_test_time = max(test_time, 15)
     elif height >= 1080:
-        config_params.update({"pacing": "wide", "packing": "GPM"})
         actual_test_time = max(test_time, 10)
     else:
-        config_params.update({"pacing": "narrow", "packing": "GPM"})
         actual_test_time = max(test_time, 8)
 
     app = app_factory(application)
@@ -80,4 +78,5 @@ def test_st20p_multicast(
         test_time=actual_test_time,
         host=host,
         compliance=pcap_capture,
+        integrity=media_integrity,
     )

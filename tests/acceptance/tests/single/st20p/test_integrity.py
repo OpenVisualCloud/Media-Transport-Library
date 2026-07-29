@@ -1,15 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
-import logging
 import os
 from pathlib import Path
 
 import pytest
 from mtl_engine import media_files as mf
 from mtl_engine.const import LOG_FOLDER
-from mtl_engine.execute import log_fail
-from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
@@ -20,14 +17,40 @@ INTEGRITY_MEDIA = [
     ("Penguin_1080p_422p10le", "yuv_files_422p10le", "Penguin_1080p"),
 ]
 
-logger = logging.getLogger(__name__)
+
+def integrity_params():
+    params = []
+
+    for application in ["ffmpeg", "rxtxapp"]:
+        for media_case, media_dict, media_key in INTEGRITY_MEDIA:
+            media_file_info = getattr(mf, media_dict)[media_key]
+
+            marks = []
+
+            if (
+                application == "ffmpeg"
+                and "rfc" in media_file_info["file_format"].lower()
+            ):
+                marks.append(
+                    pytest.mark.skip(reason="FFmpeg does not support RFC media format")
+                )
+
+            params.append(
+                pytest.param(
+                    application,
+                    media_case,
+                    media_dict,
+                    media_key,
+                    id=f"{application}-{media_case}",
+                    marks=marks,
+                )
+            )
+
+    return params
 
 
-@pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
 @pytest.mark.parametrize(
-    "media_case, media_dict, media_key",
-    INTEGRITY_MEDIA,
-    ids=[case[0] for case in INTEGRITY_MEDIA],
+    "application,media_case,media_dict,media_key", integrity_params()
 )
 def test_integrity(
     application,
@@ -40,6 +63,7 @@ def test_integrity(
     media_case,
     media_dict,
     media_key,
+    media_integrity,
 ):
     media_file_info = getattr(mf, media_dict)[media_key]
     media_path = test_config.get("media_path", "/mnt/media")
@@ -70,19 +94,9 @@ def test_integrity(
         test_time=test_time,
     )
     actual_test_time = max(test_time, 8)
-    app.execute_test(build=mtl_path, test_time=actual_test_time, host=host)
-    frame_size = calculate_yuv_frame_size(
-        media_file_info["width"],
-        media_file_info["height"],
-        media_file_info["file_format"],
+    app.execute_test(
+        build=mtl_path,
+        test_time=actual_test_time,
+        host=host,
+        integrity=media_integrity,
     )
-    result = check_st20p_integrity(
-        src_url=media_file_path, out_url=out_file_url, frame_size=frame_size
-    )
-    if result:
-        logger.info("INTEGRITY PASS")
-    else:
-        log_fail("INTEGRITY FAIL")
-        raise AssertionError(
-            "st20p integrity test failed content integrity comparison."
-        )

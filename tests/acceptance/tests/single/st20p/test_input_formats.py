@@ -17,16 +17,13 @@ transcode at runtime.
 Every case asserts both:
   1. Compliance -- ``pcap_capture`` records the wire traffic and the
      ``conftest.py`` teardown uploads it to the EBU LIST server.
-  2. Integrity -- ``FileVideoIntegrityRunner`` MD5-compares the RX output
-     against the source media file.
+  2. Integrity -- ``media_integrity`` MD5-compares the RX output against
+     the source media file.
 """
 
 import logging
-import os
 
 import pytest
-from common.integrity.integrity_runner import FileVideoIntegrityRunner
-from mtl_engine.execute import log_fail
 from mtl_engine.media_files import yuv_files_input_formats
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
@@ -53,6 +50,7 @@ def test_st20p_input_format(
     media_file,
     pcap_capture,
     output_files,
+    media_integrity,
 ):
     """TX->wire->RX for one MTL input format must be compliant and correct."""
     media_file_info, media_file_path = media_file
@@ -78,38 +76,13 @@ def test_st20p_input_format(
         transport_format=media_file_info["format"],
         input_file=media_file_path,
         output_file=rx_output,
-        # validate_results() deletes its own tracked output file after the
-        # internal size check unless told to keep it -- the integrity check
-        # below needs the file to still be on disk.
-        keep_output=True,
         test_time=test_time,
     )
 
-    passed = app.execute_test(
+    app.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
         compliance=pcap_capture,
-        fail_on_error=False,
+        integrity=media_integrity,
     )
-    if not passed:
-        log_fail(f"loopback failed for pix_fmt={pix_fmt}")
-        pytest.fail(f"loopback failed for pix_fmt={pix_fmt}")
-
-    logger.info(f"Running video integrity check for pix_fmt={pix_fmt}")
-    integrity = FileVideoIntegrityRunner(
-        host=host,
-        test_repo_path=mtl_path,
-        src_url=media_file_path,
-        out_name=os.path.basename(rx_output),
-        resolution=f"{media_file_info['width']}x{media_file_info['height']}",
-        file_format=pix_fmt,
-        out_path=os.path.dirname(rx_output),
-        delete_file=False,
-        integrity_path=os.path.join(
-            mtl_path, "tests", "validation", "common", "integrity"
-        ),
-    )
-    if not integrity.run():
-        log_fail(f"integrity check failed for pix_fmt={pix_fmt}")
-        pytest.fail(f"integrity check failed for pix_fmt={pix_fmt}")

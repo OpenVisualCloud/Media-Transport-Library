@@ -44,10 +44,13 @@ def test_st20p_packing(
     test_time,
     packing,
     pcap_capture,
+    output_files,
+    media_integrity,
     media_file,
 ):
     """Test different packing modes (GPM_SL, GPM)."""
     media_file_info, media_file_path = media_file
+    rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
@@ -65,6 +68,7 @@ def test_st20p_packing(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
+        "output_file": rx_output,
         "test_mode": "multicast",
         "packing": packing,
         "test_time": test_time,
@@ -72,17 +76,16 @@ def test_st20p_packing(
 
     height = media_file_info.get("height", 0)
     if height >= 2160:
-        if packing == "GPM_SL":
-            config_params.update({"tx_no_chain": True, "pacing": "linear"})
-        else:
-            config_params.update({"tx_no_chain": False, "pacing": "wide"})
         actual_test_time = max(test_time, 12)
     else:
-        config_params["pacing"] = "linear" if packing == "GPM_SL" else "narrow"
         actual_test_time = max(test_time, 8)
 
     app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=actual_test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )
