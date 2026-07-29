@@ -251,6 +251,46 @@ static struct rte_mbuf* make_video_mbuf(uint32_t seq, uint32_t ts, uint16_t line
   return make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, 0);
 }
 
+static struct rte_mbuf* make_video_continuation_mbuf(uint32_t seq, uint32_t ts,
+                                                     uint16_t line_num,
+                                                     uint16_t line_offset,
+                                                     uint16_t line1_length,
+                                                     uint16_t line2_length) {
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  if (!m) return NULL;
+
+  size_t total = sizeof(struct st_rfc4175_video_hdr) +
+                 sizeof(struct st20_rfc4175_extra_rtp_hdr) + line1_length + line2_length;
+  if (rte_pktmbuf_tailroom(m) < total) {
+    rte_pktmbuf_free(m);
+    return NULL;
+  }
+
+  uint8_t* buf = rte_pktmbuf_mtod(m, uint8_t*);
+  memset(buf, 0, total);
+  size_t hdr_offset =
+      sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
+  struct st20_rfc4175_rtp_hdr* rtp = (struct st20_rfc4175_rtp_hdr*)(buf + hdr_offset);
+  struct st20_rfc4175_extra_rtp_hdr* extra_rtp =
+      (struct st20_rfc4175_extra_rtp_hdr*)&rtp[1];
+
+  rtp->base.version = 2;
+  rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
+  rtp->base.tmstamp = htonl(ts);
+  rtp->seq_number_ext = htons((uint16_t)(seq >> 16));
+  rtp->row_number = htons(line_num);
+  rtp->row_offset = htons(line_offset | ST20_SRD_OFFSET_CONTINUATION);
+  rtp->row_length = htons(line1_length);
+  extra_rtp->row_length = htons(line2_length);
+  extra_rtp->row_offset = 0;
+  extra_rtp->row_number = htons(line_num + 1);
+
+  m->data_len = total;
+  m->pkt_len = total;
+  m->next = NULL;
+  return m;
+}
+
 /* ── pkt_idx → line/offset mapping ────────────────────────────────────── */
 
 static void pkt_idx_to_line(int pkt_idx, uint16_t* line_num, uint16_t* line_offset,
@@ -266,6 +306,18 @@ int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_n
                   uint16_t line_offset, uint16_t line_length,
                   enum mtl_session_port port) {
   struct rte_mbuf* m = make_video_mbuf(seq, ts, line_num, line_offset, line_length);
+  if (!m) return -1;
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+int ut20_feed_continuation_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                               uint16_t line_num, uint16_t line_offset,
+                               uint16_t line1_length, uint16_t line2_length,
+                               enum mtl_session_port port) {
+  struct rte_mbuf* m = make_video_continuation_mbuf(seq, ts, line_num, line_offset,
+                                                    line1_length, line2_length);
   if (!m) return -1;
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
@@ -391,6 +443,12 @@ void ut20_ctx_set_pt(ut20_test_ctx* ctx, uint8_t pt) {
 
 void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc) {
   ctx->session.ops.ssrc = ssrc;
+}
+
+void ut20_ctx_set_linesize(ut20_test_ctx* ctx, uint32_t linesize) {
+  ctx->session.ops.linesize = linesize;
+  ctx->session.st20_linesize = linesize;
+  ctx->session.st20_fb_size = linesize * ctx->session.ops.height;
 }
 
 void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool down) {

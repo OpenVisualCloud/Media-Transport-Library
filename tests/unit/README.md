@@ -76,6 +76,29 @@ Filter to a single suite or test:
 ./build_unit/tests/unit/UnitTest --gtest_list_tests
 ```
 
+### ST20 continuation bounds regression
+
+`St20RxHeaderValidationTest.FinalRowContinuationPastFrameDropped` feeds the
+production RFC 4175 frame handler a continuation SRD whose second row begins
+past its frame buffer. It needs no NIC, root, hugepages, or packet injector.
+
+```bash
+meson setup build_unit -Denable_unit_tests=true
+ninja -C build_unit tests/unit/UnitTest
+./build_unit/tests/unit/UnitTest \
+    --gtest_filter='St20RxHeaderValidationTest.FinalRowContinuationPastFrameDropped'
+```
+
+The test geometry is two 40-byte rows with a padded 48-byte stride, making an
+80-byte frame. It sends row 1 with a 12-byte first SRD and a 12-byte
+continuation. The original offset check accepts the first copy, while the
+second copy would begin at byte 96. Correct behavior is a negative return and
+one `stat_pkts_offset_dropped` increment. Before the continuation bound check,
+this test fails with `rc` equal to `0` and the drop counter equal to `0`.
+
+`St20RxHeaderValidationTest.PaddedLineContinuationAccepted` is the companion
+positive test. It verifies a valid padded continuation remains accepted.
+
 > **Why `LD_PRELOAD=libasan.so`?** `libmtl.so` is built with AddressSanitizer
 > when `enable_unit_tests=true`. Preloading the runtime first prevents
 > init-order interposition issues between gtest, libstdc++, and libasan.
