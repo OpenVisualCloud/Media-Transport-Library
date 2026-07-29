@@ -1,15 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 """PTP + interface-mix ST20P test using unified app_factory pattern."""
-import logging
-
 import pytest
-from common.integrity.integrity_runner import FileVideoIntegrityRunner
 from common.nicctl import InterfaceSetup
-from mtl_engine.execute import log_fail
 from mtl_engine.media_files import yuv_files_422rfc10
-
-logger = logging.getLogger(__name__)
 
 
 @pytest.mark.xfail
@@ -46,6 +40,7 @@ def test_st20_interfaces_mix_refactored(
     media_file,
     output_files,
     app_factory,
+    media_integrity,
 ):
     """Test st20p streaming with PTP across different interface profiles."""
     media_file_info, media_file_path = media_file
@@ -95,25 +90,5 @@ def test_st20_interfaces_mix_refactored(
         test_time=test_time,
         host=host,
         compliance=pcap_capture,
+        integrity=media_integrity,
     )
-
-    if test_config.get("integrity_check", True):
-        logger.info("Running video integrity check...")
-        resolution = f"{media_file_info['width']}x{media_file_info['height']}"
-        out_path = host.connection.path(video_out_url)
-        video_integrity = FileVideoIntegrityRunner(
-            host=host,
-            test_repo_path=mtl_path,
-            src_url=media_file_path,
-            out_name=out_path.name,
-            resolution=resolution,
-            file_format=media_file_info["file_format"],
-            out_path=str(out_path.parent),
-            integrity_path=str(
-                host.connection.path(
-                    mtl_path, "tests", "validation", "common", "integrity"
-                )
-            ),
-        )
-        if not video_integrity.run():
-            log_fail("Video integrity check failed")

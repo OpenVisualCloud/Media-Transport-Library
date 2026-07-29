@@ -88,7 +88,6 @@ FFMPEG_FORMAT_MAP = {
     "YUV420PLANAR10LE": "yuv420p10le",
     "RGB24": "rgb24",
     "RGBA": "rgba",
-    "YUV422RFC4175PG2BE10": "yuv422p10le",  # RFC4175 to planar 10-bit LE
     "Y210": "y210le",
     "UYVY": "uyvy422",
     "YUV420CUSTOM8": "yuv420p",

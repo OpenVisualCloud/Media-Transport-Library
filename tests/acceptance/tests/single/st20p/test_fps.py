@@ -4,7 +4,7 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = pytest.mark.verified
 
@@ -19,9 +19,9 @@ pytestmark = pytest.mark.verified
 )
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422rfc10["ParkJoy_1080p"]],
+    [yuv_files_422p10le["Penguin_1080p"]],
     indirect=["media_file"],
-    ids=["ParkJoy_1080p"],
+    ids=["Penguin_1080p"],
 )
 @pytest.mark.parametrize(
     "fps",
@@ -49,10 +49,13 @@ def test_st20p_fps(
     test_config,
     fps,
     pcap_capture,
+    output_files,
+    media_integrity,
     media_file,
 ):
     """Test different frame rates for st20p with both applications."""
     media_file_info, media_file_path = media_file
+    rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
@@ -70,13 +73,9 @@ def test_st20p_fps(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
+        "output_file": rx_output,
         "test_time": test_time,
     }
-
-    if fps in ["p30", "p50", "p59", "p60"]:
-        config_params.update({"pacing": "gap", "tx_no_chain": True})
-    elif fps in ["p100", "p119", "p120"]:
-        config_params.update({"pacing": "linear", "tx_no_chain": True})
 
     app = app_factory(application)
     app.create_command(**config_params)
@@ -88,5 +87,9 @@ def test_st20p_fps(
         actual_test_time = max(test_time, 10)
 
     app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=actual_test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )

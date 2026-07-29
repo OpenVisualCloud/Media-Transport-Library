@@ -201,12 +201,30 @@ operation, not payload identity or standards conformance.
 
 ### 5.2 Media integrity
 
-Test-owned and explicit. `mtl_engine/integrity.py` provides direct
-comparisons (`check_st20p_integrity` hashes each frame,
-`check_st30p_integrity` compares audio buffers) plus the size calculators
-they need. The `common/integrity/` runners wrap the same idea for file and
-streaming modes. Some tests gate this on `test_config.integrity_check`; many
-implement no integrity step at all.
+`IntegritySession` (`mtl_engine/integrity_session.py`) owns one post-run
+content-integrity verdict for one test, mirroring `ComplianceSession`:
+`enabled` / `skip(reason)` / `evaluate(intent)` / `close()`. The
+`media_integrity` fixture builds the session; a test hands it to
+`execute_test(integrity=media_integrity)` and `Application._finalize_run()`
+evaluates it -- strictly *before* `validate_results()` can delete the RX
+output file, so tests never need to force-keep output just to survive to
+this check. `NO_INTEGRITY` is the null-object stand-in a test gets by simply
+not requesting the fixture.
+
+`IntegrityIntent.kind` (built from the app's own `session_type`) selects
+which `common/integrity/integrity_runner.py` Runner `evaluate()` shells out
+to -- `FileVideoIntegrityRunner` (MD5-compares frames) for video sessions,
+`FileAudioIntegrityRunner` (compares sample buffers) for audio sessions,
+using size/count math from `mtl_engine/integrity.py`. A test that requests
+`media_integrity` but never dispatches it fails in teardown, same as
+`pcap_capture`.
+
+The two dual-host integrity tests
+(`tests/dual/st20p/integrity/`, `tests/dual/st30p/integrity/`) still call
+`mtl_engine/integrity.py`'s local-file comparisons
+(`check_st20p_integrity`/`check_st30p_integrity`) directly -- the fixture is
+single-host only, since a dual-host run has no single `Application` whose
+`_host` can own the verdict.
 
 ### 5.3 Packet compliance
 
@@ -288,9 +306,7 @@ must stay kernel-owned, so a DPDK-bound PF may not share its IOMMU group.
 `InterfaceSetup._check_pf_not_capture_group()` compares the requested PF's
 group against the capture NIC's and calls `pytest.fail()` on a match — it
 does not fall back to another PF. This **fails rather than skips** because a
-PF test that asked for capture is asserting the host has the hardware. On
-common dual-port E810/E830 systems both ports share one group, so this
-combination needs a second physical card.
+PF test that asked for capture is asserting the host has the hardware.
 
 ## 8. Clock model
 

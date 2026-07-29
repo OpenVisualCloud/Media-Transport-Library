@@ -10,7 +10,7 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
 from mtl_engine.const import E810_DEVICE_ID
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = pytest.mark.verified
 
@@ -74,9 +74,9 @@ PACING_WAY_CASES = [
 @pytest.mark.parametrize("interface_type,pacing_way", PACING_WAY_CASES)
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422rfc10["ParkJoy_1080p"]],
+    [yuv_files_422p10le["Penguin_1080p"]],
     indirect=["media_file"],
-    ids=["ParkJoy_1080p"],
+    ids=["Penguin_1080p"],
 )
 def test_st20p_pacing_way(
     application,
@@ -88,10 +88,13 @@ def test_st20p_pacing_way(
     interface_type,
     pacing_way,
     pcap_capture,
+    output_files,
+    media_integrity,
     media_file,
 ):
     """Test RxTxApp TX pacing_way on a VF or PF interface."""
     media_file_info, media_file_path = media_file
+    rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
     if interface_type == "PF":
         # pacing_way only affects the TX side, so only TX needs to bind to
@@ -126,6 +129,7 @@ def test_st20p_pacing_way(
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
+        "output_file": rx_output,
         "test_mode": "multicast",
         "pacing_way": pacing_way,
         "enable_ptp": needs_ptp,
@@ -148,5 +152,9 @@ def test_st20p_pacing_way(
         return
 
     app.execute_test(
-        build=mtl_path, test_time=actual_test_time, host=host, compliance=pcap_capture
+        build=mtl_path,
+        test_time=actual_test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
     )

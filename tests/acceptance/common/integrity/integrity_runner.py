@@ -2,6 +2,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# All integrity check scripts (video/audio) live together under this single
+# directory of the acceptance test repo. Runners resolve their companion
+# script relative to it unless an explicit ``integrity_path`` override is
+# given, so this is the only place the directory name needs to be correct.
+_INTEGRITY_DIR = ("tests", "acceptance", "common", "integrity")
+
+
+def _default_integrity_path(host, test_repo_path, module_name):
+    """Path to *module_name* under the acceptance repo's integrity dir."""
+    return str(host.connection.path(test_repo_path, *_INTEGRITY_DIR, module_name))
+
 
 class VideoIntegrityRunner:
     module_name = "video_integrity.py"
@@ -37,11 +48,7 @@ class VideoIntegrityRunner:
         """
         if integrity_path:
             return str(self.host.connection.path(integrity_path, self.module_name))
-        return str(
-            self.host.connection.path(
-                self.test_repo_path, "tests", "common", "integrity", self.module_name
-            )
-        )
+        return _default_integrity_path(self.host, self.test_repo_path, self.module_name)
 
     def setup(self):
         """
@@ -237,16 +244,7 @@ class AudioIntegrityRunner:
     def get_path(self, integrity_path):
         if integrity_path:
             return str(self.host.connection.path(integrity_path, self.module_name))
-        return str(
-            self.host.connection.path(
-                self.test_repo_path,
-                "tests",
-                "validation",
-                "common",
-                "integrity",
-                self.module_name,
-            )
-        )
+        return _default_integrity_path(self.host, self.test_repo_path, self.module_name)
 
     def setup(self):
         logger.info(
