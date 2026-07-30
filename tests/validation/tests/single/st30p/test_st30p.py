@@ -2,8 +2,10 @@
 # Copyright(c) 2026 Intel Corporation
 
 import logging
+import os
 from pathlib import Path
 
+import mtl_engine.media_creator as media_create
 import pytest
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from common.nicctl import InterfaceSetup
@@ -457,3 +459,71 @@ def test_st30p_multicast(
     app.execute_test(
         build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
     )
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
+@pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
+@pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
+@pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
+def test_st30p_gstreamer_audio_format(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    audio_format,
+    audio_channel,
+    audio_rate,
+    test_time,
+    test_config,
+    media_file,
+):
+    """Sweep ST30 PCM formats, channel counts, and sampling rates over GStreamer.
+
+    GStreamer drives the audio with audiotestsrc, so there is no reference clip
+    to compare against; this validates transport and caps negotiation only and
+    is therefore GStreamer-only (RxTxApp/FFmpeg integrity tests live above).
+    """
+    if audio_rate == 96000 and (
+        audio_channel == 8
+        and (audio_format == "S16BE" or audio_format == "S24BE")
+        or audio_channel == 6
+        and audio_format == "S24BE"
+    ):
+        pytest.skip(f"Audio {audio_format}/{audio_channel}ch invalid pkt_len; skipped")
+
+    _media_file_info, media_file_path = media_file
+    if not media_file_path:
+        raise ValueError("ramdisk was not setup correctly for media_file fixture")
+
+    host = list(hosts.values())[0]
+    input_file_path = os.path.join(media_file_path, "input_test_audio.pcm")
+    output_file_path = os.path.join(media_file_path, "output_test_audio.pcm")
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    # Input path unused; audiotestsrc generates the signal internally.
+    app = app_factory(application)
+    app.create_command(
+        build=mtl_path,
+        session_type="st30",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        audio_format=audio_format,
+        audio_channels=audio_channel,
+        audio_rate=audio_rate,
+    )
+
+    try:
+        app.execute_test(
+            build=mtl_path,
+            test_time=test_time,
+            host=host,
+            tx_first=False,
+            sleep_interval=1,
+        )
+    finally:
+        media_create.remove_file(output_file_path, host=host)

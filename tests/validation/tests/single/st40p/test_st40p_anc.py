@@ -35,69 +35,6 @@ _FRAME_INFO_PATTERN = re.compile(
 )
 
 
-def _append_redundant_params(
-    pipeline: list[str],
-    dev_port_red: str,
-    dev_ip_red: str,
-    ip_red: str,
-    udp_port_red: int,
-):
-    primary_udp = _find_param_value(pipeline, "udp-port")
-    primary_udp_int = None
-    try:
-        primary_udp_int = int(primary_udp) if primary_udp is not None else None
-    except (TypeError, ValueError):
-        primary_udp_int = None
-
-    GstreamerApp.add_redundant_params(
-        pipeline,
-        dev_port_red=dev_port_red,
-        dev_ip_red=dev_ip_red,
-        ip_red=ip_red,
-        udp_port_red=udp_port_red,
-        port_red=dev_port_red,
-        primary_udp_port=primary_udp_int,
-    )
-
-
-def _find_param_value(pipeline: list[str], key: str) -> str | None:
-    prefix = f"{key}="
-    for item in pipeline:
-        if item.startswith(prefix):
-            return item[len(prefix) :]
-    return None
-
-
-def _find_param_indices(pipeline: list[str], keys: list[str]) -> dict[str, int]:
-    indices: dict[str, int] = {}
-    for idx, item in enumerate(pipeline):
-        for key in keys:
-            if item.startswith(f"{key}="):
-                indices[key] = idx
-    return indices
-
-
-def _log_redundant_debug(
-    test_name: str,
-    pipeline: list[str],
-    tx_ports: list[str],
-    rx_ports: list[str],
-):
-    element_idx = None
-    for idx, item in enumerate(pipeline):
-        if item in ("mtl_st40p_tx", "mtl_st40p_rx"):
-            element_idx = idx
-            break
-    keys = ["dev-port-red", "port-red", "dev-ip-red", "ip-red", "udp-port-red"]
-    indices = _find_param_indices(pipeline, keys)
-    values = {key: _find_param_value(pipeline, key) for key in keys}
-    log_info(
-        f"[{test_name}] Redundant debug: element_idx={element_idx}, indices={indices}, "
-        f"values={values}, tx_ports={tx_ports}, rx_ports={rx_ports}, "
-        f"ip_pools_tx={ip_pools.tx}, ip_pools_rx={ip_pools.rx}"
-    )
-
-
 def _log_vf_link_state(test_name: str, host, bdfs: list[str]) -> None:
     for bdf in bdfs:
         bind = run(f"dpdk-devbind.py -s | grep -F '{bdf}'", host=host)
@@ -228,10 +165,13 @@ def setup_paths(media_file):
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40p_fps_size(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -285,26 +225,23 @@ def test_st40p_fps_size(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
         tx_fps=fps,
         tx_did=67,
         tx_sdid=2,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=15,
+        rx_timeout=15,
     )
 
     expectation = (
@@ -314,16 +251,13 @@ def test_st40p_fps_size(
 
     try:
         with _test_summary("test_st40p_fps_size", expectation):
-            GstreamerApp.execute_test(
+            app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
     finally:
@@ -333,7 +267,10 @@ def test_st40p_fps_size(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_redundant_progressive(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -368,29 +305,25 @@ def test_st40p_redundant_progressive(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
         tx_fps=24,
         tx_did=67,
         tx_sdid=2,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
     )
     _log_vf_link_state(
         "test_st40p_redundant_progressive_link",
@@ -403,44 +336,17 @@ def test_st40p_redundant_progressive(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = "Redundant progressive ST40P logs pkts_recv_p/r with deduped totals"
 
     try:
         with _test_summary("test_st40p_redundant_progressive", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -454,7 +360,10 @@ def test_st40p_redundant_progressive(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_redundant_progressive_gap(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -488,10 +397,14 @@ def test_st40p_redundant_progressive_gap(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -500,19 +413,11 @@ def test_st40p_redundant_progressive_gap(
         tx_sdid=2,
         tx_test_mode="seq-gap",
         tx_test_pkt_count=200,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_gap_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
     )
     _log_vf_link_state(
         "test_st40p_redundant_progressive_gap_link",
@@ -525,46 +430,19 @@ def test_st40p_redundant_progressive_gap(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_gap_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = (
         "Redundant progressive ST40P with seq-gap injects and logs pkts_recv_p/r"
     )
 
     try:
         with _test_summary("test_st40p_redundant_progressive_gap", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -578,7 +456,10 @@ def test_st40p_redundant_progressive_gap(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_redundant_progressive_split(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -613,10 +494,14 @@ def test_st40p_redundant_progressive_split(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -624,19 +509,11 @@ def test_st40p_redundant_progressive_split(
         tx_did=67,
         tx_sdid=2,
         tx_split_anc_by_pkt=True,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_split_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
     )
     _log_vf_link_state(
         "test_st40p_redundant_progressive_split_link",
@@ -649,44 +526,17 @@ def test_st40p_redundant_progressive_split(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_split_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = "Redundant split-mode ST40P logs pkts_recv_p/r with deduped totals"
 
     try:
         with _test_summary("test_st40p_redundant_progressive_split", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -700,7 +550,10 @@ def test_st40p_redundant_progressive_split(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_redundant_progressive_split_gap(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -734,10 +587,14 @@ def test_st40p_redundant_progressive_split_gap(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -747,19 +604,11 @@ def test_st40p_redundant_progressive_split_gap(
         tx_split_anc_by_pkt=True,
         tx_test_mode="seq-gap",
         tx_test_pkt_count=200,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_split_gap_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
     )
     _log_vf_link_state(
         "test_st40p_redundant_progressive_split_gap_link",
@@ -772,44 +621,17 @@ def test_st40p_redundant_progressive_split_gap(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40p_redundant_progressive_split_gap_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = "Redundant split ST40P with seq-gap injects and logs pkts_recv_p/r"
 
     try:
         with _test_summary("test_st40p_redundant_progressive_split_gap", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -823,7 +645,10 @@ def test_st40p_redundant_progressive_split_gap(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40i_redundant_split(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -858,10 +683,14 @@ def test_st40i_redundant_split(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -870,19 +699,12 @@ def test_st40i_redundant_split(
         tx_sdid=2,
         tx_split_anc_by_pkt=True,
         tx_interlaced=True,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40i_redundant_split_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
+        rx_interlaced=True,
     )
     _log_vf_link_state(
         "test_st40i_redundant_split_link",
@@ -895,47 +717,19 @@ def test_st40i_redundant_split(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-        rx_interlaced=True,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40i_redundant_split_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = (
         "Redundant interlaced split-mode ST40 logs pkts_recv_p/r with deduped totals"
     )
 
     try:
         with _test_summary("test_st40i_redundant_split", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -949,7 +743,10 @@ def test_st40i_redundant_split(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40i_redundant_split_gap(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -983,10 +780,14 @@ def test_st40i_redundant_split_gap(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=tx_ports[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=tx_ports + rx_ports,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        redundant=True,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -997,19 +798,12 @@ def test_st40i_redundant_split_gap(
         tx_interlaced=True,
         tx_test_mode="seq-gap",
         tx_test_pkt_count=200,
-    )
-    _append_redundant_params(
-        tx_config,
-        dev_port_red=tx_ports[1],
-        dev_ip_red=ip_pools.rx[1],
-        ip_red=ip_pools.tx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40i_redundant_split_gap_tx",
-        tx_config,
-        tx_ports,
-        rx_ports,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        rx_timeout=20,
+        frame_info_path=frame_info_path,
+        rx_interlaced=True,
     )
     _log_vf_link_state(
         "test_st40i_redundant_split_gap_link",
@@ -1022,47 +816,19 @@ def test_st40i_redundant_split_gap(
         tx_ports + rx_ports,
     )
 
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=rx_ports[0],
-        output_path=output_file_path,
-        rx_payload_type=113,
-        rx_queues=4,
-        rx_framebuff_cnt=3,
-        timeout=20,
-        frame_info_path=frame_info_path,
-        rx_interlaced=True,
-    )
-    _append_redundant_params(
-        rx_config,
-        dev_port_red=rx_ports[1],
-        dev_ip_red=ip_pools.tx[1],
-        ip_red=ip_pools.rx[1],
-        udp_port_red=40001,
-    )
-    _log_redundant_debug(
-        "test_st40i_redundant_split_gap_rx",
-        rx_config,
-        tx_ports,
-        rx_ports,
-    )
-
     expectation = (
         "Redundant interlaced split ST40 with seq-gap injects and logs pkts_recv_p/r"
     )
 
     try:
         with _test_summary("test_st40i_redundant_split_gap", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 12),
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
@@ -1076,10 +842,13 @@ def test_st40i_redundant_split_gap(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [60])
 @pytest.mark.parametrize("file_size_kb", [100])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
 def test_st40p_framebuff(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1133,26 +902,23 @@ def test_st40p_framebuff(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
         tx_fps=fps,
         tx_did=67,
         tx_sdid=2,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=timeout_period + 10,
+        rx_timeout=timeout_period + 10,
     )
 
     expectation = (
@@ -1162,16 +928,13 @@ def test_st40p_framebuff(
 
     try:
         with _test_summary("test_st40p_framebuff", expectation):
-            GstreamerApp.execute_test(
+            app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=timeout_period,
+                fail_on_error=False,
                 log_frame_info=True,
             )
     finally:
@@ -1189,9 +952,12 @@ def test_st40p_framebuff(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
 def test_st40p_format_8331(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1239,10 +1005,13 @@ def test_st40p_format_8331(
 
     input_file_path, output_file_path = setup_paths(media_file)
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
@@ -1250,16 +1019,10 @@ def test_st40p_format_8331(
         tx_did=67,
         tx_sdid=2,
         tx_rfc8331=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=timeout_period + 10,
+        rx_timeout=timeout_period + 10,
         capture_metadata=True,
     )
 
@@ -1270,16 +1033,13 @@ def test_st40p_format_8331(
 
     try:
         with _test_summary("test_st40p_format_8331", expectation):
-            GstreamerApp.execute_test(
+            app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=timeout_period,
+                fail_on_error=False,
                 log_frame_info=True,
             )
     finally:
@@ -1289,10 +1049,13 @@ def test_st40p_format_8331(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [25, 50, 60])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3, 6])
 def test_st40i_basic(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1343,10 +1106,13 @@ def test_st40i_basic(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
@@ -1354,16 +1120,10 @@ def test_st40i_basic(
         tx_did=67,
         tx_sdid=2,
         tx_interlaced=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=15,
+        rx_timeout=15,
         rx_interlaced=True,
     )
 
@@ -1374,16 +1134,13 @@ def test_st40i_basic(
 
     try:
         with _test_summary("test_st40i_basic", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
     finally:
@@ -1392,9 +1149,12 @@ def test_st40i_basic(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [50])
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40i_rfc8331(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1443,10 +1203,13 @@ def test_st40i_rfc8331(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
@@ -1455,16 +1218,10 @@ def test_st40i_rfc8331(
         tx_sdid=2,
         tx_rfc8331=True,
         tx_interlaced=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=20,
+        rx_timeout=20,
         capture_metadata=True,
         rx_interlaced=True,
     )
@@ -1476,16 +1233,13 @@ def test_st40i_rfc8331(
 
     try:
         with _test_summary("test_st40i_rfc8331", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
     finally:
@@ -1494,10 +1248,13 @@ def test_st40i_rfc8331(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 @pytest.mark.parametrize("fps", [50])
 @pytest.mark.parametrize("file_size_kb", [10])
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40i_interlace_flag_mismatch(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1546,10 +1303,13 @@ def test_st40i_interlace_flag_mismatch(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=framebuff,
@@ -1557,16 +1317,10 @@ def test_st40i_interlace_flag_mismatch(
         tx_did=67,
         tx_sdid=2,
         tx_interlaced=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
-        timeout=15,
+        rx_timeout=15,
         rx_interlaced=False,
     )
 
@@ -1577,16 +1331,13 @@ def test_st40i_interlace_flag_mismatch(
 
     try:
         with _test_summary("test_st40i_interlace_flag_mismatch", expectation):
-            result = GstreamerApp.execute_test(
+            result = app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
             assert result, "Interlace mismatch unexpectedly failed"
@@ -1596,7 +1347,10 @@ def test_st40i_interlace_flag_mismatch(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_interlace_auto_detect_reset(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1628,10 +1382,15 @@ def test_st40p_interlace_auto_detect_reset(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
+
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -1639,17 +1398,9 @@ def test_st40p_interlace_auto_detect_reset(
         tx_did=67,
         tx_sdid=2,
         tx_interlaced=True,
-    )
-
-    frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
-        timeout=15,
+        rx_timeout=15,
         rx_framebuff_cnt=3,
         rx_interlaced=False,
         frame_info_path=frame_info_path,
@@ -1659,25 +1410,24 @@ def test_st40p_interlace_auto_detect_reset(
 
     try:
         with _test_summary("test_st40p_interlace_auto_detect_reset", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
 
         # Force a sequence gap to reset auto-detect state and prove cadence re-learns
         gap_frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
-        tx_config_gap = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+        app.create_command(
             build=mtl_path,
-            nic_port_list=interfaces_list[0],
-            input_path=input_file_path,
+            session_type="st40p",
+            nic_port_list=interfaces_list,
+            input_file=input_file_path,
+            output_file=output_file_path,
             tx_payload_type=113,
             tx_queues=4,
             tx_framebuff_cnt=3,
@@ -1688,15 +1438,9 @@ def test_st40p_interlace_auto_detect_reset(
             tx_split_anc_by_pkt=True,
             tx_test_mode="seq-gap",
             tx_test_pkt_count=200,
-        )
-
-        rx_config_gap = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-            build=mtl_path,
-            nic_port_list=interfaces_list[1],
-            output_path=output_file_path,
             rx_payload_type=113,
             rx_queues=4,
-            timeout=15,
+            rx_timeout=15,
             rx_framebuff_cnt=3,
             rx_interlaced=False,
             frame_info_path=gap_frame_info_path,
@@ -1709,16 +1453,13 @@ def test_st40p_interlace_auto_detect_reset(
         with _test_summary(
             "test_st40p_interlace_auto_detect_reset_gap", reset_expectation
         ):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config_gap,
-                rx_command=rx_config_gap,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 log_frame_info=True,
             )
 
@@ -1739,7 +1480,10 @@ def test_st40p_interlace_auto_detect_reset(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_rx_timeout(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1781,42 +1525,36 @@ def test_st40p_rx_timeout(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
         tx_fps=60,
         tx_did=67,
         tx_sdid=2,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=1,  # force receiver timeout
+        rx_timeout=1,  # force receiver timeout
     )
 
     expectation = "RX timeout triggers failure with no payload capture"
 
     try:
         with _test_summary("test_st40p_rx_timeout", expectation):
-            result = GstreamerApp.execute_test(
+            result = app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=2,
                 host=host,
                 tx_first=False,
                 sleep_interval=1,
+                fail_on_error=False,
                 suppress_fail_logs=True,
                 log_frame_info=True,
             )
@@ -1827,7 +1565,10 @@ def test_st40p_rx_timeout(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_split_mode_frame_info_logging(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1873,10 +1614,13 @@ def test_st40p_split_mode_frame_info_logging(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -1884,16 +1628,10 @@ def test_st40p_split_mode_frame_info_logging(
         tx_did=67,
         tx_sdid=2,
         tx_split_anc_by_pkt=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=15,
+        rx_timeout=15,
         frame_info_path=frame_info_path,
         rx_rtp_ring_size=2048,
     )
@@ -1902,16 +1640,13 @@ def test_st40p_split_mode_frame_info_logging(
 
     try:
         with _test_summary("test_st40p_split_mode_frame_info_logging", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=6,
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
 
@@ -1927,7 +1662,10 @@ def test_st40p_split_mode_frame_info_logging(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_split_mode_invalid_rtp_ring_rejected(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -1972,14 +1710,19 @@ def test_st40p_split_mode_invalid_rtp_ring_rejected(
     )
 
     # Non power-of-two ring size should be rejected by plugin
-    rx_cmd = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
+        tx_payload_type=113,
+        tx_queues=4,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=15,
+        rx_timeout=15,
         frame_info_path=frame_info_path,
         rx_rtp_ring_size=100,
     )
@@ -1990,7 +1733,7 @@ def test_st40p_split_mode_invalid_rtp_ring_rejected(
         with _test_summary(
             "test_st40p_split_mode_invalid_rtp_ring_rejected", expectation
         ):
-            rx_proc = run(" ".join(rx_cmd), cwd=mtl_path, timeout=10, host=host)
+            rx_proc = run(app.command, cwd=mtl_path, timeout=10, host=host)
             assert rx_proc.return_code != 0
     finally:
         media_create.remove_file(input_file_path, host=host)
@@ -1999,7 +1742,10 @@ def test_st40p_split_mode_invalid_rtp_ring_rejected(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_split_mode_pacing_respected(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2049,10 +1795,13 @@ def test_st40p_split_mode_pacing_respected(
 
     tx_fps = 60
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2063,31 +1812,22 @@ def test_st40p_split_mode_pacing_respected(
         tx_test_mode="paced",
         tx_test_pkt_count=8,
         tx_test_pacing_ns=200000,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=15,
+        rx_timeout=15,
         frame_info_path=frame_info_path,
     )
 
     try:
         with _test_summary("test_st40p_split_mode_pacing_respected", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=3,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2126,7 +1866,10 @@ def test_st40p_split_mode_pacing_respected(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_rx_missing_marker_no_ready(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2173,10 +1916,13 @@ def test_st40p_rx_missing_marker_no_ready(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2186,16 +1932,10 @@ def test_st40p_rx_missing_marker_no_ready(
         tx_split_anc_by_pkt=True,
         tx_test_mode="no-marker",
         tx_test_pkt_count=1,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=20,
+        rx_timeout=20,
         frame_info_path=frame_info_path,
     )
 
@@ -2203,16 +1943,13 @@ def test_st40p_rx_missing_marker_no_ready(
 
     try:
         with _test_summary("test_st40p_rx_missing_marker_no_ready", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=3,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2226,7 +1963,10 @@ def test_st40p_rx_missing_marker_no_ready(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_rx_seq_loss_logged(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2273,10 +2013,13 @@ def test_st40p_rx_seq_loss_logged(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2286,16 +2029,10 @@ def test_st40p_rx_seq_loss_logged(
         tx_split_anc_by_pkt=True,
         tx_test_mode="seq-gap",
         tx_test_pkt_count=2,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=20,
+        rx_timeout=20,
         frame_info_path=frame_info_path,
     )
 
@@ -2303,16 +2040,13 @@ def test_st40p_rx_seq_loss_logged(
 
     try:
         with _test_summary("test_st40p_rx_seq_loss_logged", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=3,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2354,7 +2088,10 @@ def test_st40p_rx_seq_loss_logged(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_rx_bad_parity_drops_payload(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2399,10 +2136,13 @@ def test_st40p_rx_bad_parity_drops_payload(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2412,16 +2152,10 @@ def test_st40p_rx_bad_parity_drops_payload(
         tx_split_anc_by_pkt=True,
         tx_test_mode="bad-parity",
         tx_test_pkt_count=1,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=20,
+        rx_timeout=20,
         frame_info_path=frame_info_path,
     )
 
@@ -2429,16 +2163,13 @@ def test_st40p_rx_bad_parity_drops_payload(
 
     try:
         with _test_summary("test_st40p_rx_bad_parity_drops_payload", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=3,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2463,7 +2194,10 @@ def test_st40p_rx_bad_parity_drops_payload(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_rx_multi_packet_field_accumulates(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2510,10 +2244,13 @@ def test_st40p_rx_multi_packet_field_accumulates(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2523,16 +2260,10 @@ def test_st40p_rx_multi_packet_field_accumulates(
         tx_split_anc_by_pkt=True,
         tx_test_mode="paced",
         tx_test_pkt_count=3,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=40,
+        rx_timeout=40,
         frame_info_path=frame_info_path,
     )
 
@@ -2540,16 +2271,13 @@ def test_st40p_rx_multi_packet_field_accumulates(
 
     try:
         with _test_summary("test_st40p_rx_multi_packet_field_accumulates", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2567,7 +2295,10 @@ def test_st40p_rx_multi_packet_field_accumulates(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_split_padding_alignment_boundary(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2603,10 +2334,13 @@ def test_st40p_split_padding_alignment_boundary(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2617,16 +2351,10 @@ def test_st40p_split_padding_alignment_boundary(
         tx_test_mode="paced",
         tx_test_pkt_count=2,
         tx_test_pacing_ns=200000,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=20,
+        rx_timeout=20,
         frame_info_path=frame_info_path,
     )
 
@@ -2636,16 +2364,13 @@ def test_st40p_split_padding_alignment_boundary(
 
     try:
         with _test_summary("test_st40p_split_padding_alignment_boundary", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=test_time,
                 host=host,
                 tx_first=False,
                 sleep_interval=3,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2664,7 +2389,10 @@ def test_st40p_split_padding_alignment_boundary(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40p_split_tx_mtu_guard_no_stall(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2701,10 +2429,13 @@ def test_st40p_split_tx_mtu_guard_no_stall(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=2,
@@ -2714,16 +2445,10 @@ def test_st40p_split_tx_mtu_guard_no_stall(
         tx_split_anc_by_pkt=True,
         tx_test_mode="paced",
         tx_test_pkt_count=8,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=2,
-        timeout=10,
+        rx_timeout=10,
         frame_info_path=frame_info_path,
     )
 
@@ -2731,16 +2456,13 @@ def test_st40p_split_tx_mtu_guard_no_stall(
 
     try:
         with _test_summary("test_st40p_split_tx_mtu_guard_no_stall", expectation):
-            result = GstreamerApp.execute_test(
+            result = app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=min(test_time, 6),
                 host=host,
                 tx_first=False,
                 sleep_interval=2,
+                fail_on_error=False,
                 skip_file_compare=True,
                 log_frame_info=True,
             )
@@ -2753,7 +2475,10 @@ def test_st40p_split_tx_mtu_guard_no_stall(
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize("application", ["gstreamer"])
 def test_st40i_split_mode_frame_info_logging(
+    application,
+    app_factory,
     hosts,
     mtl_path,
     media,
@@ -2799,10 +2524,13 @@ def test_st40i_split_mode_frame_info_logging(
         host=host,
     )
 
-    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+    app = app_factory(application)
+    app.create_command(
         build=mtl_path,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
+        session_type="st40p",
+        nic_port_list=interfaces_list,
+        input_file=input_file_path,
+        output_file=output_file_path,
         tx_payload_type=113,
         tx_queues=4,
         tx_framebuff_cnt=3,
@@ -2811,16 +2539,10 @@ def test_st40i_split_mode_frame_info_logging(
         tx_sdid=2,
         tx_split_anc_by_pkt=True,
         tx_interlaced=True,
-    )
-
-    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=mtl_path,
-        nic_port_list=interfaces_list[1],
-        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=3,
-        timeout=15,
+        rx_timeout=15,
         frame_info_path=frame_info_path,
         rx_interlaced=True,
     )
@@ -2829,16 +2551,13 @@ def test_st40i_split_mode_frame_info_logging(
 
     try:
         with _test_summary("test_st40i_split_mode_frame_info_logging", expectation):
-            assert GstreamerApp.execute_test(
+            assert app.execute_test(
                 build=mtl_path,
-                tx_command=tx_config,
-                rx_command=rx_config,
-                input_file=input_file_path,
-                output_file=output_file_path,
                 test_time=6,
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                fail_on_error=False,
                 log_frame_info=True,
             )
 
