@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
 
+# MTL dumps ``PTP(<port>): delta avg <ns> ...`` (or ``PTP(<port>): not
+# connected``) with every stat interval. Until it locks, MTL stamps RTP
+# timestamps from the system clock while the capture NIC PHC already follows
+# the grandmaster -- the two timescales differ by seconds, which EBU LIST
+# reports as ``invalid_delta_packet_ts_vs_rtp_ts``.
+_MTL_PTP_DELTA_RE = re.compile(r"PTP\(\d+\): delta avg (-?\d+)")
+_MTL_PTP_LOCK_TOLERANCE_NS = 1_000_000
+_MTL_PTP_LOCK_TIMEOUT = 150
+
+
 # Encoder name -> MTL st22 plugin shared object, for require_encoder()
 # pre-flight checks shared across framework adapters.
 MTL_ENCODER_PLUGIN_MAP = {
@@ -468,20 +478,47 @@ class Application(ABC):
         capture window aligns with the steady-state stream.
         """
 
-        def _hook(_first_proc) -> None:
+        def _hook(first_proc) -> None:
             try:
                 if self.params.get("enable_ptp", False):
-                    ptp_sync_time = self.params.get("ptp_sync_time", 50)
-                    logger.info(
-                        "Waiting %ds for PTP sync before netsniff capture",
-                        ptp_sync_time,
-                    )
-                    time.sleep(ptp_sync_time)
+                    self._wait_mtl_ptp_locked(first_proc)
                 self._start_netsniff_capture(netsniff)
             except Exception as e:
                 logger.warning("netsniff capture setup failed: %s", e)
 
         return _hook
+
+    def _wait_mtl_ptp_locked(self, proc) -> bool:
+        """Block until MTL reports a locked PTP delta, or the budget expires.
+
+        The capture and the transmitted RTP timestamps must share one
+        timescale. MTL only stamps from the grandmaster once its PTP client
+        locks -- which can take well over a minute after a PF is (re)bound to
+        DPDK -- so capturing on a fixed sleep can sample a window where MTL is
+        still on the system clock and every packet fails compliance.
+        """
+        timeout = self.params.get("ptp_lock_timeout", _MTL_PTP_LOCK_TIMEOUT)
+        logger.info(
+            "Waiting up to %ds for MTL PTP lock before netsniff capture", timeout
+        )
+        deadline = time.monotonic() + timeout
+        try:
+            for line in proc.get_stdout_iter():
+                match = _MTL_PTP_DELTA_RE.search(line)
+                if match and abs(int(match.group(1))) < _MTL_PTP_LOCK_TOLERANCE_NS:
+                    logger.info("MTL PTP locked (delta avg %sns)", match.group(1))
+                    return True
+                if time.monotonic() > deadline:
+                    break
+        except Exception as e:
+            logger.warning("Could not read MTL PTP state: %s", e)
+            return False
+        logger.warning(
+            "MTL PTP did not lock within %ds; capture timestamps may not match "
+            "the RTP media clock",
+            timeout,
+        )
+        return False
 
     def _dispatch_validate(self, fail_on_error: bool) -> bool:
         """Run :meth:`validate_results` with consistent soft-fail semantics."""

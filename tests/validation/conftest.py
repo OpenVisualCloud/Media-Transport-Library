@@ -55,6 +55,7 @@ from mtl_engine.stash import (
 )
 from pytest_mfd_config.models.topology import TopologyModel
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
+from tests.single.ptp.ptp_helpers import wait_for_ptp4l_foreign_master
 
 logger = logging.getLogger(__name__)
 
@@ -376,13 +377,41 @@ def _select_capture_host(hosts: dict):
     return hosts["client"] if "client" in hosts else list(hosts.values())[0]
 
 
-_REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for ptp daemons
+_REAP_POLL_TIMEOUT_SEC = 3  # Max time to wait for a killed daemon to actually exit
 _PHC_SYNC_THRESHOLD_NS = 2000  # Capture PHC must track TAI this tightly
 _PHC_SYNC_TIMEOUT_SEC = 30  # Max wait for phc2sys to converge before capturing
 
 
+def _wait_daemon_dead(host, name: str, timeout_s: float) -> bool:
+    """Poll (best-effort) until no process named *name* remains, up to *timeout_s*.
+
+    A bare ``sleep()`` after ``pkill`` does not guarantee the kernel has
+    finished tearing down the process -- and releasing any PF netdev/PHC fd
+    it held (e.g. ptp4l on the PF interface) -- by the time the caller
+    proceeds. That gap has been observed to race nicctl's VF/PF rebind
+    checks (``_wait_vfio_idle`` / ``bind_kernel`` / ``disable_vf``): if the
+    fd is still open, those calls time out and fall back to a PCI
+    remove+rescan, which force-reprobes the PF (``ice_probe``) and can hit
+    an ``ice`` driver GPF (RSS flow-profile UAF in ``ice_add_prof``).
+    Polling for actual daemon death closes that race. Returns True once
+    confirmed dead (or if liveness can't be probed); False on timeout.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            res = host.connection.execute_command(
+                f"pgrep -x {name}", expected_return_codes=None
+            )
+        except Exception:
+            return True  # cannot probe; don't block the caller forever
+        if res.return_code != 0:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
-    """Forcefully kill any ptp4l/phc2sys daemons.
+    """Forcefully kill any ptp4l/phc2sys daemons and wait for them to exit.
 
     Required because ``host.connection.start_process('sudo <tool> ...')`` wraps
     the daemon in ``bash -c 'sudo ...'``; ``process.kill(SIGTERM)`` only signals
@@ -391,6 +420,9 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
     stale ``struct ptp_clock *`` across SR-IOV VF cycling and have been seen to
     trigger ``ice``-driver use-after-free in ``ptp_clock_index()``, hanging the
     host. Always cleanup via ``pkill`` on the argv, not via the process handle.
+    We also wait for the kill to actually take effect (see
+    :func:`_wait_daemon_dead`) instead of a blind sleep, since callers rebind
+    the PF right after this returns.
     """
     for name in patterns:
         try:
@@ -399,7 +431,8 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
             )
         except Exception as e:
             logger.debug("pkill -TERM %s: %s", name, e)
-    time.sleep(_REAP_GRACE_SEC)
+    for name in patterns:
+        _wait_daemon_dead(host, name, _REAP_POLL_TIMEOUT_SEC)
     for name in patterns:
         try:
             host.connection.execute_command(
@@ -407,6 +440,14 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
             )
         except Exception as e:
             logger.debug("pkill -KILL %s: %s", name, e)
+    for name in patterns:
+        if not _wait_daemon_dead(host, name, _REAP_POLL_TIMEOUT_SEC):
+            logger.warning(
+                "%s on %s still alive %ss after SIGKILL; PF rebind may race it",
+                name,
+                host.name,
+                _REAP_POLL_TIMEOUT_SEC,
+            )
 
 
 def _host_tai_utc_offset(host) -> int:
@@ -571,30 +612,61 @@ def ptp_sync(request, test_config: dict, hosts):
 
     host = _select_capture_host(hosts)
     is_single_host = len(hosts) == 1
-    capture_iface = _select_sniff_interface_name(
-        host, capture_cfg, single_host=is_single_host
-    )
 
     # Belt-and-braces: ensure no leftover daemon from a previous test/session
     # is holding a stale PHC handle before we start a new one.
     _reap_ptp_daemons(host)
 
-    logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
-    log_path = f"/tmp/ptp4l-{capture_iface}.log"
-    ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
-    ptp4l_process = host.connection.start_process(
-        ptp4l_cmd,
-        stderr_to_stdout=True,
-        output_file=log_path,
+    # Sync ONLY the capture interface. Both ports of an E810/E830 adapter share
+    # one PHC (/dev/ptpN), so a second ptp4l instance does not get its own clock
+    # -- it fights the first one over the same hardware clock. Worse, when that
+    # second port is link-down (just rebound by a previous test) its ptp4l
+    # declares itself grandmaster and free-runs the shared PHC, smearing the
+    # capture timestamps until EBU LIST can no longer parse a stream at all.
+    # Only the capture PHC has to follow the grandmaster.
+    interfaces_to_sync = []
+    capture_iface = _select_sniff_interface_name(
+        host, capture_cfg, single_host=is_single_host
     )
-
-    # Give ptp4l a moment to fail fast (e.g., missing interface).
-    time.sleep(0.2)
-    if not ptp4l_process.running:
-        _reap_ptp_daemons(host)
-        raise RuntimeError(
-            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
+    check_cmd = f"[ -d /sys/class/net/{capture_iface} ]"
+    res = host.connection.execute_command(check_cmd, expected_return_codes=None)
+    if res.return_code == 0:
+        interfaces_to_sync.append(capture_iface)
+    else:
+        logger.warning(
+            f"PTP skip: Capture interface {capture_iface} is not present in /sys/class/net/"
         )
+
+    ptp4l_processes = []
+    for iface in interfaces_to_sync:
+        logger.info(f"Starting ptp4l for PTP synchronization (iface={iface})")
+        log_path = f"/tmp/ptp4l-{iface}.log"
+        ptp4l_cmd = f"sudo ptp4l -i '{iface}' -s -m -2"
+        ptp4l_process = host.connection.start_process(
+            ptp4l_cmd,
+            stderr_to_stdout=True,
+            output_file=log_path,
+        )
+        time.sleep(0.2)
+        if not ptp4l_process.running:
+            _reap_ptp_daemons(host)
+            raise RuntimeError(f"Failed to start ptp4l (iface={iface}). log={log_path}")
+        ptp4l_processes.append(ptp4l_process)
+
+    # A hardware PTP clock that never actually locks to a grandmaster (or
+    # never even hears one) free-runs -- exactly the condition that produced
+    # a ~-55.8s packet_ts_vs_rtp_ts offset and VRX compliance failure in the
+    # past (see /memories/repo/ptp_sync_fixture_root_cause.md). Block here,
+    # before the test body/pcap_capture ever touch this clock, so a dead/
+    # unreachable grandmaster surfaces as a fast, clear ERROR. Must reap on
+    # timeout too, else the just-started ptp4l processes are orphaned (same
+    # leak class _reap_ptp_daemons/reap_leaked_phc_daemons exist to prevent).
+    try:
+        for iface in interfaces_to_sync:
+            wait_for_ptp4l_foreign_master(host, f"/tmp/ptp4l-{iface}.log")
+    except Exception:
+        _reap_ptp_daemons(host)
+        raise
 
     try:
         yield
@@ -1246,12 +1318,12 @@ def pcap_capture(
                         streams = (report or {}).get("streams") or []
                         if not streams:
                             # Empty capture — interface may not see VF-to-VF
-                            # loopback traffic.  Not a real failure.
-                            update_compliance_result(request.node.nodeid, "N/A")
-                            logger.warning(
-                                "PCAP compliance check skipped: capture "
-                                "contains no streams (capture interface may "
-                                "not see VF-to-VF loopback traffic)"
+                            # loopback traffic. Reject with a test failure so we catch false passes.
+                            update_compliance_result(request.node.nodeid, "Fail")
+                            log_fail(
+                                "PCAP compliance check failed: capture contains no streams. "
+                                "Normally interface may not see VF-to-VF loopback traffic, "
+                                "but empty capture is disallowed for strict validation/compliance."
                             )
                         else:
                             update_compliance_result(request.node.nodeid, "Fail")
