@@ -68,6 +68,21 @@
 
 #include "gst_mtl_st20p_tx.h"
 
+/*
+ * Grace period for finalize to wait for in-flight zero-copy frames to drain
+ * (the NIC frees the ext-buf mbufs, firing frame_done) before st20p_tx_free
+ * tears down the transport. Waiting here is the authoritative drain: the MTL
+ * lcore is still live (mtl_stop/uninit run later), so late completions are
+ * honored instead of abandoned with a non-zero refcnt. Aligned with the lib's
+ * default TX block timeout (NS_PER_S) so finalize never gives up before the
+ * transport's own get-frame block could resolve; bounded so a dead link cannot
+ * hang teardown. Overridable at compile time for tests.
+ */
+#ifndef GST_MTL_ST20P_TX_FINALIZE_GRACE_MS
+#define GST_MTL_ST20P_TX_FINALIZE_GRACE_MS 1000
+#endif
+#define GST_MTL_ST20P_TX_FINALIZE_POLL_US 1000
+
 GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
 #define GST_CAT_DEFAULT gst_mtl_st20p_tx_debug
 #ifndef GST_LICENSE
@@ -251,6 +266,8 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
 static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
+
+  g_atomic_int_set(&sink->pending_gst_buffers, 0);
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
@@ -510,7 +527,13 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
   }
 
   if (sink->zero_copy) {
-    return gst_mtl_st20p_tx_zero_copy(sink, buf);
+    GstFlowReturn ret;
+
+    g_atomic_int_inc(&sink->pending_gst_buffers);
+    ret = gst_mtl_st20p_tx_zero_copy(sink, buf);
+    if (ret != GST_FLOW_OK) g_atomic_int_dec_and_test(&sink->pending_gst_buffers);
+
+    return ret;
   } else {
     return gst_mtl_st20p_tx_mem_copy(sink, buf);
   }
@@ -518,6 +541,14 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
 
 static void gst_mtl_st20p_tx_finalize(GObject* object) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
+
+  if (!gst_mtl_common_wait_pending_buffers(&sink->pending_gst_buffers,
+                                           GST_MTL_ST20P_TX_FINALIZE_GRACE_MS,
+                                           GST_MTL_ST20P_TX_FINALIZE_POLL_US)) {
+    GST_WARNING_OBJECT(
+        sink, "Finalize timeout waiting for pending GstBuffers: %d still pending",
+        g_atomic_int_get(&sink->pending_gst_buffers));
+  }
 
   if (sink->async_session_create) {
     if (sink->session_thread) pthread_join(sink->session_thread, NULL);
@@ -532,6 +563,8 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
     if (gst_mtl_common_deinit_handle(&sink->mtl_lib_handle))
       GST_ERROR("Failed to uninitialize MTL library");
   }
+
+  G_OBJECT_CLASS(parent_class)->finalize(object);
 }
 
 static gboolean plugin_init(GstPlugin* mtl_st20p_tx) {
@@ -587,6 +620,7 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   pthread_mutex_unlock(&parent->parent_mutex);
   gst_buffer_unref(parent->buf);
+  g_atomic_int_dec_and_test(&sink->pending_gst_buffers);
   pthread_mutex_destroy(&parent->parent_mutex);
   free(parent);
 

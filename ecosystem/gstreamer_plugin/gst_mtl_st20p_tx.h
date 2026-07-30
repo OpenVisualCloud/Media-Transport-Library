@@ -58,6 +58,7 @@ struct _Gst_Mtl_St20p_Tx {
   GstVideoSink element;
   mtl_handle mtl_lib_handle;
   st20p_tx_handle tx_handle;
+  gint pending_gst_buffers;
   guint frame_size;
   gboolean zero_copy;
 
