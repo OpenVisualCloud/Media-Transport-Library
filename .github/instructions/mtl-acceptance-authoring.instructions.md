@@ -24,9 +24,12 @@ def test_st20p_xxx(application, app_factory, ...):
     app.execute_test(build=mtl_path, host=host, ...)
 ```
 
-List **only** the applications that actually support the behavior under test.
-If an adapter exposes no control for it, leave that application out and add it
-later when support lands. Do not fork the test per framework.
+Run the behavior only through applications that actually support it. When an
+adapter lacks the required control, retain a `pytest.param(...,
+marks=pytest.mark.skip(reason=...))` capability leg at one representative
+input. Its reason must name the missing support so collection records the
+coverage gap. Do not repeat that same skip across unrelated media or parameter
+axes, and remove it when support lands. Do not fork the test per framework.
 
 ## 2. Drive everything through universal params
 
