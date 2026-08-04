@@ -11,6 +11,18 @@ E810_DEVICE_ID = "1592"  # Intel E810 Series Ethernet Adapter
 E830_DEVICE_ID = "12d2"  # Intel E830 Series Ethernet Adapter
 E835_DEVICE_ID = "1249"  # Intel E835 Series Ethernet Adapter
 
+NIC_FAMILY_BY_DEVICE_ID = {
+    E810_DEVICE_ID: "e810",
+    E830_DEVICE_ID: "e830",
+    E835_DEVICE_ID: "e835",
+}
+
+# E810 has no TxPP launch-time engine, so it never advertises
+# RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP and mtl_init() rejects tsn pacing on it
+# even on a PF (doc/design.md#4.3.3). Membership here is the single source of
+# truth for the requires_txpp marker.
+TXPP_FAMILIES = frozenset({"e830", "e835"})
+
 PREFIX = ".local_install"
 FFMPEG_PATH = f"{PREFIX}/ffmpeg/bin"
 FFMPEG_EXE = f"{FFMPEG_PATH}/ffmpeg"

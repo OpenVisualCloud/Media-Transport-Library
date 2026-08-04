@@ -1,143 +1,364 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-"""Verify TX pacing modes with all supported applications and interfaces.
+"""ST20p pacing implementations across their load-dependent arithmetic.
 
-"PF" cases bind only TX to the PF and keep RX on a VF, so a PF is always left
-in kernel mode for netsniff-ng capture.
+Every case asserts the resolved pacing way because MTL can fall back to TSC
+without failing the session. FFmpeg cannot select this parameter.
 """
 
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.const import E810_DEVICE_ID
-from mtl_engine.media_files import yuv_files_422p10le
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
-pytestmark = pytest.mark.verified
+pytestmark = [pytest.mark.verified, pytest.mark.nightly, pytest.mark.tx_side]
 
-
-def _is_e810(host) -> bool:
-    """True if the host's first NIC is an Intel E810 Series Ethernet Adapter.
-
-    E810 lacks the TxPP launch-time HW engine and never advertises
-    RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP, so tsn pacing is rejected at
-    mtl_init() time on E810 even on a PF (see doc/design.md#4.3.3).
-    """
-    device_id = str(host.network_interfaces[0].pci_device.device_id).lower()
-    return device_id == E810_DEVICE_ID
-
-
-# tsn launch-time pacing compares the packet timestamp against the NIC's
-# hardware PHC, which is only exposed on a PF (see doc/design.md#4.3.3); a VF
-# port is rejected at mtl_init() time (lib/src/dev/mt_dev.c
-# dev_if_init_pacing()), so there is no positive VF-tsn case to run.
-# "PF" here means the TX interface only (see module docstring); RX always
-# uses a VF.
-PACING_WAY_CASES = [
+# LS is excluded from the load sweep: both SD assets are interlaced, so it
+# would confound field handling with load, and tv_train_pacing() rejects SD for
+# RL regardless. test_st20p_pacing_way_sd_downgrade covers it directly.
+LOAD_KEYS = ("i720p59", "i1080p59", "i2160p59", "i2160p119", "i4320p29")
+CORE_KEYS = ("i1080p59", "i2160p59", "i2160p119")
+# Ways reachable on a VF.
+VF_PACING_WAYS = [
+    pytest.param("rl", id="rl"),
+    pytest.param("tsc", id="tsc"),
     pytest.param(
-        application,
-        interface_type,
-        pacing_way,
-        marks=(
-            pytest.mark.skip(
-                reason="tsn launch-time pacing requires a PF; VF has no HW PHC"
-            )
-            if interface_type == "VF" and pacing_way == "tsn"
-            else ()
+        "tsn",
+        marks=pytest.mark.skip(
+            reason="tsn launch-time pacing requires a PF; VF has no HW PHC"
         ),
-        id=f"{display_name}-{interface_type}-{pacing_way}",
-    )
-    for application, display_name in (("rxtxapp", "RxTxApp"), ("ffmpeg", "FFmpeg"))
-    for interface_type in ("VF", "PF")
-    for pacing_way in ("auto", "rl", "tsc", "tsc_narrow", "ptp", "be", "tsn")
+        id="tsn",
+    ),
 ]
 
 
-@pytest.mark.nightly
-@pytest.mark.tx_side
-@pytest.mark.parametrize("application,interface_type,pacing_way", PACING_WAY_CASES)
 @pytest.mark.parametrize(
-    "media_file",
-    [yuv_files_422p10le["Penguin_1080p"]],
-    indirect=["media_file"],
-    ids=["Penguin_1080p"],
+    "application",
+    [
+        "rxtxapp",
+        pytest.param(
+            "ffmpeg",
+            marks=pytest.mark.skip(
+                reason="FFmpeg does not support pacing_way selection"
+            ),
+        ),
+    ],
 )
-def test_st20p_pacing_way(
+@pytest.mark.parametrize("pacing_way", VF_PACING_WAYS)
+@pytest.mark.parametrize(
+    "media_file", [yuv_files[key] for key in LOAD_KEYS], indirect=True, ids=LOAD_KEYS
+)
+def test_st20p_pacing_way_load(
     application,
     app_factory,
     hosts,
     mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
-    interface_type,
     pacing_way,
     pcap_capture,
     output_files,
     media_integrity,
     media_file,
 ):
-    """Test a supported application and TX pacing mode on a VF or PF."""
-    media_file_info, media_file_path = media_file
-    rx_output = output_files.register(f"{media_file_path}.out")
+    """Each pacing way across the load surface its arithmetic depends on."""
+    media_info, media_path = media_file
     host = list(hosts.values())[0]
-    if interface_type == "PF":
-        # pacing_way only affects the TX side, so only TX needs to bind to
-        # the PF; RX stays on a VF, leaving the other PF free (kernel-mode)
-        # for netsniff-ng to capture on.
-        interfaces_list = setup_interfaces.get_mixed_interfaces_list_single(
-            tx_interface_type="PF", rx_interface_type="VF"
-        )
-    else:
-        interfaces_list = setup_interfaces.get_interfaces_list_single(interface_type)
-
-    # ptp and tsn pace against the ptp-synced phc; give PTP convergence
-    # (handled internally via enable_ptp) more headroom than the 30s default.
-    # A bare-PF TX interface needs the same headroom: binding TX to a PF
-    # triggers a full port re-link + DDP package reload (~20s+) before
-    # mtl_init() returns, which otherwise leaves too little of the test
-    # window for the RX multicast group to reach steady state (IGMP
-    # query/response) before the compliance capture window closes.
-    needs_ptp = pacing_way in ("ptp", "tsn")
-    needs_extra_time = needs_ptp or interface_type == "PF"
-    actual_test_time = max(test_time, 60) if needs_extra_time else test_time
-
-    config_params = {
-        "session_type": "st20p",
-        "nic_port_list": interfaces_list,
-        "source_ip": ip_pools.tx[0],
-        "destination_ip": ip_pools.rx[0],
-        "port": 20000,
-        "width": media_file_info["width"],
-        "height": media_file_info["height"],
-        "framerate": f"p{media_file_info['fps']}",
-        "pixel_format": media_file_info["file_format"],
-        "transport_format": media_file_info["format"],
-        "input_file": media_file_path,
-        "output_file": rx_output,
-        "test_mode": "multicast",
-        "pacing_way": pacing_way,
-        "enable_ptp": needs_ptp,
-        "test_time": actual_test_time,
-    }
-
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_interfaces_list_single("VF"),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way=pacing_way,
+        test_time=test_time,
+    )
     app = app_factory(application)
     app.create_command(**config_params)
-
-    if pacing_way == "tsn" and _is_e810(host):
-        # No TxPP launch-time HW on E810: expect mtl_init() to reject tsn
-        # pacing and the app to fail to start, rather than pass.
-        assert not app.execute_test(
-            build=mtl_path,
-            test_time=actual_test_time,
-            host=host,
-            compliance=pcap_capture,
-            fail_on_error=False,
-        ), "tsn pacing unexpectedly succeeded on E810 (no TxPP launch-time HW)"
-        return
-
     app.execute_test(
         build=mtl_path,
-        test_time=actual_test_time,
+        test_time=test_time,
         host=host,
         compliance=pcap_capture,
         integrity=media_integrity,
     )
+    app.assert_pacing_way(pacing_way)
+
+
+@pytest.mark.parametrize(
+    "media_file", [yuv_files[key] for key in CORE_KEYS], indirect=True, ids=CORE_KEYS
+)
+def test_st20p_pacing_way_auto(
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    pcap_capture,
+    output_files,
+    media_integrity,
+    media_file,
+):
+    """The default must resolve to RL rather than silently fall back to TSC."""
+    media_info, media_path = media_file
+    host = list(hosts.values())[0]
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_interfaces_list_single("VF"),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way="auto",
+        test_time=test_time,
+    )
+    app = app_factory("rxtxapp")
+    app.create_command(**config_params)
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
+    )
+    app.assert_pacing_way("rl")
+
+
+# PTP and TSN pacing require the hardware PHC exposed by a PF.
+@pytest.mark.parametrize(
+    "pacing_way",
+    [
+        pytest.param("ptp", id="ptp"),
+        pytest.param("tsn", marks=pytest.mark.requires_txpp, id="tsn"),
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file", [yuv_files[key] for key in CORE_KEYS], indirect=True, ids=CORE_KEYS
+)
+def test_st20p_pacing_way_phc(
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    pacing_way,
+    pcap_capture,
+    output_files,
+    media_integrity,
+    media_file,
+):
+    """PHC-paced ways, which require a PF."""
+    media_info, media_path = media_file
+    host = list(hosts.values())[0]
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_mixed_interfaces_list_single(
+            tx_interface_type="PF", rx_interface_type="VF"
+        ),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way=pacing_way,
+        enable_ptp=True,
+        test_time=60,
+    )
+    # Allow the PF to relink and PTP to converge before capture.
+    test_time = 60
+    app = app_factory("rxtxapp")
+    app.create_command(**config_params)
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
+    )
+    app.assert_pacing_way(pacing_way)
+
+
+@pytest.mark.requires_nic_family("e810")
+@pytest.mark.parametrize(
+    "media_file", [yuv_files["i1080p59"]], indirect=True, ids=["i1080p59"]
+)
+def test_st20p_pacing_way_tsn_rejected_without_txpp(
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    output_files,
+    media_file,
+):
+    """E810 has no TxPP engine, so mtl_init() must reject tsn outright rather
+    than accept it and quietly pace some other way."""
+    media_info, media_path = media_file
+    host = list(hosts.values())[0]
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_mixed_interfaces_list_single(
+            tx_interface_type="PF", rx_interface_type="VF"
+        ),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way="tsn",
+        enable_ptp=True,
+        test_time=60,
+    )
+    app = app_factory("rxtxapp")
+    app.create_command(**config_params)
+    app.execute_test(
+        build=mtl_path,
+        test_time=60,
+        host=host,
+        fail_on_error=False,
+    )
+    app.assert_tsn_unsupported()
+
+
+# The vrx adjustment is computed per way -- -4 for RL, bulk=1 for tsc_narrow,
+# -(bulk-1) otherwise (st_tx_video_session.c:579-596) -- and the shaping
+# profile sets the budget that adjustment is spent against, so the two are
+# genuinely coupled rather than independently sweepable.
+@pytest.mark.parametrize(
+    "pacing",
+    [
+        pytest.param("narrow", id="narrow"),
+        pytest.param("wide", marks=pytest.mark.allow_wide_compliance, id="wide"),
+        pytest.param("linear", id="linear"),
+    ],
+)
+@pytest.mark.parametrize(
+    "pacing_way",
+    [
+        pytest.param("rl", id="rl"),
+        pytest.param("tsc", id="tsc"),
+        pytest.param("tsc_narrow", id="tsc_narrow"),
+    ],
+)
+@pytest.mark.parametrize(
+    "media_file", [yuv_files["i2160p59"]], indirect=True, ids=["i2160p59"]
+)
+def test_st20p_pacing_way_x_pacing(
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    pacing_way,
+    pacing,
+    pcap_capture,
+    output_files,
+    media_integrity,
+    media_file,
+):
+    """Pacing way against shaping profile, at the load where the budget bites."""
+    media_info, media_path = media_file
+    host = list(hosts.values())[0]
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_interfaces_list_single("VF"),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way=pacing_way,
+        pacing=pacing,
+        test_time=test_time,
+    )
+    app = app_factory("rxtxapp")
+    app.create_command(**config_params)
+    app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
+    )
+    app.assert_pacing_way(pacing_way)
+
+
+@pytest.mark.allow_wide_compliance
+@pytest.mark.parametrize(
+    "media_file", [yuv_files["i576i50"]], indirect=True, ids=["i576i50"]
+)
+def test_st20p_pacing_way_sd_downgrade(
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    pcap_capture,
+    output_files,
+    media_integrity,
+    media_file,
+):
+    """SD must report its RL-to-TSC fallback and preserve content."""
+    media_info, media_path = media_file
+    host = list(hosts.values())[0]
+    config_params = dict(
+        session_type="st20p",
+        nic_port_list=setup_interfaces.get_interfaces_list_single("VF"),
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
+        port=20000,
+        test_mode="multicast",
+        input_file=media_path,
+        output_file=output_files.register(f"{media_path}.out"),
+        width=media_info["width"],
+        height=media_info["height"],
+        framerate=parse_fps_to_pformat(media_info["fps"]),
+        transport_format=media_info["format"],
+        pixel_format=media_info["file_format"],
+        pacing_way="rl",
+        interlaced=True,
+        test_time=test_time,
+    )
+    app = app_factory("rxtxapp")
+    app.create_command(**config_params)
+    run_ok = app.execute_test(
+        build=mtl_path,
+        test_time=test_time,
+        host=host,
+        compliance=pcap_capture,
+        integrity=media_integrity,
+        fail_on_error=False,
+    )
+    app.assert_pacing_way("tsc")
+    assert run_ok, "SD fallback failed compliance or integrity validation"
