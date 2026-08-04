@@ -29,9 +29,11 @@ from mtl_engine.const import (
     GSTREAMER_LIB_PATH,
     LOG_FOLDER,
     MTL_LIB_PATH,
+    NIC_FAMILY_BY_DEVICE_ID,
     PERF_LOG_FOLDER,
     RXTXAPP_PATH,
     TESTCMD_LVL,
+    TXPP_FAMILIES,
 )
 from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
 from mtl_engine.execute import kill_stale_processes
@@ -612,6 +614,17 @@ def pytest_runtest_makereport(item, call):
     return rep
 
 
+def _phase_incomplete(request) -> bool:
+    """True when setup or the test body failed or skipped.
+
+    Teardown runs regardless, so an oracle that enforces "you must have
+    dispatched me" needs this to tell a test that skipped the check from one
+    that never reached it.
+    """
+    report = request.node.stash.get(phase_report_key, {})
+    return any(rep.failed or rep.skipped for rep in report.values())
+
+
 @pytest.fixture(scope="session")
 def media(test_config: dict) -> str:
     media = test_config.get("media_path", "/opt/intel/media")
@@ -679,6 +692,34 @@ def dma_port_list(request):
     dma = request.config.getoption("--dma")
     assert dma is not None, "--dma parameter not provided"
     return dma.split(",")
+
+
+@pytest.fixture(scope="session")
+def nic_family(hosts: dict) -> str:
+    """Family of the DUT NIC: e810, e830, e835, or unknown.
+
+    The first entry of ``network_interfaces`` is the device under test; later
+    entries are capture NICs and must not decide capability skips.
+    """
+    host = list(hosts.values())[0]
+    device_id = str(host.network_interfaces[0].pci_device.device_id).lower()
+    return NIC_FAMILY_BY_DEVICE_ID.get(device_id, "unknown")
+
+
+@pytest.fixture(autouse=True)
+def _capability_gate(request, nic_family):
+    """Skip tests whose capability markers the DUT cannot satisfy."""
+    if request.node.get_closest_marker("requires_txpp"):
+        if nic_family not in TXPP_FAMILIES:
+            pytest.skip(f"{nic_family} has no TxPP launch-time engine")
+
+    marker = request.node.get_closest_marker("requires_nic_family")
+    if marker and nic_family not in marker.args:
+        pytest.skip(f"needs NIC family {'/'.join(marker.args)}, DUT is {nic_family}")
+
+    if request.node.get_closest_marker("requires_dsa"):
+        if not request.config.getoption("--dma"):
+            pytest.skip("needs a DSA device; --dma not provided")
 
 
 @pytest.fixture(scope="session")
@@ -1244,12 +1285,13 @@ def pcap_capture(
         # NO_COMPLIANCE), enforces that evaluate()/skip() ran during the call
         # phase -- the real upload/poll/verdict already happened there; this
         # only catches a test that requested the fixture but never dispatched
-        # it at all.
-        session.close()
+        # it at all. A test that already failed never got that far, so
+        # enforcing there would only bury the real failure.
+        session.close(enforce_dispatch=not _phase_incomplete(request))
 
 
 @pytest.fixture(scope="function")
-def media_integrity():
+def media_integrity(request):
     """Fixture for post-run RX/TX content-integrity checking (video or audio).
 
     Yields a :class:`~mtl_engine.integrity_session.IntegritySession`. Tests
@@ -1264,8 +1306,9 @@ def media_integrity():
     yield session
     # session.close() enforces that evaluate()/skip() ran during the call
     # phase -- catches a test that requested the fixture but never
-    # dispatched it at all.
-    session.close()
+    # dispatched it at all, and stays quiet when the test already failed
+    # before the check could run.
+    session.close(enforce_dispatch=not _phase_incomplete(request))
 
 
 @pytest.fixture(scope="function", autouse=True)
