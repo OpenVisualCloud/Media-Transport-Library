@@ -1145,7 +1145,6 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
 
   ptp->delta_result_cnt++;
   ptp_timesync_adjust_time(ptp, delta);
-  ptp->ptp_delta += delta;
   dbg("%s(%d), delta %" PRId64 "\n", __func__, port, delta);
   ptp->connected = true;
 

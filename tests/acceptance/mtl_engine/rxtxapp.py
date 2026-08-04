@@ -1122,6 +1122,14 @@ class RxTxApp(Application):
         def _fail(msg: str):
             self._fail_validation(msg, fail_on_error)
 
+        def _validate_rx_timing() -> None:
+            if not self.params.get("rx_timing_parser"):
+                return
+            try:
+                self.assert_rx_timing_compliance(self._expected_rx_timing_results())
+            except AssertionError as error:
+                _fail(str(error))
+
         try:
             if not self.config:
                 _fail("RxTxApp validate_results called without config")
@@ -1138,6 +1146,7 @@ class RxTxApp(Application):
                 for stype in all_types:
                     if not self._validate_single_session_type(stype, output_lines):
                         _fail(f"{stype} validation failed (multi-session)")
+                _validate_rx_timing()
                 logger.info(f"RxTxApp multi-session validation passed for {all_types}")
                 return True
 
@@ -1154,6 +1163,8 @@ class RxTxApp(Application):
             #    _validate_single_session_type.
             if not self._validate_single_session_type(session_type, output_lines):
                 _fail(f"{session_type} validation failed")
+
+            _validate_rx_timing()
 
             logger.info(f"RxTxApp validation passed for {session_type}")
             return True
@@ -1235,6 +1246,25 @@ class RxTxApp(Application):
                 if stype not in types:
                     types.append(stype)
         return types
+
+    def _expected_video_streams(self) -> int:
+        """Return ST20 wire-stream count from the generated TX config."""
+        config = self.config or {}
+        session_groups = config.get("tx_sessions") or config.get("rx_sessions") or []
+        return sum(
+            int(session.get("replicas", 1))
+            * max(1, len(group.get("dip") or group.get("interface") or []))
+            for group in session_groups
+            for session in group.get("st20p") or []
+        )
+
+    def _expected_rx_timing_results(self) -> int:
+        """Return expected ``rv_tp_stat(session, port)`` result count."""
+        return sum(
+            int(session.get("replicas", 1)) * max(1, len(group.get("interface") or []))
+            for group in (self.config or {}).get("rx_sessions") or []
+            for session in group.get("st20p") or []
+        )
 
     def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
         """Return the destination IPs for netsniff capture, possibly empty.

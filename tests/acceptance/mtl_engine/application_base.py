@@ -67,6 +67,9 @@ _AF_XDP_COPY_MARKERS = (
     "user special to copy mode only",
     "xsk create with zero copy fail",
 )
+_RX_TIMING_RE = re.compile(
+    r"rv_tp_stat\((\d+),(\d+)\),\s*COMPLIANT NARROW (\d+) WIDE (\d+) FAILED (\d+)"
+)
 
 
 def mtl_plugin_check_cmd(plugin_so: str) -> str:
@@ -274,7 +277,21 @@ class Application(ABC):
             height=self.params.get("height"),
             transport_format=self.params.get("transport_format"),
             framerate=self.params.get("framerate"),
+            expected_video_streams=self._expected_video_streams(),
         )
+
+    def _expected_video_streams(self) -> int:
+        """Return the number of configured ST20 video streams."""
+        sessions = self.params.get("sessions") or []
+        if sessions:
+            return sum(
+                int(session.get("replicas", 1))
+                for session in sessions
+                if session.get("session_type") == "st20p"
+            )
+        if self.params.get("session_type") == "st20p":
+            return int(self.params.get("replicas", 1))
+        return 0
 
     def integrity_intent(self, test_repo_path: str, host) -> IntegrityIntent:
         """Build the :class:`IntegrityIntent` an ``IntegritySession`` needs to evaluate.
@@ -490,6 +507,37 @@ class Application(ABC):
             "TSN failed without the unsupported-launch-time error; return code "
             f"was {self.last_return_code}"
         )
+
+    def assert_rx_timing_compliance(
+        self, expected_sessions: int = 1
+    ) -> dict[tuple[int, int], dict[str, int]]:
+        """Assert every reported ST20 RX timing interval is narrow compliant."""
+        totals: dict[tuple[int, int], dict[str, int]] = {}
+        for match in _RX_TIMING_RE.finditer(self.last_output or ""):
+            key = (int(match.group(1)), int(match.group(2)))
+            counts = totals.setdefault(key, {"narrow": 0, "wide": 0, "failed": 0})
+            counts["narrow"] += int(match.group(3))
+            counts["wide"] += int(match.group(4))
+            counts["failed"] += int(match.group(5))
+
+        assert totals, (
+            "rx_timing_parser was enabled but no rv_tp_stat compliance results "
+            "were found in application output"
+        )
+        assert len(totals) == expected_sessions, (
+            f"rx_timing_parser reported {len(totals)} video session(s), but "
+            f"{expected_sessions} were expected: {totals}"
+        )
+        non_narrow = {
+            session: counts
+            for session, counts in totals.items()
+            if counts["narrow"] == 0 or counts["wide"] or counts["failed"]
+        }
+        assert not non_narrow, (
+            "MTL RX timing parser did not report narrow compliance for every "
+            f"video session: {non_narrow}"
+        )
+        return totals
 
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Hook method called before execution to perform framework-specific setup.
@@ -735,8 +783,16 @@ class Application(ABC):
             validate_ok = self._dispatch_validate(fail_on_error)
         except AssertionError as e:
             validate_ok, validate_exc = False, e
-        if fail_on_error and (compliance_exc or integrity_exc or validate_exc):
-            raise compliance_exc or integrity_exc or validate_exc
+        failures = [
+            exc
+            for exc in (compliance_exc, integrity_exc, validate_exc)
+            if exc is not None
+        ]
+        if fail_on_error and len(failures) == 1:
+            raise failures[0]
+        if fail_on_error and failures:
+            details = "\n".join(f"- {failure}" for failure in failures)
+            raise AssertionError(f"Multiple validation failures:\n{details}")
         return compliance_ok and integrity_ok and validate_ok
 
     def _run_proc_group(

@@ -4,10 +4,9 @@
  * C harness API for the PTP servo / delta-adjustment unit tests.
  *
  * The harness wraps a single `struct mt_ptp_impl` driven entirely
- * in-process: `no_timesync` is forced true so every `rte_eth_timesync_*`
- * call is bypassed and replaced by the `no_timesync_delta` accumulator,
- * letting the PI servo and delta bookkeeping run with no NIC, no
- * hugepages, and no real PHC.
+ * in-process. Servo tests use `no_timesync_delta`; user-sync tests enable
+ * timesync and replace the `rte_eth_timesync_*` calls with harness mocks.
+ * Both paths run with no NIC, no hugepages, and no real PHC.
  *
  * Only an opaque typedef plus plain C declarations are exposed here so
  * the header is safe to include from the C++ gtest translation units; no
@@ -61,9 +60,13 @@ void ut_ptp_set_read_tx_ns(uint64_t ns);
 void ut_ptp_set_no_timesync(ut_ptp_ctx* ctx, bool no_timesync);
 void ut_ptp_set_coefficient(ut_ptp_ctx* ctx, double coefficient);
 void ut_ptp_set_last_sync_ts(ut_ptp_ctx* ctx, uint64_t last_sync_ts);
+void ut_ptp_set_raw_time(uint64_t raw_ns);
+void ut_ptp_set_user_time(ut_ptp_ctx* ctx, uint64_t user_ns);
 
 /* ── exercise the production code under test ──────────────────────────── */
 void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct);
+void ut_ptp_sync_from_user(ut_ptp_ctx* ctx);
+uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns);
 /* Run the static delay_req tx-timestamp (t3) alarm handler. */
 void ut_ptp_run_t3_handler(ut_ptp_ctx* ctx);
 /* Run the static single-owner completion attempt for the current cycle. */
