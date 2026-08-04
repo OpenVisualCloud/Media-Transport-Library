@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
+"""ST 2110-21 shaping profiles across increasing bandwidth at fixed FPS."""
 
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files
 
 pytestmark = pytest.mark.verified
+
+CORE = ["i1080p59", "i2160p59", "i2160p119"]
 
 
 @pytest.mark.nightly
@@ -26,13 +29,9 @@ pytestmark = pytest.mark.verified
 @pytest.mark.parametrize("pacing", ["narrow", "wide", "linear"])
 @pytest.mark.parametrize(
     "media_file",
-    [
-        yuv_files_422rfc10["Crosswalk_720p"],
-        yuv_files_422rfc10["ParkJoy_1080p"],
-        yuv_files_422rfc10["Pedestrian_4K"],
-    ],
+    [yuv_files[k] for k in CORE],
     indirect=["media_file"],
-    ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
+    ids=CORE,
 )
 def test_st20p_pacing(
     application,
