@@ -26,6 +26,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+existing_files() {
+	local file
+	while IFS= read -r file; do
+		[[ -f "$file" ]] && printf '%s\n' "$file"
+	done
+}
+
 CHECK_MODE=0
 [[ "${1:-}" == "--check" ]] && CHECK_MODE=1
 NEEDS_CHANGES=0
@@ -100,7 +107,8 @@ run_clang_format() {
 	mapfile -t files < <(
 		git ls-files --cached --others --exclude-standard \
 			-- '*.cpp' '*.hpp' '*.cc' '*.c' '*.h' \
-			':!:pymtl_wrap.c' ':!:vmlinux.h'
+			':!:pymtl_wrap.c' ':!:vmlinux.h' |
+			existing_files
 	)
 	((${#files[@]})) || return 0
 
@@ -121,7 +129,7 @@ run_python() {
 	section "Python (isort + black)"
 
 	local files
-	mapfile -t files < <(git ls-files '*.py')
+	mapfile -t files < <(git ls-files '*.py' | existing_files)
 	((${#files[@]})) || return 0
 
 	if ! command_exists isort || ! command_exists black; then
@@ -160,7 +168,7 @@ run_python() {
 run_markdownlint() {
 	section "markdownlint"
 
-	mapfile -t MD_FILES < <(git ls-files '*.md')
+	mapfile -t MD_FILES < <(git ls-files '*.md' | existing_files)
 	((${#MD_FILES[@]})) || return 0
 
 	if ! command_exists npx; then
@@ -208,7 +216,7 @@ run_textlint() {
 run_shfmt() {
 	section "shfmt"
 
-	mapfile -t SH_FILES < <(git ls-files '*.sh')
+	mapfile -t SH_FILES < <(git ls-files '*.sh' | existing_files)
 	((${#SH_FILES[@]})) || return 0
 
 	if ! command_exists shfmt; then
