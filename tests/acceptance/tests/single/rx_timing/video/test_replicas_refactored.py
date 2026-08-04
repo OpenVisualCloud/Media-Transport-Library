@@ -7,28 +7,30 @@ from mtl_engine.media_files import yuv_files
 
 @pytest.mark.nightly
 @pytest.mark.refactored
+@pytest.mark.parametrize(
+    "media_file", [yuv_files["i1080p60"]], indirect=True, ids=["i1080p60"]
+)
 def test_rx_timing_video_replicas_refactored(
     hosts,
     mtl_path,
-    media,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
     pcap_capture,
     application,
+    media_file,
 ):
     """Refactored test for rx timing video replicas.
 
     :param hosts: Mapping of host objects from the topology configuration.
     :param mtl_path: Path to the MTL build directory on the remote host.
-    :param media: Path to the media files directory on the remote host.
     :param setup_interfaces: Interface setup helper for NIC / VF configuration.
     :param test_time: Duration to run the streaming pipeline, in seconds.
     :param test_config: Test configuration dictionary loaded from ``test_config.yaml``.
     :param application: Media application driver fixture (currently ``RxTxApp``).
     :param pcap_capture: Pcap capture fixture for EBU ST 2110-21 compliance check.
     """
-    video_file = yuv_files["i1080p60"]
+    video_file, video_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
@@ -46,7 +48,7 @@ def test_rx_timing_video_replicas_refactored(
         framerate=f"p{video_file['fps']}",
         pixel_format=video_file["file_format"],
         transport_format=video_file["format"],
-        input_file=str(host.connection.path(media, video_file["filename"])),
+        input_file=video_path,
         replicas=2,
         rx_timing_parser=True,
         test_time=test_time,
