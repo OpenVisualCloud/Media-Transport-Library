@@ -253,7 +253,7 @@ class CaptureIntent:
     Application/session boundary is exactly this dataclass.
     """
 
-    dst_ip: Optional[str]
+    dst_ips: tuple[str, ...]
     capture_time: int
     settle_time: int = CAPTURE_SETTLE_TIME
     ptp_wait: int = 0
@@ -280,7 +280,7 @@ class ComplianceCheck(Protocol):
 
     def evaluate(self, intent: CaptureIntent, fail_on_error: bool = True) -> bool: ...
 
-    def close(self) -> None: ...
+    def close(self, enforce_dispatch: bool = True) -> None: ...
 
 
 class ComplianceSession:
@@ -355,13 +355,18 @@ class ComplianceSession:
                     intent.settle_time,
                 )
                 time.sleep(intent.settle_time)
-            if not intent.dst_ip:
+            if not intent.dst_ips:
                 logger.warning("No destination IP available for netsniff capture")
                 return
-            self._recorder.update_filter(dst_ip=intent.dst_ip)
+            # One pcap holds every destination, so the packet budget -- sized
+            # for one stream's frame count -- has to cover all of them.
+            if self._recorder.packets_capture is not None:
+                self._recorder.packets_capture *= len(intent.dst_ips)
+            self._recorder.update_filter(dst_ip=intent.dst_ips)
             self._recorder.capture(capture_time=intent.capture_time)
             logger.info(
-                "Started netsniff-ng capture for destination IP %s", intent.dst_ip
+                "Started netsniff-ng capture for destination IP %s",
+                ", ".join(intent.dst_ips),
             )
         except Exception as e:
             logger.warning("netsniff capture setup failed: %s", e)
@@ -418,7 +423,7 @@ class ComplianceSession:
             logger.info("Compliance check failed (fail_on_error=False); continuing")
             return False
 
-    def close(self) -> None:
+    def close(self, enforce_dispatch: bool = True) -> None:
         """Stop the capture and enforce the evaluated-exactly-once invariant.
 
         Called from the ``pcap_capture`` fixture's teardown. The real
@@ -426,9 +431,14 @@ class ComplianceSession:
         this only catches a test that requested the fixture but never called
         it at all -- a required compliance check must not be silently
         skippable that way either.
+
+        *enforce_dispatch* is False when the test already failed before the
+        verdict could run: the check legitimately never got its turn, and
+        reporting it as "never dispatched" would bury the real failure under
+        a second, misleading one.
         """
         self._recorder.stop()
-        if not self._evaluated:
+        if not self._evaluated and enforce_dispatch:
             log_fail(
                 "Compliance check required (test uses the pcap_capture "
                 "fixture) but execute_test() never dispatched it -- ensure "
@@ -540,6 +550,20 @@ class ComplianceSession:
         unit-testable against a saved EBU LIST report.
         """
         node_id = self.node_id
+        video_streams = _video_streams(report)
+        logger.info(
+            "EBU LIST analysed %d video stream(s) for %d captured destination(s)",
+            len(video_streams),
+            len(intent.dst_ips),
+        )
+        if len(intent.dst_ips) > 1 and len(video_streams) != len(intent.dst_ips):
+            self._fail(
+                "PCAP compliance check failed: EBU LIST analysed "
+                f"{len(video_streams)} video stream(s) for "
+                f"{len(intent.dst_ips)} captured destination(s) "
+                f"({', '.join(intent.dst_ips)})",
+                fail_on_error,
+            )
         wide_streams = _wide_video_streams(report)
         if wide_streams and not allow_wide:
             msg = (
@@ -637,7 +661,7 @@ class _NullComplianceSession:
     def evaluate(self, intent: CaptureIntent, fail_on_error: bool = True) -> bool:
         return True
 
-    def close(self) -> None:
+    def close(self, enforce_dispatch: bool = True) -> None:
         pass
 
 

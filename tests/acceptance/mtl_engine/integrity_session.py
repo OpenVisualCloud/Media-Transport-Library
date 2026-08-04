@@ -76,7 +76,7 @@ class IntegrityCheck(Protocol):
 
     def evaluate(self, intent: IntegrityIntent, fail_on_error: bool = True) -> bool: ...
 
-    def close(self) -> None: ...
+    def close(self, enforce_dispatch: bool = True) -> None: ...
 
 
 class IntegritySession:
@@ -179,14 +179,19 @@ class IntegritySession:
             delete_file=False,
         )
 
-    def close(self) -> None:
+    def close(self, enforce_dispatch: bool = True) -> None:
         """Enforce the evaluated-exactly-once invariant.
 
         Called from the ``media_integrity`` fixture's teardown -- catches a
         test that requested the fixture but never called ``execute_test()``
         with it (or ``media_integrity.skip(...)``).
+
+        *enforce_dispatch* is False when the test already failed before the
+        verdict could run: the check legitimately never got its turn, and
+        reporting it as "never dispatched" would bury the real failure under
+        a second, misleading one.
         """
-        if not self._evaluated:
+        if not self._evaluated and enforce_dispatch:
             log_fail(
                 "Integrity check required (test uses the media_integrity "
                 "fixture) but execute_test() never dispatched it -- ensure "
@@ -213,7 +218,7 @@ class _NullIntegritySession:
     def evaluate(self, intent: IntegrityIntent, fail_on_error: bool = True) -> bool:
         return True
 
-    def close(self) -> None:
+    def close(self, enforce_dispatch: bool = True) -> None:
         pass
 
 
