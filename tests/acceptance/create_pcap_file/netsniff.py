@@ -338,13 +338,16 @@ class NetsniffRecorder:
         """
         Updates the capture filter with new source and/or destination IP addresses.
         :param src_ip: New source IP address to filter (optional).
-        :param dst_ip: New destination IP address to filter (optional).
+        :param dst_ip: Destination IP to filter, or several (an ST 2022-7
+            session's two copies go into one pcap so EBU judges both).
         """
         filters = []
         if src_ip:
             filters.append(f"src {src_ip}")
         if dst_ip:
-            filters.append(f"dst {dst_ip}")
+            dst_ips = [dst_ip] if isinstance(dst_ip, str) else list(dst_ip)
+            clause = " or ".join(f"dst {ip}" for ip in dst_ips)
+            filters.append(f"({clause})" if len(dst_ips) > 1 else clause)
         if len(filters) > 1:
             self.capture_filter = " and ".join(filters)
         elif len(filters) == 1:
