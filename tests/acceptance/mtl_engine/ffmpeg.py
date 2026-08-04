@@ -197,9 +197,21 @@ class FFmpeg(Application):
         # infer from ``session_type`` (allows unified tests to pass
         # session_type="st22p" without also specifying mode="st22p").
         mode = self._ff_params.get("mode")
+        tx_application = self.params.get("tx_application")
+        rx_application = self.params.get("rx_application")
+        if tx_application is not None or rx_application is not None:
+            pair = (tx_application, rx_application)
+            if pair == ("rxtxapp", "ffmpeg"):
+                mode = _MODE_YUV_H264
+                self._ff_params["tx_is_ffmpeg"] = False
+            elif pair == ("ffmpeg", "rxtxapp"):
+                mode = _MODE_RGB24
+            else:
+                raise ValueError(f"unsupported cross-application pair: {pair}")
         if mode is None:
             session_type = self.params.get("session_type", "st20p")
             mode = _SESSION_TYPE_TO_MODE.get(session_type, _MODE_YUV_H264)
+        self._ff_params["mode"] = mode
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list:
             raise ValueError("nic_port_list is required")
@@ -327,12 +339,23 @@ class FFmpeg(Application):
     # -- mode: rgb24 (FFmpeg TX, RxTxApp RX, single stream) --------------
     def _build_rgb24_cmds(self, nic_port_list):
         video_format = self.params["video_format"]
-        video_url = self.params["video_url"]
-        video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
+        if not video_format:
+            height = self.params.get("height", 1080)
+            fps = self.extract_framerate(self.params.get("framerate", "p60"))
+            video_format = f"i{height}p{fps}"
+        video_url = self.params["video_url"] or self.params.get("input_file", "")
+        if self.was_user_provided("width") and self.was_user_provided("height"):
+            video_size = f"{self.params['width']}x{self.params['height']}"
+            fps = self.extract_framerate(self.params["framerate"])
+        else:
+            video_size, fps = ffmpeg_app.decode_video_format_16_9(video_format)
+        self.params["video_format"] = video_format
+        self.params["video_url"] = video_url
+        pix_fmt = ffmpeg_pix_fmt(self.params["pixel_format"])
         self._tx_commands = [
             self._ffmpeg_st20p_tx_cmd(
                 video_size=video_size,
-                pix_fmt="yuv422p10be",
+                pix_fmt=pix_fmt,
                 video_url=video_url,
                 port=nic_port_list[1],
                 sip=ip_pools.tx[0],
@@ -538,8 +561,11 @@ class FFmpeg(Application):
             tx_is_ffmpeg = bool(self._ff_params.get("tx_is_ffmpeg", True))
             if not tx_is_ffmpeg:
                 nic_port_list = self.params["nic_port_list"]
+                # TX takes port[0]; the FFmpeg RX built above already owns
+                # port[1]. Pointing both at port[1] made RX lose the EAL probe
+                # race and produce a 0-byte output.
                 tx_cfg = ffmpeg_app.generate_rxtxapp_tx_config(
-                    nic_port_list[1],
+                    nic_port_list[0],
                     self.params["video_format"],
                     self.params["video_url"],
                     host,
@@ -671,14 +697,14 @@ class FFmpeg(Application):
         )
 
     # ----------------------------------------------------- compliance
-    def _resolve_capture_dst_ip(self):
-        """Destination IP netsniff filters on.
+    def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
+        """Destination IPs netsniff filters on.
 
         Every FFmpeg command built here transmits to ``ip_pools.rx_multicast[0]``
         (see the ``-p_rx_ip`` tokens in the RX/TX builders), so the capture
         filter target is fixed rather than read back from a config file.
         """
-        return ip_pools.rx_multicast[0]
+        return (ip_pools.rx_multicast[0],)
 
     # ----------------------------------------------------- validate
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
