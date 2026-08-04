@@ -110,7 +110,7 @@ class PcapComplianceClient:
             retries -= 1
 
         logger.error(
-            "Report is not ready after %s attempts, skipping compliance check",
+            "Report is unavailable or not analyzed after %s attempts",
             initial_retries,
         )
         return False
@@ -125,10 +125,8 @@ class PcapComplianceClient:
 
         # download_report() may return False on failure/timeout
         if not report:
-            logger.warning(
-                "Compliance report is not available; treating as non-compliant"
-            )
-            return False, report
+            logger.error("Compliance report is unavailable or not analyzed")
+            return None, report
 
         streams = report.get("streams") or []
         if not streams:
