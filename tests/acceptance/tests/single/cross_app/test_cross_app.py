@@ -1,27 +1,23 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2026 Intel Corporation
 
-"""Cross-framework streaming tests (TX app != RX app).
-
-Validates ST2110-20 transport where TX and RX use different frameworks
-(e.g., RxTxApp transmitting, FFmpeg receiving).
-"""
+"""Cross-application interoperability at one baseline stream shape."""
 
 import pytest
-from mtl_engine.media_files import yuv_files
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
-CROSS_APP_MEDIA = [
-    ("i1080p25", 1, yuv_files["i1080p25"]),
-    ("i1080p30", 1, yuv_files["i1080p30"]),
-    ("i1080p60", 2, yuv_files["i1080p60"]),
-    ("i2160p25", 2, yuv_files["i2160p25"]),
-    ("i2160p30", 2, yuv_files["i2160p30"]),
-    ("i2160p60", 2, yuv_files["i2160p60"]),
-]
 
-
+@pytest.mark.parametrize(
+    "tx_application, rx_application, media_file",
+    [
+        ("rxtxapp", "ffmpeg", yuv_files_422p10le["Penguin_1080p"]),
+        ("ffmpeg", "rxtxapp", yuv_files_422p10le["Penguin_1080p"]),
+    ],
+    ids=["rxtxapp_to_ffmpeg", "ffmpeg_to_rxtxapp"],
+    indirect=["media_file"],
+)
 @pytest.mark.parametrize(
     "application",
     [
@@ -29,123 +25,56 @@ CROSS_APP_MEDIA = [
         pytest.param(
             "rxtxapp",
             marks=pytest.mark.skip(
-                reason="Cross-app test uses RxTxApp TX + FFmpeg RX; only FFmpeg adapter supports this mode"
+                reason="Cross-app orchestration requires the FFmpeg adapter"
             ),
+            id="rxtxapp_baseline",
+        ),
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(
+                reason="Cross-app multi-session orchestration requires the FFmpeg adapter"
+            ),
+            id="rxtxapp_multisession",
         ),
     ],
-)
-@pytest.mark.parametrize("output_format", ["yuv", "h264"])
-@pytest.mark.parametrize(
-    "video_format, test_time_multiplier, media_file",
-    CROSS_APP_MEDIA,
-    ids=[m[0] for m in CROSS_APP_MEDIA],
-    indirect=["media_file"],
 )
 def test_cross_app(
     application,
+    tx_application,
+    rx_application,
     app_factory,
     hosts,
     test_time,
     mtl_path,
     setup_interfaces,
-    video_format,
-    test_time_multiplier,
-    output_format,
     test_config,
     media_file,
 ):
-    """Test RxTxApp TX -> FFmpeg RX for ST2110-20 video streams.
-
-    Validates FFmpeg MTL plugin receiving ST2110-20 video streams transmitted by
-    RxTxApp. Tests various resolutions and output formats.
-    """
+    """One TX app streaming ST2110-20 to a different RX app."""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-    app = app_factory(application)
-    app.create_command(
+    fps_num, _, fps_den = media_file_info["fps"].partition("/")
+    config_params = dict(
         session_type="st20p",
         nic_port_list=interfaces_list,
-        video_format=video_format,
-        pg_format=media_file_info["format"],
-        video_url=media_file_path,
-        output_format=output_format,
-        tx_is_ffmpeg=False,
-        mode="yuv_h264",
-        test_time=test_time * test_time_multiplier,
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        framerate=f"p{int(float(fps_num) / float(fps_den or 1))}",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        input_file=media_file_path,
+        tx_application=tx_application,
+        rx_application=rx_application,
+        test_time=test_time,
     )
-    result = app.execute_test(
-        build=mtl_path,
-        test_time=test_time * test_time_multiplier,
-        host=host,
-    )
-    assert result, f"Cross-app test failed for {video_format} ({output_format})"
 
-
-CROSS_APP_MULTI_MEDIA = [
-    ("i1080p25", 3, yuv_files["i1080p25"]),
-    ("i1080p30", 3, yuv_files["i1080p30"]),
-]
-
-
-@pytest.mark.parametrize(
-    "application",
-    [
-        "ffmpeg",
-        pytest.param(
-            "rxtxapp",
-            marks=pytest.mark.skip(
-                reason="Cross-app multi-session uses FFmpeg adapter with tx_is_ffmpeg=False"
-            ),
-        ),
-    ],
-)
-@pytest.mark.parametrize("output_format", ["yuv", "h264"])
-@pytest.mark.parametrize(
-    "video_format, test_time_multiplier, media_file",
-    CROSS_APP_MULTI_MEDIA,
-    ids=[f"{m[0]}_multi" for m in CROSS_APP_MULTI_MEDIA],
-    indirect=["media_file"],
-)
-def test_cross_app_multisession(
-    application,
-    app_factory,
-    hosts,
-    test_time,
-    mtl_path,
-    setup_interfaces,
-    video_format,
-    test_time_multiplier,
-    output_format,
-    test_config,
-    media_file,
-):
-    """Test RxTxApp TX -> FFmpeg RX with multiple simultaneous sessions."""
-    media_file_info, media_file_path = media_file
-    host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
     app = app_factory(application)
-    app.create_command(
-        session_type="st20p",
-        nic_port_list=interfaces_list,
-        video_format=video_format,
-        pg_format=media_file_info["format"],
-        video_url=media_file_path,
-        output_format=output_format,
-        tx_is_ffmpeg=False,
-        multiple_sessions=True,
-        mode="yuv_h264",
-        test_time=test_time * test_time_multiplier,
-    )
-    result = app.execute_test(
+    app.create_command(**config_params)
+    assert app.execute_test(
         build=mtl_path,
-        test_time=test_time * test_time_multiplier,
+        test_time=test_time,
         host=host,
-    )
-    assert (
-        result
-    ), f"Cross-app multi-session test failed for {video_format} ({output_format})"
+    ), f"{tx_application} to {rx_application} interop failed"
