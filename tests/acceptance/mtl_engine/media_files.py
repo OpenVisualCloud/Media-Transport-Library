@@ -664,9 +664,6 @@ anc_files = dict(
 )
 
 st41_files = dict(
-    st41_short={
-        "filename": "st41_short_test.txt",
-    },
     st41_p29_long_file={
         "filename": "st41_long_test.txt",
     },
@@ -681,7 +678,7 @@ gstreamer_formats = dict(
         "fps": "60",
     },
     I422_10LE={
-        "filename": "gstreamer_I422_10LE_1920x1080_60hz.yuv",
+        "filename": "gstreamer_I42210LE_1920x1080_60hz.yuv",
         "format": "I422_10LE",
         "width": 1920,
         "height": 1080,
