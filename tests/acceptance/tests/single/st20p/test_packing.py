@@ -23,16 +23,17 @@ pytestmark = pytest.mark.verified
     ],
 )
 @pytest.mark.tx_side
-@pytest.mark.parametrize("packing", ["GPM_SL", "GPM"])
+@pytest.mark.parametrize("packing", ["BPM", "GPM", "GPM_SL"])
 @pytest.mark.parametrize(
     "media_file",
     [
-        yuv_files_422rfc10["Crosswalk_720p"],
-        yuv_files_422rfc10["ParkJoy_1080p"],
-        yuv_files_422rfc10["Pedestrian_4K"],
+        yuv_files_422rfc10["Penguin_720p"],
+        yuv_files_422rfc10["Penguin_1080p"],
+        yuv_files_422rfc10["Penguin_4K"],
+        yuv_files_422rfc10["Penguin_8K"],
     ],
     indirect=["media_file"],
-    ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
+    ids=["Penguin_720p", "Penguin_1080p", "Penguin_4K", "Penguin_8K"],
 )
 def test_st20p_packing(
     application,
@@ -48,7 +49,7 @@ def test_st20p_packing(
     media_integrity,
     media_file,
 ):
-    """Test different packing modes (GPM_SL, GPM)."""
+    """Test each packetizer across representative frame geometry."""
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]

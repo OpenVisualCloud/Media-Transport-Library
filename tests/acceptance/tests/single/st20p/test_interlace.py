@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
@@ -23,12 +22,7 @@ pytestmark = pytest.mark.verified
 @pytest.mark.parametrize(
     "media_file",
     [
-        # SD interlaced (480i/576i) streams have too few packets/field for
-        # tv_train_pacing()'s pad_interval>32 heuristic (tuned for HD/UHD) to
-        # ever accept RL hardware pacing -- MTL falls back to TSC (bulk=4)
-        # software pacing, which only achieves ST 2110-21 "wide" VRX/Cinst
-        # compliance, not narrow/narrow_linear. This is expected/acceptable
-        # for these two resolutions; do not use as a template for HD/UHD.
+        # SD streams fall back from RL to TSC and satisfy wide compliance.
         (
             pytest.param(v, marks=pytest.mark.allow_wide_compliance)
             if v["height"] <= 576
