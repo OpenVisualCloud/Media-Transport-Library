@@ -22,6 +22,21 @@ Must run as root, from this directory, with the venv interpreter. Full
 instructions, configuration reference, and troubleshooting:
 [doc/acceptance_quickstart.md](../../doc/acceptance_quickstart.md).
 
+CI uses the real-footage corpus mounted at `/mnt/media`. Media generation is
+an optional, manual diagnostic task; neither setup nor pytest invokes it, and
+it is not an automatic fallback for a missing NFS mount.
+
+To create synthetic transport-format assets in a separate directory:
+
+```bash
+./venv/bin/pip install -r tools/requirements-assets.txt
+./venv/bin/python3 tools/gen_acceptance_assets.py --out /tmp/mtl-media-generated
+```
+
+The generator does not overwrite existing files unless `--force` is passed.
+Point `media_path` at the generated directory only for an explicit local
+diagnostic run. Do not generate assets directly into the CI NFS mount.
+
 ## Layout
 
 | Path | Contains |
@@ -45,4 +60,6 @@ and `pytest.ini` for the authoritative list.
 - [Setup and run](../../doc/acceptance_quickstart.md)
 - [Architecture](../../doc/acceptance-design.md) — modules, adapters,
   fixtures, oracles, clock model
+- [Test strategy](docs/test-strategy.md) — matrix depth, capability policy,
+  path assertions, and oracles
 - [Build guide](../../doc/build.md)
