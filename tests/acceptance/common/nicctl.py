@@ -506,6 +506,25 @@ class InterfaceSetup:
 
         return [dpdk_interfaces[0], f"kernel:{kernel_interface}"]
 
+    def get_native_af_xdp_interfaces(self, count: int = 2) -> list:
+        """Return configured kernel interfaces suitable for native AF_XDP."""
+        host = list(self.hosts.values())[0]
+        usable = []
+        for interface in host.network_interfaces:
+            result = host.connection.execute_command(
+                f"ip -o -4 addr show dev {interface.name}",
+                shell=True,
+                expected_return_codes=None,
+            )
+            if result.return_code == 0 and result.stdout.strip():
+                usable.append(f"native_af_xdp:{interface.name}")
+        if len(usable) < count:
+            pytest.skip(
+                f"native AF_XDP needs {count} configured kernel interfaces; "
+                f"found {usable or 'none'}"
+            )
+        return usable[:count]
+
     def register_cleanup(self, nicctl, interface, if_type):
         self.cleanups.append((nicctl, interface, if_type))
 
