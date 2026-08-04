@@ -241,15 +241,15 @@ class Application(ABC):
             logger.info("validate_results soft-fail (fail_on_error=False): %s", msg)
         raise AssertionError(msg)
 
-    def _resolve_capture_dst_ip(self):
-        """Return the destination IP that netsniff should filter on, or ``None``.
+    def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
+        """Return the destination IPs netsniff should filter on, or empty.
 
         Subclasses override this when their config schema exposes the TX
-        destination(s). The default returns ``None``, which makes
+        destination(s). The default returns an empty tuple, which makes
         :meth:`ComplianceSession.arm() <mtl_engine.pcap_compliance.ComplianceSession.arm>`
         skip the capture with a warning rather than raising.
         """
-        return None
+        return ()
 
     def capture_intent(self) -> CaptureIntent:
         """Build the :class:`CaptureIntent` a compliance session needs to arm/evaluate.
@@ -264,7 +264,7 @@ class Application(ABC):
             else 0
         )
         return CaptureIntent(
-            dst_ip=self._resolve_capture_dst_ip(),
+            dst_ips=self._resolve_capture_dst_ips(),
             capture_time=self.params.get("test_time", 30),
             settle_time=self.params.get("capture_settle_time", CAPTURE_SETTLE_TIME),
             ptp_wait=ptp_wait,

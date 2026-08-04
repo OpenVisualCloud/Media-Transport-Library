@@ -21,7 +21,12 @@ def init(session_id: int, pool_size: int = 8) -> None:
     for i in range(pool_size):
         host_octet = i + 1
         rx.append(f"192.168.{session_id}.{host_octet}")
-        rx_multicast.append(f"239.0.{session_id}.{host_octet}")
+        # The second octet must stay non-zero. An IPv4 multicast MAC carries
+        # only the low 23 bits of the group, so 239.0.0.x would share
+        # 01:00:5e:00:00:x with the 224.0.0.x link-local control groups --
+        # 239.0.0.1 aliases all-hosts and is then flooded to every VF on the
+        # NIC, landing on the CNI queue of ports that never joined it.
+        rx_multicast.append(f"239.1.{session_id}.{host_octet}")
         tx.append(f"192.168.{session_id}.{pool_size + i}")
 
         # Secondary port for ST2022-7 redundant sessions
