@@ -11,6 +11,7 @@
 #include "st2110/st_tx_video_session.h"
 
 #define UT_TRS_MAX_TSC_SCRIPT 64
+#define UT_TRS_MAX_SEND_HISTORY 8
 
 struct ut_trs_ctx {
   struct mtl_main_impl impl;
@@ -18,6 +19,7 @@ struct ut_trs_ctx {
   struct rte_mbuf* pad_mbuf;
   struct rte_mbuf* inflight_mbuf;
   struct rte_mbuf* inflight2_mbuf;
+  struct rte_mbuf* redundant_inflight_mbuf;
 
   uint64_t tsc_script[UT_TRS_MAX_TSC_SCRIPT];
   int tsc_script_len;
@@ -29,6 +31,8 @@ struct ut_trs_ctx {
   uint32_t burst_call_count;
   uint64_t last_pad_send_tsc;
   uint64_t last_real_send_tsc;
+  uint32_t send_history[UT_TRS_MAX_SEND_HISTORY];
+  uint32_t send_history_count;
   bool burst_force_fail;
 };
 
@@ -72,6 +76,12 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
       if (rte_mbuf_refcnt_read(tx_pkts[i]) > 1) rte_pktmbuf_free(tx_pkts[i]);
     }
   } else {
+    for (uint16_t i = 0; i < nb_pkts; i++) {
+      if (ut_trs_active_ctx->send_history_count < UT_TRS_MAX_SEND_HISTORY) {
+        uint32_t pos = ut_trs_active_ctx->send_history_count++;
+        ut_trs_active_ctx->send_history[pos] = st_tx_mbuf_get_idx(tx_pkts[i]);
+      }
+    }
     ut_trs_active_ctx->real_send_count += nb_pkts;
     ut_trs_active_ctx->last_real_send_tsc = ut_trs_active_ctx->last_tsc;
   }
@@ -125,6 +135,9 @@ ut_trs_ctx* ut_trs_create(void) {
   ctx->inflight2_mbuf = rte_pktmbuf_alloc(priv_pool);
   if (!ctx->inflight2_mbuf) goto fail;
   st_tx_mbuf_set_idx(ctx->inflight2_mbuf, 1);
+  ctx->redundant_inflight_mbuf = rte_pktmbuf_alloc(priv_pool);
+  if (!ctx->redundant_inflight_mbuf) goto fail;
+  st_tx_mbuf_set_idx(ctx->redundant_inflight_mbuf, 1);
 
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create("ut_trs_ring", 4);
   if (!s->ring[MTL_SESSION_PORT_P]) goto fail;
@@ -133,6 +146,7 @@ ut_trs_ctx* ut_trs_create(void) {
 
 fail:
   if (s->ring[MTL_SESSION_PORT_P]) rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
@@ -145,12 +159,15 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (ut_trs_active_ctx == ctx) ut_trs_active_ctx = NULL;
   bool owns_inflight = ctx->session.trs_inflight_num[MTL_SESSION_PORT_P] > 0;
   bool owns_inflight2 = ctx->session.trs_inflight_num2[MTL_SESSION_PORT_P] > 0;
+  bool owns_redundant = ctx->session.trs_inflight_num[MTL_SESSION_PORT_R] > 0;
   st_tx_video_transmitter_state_cleanup(&ctx->session);
   if (owns_inflight) ctx->inflight_mbuf = NULL;
   if (owns_inflight2) ctx->inflight2_mbuf = NULL;
+  if (owns_redundant) ctx->redundant_inflight_mbuf = NULL;
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
+  if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
   if (ctx->session.ring[MTL_SESSION_PORT_P])
     rte_ring_free(ctx->session.ring[MTL_SESSION_PORT_P]);
   free(ctx);
@@ -213,6 +230,11 @@ uint32_t ut_trs_real_send_count(const ut_trs_ctx* ctx) {
   return ctx->real_send_count;
 }
 
+uint32_t ut_trs_sent_pkt_idx(const ut_trs_ctx* ctx, uint32_t pos) {
+  if (pos >= ctx->send_history_count) return UINT32_MAX;
+  return ctx->send_history[pos];
+}
+
 uint64_t ut_trs_last_pad_send_tsc(const ut_trs_ctx* ctx) {
   return ctx->last_pad_send_tsc;
 }
@@ -261,8 +283,23 @@ void ut_trs_set_recovery_pending_port(ut_trs_ctx* ctx, int port, bool pending) {
   ctx->session.tx_queue_recovery_pending[port] = pending;
 }
 
-void ut_trs_call_port_cleanup(ut_trs_ctx* ctx, int port) {
-  st_tx_video_transmitter_port_state_cleanup(&ctx->session, port);
+bool ut_trs_process_recovery_cleanup(ut_trs_ctx* ctx, int port) {
+  if (!ctx->session.tx_queue_recovery_pending[port]) return false;
+
+  ctx->session.tx_queue_recovery_pending[port] = false;
+  ut_trs_call_recovery_cleanup(ctx);
+  return true;
+}
+
+void ut_trs_call_recovery_cleanup(ut_trs_ctx* ctx) {
+  bool owns_inflight = ctx->session.trs_inflight_num[MTL_SESSION_PORT_P] > 0;
+  bool owns_inflight2 = ctx->session.trs_inflight_num2[MTL_SESSION_PORT_P] > 0;
+  bool owns_redundant = ctx->session.trs_inflight_num[MTL_SESSION_PORT_R] > 0;
+
+  st_tx_video_transmitter_state_cleanup(&ctx->session);
+  if (owns_inflight) ctx->inflight_mbuf = NULL;
+  if (owns_inflight2) ctx->inflight2_mbuf = NULL;
+  if (owns_redundant) ctx->redundant_inflight_mbuf = NULL;
 }
 
 void ut_trs_set_pad_inflight_num(ut_trs_ctx* ctx, unsigned int n) {
@@ -286,8 +323,31 @@ void ut_trs_set_inflight_num2(ut_trs_ctx* ctx, unsigned int n) {
     s->trs_inflight2[MTL_SESSION_PORT_P][i] = ctx->inflight_mbuf;
 }
 
-void ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx) {
+static bool ut_trs_alloc_cleanup_mbufs(ut_trs_ctx* ctx) {
+  struct rte_mempool* pool = ut_trs_priv_pool();
+
+  if (!ctx->inflight_mbuf) {
+    ctx->inflight_mbuf = rte_pktmbuf_alloc(pool);
+    if (!ctx->inflight_mbuf) return false;
+    st_tx_mbuf_set_idx(ctx->inflight_mbuf, 1);
+  }
+  if (!ctx->inflight2_mbuf) {
+    ctx->inflight2_mbuf = rte_pktmbuf_alloc(pool);
+    if (!ctx->inflight2_mbuf) return false;
+    st_tx_mbuf_set_idx(ctx->inflight2_mbuf, 1);
+  }
+  if (!ctx->redundant_inflight_mbuf) {
+    ctx->redundant_inflight_mbuf = rte_pktmbuf_alloc(pool);
+    if (!ctx->redundant_inflight_mbuf) return false;
+    st_tx_mbuf_set_idx(ctx->redundant_inflight_mbuf, 1);
+  }
+  return true;
+}
+
+bool ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx) {
   struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (!ut_trs_alloc_cleanup_mbufs(ctx)) return false;
 
   s->trs_inflight[MTL_SESSION_PORT_P][0] = ctx->inflight_mbuf;
   s->trs_inflight_num[MTL_SESSION_PORT_P] = 1;
@@ -299,6 +359,19 @@ void ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx) {
   s->trs_pad_inflight_num[MTL_SESSION_PORT_P] = 2;
   s->trs_target_tsc[MTL_SESSION_PORT_P] = 10000;
   s->rl_state[MTL_SESSION_PORT_P] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  return true;
+}
+
+bool ut_trs_prepare_redundant_cleanup_state(ut_trs_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (!ut_trs_prepare_cleanup_state(ctx)) return false;
+  s->trs_inflight[MTL_SESSION_PORT_R][0] = ctx->redundant_inflight_mbuf;
+  s->trs_inflight_num[MTL_SESSION_PORT_R] = 1;
+  s->trs_inflight_idx[MTL_SESSION_PORT_R] = 0;
+  s->rl_state[MTL_SESSION_PORT_R] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  s->tx_queue_recovery_pending[MTL_SESSION_PORT_R] = true;
+  return true;
 }
 
 void ut_trs_cleanup_state(ut_trs_ctx* ctx) {
@@ -374,4 +447,15 @@ void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc) {
   st_tx_mbuf_set_idx(ctx->inflight_mbuf, 0);
   st_tx_mbuf_set_tsc(ctx->inflight_mbuf, target_tsc);
   ut_trs_enqueue_ring_pkt(ctx);
+}
+
+void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  void* pkts[2] = {ctx->inflight_mbuf, ctx->inflight2_mbuf};
+
+  s->bulk = 2;
+  st_tx_mbuf_set_idx(ctx->inflight_mbuf, 1);
+  st_tx_mbuf_set_idx(ctx->inflight2_mbuf, 0);
+  st_tx_mbuf_set_tsc(ctx->inflight2_mbuf, target_tsc);
+  rte_ring_sp_enqueue_bulk(s->ring[MTL_SESSION_PORT_P], pkts, 2, NULL);
 }

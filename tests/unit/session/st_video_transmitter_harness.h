@@ -36,6 +36,7 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx);
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail);
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_real_send_count(const ut_trs_ctx* ctx);
+uint32_t ut_trs_sent_pkt_idx(const ut_trs_ctx* ctx, uint32_t pos);
 uint64_t ut_trs_last_pad_send_tsc(const ut_trs_ctx* ctx);
 uint64_t ut_trs_last_real_send_tsc(const ut_trs_ctx* ctx);
 uint16_t ut_trs_pad_refcnt(const ut_trs_ctx* ctx);
@@ -49,12 +50,14 @@ int ut_trs_rl_state_port(const ut_trs_ctx* ctx, int port);
 void ut_trs_set_rl_state_port(ut_trs_ctx* ctx, int port, int state);
 bool ut_trs_recovery_pending_port(const ut_trs_ctx* ctx, int port);
 void ut_trs_set_recovery_pending_port(ut_trs_ctx* ctx, int port, bool pending);
-void ut_trs_call_port_cleanup(ut_trs_ctx* ctx, int port);
+bool ut_trs_process_recovery_cleanup(ut_trs_ctx* ctx, int port);
+void ut_trs_call_recovery_cleanup(ut_trs_ctx* ctx);
 
 void ut_trs_set_pad_inflight_num(ut_trs_ctx* ctx, unsigned int n);
 void ut_trs_set_inflight_num(ut_trs_ctx* ctx, unsigned int n);
 void ut_trs_set_inflight_num2(ut_trs_ctx* ctx, unsigned int n);
-void ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx);
+bool ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx);
+bool ut_trs_prepare_redundant_cleanup_state(ut_trs_ctx* ctx);
 void ut_trs_cleanup_state(ut_trs_ctx* ctx);
 unsigned int ut_trs_inflight_num2(const ut_trs_ctx* ctx);
 unsigned int ut_trs_inflight_idx(const ut_trs_ctx* ctx);
@@ -73,6 +76,7 @@ int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
 
 void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx);
 void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc);
+void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc);
 
 #ifdef __cplusplus
 }
