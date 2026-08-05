@@ -109,6 +109,10 @@ void ut_txa_set_cur_epochs(ut_txa_ctx* ctx, uint64_t cur_epochs) {
   ctx->session.pacing.cur_epochs = cur_epochs;
 }
 
+void ut_txa_set_frame_time(ut_txa_ctx* ctx, long double frame_time_ns) {
+  ctx->session.pacing.frame_time = frame_time_ns;
+}
+
 void ut_txa_set_user_pacing(ut_txa_ctx* ctx, bool enable) {
   if (enable)
     ctx->session.ops.flags |= ST40_TX_FLAG_USER_PACING;
@@ -142,6 +146,11 @@ uint64_t ut_txa_pacing_required_tai(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfm
 
 int ut_txa_sync_pacing(ut_txa_ctx* ctx, uint64_t required_tai) {
   return tx_ancillary_session_sync_pacing(&ctx->impl, &ctx->session, required_tai);
+}
+
+void ut_txa_update_rtp_time_stamp(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp) {
+  tx_ancillary_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
 }
 
 int ut_txa_prepare_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
@@ -337,4 +346,8 @@ uint64_t ut_txa_stat_recoverable_error(const ut_txa_ctx* ctx) {
 
 uint64_t ut_txa_stat_unrecoverable_error(const ut_txa_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_unrecoverable_error;
+}
+
+uint32_t ut_txa_rtp_time_stamp(const ut_txa_ctx* ctx) {
+  return ctx->session.pacing.rtp_time_stamp;
 }
