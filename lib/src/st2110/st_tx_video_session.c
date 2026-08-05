@@ -2971,11 +2971,13 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->rl_state[i] = ST_TX_VIDEO_RL_STATE_IDLE;
   s->stat_trs_ret_code[i] = 0;
   s->last_burst_succ_time_tsc[i] = 0;
-  s->tx_queue_recovery_pending[i] = false;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
-  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) tv_transmitter_port_state_init(s, i);
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    tv_transmitter_port_state_init(s, i);
+    s->tx_queue_recovery_pending[i] = false;
+  }
 }
 
 static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
@@ -2996,11 +2998,6 @@ static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s
 
 void st_tx_video_transmitter_state_cleanup(struct st_tx_video_session_impl* s) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) tv_transmitter_port_state_cleanup(s, i);
-}
-
-void st_tx_video_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s,
-                                                enum mtl_session_port port) {
-  tv_transmitter_port_state_cleanup(s, port);
 }
 
 static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
@@ -4101,14 +4098,6 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
   return 0;
 }
 
-/*
- * KNOWN LIMITATION (pre-existing since afe8b672, "tx/video: add recovery from
- * tx burst hang"): this is invoked from the pacing tasklet's thread
- * (video_trs_tasklet_handler()) and performs blocking work (busy-wait queue
- * flush, mempool alloc/free), violating the "tasklets never block" rule.
- * Fixing this properly requires moving queue/mempool replacement to a
- * dedicated recovery thread; deferred as a follow-up, out of scope here.
- */
 int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
                               struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port) {
@@ -4132,9 +4121,9 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
     if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
   }
-  /* only reset the failed port's transmitter state; other ports keep their
-   * in-flight packets, rl_state and pending recovery flags untouched */
-  st_tx_video_transmitter_port_state_cleanup(s, s_port);
+  /* Payload pools are shared by redundant ports, so release all software-held
+   * mbufs before replacing them. */
+  st_tx_video_transmitter_state_cleanup(s);
   uint64_t recovery_tsc = mt_get_tsc(impl);
   for (uint8_t i = 0; i < s->ops.num_port; i++)
     s->last_burst_succ_time_tsc[i] = recovery_tsc;

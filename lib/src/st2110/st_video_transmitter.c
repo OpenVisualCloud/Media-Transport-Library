@@ -316,8 +316,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       /* Keep an already-overdue frame pending. */
       int64_t delta = (int64_t)(target_tsc - cur_tsc);
 
-      /* unreachable: trs_inflight_num2[s_port] > 0 already drained by the
-       * early return at the top of this function */
+      /* A partial pre-boundary burst populates inflight2 in this invocation.
+       * Retain the new frame until those older packets are retried. */
       if (likely(delta <= (int64_t)NS_PER_S || s->trs_inflight_num2[s_port])) {
         s->trs_target_tsc[s_port] = target_tsc;
         s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
