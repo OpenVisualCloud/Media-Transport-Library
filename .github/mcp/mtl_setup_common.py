@@ -62,6 +62,24 @@ def _run(
     )
 
 
+def _decode(data: str | bytes | None) -> str:
+    """Coerce subprocess output to str.
+
+    subprocess.run(..., text=True) decodes stdout/stderr on normal return,
+    but on a TimeoutExpired the partially-read buffers attached to the
+    exception (e.stdout/e.stderr) can still be raw bytes regardless of
+    text=True -- the decode step only runs on the happy path. Concatenating
+    that bytes value with a str (as a naive '+' would) raises 'can't concat
+    str to bytes', which masked the actual timeout with an unrelated-looking
+    tool error. Always decode explicitly before concatenating.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode(errors="replace")
+    return data
+
+
 def _run_rc(cmd: list[str] | str, **kw: Any) -> tuple[int, str]:
     """Run and return (returncode, combined stdout+stderr), never raising.
 
@@ -74,7 +92,7 @@ def _run_rc(cmd: list[str] | str, **kw: Any) -> tuple[int, str]:
             out += "\n" + r.stderr
         return r.returncode, out.strip()
     except subprocess.TimeoutExpired as e:
-        out = (e.stdout or "") + "\n" + (e.stderr or "")
+        out = _decode(e.stdout) + "\n" + _decode(e.stderr)
         out += f"\n\n*** TIMEOUT after {e.timeout}s ***"
         return -1, out.strip()
 
