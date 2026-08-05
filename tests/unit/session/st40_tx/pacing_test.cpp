@@ -17,6 +17,7 @@ constexpr uint64_t kCurrentTsc = kFramePeriodNs / 2;
 constexpr uint64_t kCurrentEpoch = kCurrentTai / kFramePeriodNs;
 constexpr uint64_t kInitialEpoch = kCurrentEpoch - 1;
 constexpr uint64_t kTargetTai = kCurrentTai + kFramePeriodNs / 2;
+constexpr uint64_t kOffTickExactTargetTai = kTargetTai + 1;
 constexpr uint64_t kAlignedTargetTai = kCurrentTai + kFramePeriodNs;
 constexpr uint64_t kPastTai = kCurrentTai - kFramePeriodNs / 2;
 constexpr uint64_t kMediaClockRate = ST10_VIDEO_SAMPLING_RATE_90K;
@@ -49,6 +50,19 @@ class St40TxPacingTest : public ::testing::Test {
 TEST_F(St40TxPacingTest, SteadyStateAdvancesByOneEpoch) {
   ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
   EXPECT_EQ(ut_txa_calc_epoch(ctx_, kCurrentTai, 0), kCurrentEpoch);
+  ExpectNoPacingStats();
+}
+
+TEST_F(St40TxPacingTest, DefaultPacingSnapsOffTickGateToMediaClock) {
+  ut_txa_set_frame_time(ctx_, kFramePeriodNs + 1);
+  ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txa_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(ut_txa_sync_pacing(ctx_, 0), 0);
+
+  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc);
   ExpectNoPacingStats();
 }
 
@@ -312,10 +326,11 @@ TEST_F(St40TxPacingTest, ExactUserPacingUsesTimestampVerbatim) {
   ut_txa_set_mock_ptp_time(ctx_, kCurrentTai);
   ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
 
-  ASSERT_EQ(ut_txa_sync_pacing(ctx_, kTargetTai), 0);
+  ASSERT_EQ(ut_txa_sync_pacing(ctx_, kOffTickExactTargetTai), 0);
 
-  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kTargetTai);
-  EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc + kTargetTai - kCurrentTai);
+  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kOffTickExactTargetTai);
+  EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_),
+            kCurrentTsc + kOffTickExactTargetTai - kCurrentTai);
   ExpectNoPacingStats();
 }
 

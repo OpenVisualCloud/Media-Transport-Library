@@ -20,6 +20,7 @@ int ut_txa_init(void);
 ut_txa_ctx* ut_txa_create(void);
 void ut_txa_destroy(ut_txa_ctx* ctx);
 void ut_txa_set_cur_epochs(ut_txa_ctx* ctx, uint64_t cur_epochs);
+void ut_txa_set_frame_time(ut_txa_ctx* ctx, long double frame_time_ns);
 void ut_txa_set_user_pacing(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_exact_user_pacing(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_mock_ptp_time(ut_txa_ctx* ctx, uint64_t ptp_ns);
@@ -28,6 +29,10 @@ uint64_t ut_txa_calc_epoch(ut_txa_ctx* ctx, uint64_t cur_tai, uint64_t required_
 uint64_t ut_txa_pacing_required_tai(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp);
 int ut_txa_sync_pacing(ut_txa_ctx* ctx, uint64_t required_tai);
+/* Drives tx_ancillary_update_rtp_time_stamp() directly with the pacing state set
+ * up above (ptp_time_cursor, sampling_clock_rate). */
+void ut_txa_update_rtp_time_stamp(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp);
 int ut_txa_prepare_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                  uint64_t timestamp, unsigned int packets);
 int ut_txa_step_frame_tasklet(ut_txa_ctx* ctx);
@@ -61,6 +66,8 @@ uint32_t ut_txa_packet_len(const ut_txa_ctx* ctx);
 uint64_t ut_txa_stat_port_frames(const ut_txa_ctx* ctx);
 uint64_t ut_txa_stat_recoverable_error(const ut_txa_ctx* ctx);
 uint64_t ut_txa_stat_unrecoverable_error(const ut_txa_ctx* ctx);
+/* Result of the last ut_txa_update_rtp_time_stamp() call. */
+uint32_t ut_txa_rtp_time_stamp(const ut_txa_ctx* ctx);
 
 #ifdef __cplusplus
 }
