@@ -17,9 +17,9 @@ if [ $# -lt 2 ]; then
 	echo "Commands:"
 	echo "   bind_pmd                 Bind driver to DPDK PMD driver"
 	echo "   bind_kernel              Bind driver to kernel driver"
-	echo "   create_vf                Create VFs, bind to VFIO, and bring PF UP"
+	echo "   create_vf                Create large VFs, bind to VFIO, and bring PF UP"
 	echo "   create_kvf               Create VFs and bind to kernel driver"
-	echo "   create_tvf               Create trusted VFs, bind to VFIO, and bring PF UP"
+	echo "   create_tvf               Create trusted large VFs, bind to VFIO, and bring PF UP"
 	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
 	echo "   disable_vf               Disable VF"
 	echo "   list all                 List all NIC devices and the brief"
@@ -90,6 +90,10 @@ create_vf() {
 	for ((i = 0; i < numvfs; i++)); do
 		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
 		vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+		rss_lut_vf_attr="$vfpath/rss_lut_vf_attr"
+		if [ -f "$rss_lut_vf_attr" ]; then
+			echo 512 >"$rss_lut_vf_attr"
+		fi
 		vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
 		if [ -n "$vfif" ]; then
 			ip link set "$vfif" down
