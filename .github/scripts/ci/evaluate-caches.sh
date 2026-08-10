@@ -17,8 +17,9 @@ for component in "${components[@]}"; do
 		if bash "${root_dir}/.github/scripts/ci/validate-cache.sh" "$component"; then
 			miss=0
 		else
-			echo "::warning::${component} cache is invalid and will be rebuilt"
-			rm -rf "${root_dir}/.local_install/${component}"
+			echo "::error::${component} cache is invalid at its immutable exact key" >&2
+			echo "::error::Rotate the cache schema (CI_CACHE_SCHEMA) in .github/scripts/ci/cache-schema.env to rebuild under a new key" >&2
+			exit 1
 		fi
 	fi
 	[ "$miss" -eq 1 ] && any_miss=1
