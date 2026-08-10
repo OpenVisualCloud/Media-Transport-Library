@@ -9,6 +9,12 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 . "${root_dir}/versions.env"
 
 bundle=${JPEGXS_ROOT:-"${root_dir}/.local_install/jpegxs"}
+producer_compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)
+actual_compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")
+[ "$actual_compiler_sha256" = "$producer_compiler_sha256" ] || {
+	echo "JPEG XS producer compiler does not match the CI toolchain contract" >&2
+	exit 1
+}
 source_root=${SVT_JPEG_XS_SOURCE_ROOT:-"${root_dir}/.github/scripts"}
 source_dir=$(bash "${root_dir}/.github/scripts/ci/jpegxs-source.sh" path "$source_root" "$SVT_JPEG_XS_VER")
 archive="${source_dir}.tar.gz"
@@ -66,7 +72,8 @@ cat >"${stage}/bundle.env" <<EOF
 schema=1
 svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}
 architecture=$(uname -m)
-compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")
+compiler_sha256=${producer_compiler_sha256}
+source_hash=$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')
 EOF
 (cd "$stage" && find . -type l -printf '%p=%l\n' | LC_ALL=C sort >symlinks.manifest)
 manifest="${stage}.manifest"

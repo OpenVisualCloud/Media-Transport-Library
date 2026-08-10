@@ -20,4 +20,14 @@ if [ -s "$violations" ]; then
 	exit 1
 fi
 
+grep -RInE --include='*.yml' --include='*.yaml' '^[[:space:]]*(-[[:space:]]*)?uses:' \
+	"${policy_root}/workflows" "${policy_root}/actions" |
+	grep -vE 'uses:[[:space:]]*(\./.*|docker://.*|[^[:space:]@]+@[0-9a-f]{40}([[:space:]]*#.*)?)$' \
+	>"$violations" || true
+if [ -s "$violations" ]; then
+	echo "Active workflow/composite YAML contains mutable external actions:" >&2
+	sed "s|${policy_root}/|.github/|" "$violations" >&2
+	exit 1
+fi
+
 echo "active YAML inline-program policy: PASS"

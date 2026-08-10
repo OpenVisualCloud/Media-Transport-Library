@@ -12,8 +12,7 @@ output=${GITHUB_OUTPUT:-/dev/stdout}
 architecture=${ICE_ARCH:-$(uname -m)}
 kernel_release=${ICE_KERNEL_RELEASE:-$(uname -r)}
 schema=${CI_CACHE_SCHEMA:?CI_CACHE_SCHEMA is required}
-compiler=${CC:-cc}
-compiler_sha256=$(bash "${script_dir}/compiler-identity.sh" "$compiler")
+compiler_sha256=$(bash "${script_dir}/compiler-identity.sh" producer)
 ice_compiler_sha256=${ICE_COMPILER_SHA256:-$compiler_sha256}
 jpegxs_compiler_sha256=${JPEGXS_COMPILER_SHA256:-$compiler_sha256}
 if [ -n "${ICE_ABI_SHA256:-}" ]; then

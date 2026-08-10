@@ -5,6 +5,8 @@
 set -euo pipefail
 
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+# shellcheck disable=SC1091
+. "${root_dir}/versions.env"
 bundle=${JPEGXS_ROOT:-"${root_dir}/.local_install/jpegxs"}
 manifest="${bundle}/manifest.sha256"
 
@@ -48,7 +50,20 @@ grep -q "^architecture=$(uname -m)$" "${bundle}/bundle.env" || {
 	echo "JPEG XS architecture does not match this host" >&2
 	exit 1
 }
-expected_compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")}
+grep -q '^schema=1$' "${bundle}/bundle.env" || {
+	echo "JPEG XS bundle schema is incompatible" >&2
+	exit 1
+}
+grep -q "^svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}$" "${bundle}/bundle.env" || {
+	echo "JPEG XS source revision does not match this checkout" >&2
+	exit 1
+}
+expected_source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')}
+grep -q "^source_hash=${expected_source_hash}$" "${bundle}/bundle.env" || {
+	echo "JPEG XS source hash does not match this checkout" >&2
+	exit 1
+}
+expected_compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)}
 grep -q "^compiler_sha256=${expected_compiler_sha256}$" "${bundle}/bundle.env" || {
 	echo "JPEG XS compiler identity does not match this cache key" >&2
 	exit 1

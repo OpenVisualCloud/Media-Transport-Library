@@ -94,6 +94,10 @@ test_yaml_policy_checker() {
 	if CI_YAML_POLICY_ROOT="$policy_root" bash "${root_dir}/.github/scripts/ci/check-yaml-policy.sh" >/dev/null 2>&1; then
 		fail "YAML policy checker accepted a nested .yaml inline program"
 	fi
+	printf 'jobs:\n  mutable:\n    steps:\n      - uses: actions/checkout@v4\n' >"$policy_root/workflows/nested/check.yaml"
+	if CI_YAML_POLICY_ROOT="$policy_root" bash "${root_dir}/.github/scripts/ci/check-yaml-policy.sh" >/dev/null 2>&1; then
+		fail "YAML policy checker accepted a mutable external action"
+	fi
 }
 
 test_immutable_cache_poison_migration() {
@@ -177,6 +181,8 @@ test_hash_waterfall() {
 
 create_jpeg_fixture() {
 	bundle=$1
+	# shellcheck disable=SC1091
+	. "${root_dir}/versions.env"
 	mkdir -p "$bundle/lib/pkgconfig" "$bundle/lib/plugins"
 	printf 'runtime\n' >"$bundle/lib/libSvtJpegxs.so.0"
 	ln -s libSvtJpegxs.so.0 "$bundle/lib/libSvtJpegxs.so"
@@ -190,7 +196,9 @@ Version: 0.10.0
 Libs: -L${libdir} -lSvtJpegxs
 EOF
 	compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")
-	printf 'schema=1\narchitecture=%s\ncompiler_sha256=%s\n' "$(uname -m)" "$compiler_sha256" >"$bundle/bundle.env"
+	source_hash=$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')
+	printf 'schema=1\nsvt_jpeg_xs_revision=%s\narchitecture=%s\ncompiler_sha256=%s\nsource_hash=%s\n' \
+		"$SVT_JPEG_XS_VER" "$(uname -m)" "$compiler_sha256" "$source_hash" >"$bundle/bundle.env"
 	(cd "$bundle" && find . -type l -printf '%p=%l\n' | sort >symlinks.manifest)
 	manifest="${bundle}.manifest"
 	(cd "$bundle" && find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum >"$manifest")
@@ -201,6 +209,15 @@ test_jpeg_validation() {
 	bundle="${temporary_dir}/jpegxs"
 	create_jpeg_fixture "$bundle"
 	JPEGXS_ROOT="$bundle" bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null
+	sed -i 's/^svt_jpeg_xs_revision=.*/svt_jpeg_xs_revision=stale/' "$bundle/bundle.env"
+	stale_manifest="${bundle}.stale-manifest"
+	(cd "$bundle" && find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum >"$stale_manifest")
+	mv "$stale_manifest" "$bundle/manifest.sha256"
+	if JPEGXS_ROOT="$bundle" bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null 2>&1; then
+		fail "JPEG validator accepted a stale bundle revision"
+	fi
+	rm -rf "$bundle"
+	create_jpeg_fixture "$bundle"
 	if JPEGXS_ROOT="$bundle" JPEGXS_EXPECTED_COMPILER_SHA256=changed \
 		bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null 2>&1; then
 		fail "JPEG validator accepted a different compiler identity"
@@ -268,7 +285,13 @@ case "$2" in
 vermagic) echo "${FAKE_VERMAGIC}" ;;
 signer) echo "${FAKE_SIGNER:-}" ;;
 sig_id) echo "${FAKE_SIG_ID:-}" ;;
-*) exit 2 ;;
+*)
+	if [ "$1" = -n ] && [ "$2" = ice ]; then
+		echo "${FAKE_MODULE_PATH}"
+	else
+		exit 2
+	fi
+	;;
 esac
 EOF
 	chmod +x "$command"
@@ -326,7 +349,8 @@ test_ice_validation_and_activation() {
 	sys_root="${temporary_dir}/sys"
 	stamp="${temporary_dir}/ice.state"
 	log="${temporary_dir}/commands.log"
-	mkdir -p "$sys_root/module/ice" "$sys_root/class/net/eth0/device"
+	mkdir -p "$sys_root/module/ice" "$sys_root/class/net/eth0/device" "$sys_root/bus/pci/drivers/ice"
+	ln -s "$sys_root/bus/pci/drivers/ice" "$sys_root/class/net/eth0/device/driver"
 	printf 'Kahawai_2.6.6\n' >"$sys_root/module/ice/version"
 	printf 'module_sha256=%s\nice_version=Kahawai_2.6.6\n' "$hash" >"$stamp"
 	env "${ice_env[@]}" ICE_SYS_ROOT="$sys_root" ICE_ACTIVATION_STAMP="$stamp" \
@@ -367,9 +391,14 @@ EOF
 	log="${temporary_dir}/rollback.log"
 	mock_bin="${temporary_dir}/mock-bin"
 	mkdir -p "$sys_root/module/ice" "$sys_root/module/irdma" "$sys_root/class/net/eth0/device" \
+		"$sys_root/class/net/eth1/device" "$sys_root/bus/pci/drivers/ice" \
+		"$sys_root/bus/pci/drivers/ixgbe" \
 		"$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice" "$mock_bin"
+	ln -s "$sys_root/bus/pci/drivers/ice" "$sys_root/class/net/eth0/device/driver"
+	ln -s "$sys_root/bus/pci/drivers/ixgbe" "$sys_root/class/net/eth1/device/driver"
 	printf 'Kahawai_2.6.6\n' >"$sys_root/module/ice/version"
 	printf '2\n' >"$sys_root/class/net/eth0/device/sriov_numvfs"
+	printf '3\n' >"$sys_root/class/net/eth1/device/sriov_numvfs"
 	printf 'old module\n' >"$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko"
 	printf 'old stamp\n' >"$stamp"
 	for command in pkill depmod; do
@@ -400,6 +429,7 @@ EOF
 		ICE_ACTIVATION_LOCK="${temporary_dir}/rollback.lock" ICE_COMMAND_LOG="$log" \
 		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_NM_COUNT="${temporary_dir}/nm-count" \
 		PATH="$mock_bin:$PATH")
+	export FAKE_MODULE_PATH="$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko"
 	if env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/activate-ice.sh" >/dev/null 2>&1; then
 		fail "activation unexpectedly succeeded without loaded Kahawai QoS capability"
 	fi
@@ -409,6 +439,10 @@ EOF
 	irdma_line=$(grep -n '^modprobe irdma$' "$log" | tail -n1 | cut -d: -f1)
 	[ "$irdma_line" -gt "$ice_line" ] || fail "rollback restored irdma before ICE"
 	[ "$(cat "$sys_root/class/net/eth0/device/sriov_numvfs")" = 2 ] || fail "rollback did not restore VFs"
+	[ "$(cat "$sys_root/class/net/eth1/device/sriov_numvfs")" = 3 ] || fail "activation changed non-ICE VFs"
+	if grep -q "eth1/device/sriov_numvfs" "$log"; then
+		fail "activation attempted to mutate a non-ICE PF"
+	fi
 	grep -q '^old module$' "$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko" || fail "rollback did not restore the previous module"
 	[ "$(cat "$stamp")" = 'old stamp' ] || fail "failed activation changed the stamp"
 }
