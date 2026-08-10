@@ -24,6 +24,7 @@ test_cache_schema_migration() {
 		HASH_DPDK=dpdk HASH_MTL=mtl HASH_JPEGXS=jpegxs HASH_FFMPEG=ffmpeg
 		HASH_GSTREAMER=gstreamer HASH_PLUGINS=plugins HASH_ICE=ice
 		ICE_KERNEL_RELEASE=fixture-kernel ICE_ARCH=x86_64 ICE_ABI_SHA256=abi
+		ICE_COMPILER_SHA256=ice-compiler JPEGXS_COMPILER_SHA256=jpeg-compiler
 	)
 	env "${key_env[@]}" CI_CACHE_SCHEMA=1 GITHUB_OUTPUT="$first" \
 		bash "${root_dir}/.github/scripts/ci/cache-keys.sh"
@@ -33,7 +34,14 @@ test_cache_schema_migration() {
 		[ "$(value "${component}_key" "$first")" != "$(value "${component}_key" "$second")" ] ||
 			fail "${component} cache key ignored the schema"
 	done
-	grep -q 'ice_key=.*-abi$' "$first" || fail "ICE cache key omitted the ABI fingerprint"
+	grep -q 'ice_key=.*-abi-ice-compiler$' "$first" || fail "ICE cache key omitted ABI or compiler identity"
+	grep -q 'jpegxs_key=.*-jpeg-compiler-jpegxs$' "$first" || fail "JPEG XS cache key omitted compiler identity"
+
+	third="${temporary_dir}/keys-compiler"
+	env "${key_env[@]}" ICE_COMPILER_SHA256=changed-ice JPEGXS_COMPILER_SHA256=changed-jpeg \
+		CI_CACHE_SCHEMA=1 GITHUB_OUTPUT="$third" bash "${root_dir}/.github/scripts/ci/cache-keys.sh"
+	[ "$(value ice_key "$first")" != "$(value ice_key "$third")" ] || fail "ICE cache key ignored compiler identity"
+	[ "$(value jpegxs_key "$first")" != "$(value jpegxs_key "$third")" ] || fail "JPEG XS cache key ignored compiler identity"
 }
 
 test_shared_fleet_ice_key() {
@@ -41,6 +49,7 @@ test_shared_fleet_ice_key() {
 		HASH_DPDK=dpdk HASH_MTL=mtl HASH_JPEGXS=jpegxs HASH_FFMPEG=ffmpeg
 		HASH_GSTREAMER=gstreamer HASH_PLUGINS=plugins HASH_ICE=ice
 		ICE_KERNEL_RELEASE=fleet-kernel ICE_ARCH=x86_64 ICE_ABI_SHA256=fleet-abi
+		ICE_COMPILER_SHA256=fleet-compiler JPEGXS_COMPILER_SHA256=fleet-compiler
 	)
 	expected=""
 	for nic in e810 e830 e835; do
@@ -180,7 +189,8 @@ Description: fixture
 Version: 0.10.0
 Libs: -L${libdir} -lSvtJpegxs
 EOF
-	printf 'schema=1\narchitecture=%s\n' "$(uname -m)" >"$bundle/bundle.env"
+	compiler_sha256=$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)
+	printf 'schema=1\narchitecture=%s\ncompiler_sha256=%s\n' "$(uname -m)" "$compiler_sha256" >"$bundle/bundle.env"
 	(cd "$bundle" && find . -type l -printf '%p=%l\n' | sort >symlinks.manifest)
 	manifest="${bundle}.manifest"
 	(cd "$bundle" && find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum >"$manifest")
@@ -191,6 +201,10 @@ test_jpeg_validation() {
 	bundle="${temporary_dir}/jpegxs"
 	create_jpeg_fixture "$bundle"
 	JPEGXS_ROOT="$bundle" bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null
+	if JPEGXS_ROOT="$bundle" JPEGXS_EXPECTED_COMPILER_SHA256=changed \
+		bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null 2>&1; then
+		fail "JPEG validator accepted a different compiler identity"
+	fi
 	printf 'corrupt\n' >>"$bundle/lib/libSvtJpegxs.so.0"
 	if JPEGXS_ROOT="$bundle" bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null 2>&1; then
 		fail "JPEG validator accepted a malformed manifest"
@@ -260,17 +274,37 @@ EOF
 	chmod +x "$command"
 }
 
+create_nm_fixture() {
+	command=$1
+	cat >"$command" <<'EOF'
+#!/usr/bin/env bash
+printf '0000000000000000 t ice_vc_cfg_q_bw\n'
+EOF
+	chmod +x "$command"
+}
+
 test_ice_validation_and_activation() {
 	kernel='fixture-kernel'
 	arch=x86_64
 	bundle="${temporary_dir}/ice"
 	modinfo="${temporary_dir}/modinfo"
+	nm_command="${temporary_dir}/nm"
 	create_ice_fixture "$bundle" "$kernel" "$arch"
 	create_modinfo_fixture "$modinfo"
+	create_nm_fixture "$nm_command"
 	export FAKE_VERMAGIC="${kernel} SMP mod_unload"
 
-	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" ICE_MODINFO="$modinfo" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi)
+	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi ICE_EXPECTED_COMPILER_SHA256=compiler)
 	env "${ice_env[@]}" CC=/missing/host-compiler bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null
+	if env "${ice_env[@]}" ICE_EXPECTED_COMPILER_SHA256=changed \
+		bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
+		fail "ICE validator accepted a different compiler identity"
+	fi
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$nm_command"
+	if env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
+		fail "ICE validator accepted a module without Kahawai QoS capability"
+	fi
+	create_nm_fixture "$nm_command"
 	if env "${ice_env[@]}" ICE_EXPECTED_ABI_SHA256=changed bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
 		fail "ICE validator accepted a kernel header/config ABI mismatch"
 	fi
@@ -314,8 +348,17 @@ test_activation_rollback() {
 	arch=x86_64
 	bundle="${temporary_dir}/rollback-ice"
 	modinfo="${temporary_dir}/rollback-modinfo"
+	nm_command="${temporary_dir}/rollback-nm"
 	create_ice_fixture "$bundle" "$kernel" "$arch"
 	create_modinfo_fixture "$modinfo"
+	cat >"$nm_command" <<'EOF'
+#!/usr/bin/env bash
+count=$(cat "${ICE_TEST_NM_COUNT}" 2>/dev/null || echo 0)
+count=$((count + 1))
+printf '%s\n' "$count" >"${ICE_TEST_NM_COUNT}"
+[ "$count" -gt 2 ] || printf '0000000000000000 t ice_vc_cfg_q_bw\n'
+EOF
+	chmod +x "$nm_command"
 	export FAKE_VERMAGIC="${kernel} SMP mod_unload"
 
 	sys_root="${temporary_dir}/rollback-sys"
@@ -325,7 +368,7 @@ test_activation_rollback() {
 	mock_bin="${temporary_dir}/mock-bin"
 	mkdir -p "$sys_root/module/ice" "$sys_root/module/irdma" "$sys_root/class/net/eth0/device" \
 		"$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice" "$mock_bin"
-	printf 'Kahawai_old\n' >"$sys_root/module/ice/version"
+	printf 'Kahawai_2.6.6\n' >"$sys_root/module/ice/version"
 	printf '2\n' >"$sys_root/class/net/eth0/device/sriov_numvfs"
 	printf 'old module\n' >"$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko"
 	printf 'old stamp\n' >"$stamp"
@@ -346,22 +389,19 @@ EOF
 	cat >"$mock_bin/modprobe" <<'EOF'
 #!/usr/bin/env bash
 printf 'modprobe %s\n' "$*" >>"$ICE_COMMAND_LOG"
-if [ "$*" = "ice" ] && [ ! -e "${ICE_TEST_FAILED_ONCE}" ]; then
-	touch "${ICE_TEST_FAILED_ONCE}"
-	exit 1
-fi
 exit 0
 EOF
 	chmod +x "$mock_bin/modprobe"
 
 	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" \
-		ICE_MODINFO="$modinfo" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi \
+		ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi \
+		ICE_EXPECTED_COMPILER_SHA256=compiler \
 		ICE_SYS_ROOT="$sys_root" ICE_MODULES_ROOT="$modules_root" ICE_ACTIVATION_STAMP="$stamp" \
 		ICE_ACTIVATION_LOCK="${temporary_dir}/rollback.lock" ICE_COMMAND_LOG="$log" \
-		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_FAILED_ONCE="${temporary_dir}/failed-once" \
+		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_NM_COUNT="${temporary_dir}/nm-count" \
 		PATH="$mock_bin:$PATH")
 	if env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/activate-ice.sh" >/dev/null 2>&1; then
-		fail "activation unexpectedly succeeded after module load failure"
+		fail "activation unexpectedly succeeded without loaded Kahawai QoS capability"
 	fi
 	grep -q '^modprobe ice$' "$log" || fail "rollback did not reload the previous ICE module"
 	grep -q '^modprobe irdma$' "$log" || fail "rollback did not reload the previous irdma module"

@@ -45,7 +45,7 @@ jobs:
           egress-policy: audit
 
       - name: Clean workspace and checkout
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter

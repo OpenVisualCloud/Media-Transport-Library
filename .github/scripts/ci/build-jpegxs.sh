@@ -66,7 +66,7 @@ cat >"${stage}/bundle.env" <<EOF
 schema=1
 svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}
 architecture=$(uname -m)
-compiler=$(cc -dumpfullversion -dumpversion)
+compiler_sha256=$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)
 EOF
 (cd "$stage" && find . -type l -printf '%p=%l\n' | LC_ALL=C sort >symlinks.manifest)
 manifest="${stage}.manifest"
