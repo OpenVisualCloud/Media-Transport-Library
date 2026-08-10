@@ -41,7 +41,7 @@ done
 	echo "ICE artifact is missing the Kahawai QoS capability" >&2
 	exit 1
 }
-expected_compiler_sha256=${ICE_EXPECTED_COMPILER_SHA256:-$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)}
+expected_compiler_sha256=${ICE_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")}
 [ "$(metadata_value compiler_sha256)" = "$expected_compiler_sha256" ] || {
 	echo "ICE compiler identity does not match this cache key" >&2
 	exit 1
