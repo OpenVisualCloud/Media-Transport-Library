@@ -97,6 +97,8 @@ for vf_file in "${sys_root}"/class/net/*/device/sriov_numvfs; do
 	[ "$count" -gt 0 ] || continue
 	pf_interface=$(basename "$(dirname "$(dirname "$vf_file")")")
 	pf_device=$(dirname "$(readlink -f "$vf_file")")
+	pf_driver=$(basename "$(readlink -f "$pf_device/driver" 2>/dev/null || true)")
+	[ "$pf_driver" = ice ] || continue
 	pf_bdf=$(basename "$pf_device")
 	vf_mode=create_kvf
 	if [ "$sys_root" = /sys ]; then
@@ -189,7 +191,12 @@ if [ "$dry_run" -eq 0 ]; then
 		echo "loaded ICE version is ${loaded_version:-unknown}, expected Kahawai_${ICE_VER}" >&2
 		exit 1
 	}
-	"${ICE_NM:-nm}" "$installed_module" | grep '[[:space:]]ice_vc_cfg_q_bw$' >/dev/null || {
+	selected_module=$(${ICE_MODINFO:-modinfo} -n ice)
+	[ "$(readlink -f "$selected_module")" = "$(readlink -f "$installed_module")" ] || {
+		echo "loaded ICE module was not selected from the installed artifact" >&2
+		exit 1
+	}
+	"${ICE_NM:-nm}" "$selected_module" | grep '[[:space:]]ice_vc_cfg_q_bw$' >/dev/null || {
 		echo "loaded ICE module is missing the Kahawai QoS capability" >&2
 		exit 1
 	}

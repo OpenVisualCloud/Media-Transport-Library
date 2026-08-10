@@ -33,6 +33,12 @@ command -v "$build_compiler" >/dev/null 2>&1 || {
 	echo "ICE build compiler is unavailable: ${build_compiler}" >&2
 	exit 1
 }
+producer_compiler_hash=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)
+actual_compiler_hash=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" "$build_compiler")
+[ "$actual_compiler_hash" = "$producer_compiler_hash" ] || {
+	echo "ICE producer compiler does not match the CI toolchain contract" >&2
+	exit 1
+}
 kernel_compile_header="/lib/modules/${kernel_release}/build/include/generated/compile.h"
 if [ -f "$kernel_compile_header" ] && grep -qi 'gcc' "$kernel_compile_header"; then
 	kernel_gcc_major=$(grep -oEi 'gcc[^0-9]*[0-9]+' "$kernel_compile_header" | grep -oE '[0-9]+' | head -n1 || true)
@@ -67,7 +73,7 @@ bash "${root_dir}/script/hash_sources.sh" -o "$hash_output" >/dev/null
 source_hash=$(sed -n 's/^ice=//p' "$hash_output")
 rm -f "$hash_output"
 module_hash=$(sha256sum "${stage}/ice.ko" | cut -d' ' -f1)
-compiler_hash=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" "$build_compiler")
+compiler_hash=$producer_compiler_hash
 abi_output=$(mktemp)
 GITHUB_OUTPUT="$abi_output" bash "${root_dir}/.github/scripts/ci/ice-abi.sh"
 kernel_abi_hash=$(sed -n 's/^abi_sha256=//p' "$abi_output")
