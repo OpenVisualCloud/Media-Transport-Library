@@ -131,11 +131,13 @@ backup_dir=$(mktemp -d)
 previous_module="${backup_dir}/ice.ko"
 previous_module_present=0
 previous_module_loaded=0
+previous_irdma_loaded=0
 [ -f "$installed_module" ] && {
 	cp -a "$installed_module" "$previous_module"
 	previous_module_present=1
 }
 [ -d "${sys_root}/module/ice" ] && previous_module_loaded=1
+[ -d "${sys_root}/module/irdma" ] && previous_irdma_loaded=1
 
 rollback() {
 	rc=$?
@@ -154,6 +156,7 @@ rollback() {
 	fi
 	run depmod -a "$kernel_release"
 	[ "$previous_module_loaded" -eq 0 ] || run modprobe ice
+	[ "$previous_irdma_loaded" -eq 0 ] || run modprobe irdma
 	restore_vfs
 	echo "rollback complete" >>"$command_log"
 	rm -rf "$backup_dir"
@@ -187,6 +190,8 @@ if [ "$dry_run" -eq 0 ]; then
 		exit 1
 	}
 fi
+
+[ "$previous_irdma_loaded" -eq 0 ] || run modprobe irdma
 
 restore_vfs
 

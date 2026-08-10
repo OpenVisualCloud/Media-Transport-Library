@@ -167,6 +167,12 @@ Kernel release and architecture are part of the cache key. `validate-host`
 rejects incompatible modules before touching the NIC and uses SHA-256, not
 MD5, for identity.
 
+There is one ICE producer in `build.yml`, running on the `dpdk` builder. The
+`dpdk`, `e810`, `e830`, and `e835` runners share one fleet kernel ABI, so all
+validation jobs restore the same ICE cache entry. NIC type is not part of the
+key and does not require separate producer jobs. A kernel mismatch indicates
+runner drift and fails validation instead of triggering a host-side build.
+
 Driver activation is separate from driver compilation. Under a per-host lock,
 validation compares the desired artifact with a root-owned activation stamp.
 On a mismatch it stops NIC users, removes VFs, unloads dependent modules and

@@ -53,8 +53,15 @@ install-dependencies)
 	python3 -m pip install pandas beautifulsoup4 openpyxl ${REPORT_REQUIRE_LXML:+lxml}
 	;;
 combine-pytest)
-	output_path=$(python3 "${root_dir}/.github/scripts/combine_reports.py" \
-		--directory python-reports --timestamp --quiet --print-path)
+	timestamp=$(date -u +%Y%m%d_%H%M%S)
+	output_path="${root_dir}/python-reports/nightly_pytest_report_${timestamp}.html"
+	temporary_dir=$(mktemp -d)
+	trap 'rm -rf "$temporary_dir"' EXIT
+	"${REPORT_PYTHON:-python3}" "${root_dir}/.github/scripts/combine_all_reports.py" \
+		--pytest-dir "${root_dir}/python-reports" \
+		--gtest-dir "$temporary_dir" \
+		--output-excel "${temporary_dir}/pytest-report.xlsx" \
+		--output-html "$output_path"
 	if [[ -z $output_path || ! -f $output_path ]]; then
 		echo "Combined report not found at ${output_path:-<empty>}" >&2
 		ls -la "${root_dir}/python-reports" >&2

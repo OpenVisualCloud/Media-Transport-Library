@@ -70,7 +70,7 @@ jobs:
 
       - name: Wait for both workflows to complete
         id: get-runs
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           PYTEST_BRANCH: ${{ github.event.inputs.pytest_branch }}
           PYTEST_RUN_NUMBER: ${{ github.event.inputs.pytest_run_number }}
@@ -106,7 +106,7 @@ jobs:
 
       - name: Get pytest run metadata
         id: pytest-metadata
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }}
           RUN_LABEL: Pytest
@@ -115,7 +115,7 @@ jobs:
 
       - name: Get gtest run metadata
         id: gtest-metadata
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }}
           RUN_LABEL: GTest
@@ -206,7 +206,7 @@ jobs:
       - name: Get baseline pytest run metadata
         id: baseline-pytest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.baseline_pytest_run_id }}
           RUN_LABEL: Baseline Pytest
@@ -216,7 +216,7 @@ jobs:
       - name: Get baseline gtest run metadata
         id: baseline-gtest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.baseline_gtest_run_id }}
           RUN_LABEL: Baseline GTest

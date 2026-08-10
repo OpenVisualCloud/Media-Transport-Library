@@ -36,6 +36,26 @@ test_cache_schema_migration() {
 	grep -q 'ice_key=.*-abi$' "$first" || fail "ICE cache key omitted the ABI fingerprint"
 }
 
+test_shared_fleet_ice_key() {
+	common_env=(
+		HASH_DPDK=dpdk HASH_MTL=mtl HASH_JPEGXS=jpegxs HASH_FFMPEG=ffmpeg
+		HASH_GSTREAMER=gstreamer HASH_PLUGINS=plugins HASH_ICE=ice
+		ICE_KERNEL_RELEASE=fleet-kernel ICE_ARCH=x86_64 ICE_ABI_SHA256=fleet-abi
+	)
+	expected=""
+	for nic in e810 e830 e835; do
+		output="${temporary_dir}/keys-${nic}"
+		env "${common_env[@]}" CI_NIC="$nic" GITHUB_OUTPUT="$output" \
+			bash "${root_dir}/.github/scripts/ci/cache-keys.sh"
+		key=$(value ice_key "$output")
+		if [ -z "$expected" ]; then
+			expected=$key
+		else
+			[ "$key" = "$expected" ] || fail "ICE cache key varies by NIC model"
+		fi
+	done
+}
+
 test_kernel_abi_fingerprint() {
 	kernel_build="${temporary_dir}/kernel-build"
 	mkdir -p "$kernel_build/include/generated" "$kernel_build/include/config" \
@@ -81,6 +101,49 @@ test_immutable_cache_poison_migration() {
 	bash "${root_dir}/.github/ci-local/local-cache.sh" save "$store" jpegxs key-v2 "$source"
 	bash "${root_dir}/.github/ci-local/local-cache.sh" restore "$store" jpegxs key-v2 "$restored"
 	[ "$(cat "$restored/payload")" = valid ] || fail "schema migration did not move to a clean cache key"
+}
+
+test_invalid_exact_cache_hit_fails() {
+	install_root="${temporary_dir}/invalid-cache"
+	mkdir -p "$install_root/dpdk"
+	github_env="${temporary_dir}/invalid-cache.env"
+	github_output="${temporary_dir}/invalid-cache.output"
+	if LOCAL_INSTALL_ROOT="$install_root" CACHE_HIT_DPDK=true \
+		GITHUB_ENV="$github_env" GITHUB_OUTPUT="$github_output" \
+		bash "${root_dir}/.github/scripts/ci/evaluate-caches.sh" \
+		>"${temporary_dir}/invalid-cache.log" 2>&1; then
+		fail "invalid exact cache hit was treated as rebuildable"
+	fi
+	grep -qi 'cache schema' "${temporary_dir}/invalid-cache.log" ||
+		fail "invalid cache failure did not explain schema rotation"
+}
+
+test_pytest_report_combiner() {
+	report_dir="${root_dir}/python-reports"
+	output="${temporary_dir}/report.output"
+	python="${temporary_dir}/report-python"
+	rm -rf "$report_dir"
+	mkdir -p "$report_dir"
+	cat >"$report_dir/nightly-test-report-e810-st20p.html" <<'EOF'
+<html><body><span class="passed">1 passed</span></body></html>
+EOF
+	cat >"$python" <<'EOF'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = --output-html ]; then
+		printf '<html>combined</html>\n' >"$2"
+		exit 0
+	fi
+	shift
+done
+exit 1
+EOF
+	chmod +x "$python"
+	REPORT_PYTHON="$python" GITHUB_OUTPUT="$output" \
+		bash "${root_dir}/.github/scripts/ci/reports.sh" combine-pytest >/dev/null
+	report_path=$(value report_path "$output")
+	[ -f "$report_path" ] || fail "pytest report combiner did not produce its output path"
+	rm -rf "$report_dir"
 }
 
 test_hash_waterfall() {
@@ -260,7 +323,7 @@ test_activation_rollback() {
 	stamp="${temporary_dir}/rollback.state"
 	log="${temporary_dir}/rollback.log"
 	mock_bin="${temporary_dir}/mock-bin"
-	mkdir -p "$sys_root/module/ice" "$sys_root/class/net/eth0/device" \
+	mkdir -p "$sys_root/module/ice" "$sys_root/module/irdma" "$sys_root/class/net/eth0/device" \
 		"$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice" "$mock_bin"
 	printf 'Kahawai_old\n' >"$sys_root/module/ice/version"
 	printf '2\n' >"$sys_root/class/net/eth0/device/sriov_numvfs"
@@ -301,15 +364,22 @@ EOF
 		fail "activation unexpectedly succeeded after module load failure"
 	fi
 	grep -q '^modprobe ice$' "$log" || fail "rollback did not reload the previous ICE module"
+	grep -q '^modprobe irdma$' "$log" || fail "rollback did not reload the previous irdma module"
+	ice_line=$(grep -n '^modprobe ice$' "$log" | tail -n1 | cut -d: -f1)
+	irdma_line=$(grep -n '^modprobe irdma$' "$log" | tail -n1 | cut -d: -f1)
+	[ "$irdma_line" -gt "$ice_line" ] || fail "rollback restored irdma before ICE"
 	[ "$(cat "$sys_root/class/net/eth0/device/sriov_numvfs")" = 2 ] || fail "rollback did not restore VFs"
 	grep -q '^old module$' "$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko" || fail "rollback did not restore the previous module"
 	[ "$(cat "$stamp")" = 'old stamp' ] || fail "failed activation changed the stamp"
 }
 
 test_cache_schema_migration
+test_shared_fleet_ice_key
 test_kernel_abi_fingerprint
 test_yaml_policy_checker
 test_immutable_cache_poison_migration
+test_invalid_exact_cache_hit_fails
+test_pytest_report_combiner
 test_hash_waterfall
 test_jpeg_validation
 test_jpeg_source_revision
