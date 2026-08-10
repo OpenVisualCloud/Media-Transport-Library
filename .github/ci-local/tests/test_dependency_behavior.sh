@@ -25,6 +25,7 @@ test_cache_schema_migration() {
 		HASH_GSTREAMER=gstreamer HASH_PLUGINS=plugins HASH_ICE=ice
 		ICE_KERNEL_RELEASE=fixture-kernel ICE_ARCH=x86_64 ICE_ABI_SHA256=abi
 		ICE_COMPILER_SHA256=ice-compiler JPEGXS_COMPILER_SHA256=jpeg-compiler
+		CC=/missing/consumer-compiler
 	)
 	env "${key_env[@]}" CI_CACHE_SCHEMA=1 GITHUB_OUTPUT="$first" \
 		bash "${root_dir}/.github/scripts/ci/cache-keys.sh"
@@ -50,6 +51,7 @@ test_shared_fleet_ice_key() {
 		HASH_GSTREAMER=gstreamer HASH_PLUGINS=plugins HASH_ICE=ice
 		ICE_KERNEL_RELEASE=fleet-kernel ICE_ARCH=x86_64 ICE_ABI_SHA256=fleet-abi
 		ICE_COMPILER_SHA256=fleet-compiler JPEGXS_COMPILER_SHA256=fleet-compiler
+		CC=/missing/consumer-compiler
 	)
 	expected=""
 	for nic in e810 e830 e835; do
@@ -98,6 +100,12 @@ test_yaml_policy_checker() {
 	if CI_YAML_POLICY_ROOT="$policy_root" bash "${root_dir}/.github/scripts/ci/check-yaml-policy.sh" >/dev/null 2>&1; then
 		fail "YAML policy checker accepted a mutable external action"
 	fi
+	printf 'jobs:\n  mutable:\n    steps:\n      - "uses" : "actions/checkout@v4"\n' >"$policy_root/workflows/nested/check.yaml"
+	if CI_YAML_POLICY_ROOT="$policy_root" bash "${root_dir}/.github/scripts/ci/check-yaml-policy.sh" >/dev/null 2>&1; then
+		fail "YAML policy checker accepted a quoted mutable action"
+	fi
+	printf 'jobs:\n  pinned:\n    steps:\n      - "uses" : "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"\n' >"$policy_root/workflows/nested/check.yaml"
+	CI_YAML_POLICY_ROOT="$policy_root" bash "${root_dir}/.github/scripts/ci/check-yaml-policy.sh" >/dev/null
 }
 
 test_immutable_cache_poison_migration() {
@@ -195,7 +203,7 @@ Description: fixture
 Version: 0.10.0
 Libs: -L${libdir} -lSvtJpegxs
 EOF
-	compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")
+	compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)
 	source_hash=$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')
 	printf 'schema=1\nsvt_jpeg_xs_revision=%s\narchitecture=%s\ncompiler_sha256=%s\nsource_hash=%s\n' \
 		"$SVT_JPEG_XS_VER" "$(uname -m)" "$compiler_sha256" "$source_hash" >"$bundle/bundle.env"
@@ -208,7 +216,8 @@ EOF
 test_jpeg_validation() {
 	bundle="${temporary_dir}/jpegxs"
 	create_jpeg_fixture "$bundle"
-	JPEGXS_ROOT="$bundle" bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null
+	JPEGXS_ROOT="$bundle" CC=/missing/consumer-compiler \
+		bash "${root_dir}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null
 	sed -i 's/^svt_jpeg_xs_revision=.*/svt_jpeg_xs_revision=stale/' "$bundle/bundle.env"
 	stale_manifest="${bundle}.stale-manifest"
 	(cd "$bundle" && find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum >"$stale_manifest")
@@ -260,6 +269,7 @@ create_ice_fixture() {
 	mkdir -p "$dir"
 	printf 'module fixture\n' >"$dir/ice.ko"
 	hash=$(sha256sum "$dir/ice.ko" | cut -d' ' -f1)
+	producer_compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)
 	cat >"$dir/metadata.env" <<EOF
 schema=2
 source_hash=source
@@ -267,7 +277,7 @@ ice_version=2.6.6
 ice_dmid=921605
 kernel_release=${kernel}
 architecture=${arch}
-compiler_sha256=compiler
+compiler_sha256=${producer_compiler_sha256}
 kernel_compiler_sha256=kernel-compiler
 kernel_abi_sha256=abi
 vermagic=${kernel} SMP mod_unload
@@ -317,7 +327,7 @@ test_ice_validation_and_activation() {
 	create_nm_fixture "$nm_command"
 	export FAKE_VERMAGIC="${kernel} SMP mod_unload"
 
-	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi ICE_EXPECTED_COMPILER_SHA256=compiler)
+	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi)
 	env "${ice_env[@]}" CC=/missing/host-compiler bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null
 	if env "${ice_env[@]}" ICE_EXPECTED_COMPILER_SHA256=changed \
 		bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
@@ -424,7 +434,6 @@ EOF
 
 	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" \
 		ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi \
-		ICE_EXPECTED_COMPILER_SHA256=compiler \
 		ICE_SYS_ROOT="$sys_root" ICE_MODULES_ROOT="$modules_root" ICE_ACTIVATION_STAMP="$stamp" \
 		ICE_ACTIVATION_LOCK="${temporary_dir}/rollback.lock" ICE_COMMAND_LOG="$log" \
 		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_NM_COUNT="${temporary_dir}/nm-count" \

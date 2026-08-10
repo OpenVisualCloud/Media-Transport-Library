@@ -20,9 +20,11 @@ if [ -s "$violations" ]; then
 	exit 1
 fi
 
-grep -RInE --include='*.yml' --include='*.yaml' '^[[:space:]]*(-[[:space:]]*)?uses:' \
+uses_key_re="^[[:space:]]*(-[[:space:]]*)?([\"']?uses[\"']?)[[:space:]]*:"
+immutable_uses_re="([\"']?uses[\"']?)[[:space:]]*:[[:space:]]*[\"']?(\./.*|docker://.*|[^[:space:]@\"']+@[0-9a-f]{40})[\"']?[[:space:]]*(#.*)?$"
+grep -RInE --include='*.yml' --include='*.yaml' "$uses_key_re" \
 	"${policy_root}/workflows" "${policy_root}/actions" |
-	grep -vE 'uses:[[:space:]]*(\./.*|docker://.*|[^[:space:]@]+@[0-9a-f]{40}([[:space:]]*#.*)?)$' \
+	grep -vE "$immutable_uses_re" \
 	>"$violations" || true
 if [ -s "$violations" ]; then
 	echo "Active workflow/composite YAML contains mutable external actions:" >&2
