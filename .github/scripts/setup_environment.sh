@@ -327,69 +327,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build"
-		# shellcheck disable=SC1091
-		. "${root_folder}/script/build_ice_driver.sh"
-		if [ -z "$setup_script_folder" ] || [ -z "$ICE_VER" ] || [ -z "$ICE_DMID" ]; then
-			exit 3
-		fi
-		pushd "${setup_script_folder}" >/dev/null || exit 1
-
-		echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
-
-		archive_name="ice-${ICE_VER}.tar.gz"
-		IS_GITHUB_ARCHIVE=0
-		if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
-			echo "Found valid local archive $archive_name, skipping download."
-			if tar -tzf "$archive_name" | grep -q "^ethernet-linux-ice"; then
-				IS_GITHUB_ARCHIVE=1
-			fi
-		else
-			rm -f "$archive_name"
-			echo "Downloading ICE driver of version ${ICE_VER}..."
-			wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name" || true
-			if [ ! -f "$archive_name" ] || ! gzip -t "$archive_name" >/dev/null 2>&1; then
-				echo "Intel mirror download failed or was blocked by AWS WAF. Trying GitHub fallback..."
-				rm -f "$archive_name"
-				wget "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "$archive_name" || true
-				if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
-					echo "Successfully downloaded driver from GitHub fallback."
-					IS_GITHUB_ARCHIVE=1
-				else
-					echo "Error: Failed to download a valid $archive_name from both Intel mirror and GitHub."
-					echo "This is likely caused by corporate proxy blockage or firewall settings."
-					rm -f "$archive_name"
-					exit 1
-				fi
-			fi
-		fi
-		if [ -d "ice-${ICE_VER}" ]; then
-			echo "ice-${ICE_VER} directory already exists, please remove it first"
-			exit 1
-		fi
-		tar xvzf "$archive_name"
-		if [ "${IS_GITHUB_ARCHIVE}" -eq 1 ]; then
-			if [ -d "ethernet-linux-ice-${ICE_VER}" ]; then
-				mv "ethernet-linux-ice-${ICE_VER}" "ice-${ICE_VER}"
-			fi
-		fi
-		rm -f "$archive_name"
-		pushd "ice-${ICE_VER}" >/dev/null || exit 1
-
-		for patch_file in "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
-			patch -p1 -i "$patch_file"
-		done
-
-		pushd src >/dev/null || exit 1
-		make -j"${nproc}"
-		popd >/dev/null
-		popd >/dev/null
-		rm -rf "ice-${ICE_VER}"
-		popd >/dev/null
+		bash "${root_folder}/script/build_ice_driver.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
-		echo "$STEP ICE driver build and install"
+		echo "$STEP ICE driver artifact build"
 		bash "${root_folder}/script/build_ice_driver.sh"
 		STEP=$((STEP + 1))
 	fi
@@ -469,58 +412,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		echo "$STEP Plugin JPEG-XS build and install"
-
-		lib_so="libst_plugin_st22_svt_jpeg_xs.so"
-		need_build=0
-
-		# Check plugin .so
-		if ! ldconfig -p 2>/dev/null | grep -q "${lib_so}" &&
-			! test -f /usr/local/lib/x86_64-linux-gnu/${lib_so} &&
-			! test -f /usr/local/lib64/${lib_so}; then
-			echo "MTL JPEG-XS plugin not found."
-			need_build=1
-		fi
-
-		# Check core SvtJpegxs version/presence
-		if ! ldconfig -p 2>/dev/null | grep -q "libSvtJpegxs.so.0"; then
-			echo "Core SvtJpegxs library not found."
-			need_build=1
-		elif ! pkg-config --atleast-version="${SVT_JPEG_XS_MIN_VER}" SvtJpegxs 2>/dev/null; then
-			echo "Core SvtJpegxs library is outdated (< ${SVT_JPEG_XS_MIN_VER} required by FFmpeg). Rebuilding."
-			need_build=1
-		fi
-
+		echo "$STEP Plugin JPEG-XS bundle build"
 		export SVT_JPEG_XS_REPO="${setup_script_folder}/SVT-JPEG-XS"
-
-		if [ ! -d "${SVT_JPEG_XS_REPO}" ]; then
-			echo "Downloading SVT-JPEG-XS (${SVT_JPEG_XS_VER}) using wget..."
-			if ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"; then
-				wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-			fi
-			mkdir -p "${SVT_JPEG_XS_REPO}"
-			tar -xzf "${setup_script_folder}/SVT-JPEG-XS.tar.gz" -C "${SVT_JPEG_XS_REPO}" --strip-components=1
-			rm -f "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-		fi
-
-		if [ "${need_build}" -eq 0 ]; then
-			echo "=== SVT-JPEG-XS and MTL bridge plugin are already up-to-date. Alignment skipped ==="
-		else
-			# Build and install SVT-JPEG-XS library
-			pushd "${SVT_JPEG_XS_REPO}/Build/linux" >/dev/null || exit 1
-			./build.sh install
-			popd >/dev/null
-
-			# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
-			pushd "${SVT_JPEG_XS_REPO}/imtl-plugin" >/dev/null || exit 1
-			rm -rf build
-			meson setup build
-			meson compile -C build
-			sudo meson install -C build
-			popd >/dev/null
-
-			sudo ldconfig
-		fi
+		bash "${root_folder}/.github/scripts/ci/build-jpegxs.sh"
 		STEP=$((STEP + 1))
 	fi
 

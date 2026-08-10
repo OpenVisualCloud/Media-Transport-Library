@@ -29,10 +29,14 @@ OUT_DIR="${CI_LOCAL_OUT:-/github/out}"
 NIC="${CI_LOCAL_NIC:-}"
 LOCAL_INSTALL="${WORKDIR}/.local_install"
 ENV_FILE="${OUT_DIR}/validate-host.env"
+PATH_FILE="${OUT_DIR}/validate-host.path"
+export GITHUB_ENV="$ENV_FILE"
+export GITHUB_PATH="$PATH_FILE"
 
 cd "${WORKDIR}" || exit 1
 mkdir -p "${OUT_DIR}"
 : >"${ENV_FILE}"
+: >"${PATH_FILE}"
 
 rc=0
 failed_step=""
@@ -50,13 +54,13 @@ echo "::group::system: Check eBPF/XDP prerequisites"
 bash "${WORKDIR}/script/build_ebpf_xdp.sh" --check --mode all
 echo "::endgroup::"
 
-# ── step: cache: Restore DPDK / MTL / FFmpeg / GStreamer / plugins ──────────
+# ── step: cache: Restore dependency artifacts ───────────────────────────────
 # The action restores each with fail-on-cache-miss: true, except plugins,
 # whose absence only disables the codec tests. A miss here is the local
 # equivalent of that hard failure -- it means the build job never published
 # an artifact for these sources.
 echo "::group::cache: Restore build artifacts"
-for comp in dpdk mtl ffmpeg gstreamer; do
+for comp in dpdk mtl jpegxs ffmpeg gstreamer plugins ice; do
 	upper="${comp^^}"
 	miss_var="CI_LOCAL_MISS_${upper}"
 	if [ "${!miss_var:-1}" = "1" ]; then
@@ -65,11 +69,6 @@ for comp in dpdk mtl ffmpeg gstreamer; do
 		echo "  restored ${comp}"
 	fi
 done
-if [ "${CI_LOCAL_MISS_PLUGINS:-1}" = "1" ]; then
-	echo "::warning::plugins cache missing; H264 st22p tests would skip"
-else
-	echo "  restored plugins"
-fi
 echo "::endgroup::"
 
 if [ "${rc}" -ne 0 ]; then
@@ -79,61 +78,31 @@ if [ "${rc}" -ne 0 ]; then
 fi
 
 # ── step: Make artifacts executable ─────────────────────────────────────────
-find .local_install -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} + 2>/dev/null || true
+task ci:validate-dependencies || step_failed "cache: structural validation failed"
+task ci:configure-host -- make-executable || step_failed "cache: executable alignment failed"
 
 # ── step: kahawai: Generate CI plugin registry from cache ───────────────────
 echo "::group::kahawai: Generate CI plugin registry from cache"
-template="${WORKDIR}/.github/workflows/kahawai_template.json"
-cfg="${OUT_DIR}/kahawai_ci.json"
-plugin_dir="$(find "${LOCAL_INSTALL}/plugins" -name 'libst_plugin_st22_avcodec.so' -printf '%h\n' -quit 2>/dev/null || true)"
-if [ -z "${plugin_dir}" ]; then
-	echo "::warning::st22 avcodec plugin not found in .local_install/plugins; H264 st22p tests will skip"
-	plugin_dir="${LOCAL_INSTALL}/plugins/lib/x86_64-linux-gnu"
-fi
-if cp -f "${template}" "${cfg}" 2>/dev/null; then
-	sed -i "s+REPLACE_BY_CICD_PLUGIN_DIR+${plugin_dir}+g" "${cfg}"
-	echo "KAHAWAI_CFG_PATH=${cfg}" >>"${ENV_FILE}"
-	echo "::notice::CI kahawai registry ${cfg} (avcodec from ${plugin_dir})"
-else
-	step_failed "kahawai: template ${template} could not be copied"
-fi
+RUNNER_TEMP="$OUT_DIR" task ci:configure-host -- registry || step_failed "kahawai: registry generation failed"
 echo "::endgroup::"
 
-# ── step: installation: Auto-align host components ──────────────────────────
-# The real step runs setup_environment.sh with the ICE driver and SVT-JPEG-XS
-# enabled. The JPEG-XS half runs here -- it installs into /usr/local, which is
-# exactly what the test host needs and what ffmpeg links against. The ICE half
-# does not: a container shares the host kernel, and installing a module here
-# would either fail or, worse, succeed against the host.
-echo "::group::installation: Auto-align host components (SVT-JPEG-XS)"
-echo "::notice::skipped (container): ICE driver alignment -- needs the real kernel"
-if ldconfig -p 2>/dev/null | grep -q 'libSvtJpegxs\.so'; then
-	echo "  SVT-JPEG-XS already installed"
-else
-	MTL_INSTALL_PREFIX="${LOCAL_INSTALL}/mtl" \
-		PKG_CONFIG_PATH="${LOCAL_INSTALL}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${LOCAL_INSTALL}/mtl/lib/x86_64-linux-gnu/pkgconfig" \
-		LD_LIBRARY_PATH="${LOCAL_INSTALL}/dpdk/lib/x86_64-linux-gnu:${LOCAL_INSTALL}/mtl/lib/x86_64-linux-gnu" \
-		SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 \
-		PLUGIN_BUILD_AND_INSTALL_JPEGXS=1 \
-		bash "${WORKDIR}/.github/scripts/setup_environment.sh" ||
-		step_failed "installation: SVT-JPEG-XS alignment failed"
-fi
+# ── step: activation: Model ICE ordering without host mutation ──────────────
+echo "::group::activation: ICE dry run"
+ICE_ACTIVATION_STAMP="${OUT_DIR}/ice.state" \
+	ICE_COMMAND_LOG="${OUT_DIR}/ice-activation.log" \
+	task ci:activate-ice -- --dry-run || step_failed "activation: ICE dry run failed"
 echo "::endgroup::"
 
 # ── step: Configure LD_LIBRARY_PATH, PATH, GST_PLUGIN_PATH ──────────────────
 # Written to a file, which is what $GITHUB_ENV and $GITHUB_PATH are.
 echo "::group::Configure environment"
 LI="${LOCAL_INSTALL}"
-{
-	echo "LD_LIBRARY_PATH=${LI}/dpdk/lib/x86_64-linux-gnu:${LI}/mtl/lib/x86_64-linux-gnu:${LI}/ffmpeg/lib:${LI}/gstreamer/gstreamer-1.0"
-	echo "GST_PLUGIN_PATH=${LI}/gstreamer/gstreamer-1.0"
-	echo "PKG_CONFIG_PATH=${LI}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${LI}/mtl/lib/x86_64-linux-gnu/pkgconfig"
-	echo "PATH=${LI}/mtl/bin:${LI}/ffmpeg/bin:${LI}/dpdk/bin:${PATH}"
-} >>"${ENV_FILE}"
+task ci:configure-host -- environment || step_failed "environment: configuration failed"
 # shellcheck disable=SC1090 # generated above
 set -a && . "${ENV_FILE}" && set +a
-sudo ldconfig 2>/dev/null || true
-echo "::notice::Host environment configured for .local_install/{dpdk,mtl,ffmpeg,gstreamer,plugins}"
+PATH="$(paste -sd: "$PATH_FILE"):${PATH}"
+export PATH
+echo "::notice::Host environment configured from validated caches"
 echo "::endgroup::"
 
 # ── verification ────────────────────────────────────────────────────────────
@@ -157,10 +126,12 @@ check() {
 
 check 1 "pkg-config finds mtl >= 22.12.0" pkg-config --exists 'mtl >= 22.12.0'
 check 1 "pkg-config finds libdpdk" pkg-config --exists libdpdk
+check 1 "pkg-config finds SvtJpegxs" pkg-config --exists SvtJpegxs
 check 1 "RxTxApp is present and executable" test -x "${LI}/mtl/bin/RxTxApp"
 check 0 "ffmpeg carries the mtl device" bash -c "'${LI}/ffmpeg/bin/ffmpeg' -hide_banner -devices 2>/dev/null | grep -q mtl"
 check 0 "gstreamer plugin is loadable" bash -c "GST_PLUGIN_PATH='${LI}/gstreamer/gstreamer-1.0' gst-inspect-1.0 mtl_st20p_tx"
-check 0 "st22 avcodec plugin present" test -f "${plugin_dir}/libst_plugin_st22_avcodec.so"
+check 1 "st22 JPEG XS plugin present" bash -c "find '${LI}/jpegxs' -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit | grep -q ."
+check 1 "st22 avcodec plugin present" bash -c "find '${LI}/plugins' -name libst_plugin_st22_avcodec.so -type f -print -quit | grep -q ."
 
 # RxTxApp links against DPDK and MTL; an unresolved symbol here is the failure
 # the test jobs would otherwise hit minutes later, with a NIC in the way.
@@ -182,7 +153,7 @@ jobs do *before* touching hardware has been exercised above.
 
   nic ${NIC:-<none>}${PCI_DEVICE:+, pci ${PCI_DEVICE}}
   - PF/VF binding and PCI passthrough  (no devices in the container)
-  - Kahawai ICE driver                 (shared host kernel)
+	- Kahawai ICE driver mutation        (ordering validated via dry run)
   - hugepages, PTP, MtlManager         (host-wide state)
 EOF
 echo "::endgroup::"

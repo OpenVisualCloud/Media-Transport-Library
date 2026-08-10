@@ -36,10 +36,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
       - name: Prepare operating system for documentation build
-        run: |
-          sudo apt-get update -y && \
-          sudo apt-get install -y --no-install-recommends make python3 python3-pip python3-sphinx
+        run: task ci:workflow -- docs-dependencies
 
       - name: Prepare environment for documentation build
         run: python3 -m pip install sphinx_book_theme myst_parser sphinxcontrib.mermaid sphinx-copybutton

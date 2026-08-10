@@ -74,14 +74,14 @@ jobs:
             SDL2_ttf:p
             dlfcn:p
 
-      - name: Install npcap-sdk
-        run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-          unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
-
       - name: Checkout IMTL code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Install npcap-sdk
+        run: task ci:msys2 -- npcap
 
       - name: Checkout mman-win32 code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -91,23 +91,18 @@ jobs:
           path: mman-win32
 
       - name: Build and install mman-win32
-        run: |
-          cd mman-win32
-          ./configure --prefix=${MSYSTEM_PREFIX}
-          make -j$(nproc) && make install
+        run: task ci:msys2 -- mman
 
       - name: Convert patches for DPDK
-        run: |
-          cd patches/dpdk/${{matrix.dpdk}}
-          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-          cd windows
-          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- convert-patches
 
       - name: Hash DPDK patches
         id: hash-patches
-        run: |
-          HASH=$(sha1sum patches/dpdk/${{matrix.dpdk}}/*.patch patches/dpdk/${{matrix.dpdk}}/windows/*.patch | sha1sum | cut -d" " -f1)
-          echo "hash=${HASH}"  >> $GITHUB_OUTPUT
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- hash-patches
 
       - name: Cache DPDK
         id: cache-dpdk
@@ -128,36 +123,23 @@ jobs:
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         shell: bash
-        run: |
-          cd dpdk
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
-          git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- apply-patches
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        run: |
-          cd dpdk
-          meson setup build -Dplatform=generic
-          meson install -C build
+        run: task ci:msys2 -- build-dpdk
 
       - name: Install cached DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
-        run: |
-          cd dpdk
-          meson install -C build --no-rebuild
+        run: task ci:msys2 -- install-dpdk
 
       - name: Build
-        run: |
-          ./build.sh
+        run: task ci:msys2 -- build
 
       - name: Build with debug
-        run: |
-          rm build -rf
-          ./build.sh debugonly
+        run: task ci:msys2 -- build-debug
 
       - name: Build with TAP
-        run: |
-          meson setup tap_build -Denable_tap=true
-          meson install -C tap_build
+        run: task ci:msys2 -- build-tap

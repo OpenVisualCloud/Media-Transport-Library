@@ -15,9 +15,9 @@
 #   ----------------------------------  ------------------------------------
 #   runs-on: dpdk                       .github/ci-local/Dockerfile
 #   actions/checkout                    rsync of the working tree
-#   actions/cache (restore)             stamp files under <cache>/.stamps
+#   actions/cache (restore)             immutable snapshots under <cache>/.cache-store
 #   job steps                           .github/ci-local/jobs/<job>.sh
-#   actions/cache (post: save)          stamps refreshed, on success only
+#   actions/cache/save                  immutable snapshot, on success only
 #
 # Two things are deliberately stricter than CI, because CI's laxness is what
 # produced the "mtl >= 22.12.0 not found using pkg-config" failure:
@@ -33,15 +33,9 @@
 #
 #   -f, --force LIST      rebuild these components even on a cache hit;
 #                         comma separated, or "all"
-#   -m, --cache-mode MODE how the cache behaves:
-#                           strict (default) a restored tree must be usable to
-#                                            count as a hit, and only a passing
-#                                            job may save;
-#                           github           what the workflow does today: the
-#                                            key alone decides, and the save
-#                                            happens whether the job passed or
-#                                            not. Use it to reproduce the
-#                                            poisoned-cache failure.
+#   -m, --cache-mode MODE accepted for compatibility; strict and github both
+#                         model immutable GitHub cache entries and validated
+#                         workflow restores.
 #   -c, --cache-dir DIR   cache root (default: <repo>/.local_install)
 #       --nic NIC         simulate a bare-metal test host for this NIC
 #                         (e810, e830, e835, e825). Selects the bare-metal
@@ -68,7 +62,7 @@ CI_LOCAL_DIR="$(dirname "${script_path}")"
 REPO_ROOT="$(cd "${CI_LOCAL_DIR}/../.." && pwd)"
 
 # Components cached by the workflow, in build order.
-COMPONENTS=(dpdk mtl ffmpeg gstreamer plugins)
+COMPONENTS=(dpdk mtl jpegxs ffmpeg gstreamer plugins ice)
 
 JOB="build"
 CACHE_DIR="${REPO_ROOT}/.local_install"
@@ -162,14 +156,15 @@ esac
 
 command -v docker >/dev/null 2>&1 || die "docker is not installed"
 docker info >/dev/null 2>&1 || die "cannot talk to the docker daemon"
+TASK_BIN=$(command -v task) || die "task is not installed"
 
 STATE_DIR="${REPO_ROOT}/.ci-local"
 LOG_DIR="${STATE_DIR}/logs"
 OUT_DIR="${STATE_DIR}/out"
 mkdir -p "${CACHE_DIR}" "${LOG_DIR}" "${OUT_DIR}"
 CACHE_DIR="$(cd "${CACHE_DIR}" && pwd)"
-STAMP_DIR="${CACHE_DIR}/.stamps"
-mkdir -p "${STAMP_DIR}"
+CACHE_STORE="${CACHE_DIR}/.cache-store"
+mkdir -p "${CACHE_STORE}"
 
 # ── the runner: `runs-on:` ──────────────────────────────────────────────────
 # Two kinds of runner, because the workflows use two. `runs-on: dpdk` builds
@@ -284,19 +279,23 @@ for comp in "${COMPONENTS[@]}"; do
 	[ -n "${HASH[${comp}]:-}" ] || die "hash_sources.sh produced no '${comp}' checksum"
 done
 
+declare -A CACHE_KEY
+key_out="$(mktemp)"
+key_env=("GITHUB_OUTPUT=${key_out}")
+for comp in "${COMPONENTS[@]}"; do
+	key_env+=("HASH_${comp^^}=${HASH[${comp}]}")
+done
+env "${key_env[@]}" bash "${REPO_ROOT}/.github/scripts/ci/cache-keys.sh"
+while IFS='=' read -r key value; do
+	[[ "$key" == *_key ]] && CACHE_KEY["${key%_key}"]="$value"
+done <"$key_out"
+rm -f "$key_out"
+
 # ── the restore: `actions/cache` ────────────────────────────────────────────
-# A component is a hit only when its stamp matches AND its install tree is
-# usable. CI trusts the key alone, which is how a half-built tree got promoted
-# to a permanent hit and broke every later run with the same source hash.
+# A component is a hit only when the exact immutable entry restores and the
+# workflow's structural validation accepts it.
 tree_is_usable() {
-	case "$1" in
-	dpdk) find "${CACHE_DIR}/dpdk" -name 'libdpdk.pc' -print -quit 2>/dev/null | grep -q . ;;
-	mtl) find "${CACHE_DIR}/mtl" -name 'mtl.pc' -print -quit 2>/dev/null | grep -q . ;;
-	ffmpeg) find "${CACHE_DIR}/ffmpeg" -name 'libavcodec.pc' -print -quit 2>/dev/null | grep -q . ;;
-	gstreamer) find "${CACHE_DIR}/gstreamer" -name '*.so' -print -quit 2>/dev/null | grep -q . ;;
-	plugins) find "${CACHE_DIR}/plugins" -name '*.so' -print -quit 2>/dev/null | grep -q . ;;
-	*) return 1 ;;
-	esac
+	LOCAL_INSTALL_ROOT="$CACHE_DIR" bash "${REPO_ROOT}/.github/scripts/ci/validate-cache.sh" "$1" >/dev/null 2>&1
 }
 
 is_forced() {
@@ -310,13 +309,12 @@ for comp in "${COMPONENTS[@]}"; do
 	state="MISS"
 	if is_forced "${comp}"; then
 		state="FORCED"
-	elif [ -f "${STAMP_DIR}/${comp}" ] && [ "$(cat "${STAMP_DIR}/${comp}")" = "${HASH[${comp}]}" ]; then
-		# The github mode asks no further questions -- the key matched, so the
-		# tree is declared good. That is the bug.
-		if [ "${CACHE_MODE}" = "github" ] || tree_is_usable "${comp}"; then
+	elif bash "${CI_LOCAL_DIR}/local-cache.sh" restore "$CACHE_STORE" "$comp" \
+		"${CACHE_KEY[${comp}]}" "${CACHE_DIR}/${comp}"; then
+		if tree_is_usable "${comp}"; then
 			state="HIT"
 		else
-			state="STALE"
+			state="POISONED"
 		fi
 	fi
 	[ "${state}" = "HIT" ] && MISS["${comp}"]=0 || MISS["${comp}"]=1
@@ -332,7 +330,6 @@ echo "cache: ${cache_summary}"
 for comp in "${COMPONENTS[@]}"; do
 	if [ "${MISS[${comp}]}" = "1" ]; then
 		rm -rf "${CACHE_DIR:?}/${comp}"
-		rm -f "${STAMP_DIR}/${comp}"
 	fi
 done
 
@@ -346,6 +343,9 @@ docker_args=(
 	--workdir "${WORKDIR}"
 	--volume "${SRC_DIR}:${WORKDIR}"
 	--volume "${CACHE_DIR}:${WORKDIR}/.local_install"
+	--volume "${TASK_BIN}:/usr/local/bin/task:ro"
+	--volume "/lib/modules:/lib/modules:ro"
+	--volume "/usr/src:/usr/src:ro"
 	--volume "${USR_LOCAL_VOLUME}:/usr/local"
 	--volume "${OUT_DIR}:/github/out"
 	--env "CI_LOCAL_WORKDIR=${WORKDIR}"
@@ -390,13 +390,9 @@ elapsed=$(($(date +%s) - started))
 # ── the save: `actions/cache` post step ─────────────────────────────────────
 if [ "${SHELL_MODE}" -eq 0 ]; then
 	for comp in "${COMPONENTS[@]}"; do
-		if [ "${CACHE_MODE}" = "github" ]; then
-			# A post step runs even when the job failed, so whatever the
-			# aborted install left behind is stored under the source key and
-			# restored by every later run.
-			[ -d "${CACHE_DIR}/${comp}" ] && echo "${HASH[${comp}]}" >"${STAMP_DIR}/${comp}"
-		elif [ "${rc}" -eq 0 ] && tree_is_usable "${comp}"; then
-			echo "${HASH[${comp}]}" >"${STAMP_DIR}/${comp}"
+		if [ "${rc}" -eq 0 ] && tree_is_usable "${comp}"; then
+			bash "${CI_LOCAL_DIR}/local-cache.sh" save "$CACHE_STORE" "$comp" \
+				"${CACHE_KEY[${comp}]}" "${CACHE_DIR}/${comp}"
 		fi
 	done
 fi

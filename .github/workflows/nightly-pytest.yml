@@ -57,65 +57,39 @@ jobs:
         uses: ./.github/actions/cleanup
 
       - name: 'installation: Install pipenv environment'
-        working-directory: tests/acceptance
         id: pipenv-install
-        run: |
-          python3 -m venv .venv
-          source .venv/bin/activate
-          pip install -r requirements.txt
+        run: task ci:pytest-setup -- install
       - name: Create session ID
-        run: |
-          runner_name=${{ runner.name }}
-          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
       - name: Set PCI device env variable
-        run: |
-          if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e825" ]; then
-            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e835" ]; then
-            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
-          fi
+        env:
+          NIC: ${{ matrix.nic }}
+        run: task ci:pytest-setup -- pci
       - name: Generate test framework config files
-        working-directory: tests/acceptance/configs
-        run: |
-          python3 gen_config.py \
-            --session_id ${{ env.SESSION_ID }} \
-            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
-            --pci_device ${{ env.PCI_DEVICE }} \
-            --ip_address 127.0.0.1 \
-            --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path "/home/$USER/.ssh/id_ed25519" \
-            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
-            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
-            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          MTL_PATH: ${{ secrets.RUNNER_MTL_PATH }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          RUNNER_USERNAME: ${{ secrets.RUNNER_USERNAME }}
+          EBU_IP: ${{ secrets.RUNNER_EBU_LIST_IP }}
+          EBU_USER: ${{ secrets.RUNNER_EBU_LIST_USER }}
+          EBU_PASSWORD: ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+        run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
-        shell: bash
-        run: |
-          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
+        env:
+          WORKFLOW_TAG: ${{ github.workflow }}:${{ matrix.nic }}
+        run: task ci:pytest-setup -- tag
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
-        working-directory: ./tests/acceptance
-        run: |
-          .venv/bin/python3 -m pytest \
-            --test_config=./configs/test_config.yaml \
-            --topology_config=./configs/topology_config.yaml \
-            -m nightly \
-            --template=html/index.html \
-            --report=report.html \
-            "./tests/single/${{ matrix.dir }}"
+        env:
+          TEST_PATH: ${{ matrix.dir }}
+        run: task ci:pytest-run -- nightly
       - name: 'collect: System status report'
         if: always()
-        run: |
-          ./script/status_report.sh
-          # Rename to include NIC info
-          for dir in mtl_system_status_*; do
-            if [ -d "$dir" ]; then
-              mv "$dir" "system-info-${{ matrix.nic }}-${{ matrix.dir }}"
-              break
-            fi
-          done
+        env:
+          STATUS_NAME: system-info-${{ matrix.nic }}-${{ matrix.dir }}
+        run: task ci:report -- status
       - name: "upload report python"
         if: always()
         id: upload-report
@@ -147,6 +121,8 @@ jobs:
 
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
       - name: Download python report artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -154,40 +130,12 @@ jobs:
           path: python-reports  # Downloads all artifacts into this directory
           merge-multiple: false  # Each artifact in separate subdirectory
       - name: Flatten report directory structure
-        run: |
-          cd python-reports
-          for dir in ./nightly-test-report-*; do
-            if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
-              mv "$dir/report.html" "${dir}.html"
-              rm -rf "$dir"
-            fi
-          done
-          ls -lh ./*.html
+        run: task ci:report -- flatten-pytest
       - name: Install report dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pandas beautifulsoup4 openpyxl
+        run: task ci:report -- install-dependencies
       - name: Combine python reports
         id: combine
-        run: |
-          set -euo pipefail
-          OUTPUT_PATH=$(python3 .github/scripts/combine_reports.py \
-            --directory python-reports \
-            --timestamp \
-            --quiet \
-            --print-path)
-          if [ -z "${OUTPUT_PATH}" ]; then
-            echo "combine_reports.py did not emit an output path" >&2
-            exit 1
-          fi
-          if [ ! -f "${OUTPUT_PATH}" ]; then
-            echo "Combined report not found at ${OUTPUT_PATH}" >&2
-            echo "Available files:"
-            ls -la python-reports
-            exit 1
-          fi
-          echo "Combined report path: ${OUTPUT_PATH}"
-          printf 'report_path=%s\n' "$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+        run: task ci:report -- combine-pytest
       - name: Upload combined python report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

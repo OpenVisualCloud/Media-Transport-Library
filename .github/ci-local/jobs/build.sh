@@ -35,38 +35,33 @@ echo "::endgroup::"
 
 # ── step: Evaluate cache results ────────────────────────────────────────────
 echo "::group::Evaluate cache results"
-export SETUP_BUILD_AND_INSTALL_DPDK="${CI_LOCAL_MISS_DPDK:-1}"
-export MTL_BUILD_AND_INSTALL="${CI_LOCAL_MISS_MTL:-1}"
-export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN="${CI_LOCAL_MISS_FFMPEG:-1}"
-export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN="${CI_LOCAL_MISS_GSTREAMER:-1}"
-export PLUGIN_BUILD_AND_INSTALL_AVCODEC="${CI_LOCAL_MISS_PLUGINS:-1}"
+export CI_BUILD_DPDK="${CI_LOCAL_MISS_DPDK:-1}"
+export CI_BUILD_MTL="${CI_LOCAL_MISS_MTL:-1}"
+export CI_BUILD_JPEGXS="${CI_LOCAL_MISS_JPEGXS:-1}"
+export CI_BUILD_FFMPEG="${CI_LOCAL_MISS_FFMPEG:-1}"
+export CI_BUILD_GSTREAMER="${CI_LOCAL_MISS_GSTREAMER:-1}"
+export CI_BUILD_PLUGINS="${CI_LOCAL_MISS_PLUGINS:-1}"
+export CI_BUILD_ICE="${CI_LOCAL_MISS_ICE:-1}"
 
 state() { [ "$1" = "1" ] && echo MISS || echo HIT; }
-echo "::notice::DPDK=$(state "${SETUP_BUILD_AND_INSTALL_DPDK}")" \
-	"MTL=$(state "${MTL_BUILD_AND_INSTALL}")" \
-	"FFmpeg=$(state "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}")" \
-	"GStreamer=$(state "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}")" \
-	"plugins=$(state "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}")"
+echo "::notice::DPDK=$(state "${CI_BUILD_DPDK}")" \
+	"MTL=$(state "${CI_BUILD_MTL}")" \
+	"JPEGXS=$(state "${CI_BUILD_JPEGXS}")" \
+	"FFmpeg=$(state "${CI_BUILD_FFMPEG}")" \
+	"GStreamer=$(state "${CI_BUILD_GSTREAMER}")" \
+	"plugins=$(state "${CI_BUILD_PLUGINS}")" \
+	"ICE=$(state "${CI_BUILD_ICE}")"
 
 any_miss=0
-for miss in "${SETUP_BUILD_AND_INSTALL_DPDK}" "${MTL_BUILD_AND_INSTALL}" \
-	"${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" \
-	"${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" \
-	"${PLUGIN_BUILD_AND_INSTALL_AVCODEC}"; do
+for miss in "${CI_BUILD_DPDK}" "${CI_BUILD_MTL}" "${CI_BUILD_JPEGXS}" \
+	"${CI_BUILD_FFMPEG}" "${CI_BUILD_GSTREAMER}" "${CI_BUILD_PLUGINS}" \
+	"${CI_BUILD_ICE}"; do
 	[ "${miss}" = "1" ] && any_miss=1
 done
 echo "::endgroup::"
 
 # ── step: Setup environment and build ───────────────────────────────────────
 # Environment copied verbatim from the workflow step of the same name.
-export MTL_INSTALL_PREFIX="${LOCAL_INSTALL}/mtl"
-export PKG_CONFIG_PATH="${LOCAL_INSTALL}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${LOCAL_INSTALL}/mtl/lib/x86_64-linux-gnu/pkgconfig"
-export LD_LIBRARY_PATH="${LOCAL_INSTALL}/dpdk/lib/x86_64-linux-gnu:${LOCAL_INSTALL}/mtl/lib/x86_64-linux-gnu"
-export TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET=1
-export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
-# Capture PHC is disciplined to TAI at runtime via phc2sys -O <live_offset>,
-# so the kernel TAI offset is left untouched.
-export TOOLS_RUN_SET_TAI_OFFSET=0
 # The workflow's runner is long-lived and already provisioned; a fresh
 # container is not, so it takes the same path CI takes on a clean machine.
 export SETUP_ENVIRONMENT=1
@@ -84,10 +79,10 @@ dump_diagnostics() {
 		(. /etc/os-release && echo "${PRETTY_NAME}")
 		echo
 		echo "=== build environment ==="
-		env | grep -E '^(MTL_|SETUP_|ECOSYSTEM_|PLUGIN_|TOOLS_|CICD_|PKG_CONFIG|LD_LIBRARY)' | sort
+		env | grep -E '^(CI_BUILD_|MTL_|SETUP_|ECOSYSTEM_|PLUGIN_|TOOLS_|CICD_|PKG_CONFIG|LD_LIBRARY)' | sort
 		echo
 		echo "=== pkg-config: what the build can see ==="
-		pkg-config --list-all 2>/dev/null | grep -iE 'mtl|dpdk' || echo "(nothing)"
+		pkg-config --list-all 2>/dev/null | grep -iE 'mtl|dpdk|jpeg' || echo "(nothing)"
 		echo
 		echo "=== pkg-config: the check that fails in CI ==="
 		pkg-config --print-errors --exists 'mtl >= 22.12.0' 2>&1 &&
@@ -112,7 +107,7 @@ dump_diagnostics() {
 
 if [ "${CI_LOCAL_SHELL:-0}" = "1" ]; then
 	echo "Runner ready. The build environment is exported; run:"
-	echo "  bash .github/scripts/setup_environment.sh"
+	echo "  task ci:build-dependencies"
 	exec bash -i
 fi
 
@@ -124,7 +119,10 @@ fi
 
 echo "::group::Setup environment and build"
 rc=0
-bash "${WORKDIR}/.github/scripts/setup_environment.sh" || rc=$?
+task ci:build-dependencies || rc=$?
+if [ "$rc" -eq 0 ]; then
+	task ci:validate-dependencies || rc=$?
+fi
 echo "::endgroup::"
 
 dump_diagnostics
