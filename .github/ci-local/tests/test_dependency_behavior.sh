@@ -189,7 +189,7 @@ Description: fixture
 Version: 0.10.0
 Libs: -L${libdir} -lSvtJpegxs
 EOF
-	compiler_sha256=$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)
+	compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")
 	printf 'schema=1\narchitecture=%s\ncompiler_sha256=%s\n' "$(uname -m)" "$compiler_sha256" >"$bundle/bundle.env"
 	(cd "$bundle" && find . -type l -printf '%p=%l\n' | sort >symlinks.manifest)
 	manifest="${bundle}.manifest"

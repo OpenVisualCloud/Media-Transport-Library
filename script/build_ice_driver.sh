@@ -67,7 +67,7 @@ bash "${root_dir}/script/hash_sources.sh" -o "$hash_output" >/dev/null
 source_hash=$(sed -n 's/^ice=//p' "$hash_output")
 rm -f "$hash_output"
 module_hash=$(sha256sum "${stage}/ice.ko" | cut -d' ' -f1)
-compiler_hash=$($build_compiler --version | head -n1 | sha256sum | cut -d' ' -f1)
+compiler_hash=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" "$build_compiler")
 abi_output=$(mktemp)
 GITHUB_OUTPUT="$abi_output" bash "${root_dir}/.github/scripts/ci/ice-abi.sh"
 kernel_abi_hash=$(sed -n 's/^abi_sha256=//p' "$abi_output")

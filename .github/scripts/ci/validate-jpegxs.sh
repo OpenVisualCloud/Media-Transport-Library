@@ -48,7 +48,7 @@ grep -q "^architecture=$(uname -m)$" "${bundle}/bundle.env" || {
 	echo "JPEG XS architecture does not match this host" >&2
 	exit 1
 }
-expected_compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)}
+expected_compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh")}
 grep -q "^compiler_sha256=${expected_compiler_sha256}$" "${bundle}/bundle.env" || {
 	echo "JPEG XS compiler identity does not match this cache key" >&2
 	exit 1
