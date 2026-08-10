@@ -193,33 +193,8 @@ def ci_test_pr(
         if line.startswith("═══ test-pr-locally summary"):
             table = "\n".join(lines[i:])
             break
-    body = _summarize_output("ci_test_pr", out, rc=rc)
     return f"{body}\n\n```\n{table}\n```" if table else body
-
-
-@mcp.tool()
-def ci_reproduce_cache_poisoning(timeout_s: int = 5400) -> str:
-    """Reproduce the cache failure behind `mtl >= 22.12.0 not found using pkg-config`.
-
-    Warms the cache, empties the MTL tree the way a run that died mid-install
-    would while leaving its key valid, then runs the job twice: once with the
-    workflow's current cache semantics (fails) and once with the proposed rule
-    that a hit must be structurally usable (rebuilds and passes).
-
-    Mutates .local_install/mtl. Harmless -- the run rebuilds it.
-    """
-    script = CI_LOCAL / "reproduce-cache-poisoning.sh"
-    if not script.is_file():
-        return f"ERROR: {script} not found."
-    rc, out = _run_rc([str(script)], timeout=timeout_s)
-    lines = out.splitlines()
-    verdict = ""
-    for i, line in enumerate(lines):
-        if line.strip().startswith("=== verdict"):
-            verdict = "\n".join(lines[i:])
-            break
-    body = _summarize_output("ci_reproduce_cache_poisoning", out, rc=rc)
-    return f"{body}\n\n```\n{verdict}\n```" if verdict else body
+    body = _summarize_output("ci_test_pr", out, rc=rc)
 
 
 @mcp.tool()

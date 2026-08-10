@@ -26,9 +26,6 @@ attempt, and the log rarely contains the state you actually need.
 
 # get a shell on the prepared runner instead of running the job
 .github/ci-local/run-job.sh build --shell
-
-# reproduce the cache failure this was written for, and show the fix
-.github/ci-local/reproduce-cache-poisoning.sh
 ```
 
 The common entry points are also [Taskfile](../../Taskfile.yml) tasks, so a
@@ -122,7 +119,7 @@ So this harness adds two rules the workflow should adopt:
    `run-job.sh` looks for the artifact that consumers actually resolve —
    `libdpdk.pc`, `mtl.pc`, `libavcodec.pc`, a plugin `.so`. A key match with an
    unusable tree is reported `STALE` and rebuilt.
-2. **Only a passing job may write the cache.** Stamps are refreshed after the
+1. **Only a passing job may write the cache.** Stamps are refreshed after the
    container exits, and only on success, so a broken tree can never become a
    permanent hit.
 
@@ -148,15 +145,12 @@ below.
 
 Reproducible with the commands above.
 
-1. **A failed run poisons the cache permanently.** The headline bug, described
-   in the previous section. `reproduce-cache-poisoning.sh` shows both the
-   failure and the fix.
-2. **`libdpdk` needs `libelf-dev`, which nothing installs.** It arrives only
+1. **`libdpdk` needs `libelf-dev`, which nothing installs.** It arrives only
    under `SETUP_BUILD_AND_INSTALL_EBPF_XDP`, which the `build` job leaves off.
    The runner has it from an earlier XDP run, so the job passes there and
    fails on any freshly provisioned machine whose DPDK cache is a hit —
    `Package 'libelf', required by 'libdpdk', not found`.
-3. **The second MTL build step is a silent no-op.**
+1. **The second MTL build step is a silent no-op.**
    `.github/scripts/setup_environment.sh` carries two `MTL_BUILD_AND_INSTALL`
    blocks. The first runs `./build.sh`, which builds. The second runs
    `./build.sh "${mtl_build_options}"`, and with fuzzing off that expands to
@@ -164,7 +158,7 @@ Reproducible with the commands above.
    printing its usage and exiting **0**. `set -e` cannot catch a zero exit, so
    the step is reported as having built MTL. Harmless only because the first
    block already did.
-4. **The GStreamer plugins were unloadable.** `validate-host` set
+1. **The GStreamer plugins were unloadable.** `validate-host` set
    `GST_PLUGIN_PATH` to the cached plugin directory but did not put that
    directory on `LD_LIBRARY_PATH`. The plugins there link against their own
    `libgstmtl_common.so`, which lives beside them and is not installed
