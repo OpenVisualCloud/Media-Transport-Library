@@ -3,7 +3,7 @@
 #
 # Simulated GitHub Actions runner for the MTL workflows.
 #
-# The real `build` job runs on a self-hosted `dpdk` runner: Ubuntu 22.04, a
+# The real `build` job runs on a self-hosted `dpdk` runner with GCC 13, a
 # non-root user with passwordless sudo, and every apt dependency already
 # present from earlier runs. A bare `ubuntu:22.04` differs from that in three
 # ways that each produce a failure which has nothing to do with the change
@@ -16,7 +16,7 @@
 #
 # This image removes all three, so a failure inside it is a real failure.
 
-FROM ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:24.04@sha256:be20a0347f238b7d373edddc55923443b21dd9a60277bf8a93e43458cd0bf2fc
 
 # Matches the timezone setup_environment.sh applies under CICD_BUILD=1.
 ARG TZ=Europe/Warsaw
@@ -64,12 +64,15 @@ RUN set -eux; \
 	doxygen \
 	ethtool \
 	gcc \
+	gcc-13 \
 	gcc-multilib \
+	g++-13 \
 	git \
 	gstreamer1.0-libav \
 	gstreamer1.0-plugins-base \
 	gstreamer1.0-plugins-good \
 	gstreamer1.0-tools \
+	kmod \
 	libcap-ng-dev \
 	libcap2-bin \
 	libelf-dev \
@@ -97,6 +100,7 @@ RUN set -eux; \
 	python3 \
 	python3-dev \
 	python3-pip \
+	python3-pyelftools \
 	python3-venv \
 	sudo \
 	systemtap-sdt-dev \
@@ -106,9 +110,10 @@ RUN set -eux; \
 	yasm \
 	zlib1g-dev; \
 	dpkg-reconfigure -f noninteractive tzdata; \
-	python3 -m pip install --no-cache-dir --upgrade pip; \
-	python3 -m pip install --no-cache-dir pyelftools ninja; \
 	rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-13 \
+	CXX=g++-13
 
 # A non-root user with passwordless sudo, like the GitHub runner. sudo's
 # env_reset would otherwise strip the proxy and DEBIAN_FRONTEND that every apt
@@ -117,7 +122,8 @@ RUN set -eux; \
 	groupadd --gid "${RUNNER_GID}" --non-unique "${RUNNER_USER}"; \
 	useradd --uid "${RUNNER_UID}" --gid "${RUNNER_GID}" --non-unique \
 	--home-dir "${HOME}" --create-home --shell /bin/bash "${RUNNER_USER}"; \
-	echo "${RUNNER_USER} ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/10-runner; \
+	effective_user="$(getent passwd "${RUNNER_UID}" | cut -d: -f1)"; \
+	echo "${effective_user} ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/10-runner; \
 	echo 'Defaults env_keep += "DEBIAN_FRONTEND http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY PIP_BREAK_SYSTEM_PACKAGES"' \
 	>/etc/sudoers.d/20-env; \
 	chmod 0440 /etc/sudoers.d/10-runner /etc/sudoers.d/20-env

@@ -12,6 +12,10 @@ output=${GITHUB_OUTPUT:-/dev/stdout}
 architecture=${ICE_ARCH:-$(uname -m)}
 kernel_release=${ICE_KERNEL_RELEASE:-$(uname -r)}
 schema=${CI_CACHE_SCHEMA:?CI_CACHE_SCHEMA is required}
+compiler=${CC:-cc}
+compiler_sha256=$($compiler --version | sed -n '1p' | sha256sum | cut -d' ' -f1)
+ice_compiler_sha256=${ICE_COMPILER_SHA256:-$compiler_sha256}
+jpegxs_compiler_sha256=${JPEGXS_COMPILER_SHA256:-$compiler_sha256}
 if [ -n "${ICE_ABI_SHA256:-}" ]; then
 	ice_abi_sha256=$ICE_ABI_SHA256
 else
@@ -27,8 +31,8 @@ for component in dpdk mtl jpegxs ffmpeg gstreamer plugins ice; do
 	hash_var="HASH_${upper}"
 	value=${!hash_var:?${hash_var} is required}
 	case "$component" in
-	jpegxs) key="stash-v${schema}-jpegxs-${architecture}-${value}" ;;
-	ice) key="stash-v${schema}-ice-${value}-${kernel_release}-${architecture}-${ice_abi_sha256}" ;;
+	jpegxs) key="stash-v${schema}-jpegxs-${architecture}-${jpegxs_compiler_sha256}-${value}" ;;
+	ice) key="stash-v${schema}-ice-${value}-${kernel_release}-${architecture}-${ice_abi_sha256}-${ice_compiler_sha256}" ;;
 	*) key="stash-v${schema}-${component}-${value}" ;;
 	esac
 	printf '%s=%s\n' "${component}_key" "$key" >>"$output"
@@ -37,4 +41,6 @@ done
 	echo "kernel_release=${kernel_release}"
 	echo "architecture=${architecture}"
 	echo "cache_schema=${schema}"
+	echo "ice_compiler_sha256=${ice_compiler_sha256}"
+	echo "jpegxs_compiler_sha256=${jpegxs_compiler_sha256}"
 } >>"$output"

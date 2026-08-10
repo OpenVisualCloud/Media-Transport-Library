@@ -13,6 +13,7 @@ bundle_root=${ICE_BUNDLE_ROOT:-"${root_dir}/.local_install/ice"}
 artifact_dir="${bundle_root}/${kernel_release}/${architecture}"
 module="${artifact_dir}/ice.ko"
 metadata="${artifact_dir}/metadata.env"
+nm_command=${ICE_NM:-nm}
 modinfo_cmd=${ICE_MODINFO:-modinfo}
 
 metadata_value() {
@@ -35,6 +36,16 @@ for field in schema source_hash ice_version ice_dmid kernel_release architecture
 		exit 1
 	}
 done
+
+"$nm_command" "$module" | grep '[[:space:]]ice_vc_cfg_q_bw$' >/dev/null || {
+	echo "ICE artifact is missing the Kahawai QoS capability" >&2
+	exit 1
+}
+expected_compiler_sha256=${ICE_EXPECTED_COMPILER_SHA256:-$(${CC:-cc} --version | sed -n '1p' | sha256sum | cut -d' ' -f1)}
+[ "$(metadata_value compiler_sha256)" = "$expected_compiler_sha256" ] || {
+	echo "ICE compiler identity does not match this cache key" >&2
+	exit 1
+}
 
 test "$(metadata_value schema)" = 2
 test "$(metadata_value ice_version)" = "$ICE_VER"

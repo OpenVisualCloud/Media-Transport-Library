@@ -194,7 +194,7 @@ e835) PCI_DEVICE="8086:1249,8086:1249" ;;
 *) die "unknown nic: ${NIC} (e810, e830, e835, e825)" ;;
 esac
 
-BASE_IMAGE="mtl-ci-local:22.04-$(id -u)"
+BASE_IMAGE="mtl-ci-local:24.04-$(id -u)"
 IMAGE="${BASE_IMAGE}"
 [ "${RUNNER_KIND}" = "baremetal" ] && IMAGE="mtl-ci-local:baremetal-$(id -u)"
 # The self-hosted runner is a long-lived machine: whatever the build installs

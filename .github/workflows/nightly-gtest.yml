@@ -41,7 +41,7 @@ jobs:
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ inputs.commit_sha || github.sha }}'
       - name: 'preparation: Validate host and download artifacts'

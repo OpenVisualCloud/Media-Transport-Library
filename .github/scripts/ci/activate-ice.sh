@@ -189,6 +189,10 @@ if [ "$dry_run" -eq 0 ]; then
 		echo "loaded ICE version is ${loaded_version:-unknown}, expected Kahawai_${ICE_VER}" >&2
 		exit 1
 	}
+	"${ICE_NM:-nm}" "$installed_module" | grep '[[:space:]]ice_vc_cfg_q_bw$' >/dev/null || {
+		echo "loaded ICE module is missing the Kahawai QoS capability" >&2
+		exit 1
+	}
 fi
 
 [ "$previous_irdma_loaded" -eq 0 ] || run modprobe irdma
