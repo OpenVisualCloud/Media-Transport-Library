@@ -63,11 +63,6 @@ jobs:
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
 
-      - name: Check and build ice driver if needed
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        run: |
-          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
-
       - name: 'cleanup: Kill stale processes before test'
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup

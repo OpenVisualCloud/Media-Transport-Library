@@ -1,123 +1,134 @@
-# GitHub Actions issue — CI tooling plan
+# GitHub Actions issue: prebuilt host dependencies
 
-## The problem
+## Problem
 
-Our `build` job fails because it cannot find the MTL library. We will fix that,
-and build tooling (an MCP server for CI actions + scripts in `.github/scripts`)
-so the AI can inspect PR results directly after local tests. The scripts must be
-independent and simple enough that a human can run them by hand — the MCP server
-only wraps them.
+MTL host setup currently has two phases:
 
-### Failing run
+1. [The build workflow](./workflows/build.yml) runs once on the `dpdk` runner,
+  computes source hashes, builds the required components, and stores them in
+  the GitHub Actions cache.
+2. The `validate-host` action runs on each bare-metal runner. It should restore
+  those components and verify that the host is ready for testing.
 
-- Job: <https://github.com/OpenVisualCloud/Media-Transport-Library/actions/runs/30359264440/job/90275514969?pr=1661>
-- PR: <https://github.com/OpenVisualCloud/Media-Transport-Library/pull/1661>
+The boundary is currently incomplete. Host validation still builds and installs
+the ICE driver and SVT-JPEG-XS, while the gtest workflow performs another ICE
+driver check. This makes validation slow, gives test jobs permission to mutate
+the host, and can produce different binaries on different runners.
 
-### Confirmed failure
+See [the CI/CD architecture proposal](../doc/cicd_setup_proposition.md) and the
+[architecture diagram](./ci_arch.svg) for the wider pipeline.
 
-Run `30359264440` (`fix_double_free`, PR #1661) — `build` job, step
-*Setup environment and build*:
+## Proposed architecture
 
-```text
-ERROR: mtl >= 22.12.0 not found using pkg-config
+Build expensive dependencies once and make host jobs consumers of immutable,
+content-addressed outputs:
+
+1. Build SVT-JPEG-XS and its MTL bridge plugin in `build.yml`, installed under
+  `.local_install/jpegxs` without writing to `/usr/local`.
+2. Build the patched ICE module in `build.yml` for each supported host kernel ABI.
+3. Store each successful output under a deterministic SHA-256 cache key.
+4. Make `validate-host` restore, validate, and, only when required, activate the
+  outputs.
+5. Remove all driver build, install, and reload behavior from gtest steps. Tests
+  must only test.
+
+### JPEG XS artifact
+
+The JPEG XS output is a bundle, not only one shared object. It must contain:
+
+- the SVT-JPEG-XS runtime libraries;
+- its `pkg-config` metadata;
+- the MTL JPEG XS bridge plugin; and
+- any required runtime data or symlinks.
+
+Its cache key must include the pinned `SVT_JPEG_XS_VER`, MTL hash, architecture,
+toolchain/build options, and the sources used by the bridge plugin. FFmpeg's key
+must also include the JPEG XS hash whenever FFmpeg is built with JPEG XS support.
+
+Host validation must verify the expected libraries, plugin, and `pkg-config`
+entry before exporting the local library and plugin paths. It must never fall
+back to compiling or installing JPEG XS on the test host.
+
+### ICE artifact
+
+An ICE kernel module is tied to its target kernel. The cache key must include:
+
+- ICE version, Intel download identifier, and all MTL ICE patches;
+- target kernel release and architecture;
+- relevant kernel build configuration or headers; and
+- compiler/toolchain identity when it affects module compatibility.
+
+The build must preserve `ice.ko` in a dedicated artifact directory before
+removing the driver source tree. Validation must reject an artifact when
+`modinfo -F vermagic` does not match the running kernel. Secure Boot and module
+signing requirements must also be checked explicitly.
+
+Use SHA-256 rather than MD5 for artifact identity. Comparing the cached module
+with `modinfo -n ice` is not enough because the file on disk can differ from the
+module already loaded in memory. After a successful activation, store the
+artifact SHA-256 in a root-owned host state file and require both that state and
+the expected loaded Kahawai version to match before skipping activation.
+
+ICE activation is a host-maintenance operation and must be implemented as one
+idempotent Taskfile command. When the hash differs it must:
+
+1. acquire a per-host lock to prevent concurrent jobs from changing the NIC;
+2. stop processes using the NIC and remove existing VFs;
+3. unload dependent modules such as `irdma`, then unload `ice`;
+4. install/load the validated module using the host's normal module tooling;
+5. verify the loaded version and capabilities;
+6. recreate the required VFs; and
+7. update the host state file only after all checks succeed.
+
+If any step fails, validation fails. It must not continue with an unknown driver
+or partially configured NIC.
+
+## Workflow authoring rules
+
+GitHub Actions YAML is orchestration, not the implementation. In particular, do
+not add multi-line `run: |` scripts to workflows or composite actions. Put each
+operation behind a named [Taskfile](../Taskfile.yml) task backed by a focused,
+human-runnable script when shell logic is required. The same command must work
+locally and in CI, for example:
+
+```sh
+task ci:build-ice
+task ci:validate-ice
+task ci:build-jpegxs
+task ci:validate-jpegxs
 ```
 
-The cache reported `MTL=HIT`, so nothing rebuilt it, and `PKG_CONFIG_PATH`
-(`.local_install/mtl/lib/x86_64-linux-gnu/pkgconfig`) did not resolve. That is
-the "where is the MTL library" problem.
+This keeps logs grouped by operation, makes failures reproducible without a
+runner, and avoids maintaining separate local and CI implementations.
 
-## `gh` CLI status
+Additional rules adopted for this work:
 
-Installed (v2.96.0, official apt repo) and authenticated. Token scopes:
-`repo`, `workflow`, `read:org`, `gist` — enough to read Actions runs, jobs,
-logs and artifacts.
+- pin third-party actions to immutable commit SHAs;
+- grant the smallest job-level `permissions` needed;
+- set explicit job timeouts and concurrency controls for each physical host;
+- keep build, validation, and test responsibilities separate;
+- use caches for reusable content-addressed dependencies and artifacts for run
+ outputs such as logs and reports;
+- restore caches before doing expensive work, validate their contents, and save
+ them only after a successful build;
+- make dependencies and cache-key inputs explicit;
+- fail early with actionable compatibility checks;
+- keep secrets out of command lines, logs, caches, and artifacts; and
+- run the same Taskfile entry points in the local CI harness before merging.
 
----
+These practices are informed by DevOps Directive's
+[Complete GitHub Actions Course - From BEGINNER to PRO](https://www.youtube.com/watch?v=Xwpi0ITkL3U&t=6767s)
+and adapted to this repository's self-hosted, hardware-backed runners.
 
-## Design: what to build and why
+## Acceptance criteria
 
-The common mistake is wrapping `gh` in MCP and calling it done. `gh` is already
-a fine CLI; the AI's problem is not *access*, it is **signal-to-noise and
-turnaround time**. Raw Actions logs are tens of megabytes — a single
-`gh run view --log-failed` on the run above returned megabytes of FFmpeg
-`inflating:` lines to surface one error line. Any tool that hands a model a raw
-log burns the context window before it diagnoses anything.
-
-**Design principle: the MCP layer's job is evidence reduction and local
-reproduction, not API proxying.**
-
-### 1. Keep the existing layering
-
-Plain scripts in `.github/scripts/` that a human can run standalone;
-`mtl_ci_mcp_server.py` is a thin wrapper, mirroring `mtl_mcp_server.py` +
-`mtl_setup_common.py`. Logic must never live only inside MCP — it is lost the
-moment the server is not running.
-
-### 2. Small, composable, output-capped primitives
-
-- `ci_run_list(branch|pr)` — recent runs + conclusions (tiny output).
-- `ci_failure_report(run_id)` — the key tool: walk failed jobs → failed steps →
-  extract `##[error]` / `##[warning]` annotations plus N lines of context around
-  each, dedupe, **hard-cap output**. Returns a structured summary, never a log.
-- `ci_log_grep(run_id, job, regex, context)` — targeted follow-up when the
-  report is not enough.
-- `ci_artifacts(run_id)` — pull diagnostic bundles (see §4).
-
-Every tool returns bounded text and writes the full blob to a temp path the
-model can grep on demand.
-
-### 3. Local reproduction is the highest-leverage piece
-
-A push-to-test loop is ~10 minutes; local repro is seconds.
-`ci_reproduce(run_id, job)` materializes the job's `env:` block and inputs into
-a `.env` and runs **the same** `.github/scripts/setup_environment.sh` locally.
-The workflows already call shared scripts, so this is mostly plumbing — and it
-turns the AI from "guess, push, wait" into an actual debug loop.
-
-### 4. Make CI emit diagnostics instead of forcing log archaeology
-
-The current failure is undiagnosable from the log alone. Add a failure trap to
-the build scripts that dumps a bundle and uploads it as an artifact:
-
-- `PKG_CONFIG_PATH`
-- `pkg-config --list-all | grep -i mtl`
-- `find .local_install -name '*.pc'`
-- cache hit/miss per component
-- `$GITHUB_WORKSPACE`, tool versions, disk free
-
-Plus `::error::` annotations so `gh run view --json` yields structured errors
-rather than needing regex. This single change is worth more than the entire MCP
-server.
-
-### 5. Remote / self-hosted specifics
-
-`runs-on: dpdk` is our own box, so state persists after a failure. Resist
-building SSH-into-runner tooling — it needs secrets, it is racy, and it breaks
-when the runner is reimaged. The always-run diagnostics step in §4 gets ~95% of
-the value with zero credentials.
-
-### 6. Root-cause class worth fixing properly
-
-Caches are keyed on **source checksum**, but the installed artifacts embed
-**absolute paths** (`.pc` files hardcode `prefix=`). Restoring that cache under
-a different workspace path makes pkg-config silently find nothing — a whole
-class of "works on rerun, fails on PR" flakes. Worth a `ci_cache_audit` tool
-and/or making the `.pc` files relocatable.
-
-### 7. Guardrails
-
-Read-only by default. No `run rerun`, `pr merge`, `pr comment`, or
-`workflow dispatch` in the tool surface without explicit confirmation — an AI
-that can retrigger CI will retrigger CI forever instead of fixing the bug. Cap
-every output. Never echo token or secret values.
-
----
-
-## Build order
-
-1. `ci_failure_report`
-2. CI diagnostic bundle (§4)
-3. `ci_reproduce`
-4. The rest (`ci_log_grep`, `ci_artifacts`, `ci_cache_audit`)
-
-The first two would have diagnosed this exact failure automatically.
+- `build.yml` produces validated JPEG XS and kernel-compatible ICE outputs.
+- A cache hit never triggers compilation on a bare-metal test runner.
+- A malformed or incompatible cache entry fails host validation immediately.
+- `validate-host` changes the loaded ICE module only when the validated artifact
+ differs from the activated host state.
+- VFs are available again after any driver activation.
+- Gtest and pytest workflows contain no ICE/JPEG XS build or install step.
+- Workflow and composite-action YAML call named Taskfile tasks instead of
+ embedding multi-line shell programs.
+- Every new task can be invoked locally and has a focused validation path.

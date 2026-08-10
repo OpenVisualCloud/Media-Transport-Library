@@ -48,9 +48,9 @@ Lint Code Base     linter.yml          (opt-in: --with-lint)
 ```
 
 The tests themselves need a NIC, VFs, the Kahawai ICE driver and hugepages, so
-they stay on real hardware. Everything the test jobs do *before* touching it —
-cache restore, artifact layout, library and plugin resolution, the environment
-the tests inherit — runs here, and that is where these jobs actually break.
+they stay on real hardware. Cache restore, JPEG XS and ICE artifact validation,
+library and plugin resolution, and ICE activation ordering run here. Activation
+uses the production script's dry-run mode and never changes the host kernel.
 
 Results land in `.ci-local/` (git-ignored):
 
@@ -97,28 +97,22 @@ flowchart LR
         SAVE["save: refresh stamps<br/>only if job passed"]
     end
     subgraph cont["container — jobs/build.sh"]
-        EVAL["Evaluate cache results<br/>*_BUILD_AND_INSTALL"]
-        BUILD["Setup environment and build<br/>setup_environment.sh"]
+      EVAL["Evaluate cache results<br/>CI_BUILD_*"]
+      BUILD["Build and validate<br/>task ci:build-dependencies"]
         DIAG["diagnostics.txt"]
     end
     IMG --> SYNC --> HASH --> REST --> EVAL --> BUILD --> DIAG --> SAVE
 ```
 
-## Where it is deliberately stricter than CI
+## Cache integrity
 
-The workflow decides whether to rebuild a component from `cache-hit` alone. A
-run that dies part-way through an install still saves its half-written tree
-under the source-derived key, and every later run with the same sources then
-restores that tree, skips the build, and fails on whatever is missing from it.
-That is the shape of the `mtl >= 22.12.0 not found using pkg-config` failure:
-`MTL=HIT`, no rebuild, no `mtl.pc` anywhere on `PKG_CONFIG_PATH`.
-
-So this harness adds two rules the workflow should adopt:
+The local harness and build workflow enforce the same two rules:
 
 1. **A hit must be usable, not merely present.** `tree_is_usable()` in
    `run-job.sh` looks for the artifact that consumers actually resolve —
-   `libdpdk.pc`, `mtl.pc`, `libavcodec.pc`, a plugin `.so`. A key match with an
-   unusable tree is reported `STALE` and rebuilt.
+   `libdpdk.pc`, `mtl.pc`, the JPEG XS manifest and plugin, `libavcodec.pc`, a
+   plugin `.so`, or the kernel-specific ICE module and metadata. A key match
+   with an unusable tree is reported `STALE` and rebuilt.
 1. **Only a passing job may write the cache.** Stamps are refreshed after the
    container exits, and only on success, so a broken tree can never become a
    permanent hit.

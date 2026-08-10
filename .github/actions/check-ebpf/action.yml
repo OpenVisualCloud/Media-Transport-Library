@@ -32,8 +32,4 @@ runs:
         MODE: ${{ inputs.mode }}
         STRICT: ${{ inputs.strict }}
         REQUIRE_XDP: ${{ inputs.require_xdp }}
-      run: |
-        args=(--check --mode "${MODE}")
-        if [ "${STRICT}" = "true" ]; then args+=(--strict); fi
-        if [ "${REQUIRE_XDP}" = "true" ]; then args+=(--require-xdp); fi
-        bash "${GITHUB_WORKSPACE}/script/build_ebpf_xdp.sh" "${args[@]}"
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/ci/check-ebpf-action.sh"
