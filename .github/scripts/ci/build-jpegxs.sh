@@ -42,6 +42,7 @@ rm -rf "$stage"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage"
 
+rm -rf "${source_dir}/Build/ci"
 cmake -S "$source_dir" -B "${source_dir}/Build/ci" \
 	-DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_INSTALL_PREFIX="$stage" \

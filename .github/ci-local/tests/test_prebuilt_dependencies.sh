@@ -57,4 +57,14 @@ if grep -Eq 'sudo|modprobe|rmmod|depmod|make install' script/build_ice_driver.sh
 	fail "ICE build-only script still mutates the host"
 fi
 
+# shellcheck disable=SC2016
+grep -Fq 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh ||
+	fail "JPEG XS producer can reuse stale CMake compiler state"
+# shellcheck disable=SC2016
+cleanup_line=$(grep -nF 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh | cut -d: -f1)
+# shellcheck disable=SC2016
+configure_line=$(grep -nF 'cmake -S "$source_dir"' .github/scripts/ci/build-jpegxs.sh | cut -d: -f1)
+[ "$cleanup_line" -lt "$configure_line" ] ||
+	fail "JPEG XS CMake cleanup occurs after configuration"
+
 echo "prebuilt dependency contracts: PASS"
