@@ -52,7 +52,9 @@ For pushed branches, call `ci_pr_checks` first. If it reports failures, call
 prefix-stripped extract from failed-job logs. This avoids loading entire GitHub
 Actions logs into the agent context.
 Only failure-level annotations suppress the log fallback. Check rows and
-diagnostic excerpts have hard caps, with omitted counts included in the result.
+failed-check sections, annotations, and diagnostic excerpts have hard caps,
+with omitted counts included in the result. GitHub command failures never
+include raw stderr because authentication diagnostics may contain credentials.
 
 ## What `test-pr-locally.sh` covers
 

@@ -113,7 +113,7 @@ def _gh_json(args: list[str], timeout: int = 120) -> tuple[object | None, str | 
     rc, out = _run_rc(["gh", *args], timeout=timeout)
     if rc != 0:
         command = " ".join(args[:2])
-        return None, f"ERROR: gh {command} failed (exit {rc})\n```\n{out[-1500:]}\n```"
+        return None, f"ERROR: gh {command} failed (exit {rc})."
     try:
         return json.loads(out), None
     except json.JSONDecodeError as exc:
@@ -199,7 +199,9 @@ def ci_pr_checks(pr: int, repo: str = "", max_checks: int = 40) -> str:
 
 
 @mcp.tool()
-def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
+def ci_pr_failures(
+    pr: int, repo: str = "", log_lines: int = 8, max_failures: int = 10
+) -> str:
     """Return bounded diagnostics for failed production PR checks.
 
     Uses check-run annotations when available. Otherwise it reports failed
@@ -209,6 +211,7 @@ def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
         pr: pull request number.
         repo: optional owner/repo; defaults to the origin remote.
         log_lines: error lines retained per failed check, capped at 20.
+        max_failures: failed checks retained, capped at 20.
     """
     if pr < 1:
         return "ERROR: pr must be a positive integer."
@@ -243,9 +246,10 @@ def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
         return f"PR {pr} has no failed production checks.\n\n{view['url']}"
 
     log_lines = max(1, min(log_lines, 20))
+    max_failures = max(1, min(max_failures, 20))
     sections = [f"### PR {pr} production failures", ""]
     fetched_runs: set[str] = set()
-    for check in failed:
+    for check in failed[:max_failures]:
         sections.append(f"#### [{check['name']}]({check['details_url']})")
         annotations, annotation_error = _gh_json(
             [
@@ -267,6 +271,11 @@ def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
                     location += f":{annotation['start_line']}"
                 message = annotation.get("message", "").strip()[:500]
                 sections.append(f"- `{location}`: {message}")
+            omitted_annotations = len(failures) - log_lines
+            if omitted_annotations > 0:
+                sections.append(
+                    f"- {omitted_annotations} additional annotations omitted."
+                )
             sections.append("")
             continue
 
@@ -298,6 +307,9 @@ def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
             or ["- No concise error lines found; open the linked check."]
         )
         sections.append("")
+    omitted_failures = len(failed) - max_failures
+    if omitted_failures > 0:
+        sections.append(f"{omitted_failures} additional failed checks omitted.")
     return "\n".join(sections).rstrip()
 
 
