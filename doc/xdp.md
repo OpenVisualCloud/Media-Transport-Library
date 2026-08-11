@@ -77,6 +77,18 @@ Build libxdp and libbpf from the xdp-tools repository using the versions pinned 
 ./script/build_ebpf_xdp.sh
 ```
 
+### Verifying the prerequisites
+
+The same script checks a host instead of building on it. CI runs this first in
+every job that later needs DPDK or AF_XDP, so a missing dependency fails in
+seconds rather than as an unrelated `pkg-config` error minutes later.
+
+```bash
+./script/build_ebpf_xdp.sh --check              # report build + runtime state
+./script/build_ebpf_xdp.sh --check --strict --require-xdp   # demand the pinned versions
+task ebpf:check                                 # same thing, via the Taskfile
+```
+
 ### Building MTL
 
 See [Build Guide](build.md).

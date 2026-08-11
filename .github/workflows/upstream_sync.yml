@@ -25,6 +25,9 @@ jobs:
       - name: Checkout target repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
       - name: Sync upstream changes
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@9e2e4fd0829a2fe8ca4b13693faac9230c414d51 # v3.4
@@ -39,9 +42,7 @@ jobs:
 
       - name: Sync check
         if: failure()
-        run: |
-          echo "Something wrong, please sync upstream manually once."
-          exit 1
+        run: task ci:workflow -- upstream-sync-failed
 
       - name: New commits found
         if: steps.sync.outputs.has_new_commits == 'true'

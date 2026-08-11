@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+
+set -euo pipefail
+
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+cd "$root_dir"
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+hash_output=$(bash script/hash_sources.sh)
+grep -q '^  jpegxs:' <<<"$hash_output" || fail "jpegxs source hash is missing"
+grep -q '^  ice:' <<<"$hash_output" || fail "ice source hash is missing"
+
+for script in \
+	.github/scripts/ci/build-jpegxs.sh \
+	.github/scripts/ci/validate-jpegxs.sh \
+	.github/scripts/ci/validate-cache.sh \
+	.github/scripts/ci/validate-ice.sh \
+	.github/scripts/ci/activate-ice.sh \
+	.github/scripts/ci/configure-host.sh; do
+	test -x "$script" || fail "$script is missing or not executable"
+done
+
+bash .github/scripts/ci/check-yaml-policy.sh
+
+task_path_literal="TASK_BIN=\$(command -v task)"
+grep -Fq "$task_path_literal" .github/actions/validate-host/action.yml ||
+	fail "validate-host does not preserve the absolute Task binary path"
+if grep -q 'sudo -E task ' .github/actions/validate-host/action.yml; then
+	fail "validate-host resolves Task through sudo secure_path"
+fi
+
+if grep -Eq 'build_ice_driver|make install|modprobe|rmmod' .github/workflows/gtest-bare-metal.yml; then
+	fail "gtest-bare-metal still builds or activates ICE"
+fi
+
+if grep -Eq 'sudo|modprobe|rmmod|depmod|make install' script/build_ice_driver.sh; then
+	fail "ICE build-only script still mutates the host"
+fi
+
+grep -Fq "run_command(find_program('cc'), '-dumpmachine'" manager/meson.build ||
+	fail "manager XDP build does not derive the compiler multiarch tuple"
+grep -Fq "'-I/usr/include/' + multiarch" manager/meson.build ||
+	fail "manager XDP build does not include Ubuntu's multiarch headers"
+
+# shellcheck disable=SC2016
+[ "$(grep -Fc 'cd "$acceptance_dir/configs"' .github/scripts/ci/pytest-setup.sh)" -eq 2 ] ||
+	fail "both pytest config modes must run in the configs directory"
+grep -Fq 'if ! run modprobe irdma; then' .github/scripts/ci/activate-ice.sh ||
+	fail "optional irdma reload can roll back a valid ICE activation"
+
+# shellcheck disable=SC2016
+grep -Fq 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh ||
+	fail "JPEG XS producer can reuse stale CMake compiler state"
+# shellcheck disable=SC2016
+cleanup_line=$(grep -nF 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh | cut -d: -f1)
+# shellcheck disable=SC2016
+configure_line=$(grep -nF 'cmake -S "$source_dir"' .github/scripts/ci/build-jpegxs.sh | cut -d: -f1)
+[ "$cleanup_line" -lt "$configure_line" ] ||
+	fail "JPEG XS CMake cleanup occurs after configuration"
+
+echo "prebuilt dependency contracts: PASS"

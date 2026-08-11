@@ -125,13 +125,16 @@ jobs:
           egress-policy: audit
 
       - name: 'preparation: Clean workspace and checkout MTL'
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ inputs.branch-to-checkout }}'
 
+      - name: Validate host and restore dependency caches
+        uses: ./.github/actions/validate-host
+
       - name: 'preparation: Print TEST_ environment'
         if: always()
-        run: env | grep TEST_ || true
+        run: task ci:validation -- print-environment
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -142,56 +145,23 @@ jobs:
           path: 'dpdk'
 
       - name: 'configuration: Install the build dependency'
-        run: |
-          sudo apt update
-          sudo apt-get remove -y pipenv || true
-          sudo apt-get install -y \
-              git gcc meson tar zip \
-              pkg-config \
-              python3 \
-              python3-pyelftools \
-              python3-virtualenv \
-              python3-pip \
-              libnuma-dev \
-              libjson-c-dev \
-              libpcap-dev \
-              libgtest-dev \
-              libsdl2-dev \
-              libsdl2-ttf-dev \
-              libssl-dev \
-              systemtap-sdt-dev \
-              libbpf-dev \
-              libelf1
+        run: task ci:validation -- install-dependencies
 
       - name: 'configuration: Apply dpdk patches'
         if: env.DPDK_REBUILD == 'true'
-        run: |
-          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
+        run: task ci:validation -- patch-dpdk
 
       - name: 'installation: Build dpdk'
-        working-directory: dpdk
         if: env.DPDK_REBUILD == 'true'
-        run: |
-          meson build
-          ninja -C build
-          sudo ninja -C build install
+        run: task ci:validation -- build-dpdk
 
       - name: 'installation: Build mtl'
-        run: |
-          ./build.sh
-          sudo ldconfig
+        run: task ci:validation -- build-mtl
 
-      - name: 'installation: Auto-align SVT-JPEG-XS core and plugin'
-        run: |
-          export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
-          bash .github/scripts/setup_environment.sh
       - name: 'installation: Install pipenv environment'
         working-directory: tests/acceptance
         id: pipenv-install
-        run: |
-          python3 -m pip install pipenv
-          python3 -m pipenv install -r requirements.txt
-          echo "VIRTUAL_ENV=$(python3 -m pipenv --venv)/bin/activate" >> "$GITHUB_ENV"
+        run: task ci:validation -- install-pipenv
 
   # Timeout of this job is set to 12h [60m/h*12h=720m]
   validation-run-tests:
@@ -209,32 +179,24 @@ jobs:
           egress-policy: audit
 
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
-        run: |
-          eval "export TEST_PORT_P=\$${{ inputs.validation-test-port-p }}"
-          eval "export TEST_PORT_R=\$${{ inputs.validation-test-port-r }}"
-          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_P=${TEST_PORT_P}"
-          echo "TEST_PORT_R=${TEST_PORT_R}"
+        env:
+          PORT_P_NAME: ${{ inputs.validation-test-port-p }}
+          PORT_R_NAME: ${{ inputs.validation-test-port-r }}
+        run: task ci:validation -- select-ports
 
       - uses: ./.github/actions/cleanup
       - name: 'preparation: Binding network adapter pf to kernel driver'
         if: inputs.validation-iface-binding != 'bind_pmd'
-        run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
+        run: task ci:validation -- bind-kernel
 
       - name: 'preparation: Binding network adapter ${{ inputs.validation-iface-binding }}'
-        run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
+        env:
+          VALIDATION_IFACE_BINDING: ${{ inputs.validation-iface-binding }}
+        run: task ci:validation -- bind-interface
 
       - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/acceptance
-        run: |
-          . "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
+        run: task ci:validation -- run-tests
         env:
           TEST_PORT_P: ${{ env.TEST_PORT_P }}
           TEST_PORT_R: ${{ env.TEST_PORT_R }}
@@ -246,40 +208,37 @@ jobs:
       - name: 'execution: Run validation-pre-release-1 in pipenv environment'
         if: inputs.validation-pre-release-1 != 'NONE'
         working-directory: tests/acceptance
-        run: |
-          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-1 }} ==" || ${{ inputs.validation-no-fail-tests }}
+        env:
+          VALIDATION_PRERELEASE: ${{ inputs.validation-pre-release-1 }}
+        run: task ci:validation -- prerelease
 
       - name: 'execution: Run validation-pre-release-2 in pipenv environment'
         if: inputs.validation-pre-release-2 != 'NONE'
         working-directory: tests/acceptance
-        run: |
-          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-2 }} ==" || ${{ inputs.validation-no-fail-tests }}
+        env:
+          VALIDATION_PRERELEASE: ${{ inputs.validation-pre-release-2 }}
+        run: task ci:validation -- prerelease
 
       - name: 'execution: Run validation-pre-release-3 in pipenv environment'
         if: inputs.validation-pre-release-3 != 'NONE'
         working-directory: tests/acceptance
-        run: |
-          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-3 }} ==" || ${{ inputs.validation-no-fail-tests }}
+        env:
+          VALIDATION_PRERELEASE: ${{ inputs.validation-pre-release-3 }}
+        run: task ci:validation -- prerelease
 
       - uses: ./.github/actions/cleanup
       - name: 'cleanup: Create archive with logs from execution'
         if: always()
         working-directory: tests/acceptance
-        run: |
-          sudo tar -czf "validation-execution-logs.tar.gz" "./logs"
-          sudo rm -rf "./logs"
+        run: task ci:validation -- archive-logs
 
       - name: 'cleanup: Restore valid owner to repository and directories'
         if: always()
-        run: |
-          sudo chown -R "${USER}" "$(pwd)"
+        run: task ci:validation -- restore-owner
 
       - name: 'cleanup: Bind pf to kernel driver'
         if: always()
-        run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
+        run: task ci:validation -- bind-kernel
 
       - name: 'cleanup: Validation execution logs'
         if: always()
@@ -290,24 +249,6 @@ jobs:
 
       - name: 'cleanup: Generate runner summary'
         if: always()
-        run: |
-          {
-          echo "## Runner ${{ runner.name }}"
-          echo "Bellow ENV variables are defined on the ${{ runner.name }} self-hosted runner side"
-          echo "| Variable | Value |"
-          echo "| --- | --- |"
-          echo "| TEST_PF_PORT_P | ${TEST_PF_PORT_P} |"
-          echo "| TEST_PF_PORT_R | ${TEST_PF_PORT_R} |"
-          echo "| TEST_PORT_P | ${TEST_PORT_P} |"
-          echo "| TEST_PORT_R | ${TEST_PORT_R} |"
-          echo "| TEST_DMA_PORT_P | ${TEST_DMA_PORT_P} |"
-          echo "| TEST_DMA_PORT_R | ${TEST_DMA_PORT_R} |"
-          echo "| TEST_VF_PORT_P_0 | ${TEST_VF_PORT_P_0} |"
-          echo "| TEST_VF_PORT_P_1 | ${TEST_VF_PORT_P_1} |"
-          echo "| TEST_VF_PORT_P_2 | ${TEST_VF_PORT_P_2} |"
-          echo "| TEST_VF_PORT_P_3 | ${TEST_VF_PORT_P_3} |"
-          echo "| TEST_VF_PORT_R_0 | ${TEST_VF_PORT_R_0} |"
-          echo "| TEST_VF_PORT_R_1 | ${TEST_VF_PORT_R_1} |"
-          echo "| TEST_VF_PORT_R_2 | ${TEST_VF_PORT_R_2} |"
-          echo "| TEST_VF_PORT_R_3 | ${TEST_VF_PORT_R_3} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:validation -- summary

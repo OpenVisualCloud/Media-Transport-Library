@@ -1,0 +1,35 @@
+name: Check eBPF/XDP prerequisites
+description: >
+  Assert that the runner can build and run MTL's eBPF/XDP paths before the job
+  spends any time on it. Wraps script/build_ebpf_xdp.sh --check, so a local
+  `task ebpf:check` and a CI run execute the same code.
+
+  Place it as the first step of a job: a missing prerequisite fails here in
+  seconds instead of surfacing minutes later as an unrelated pkg-config error.
+
+inputs:
+  mode:
+    description: What to verify -- build, runtime or all.
+    required: false
+    default: 'all'
+  strict:
+    description: Fail the job when a required prerequisite is missing.
+    required: false
+    default: 'true'
+  require_xdp:
+    description: >
+      Treat xdp-tools/libbpf as mandatory and demand the exact versions pinned
+      in versions.env. Enable on hosts provisioned for AF_XDP.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: 'ebpf: check prerequisites'
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        STRICT: ${{ inputs.strict }}
+        REQUIRE_XDP: ${{ inputs.require_xdp }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/ci/check-ebpf-action.sh"
