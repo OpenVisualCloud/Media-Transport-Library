@@ -55,6 +55,23 @@ def main():
             ".github/workflows/build.yml: ICE producer must run on the validation fleet"
         )
 
+    pr_gate_workflow = yaml.load(
+        (ROOT / ".github/workflows/pr-gate.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    wait_job = pr_gate_workflow["jobs"]["wait-for-build"]
+    wait_step = next(
+        step
+        for step in wait_job["steps"]
+        if step.get("uses") == "./.github/actions/wait-for-workflow"
+    )
+    wait_seconds = int(wait_step["with"]["timeout"])
+    wait_job_seconds = int(wait_job["timeout-minutes"]) * 60
+    if wait_job_seconds < wait_seconds + 300:
+        errors.append(
+            ".github/workflows/pr-gate.yml: wait-for-build job must outlive its poll timeout by five minutes"
+        )
+
     for path in active_yaml():
         source = path.read_text(encoding="utf-8")
         document = yaml.safe_load(source)

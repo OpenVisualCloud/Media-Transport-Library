@@ -15,11 +15,6 @@ on:
         type: boolean
         required: false
         default: true
-      wait_timeout:
-        description: Seconds to wait for the Build workflow.
-        type: number
-        required: false
-        default: 900
     outputs:
       changed:
         description: Whether the change touches code these tests cover.
@@ -55,7 +50,7 @@ jobs:
   wait-for-build:
     needs: check-for-changes
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 95
     steps:
       - name: Harden Runner
         if: ${{ needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
@@ -70,4 +65,4 @@ jobs:
         uses: ./.github/actions/wait-for-workflow
         with:
           check_name: build
-          timeout: ${{ inputs.wait_timeout }}
+          timeout: 5400
