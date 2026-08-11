@@ -53,6 +53,10 @@ ERROR_RE = re.compile(
     r"(?:##\[error\]|\b(?:error|fatal|failed|failure)\b|not found|no such file)",
     re.IGNORECASE,
 )
+GENERIC_ANNOTATION_RE = re.compile(
+    r"^(?:Process completed with exit code \d+\.?|exit status \d+)$",
+    re.IGNORECASE,
+)
 
 mcp = FastMCP(
     "mtl-ci-local",
@@ -264,14 +268,19 @@ def ci_pr_failures(
             if not annotation_error and isinstance(annotations, list)
             else []
         )
-        if failures:
-            for annotation in failures[:log_lines]:
+        actionable_failures = [
+            item
+            for item in failures
+            if not GENERIC_ANNOTATION_RE.fullmatch(item.get("message", "").strip())
+        ]
+        if actionable_failures:
+            for annotation in actionable_failures[:log_lines]:
                 location = annotation.get("path", "")
                 if annotation.get("start_line"):
                     location += f":{annotation['start_line']}"
                 message = annotation.get("message", "").strip()[:500]
                 sections.append(f"- `{location}`: {message}")
-            omitted_annotations = len(failures) - log_lines
+            omitted_annotations = len(actionable_failures) - log_lines
             if omitted_annotations > 0:
                 sections.append(
                     f"- {omitted_annotations} additional annotations omitted."

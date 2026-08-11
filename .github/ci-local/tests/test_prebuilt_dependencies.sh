@@ -57,6 +57,11 @@ if grep -Eq 'sudo|modprobe|rmmod|depmod|make install' script/build_ice_driver.sh
 	fail "ICE build-only script still mutates the host"
 fi
 
+grep -Fq "run_command(find_program('cc'), '-dumpmachine'" manager/meson.build ||
+	fail "manager XDP build does not derive the compiler multiarch tuple"
+grep -Fq "'-I/usr/include/' + multiarch" manager/meson.build ||
+	fail "manager XDP build does not include Ubuntu's multiarch headers"
+
 # shellcheck disable=SC2016
 grep -Fq 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh ||
 	fail "JPEG XS producer can reuse stale CMake compiler state"

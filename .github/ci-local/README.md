@@ -55,6 +55,8 @@ Only failure-level annotations suppress the log fallback. Check rows and
 failed-check sections, annotations, and diagnostic excerpts have hard caps,
 with omitted counts included in the result. GitHub command failures never
 include raw stderr because authentication diagnostics may contain credentials.
+Generic failure annotations do not suppress failed-log extraction; they lack
+the compiler or linter message needed to diagnose the failure.
 
 ## What `test-pr-locally.sh` covers
 

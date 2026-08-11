@@ -60,12 +60,14 @@ if libxdp_dep.found() and libbpf_dep.found()
   add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'cpp')
   clang = find_program('clang')
   llvm_strip = find_program('llvm-strip')
+  multiarch = run_command(find_program('cc'), '-dumpmachine', check: true).stdout().strip()
   # Build XDP prog obj
   xdp_src = files('mtl.xdp.c')
   xdp_temp_obj = custom_target('mtl.xdp.temp.o',
     input : xdp_src,
     output : 'mtl.xdp.temp.o',
-    command : [clang, '-g', '-O2', '-target', 'bpf', '-c', '@INPUT@', '-o', '@OUTPUT@']
+    command : [clang, '-g', '-O2', '-target', 'bpf', '-I/usr/include/' + multiarch,
+      '-c', '@INPUT@', '-o', '@OUTPUT@']
   )
   xdp_obj = custom_target('mtl.xdp.o',
     depends : xdp_temp_obj,
