@@ -32,11 +32,7 @@ import textwrap
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
-from mtl_setup_common import (
-    REPO_ROOT,
-    _run_rc,
-    _summarize_output,
-)
+from mtl_setup_common import REPO_ROOT, _run_rc, _summarize_output
 
 CI_LOCAL = REPO_ROOT / ".github" / "ci-local"
 RUN_JOB = CI_LOCAL / "run-job.sh"
@@ -46,7 +42,13 @@ OUT_DIR = STATE_DIR / "out"
 
 VALID_NICS = ("e810", "e830", "e835", "e825")
 GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-FAILED_CONCLUSIONS = {"action_required", "cancelled", "failure", "startup_failure", "timed_out"}
+FAILED_CONCLUSIONS = {
+    "action_required",
+    "cancelled",
+    "failure",
+    "startup_failure",
+    "timed_out",
+}
 ERROR_RE = re.compile(
     r"(?:##\[error\]|\b(?:error|fatal|failed|failure)\b|not found|no such file)",
     re.IGNORECASE,
@@ -100,7 +102,10 @@ def _github_repo(repo: str) -> tuple[str | None, str | None]:
         candidate = out.strip().removesuffix(".git")
         candidate = re.sub(r"^(?:https://github\.com/|git@github\.com:)", "", candidate)
     if not GITHUB_REPO_RE.fullmatch(candidate):
-        return None, f"ERROR: invalid GitHub repository '{candidate}'. Expected owner/repo."
+        return (
+            None,
+            f"ERROR: invalid GitHub repository '{candidate}'. Expected owner/repo.",
+        )
     return candidate, None
 
 
@@ -133,16 +138,17 @@ def _log_excerpt(log: str, limit: int = 8) -> list[str]:
             continue
         seen.add(line)
         matches.append(line[:500])
-    return matches[-limit:]
+    return matches[:limit]
 
 
 @mcp.tool()
-def ci_pr_checks(pr: int, repo: str = "") -> str:
+def ci_pr_checks(pr: int, repo: str = "", max_checks: int = 40) -> str:
     """Return a compact production check summary for a pushed pull request.
 
     Args:
         pr: pull request number.
         repo: optional owner/repo; defaults to the origin remote.
+        max_checks: check rows retained, capped at 100.
     """
     if pr < 1:
         return "ERROR: pr must be a positive integer."
@@ -168,18 +174,27 @@ def ci_pr_checks(pr: int, repo: str = "") -> str:
     order = {"fail": 0, "pending": 1, "cancel": 2, "skipping": 3, "pass": 4}
     checks = sorted(
         data,
-        key=lambda check: (order.get(check.get("bucket", ""), 5), check.get("name", "")),
+        key=lambda check: (
+            order.get(check.get("bucket", ""), 5),
+            check.get("name", ""),
+        ),
     )
+    max_checks = max(1, min(max_checks, 100))
     counts: dict[str, int] = {}
-    rows = ["| result | check | workflow |", "|---|---|---|"]
     for check in checks:
         bucket = check.get("bucket", "unknown")
         counts[bucket] = counts.get(bucket, 0) + 1
+    rows = ["| result | check | workflow |", "|---|---|---|"]
+    for check in checks[:max_checks]:
+        bucket = check.get("bucket", "unknown")
         rows.append(
             f"| {bucket} | [{check.get('name', '')}]({check.get('link', '')}) | "
             f"{check.get('workflow', '')} |"
         )
     summary = ", ".join(f"{count} {bucket}" for bucket, count in sorted(counts.items()))
+    omitted = len(checks) - max_checks
+    if omitted > 0:
+        rows.append(f"\n{omitted} additional checks omitted.")
     return f"### PR {pr} production checks\n\n{summary}\n\n" + "\n".join(rows)
 
 
@@ -240,8 +255,13 @@ def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
                 f"repos/{repository}/check-runs/{check['id']}/annotations?per_page=100",
             ]
         )
-        if not annotation_error and isinstance(annotations, list) and annotations:
-            for annotation in annotations[:log_lines]:
+        failures = (
+            [item for item in annotations if item.get("annotation_level") == "failure"]
+            if not annotation_error and isinstance(annotations, list)
+            else []
+        )
+        if failures:
+            for annotation in failures[:log_lines]:
                 location = annotation.get("path", "")
                 if annotation.get("start_line"):
                     location += f":{annotation['start_line']}"
@@ -457,7 +477,9 @@ def ci_cache_status() -> str:
 
 
 @mcp.tool()
-def ci_check_ebpf(mode: str = "all", strict: bool = False, require_xdp: bool = False) -> str:
+def ci_check_ebpf(
+    mode: str = "all", strict: bool = False, require_xdp: bool = False
+) -> str:
     """Check this host's eBPF/XDP prerequisites, as the CI jobs now do.
 
     Args:
