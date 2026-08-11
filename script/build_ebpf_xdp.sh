@@ -232,7 +232,9 @@ build_and_install() {
 	sudo make install
 	pushd lib/libbpf/src >/dev/null || exit 1
 	make
-	sudo make install
+	libdir="/usr/local/lib/$(cc -dumpmachine)"
+	sudo make install PREFIX=/usr/local LIBDIR="${libdir}"
+	sudo ldconfig
 	popd >/dev/null
 	popd >/dev/null
 	echo "Removing downloaded XDP sources"

@@ -15,8 +15,8 @@ Every tool caps what it returns: full output goes to a file under
 build/logs/, and the tool result carries a verdict, a path and, on failure,
 the tail. Reproductions and builds take minutes, so timeouts are generous.
 
-The server is read-only with respect to GitHub. It never pushes, re-runs a
-remote workflow, comments, or merges -- everything happens on this machine.
+The production-inspection tools are read-only with respect to GitHub. They
+query pushed PR checks but never push, re-run a workflow, comment, or merge.
 
 Usage:
     pip install -r requirements.txt
@@ -25,6 +25,8 @@ Usage:
 
 from __future__ import annotations
 
+import json
+import re
 import shlex
 import textwrap
 from pathlib import Path
@@ -43,25 +45,30 @@ LOG_DIR = STATE_DIR / "logs"
 OUT_DIR = STATE_DIR / "out"
 
 VALID_NICS = ("e810", "e830", "e835", "e825")
+GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+FAILED_CONCLUSIONS = {"action_required", "cancelled", "failure", "startup_failure", "timed_out"}
+ERROR_RE = re.compile(
+    r"(?:##\[error\]|\b(?:error|fatal|failed|failure)\b|not found|no such file)",
+    re.IGNORECASE,
+)
 
 mcp = FastMCP(
     "mtl-ci-local",
     instructions=textwrap.dedent(
         """\
-        MTL Local CI MCP Server — runs the repository's GitHub Actions jobs
-        on this machine, in a container that simulates the runner.
+        MTL CI MCP Server — runs jobs locally and inspects pushed PR checks.
 
         Common workflows:
+        • After pushing:         ci_pr_checks(1676) → ci_pr_failures(1676)
         • Before pushing:        ci_test_pr()
         • One job:               ci_run_job("build") / ci_run_job("validate-host", nic="e810")
         • Why did CI fail?:      ci_cache_status() → ci_run_job(...) → ci_last_log()
-        • Known cache bug:       ci_reproduce_cache_poisoning()
         • Host prerequisites:    ci_check_ebpf()
         • Shared entry points:   ci_list_tasks() → ci_run_task("ebpf:check")
 
-        Never talks to GitHub: no pushes, no re-runs, no comments. To prepare
-        a real host for hardware tests use the `mtl-system-setup` server; to
-        prepare pytest use `mtl-validation-setup`.
+        GitHub access is read-only: no pushes, re-runs, comments, or merges.
+        To prepare a real host for hardware tests use the `mtl-system-setup`
+        server; to prepare pytest use `mtl-validation-setup`.
         """
     ),
 )
@@ -81,6 +88,197 @@ def _latest_log(pattern: str = "*.log") -> Path | None:
         return None
     logs = sorted(LOG_DIR.glob(pattern), key=lambda p: p.stat().st_mtime)
     return logs[-1] if logs else None
+
+
+def _github_repo(repo: str) -> tuple[str | None, str | None]:
+    if repo:
+        candidate = repo
+    else:
+        rc, out = _run_rc(["git", "remote", "get-url", "origin"], timeout=30)
+        if rc != 0:
+            return None, "ERROR: cannot determine GitHub repository from origin."
+        candidate = out.strip().removesuffix(".git")
+        candidate = re.sub(r"^(?:https://github\.com/|git@github\.com:)", "", candidate)
+    if not GITHUB_REPO_RE.fullmatch(candidate):
+        return None, f"ERROR: invalid GitHub repository '{candidate}'. Expected owner/repo."
+    return candidate, None
+
+
+def _gh_json(args: list[str], timeout: int = 120) -> tuple[object | None, str | None]:
+    rc, out = _run_rc(["gh", *args], timeout=timeout)
+    if rc != 0:
+        command = " ".join(args[:2])
+        return None, f"ERROR: gh {command} failed (exit {rc})\n```\n{out[-1500:]}\n```"
+    try:
+        return json.loads(out), None
+    except json.JSONDecodeError as exc:
+        return None, f"ERROR: gh returned invalid JSON: {exc}"
+
+
+def _log_excerpt(log: str, limit: int = 8) -> list[str]:
+    matches: list[str] = []
+    seen: set[str] = set()
+    context = 0
+    for raw_line in log.splitlines():
+        line = raw_line.split("\t", 3)[-1].strip()
+        line = re.sub(r"^\d{4}-\d\d-\d\dT\S+Z\s*", "", line)
+        if not line:
+            continue
+        is_error = bool(ERROR_RE.search(line))
+        if "Command output for " in line:
+            context = 8
+        elif context:
+            context -= 1
+        if (not is_error and not context) or line == "------" or line in seen:
+            continue
+        seen.add(line)
+        matches.append(line[:500])
+    return matches[-limit:]
+
+
+@mcp.tool()
+def ci_pr_checks(pr: int, repo: str = "") -> str:
+    """Return a compact production check summary for a pushed pull request.
+
+    Args:
+        pr: pull request number.
+        repo: optional owner/repo; defaults to the origin remote.
+    """
+    if pr < 1:
+        return "ERROR: pr must be a positive integer."
+    repository, error = _github_repo(repo)
+    if error:
+        return error
+    data, error = _gh_json(
+        [
+            "pr",
+            "checks",
+            str(pr),
+            "--repo",
+            repository,
+            "--json",
+            "name,state,link,bucket,workflow",
+        ]
+    )
+    if error:
+        return error
+    if not isinstance(data, list):
+        return "ERROR: gh returned an unexpected check list."
+
+    order = {"fail": 0, "pending": 1, "cancel": 2, "skipping": 3, "pass": 4}
+    checks = sorted(
+        data,
+        key=lambda check: (order.get(check.get("bucket", ""), 5), check.get("name", "")),
+    )
+    counts: dict[str, int] = {}
+    rows = ["| result | check | workflow |", "|---|---|---|"]
+    for check in checks:
+        bucket = check.get("bucket", "unknown")
+        counts[bucket] = counts.get(bucket, 0) + 1
+        rows.append(
+            f"| {bucket} | [{check.get('name', '')}]({check.get('link', '')}) | "
+            f"{check.get('workflow', '')} |"
+        )
+    summary = ", ".join(f"{count} {bucket}" for bucket, count in sorted(counts.items()))
+    return f"### PR {pr} production checks\n\n{summary}\n\n" + "\n".join(rows)
+
+
+@mcp.tool()
+def ci_pr_failures(pr: int, repo: str = "", log_lines: int = 8) -> str:
+    """Return bounded diagnostics for failed production PR checks.
+
+    Uses check-run annotations when available. Otherwise it reports failed
+    steps and extracts only high-signal lines from the failed workflow log.
+
+    Args:
+        pr: pull request number.
+        repo: optional owner/repo; defaults to the origin remote.
+        log_lines: error lines retained per failed check, capped at 20.
+    """
+    if pr < 1:
+        return "ERROR: pr must be a positive integer."
+    repository, error = _github_repo(repo)
+    if error:
+        return error
+    view, error = _gh_json(
+        ["pr", "view", str(pr), "--repo", repository, "--json", "headRefOid,url"]
+    )
+    if error:
+        return error
+    if not isinstance(view, dict):
+        return "ERROR: gh returned unexpected pull request metadata."
+    checks, error = _gh_json(
+        [
+            "api",
+            "-H",
+            "Accept: application/vnd.github+json",
+            f"repos/{repository}/commits/{view['headRefOid']}/check-runs?per_page=100",
+        ]
+    )
+    if error:
+        return error
+    if not isinstance(checks, dict):
+        return "ERROR: gh returned an unexpected check-run response."
+    failed = [
+        check
+        for check in checks.get("check_runs", [])
+        if check.get("conclusion") in FAILED_CONCLUSIONS
+    ]
+    if not failed:
+        return f"PR {pr} has no failed production checks.\n\n{view['url']}"
+
+    log_lines = max(1, min(log_lines, 20))
+    sections = [f"### PR {pr} production failures", ""]
+    fetched_runs: set[str] = set()
+    for check in failed:
+        sections.append(f"#### [{check['name']}]({check['details_url']})")
+        annotations, annotation_error = _gh_json(
+            [
+                "api",
+                "-H",
+                "Accept: application/vnd.github+json",
+                f"repos/{repository}/check-runs/{check['id']}/annotations?per_page=100",
+            ]
+        )
+        if not annotation_error and isinstance(annotations, list) and annotations:
+            for annotation in annotations[:log_lines]:
+                location = annotation.get("path", "")
+                if annotation.get("start_line"):
+                    location += f":{annotation['start_line']}"
+                message = annotation.get("message", "").strip()[:500]
+                sections.append(f"- `{location}`: {message}")
+            sections.append("")
+            continue
+
+        run_match = re.search(r"/actions/runs/(\d+)", check.get("details_url", ""))
+        if not run_match or run_match.group(1) in fetched_runs:
+            sections.extend(["- No check annotations available.", ""])
+            continue
+        run_id = run_match.group(1)
+        fetched_runs.add(run_id)
+        run, run_error = _gh_json(
+            ["run", "view", run_id, "--repo", repository, "--json", "jobs"]
+        )
+        if not run_error and isinstance(run, dict):
+            failed_steps = [
+                step["name"]
+                for job in run.get("jobs", [])
+                for step in job.get("steps", [])
+                if step.get("conclusion") == "failure"
+            ]
+            if failed_steps:
+                sections.append("- Failed step: " + ", ".join(failed_steps[:5]))
+        rc, log = _run_rc(
+            ["gh", "run", "view", run_id, "--repo", repository, "--log-failed"],
+            timeout=180,
+        )
+        excerpt = _log_excerpt(log, log_lines) if rc == 0 else []
+        sections.extend(
+            [f"- {line}" for line in excerpt]
+            or ["- No concise error lines found; open the linked check."]
+        )
+        sections.append("")
+    return "\n".join(sections).rstrip()
 
 
 @mcp.tool()
@@ -193,8 +391,8 @@ def ci_test_pr(
         if line.startswith("═══ test-pr-locally summary"):
             table = "\n".join(lines[i:])
             break
-    return f"{body}\n\n```\n{table}\n```" if table else body
     body = _summarize_output("ci_test_pr", out, rc=rc)
+    return f"{body}\n\n```\n{table}\n```" if table else body
 
 
 @mcp.tool()
@@ -321,7 +519,8 @@ def ci_run_task(task: str, args: str = "", timeout_s: int = 1800) -> str:
     cmd = shlex.join(["task", task] + shlex.split(args))
     rc, out = _run_rc(cmd, timeout=timeout_s)
     verdict = "OK" if rc == 0 else f"FAILED (exit {rc})"
-    return f"**task {task}: {verdict}**\n```\n{_summarize_output(out)}\n```"
+    summary = _summarize_output(f"ci_task_{task.replace(':', '_')}", out, rc=rc)
+    return f"**task {task}: {verdict}**\n{summary}"
 
 
 @mcp.tool()
