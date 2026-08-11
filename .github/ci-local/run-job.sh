@@ -13,7 +13,7 @@
 #
 #   GitHub                              this script
 #   ----------------------------------  ------------------------------------
-#   build on runs-on: e810              .github/ci-local/Dockerfile
+#   build on runs-on: e835              .github/ci-local/Dockerfile
 #   actions/checkout                    rsync of the working tree
 #   actions/cache (restore)             immutable snapshots under <cache>/.cache-store
 #   job steps                           .github/ci-local/jobs/<job>.sh
@@ -168,7 +168,7 @@ mkdir -p "${CACHE_STORE}"
 
 # ── the runner: `runs-on:` ──────────────────────────────────────────────────
 # Two kinds of runner, because the workflows use two roles. The `build` job
-# produces artifacts on an e810 fleet runner; `runs-on: ${{ matrix.nic }}`
+# produces artifacts on an e835 fleet runner; `runs-on: ${{ matrix.nic }}`
 # consumes them and owns a NIC. Locally the build role does not need a NIC, so
 # only the consumer role uses the bare-metal image and test tooling.
 if [ -z "${RUNNER_KIND}" ]; then

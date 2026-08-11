@@ -105,7 +105,7 @@ jobs:
   build:
     needs: [wait-for-linter, checksums]
     if: ${{ !cancelled() && needs.checksums.result == 'success' && (needs.wait-for-linter.result == 'success' || needs.wait-for-linter.result == 'skipped') }}
-    runs-on: e810
+    runs-on: e835
     timeout-minutes: 60
     outputs:
       jpegxs_cache_key: ${{ steps.keys.outputs.jpegxs_key }}

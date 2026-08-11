@@ -4,7 +4,7 @@
 
 MTL host setup currently has two phases:
 
-1. [The build workflow](./workflows/build.yml) runs once on the `e810` fleet runner,
+1. [The build workflow](./workflows/build.yml) runs once on the `e835` fleet runner,
   computes source hashes, builds the required components, and stores them in
   the GitHub Actions cache.
 2. The `validate-host` action runs on each bare-metal runner. It should restore
@@ -25,9 +25,9 @@ content-addressed outputs:
 
 1. Build SVT-JPEG-XS and its MTL bridge plugin in `build.yml`, installed under
   `.local_install/jpegxs` without writing to `/usr/local`.
-2. Build one patched ICE module in `build.yml`. The `e810`, `e830`, and `e835`
-  runners are maintained on the same kernel ABI, so every validation job
-  consumes the same artifact.
+2. Build one patched ICE module in `build.yml`. The dedicated `e810`, `e830`,
+  and `e835` hardware validation hosts are maintained on the same kernel ABI,
+  so every validation job consumes the same artifact.
 3. Store each successful output under a deterministic SHA-256 cache key.
 4. Make `validate-host` restore, validate, and, only when required, activate the
   outputs.

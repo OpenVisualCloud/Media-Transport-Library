@@ -50,7 +50,7 @@ def main():
     build_workflow = yaml.safe_load(
         (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     )
-    if build_workflow["jobs"]["build"]["runs-on"] != "e810":
+    if build_workflow["jobs"]["build"]["runs-on"] != "e835":
         errors.append(
             ".github/workflows/build.yml: ICE producer must run on the validation fleet"
         )
