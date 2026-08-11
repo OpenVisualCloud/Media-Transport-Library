@@ -25,6 +25,10 @@ endif
 
 unit_sources = [
   'common/ut_common.c',
+  'ffmpeg/mtl_common_harness.c',
+  'ffmpeg/mtl_common_test.cpp',
+  'dev/mt_dev_harness.c',
+  'dev/mt_dev_igc_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',
   'session/st40/redundancy_test.cpp',
