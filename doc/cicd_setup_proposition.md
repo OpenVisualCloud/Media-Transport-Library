@@ -122,7 +122,7 @@ actually touched.
 | `LINTER` / `WAITS`        | `wait-for-linter` job                                |
 | `COMPUTES SOURCE SHA-256` | `checksums` job, `script/hash_sources.sh`            |
 | `GITHUB STASH`            | `actions/cache`, keys `stash-<component>-<checksum>` |
-| `BUILD`                   | `build` job on the self-hosted `e810` fleet runner   |
+| `BUILD`                   | `build` job on the self-hosted `e835` fleet runner   |
 
 The checksums waterfall, so that rebuilding a component invalidates everything
 downstream of it:
@@ -167,12 +167,12 @@ Kernel release and architecture are part of the cache key. `validate-host`
 rejects incompatible modules before touching the NIC and uses SHA-256, not
 MD5, for identity.
 
-There is one ICE producer in `build.yml`, running on the `e810` fleet runner so
-the artifact is built against the validation kernel ABI. The `e810`, `e830`,
-and `e835` runners share that ABI, so all validation jobs restore the same ICE
-cache entry. NIC type is not part of the key and does not require separate
-producer jobs. A kernel mismatch indicates runner drift and fails validation
-instead of triggering a host-side build.
+There is one ICE producer in `build.yml`, running on the `e835` fleet runner so
+the artifact is built against the validation kernel ABI. The dedicated `e810`,
+`e830`, and `e835` hardware validation hosts share that ABI, so all validation
+jobs restore the same ICE cache entry. NIC type is not part of the key and does
+not require separate producer jobs. A kernel mismatch indicates runner drift
+and fails validation instead of triggering a host-side build.
 
 Driver activation is separate from driver compilation. Under a per-host lock,
 validation compares the desired artifact with a root-owned activation stamp.

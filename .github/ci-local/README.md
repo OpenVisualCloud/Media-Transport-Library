@@ -98,7 +98,7 @@ the steps live in `jobs/<job>.sh`, one section per workflow step.
 
 | GitHub                        | here                                        |
 | ----------------------------- | ------------------------------------------- |
-| `build` on `runs-on: e810`    | `Dockerfile`                                |
+| `build` on `runs-on: e835`    | `Dockerfile`                                |
 | `runs-on: ${{ matrix.nic }}`  | `Dockerfile.baremetal`, `run-job.sh --nic`  |
 | `actions/checkout`            | `git ls-files` piped into `rsync`, into `.ci-local/src` |
 | the `checksums` job           | `script/hash_sources.sh`, the same helper CI calls |

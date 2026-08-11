@@ -3,7 +3,7 @@
 #
 # Simulated GitHub Actions runner for the MTL workflows.
 #
-# The real `build` job runs on a self-hosted `e810` runner with GCC 13, a
+# The real `build` job runs on a self-hosted `e835` runner with GCC 13, a
 # non-root user with passwordless sudo, and every apt dependency already
 # present from earlier runs. A bare `ubuntu:24.04` differs from that in three
 # ways that each produce a failure which has nothing to do with the change
