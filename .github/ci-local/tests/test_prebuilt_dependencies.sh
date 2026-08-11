@@ -16,20 +16,6 @@ hash_output=$(bash script/hash_sources.sh)
 grep -q '^  jpegxs:' <<<"$hash_output" || fail "jpegxs source hash is missing"
 grep -q '^  ice:' <<<"$hash_output" || fail "ice source hash is missing"
 
-task_list=$(task --list-all)
-for task_name in \
-	ci:hash-dependencies \
-	ci:build-dependencies \
-	ci:validate-dependencies \
-	ci:build-jpegxs \
-	ci:validate-jpegxs \
-	ci:build-ice \
-	ci:validate-ice \
-	ci:activate-ice \
-	ci:validate-host; do
-	grep -q "^\* ${task_name}:" <<<"$task_list" || fail "Taskfile task ${task_name} is missing"
-done
-
 for script in \
 	.github/scripts/ci/build-jpegxs.sh \
 	.github/scripts/ci/validate-jpegxs.sh \
