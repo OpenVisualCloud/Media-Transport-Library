@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 
+import importlib
 import json
 import sys
 import unittest
@@ -26,7 +27,7 @@ sys.modules.setdefault("mcp.server", mcp_server_module)
 sys.modules.setdefault("mcp.server.fastmcp", mcp_fastmcp_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import mtl_ci_mcp_server as server
+server = importlib.import_module("mtl_ci_mcp_server")
 
 
 class ProductionCiToolsTest(unittest.TestCase):
