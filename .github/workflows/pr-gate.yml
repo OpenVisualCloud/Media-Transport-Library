@@ -50,7 +50,7 @@ jobs:
   wait-for-build:
     needs: check-for-changes
     runs-on: ubuntu-latest
-    timeout-minutes: 95
+    timeout-minutes: 20
     steps:
       - name: Harden Runner
         if: ${{ needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
@@ -65,4 +65,3 @@ jobs:
         uses: ./.github/actions/wait-for-workflow
         with:
           check_name: build
-          timeout: 5400

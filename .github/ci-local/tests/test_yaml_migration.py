@@ -65,11 +65,25 @@ def main():
         for step in wait_job["steps"]
         if step.get("uses") == "./.github/actions/wait-for-workflow"
     )
-    wait_seconds = int(wait_step["with"]["timeout"])
+    wait_action = yaml.load(
+        (ROOT / ".github/actions/wait-for-workflow/action.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    wait_seconds = int(
+        wait_step.get("with", {}).get(
+            "timeout", wait_action["inputs"]["timeout"]["default"]
+        )
+    )
     wait_job_seconds = int(wait_job["timeout-minutes"]) * 60
-    if wait_job_seconds < wait_seconds + 300:
+    if wait_seconds != 600:
         errors.append(
-            ".github/workflows/pr-gate.yml: wait-for-build job must outlive its poll timeout by five minutes"
+            ".github/workflows/pr-gate.yml: Build execution wait must be 10 minutes"
+        )
+    if wait_job_seconds != 1200:
+        errors.append(
+            ".github/workflows/pr-gate.yml: wait-for-build job must have a 20-minute outer cap"
         )
 
     for path in active_yaml():
