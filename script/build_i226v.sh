@@ -114,11 +114,15 @@ if [[ "${SKIP_DPDK}" == "false" ]]; then
 		echo "DPDK source directory is not a git repository: ${DPDK_SRC_DIR}" >&2
 		exit 1
 	fi
+	if [[ -n "$(git -C "${DPDK_SRC_DIR}" status --porcelain)" ]]; then
+		echo "DPDK source directory has local changes: ${DPDK_SRC_DIR}" >&2
+		echo "Use --force-dpdk-reclone to replace it." >&2
+		exit 1
+	fi
 
 	pushd "${DPDK_SRC_DIR}" >/dev/null
 	git fetch --tags origin
 	git checkout "v${DPDK_VER}"
-	git reset --hard "v${DPDK_VER}"
 
 	if compgen -G "${REPO_DIR}/patches/dpdk/${DPDK_VER}/*.patch" >/dev/null; then
 		git am "${REPO_DIR}"/patches/dpdk/"${DPDK_VER}"/*.patch

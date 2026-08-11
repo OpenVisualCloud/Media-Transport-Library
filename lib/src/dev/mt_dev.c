@@ -1195,7 +1195,7 @@ static int dev_start_port(struct mt_interface* inf) {
   if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
       (inf->drv_info.drv_type == MT_DRV_IGC)) {
     ret = dev_start_timesync(inf);
-    if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
+    if (ret < 0) return ret;
   }
 
   ret = rte_eth_dev_start(port_id);
@@ -1203,12 +1203,14 @@ static int dev_start_port(struct mt_interface* inf) {
     err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
     return ret;
   }
+  inf->status |= MT_IF_STAT_PORT_STARTED;
 
   /* Port start resets IGC timestamp registers; restore them after RX init. */
   if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
       (inf->drv_info.drv_type == MT_DRV_IGC)) {
     ret = dev_start_timesync(inf);
-    if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
+    if (ret < 0) return ret;
+    inf->feature |= MT_IF_FEATURE_TIMESYNC;
   }
 
   if (mt_has_virtio_user(impl, port)) {
@@ -1232,8 +1234,6 @@ static int dev_start_port(struct mt_interface* inf) {
       return ret;
     }
   }
-
-  inf->status |= MT_IF_STAT_PORT_STARTED;
 
   if (mt_has_srss(impl, port)) {
     ret = dev_config_rss_reta(inf);
