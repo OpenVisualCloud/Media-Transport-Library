@@ -59,7 +59,7 @@ test -n "$jpeg_pc"
 rm -rf "${source_dir}/imtl-plugin/build-ci"
 PKG_CONFIG_PATH="$(dirname "$jpeg_pc"):$(dirname "$mtl_pc"):$(dirname "$dpdk_pc")" \
 	meson setup "${source_dir}/imtl-plugin/build-ci" "${source_dir}/imtl-plugin" \
-		--buildtype release --prefix "$stage"
+	--buildtype release --prefix "$stage"
 PKG_CONFIG_PATH="$(dirname "$jpeg_pc"):$(dirname "$mtl_pc"):$(dirname "$dpdk_pc")" \
 	meson compile -C "${source_dir}/imtl-plugin/build-ci"
 meson install -C "${source_dir}/imtl-plugin/build-ci"

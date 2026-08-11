@@ -79,5 +79,8 @@ summary)
 		done
 	} >>"${GITHUB_STEP_SUMMARY:?}"
 	;;
-*) echo "unknown validation workflow operation: ${operation}" >&2; exit 2 ;;
+*)
+	echo "unknown validation workflow operation: ${operation}" >&2
+	exit 2
+	;;
 esac

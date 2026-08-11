@@ -25,7 +25,7 @@ immutable_uses_re="([\"']?uses[\"']?)[[:space:]]*:[[:space:]]*[\"']?(\./.*|docke
 grep -RInE --include='*.yml' --include='*.yaml' "$uses_key_re" \
 	"${policy_root}/workflows" "${policy_root}/actions" |
 	grep -vE "$immutable_uses_re" \
-	>"$violations" || true
+		>"$violations" || true
 if [ -s "$violations" ]; then
 	echo "Active workflow/composite YAML contains mutable external actions:" >&2
 	sed "s|${policy_root}/|.github/|" "$violations" >&2
