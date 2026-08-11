@@ -104,6 +104,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/validate-dependencies.sh
 
+  ci:install-test-dependencies:
+    desc: Install pinned Python dependencies for CI contract tests
+    cmds:
+      - python3 -m pip install --disable-pip-version-check --requirement {{.CI_LOCAL}}/requirements.txt
+
   ci:test-dependencies:
     desc: Run focused prebuilt dependency contract and behavior tests
     cmds:

@@ -73,6 +73,7 @@ jobs:
   # ── Compute source checksums ──
   checksums:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     outputs:
       dpdk: ${{ steps.sums.outputs.dpdk }}
       mtl: ${{ steps.sums.outputs.mtl }}
@@ -89,13 +90,22 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Install test dependencies
+        run: task ci:install-test-dependencies
+
+      - name: Verify dependency contracts
+        run: task ci:test-dependencies
+
       - id: sums
         uses: ./.github/actions/source-checksums
 
   build:
     needs: [wait-for-linter, checksums]
     if: ${{ !cancelled() && needs.checksums.result == 'success' && (needs.wait-for-linter.result == 'success' || needs.wait-for-linter.result == 'skipped') }}
-    runs-on: dpdk
+    runs-on: e810
     timeout-minutes: 60
     outputs:
       jpegxs_cache_key: ${{ steps.keys.outputs.jpegxs_key }}

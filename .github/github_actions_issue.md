@@ -4,7 +4,7 @@
 
 MTL host setup currently has two phases:
 
-1. [The build workflow](./workflows/build.yml) runs once on the `dpdk` runner,
+1. [The build workflow](./workflows/build.yml) runs once on the `e810` fleet runner,
   computes source hashes, builds the required components, and stores them in
   the GitHub Actions cache.
 2. The `validate-host` action runs on each bare-metal runner. It should restore
@@ -25,8 +25,8 @@ content-addressed outputs:
 
 1. Build SVT-JPEG-XS and its MTL bridge plugin in `build.yml`, installed under
   `.local_install/jpegxs` without writing to `/usr/local`.
-2. Build one patched ICE module in `build.yml`. The `dpdk`, `e810`, `e830`, and
-  `e835` runners are maintained on the same kernel ABI, so every validation job
+2. Build one patched ICE module in `build.yml`. The `e810`, `e830`, and `e835`
+  runners are maintained on the same kernel ABI, so every validation job
   consumes the same artifact.
 3. Store each successful output under a deterministic SHA-256 cache key.
 4. Make `validate-host` restore, validate, and, only when required, activate the
@@ -60,10 +60,12 @@ An ICE kernel module is tied to its target kernel. The cache key must include:
 - relevant kernel build configuration or headers; and
 - compiler/toolchain identity when it affects module compatibility.
 
-The common fleet kernel is a runner-provisioning invariant. NIC model is not an
-ICE build input and must not create separate producer jobs or cache entries.
-Validation still checks the module metadata against the running kernel and
-fails clearly if a runner has drifted from the fleet kernel.
+The common validation-fleet kernel is a runner-provisioning invariant. The
+single producer runs on one fleet runner so an unrelated build runner's kernel
+cannot select the artifact ABI. NIC model is not an ICE build input and must
+not create separate producer jobs or cache entries. Validation still checks the
+module metadata against the running kernel and fails clearly if a runner has
+drifted from the fleet kernel.
 
 The build must preserve `ice.ko` in a dedicated artifact directory before
 removing the driver source tree. Validation must reject an artifact when

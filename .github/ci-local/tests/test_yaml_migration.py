@@ -33,6 +33,14 @@ def main():
     tasks = set(taskfile["tasks"])
     errors = []
 
+    build_workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    )
+    if build_workflow["jobs"]["build"]["runs-on"] != "e810":
+        errors.append(
+            ".github/workflows/build.yml: ICE producer must run on the validation fleet"
+        )
+
     for path in active_yaml():
         source = path.read_text(encoding="utf-8")
         document = yaml.safe_load(source)

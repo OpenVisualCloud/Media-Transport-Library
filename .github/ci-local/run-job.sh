@@ -13,7 +13,7 @@
 #
 #   GitHub                              this script
 #   ----------------------------------  ------------------------------------
-#   runs-on: dpdk                       .github/ci-local/Dockerfile
+#   build on runs-on: e810              .github/ci-local/Dockerfile
 #   actions/checkout                    rsync of the working tree
 #   actions/cache (restore)             immutable snapshots under <cache>/.cache-store
 #   job steps                           .github/ci-local/jobs/<job>.sh
@@ -167,10 +167,10 @@ CACHE_STORE="${CACHE_DIR}/.cache-store"
 mkdir -p "${CACHE_STORE}"
 
 # ── the runner: `runs-on:` ──────────────────────────────────────────────────
-# Two kinds of runner, because the workflows use two. `runs-on: dpdk` builds
-# the artifacts; `runs-on: ${{ matrix.nic }}` is a bare-metal host that
-# consumes them and owns a NIC. The second image is the first plus the test
-# tooling, so the expensive layer is shared.
+# Two kinds of runner, because the workflows use two roles. The `build` job
+# produces artifacts on an e810 fleet runner; `runs-on: ${{ matrix.nic }}`
+# consumes them and owns a NIC. Locally the build role does not need a NIC, so
+# only the consumer role uses the bare-metal image and test tooling.
 if [ -z "${RUNNER_KIND}" ]; then
 	case "${JOB}" in
 	validate-host | smoke-tests | gtest) RUNNER_KIND="baremetal" ;;
