@@ -432,11 +432,11 @@ exit 0
 EOF
 	chmod +x "$mock_bin/modprobe"
 
-	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch" \
-		ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi \
-		ICE_SYS_ROOT="$sys_root" ICE_MODULES_ROOT="$modules_root" ICE_ACTIVATION_STAMP="$stamp" \
-		ICE_ACTIVATION_LOCK="${temporary_dir}/rollback.lock" ICE_COMMAND_LOG="$log" \
-		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_NM_COUNT="${temporary_dir}/nm-count" \
+	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch"
+		ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi
+		ICE_SYS_ROOT="$sys_root" ICE_MODULES_ROOT="$modules_root" ICE_ACTIVATION_STAMP="$stamp"
+		ICE_ACTIVATION_LOCK="${temporary_dir}/rollback.lock" ICE_COMMAND_LOG="$log"
+		ICE_ALLOW_UNPRIVILEGED_TEST=1 ICE_TEST_NM_COUNT="${temporary_dir}/nm-count"
 		PATH="$mock_bin:$PATH")
 	export FAKE_MODULE_PATH="$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko"
 	if env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/activate-ice.sh" >/dev/null 2>&1; then

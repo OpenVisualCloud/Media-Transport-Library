@@ -32,8 +32,8 @@ performance)
 	acceptance_dir="${root_dir}/tests/acceptance"
 	if [[ -d ${acceptance_dir}/logs/performance ]]; then
 		"${acceptance_dir}/.venv/bin/python3" "${acceptance_dir}/common/generate_report.py" \
-			"${acceptance_dir}/logs/performance" -o "${acceptance_dir}/performance_report.html" \
-			|| echo "::warning::Performance report generation failed"
+			"${acceptance_dir}/logs/performance" -o "${acceptance_dir}/performance_report.html" ||
+			echo "::warning::Performance report generation failed"
 	else
 		echo "::warning::No performance logs found; skipping report generation"
 	fi

@@ -14,7 +14,10 @@ case ${1:-} in
 --dry-run) dry_run=1 ;;
 --probe) probe_only=1 ;;
 "") ;;
-*) echo "usage: activate-ice.sh [--dry-run|--probe]" >&2; exit 2 ;;
+*)
+	echo "usage: activate-ice.sh [--dry-run|--probe]" >&2
+	exit 2
+	;;
 esac
 
 kernel_release=${ICE_KERNEL_RELEASE:-$(uname -r)}

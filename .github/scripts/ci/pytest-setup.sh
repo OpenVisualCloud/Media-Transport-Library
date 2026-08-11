@@ -22,7 +22,10 @@ pci)
 	e830) pci_device=8086:12d2,8086:12d2 ;;
 	e825) pci_device=8086:579d,8086:579d ;;
 	e835) pci_device=8086:1249,8086:1249 ;;
-	*) echo "Unsupported NIC: ${NIC}" >&2; exit 1 ;;
+	*)
+		echo "Unsupported NIC: ${NIC}" >&2
+		exit 1
+		;;
 	esac
 	printf 'PCI_DEVICE=%s\n' "$pci_device" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
