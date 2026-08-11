@@ -146,7 +146,7 @@ else
 	echo "${changed_files}" | sed 's/^/  /' | head -20
 	[ "$(echo "${changed_files}" | wc -l)" -gt 20 ] && echo "  ... $(($(echo "${changed_files}" | wc -l) - 20)) more"
 fi
-record "pr-gate / check-for-changes" 0 "$(echo "${changed_files}" | grep -c . ) files"
+record "pr-gate / check-for-changes" 0 "$(echo "${changed_files}" | grep -c .) files"
 
 # ── validate-host, per matrix NIC (smoke-tests.yml, gtest-bare-metal.yml) ───
 if [ "${NICS}" != "none" ]; then

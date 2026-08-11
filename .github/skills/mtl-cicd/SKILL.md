@@ -81,6 +81,34 @@ Read the current contracts before editing:
 8. Push only when the user explicitly requested it, all available local gates
    are green, and the pushed commit contains only the intended saved changes.
 
+## Local CI MCP contract
+
+- `.github/mcp/mtl_ci_mcp_server.py` is the agent-facing adapter for the
+  human-runnable scripts under `.github/ci-local/`; every documented MCP tool
+  must exist and invoke the same script or Taskfile entry point documented in
+  `.github/ci-local/README.md`.
+- Keep MCP result formatting on the shared
+  `.github/mcp/mtl_setup_common.py::_summarize_output(name, output, rc=...)`
+  contract. Exercise each wrapper far enough to format its result; syntax-only
+  checks do not catch unassigned result variables or bad helper arity.
+- `ci_test_pr` must summarize `.github/ci-local/test-pr-locally.sh`, and
+  `ci_run_task` must return the shared summary for `task`. These paths are the
+  first focused checks when the local MCP wrappers change.
+
+## Production CI MCP contract
+
+- Use `ci_pr_checks` as the first check after pushing. It queries GitHub through
+  the authenticated `gh` CLI and returns a bounded table, failed checks first.
+- Use `ci_pr_failures` only when checks fail. Query check-run annotations first;
+  fetch failed-job logs only as a fallback, strip runner prefixes, and return a
+  small set of actionable error lines instead of complete workflow logs.
+- Default the repository from `git remote get-url origin`; allow an explicit
+  `owner/repo` override. Validate repository and PR inputs before invoking `gh`.
+- Production tools are read-only. They may inspect or wait for checks but never
+  push, rerun, comment, merge, or expose authentication details.
+- Verify production wrappers with stubbed `gh` output before deployment, then
+  restart the MCP server and call the deployed tool against the target PR.
+
 ## Failure policy
 
 - Fail early with an actionable compatibility error. Never continue with an
@@ -90,3 +118,11 @@ Read the current contracts before editing:
 - Never print secrets or put them in command lines, caches, or artifacts.
 - If hardware-only validation is unavailable locally, report that gate clearly
   and do not represent container simulation as physical-host validation.
+
+## eBPF/XDP install contract
+
+- Install bundled libbpf into `/usr/local/lib/$(cc -dumpmachine)`, not libbpf's
+  `/usr/local/lib64` default. Ubuntu's `pkg-config` does not search the latter,
+  so CI can install `libbpf.pc` successfully and still fail `--require-xdp`.
+- Run `ldconfig` after installing xdp-tools and libbpf, then verify the pinned
+  versions through the same `ebpf:check REQUIRE_XDP=1` path production uses.

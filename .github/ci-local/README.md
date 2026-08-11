@@ -32,11 +32,25 @@ The common entry points are also [Taskfile](../../Taskfile.yml) tasks, so a
 local run and a runner run invoke the same command: `task ci:test-pr`,
 `task ci:build`, `task ci:validate-host NIC=e830`, `task ebpf:check`.
 
-An agent can drive all of it through the `mtl-ci-local` MCP server
-(`.github/mcp/run_ci_server.sh`): `ci_test_pr`, `ci_run_job`, `ci_cache_status`,
-`ci_reproduce_cache_poisoning`, `ci_check_ebpf`, `ci_list_tasks`, `ci_run_task`,
-`ci_last_log`, `ci_diagnostics`. Every tool caps its output and none of them
-talk to GitHub — no pushes, re-runs or comments.
+An agent can drive local jobs and inspect production checks through the
+`mtl-ci-local` MCP server (`.github/mcp/run_ci_server.sh`). Local tools include
+`ci_test_pr`, `ci_run_job`, `ci_cache_status`, `ci_check_ebpf`, `ci_list_tasks`,
+`ci_run_task`, `ci_last_log`, and `ci_diagnostics`. `ci_pr_checks` and
+`ci_pr_failures` use the authenticated `gh` CLI to inspect a pushed PR. All
+results are bounded; the production tools are read-only and never push, rerun,
+comment, or merge.
+
+The MCP layer is only an adapter. `ci_test_pr` calls
+`test-pr-locally.sh`, and `ci_run_task` calls the root Taskfile.
+Changes to `.github/mcp/mtl_ci_mcp_server.py` must exercise each affected
+wrapper through result formatting; `py_compile` alone cannot detect failures
+such as using a summary variable before assignment or calling the shared
+summary helper with the wrong signature.
+
+For pushed branches, call `ci_pr_checks` first. If it reports failures, call
+`ci_pr_failures`; it prefers check-run annotations and falls back to a bounded,
+prefix-stripped extract from failed-job logs. This avoids loading entire GitHub
+Actions logs into the agent context.
 
 ## What `test-pr-locally.sh` covers
 
@@ -160,6 +174,11 @@ Reproducible with the commands above.
    `libgstmtl_common.so: cannot open shared object file`. Fixed in the action;
    `jobs/validate-host.sh` asserts `gst-inspect-1.0 mtl_st20p_tx` succeeds so it
    cannot regress silently.
+1. **libbpf installed successfully but was invisible to `pkg-config`.** Its
+   upstream default is `/usr/local/lib64`, which Ubuntu does not include in the
+   default pkg-config search path. `build_ebpf_xdp.sh` installs bundled libbpf
+   into `/usr/local/lib/$(cc -dumpmachine)` and refreshes `ldconfig`, matching
+   the multiarch path used by the rest of the job.
 
 ## Adding a job
 
