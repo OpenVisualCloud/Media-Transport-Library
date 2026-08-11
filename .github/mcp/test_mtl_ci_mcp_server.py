@@ -6,6 +6,24 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import ModuleType
+
+
+class FastMCP:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    def tool(self):
+        return lambda function: function
+
+
+mcp_module = ModuleType("mcp")
+mcp_server_module = ModuleType("mcp.server")
+mcp_fastmcp_module = ModuleType("mcp.server.fastmcp")
+mcp_fastmcp_module.FastMCP = FastMCP
+sys.modules.setdefault("mcp", mcp_module)
+sys.modules.setdefault("mcp.server", mcp_server_module)
+sys.modules.setdefault("mcp.server.fastmcp", mcp_fastmcp_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mtl_ci_mcp_server as server
@@ -60,6 +78,7 @@ class ProductionCiToolsTest(unittest.TestCase):
 
         server._run_rc = fake_run
         result = server.ci_pr_failures(1, "o/r")
+        self.assertIn("Process completed with exit code 201", result)
         self.assertIn("asm/types.h", result)
 
     def test_failure_count_and_stderr_are_bounded(self):
