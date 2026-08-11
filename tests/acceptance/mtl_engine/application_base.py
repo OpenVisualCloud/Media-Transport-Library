@@ -31,6 +31,46 @@ MTL_ENCODER_PLUGIN_MAP = {
     "libopenh264": "libst_plugin_st22_avcodec.so",
 }
 
+_PACING_LOG_NAMES = {
+    "auto": "auto",
+    "rl": "ratelimit",
+    "tsc": "tsc",
+    "tsn": "tsn",
+    "ptp": "ptp",
+    "be": "be",
+    "tsc_narrow": "tsc_narrow",
+}
+_SESSION_PACING_RE = re.compile(r"tv_attach\((\d+)\),.*?pacing way:\s*(\S+)")
+_PACING_DOWNGRADE_MARKERS = (
+    "fallback to tsc as rl fail",
+    "fallback to tsc as rl init fail",
+    "use tsc as shared tx queue",
+    "different pacing detected, all set to tsc",
+)
+_SRSS_INIT_RE = re.compile(r"mt_srss_init\((\d+)\), succ with shared rss mode")
+_SRSS_RX_RE = re.compile(r"srss_stat\((\d+),(\d+)\), pkts rx (\d+)")
+_SRSS_STREAM_FLOOR = 10_000
+_PORT_TYPE_NAMES = {
+    0: "err",
+    1: "vf",
+    2: "pf",
+    3: "dpdk_af_xdp",
+    4: "dpdk_af_pkt",
+    5: "kernel_socket",
+    6: "native_af_xdp",
+}
+_PORT_TYPE_RE = re.compile(r"mt_dev_if_init\((\d+)\), port_id \d+ port_type (\d+)")
+_VIRTIO_RE = re.compile(
+    r"dev_if_init_virtio_user\((\d+)\), succ, kernel interface (\S+)"
+)
+_AF_XDP_COPY_MARKERS = (
+    "user special to copy mode only",
+    "xsk create with zero copy fail",
+)
+_RX_TIMING_RE = re.compile(
+    r"rv_tp_stat\((\d+),(\d+)\),\s*COMPLIANT NARROW (\d+) WIDE (\d+) FAILED (\d+)"
+)
+
 
 def mtl_plugin_check_cmd(plugin_so: str) -> str:
     """Return a shell test that succeeds when *plugin_so* is loadable on the host.
@@ -204,15 +244,15 @@ class Application(ABC):
             logger.info("validate_results soft-fail (fail_on_error=False): %s", msg)
         raise AssertionError(msg)
 
-    def _resolve_capture_dst_ip(self):
-        """Return the destination IP that netsniff should filter on, or ``None``.
+    def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
+        """Return the destination IPs netsniff should filter on, or empty.
 
         Subclasses override this when their config schema exposes the TX
-        destination(s). The default returns ``None``, which makes
+        destination(s). The default returns an empty tuple, which makes
         :meth:`ComplianceSession.arm() <mtl_engine.pcap_compliance.ComplianceSession.arm>`
         skip the capture with a warning rather than raising.
         """
-        return None
+        return ()
 
     def capture_intent(self) -> CaptureIntent:
         """Build the :class:`CaptureIntent` a compliance session needs to arm/evaluate.
@@ -227,7 +267,7 @@ class Application(ABC):
             else 0
         )
         return CaptureIntent(
-            dst_ip=self._resolve_capture_dst_ip(),
+            dst_ips=self._resolve_capture_dst_ips(),
             capture_time=self.params.get("test_time", 30),
             settle_time=self.params.get("capture_settle_time", CAPTURE_SETTLE_TIME),
             ptp_wait=ptp_wait,
@@ -237,7 +277,21 @@ class Application(ABC):
             height=self.params.get("height"),
             transport_format=self.params.get("transport_format"),
             framerate=self.params.get("framerate"),
+            expected_video_streams=self._expected_video_streams(),
         )
+
+    def _expected_video_streams(self) -> int:
+        """Return the number of configured ST20 video streams."""
+        sessions = self.params.get("sessions") or []
+        if sessions:
+            return sum(
+                int(session.get("replicas", 1))
+                for session in sessions
+                if session.get("session_type") == "st20p"
+            )
+        if self.params.get("session_type") == "st20p":
+            return int(self.params.get("replicas", 1))
+        return 0
 
     def integrity_intent(self, test_repo_path: str, host) -> IntegrityIntent:
         """Build the :class:`IntegrityIntent` an ``IntegritySession`` needs to evaluate.
@@ -333,6 +387,157 @@ class Application(ABC):
                 seen = True
                 total += int(m.group(1))
         return total if seen else -1
+
+    def _session_pacing_ways(self) -> list[str]:
+        """Return final per-session pacing ways in attach order."""
+        return [
+            match.group(2)
+            for match in _SESSION_PACING_RE.finditer(self.last_output or "")
+        ]
+
+    def assert_pacing_way(self, expected: str, *, allow_downgrade: bool = False):
+        """Assert every TX video session resolved to ``expected``."""
+        if expected not in _PACING_LOG_NAMES:
+            raise ValueError(f"unknown pacing_way {expected!r}")
+
+        ways = self._session_pacing_ways()
+        assert ways, (
+            "no 'tv_attach(...) pacing way:' line in application output; "
+            "the session did not attach or info logging is disabled"
+        )
+        if expected == "auto":
+            return ways
+
+        want = _PACING_LOG_NAMES[expected]
+        wrong = [way for way in ways if way != want]
+        downgrades = [
+            marker
+            for marker in _PACING_DOWNGRADE_MARKERS
+            if marker in (self.last_output or "")
+        ]
+        assert not wrong, (
+            f"requested pacing_way={expected!r} but session(s) resolved to "
+            f"{wrong}; downgrade markers: {downgrades or 'none'}"
+        )
+        if expected in ("rl", "tsn") and not allow_downgrade:
+            assert not downgrades, (
+                f"pacing_way={expected!r} resolved at attach but MTL reported "
+                f"a downgrade: {downgrades}"
+            )
+        return ways
+
+    def assert_rss_mode(self, expected: str):
+        """Assert the RX dispatch path matches ``expected``."""
+        if expected not in ("none", "l3", "l3_l4"):
+            raise ValueError(f"unknown rss_mode {expected!r}")
+
+        ports = [
+            int(match.group(1))
+            for match in _SRSS_INIT_RE.finditer(self.last_output or "")
+        ]
+        totals: dict[int, int] = {}
+        for match in _SRSS_RX_RE.finditer(self.last_output or ""):
+            port = int(match.group(1))
+            totals[port] = totals.get(port, 0) + int(match.group(3))
+
+        if expected == "none":
+            assert not ports, (
+                f"rss_mode='none' used shared RSS on port(s) {ports} " f"(rx {totals})"
+            )
+            return totals
+
+        assert (
+            ports
+        ), f"rss_mode={expected!r} requested but shared RSS did not initialize"
+        assert max(totals.values(), default=0) >= _SRSS_STREAM_FLOOR, (
+            f"rss_mode={expected!r} initialized shared RSS on {ports}, but the "
+            f"stream did not traverse it (rx {totals})"
+        )
+        return totals
+
+    def assert_port_types(self, expected: list[str | None]):
+        """Assert each port resolved to the requested backend."""
+        resolved = {
+            int(match.group(1)): _PORT_TYPE_NAMES.get(
+                int(match.group(2)), f"unknown({match.group(2)})"
+            )
+            for match in _PORT_TYPE_RE.finditer(self.last_output or "")
+        }
+        assert resolved, "no resolved port types found in application output"
+        for port, want in enumerate(expected):
+            if want is None:
+                continue
+            assert resolved.get(port) == want, (
+                f"requested {want!r} on port {port}, but MTL resolved "
+                f"{resolved.get(port)!r} (all ports: {resolved})"
+            )
+        return resolved
+
+    def assert_virtio_user(self, ports: list[int]):
+        """Assert virtio-user initialized on each requested port."""
+        initialized = [
+            int(match.group(1)) for match in _VIRTIO_RE.finditer(self.last_output or "")
+        ]
+        missing = [port for port in ports if port not in initialized]
+        assert not missing, (
+            f"virtio-user did not initialize on port(s) {missing}; "
+            f"initialized on {initialized or 'none'}"
+        )
+        return initialized
+
+    def assert_af_xdp_zero_copy(self, expected: bool) -> None:
+        """Assert whether native AF_XDP used zero-copy mode."""
+        output = self.last_output or ""
+        markers = [marker for marker in _AF_XDP_COPY_MARKERS if marker in output]
+        if expected:
+            assert not markers, f"AF_XDP fell back to copy mode: {markers}"
+        else:
+            assert (
+                _AF_XDP_COPY_MARKERS[0] in output
+            ), "AF_XDP copy mode was requested but its marker was absent"
+
+    def assert_tsn_unsupported(self) -> None:
+        """Assert TSN failed because the port lacks launch-time support."""
+        assert self.last_return_code not in (
+            0,
+            None,
+        ), "TSN initialization unexpectedly succeeded"
+        marker = "this port not support tsn launch time"
+        assert marker in (self.last_output or ""), (
+            "TSN failed without the unsupported-launch-time error; return code "
+            f"was {self.last_return_code}"
+        )
+
+    def assert_rx_timing_compliance(
+        self, expected_sessions: int = 1
+    ) -> dict[tuple[int, int], dict[str, int]]:
+        """Assert every reported ST20 RX timing interval is narrow compliant."""
+        totals: dict[tuple[int, int], dict[str, int]] = {}
+        for match in _RX_TIMING_RE.finditer(self.last_output or ""):
+            key = (int(match.group(1)), int(match.group(2)))
+            counts = totals.setdefault(key, {"narrow": 0, "wide": 0, "failed": 0})
+            counts["narrow"] += int(match.group(3))
+            counts["wide"] += int(match.group(4))
+            counts["failed"] += int(match.group(5))
+
+        assert totals, (
+            "rx_timing_parser was enabled but no rv_tp_stat compliance results "
+            "were found in application output"
+        )
+        assert len(totals) == expected_sessions, (
+            f"rx_timing_parser reported {len(totals)} video session(s), but "
+            f"{expected_sessions} were expected: {totals}"
+        )
+        non_narrow = {
+            session: counts
+            for session, counts in totals.items()
+            if counts["narrow"] == 0 or counts["wide"] or counts["failed"]
+        }
+        assert not non_narrow, (
+            "MTL RX timing parser did not report narrow compliance for every "
+            f"video session: {non_narrow}"
+        )
+        return totals
 
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Hook method called before execution to perform framework-specific setup.
@@ -578,8 +783,16 @@ class Application(ABC):
             validate_ok = self._dispatch_validate(fail_on_error)
         except AssertionError as e:
             validate_ok, validate_exc = False, e
-        if fail_on_error and (compliance_exc or integrity_exc or validate_exc):
-            raise compliance_exc or integrity_exc or validate_exc
+        failures = [
+            exc
+            for exc in (compliance_exc, integrity_exc, validate_exc)
+            if exc is not None
+        ]
+        if fail_on_error and len(failures) == 1:
+            raise failures[0]
+        if fail_on_error and failures:
+            details = "\n".join(f"- {failure}" for failure in failures)
+            raise AssertionError(f"Multiple validation failures:\n{details}")
         return compliance_ok and integrity_ok and validate_ok
 
     def _run_proc_group(

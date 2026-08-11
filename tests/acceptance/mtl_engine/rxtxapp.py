@@ -749,18 +749,34 @@ class RxTxApp(Application):
                     config["rx_sessions"][0]["interface"] = [0, 1]
                 config["tx_sessions"] = []
             else:
-                # Loopback redundant (less common)
-                config["interfaces"][0]["ip"] = source_ip or ""
-                config["interfaces"][1]["ip"] = source_ip_r or ""
+                # Loopback redundant. TX and RX need their own port pair --
+                # sharing one pair means each leg arrives on the port that
+                # sent it, and nothing is received.
+                rx_offset = 2 if len(nic_port_list) >= 4 else 0
+                config["interfaces"] = [
+                    {"name": nic_port_list[0], "ip": source_ip or ""},
+                    {"name": nic_port_list[1], "ip": source_ip_r or ""},
+                ]
+                if rx_offset:
+                    config["interfaces"] += [
+                        {"name": nic_port_list[2], "ip": ip_pools.rx[0]},
+                        {"name": nic_port_list[3], "ip": ip_pools.rx_r[0]},
+                    ]
                 if config["tx_sessions"] and len(config["tx_sessions"]) > 0:
                     config["tx_sessions"][0]["dip"] = [dest_ip or "", dest_ip_r or ""]
                     config["tx_sessions"][0]["interface"] = [0, 1]
                 if config["rx_sessions"] and len(config["rx_sessions"]) > 0:
-                    config["rx_sessions"][0]["ip"] = [
-                        source_ip or "",
-                        source_ip_r or "",
+                    # Multicast receivers join the groups; unicast receivers
+                    # filter on the sender addresses.
+                    config["rx_sessions"][0]["ip"] = (
+                        [dest_ip or "", dest_ip_r or ""]
+                        if test_mode == "multicast"
+                        else [source_ip or "", source_ip_r or ""]
+                    )
+                    config["rx_sessions"][0]["interface"] = [
+                        rx_offset,
+                        rx_offset + 1,
                     ]
-                    config["rx_sessions"][0]["interface"] = [0, 1]
 
             logger.info(
                 f"Redundant mode: interfaces={[i['name'] for i in config['interfaces']]}, "
@@ -1106,6 +1122,14 @@ class RxTxApp(Application):
         def _fail(msg: str):
             self._fail_validation(msg, fail_on_error)
 
+        def _validate_rx_timing() -> None:
+            if not self.params.get("rx_timing_parser"):
+                return
+            try:
+                self.assert_rx_timing_compliance(self._expected_rx_timing_results())
+            except AssertionError as error:
+                _fail(str(error))
+
         try:
             if not self.config:
                 _fail("RxTxApp validate_results called without config")
@@ -1122,6 +1146,7 @@ class RxTxApp(Application):
                 for stype in all_types:
                     if not self._validate_single_session_type(stype, output_lines):
                         _fail(f"{stype} validation failed (multi-session)")
+                _validate_rx_timing()
                 logger.info(f"RxTxApp multi-session validation passed for {all_types}")
                 return True
 
@@ -1138,6 +1163,8 @@ class RxTxApp(Application):
             #    _validate_single_session_type.
             if not self._validate_single_session_type(session_type, output_lines):
                 _fail(f"{session_type} validation failed")
+
+            _validate_rx_timing()
 
             logger.info(f"RxTxApp validation passed for {session_type}")
             return True
@@ -1220,16 +1247,34 @@ class RxTxApp(Application):
                     types.append(stype)
         return types
 
-    def _resolve_capture_dst_ip(self):
-        """Return the destination IP for netsniff capture, or ``None``.
+    def _expected_video_streams(self) -> int:
+        """Return ST20 wire-stream count from the generated TX config."""
+        config = self.config or {}
+        session_groups = config.get("tx_sessions") or config.get("rx_sessions") or []
+        return sum(
+            int(session.get("replicas", 1))
+            * max(1, len(group.get("dip") or group.get("interface") or []))
+            for group in session_groups
+            for session in group.get("st20p") or []
+        )
+
+    def _expected_rx_timing_results(self) -> int:
+        """Return expected ``rv_tp_stat(session, port)`` result count."""
+        return sum(
+            int(session.get("replicas", 1)) * max(1, len(group.get("interface") or []))
+            for group in (self.config or {}).get("rx_sessions") or []
+            for session in group.get("st20p") or []
+        )
+
+    def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
+        """Return the destination IPs for netsniff capture, possibly empty.
 
         RxTxApp stores TX destinations under ``config['tx_sessions'][i]['dip']``
-        (a list). We use the first TX session's first DIP as the capture filter
-        target; that matches the single-stream case the capture path is
-        designed for. Returns ``None`` if no TX session / DIP is configured,
-        which the base class treats as "skip capture".
+        (a list). All of the first TX session's DIPs are captured: an ST 2022-7
+        session has two, and each copy must independently satisfy ST 2110-21
+        because a receiver may be listening to either one alone.
         """
         tx_sessions = (self.config or {}).get("tx_sessions") or []
-        if tx_sessions and tx_sessions[0].get("dip"):
-            return tx_sessions[0]["dip"][0]
-        return None
+        if tx_sessions:
+            return tuple(tx_sessions[0].get("dip") or ())
+        return ()

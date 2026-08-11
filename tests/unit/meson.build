@@ -88,6 +88,7 @@ unit_sources = [
   'ptp/ptp_harness.c',
   'ptp/servo_test.cpp',
   'ptp/adjust_delta_test.cpp',
+  'ptp/user_sync_test.cpp',
   'ptp/delta_math_test.cpp',
   'ptp/t3_test.cpp',
   'main.cpp',

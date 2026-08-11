@@ -52,6 +52,8 @@ UNIVERSAL_PARAMS = {
     "payload_type": 112,  # RTP payload type
     "session_type": "st20p",  # Session type (st20p, st22p, st30p, video, audio, etc.)
     "direction": None,  # Direction: tx, rx, or None (both for RxTxApp)
+    "tx_application": None,  # Application providing the transmit endpoint
+    "rx_application": None,  # Application providing the receive endpoint
     "replicas": 1,  # Number of session replicas
     "framebuffer_count": None,  # Frame buffer count (RX video: rx_video_fb_cnt)
     # Quality and encoding parameters
@@ -75,6 +77,15 @@ UNIVERSAL_PARAMS = {
     "display": False,  # Enable display output
     "enable_ptp": False,  # Enable PTP synchronization
     "virtio_user": False,  # Enable virtio-user mode
+    "afxdp_zc_disable": False,  # Disable AF_XDP zero-copy
+    "shared_tx_queues": False,  # Share TX queues between sessions
+    "shared_rx_queues": False,  # Share RX queues between sessions
+    "rx_burst_size": None,  # RX burst depth
+    "static_pad": False,  # Send pad packets from a static buffer
+    "no_bulk": False,  # Disable bulk mbuf allocation
+    "random_src_port": False,  # Randomise the UDP source port
+    "hdr_split": False,  # Split RX header and payload into separate queues
+    "rx_video_fb_cnt": None,  # RX video framebuffer count
     # RxTxApp specific parameters
     "config_file": None,  # JSON config file path
     "lcores": None,  # DPDK lcore list (e.g., "28,29,30,31")
@@ -104,8 +115,9 @@ UNIVERSAL_PARAMS = {
     "tsc": False,  # Force TSC pacing
     "pacing_way": None,  # Pacing way (auto, rl, tsc, tsc_narrow, ptp, tsn)
     "shaping": None,  # ST21 shaping type (narrow, wide)
-    "vrx": None,  # ST21 vrx value
-    "ts_first_pkt": False,  # Set RTP timestamp at first packet egress
+    "start_vrx": None,  # ST21 start VRX buffer level
+    "pad_interval": None,  # Packet interval for the padding tasklet
+    "timestamp_epoch": False,  # Derive RTP timestamp from the epoch
     "ts_delta_us": None,  # RTP timestamp delta in microseconds
     "mono_pool": False,  # Use mono pool for all queues
     "tasklet_thread": False,  # Run tasklet under thread

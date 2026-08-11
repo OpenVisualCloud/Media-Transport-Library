@@ -30,6 +30,7 @@
 struct ut_ptp_ctx {
   struct mtl_main_impl impl;
   struct mt_ptp_impl ptp;
+  uint64_t user_time_ns;
 };
 
 /* pull in the public header after the struct so the opaque typedef resolves */
@@ -39,6 +40,20 @@ struct ut_ptp_ctx {
  * overrides below; -Wl,--allow-multiple-definition lets them win over libdpdk. */
 static int ut_g_read_tx_ret = 0;
 static uint64_t ut_g_read_tx_ns = 0;
+static uint64_t ut_g_raw_time_ns = 0;
+
+int rte_eth_timesync_read_time(uint16_t port_id, struct timespec* timestamp) {
+  (void)port_id;
+  timestamp->tv_sec = ut_g_raw_time_ns / NS_PER_S;
+  timestamp->tv_nsec = ut_g_raw_time_ns % NS_PER_S;
+  return 0;
+}
+
+int rte_eth_timesync_adjust_time(uint16_t port_id, int64_t delta) {
+  (void)port_id;
+  ut_g_raw_time_ns += delta;
+  return 0;
+}
 
 int rte_eth_timesync_read_tx_timestamp(uint16_t port_id, struct timespec* timestamp) {
   (void)port_id;
@@ -134,10 +149,44 @@ void ut_ptp_set_last_sync_ts(ut_ptp_ctx* ctx, uint64_t last_sync_ts) {
   ctx->ptp.last_sync_ts = last_sync_ts;
 }
 
+void ut_ptp_set_raw_time(uint64_t raw_ns) {
+  ut_g_raw_time_ns = raw_ns;
+}
+
+static uint64_t ut_ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
+  ut_ptp_ctx* ctx = impl->user_para.priv;
+  MTL_MAY_UNUSED(port);
+  return ctx->user_time_ns;
+}
+
+void ut_ptp_set_user_time(ut_ptp_ctx* ctx, uint64_t user_ns) {
+  ctx->user_time_ns = user_ns;
+  ctx->impl.user_para.priv = ctx;
+  ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_ptp_from_user;
+}
+
 /* ── code under test ──────────────────────────────────────────────────── */
 
 void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct) {
   ptp_adjust_delta(&ctx->ptp, delta, error_correct);
+}
+
+void ut_ptp_sync_from_user(ut_ptp_ctx* ctx) {
+  ctx->ptp.no_timesync = false;
+  ptp_sync_from_user(&ctx->impl, &ctx->ptp);
+}
+
+uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns) {
+  struct ut_timestamp_mbuf {
+    struct rte_mbuf mbuf;
+    rte_mbuf_timestamp_t timestamp;
+  } timestamp_mbuf = {0};
+
+  ctx->impl.ptp[MTL_PORT_P] = &ctx->ptp;
+  ctx->impl.dynfield_offset = offsetof(struct ut_timestamp_mbuf, timestamp);
+  ctx->impl.inf[MTL_PORT_P].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+  timestamp_mbuf.timestamp = raw_ns;
+  return mt_mbuf_time_stamp(&ctx->impl, &timestamp_mbuf.mbuf, MTL_PORT_P);
 }
 
 void ut_ptp_run_t3_handler(ut_ptp_ctx* ctx) {
