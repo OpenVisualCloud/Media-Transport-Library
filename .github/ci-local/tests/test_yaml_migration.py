@@ -33,6 +33,20 @@ def main():
     tasks = set(taskfile["tasks"])
     errors = []
 
+    required_tasks = {
+        "ci:hash-dependencies",
+        "ci:build-dependencies",
+        "ci:validate-dependencies",
+        "ci:build-jpegxs",
+        "ci:validate-jpegxs",
+        "ci:build-ice",
+        "ci:validate-ice",
+        "ci:activate-ice",
+        "ci:validate-host",
+    }
+    for task in sorted(required_tasks - tasks):
+        errors.append(f"Taskfile.yml: required task {task} is missing")
+
     build_workflow = yaml.safe_load(
         (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     )
