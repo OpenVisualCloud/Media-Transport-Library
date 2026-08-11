@@ -21,15 +21,9 @@
 
 static mtl_handle g_mtl_shared_handle = NULL;
 static int g_mtl_ref_cnt;
-
-/* Logged every time the built-in PTP client receives a valid PTP_DELAY_RESP
- * from the grandmaster (only fires when MTL_FLAG_PTP_ENABLE is set). priv is
- * the AVFormatContext passed as mtl_init_params.priv below. */
-static void mtl_ptp_sync_notify_cb(void* priv, struct mtl_ptp_sync_notify_meta* meta) {
-  AVFormatContext* ctx = (AVFormatContext*)priv;
-  info(ctx, "%s, PTP sync: master_utc_offset=%d delta=%" PRId64 "ns\n", __func__,
-       meta->master_utc_offset, meta->delta);
-}
+static int g_mtl_ptp_enable;
+static int g_mtl_ptp_pi;
+static int g_mtl_ptp_unicast;
 
 enum st_fps framerate_to_st_fps(AVRational framerate) {
   double fps = (double)framerate.num / (double)framerate.den;
@@ -41,7 +35,18 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
   struct mtl_init_params p;
   mtl_handle handle = NULL;
 
+  if (!args->ptp_enable && (args->ptp_pi || args->ptp_unicast)) {
+    err(ctx, "%s, ptp_pi and ptp_unicast require ptp_enable\n", __func__);
+    return NULL;
+  }
+
   if (g_mtl_shared_handle) {
+    if ((args->ptp_enable && !g_mtl_ptp_enable) ||
+        (args->ptp_pi && !g_mtl_ptp_pi) ||
+        (args->ptp_unicast && !g_mtl_ptp_unicast)) {
+      err(ctx, "%s, shared handle does not support requested PTP options\n", __func__);
+      return NULL;
+    }
     *idx = g_mtl_ref_cnt;
     g_mtl_ref_cnt++;
     info(ctx, "%s, shared handle %p ref cnt %d\n", __func__, g_mtl_shared_handle,
@@ -52,18 +57,19 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
   memset(&p, 0, sizeof(p));
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
-    if (!args->port[i]) break;
-    snprintf(p.port[i], sizeof(p.port[i]), "%s", args->port[i]);
-    p.pmd[i] = mtl_pmd_by_port_name(p.port[i]);
+    if (!args->port[i]) continue;
+    int port = p.num_ports;
+    snprintf(p.port[port], sizeof(p.port[port]), "%s", args->port[i]);
+    p.pmd[port] = mtl_pmd_by_port_name(p.port[port]);
     if (args->sip[i]) {
-      int ret = inet_pton(AF_INET, args->sip[i], p.sip_addr[i]);
+      int ret = inet_pton(AF_INET, args->sip[i], p.sip_addr[port]);
       if (ret != 1) {
         err(ctx, "%s, %d sip %s is not valid ip address\n", __func__, i, args->sip[i]);
         return NULL;
       }
     }
-    p.tx_queues_cnt[i] = args->tx_queues_cnt[i];
-    p.rx_queues_cnt[i] = args->rx_queues_cnt[i];
+    p.tx_queues_cnt[port] = args->tx_queues_cnt[i];
+    p.rx_queues_cnt[port] = args->rx_queues_cnt[i];
     p.num_ports++;
   }
 
@@ -78,8 +84,6 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
     p.pacing = ST21_TX_PACING_WAY_PTP;
     if (args->ptp_pi) p.flags |= MTL_FLAG_PTP_PI;
     if (args->ptp_unicast) p.flags |= MTL_FLAG_PTP_UNICAST_ADDR;
-    p.priv = ctx;
-    p.ptp_sync_notify = mtl_ptp_sync_notify_cb;
     info(ctx, "%s, PTP enabled (pi=%d unicast=%d)\n", __func__, args->ptp_pi,
          args->ptp_unicast);
   }
@@ -107,6 +111,9 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
   }
 
   g_mtl_shared_handle = handle;
+  g_mtl_ptp_enable = args->ptp_enable;
+  g_mtl_ptp_pi = args->ptp_pi;
+  g_mtl_ptp_unicast = args->ptp_unicast;
   *idx = 0;
   g_mtl_ref_cnt++;
   info(ctx, "%s, handle %p ref cnt %d\n", __func__, handle, g_mtl_ref_cnt);
@@ -125,6 +132,9 @@ int mtl_instance_put(AVFormatContext* ctx, mtl_handle handle) {
     info(ctx, "%s, ref cnt reach zero, uninit mtl device\n", __func__);
     mtl_uninit(handle);
     g_mtl_shared_handle = NULL;
+    g_mtl_ptp_enable = 0;
+    g_mtl_ptp_pi = 0;
+    g_mtl_ptp_unicast = 0;
   }
 
   return 0;

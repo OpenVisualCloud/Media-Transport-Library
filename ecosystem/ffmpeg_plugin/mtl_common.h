@@ -309,10 +309,9 @@ typedef struct StDevArgs {
   int tx_queues_cnt[MTL_PORT_MAX];
   int rx_queues_cnt[MTL_PORT_MAX];
   char* dma_dev;
-  /* PTP hardware timing (built-in MTL PTP client). See MTL_FLAG_PTP_* in mtl_api.h. */
-  int ptp_enable;  /* enable built-in PTP + PTP-paced TX (ST21_TX_PACING_WAY_PTP) */
-  int ptp_pi;      /* use PI controller for built-in PTP (PF only) */
-  int ptp_unicast; /* use unicast address for PTP_DELAY_REQ message */
+  int ptp_enable;
+  int ptp_pi;
+  int ptp_unicast;
 } StDevArgs;
 
 typedef struct StTxSessionPortArgs {
