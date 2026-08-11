@@ -273,18 +273,16 @@ def ci_pr_failures(
             for item in failures
             if not GENERIC_ANNOTATION_RE.fullmatch(item.get("message", "").strip())
         ]
+        for annotation in failures[:log_lines]:
+            location = annotation.get("path", "")
+            if annotation.get("start_line"):
+                location += f":{annotation['start_line']}"
+            message = annotation.get("message", "").strip()[:500]
+            sections.append(f"- `{location}`: {message}")
+        omitted_annotations = len(failures) - log_lines
+        if omitted_annotations > 0:
+            sections.append(f"- {omitted_annotations} additional annotations omitted.")
         if actionable_failures:
-            for annotation in actionable_failures[:log_lines]:
-                location = annotation.get("path", "")
-                if annotation.get("start_line"):
-                    location += f":{annotation['start_line']}"
-                message = annotation.get("message", "").strip()[:500]
-                sections.append(f"- `{location}`: {message}")
-            omitted_annotations = len(actionable_failures) - log_lines
-            if omitted_annotations > 0:
-                sections.append(
-                    f"- {omitted_annotations} additional annotations omitted."
-                )
             sections.append("")
             continue
 
