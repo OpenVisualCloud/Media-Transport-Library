@@ -112,6 +112,55 @@ class ProductionCiToolsTest(unittest.TestCase):
         self.assertNotIn("ghp_secret", error)
         self.assertIn("exit 1", error)
 
+    def test_omitted_actionable_annotation_does_not_suppress_log(self):
+        annotations = [
+            {
+                "annotation_level": "failure",
+                "path": ".github",
+                "start_line": index,
+                "message": "Process completed with exit code 1.",
+            }
+            for index in range(1, 9)
+        ]
+        annotations.append(
+            {
+                "annotation_level": "failure",
+                "path": "manager/meson.build",
+                "start_line": 69,
+                "message": "fatal error: asm/types.h not found",
+            }
+        )
+
+        def fake_run(command, **_kwargs):
+            args = command[1:] if command[0] == "gh" else command
+            if args[:2] == ["pr", "view"]:
+                return 0, json.dumps({"headRefOid": "abc", "url": "https://example/pr"})
+            if args[0] == "api" and "/commits/" in args[-1]:
+                return 0, json.dumps(
+                    {
+                        "check_runs": [
+                            {
+                                "id": 7,
+                                "name": "build",
+                                "conclusion": "failure",
+                                "details_url": "https://github.com/o/r/actions/runs/42/job/7",
+                            }
+                        ]
+                    }
+                )
+            if args[0] == "api":
+                return 0, json.dumps(annotations)
+            if args[:2] == ["run", "view"] and "--json" in args:
+                return 0, json.dumps({"jobs": []})
+            if args[:2] == ["run", "view"]:
+                return 0, "build\tstep\tfatal error: asm/types.h not found\n"
+            raise AssertionError(args)
+
+        server._run_rc = fake_run
+        result = server.ci_pr_failures(1, "o/r", log_lines=8)
+        self.assertIn("1 additional annotations omitted", result)
+        self.assertIn("asm/types.h", result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -268,12 +268,13 @@ def ci_pr_failures(
             if not annotation_error and isinstance(annotations, list)
             else []
         )
+        retained_failures = failures[:log_lines]
         actionable_failures = [
             item
-            for item in failures
+            for item in retained_failures
             if not GENERIC_ANNOTATION_RE.fullmatch(item.get("message", "").strip())
         ]
-        for annotation in failures[:log_lines]:
+        for annotation in retained_failures:
             location = annotation.get("path", "")
             if annotation.get("start_line"):
                 location += f":{annotation['start_line']}"
