@@ -114,6 +114,7 @@ tasks:
     cmds:
       - bash {{.CI_LOCAL}}/tests/test_prebuilt_dependencies.sh
       - bash {{.CI_LOCAL}}/tests/test_dependency_behavior.sh
+      - node {{.CI_LOCAL}}/tests/test_wait_for_workflow.js
       - python3 {{.CI_LOCAL}}/tests/test_yaml_migration.py
       - python3 {{.TASKFILE_DIR}}/.github/mcp/test_mtl_ci_mcp_server.py
 

@@ -7,9 +7,9 @@ inputs:
     description: 'The check run name to wait for (e.g. "build", "Lint Code Base")'
     required: true
   timeout:
-    description: 'Maximum wait time in seconds'
+    description: 'Maximum in-progress time in seconds'
     required: false
-    default: '900'
+    default: '600'
   interval:
     description: 'Polling interval in seconds'
     required: false
