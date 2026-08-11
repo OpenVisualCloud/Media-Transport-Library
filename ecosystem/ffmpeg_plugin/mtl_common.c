@@ -41,8 +41,7 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
   }
 
   if (g_mtl_shared_handle) {
-    if ((args->ptp_enable && !g_mtl_ptp_enable) ||
-        (args->ptp_pi && !g_mtl_ptp_pi) ||
+    if ((args->ptp_enable && !g_mtl_ptp_enable) || (args->ptp_pi && !g_mtl_ptp_pi) ||
         (args->ptp_unicast && !g_mtl_ptp_unicast)) {
       err(ctx, "%s, shared handle does not support requested PTP options\n", __func__);
       return NULL;
