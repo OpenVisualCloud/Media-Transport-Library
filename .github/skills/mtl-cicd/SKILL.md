@@ -52,7 +52,9 @@ Read the current contracts before editing:
   the loaded module. Comparing only the module file on disk is insufficient.
 - Activation must be idempotent and protected by a per-host lock. Stop NIC
   users, remove VFs, unload dependent modules and ICE, load the validated
-  module, verify it, recreate VFs, then update the stamp.
+  module, verify it, recreate VFs, then update the stamp. Reload optional
+  `irdma` on a best-effort basis; a host RDMA reload failure must not roll back
+  a valid Kahawai ICE activation.
 - Gtest and pytest workflows never compile, install, or reload ICE.
 
 ## JPEG XS rules

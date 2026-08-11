@@ -377,6 +377,62 @@ test_ice_validation_and_activation() {
 	[[ $(tail -n1 "$log") == "write stamp ${stamp}" ]] || fail "activation stamp was not last"
 }
 
+test_optional_irdma_reload() {
+	kernel='fixture-kernel'
+	arch=x86_64
+	bundle="${temporary_dir}/optional-irdma-ice"
+	modinfo="${temporary_dir}/optional-irdma-modinfo"
+	nm_command="${temporary_dir}/optional-irdma-nm"
+	create_ice_fixture "$bundle" "$kernel" "$arch"
+	create_modinfo_fixture "$modinfo"
+	create_nm_fixture "$nm_command"
+	export FAKE_VERMAGIC="${kernel} SMP mod_unload"
+
+	sys_root="${temporary_dir}/optional-irdma-sys"
+	modules_root="${temporary_dir}/optional-irdma-modules"
+	stamp="${temporary_dir}/optional-irdma.state"
+	log="${temporary_dir}/optional-irdma.log"
+	mock_bin="${temporary_dir}/optional-irdma-bin"
+	installed_module="$modules_root/$kernel/updates/drivers/net/ethernet/intel/ice/ice.ko"
+	mkdir -p "$sys_root/module/ice" "$sys_root/module/irdma" "$(dirname "$installed_module")" "$mock_bin"
+	printf 'Kahawai_2.6.6\n' >"$sys_root/module/ice/version"
+	printf 'old module\n' >"$installed_module"
+	for command in pkill depmod; do
+		cat >"$mock_bin/$command" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+		chmod +x "$mock_bin/$command"
+	done
+	cat >"$mock_bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+	chmod +x "$mock_bin/pgrep"
+	cat >"$mock_bin/modprobe" <<'EOF'
+#!/usr/bin/env bash
+printf 'modprobe %s\n' "$*" >>"$ICE_COMMAND_LOG"
+[ "$*" != irdma ]
+EOF
+	chmod +x "$mock_bin/modprobe"
+
+	export FAKE_MODULE_PATH="$installed_module"
+	ice_env=(ICE_BUNDLE_ROOT="$bundle" ICE_KERNEL_RELEASE="$kernel" ICE_ARCH="$arch"
+		ICE_MODINFO="$modinfo" ICE_NM="$nm_command" ICE_EXPECTED_SOURCE_HASH=source ICE_EXPECTED_ABI_SHA256=abi
+		ICE_SYS_ROOT="$sys_root" ICE_MODULES_ROOT="$modules_root" ICE_ACTIVATION_STAMP="$stamp"
+		ICE_ACTIVATION_LOCK="${temporary_dir}/optional-irdma.lock" ICE_COMMAND_LOG="$log"
+		ICE_ALLOW_UNPRIVILEGED_TEST=1 PATH="$mock_bin:$PATH")
+	stderr="${temporary_dir}/optional-irdma.stderr"
+	env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/activate-ice.sh" >/dev/null 2>"$stderr" ||
+		fail "optional irdma reload rolled back a valid ICE activation"
+	grep -q '^modprobe irdma$' "$log" || fail "activation did not attempt to restore optional irdma"
+	grep -q 'warning: unable to reload optional irdma' "$stderr" || fail "optional irdma failure was not reported"
+	grep -q '^module_sha256=' "$stamp" || fail "successful ICE activation did not write its stamp"
+	if grep -q '^rollback begin$' "$log"; then
+		fail "optional irdma failure triggered rollback"
+	fi
+}
+
 test_activation_rollback() {
 	kernel='fixture-kernel'
 	arch=x86_64
@@ -467,5 +523,6 @@ test_hash_waterfall
 test_jpeg_validation
 test_jpeg_source_revision
 test_ice_validation_and_activation
+test_optional_irdma_reload
 test_activation_rollback
 echo "dependency behavior tests: PASS"

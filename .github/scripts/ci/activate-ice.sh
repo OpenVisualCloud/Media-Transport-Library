@@ -205,7 +205,11 @@ if [ "$dry_run" -eq 0 ]; then
 	}
 fi
 
-[ "$previous_irdma_loaded" -eq 0 ] || run modprobe irdma
+if [ "$previous_irdma_loaded" -ne 0 ]; then
+	if ! run modprobe irdma; then
+		echo "warning: unable to reload optional irdma; it remains unloaded" >&2
+	fi
+fi
 
 restore_vfs
 

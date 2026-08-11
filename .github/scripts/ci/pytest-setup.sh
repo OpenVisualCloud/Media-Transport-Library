@@ -44,17 +44,17 @@ config-single)
 	if [[ -n ${EBU_IP:-} ]]; then
 		args+=(--ebu_ip "$EBU_IP" --ebu_user "${EBU_USER:-}" --ebu_password "${EBU_PASSWORD:-}")
 	fi
-	"${acceptance_dir}/.venv/bin/python3" "${acceptance_dir}/configs/gen_config.py" "${args[@]}"
+	(cd "$acceptance_dir/configs" && "${acceptance_dir}/.venv/bin/python3" gen_config.py "${args[@]}")
 	;;
 config-perf)
-	"${acceptance_dir}/.venv/bin/python3" "${acceptance_dir}/configs/gen_config.py" \
+	(cd "$acceptance_dir/configs" && "${acceptance_dir}/.venv/bin/python3" gen_config.py \
 		--session_id "${SESSION_ID:?SESSION_ID is required}" \
 		--mtl_path "$root_dir" "$root_dir" \
 		--pci_device "${PCI_DEVICE:?PCI_DEVICE is required}" "$PCI_DEVICE" \
 		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
 		--username "${SHADOW_USER:?SHADOW_USER is required}" \
 		--key_path "/home/${USER}/.ssh/id_ed25519" \
-		--test_time "${TEST_TIME:-120}" --no_capture
+		--test_time "${TEST_TIME:-120}" --no_capture)
 	;;
 tag)
 	: "${WORKFLOW_TAG:?WORKFLOW_TAG is required}"

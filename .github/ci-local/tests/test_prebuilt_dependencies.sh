@@ -49,6 +49,12 @@ grep -Fq "'-I/usr/include/' + multiarch" manager/meson.build ||
 	fail "manager XDP build does not include Ubuntu's multiarch headers"
 
 # shellcheck disable=SC2016
+[ "$(grep -Fc 'cd "$acceptance_dir/configs"' .github/scripts/ci/pytest-setup.sh)" -eq 2 ] ||
+	fail "both pytest config modes must run in the configs directory"
+grep -Fq 'if ! run modprobe irdma; then' .github/scripts/ci/activate-ice.sh ||
+	fail "optional irdma reload can roll back a valid ICE activation"
+
+# shellcheck disable=SC2016
 grep -Fq 'rm -rf "${source_dir}/Build/ci"' .github/scripts/ci/build-jpegxs.sh ||
 	fail "JPEG XS producer can reuse stale CMake compiler state"
 # shellcheck disable=SC2016
