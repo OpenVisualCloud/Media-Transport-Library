@@ -98,7 +98,7 @@ the steps live in `jobs/<job>.sh`, one section per workflow step.
 
 | GitHub                        | here                                        |
 | ----------------------------- | ------------------------------------------- |
-| `runs-on: dpdk`               | `Dockerfile`                                |
+| `build` on `runs-on: e810`    | `Dockerfile`                                |
 | `runs-on: ${{ matrix.nic }}`  | `Dockerfile.baremetal`, `run-job.sh --nic`  |
 | `actions/checkout`            | `git ls-files` piped into `rsync`, into `.ci-local/src` |
 | the `checksums` job           | `script/hash_sources.sh`, the same helper CI calls |
@@ -139,7 +139,7 @@ The local harness and build workflow enforce the same two rules:
 
 ## Why the image exists
 
-A bare `ubuntu:22.04` fails for reasons that have nothing to do with the code
+A bare `ubuntu:24.04` fails for reasons that have nothing to do with the code
 under test, and each one costs a debugging round trip:
 
 - apt resolves the Ubuntu mirrors over IPv6, which many hosts cannot route;

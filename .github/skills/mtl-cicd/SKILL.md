@@ -39,9 +39,9 @@ Read the current contracts before editing:
 
 ## ICE module rules
 
-- The `dpdk` build runner and the `e810`, `e830`, and `e835` validation runners
-  are provisioned with the same kernel ABI. Build one ICE artifact in
-  `build.yml`; every NIC validation job restores and activates that artifact.
+- Build one ICE artifact on the `e810` validation-fleet runner in `build.yml`;
+  every NIC validation job restores and activates that artifact. Do not build
+  ICE on the generic `dpdk` runner because its kernel can drift from the fleet.
   Do not create per-NIC ICE producer jobs or include the NIC model in its key.
 - An ICE module artifact is specific to its source/patch hash, kernel release,
   architecture, relevant kernel configuration/headers, and compiler ABI.
