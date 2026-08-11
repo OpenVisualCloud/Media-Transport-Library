@@ -86,8 +86,10 @@ idempotent Taskfile command. When the hash differs it must:
 3. unload dependent modules such as `irdma`, then unload `ice`;
 4. install/load the validated module using the host's normal module tooling;
 5. verify the loaded version and capabilities;
-6. recreate the required VFs; and
-7. update the host state file only after all checks succeed.
+6. reload optional `irdma` on a best-effort basis without rolling back valid
+  ICE when the reload fails;
+7. recreate the required VFs; and
+8. update the host state file only after all checks succeed.
 
 If any step fails, validation fails. It must not continue with an unknown driver
 or partially configured NIC.
