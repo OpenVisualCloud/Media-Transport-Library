@@ -135,3 +135,9 @@ Read the current contracts before editing:
   so CI can install `libbpf.pc` successfully and still fail `--require-xdp`.
 - Run `ldconfig` after installing xdp-tools and libbpf, then verify the pinned
   versions through the same `ebpf:check REQUIRE_XDP=1` path production uses.
+- The manager's clang `-target bpf` compile must include the host compiler's
+  multiarch directory (`/usr/include/$(cc -dumpmachine)`), because BPF-target
+  clang does not discover Ubuntu's `asm/types.h` path automatically.
+- A generic failure annotation such as "Process completed with exit code" is
+  not actionable. Keep it in the result, but also inspect the bounded failed
+  log so the underlying compiler or linter error is returned.
