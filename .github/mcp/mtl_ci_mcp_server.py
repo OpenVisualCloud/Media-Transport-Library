@@ -120,7 +120,7 @@ def _gh_json(args: list[str], timeout: int = 120) -> tuple[object | None, str | 
         return None, f"ERROR: gh returned invalid JSON: {exc}"
 
 
-def _log_excerpt(log: str, limit: int = 8) -> list[str]:
+def _log_excerpt(log: str, limit: int = 8) -> tuple[list[str], int]:
     matches: list[str] = []
     seen: set[str] = set()
     context = 0
@@ -138,7 +138,7 @@ def _log_excerpt(log: str, limit: int = 8) -> list[str]:
             continue
         seen.add(line)
         matches.append(line[:500])
-    return matches[:limit]
+    return matches[:limit], max(0, len(matches) - limit)
 
 
 @mcp.tool()
@@ -301,11 +301,13 @@ def ci_pr_failures(
             ["gh", "run", "view", run_id, "--repo", repository, "--log-failed"],
             timeout=180,
         )
-        excerpt = _log_excerpt(log, log_lines) if rc == 0 else []
+        excerpt, omitted_lines = _log_excerpt(log, log_lines) if rc == 0 else ([], 0)
         sections.extend(
             [f"- {line}" for line in excerpt]
             or ["- No concise error lines found; open the linked check."]
         )
+        if omitted_lines:
+            sections.append(f"- {omitted_lines} additional error lines omitted.")
         sections.append("")
     omitted_failures = len(failed) - max_failures
     if omitted_failures > 0:
