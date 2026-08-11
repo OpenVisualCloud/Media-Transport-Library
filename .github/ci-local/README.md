@@ -51,6 +51,8 @@ For pushed branches, call `ci_pr_checks` first. If it reports failures, call
 `ci_pr_failures`; it prefers check-run annotations and falls back to a bounded,
 prefix-stripped extract from failed-job logs. This avoids loading entire GitHub
 Actions logs into the agent context.
+Only failure-level annotations suppress the log fallback. Check rows and
+diagnostic excerpts have hard caps, with omitted counts included in the result.
 
 ## What `test-pr-locally.sh` covers
 

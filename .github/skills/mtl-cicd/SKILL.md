@@ -102,12 +102,19 @@ Read the current contracts before editing:
 - Use `ci_pr_failures` only when checks fail. Query check-run annotations first;
   fetch failed-job logs only as a fallback, strip runner prefixes, and return a
   small set of actionable error lines instead of complete workflow logs.
+- Treat only failure-level check annotations as diagnostics. Warning and notice
+  annotations must not suppress the failed-log fallback.
+- Cap both check rows and failure excerpts, and report omitted counts. Prefer
+  explicit linter diagnostic blocks and affected-file lines over trailing
+  runner warnings.
 - Default the repository from `git remote get-url origin`; allow an explicit
   `owner/repo` override. Validate repository and PR inputs before invoking `gh`.
 - Production tools are read-only. They may inspect or wait for checks but never
   push, rerun, comment, merge, or expose authentication details.
 - Verify production wrappers with stubbed `gh` output before deployment, then
   restart the MCP server and call the deployed tool against the target PR.
+- Run production Black, isort, and Ruff against changed Python MCP files before
+  pushing; syntax compilation alone is insufficient.
 
 ## Failure policy
 
