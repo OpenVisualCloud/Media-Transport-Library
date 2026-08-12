@@ -21,9 +21,7 @@
 #include <mtl/st30_api.h>
 #include <mtl/st_pipeline_api.h>
 
-#ifdef MTL_FFMPEG_UNIT_TEST
-#include "ffmpeg/ffmpeg_test_compat.h"
-#else
+#ifndef MTL_FFMPEG_UNIT_TEST
 // clang-format off
 /* MTL FFMPEG version */
 #include "libavdevice/version.h"
@@ -105,29 +103,36 @@
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        DEC},                                                                               \
       {"r_tx_queues",                                                                      \
        "mtl r_port device amount of tx queues",                                            \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_R]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        DEC},                                                                               \
       {"rx_queues",                                                                        \
        "mtl device amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_P]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
+       DEC},                                                                               \
+      {"tx_queues",                                                                        \
+       "mtl device amount of tx queues",                                                   \
+       OFFSET(devArgs.tx_queues_cnt[MTL_PORT_P]),                                          \
+       AV_OPT_TYPE_INT,                                                                    \
+       {.i64 = 16},                                                                        \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        DEC},                                                                               \
   {                                                                                        \
-    "tx_queues", "mtl device amount of tx queues",                                         \
-        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_P]), AV_OPT_TYPE_INT, {.i64 = 16}, -1,       \
-        INT_MAX, DEC                                                                       \
+    "ptp_pacing", "use PTP-based packet pacing", OFFSET(devArgs.ptp_pacing),               \
+        AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC                                            \
   }
 
 #define MTL_RX_PORT_ARGS                                                            \
@@ -214,96 +219,96 @@
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_2]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p2_rx_queues",                                                                     \
        "mtl port 2 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_2]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p3_tx_queues",                                                                     \
        "mtl port 3 amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_3]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p3_rx_queues",                                                                     \
        "mtl port 3 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_3]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p4_tx_queues",                                                                     \
        "mtl port 4 amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_4]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p4_rx_queues",                                                                     \
        "mtl port 4 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_4]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p5_tx_queues",                                                                     \
        "mtl port 5 amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_5]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p5_rx_queues",                                                                     \
        "mtl port 5 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_5]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p6_tx_queues",                                                                     \
        "mtl port 6 amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_6]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p6_rx_queues",                                                                     \
        "mtl port 6 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_6]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p7_tx_queues",                                                                     \
        "mtl port 7 amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_7]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"p7_rx_queues",                                                                     \
        "mtl port 7 amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_7]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
@@ -312,36 +317,44 @@
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"r_tx_queues",                                                                      \
        "mtl r_port device amount of tx queues",                                            \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_R]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"rx_queues",                                                                        \
        "mtl device amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_P]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"tx_queues",                                                                        \
-       "mtl device amount of rx queues",                                                   \
+       "mtl device amount of tx queues",                                                   \
        OFFSET(devArgs.tx_queues_cnt[MTL_PORT_P]),                                          \
        AV_OPT_TYPE_INT,                                                                    \
        {.i64 = 16},                                                                        \
-       -1,                                                                                 \
-       INT_MAX,                                                                            \
+       0,                                                                                  \
+       UINT16_MAX,                                                                         \
        ENC},                                                                               \
       {"ptp_enable",                                                                       \
-       "enable built-in MTL PTP client and PTP-paced TX",                                  \
+       "enable built-in MTL PTP client",                                                   \
        OFFSET(devArgs.ptp_enable),                                                         \
+       AV_OPT_TYPE_BOOL,                                                                   \
+       {.i64 = 0},                                                                         \
+       0,                                                                                  \
+       1,                                                                                  \
+       ENC},                                                                               \
+      {"ptp_pacing",                                                                       \
+       "use PTP-based packet pacing",                                                      \
+       OFFSET(devArgs.ptp_pacing),                                                         \
        AV_OPT_TYPE_BOOL,                                                                   \
        {.i64 = 0},                                                                         \
        0,                                                                                  \
@@ -385,6 +398,7 @@ typedef struct StDevArgs {
   int rx_queues_cnt[MTL_PORT_MAX];
   char* dma_dev;
   int ptp_enable;
+  int ptp_pacing;
   int ptp_pi;
   int ptp_unicast;
 } StDevArgs;

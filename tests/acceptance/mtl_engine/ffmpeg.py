@@ -152,6 +152,8 @@ class FFmpeg(Application):
         framerate=None,
         filter_v: str = "",
         udp_port: int = 20000,
+        ptp_enable: bool = False,
+        ptp_pacing: bool = False,
     ) -> str:
         """Build an FFmpeg → mtl_st20p TX command line.
 
@@ -160,9 +162,16 @@ class FFmpeg(Application):
         ``framerate`` only emitted for the rgb24 family — yuv_h264 omits
         ``-framerate`` because the source already carries the canonical fps.
         ``filter_v`` is the full ``-filter:v <chain>`` token (empty by default).
+        ``ptp_enable``/``ptp_pacing`` are independent opt-in flags; neither is
+        implied by the other or by any other parameter.
         """
         framerate_token = f"-framerate {framerate} " if framerate is not None else ""
         filter_token = f"{filter_v} " if filter_v else ""
+        ptp_token = ""
+        if ptp_enable:
+            ptp_token += "-ptp_enable 1 "
+        if ptp_pacing:
+            ptp_token += "-ptp_pacing 1 "
         # ``-re`` throttles the rawvideo reader to the source framerate. Without
         # it FFmpeg drains the (ramdisk) file as fast as it can and hands frames
         # to st20p_tx_put_frame() faster than realtime; MTL then transmits ahead
@@ -174,7 +183,7 @@ class FFmpeg(Application):
             f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
             f"-i {video_url} {filter_token}"
             f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
-            f"-udp_port {udp_port} -payload_type 112 -f mtl_st20p -"
+            f"-udp_port {udp_port} -payload_type 112 {ptp_token}-f mtl_st20p -"
         )
 
     def _create_command_and_config(self) -> tuple:
@@ -306,6 +315,8 @@ class FFmpeg(Application):
                     sip=ip_pools.tx[0],
                     mcast=ip_pools.rx_multicast[0],
                     framerate=fps,
+                    ptp_enable=self.params.get("enable_ptp", False),
+                    ptp_pacing=self.params.get("ptp_pacing", False),
                 )
             ]
         else:
