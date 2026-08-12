@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-"""Verify every RxTxApp TX pacing_way (auto, rl, tsc, tsc_narrow, ptp, be, tsn)
-works with the TX side on both a VF and a PF interface. "PF" cases bind only
-TX to the PF (pacing_way is TX-only) and keep RX on a VF, so a PF is always
-left in kernel mode for netsniff-ng capture.
+"""Verify TX pacing modes with the supported applications and interfaces.
+
+RxTxApp covers every pacing mode on VF and PF interfaces. FFmpeg covers PTP
+pacing only. "PF" cases bind only TX to the PF and keep RX on a VF, so a PF
+is always left in kernel mode for netsniff-ng capture.
 """
 
 import pytest
@@ -33,45 +34,36 @@ def _is_e810(host) -> bool:
 # "PF" here means the TX interface only (see module docstring); RX always
 # uses a VF.
 PACING_WAY_CASES = [
-    pytest.param("VF", "auto", id="VF-auto"),
-    pytest.param("PF", "auto", id="PF-auto"),
-    pytest.param("VF", "rl", id="VF-rl"),
-    pytest.param("PF", "rl", id="PF-rl"),
-    pytest.param("VF", "tsc", id="VF-tsc"),
-    pytest.param("PF", "tsc", id="PF-tsc"),
-    pytest.param("VF", "tsc_narrow", id="VF-tsc_narrow"),
-    pytest.param("PF", "tsc_narrow", id="PF-tsc_narrow"),
-    pytest.param("VF", "ptp", id="VF-ptp"),
-    pytest.param("PF", "ptp", id="PF-ptp"),
-    pytest.param("VF", "be", id="VF-be"),
-    pytest.param("PF", "be", id="PF-be"),
+    pytest.param("rxtxapp", "VF", "auto", id="RxTxApp-VF-auto"),
+    pytest.param("rxtxapp", "PF", "auto", id="RxTxApp-PF-auto"),
+    pytest.param("rxtxapp", "VF", "rl", id="RxTxApp-VF-rl"),
+    pytest.param("rxtxapp", "PF", "rl", id="RxTxApp-PF-rl"),
+    pytest.param("rxtxapp", "VF", "tsc", id="RxTxApp-VF-tsc"),
+    pytest.param("rxtxapp", "PF", "tsc", id="RxTxApp-PF-tsc"),
+    pytest.param("rxtxapp", "VF", "tsc_narrow", id="RxTxApp-VF-tsc_narrow"),
+    pytest.param("rxtxapp", "PF", "tsc_narrow", id="RxTxApp-PF-tsc_narrow"),
+    pytest.param("rxtxapp", "VF", "ptp", id="RxTxApp-VF-ptp"),
+    pytest.param("rxtxapp", "PF", "ptp", id="RxTxApp-PF-ptp"),
+    pytest.param("ffmpeg", "VF", "ptp", id="FFmpeg-VF-ptp"),
+    pytest.param("ffmpeg", "PF", "ptp", id="FFmpeg-PF-ptp"),
+    pytest.param("rxtxapp", "VF", "be", id="RxTxApp-VF-be"),
+    pytest.param("rxtxapp", "PF", "be", id="RxTxApp-PF-be"),
     pytest.param(
+        "rxtxapp",
         "VF",
         "tsn",
         marks=pytest.mark.skip(
             reason="tsn launch-time pacing requires a PF; VF has no HW PHC"
         ),
-        id="VF-tsn",
+        id="RxTxApp-VF-tsn",
     ),
-    pytest.param("PF", "tsn", id="PF-tsn"),
+    pytest.param("rxtxapp", "PF", "tsn", id="RxTxApp-PF-tsn"),
 ]
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support pacing_way selection"
-            ),
-        ),
-    ],
-)
 @pytest.mark.tx_side
-@pytest.mark.parametrize("interface_type,pacing_way", PACING_WAY_CASES)
+@pytest.mark.parametrize("application,interface_type,pacing_way", PACING_WAY_CASES)
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422p10le["Penguin_1080p"]],
@@ -92,7 +84,7 @@ def test_st20p_pacing_way(
     media_integrity,
     media_file,
 ):
-    """Test RxTxApp TX pacing_way on a VF or PF interface."""
+    """Test a supported application and TX pacing mode on a VF or PF."""
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
@@ -133,6 +125,7 @@ def test_st20p_pacing_way(
         "test_mode": "multicast",
         "pacing_way": pacing_way,
         "enable_ptp": needs_ptp,
+        "ptp_pacing": pacing_way == "ptp",
         "test_time": actual_test_time,
     }
 
