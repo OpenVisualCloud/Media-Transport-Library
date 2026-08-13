@@ -19,6 +19,10 @@ struct ut_dev_ctx {
   int timesync_enable_calls;
   int fail_timesync_call;
   int fail_timesync_error;
+  int timesync_read_calls;
+  int fail_timesync_read_call;
+  int fail_timesync_read_error;
+  int fail_port_start_error;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -110,6 +114,10 @@ static int ut_rte_eth_timesync_enable(uint16_t port_id) {
 
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time) {
   (void)port_id;
+  ut_dev_record(UT_DEV_EVENT_TIMESYNC_READ);
+  ut_active_ctx->timesync_read_calls++;
+  if (ut_active_ctx->timesync_read_calls == ut_active_ctx->fail_timesync_read_call)
+    return ut_active_ctx->fail_timesync_read_error;
   time->tv_sec = 1;
   time->tv_nsec = 0;
   return 0;
@@ -118,7 +126,7 @@ static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time
 static int ut_rte_eth_dev_start(uint16_t port_id) {
   (void)port_id;
   ut_dev_record(UT_DEV_EVENT_PORT_START);
-  return 0;
+  return ut_active_ctx->fail_port_start_error;
 }
 
 static int ut_rte_eth_dev_stop(uint16_t port_id) {
@@ -169,6 +177,26 @@ void ut_dev_destroy_ctx(ut_dev_ctx* ctx) {
 void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error) {
   ctx->fail_timesync_call = call;
   ctx->fail_timesync_error = error;
+}
+
+void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error) {
+  ctx->fail_timesync_read_call = call;
+  ctx->fail_timesync_read_error = error;
+}
+
+void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error) {
+  ctx->fail_port_start_error = error;
+}
+
+void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].drv_info.drv_type = MT_DRV_ICE;
+}
+
+void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled) {
+  if (enabled)
+    ctx->impl.user_para.flags |= MTL_FLAG_PTP_ENABLE;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_PTP_ENABLE;
 }
 
 int ut_dev_start_port(ut_dev_ctx* ctx) {

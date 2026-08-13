@@ -1084,6 +1084,46 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
   return nb_pkts;
 }
 
+static bool dev_igc_timesync_required(const struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
+
+  return (inf->drv_info.drv_type == MT_DRV_IGC) &&
+         (mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl));
+}
+
+static int dev_start_eth_port(struct mt_interface* inf) {
+  uint16_t port_id = inf->port_id;
+  enum mtl_port port = inf->port;
+  bool igc_timesync = dev_igc_timesync_required(inf);
+  int ret;
+
+  if (igc_timesync) {
+    /* IGC sizes RX timestamp prefixes from queues configured before port start. */
+    ret = rte_eth_timesync_enable(port_id);
+    if (ret < 0) {
+      err("%s(%d), rte_eth_timesync_enable fail %d\n", __func__, port, ret);
+      return ret;
+    }
+  }
+
+  ret = rte_eth_dev_start(port_id);
+  if (ret < 0) {
+    err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
+    return ret;
+  }
+
+  inf->status |= MT_IF_STAT_PORT_STARTED;
+
+  if (igc_timesync) {
+    /* IGC port start clears timesync registers, so enable and validate them again. */
+    ret = dev_start_timesync(inf);
+    if (ret < 0) return ret;
+    inf->feature |= MT_IF_FEATURE_TIMESYNC;
+  }
+
+  return 0;
+}
+
 static int dev_start_port(struct mt_interface* inf) {
   int ret;
   struct mtl_main_impl* impl = inf->parent;
@@ -1187,31 +1227,8 @@ static int dev_start_port(struct mt_interface* inf) {
       rte_eth_add_tx_callback(port_id, q, dev_tx_pkt_check, inf);
   }
 
-  /*
-   * IGC timesync accesses the configured RX queues and enables a timestamp
-   * prefix that must be accounted for when the PMD allocates RX buffers at
-   * port start. Enable it after queue setup, but before rte_eth_dev_start().
-   */
-  if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-      (inf->drv_info.drv_type == MT_DRV_IGC)) {
-    ret = dev_start_timesync(inf);
-    if (ret < 0) return ret;
-  }
-
-  ret = rte_eth_dev_start(port_id);
-  if (ret < 0) {
-    err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
-    return ret;
-  }
-  inf->status |= MT_IF_STAT_PORT_STARTED;
-
-  /* Port start resets IGC timestamp registers; restore them after RX init. */
-  if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-      (inf->drv_info.drv_type == MT_DRV_IGC)) {
-    ret = dev_start_timesync(inf);
-    if (ret < 0) return ret;
-    inf->feature |= MT_IF_FEATURE_TIMESYNC;
-  }
+  ret = dev_start_eth_port(inf);
+  if (ret < 0) return ret;
 
   if (mt_has_virtio_user(impl, port)) {
     mbuf_pool = inf->rx_queues[0].mbuf_pool ? inf->rx_queues[0].mbuf_pool
@@ -1933,9 +1950,10 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     allow_port_down = mt_if_allow_port_down(impl, i);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-    /* DPDK 21.11 support start time sync before rte_eth_dev_start */
+    /* DPDK 21.11 supports timesync before rte_eth_dev_start. */
+    /* IGC timesync is deferred until RX queues are configured. */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && (inf->drv_info.drv_type != MT_DRV_IGC)) {
+        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
@@ -1969,7 +1987,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
     /* try to start time sync after rte_eth_dev_start */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && (inf->drv_info.drv_type != MT_DRV_IGC) &&
+        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf) &&
         !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
