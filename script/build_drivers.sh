@@ -54,7 +54,10 @@ run_as_root() {
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--driver)
-		[[ $# -ge 2 ]] || { echo "--driver requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--driver requires a value" >&2
+			exit 1
+		}
 		DRIVER="$2"
 		shift 2
 		;;
@@ -63,27 +66,42 @@ while [[ $# -gt 0 ]]; do
 		shift
 		;;
 	--ice-version)
-		[[ $# -ge 2 ]] || { echo "--ice-version requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--ice-version requires a value" >&2
+			exit 1
+		}
 		ICE_VER="$2"
 		shift 2
 		;;
 	--ice-download-id)
-		[[ $# -ge 2 ]] || { echo "--ice-download-id requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--ice-download-id requires a value" >&2
+			exit 1
+		}
 		ICE_DMID="$2"
 		shift 2
 		;;
 	--dpdk-ver)
-		[[ $# -ge 2 ]] || { echo "--dpdk-ver requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--dpdk-ver requires a value" >&2
+			exit 1
+		}
 		DPDK_VER="$2"
 		shift 2
 		;;
 	--dpdk-src-dir)
-		[[ $# -ge 2 ]] || { echo "--dpdk-src-dir requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--dpdk-src-dir requires a value" >&2
+			exit 1
+		}
 		DPDK_SRC_DIR="$2"
 		shift 2
 		;;
 	--buildtype)
-		[[ $# -ge 2 ]] || { echo "--buildtype requires a value" >&2; exit 1; }
+		[[ $# -ge 2 ]] || {
+			echo "--buildtype requires a value" >&2
+			exit 1
+		}
 		BUILDTYPE="$2"
 		shift 2
 		;;
@@ -153,7 +171,10 @@ build_ice() {
 	if [[ "${github_archive}" -eq 1 && -d "ethernet-linux-ice-${ICE_VER}" ]]; then
 		mv "ethernet-linux-ice-${ICE_VER}" "ice-${ICE_VER}"
 	fi
-	[[ -d "ice-${ICE_VER}" ]] || { echo "Failed to extract ${archive_name}." >&2; exit 1; }
+	[[ -d "ice-${ICE_VER}" ]] || {
+		echo "Failed to extract ${archive_name}." >&2
+		exit 1
+	}
 
 	pushd "ice-${ICE_VER}" >/dev/null
 	for patch_file in "${REPO_DIR}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
@@ -173,7 +194,10 @@ build_ice() {
 build_igc() {
 	case "${BUILDTYPE}" in
 	debug | debugonly | debugoptimized | plain | release) ;;
-	*) echo "Invalid --buildtype '${BUILDTYPE}'" >&2; exit 1 ;;
+	*)
+		echo "Invalid --buildtype '${BUILDTYPE}'" >&2
+		exit 1
+		;;
 	esac
 
 	if [[ -z "${DPDK_SRC_DIR}" ]]; then
@@ -187,8 +211,14 @@ build_igc() {
 		if [[ ! -d "${DPDK_SRC_DIR}" ]]; then
 			git -C "$(dirname "${DPDK_SRC_DIR}")" clone https://github.com/DPDK/dpdk.git "$(basename "${DPDK_SRC_DIR}")"
 		fi
-		[[ -d "${DPDK_SRC_DIR}/.git" ]] || { echo "Not a git repository: ${DPDK_SRC_DIR}" >&2; exit 1; }
-		[[ -z "$(git -C "${DPDK_SRC_DIR}" status --porcelain)" ]] || { echo "DPDK source has local changes: ${DPDK_SRC_DIR}" >&2; exit 1; }
+		[[ -d "${DPDK_SRC_DIR}/.git" ]] || {
+			echo "Not a git repository: ${DPDK_SRC_DIR}" >&2
+			exit 1
+		}
+		[[ -z "$(git -C "${DPDK_SRC_DIR}" status --porcelain)" ]] || {
+			echo "DPDK source has local changes: ${DPDK_SRC_DIR}" >&2
+			exit 1
+		}
 
 		pushd "${DPDK_SRC_DIR}" >/dev/null
 		git fetch --tags origin
@@ -210,5 +240,8 @@ build_igc() {
 case "${DRIVER}" in
 ice) build_ice ;;
 igc) build_igc ;;
-*) echo "Unsupported driver '${DRIVER}'. Use ice or igc." >&2; exit 1 ;;
+*)
+	echo "Unsupported driver '${DRIVER}'. Use ice or igc." >&2
+	exit 1
+	;;
 esac

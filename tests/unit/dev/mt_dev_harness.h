@@ -17,6 +17,7 @@ enum ut_dev_event {
   UT_DEV_EVENT_RX_QUEUE_SETUP,
   UT_DEV_EVENT_TX_QUEUE_SETUP,
   UT_DEV_EVENT_TIMESYNC_ENABLE,
+  UT_DEV_EVENT_TIMESYNC_READ,
   UT_DEV_EVENT_PORT_START,
   UT_DEV_EVENT_PORT_STOP,
 };
@@ -24,6 +25,10 @@ enum ut_dev_event {
 ut_dev_ctx* ut_dev_create_ctx(void);
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx);
 void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
+void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
+void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
+void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
+void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 int ut_dev_start_port(ut_dev_ctx* ctx);
 int ut_dev_create_ports(ut_dev_ctx* ctx);
 int ut_dev_event_count(const ut_dev_ctx* ctx);

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD001 MD041 -->
 This guide provides an Intel I226-V focused runtime flow for Media Transport Library (MTL) on Ubuntu.
 It targets:
 
