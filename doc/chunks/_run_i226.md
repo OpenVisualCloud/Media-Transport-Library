@@ -1,5 +1,3 @@
-# Run Guide for Intel I226-V (Ubuntu, 1G/2.5G)
-
 This guide provides an Intel I226-V focused runtime flow for Media Transport Library (MTL) on Ubuntu.
 It targets:
 
@@ -7,9 +5,9 @@ It targets:
 * Intel I226-V link speeds of 1GbE or 2.5GbE
 * Preferred backend order: **DPDK first**, with **AF_XDP fallback**
 
-## 1. Host readiness checklist (Ubuntu)
+### 9.1. Host Readiness Checklist (Ubuntu)
 
-### 1.1 Install required packages
+#### 9.1.1. Install Required Packages
 
 ```bash
 sudo apt-get update
@@ -27,7 +25,7 @@ releases unless you are intentionally using a virtual environment. Ubuntu's
 Python packages are externally managed, so `python3-pyelftools` and
 `ninja-build` should be installed with `apt`.
 
-### 1.2 BIOS/Kernel pre-checks
+#### 9.1.2. BIOS/Kernel Pre-checks
 
 * Enable IOMMU in BIOS/UEFI.
 * Keep power management conservative for media workloads (avoid deep C-states when possible).
@@ -39,7 +37,7 @@ cat /proc/cmdline
 
 Typical Intel platform options include `intel_iommu=on iommu=pt`.
 
-### 1.3 Hugepages (for DPDK path)
+#### 9.1.3. Hugepages (DPDK Path)
 
 ```bash
 # Example: reserve 1024 x 2MB pages
@@ -49,7 +47,7 @@ sudo sysctl -w vm.nr_hugepages=1024
 grep -E "HugePages_Total|HugePages_Free|Hugepagesize" /proc/meminfo
 ```
 
-### 1.4 I226-V capability checks
+#### 9.1.4. I226-V Capability Checks
 
 Replace `<ifname>` with your I226-V Linux interface name.
 
@@ -60,9 +58,9 @@ ethtool -k <ifname>
 ethtool -T <ifname>
 ```
 
-## 2. DPDK-first runtime flow (preferred)
+### 9.2. DPDK-first Runtime Flow (Preferred)
 
-### 2.1 Build/install
+#### 9.2.1. Build and Install
 
 Use the I226-V build helper from [Build Guide](build.md):
 
@@ -71,7 +69,7 @@ cd $mtl_source_code
 ./script/build_drivers.sh --driver igc
 ```
 
-### 2.2 Prepare VFIO access
+#### 9.2.2. Prepare VFIO Access
 
 Follow the shared VFIO permissions flow in [Run Guide](run.md#31-allow-current-user-to-access-devvfio-devices).
 Load the VFIO kernel modules before binding the I226-V to `vfio-pci`:
@@ -86,7 +84,7 @@ If `dpdk-devbind.py` reports `Warning: no supported DPDK kernel modules are load
 or `Error: Driver 'vfio-pci' is not loaded`, re-run the `modprobe` commands above and
 then retry the bind command.
 
-### 2.3 Bind I226-V port to `vfio-pci`
+#### 9.2.3. Bind I226-V Port to `vfio-pci`
 
 ```bash
 # Identify BDF and current driver
@@ -105,7 +103,7 @@ sudo dpdk-devbind.py -b vfio-pci 0000:xx:yy.z
 sudo dpdk-devbind.py -s
 ```
 
-### 2.4 Run MTL sample with DPDK backend
+#### 9.2.4. Run an MTL Sample with the DPDK Backend
 
 Set your JSON interface `name` to the DPDK BDF (for example `0000:xx:yy.z`) and run:
 
@@ -113,7 +111,7 @@ Set your JSON interface `name` to the DPDK BDF (for example `0000:xx:yy.z`) and 
 ./tests/tools/RxTxApp/build/RxTxApp --config_file config/tx_1v.json
 ```
 
-### 2.5 Run PTP with the DPDK IGC driver
+#### 9.2.5. Run PTP with the DPDK IGC Driver
 
 When the I226-V is bound to `vfio-pci`, Linux `ptp4l` cannot access the port. Use the
 MTL built-in PTP implementation instead:
@@ -142,11 +140,11 @@ This path was validated with UDP/IPv4 multicast PTP in domain 0. Sync and Delay 
 messages used UDP port 319, while Announce, Follow Up, and Delay Response general messages used
 UDP port 320.
 
-## 3. AF_XDP fallback flow
+### 9.3. AF_XDP Fallback Flow
 
 If DPDK PMD path is not suitable for your deployment, use AF_XDP backend.
 
-### 3.1 Keep kernel `igc` driver attached
+#### 9.3.1. Keep the Kernel `igc` Driver Attached
 
 For AF_XDP, do **not** bind to `vfio-pci`; interface remains as Linux netdev.
 
@@ -155,7 +153,7 @@ ip -br link
 ethtool -i <ifname>
 ```
 
-### 3.2 Assign and verify interface IP
+#### 9.3.2. Assign and Verify the Interface IP
 
 ```bash
 sudo ip addr add 192.168.88.101/24 dev <ifname>
@@ -163,7 +161,7 @@ sudo ip link set <ifname> up
 ip -4 addr show dev <ifname>
 ```
 
-### 3.3 Run with AF_XDP config
+#### 9.3.3. Run with an AF_XDP Config
 
 Use JSON profiles under RxTxApp AF_XDP examples and update interface names/IPs for your setup.
 See also [AF_XDP guide](experimental/af_xdp.md).
@@ -186,7 +184,7 @@ AF_XDP. The following settings were validated for one audio TX session:
 }
 ```
 
-### 3.4 Install and start MTL Manager
+#### 9.3.4. Install and Start MTL Manager
 
 Install `mtl.xdp.o` in the same libxdp BPF object directory that contains
 `xdp-dispatcher.o`. On Ubuntu multiarch installations this is commonly:
@@ -206,7 +204,7 @@ The application needs `CAP_NET_RAW` for native AF_XDP:
 sudo setcap 'cap_net_raw+ep' ./tests/tools/RxTxApp/build/RxTxApp
 ```
 
-### 3.5 Use linuxptp with native AF_XDP
+#### 9.3.5. Use linuxptp with Native AF_XDP
 
 The kernel `igc` driver owns the PHC in native AF_XDP mode, so use one host-level `ptp4l` and
 `phc2sys` pair instead of enabling MTL built-in PTP in each application. Multiple MTL applications
@@ -259,7 +257,7 @@ grandmaster timescale:
 Do not use `--ptp` in this AF_XDP configuration. PTP UDP ports 319 and 320 remain in the kernel;
 the MTL XDP filter redirects only registered media destination ports to AF_XDP sockets.
 
-### 3.6 Validated AF_XDP result
+#### 9.3.6. Validated AF_XDP Result
 
 An I226-V at 1GbE was tested for 120 seconds with one 48 kHz, two-channel ST 2110-30 audio TX
 session. The application exited successfully and held 1000 frames/s at 1.968 Mb/s. While the XDP
@@ -270,9 +268,9 @@ The tested teardown reported outstanding RX mbufs and full TX-ring warnings afte
 They did not cause packet loss or a nonzero application exit during this run, but should be
 considered separately when validating repeated start/stop cycles.
 
-## 4. Validation matrix and day-1 command sequence
+### 9.4. Validation Matrix and Day-1 Command Sequence
 
-### 4.1 Validation matrix (1G and 2.5G)
+#### 9.4.1. Validation Matrix (1G and 2.5G)
 
 Validate each mode at both link rates where applicable:
 
@@ -289,7 +287,7 @@ For each run collect:
 * CPU utilization
 * Soak stability (for example 8h/24h)
 
-### 4.2 Day-1 command sequence
+#### 9.4.2. Day-1 Command Sequence
 
 ```bash
 # 1) Inventory

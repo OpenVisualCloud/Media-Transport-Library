@@ -13,7 +13,7 @@ The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supp
 
 For Intel® E810 and E830 Series Ethernet Adapter, refer to [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md). For other NICs, you may need to follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
 
-For Intel I226-V on Ubuntu with DPDK-first and AF_XDP fallback flow, see [Run Guide for Intel I226-V](run_i226.md).
+Intel I226-V setup is covered in [Intel I226-V Runtime Flow](#9-intel-i226-v-runtime-flow).
 
 ## 3. DPDK PMD Setup
 
@@ -595,4 +595,9 @@ Follow the below steps to clear the old shared memory in the system:
 ipcs -m
 # delete the old shm
 sudo ipcrm -m <shmid>
+```
+
+## 9. [Intel I226-V Runtime Flow](chunks/_run_i226.md)
+
+```{include} chunks/_run_i226.md
 ```
