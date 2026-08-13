@@ -185,30 +185,30 @@ environments:
 
 * Use the in-tree Linux `igc` driver for normal host networking and PTP validation.
 * Use DPDK `igc` PMD if you plan to run MTL with DPDK backend.
-* Do **not** use `script/build_ice_driver.sh` (that script is only for E810 `ice`).
+* Select the `igc` flow in `script/build_drivers.sh`; the default `ice` flow is for E810.
 
 For I226-V, you can use the dedicated helper script below, which builds DPDK and then
 builds MTL without any E810-specific driver steps:
 
 ```bash
 cd $mtl_source_code
-./script/build_i226v.sh
+./script/build_drivers.sh --driver igc
 ```
 
 Optional examples:
 
 ```bash
 # Build with debug symbols
-./script/build_i226v.sh --buildtype debug
+./script/build_drivers.sh --driver igc --buildtype debug
 
 # Use an existing DPDK checkout location
-./script/build_i226v.sh --dpdk-src-dir /opt/src/dpdk-25.11
+./script/build_drivers.sh --driver igc --dpdk-src-dir /opt/src/dpdk-25.11
 
 # Re-clone DPDK source before building
-./script/build_i226v.sh --force-dpdk-reclone
+./script/build_drivers.sh --driver igc --force
 
 # Build MTL only (assume DPDK already installed)
-./script/build_i226v.sh --skip-dpdk
+./script/build_drivers.sh --driver igc --skip-dpdk
 ```
 
 ### 3.2. I226-V (`igc` PMD) notes from DPDK driver guidance

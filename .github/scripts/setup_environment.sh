@@ -327,70 +327,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build"
-		# shellcheck disable=SC1091
-		. "${root_folder}/script/build_ice_driver.sh"
-		if [ -z "$setup_script_folder" ] || [ -z "$ICE_VER" ] || [ -z "$ICE_DMID" ]; then
-			exit 3
-		fi
-		pushd "${setup_script_folder}" >/dev/null || exit 1
-
-		echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
-
-		archive_name="ice-${ICE_VER}.tar.gz"
-		IS_GITHUB_ARCHIVE=0
-		if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
-			echo "Found valid local archive $archive_name, skipping download."
-			if tar -tzf "$archive_name" | grep -q "^ethernet-linux-ice"; then
-				IS_GITHUB_ARCHIVE=1
-			fi
-		else
-			rm -f "$archive_name"
-			echo "Downloading ICE driver of version ${ICE_VER}..."
-			wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name" || true
-			if [ ! -f "$archive_name" ] || ! gzip -t "$archive_name" >/dev/null 2>&1; then
-				echo "Intel mirror download failed or was blocked by AWS WAF. Trying GitHub fallback..."
-				rm -f "$archive_name"
-				wget "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "$archive_name" || true
-				if [ -f "$archive_name" ] && gzip -t "$archive_name" >/dev/null 2>&1; then
-					echo "Successfully downloaded driver from GitHub fallback."
-					IS_GITHUB_ARCHIVE=1
-				else
-					echo "Error: Failed to download a valid $archive_name from both Intel mirror and GitHub."
-					echo "This is likely caused by corporate proxy blockage or firewall settings."
-					rm -f "$archive_name"
-					exit 1
-				fi
-			fi
-		fi
-		if [ -d "ice-${ICE_VER}" ]; then
-			echo "ice-${ICE_VER} directory already exists, please remove it first"
-			exit 1
-		fi
-		tar xvzf "$archive_name"
-		if [ "${IS_GITHUB_ARCHIVE}" -eq 1 ]; then
-			if [ -d "ethernet-linux-ice-${ICE_VER}" ]; then
-				mv "ethernet-linux-ice-${ICE_VER}" "ice-${ICE_VER}"
-			fi
-		fi
-		rm -f "$archive_name"
-		pushd "ice-${ICE_VER}" >/dev/null || exit 1
-
-		for patch_file in "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
-			patch -p1 -i "$patch_file"
-		done
-
-		pushd src >/dev/null || exit 1
-		make -j"${nproc}"
-		popd >/dev/null
-		popd >/dev/null
-		rm -rf "ice-${ICE_VER}"
-		popd >/dev/null
+		bash "${root_folder}/script/build_drivers.sh" --driver ice --build-only
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build and install"
-		bash "${root_folder}/script/build_ice_driver.sh"
+		bash "${root_folder}/script/build_drivers.sh" --driver ice
 		STEP=$((STEP + 1))
 	fi
 

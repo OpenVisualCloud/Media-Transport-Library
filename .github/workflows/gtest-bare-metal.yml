@@ -98,7 +98,7 @@ jobs:
       - name: Check and build ice driver if needed
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: |
-          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
+          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_drivers.sh --driver ice; fi
 
       - name: 'cleanup: Kill stale processes before test'
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}

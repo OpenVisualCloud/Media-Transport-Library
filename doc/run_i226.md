@@ -68,7 +68,7 @@ Use the I226-V build helper from [Build Guide](build.md):
 
 ```bash
 cd $mtl_source_code
-./script/build_i226v.sh
+./script/build_drivers.sh --driver igc
 ```
 
 ### 2.2 Prepare VFIO access
