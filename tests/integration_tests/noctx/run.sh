@@ -13,7 +13,8 @@ script_folder=${script_path/$script_name/}
 cd "${script_folder}" || exit 1
 
 mtl_folder="${script_folder}/../../.."
-sleep_time=30
+# time between tests is added due to DPDK driver reinitialization occasionally failing.
+sleep_time=20
 
 # Detect whether to use .local_install (CI) or local build paths
 if [ -z "${BUILD_PATH:-}" ]; then

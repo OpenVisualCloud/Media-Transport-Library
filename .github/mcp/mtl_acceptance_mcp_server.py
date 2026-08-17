@@ -379,7 +379,7 @@ def build_ffmpeg_plugin() -> str:
     rc, out = _run_rc(
         "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1 "
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
+        "SETUP_BUILD_AND_INSTALL_DRIVERS=0 MTL_BUILD_AND_INSTALL=0 "
         f"MTL_INSTALL_PREFIX={local_prefix} "
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
@@ -401,7 +401,7 @@ def build_gstreamer_plugin() -> str:
     rc, out = _run_rc(
         "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 "
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 MTL_BUILD_AND_INSTALL=0 "
+        "SETUP_BUILD_AND_INSTALL_DRIVERS=0 MTL_BUILD_AND_INSTALL=0 "
         f"MTL_INSTALL_PREFIX={local_prefix} "
         "bash .github/scripts/setup_environment.sh",
         timeout=600,
