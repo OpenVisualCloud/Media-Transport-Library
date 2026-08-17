@@ -35,6 +35,34 @@ enum st_fps framerate_to_st_fps(AVRational framerate) {
   return st_frame_rate_to_st_fps(fps);
 }
 
+static int mtl_parse_pacing_way(AVFormatContext* ctx, const char* value,
+                                enum st21_tx_pacing_way* pacing) {
+  static const struct {
+    const char* name;
+    enum st21_tx_pacing_way pacing;
+  } pacing_ways[] = {
+      {"auto", ST21_TX_PACING_WAY_AUTO},
+      {"rl", ST21_TX_PACING_WAY_RL},
+      {"tsn", ST21_TX_PACING_WAY_TSN},
+      {"tsc", ST21_TX_PACING_WAY_TSC},
+      {"tsc_narrow", ST21_TX_PACING_WAY_TSC_NARROW},
+      {"ptp", ST21_TX_PACING_WAY_PTP},
+      {"be", ST21_TX_PACING_WAY_BE},
+  };
+
+  if (!value) return 0;
+
+  for (size_t i = 0; i < sizeof(pacing_ways) / sizeof(pacing_ways[0]); i++) {
+    if (!strcmp(value, pacing_ways[i].name)) {
+      *pacing = pacing_ways[i].pacing;
+      return 0;
+    }
+  }
+
+  err(ctx, "%s, invalid pacing way: %s\n", __func__, value);
+  return AVERROR(EINVAL);
+}
+
 static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* args,
                                 struct mtl_init_params* p) {
   memset(p, 0, sizeof(*p));
@@ -43,6 +71,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
     err(ctx, "%s, ptp_pi and ptp_unicast require ptp_enable\n", __func__);
     return AVERROR(EINVAL);
   }
+
+  if (mtl_parse_pacing_way(ctx, args->pacing_way, &p->pacing) < 0) return AVERROR(EINVAL);
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     if (!args->port[i]) continue;
@@ -83,8 +113,6 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
     info(ctx, "%s, PTP enabled (pi=%d unicast=%d)\n", __func__, args->ptp_pi,
          args->ptp_unicast);
   }
-
-  if (args->ptp_pacing) p->pacing = ST21_TX_PACING_WAY_PTP;
 
   if (args->dma_dev) {
     char devs[128] = {0};
