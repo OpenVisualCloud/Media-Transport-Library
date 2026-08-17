@@ -153,7 +153,7 @@ class FFmpeg(Application):
         filter_v: str = "",
         udp_port: int = 20000,
         ptp_enable: bool = False,
-        ptp_pacing: bool = False,
+        pacing_way=None,
     ) -> str:
         """Build an FFmpeg → mtl_st20p TX command line.
 
@@ -162,16 +162,15 @@ class FFmpeg(Application):
         ``framerate`` only emitted for the rgb24 family — yuv_h264 omits
         ``-framerate`` because the source already carries the canonical fps.
         ``filter_v`` is the full ``-filter:v <chain>`` token (empty by default).
-        ``ptp_enable``/``ptp_pacing`` are independent opt-in flags; neither is
-        implied by the other or by any other parameter.
+        ``ptp_enable`` is independent from ``pacing_way``.
         """
         framerate_token = f"-framerate {framerate} " if framerate is not None else ""
         filter_token = f"{filter_v} " if filter_v else ""
         ptp_token = ""
         if ptp_enable:
             ptp_token += "-ptp_enable 1 "
-        if ptp_pacing:
-            ptp_token += "-ptp_pacing 1 "
+        if pacing_way:
+            ptp_token += f"-pacing_way {pacing_way} "
         # ``-re`` throttles the rawvideo reader to the source framerate. Without
         # it FFmpeg drains the (ramdisk) file as fast as it can and hands frames
         # to st20p_tx_put_frame() faster than realtime; MTL then transmits ahead
@@ -316,7 +315,7 @@ class FFmpeg(Application):
                     mcast=ip_pools.rx_multicast[0],
                     framerate=fps,
                     ptp_enable=self.params.get("enable_ptp", False),
-                    ptp_pacing=self.params.get("ptp_pacing", False),
+                    pacing_way=self.params.get("pacing_way"),
                 )
             ]
         else:
@@ -340,6 +339,7 @@ class FFmpeg(Application):
                 mcast=ip_pools.rx_multicast[0],
                 framerate=fps,
                 filter_v="-filter:v format=rgb24",
+                pacing_way=self.params.get("pacing_way"),
             )
         ]
         return self._RXTXAPP_RX_TMPL, None
@@ -368,6 +368,7 @@ class FFmpeg(Application):
                     mcast=ip_pools.rx_multicast[i],
                     framerate=f,
                     filter_v="-filter:v format=rgb24",
+                    pacing_way=self.params.get("pacing_way"),
                 )
             )
         return self._RXTXAPP_RX_TMPL, None

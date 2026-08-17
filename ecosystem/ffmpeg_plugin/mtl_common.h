@@ -131,8 +131,8 @@
        UINT16_MAX,                                                                         \
        DEC},                                                                               \
   {                                                                                        \
-    "ptp_pacing", "use PTP-based packet pacing", OFFSET(devArgs.ptp_pacing),               \
-        AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC                                            \
+    "pacing_way", "set packet pacing way", OFFSET(devArgs.pacing_way),                     \
+        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC                                    \
   }
 
 #define MTL_RX_PORT_ARGS                                                            \
@@ -352,14 +352,8 @@
        0,                                                                                  \
        1,                                                                                  \
        ENC},                                                                               \
-      {"ptp_pacing",                                                                       \
-       "use PTP-based packet pacing",                                                      \
-       OFFSET(devArgs.ptp_pacing),                                                         \
-       AV_OPT_TYPE_BOOL,                                                                   \
-       {.i64 = 0},                                                                         \
-       0,                                                                                  \
-       1,                                                                                  \
-       ENC},                                                                               \
+      {"pacing_way",       "set packet pacing way", OFFSET(devArgs.pacing_way),            \
+       AV_OPT_TYPE_STRING, {.str = NULL},           .flags = ENC},                         \
       {"ptp_pi",                                                                           \
        "use PI controller for built-in PTP (PF only)",                                     \
        OFFSET(devArgs.ptp_pi),                                                             \
@@ -398,7 +392,7 @@ typedef struct StDevArgs {
   int rx_queues_cnt[MTL_PORT_MAX];
   char* dma_dev;
   int ptp_enable;
-  int ptp_pacing;
+  char* pacing_way;
   int ptp_pi;
   int ptp_unicast;
 } StDevArgs;

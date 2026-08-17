@@ -102,8 +102,7 @@ UNIVERSAL_PARAMS = {
     "nb_rx_desc": None,  # Number of RX descriptors per queue
     "tasklet_time": False,  # Enable tasklet running time stats
     "tsc": False,  # Force TSC pacing
-    "pacing_way": None,  # Pacing way (auto, rl, tsc, tsc_narrow, ptp, tsn)
-    "ptp_pacing": False,  # FFmpeg only: opt-in PTP-based TX pacing (-ptp_pacing)
+    "pacing_way": None,  # Pacing way (auto, rl, tsn, tsc, tsc_narrow, ptp, be)
     "shaping": None,  # ST21 shaping type (narrow, wide)
     "vrx": None,  # ST21 vrx value
     "ts_first_pkt": False,  # Set RTP timestamp at first packet egress

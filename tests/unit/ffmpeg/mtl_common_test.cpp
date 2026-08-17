@@ -19,12 +19,14 @@ struct FfmpegOptionContext {
 
 #define OFFSET(field) offsetof(FfmpegOptionContext, field)
 #define ENC 1
+static constexpr int kEncodingOptionFlag = ENC;
 static const AVOption kTxOptions[] = {MTL_TX_DEV_ARGS};
 #undef ENC
 #undef OFFSET
 
 #define OFFSET(field) offsetof(FfmpegOptionContext, field)
 #define DEC 1
+static constexpr int kDecodingOptionFlag = DEC;
 static const AVOption kRxOptions[] = {MTL_RX_DEV_ARGS};
 #undef DEC
 #undef OFFSET
@@ -188,29 +190,58 @@ TEST_F(FfmpegMtlCommonTest, PtpEnableLeavesDefaultPacing) {
   ASSERT_EQ(ut_ffmpeg_put(handle), 0);
 }
 
-TEST_F(FfmpegMtlCommonTest, ExplicitPtpPacingSelectsPtpPacingWithoutClockClient) {
-  StDevArgs args = {};
-  args.ptp_pacing = 1;
+TEST_F(FfmpegMtlCommonTest, PacingWayMapsCanonicalValues) {
+  struct PacingWayCase {
+    const char* name;
+    enum st21_tx_pacing_way pacing;
+  } cases[] = {
+      {"auto", ST21_TX_PACING_WAY_AUTO},
+      {"rl", ST21_TX_PACING_WAY_RL},
+      {"tsn", ST21_TX_PACING_WAY_TSN},
+      {"tsc", ST21_TX_PACING_WAY_TSC},
+      {"tsc_narrow", ST21_TX_PACING_WAY_TSC_NARROW},
+      {"ptp", ST21_TX_PACING_WAY_PTP},
+      {"be", ST21_TX_PACING_WAY_BE},
+  };
 
-  int idx = -1;
-  mtl_handle handle = ut_ffmpeg_get(&args, &idx);
-  ASSERT_NE(handle, nullptr);
-  const mtl_init_params* params = ut_ffmpeg_last_init_params();
-  EXPECT_FALSE(params->flags & MTL_FLAG_PTP_ENABLE);
-  EXPECT_EQ(params->pacing, ST21_TX_PACING_WAY_PTP);
-  ASSERT_EQ(ut_ffmpeg_put(handle), 0);
+  for (const PacingWayCase& test_case : cases) {
+    ut_ffmpeg_reset();
+    StDevArgs args = {};
+    args.pacing_way = const_cast<char*>(test_case.name);
+    int idx = -1;
+    mtl_handle handle = ut_ffmpeg_get(&args, &idx);
+    ASSERT_NE(handle, nullptr) << test_case.name;
+    const mtl_init_params* params = ut_ffmpeg_last_init_params();
+    EXPECT_EQ(params->pacing, test_case.pacing) << test_case.name;
+    EXPECT_FALSE(params->flags & MTL_FLAG_PTP_ENABLE) << test_case.name;
+    ASSERT_EQ(ut_ffmpeg_put(handle), 0) << test_case.name;
+  }
 }
 
-TEST_F(FfmpegMtlCommonTest, PtpPacingOptionTargetsBothDeviceDirections) {
+TEST_F(FfmpegMtlCommonTest, InvalidPacingWayRejectsBeforeMtlInit) {
+  StDevArgs args = {};
+  args.pacing_way = const_cast<char*>("PTP");
+
+  int idx = -1;
+  EXPECT_EQ(ut_ffmpeg_get(&args, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_init_calls(), 0);
+}
+
+TEST_F(FfmpegMtlCommonTest, PacingWayOptionTargetsBothDeviceDirections) {
   for (const AVOption* options : {kTxOptions, kRxOptions}) {
     size_t count = options == kTxOptions ? std::size(kTxOptions) : std::size(kRxOptions);
+    int expected_flags =
+        options == kTxOptions ? kEncodingOptionFlag : kDecodingOptionFlag;
     const AVOption* pacing_option = nullptr;
     for (size_t i = 0; i < count; i++) {
-      if (!strcmp(options[i].name, "ptp_pacing")) pacing_option = &options[i];
+      if (!strcmp(options[i].name, "pacing_way")) pacing_option = &options[i];
     }
     ASSERT_NE(pacing_option, nullptr);
     EXPECT_EQ(pacing_option->offset,
-              static_cast<int>(offsetof(FfmpegOptionContext, devArgs.ptp_pacing)));
+              static_cast<int>(offsetof(FfmpegOptionContext, devArgs.pacing_way)));
+    EXPECT_EQ(pacing_option->type, AV_OPT_TYPE_STRING);
+    EXPECT_EQ(pacing_option->default_val.str, nullptr);
+    EXPECT_EQ(pacing_option->flags, expected_flags);
   }
 }
 
@@ -243,15 +274,21 @@ TEST_F(FfmpegMtlCommonTest,
   EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
 }
 
-TEST_F(FfmpegMtlCommonTest, SharedHandleRejectsDifferentPtpPacing) {
-  StDevArgs plain = {};
+TEST_F(FfmpegMtlCommonTest, SharedHandleComparesPacingWay) {
+  StDevArgs first = {};
+  first.pacing_way = const_cast<char*>("tsc");
   int idx = -1;
-  mtl_handle handle = ut_ffmpeg_get(&plain, &idx);
+  mtl_handle handle = ut_ffmpeg_get(&first, &idx);
   ASSERT_NE(handle, nullptr);
 
-  StDevArgs paced = {};
-  paced.ptp_pacing = 1;
-  EXPECT_EQ(ut_ffmpeg_get(&paced, &idx), nullptr);
+  StDevArgs same = {};
+  same.pacing_way = const_cast<char*>("tsc");
+  EXPECT_EQ(ut_ffmpeg_get(&same, &idx), handle);
+
+  StDevArgs different = {};
+  different.pacing_way = const_cast<char*>("ptp");
+  EXPECT_EQ(ut_ffmpeg_get(&different, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
   EXPECT_EQ(ut_ffmpeg_put(handle), 0);
   EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
 }
