@@ -17,7 +17,7 @@ export MTL_INSTALL_PREFIX
 : "${SETUP_BUILD_AND_INSTALL_DPDK:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:=0}"
-: "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGB:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:=0}"
 : "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
 : "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
 
@@ -32,7 +32,7 @@ else
 	else
 		setup_build_drivers_options="--disable-ice"
 	fi
-	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGB}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGC}" == "1" ]; then
 		SETUP_BUILD_AND_INSTALL_DRIVERS=1
 	else
 		setup_build_drivers_options="${setup_build_drivers_options} --disable-igc"
@@ -653,7 +653,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"SETUP_BUILD_AND_INSTALL_DPDK:DPDK build/install" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow" \
-		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGB:IGC driver flow" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:IGC driver flow" \
 		"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain" \
 		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
 		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \

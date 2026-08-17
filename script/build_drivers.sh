@@ -186,6 +186,11 @@ build_igc() {
 		return
 	fi
 
+	if [[ "${BUILD_ONLY}" == "true" ]]; then
+		echo "BUILD_ONLY is true. Skipping IGC driver installation." >&2
+		return
+	fi
+
 	if [[ -z "${DRIVER_PACKAGE}" ]]; then
 		echo "No IGC driver package configured for ${ID}." >&2
 		exit 1
@@ -194,7 +199,7 @@ build_igc() {
 	echo "Installing in-tree IGC driver package ${DRIVER_PACKAGE} from the ${ID} repository."
 	install_packages "${DRIVER_PACKAGE}"
 	if ! modinfo igc >/dev/null 2>&1; then
-		echo "IGC driver is unavailable after installing ${DRIVER_PACKAGE}." >&2
+		log_error "IGC driver is unavailable after installing ${DRIVER_PACKAGE}." >&2
 		exit 1
 	fi
 }
