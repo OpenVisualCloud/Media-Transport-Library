@@ -1117,7 +1117,10 @@ static int dev_start_eth_port(struct mt_interface* inf) {
   if (igc_timesync) {
     /* IGC port start clears timesync registers, so enable and validate them again. */
     ret = dev_start_timesync(inf);
-    if (ret < 0) return ret;
+    if (ret < 0) {
+      err("%s(%d), dev_start_timesync fail %d\n", __func__, port, ret);
+      return ret;
+    }
     inf->feature |= MT_IF_FEATURE_TIMESYNC;
   }
 
