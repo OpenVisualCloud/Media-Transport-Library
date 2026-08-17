@@ -72,6 +72,239 @@ TEST_F(FfmpegMtlCommonTest, SparsePortsCompactWithPairedAddressesAndQueues) {
   ASSERT_EQ(ut_ffmpeg_put(handle), 0);
 }
 
+TEST_F(FfmpegMtlCommonTest, PrimaryAndPort7CompactWithPairedValues) {
+  StDevArgs args = {};
+  args.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  args.sip[MTL_PORT_P] = const_cast<char*>("192.0.2.1");
+  args.tx_queues_cnt[MTL_PORT_P] = 11;
+  args.rx_queues_cnt[MTL_PORT_P] = 12;
+  args.port[MTL_PORT_7] = const_cast<char*>("0000:07:00.0");
+  args.sip[MTL_PORT_7] = const_cast<char*>("203.0.113.7");
+  args.tx_queues_cnt[MTL_PORT_7] = 71;
+  args.rx_queues_cnt[MTL_PORT_7] = 72;
+
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&args, &idx);
+  ASSERT_NE(handle, nullptr);
+  EXPECT_EQ(ut_ffmpeg_init_calls(), 1);
+  const mtl_init_params* params = ut_ffmpeg_last_init_params();
+  ASSERT_EQ(params->num_ports, 2);
+  EXPECT_STREQ(params->port[0], "0000:01:00.0");
+  EXPECT_EQ(params->sip_addr[0][0], 192);
+  EXPECT_EQ(params->sip_addr[0][1], 0);
+  EXPECT_EQ(params->sip_addr[0][2], 2);
+  EXPECT_EQ(params->sip_addr[0][3], 1);
+  EXPECT_EQ(params->tx_queues_cnt[0], 11);
+  EXPECT_EQ(params->rx_queues_cnt[0], 12);
+  EXPECT_STREQ(params->port[1], "0000:07:00.0");
+  EXPECT_EQ(params->sip_addr[1][0], 203);
+  EXPECT_EQ(params->sip_addr[1][1], 0);
+  EXPECT_EQ(params->sip_addr[1][2], 113);
+  EXPECT_EQ(params->sip_addr[1][3], 7);
+  EXPECT_EQ(params->tx_queues_cnt[1], 71);
+  EXPECT_EQ(params->rx_queues_cnt[1], 72);
+  ASSERT_EQ(ut_ffmpeg_put(handle), 0);
+}
+
+TEST_F(FfmpegMtlCommonTest, TxSessionPrimaryAndPort7CompactWithPairedValues) {
+  StDevArgs dev_args = {};
+  dev_args.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  dev_args.port[MTL_PORT_7] = const_cast<char*>("0000:07:00.0");
+  StTxSessionPortArgs args = {};
+  args.dip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.1");
+  args.dip[MTL_SESSION_PORT_R] = const_cast<char*>("239.1.1.7");
+  args.udp_port = 20000;
+  args.payload_type = 112;
+  st_tx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &args, &port), 0);
+  ASSERT_EQ(port.num_port, 2);
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_P], "0000:01:00.0");
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_R], "0000:07:00.0");
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_P][0], 239);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_P][1], 1);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_P][2], 1);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_P][3], 1);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_R][0], 239);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_R][1], 1);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_R][2], 1);
+  EXPECT_EQ(port.dip_addr[MTL_SESSION_PORT_R][3], 7);
+  EXPECT_EQ(port.udp_port[MTL_SESSION_PORT_P], 20000);
+  EXPECT_EQ(port.udp_port[MTL_SESSION_PORT_R], 20000);
+  EXPECT_EQ(port.payload_type, 112);
+}
+
+TEST_F(FfmpegMtlCommonTest, RxSessionPrimaryAndPort7CompactWithPairedValues) {
+  StDevArgs dev_args = {};
+  dev_args.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  dev_args.port[MTL_PORT_7] = const_cast<char*>("0000:07:00.0");
+  StRxSessionPortArgs args = {};
+  args.sip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.1");
+  args.sip[MTL_SESSION_PORT_R] = const_cast<char*>("239.1.1.7");
+  args.udp_port = 20000;
+  args.payload_type = 112;
+  st_rx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &args, &port), 0);
+  ASSERT_EQ(port.num_port, 2);
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_P], "0000:01:00.0");
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_R], "0000:07:00.0");
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_P][0], 239);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_P][1], 1);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_P][2], 1);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_P][3], 1);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_R][0], 239);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_R][1], 1);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_R][2], 1);
+  EXPECT_EQ(port.ip_addr[MTL_SESSION_PORT_R][3], 7);
+  EXPECT_EQ(port.udp_port[MTL_SESSION_PORT_P], 20000);
+  EXPECT_EQ(port.udp_port[MTL_SESSION_PORT_R], 20000);
+  EXPECT_EQ(port.payload_type, 112);
+}
+
+TEST_F(FfmpegMtlCommonTest, SessionSecondPortOverridesCompactedDevicePort) {
+  StDevArgs dev_args = {};
+  dev_args.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  dev_args.port[MTL_PORT_7] = const_cast<char*>("0000:07:00.0");
+  StTxSessionPortArgs args = {};
+  args.port[MTL_SESSION_PORT_R] = const_cast<char*>("kernel:eth7");
+  st_tx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &args, &port), 0);
+  ASSERT_EQ(port.num_port, 2);
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_P], "0000:01:00.0");
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_R], "kernel:eth7");
+}
+
+TEST_F(FfmpegMtlCommonTest, LonePort7CompactsToSessionPrimary) {
+  StDevArgs dev_args = {};
+  dev_args.port[MTL_PORT_7] = const_cast<char*>("0000:07:00.0");
+  StTxSessionPortArgs args = {};
+  st_tx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &args, &port), 0);
+  ASSERT_EQ(port.num_port, 1);
+  EXPECT_STREQ(port.port[MTL_SESSION_PORT_P], "0000:07:00.0");
+}
+
+TEST_F(FfmpegMtlCommonTest, SessionOnlyExplicitPortsRemainSupported) {
+  StDevArgs dev_args = {};
+  StTxSessionPortArgs tx_args = {};
+  tx_args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+  tx_args.port[MTL_SESSION_PORT_R] = const_cast<char*>("kernel:eth1");
+  st_tx_port tx_port = {};
+  StRxSessionPortArgs rx_args = {};
+  rx_args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+  rx_args.port[MTL_SESSION_PORT_R] = const_cast<char*>("kernel:eth1");
+  st_rx_port rx_port = {};
+
+  ASSERT_EQ(tx_port.num_port, 0);
+  ASSERT_EQ(tx_port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &tx_args, &tx_port), 0);
+  ASSERT_EQ(tx_port.num_port, 2);
+  EXPECT_STREQ(tx_port.port[MTL_SESSION_PORT_P], "kernel:eth0");
+  EXPECT_STREQ(tx_port.port[MTL_SESSION_PORT_R], "kernel:eth1");
+
+  ASSERT_EQ(rx_port.num_port, 0);
+  ASSERT_EQ(rx_port.port[MTL_SESSION_PORT_P][0], '\0');
+  ASSERT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &rx_args, &rx_port), 0);
+  ASSERT_EQ(rx_port.num_port, 2);
+  EXPECT_STREQ(rx_port.port[MTL_SESSION_PORT_P], "kernel:eth0");
+  EXPECT_STREQ(rx_port.port[MTL_SESSION_PORT_R], "kernel:eth1");
+}
+
+TEST_F(FfmpegMtlCommonTest, TxSessionRejectsInvalidDestinationIp) {
+  StDevArgs dev_args = {};
+  StTxSessionPortArgs args = {};
+  args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+  args.dip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.999");
+  st_tx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  EXPECT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &args, &port), AVERROR(EINVAL));
+}
+
+TEST_F(FfmpegMtlCommonTest, RxSessionRejectsInvalidSourceIp) {
+  StDevArgs dev_args = {};
+  StRxSessionPortArgs args = {};
+  args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+  args.sip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.999");
+  st_rx_port port = {};
+
+  ASSERT_EQ(port.num_port, 0);
+  ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+  EXPECT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &args, &port), AVERROR(EINVAL));
+}
+
+TEST_F(FfmpegMtlCommonTest, TxSessionValidatesUdpAndPayloadBoundaries) {
+  struct ValidationCase {
+    int udp_port;
+    int payload_type;
+    int expected;
+  } cases[] = {
+      {0, 0, 0},
+      {0xFFFF, 0x7F, 0},
+      {-1, 0, AVERROR(EINVAL)},
+      {0x10000, 0, AVERROR(EINVAL)},
+      {0, -1, AVERROR(EINVAL)},
+      {0, 0x80, AVERROR(EINVAL)},
+  };
+  StDevArgs dev_args = {};
+
+  for (const ValidationCase& test : cases) {
+    SCOPED_TRACE(testing::Message()
+                 << "udp=" << test.udp_port << " payload=" << test.payload_type);
+    StTxSessionPortArgs args = {};
+    args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+    args.udp_port = test.udp_port;
+    args.payload_type = test.payload_type;
+    st_tx_port port = {};
+
+    ASSERT_EQ(port.num_port, 0);
+    ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+    EXPECT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &args, &port), test.expected);
+  }
+}
+
+TEST_F(FfmpegMtlCommonTest, RxSessionValidatesUdpAndPayloadBoundaries) {
+  struct ValidationCase {
+    int udp_port;
+    int payload_type;
+    int expected;
+  } cases[] = {
+      {0, 0, 0},
+      {0xFFFF, 0x7F, 0},
+      {-1, 0, AVERROR(EINVAL)},
+      {0x10000, 0, AVERROR(EINVAL)},
+      {0, -1, AVERROR(EINVAL)},
+      {0, 0x80, AVERROR(EINVAL)},
+  };
+  StDevArgs dev_args = {};
+
+  for (const ValidationCase& test : cases) {
+    SCOPED_TRACE(testing::Message()
+                 << "udp=" << test.udp_port << " payload=" << test.payload_type);
+    StRxSessionPortArgs args = {};
+    args.port[MTL_SESSION_PORT_P] = const_cast<char*>("kernel:eth0");
+    args.udp_port = test.udp_port;
+    args.payload_type = test.payload_type;
+    st_rx_port port = {};
+
+    ASSERT_EQ(port.num_port, 0);
+    ASSERT_EQ(port.port[MTL_SESSION_PORT_P][0], '\0');
+    EXPECT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &args, &port), test.expected);
+  }
+}
+
 TEST_F(FfmpegMtlCommonTest, AllEightSourceIndexesReachMtlInit) {
   StDevArgs args = {};
   char ports[MTL_PORT_MAX][16];

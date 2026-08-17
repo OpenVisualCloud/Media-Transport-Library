@@ -225,14 +225,26 @@ int mtl_instance_put(AVFormatContext* ctx, mtl_handle handle) {
   return 0;
 }
 
+static const char* mtl_next_dev_port(const struct StDevArgs* devArgs, int* index) {
+  while (*index < MTL_PORT_MAX) {
+    const char* port = devArgs->port[*index];
+    (*index)++;
+    if (port) return port;
+  }
+
+  return NULL;
+}
+
 int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StRxSessionPortArgs* args, struct st_rx_port* port) {
+  int dev_port_idx = 0;
+
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    /* if no special port in StRxSessionPortArgs, get from StDevArgs */
-    if (!args->port[i] && !devArgs->port[i]) break;
+    const char* dev_port = mtl_next_dev_port(devArgs, &dev_port_idx);
+    const char* port_name = args->port[i] ? args->port[i] : dev_port;
+    if (!port_name) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
-    snprintf(port->port[i], sizeof(port->port[i]), "%s",
-             args->port[i] ? args->port[i] : devArgs->port[i]);
+    snprintf(port->port[i], sizeof(port->port[i]), "%s", port_name);
     if (args->sip[i]) {
       int ret = inet_pton(AF_INET, args->sip[i], port->ip_addr[i]);
       if (ret != 1) {
@@ -258,12 +270,14 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
 
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port) {
+  int dev_port_idx = 0;
+
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    /* if no special port in StTxSessionPortArgs, get from StDevArgs */
-    if (!args->port[i] && !devArgs->port[i]) break;
+    const char* dev_port = mtl_next_dev_port(devArgs, &dev_port_idx);
+    const char* port_name = args->port[i] ? args->port[i] : dev_port;
+    if (!port_name) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
-    snprintf(port->port[i], sizeof(port->port[i]), "%s",
-             args->port[i] ? args->port[i] : devArgs->port[i]);
+    snprintf(port->port[i], sizeof(port->port[i]), "%s", port_name);
     if (args->dip[i]) {
       int ret = inet_pton(AF_INET, args->dip[i], port->dip_addr[i]);
       if (ret != 1) {

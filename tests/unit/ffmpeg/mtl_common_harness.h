@@ -47,10 +47,20 @@ extern "C" {
 #endif
 
 struct StDevArgs;
+struct StRxSessionPortArgs;
+struct StTxSessionPortArgs;
+struct st_rx_port;
+struct st_tx_port;
 
 void ut_ffmpeg_reset(void);
 mtl_handle ut_ffmpeg_get(const struct StDevArgs* args, int* idx);
 int ut_ffmpeg_put(mtl_handle handle);
+int ut_ffmpeg_parse_rx_port(const struct StDevArgs* dev_args,
+                            const struct StRxSessionPortArgs* args,
+                            struct st_rx_port* port);
+int ut_ffmpeg_parse_tx_port(const struct StDevArgs* dev_args,
+                            const struct StTxSessionPortArgs* args,
+                            struct st_tx_port* port);
 void ut_ffmpeg_block_first_init(void);
 bool ut_ffmpeg_wait_for_init_calls(int count);
 bool ut_ffmpeg_wait_for_lifecycle_lock_calls(int count);
