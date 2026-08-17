@@ -89,6 +89,18 @@ int ut_ffmpeg_put(mtl_handle handle) {
   return mtl_instance_put(NULL, handle);
 }
 
+int ut_ffmpeg_parse_rx_port(const struct StDevArgs* dev_args,
+                            const struct StRxSessionPortArgs* args,
+                            struct st_rx_port* port) {
+  return mtl_parse_rx_port(NULL, dev_args, args, port);
+}
+
+int ut_ffmpeg_parse_tx_port(const struct StDevArgs* dev_args,
+                            const struct StTxSessionPortArgs* args,
+                            struct st_tx_port* port) {
+  return mtl_parse_tx_port(NULL, dev_args, args, port);
+}
+
 void ut_ffmpeg_block_first_init(void) {
   pthread_mutex_lock(&ut_init_mutex);
   ut_block_init = true;
