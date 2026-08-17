@@ -23,7 +23,7 @@ NPROC="${NPROC:-$(nproc)}"
 
 if ! grep "/root/.local/bin" <<<"${PATH}" >/dev/null 2>&1; then
 	PATH="/root/.local/bin:/root/bin:/root/usr/bin:${PATH}"
-	PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}"
+	PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
 fi
 
 BOLD="${BOLD:-\e[1;}"
@@ -402,6 +402,59 @@ function setup_package_manager() {
 	return 0
 }
 
+function setup_distribution() {
+	if [[ ! -f /etc/os-release ]]; then
+		log_error "/etc/os-release not found. Cannot determine OS."
+		return 1
+	fi
+
+	# shellcheck disable=SC1091
+	. /etc/os-release
+	ID_LIKE="${ID_LIKE:-}"
+
+	case "${ID}" in
+	ubuntu)
+		PACKAGE_MANAGER="apt-get"
+		PACKAGE_INSTALL_COMMAND="apt-get install -y"
+		DRIVER_PACKAGE="linux-modules-${KERNEL_VERSION}"
+		;;
+	debian)
+		PACKAGE_MANAGER="apt-get"
+		PACKAGE_INSTALL_COMMAND="apt-get install -y"
+		DRIVER_PACKAGE="linux-image-${KERNEL_VERSION}"
+		;;
+	centos | fedora | rhel | rockos | rocky)
+		if command_exists dnf; then
+			PACKAGE_MANAGER="dnf"
+		else
+			PACKAGE_MANAGER="yum"
+		fi
+		PACKAGE_INSTALL_COMMAND="${PACKAGE_MANAGER} install -y"
+		DRIVER_PACKAGE="kernel-modules-core-${KERNEL_VERSION}"
+		;;
+	*)
+		PACKAGE_MANAGER=""
+		PACKAGE_INSTALL_COMMAND=""
+		DRIVER_PACKAGE=""
+		;;
+	esac
+
+	PM="${PACKAGE_MANAGER}"
+	export ID VERSION_ID ID_LIKE PM PACKAGE_MANAGER PACKAGE_INSTALL_COMMAND DRIVER_PACKAGE
+}
+
+function install_packages() {
+	local install_command
+
+	if [[ -z "${PACKAGE_INSTALL_COMMAND}" ]]; then
+		log_error "No package installation command configured for ${ID}."
+		return 1
+	fi
+
+	read -r -a install_command <<<"${PACKAGE_INSTALL_COMMAND}"
+	as_root "${install_command[@]}" "$@"
+}
+
 # Setup build dir and ffmpeg version/directory.
 # FFMPEG_VER taken from environment or forced by 1st parameter
 # Exports FFMPEG_DIR and FFMPEG_VER
@@ -488,3 +541,9 @@ function get_cpu_arch() {
 	esac
 	return 0
 }
+
+setup_distribution ||
+	{
+		log_error "Failed to setup distribution. Please check the script or setup the distribution manually."
+		return 1
+	}

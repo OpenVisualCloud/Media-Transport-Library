@@ -34,7 +34,7 @@ mh_install_dependencies() {
 		cd "$MH_REPO_ROOT" &&
 			SETUP_ENVIRONMENT=1 \
 				SETUP_BUILD_AND_INSTALL_DPDK=0 \
-				SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 \
+				SETUP_BUILD_AND_INSTALL_DRIVERS=0 \
 				SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
 				SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
 				MTL_BUILD_AND_INSTALL=0 \
@@ -103,7 +103,7 @@ mh_ice_driver_status_report() {
 		echo "### Issue"
 		echo "MTL requires the patched out-of-tree ICE driver for rate-limit pacing."
 		echo "Stock kernel ice does not support the iavf TM virtchnl messages."
-		echo 'Rebuild it with: SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 bash .github/scripts/setup_environment.sh'
+		echo 'Rebuild it with: SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash .github/scripts/setup_environment.sh'
 	fi
 }
 
@@ -114,7 +114,9 @@ mh_ice_driver_rebuild() {
 		cd "$MH_REPO_ROOT" &&
 			SETUP_ENVIRONMENT=0 \
 				SETUP_BUILD_AND_INSTALL_DPDK=0 \
-				SETUP_BUILD_AND_INSTALL_ICE_DRIVER=1 \
+				SETUP_BUILD_AND_INSTALL_DRIVERS=0 \
+				SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 \
+				SETUP_BUILD_AND_INSTALL_DRIVERS_IGB=0 \
 				SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
 				SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
 				MTL_BUILD_AND_INSTALL=0 \

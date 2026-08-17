@@ -63,7 +63,7 @@ ethtool -T <ifname>
 
 #### 9.2.1. Build and Install
 
-Use the I226-V build helper from [Build Guide](build.md):
+Use the I226-V build helper to make sure that the igc driver is installed.
 
 ```bash
 cd $mtl_source_code

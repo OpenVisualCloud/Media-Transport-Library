@@ -8,34 +8,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091
-. "${REPO_DIR}/versions.env"
+. "${REPO_DIR}/script/common.sh"
 
-DRIVER="ice"
+BUILD_ICE=true
+BUILD_IGC=true
 BUILD_ONLY=false
 FORCE=false
 if [[ "${FORCE_ICE_REBUILD:-0}" == "1" ]]; then
 	FORCE=true
 fi
-DPDK_SRC_DIR=""
-BUILDTYPE="release"
-SKIP_DPDK=false
-
 usage() {
 	cat <<USAGE
 Usage: $(basename "$0") [OPTIONS]
 
 Build drivers used by Media Transport Library.
+By default, all driver flows are built.
 
 Options:
-  --driver <ice|igc>         Driver flow to build (default: ice)
+  --driver <ice|igc>         Build only the selected driver flow
+  --disable-ice              Do not build the ICE driver flow
+  --disable-igc              Do not build the IGC driver flow
   --build-only              Compile ICE without installing or loading it
   --ice-version <version>    ICE version (default: ${ICE_VER})
   --ice-download-id <id>     Intel download mirror ID (default: ${ICE_DMID})
-  --dpdk-ver <version>       DPDK version for IGC (default: ${DPDK_VER})
-  --dpdk-src-dir <path>      DPDK source directory (default: ../dpdk-<version>)
-  --buildtype <type>         MTL build type for IGC (default: ${BUILDTYPE})
-  --force                    Rebuild ICE or re-clone DPDK
-  --skip-dpdk                Build only MTL in the IGC flow
+	--force                    Rebuild ICE
   -h, --help                 Show this help
 USAGE
 }
@@ -58,8 +54,29 @@ while [[ $# -gt 0 ]]; do
 			echo "--driver requires a value" >&2
 			exit 1
 		}
-		DRIVER="$2"
+		case "$2" in
+		ice)
+			BUILD_ICE=true
+			BUILD_IGC=false
+			;;
+		igc)
+			BUILD_ICE=false
+			BUILD_IGC=true
+			;;
+		*)
+			echo "Unsupported driver '$2'. Use ice or igc." >&2
+			exit 1
+			;;
+		esac
 		shift 2
+		;;
+	--disable-ice)
+		BUILD_ICE=false
+		shift
+		;;
+	--disable-igc)
+		BUILD_IGC=false
+		shift
 		;;
 	--build-only)
 		BUILD_ONLY=true
@@ -81,36 +98,8 @@ while [[ $# -gt 0 ]]; do
 		ICE_DMID="$2"
 		shift 2
 		;;
-	--dpdk-ver)
-		[[ $# -ge 2 ]] || {
-			echo "--dpdk-ver requires a value" >&2
-			exit 1
-		}
-		DPDK_VER="$2"
-		shift 2
-		;;
-	--dpdk-src-dir)
-		[[ $# -ge 2 ]] || {
-			echo "--dpdk-src-dir requires a value" >&2
-			exit 1
-		}
-		DPDK_SRC_DIR="$2"
-		shift 2
-		;;
-	--buildtype)
-		[[ $# -ge 2 ]] || {
-			echo "--buildtype requires a value" >&2
-			exit 1
-		}
-		BUILDTYPE="$2"
-		shift 2
-		;;
 	--force)
 		FORCE=true
-		shift
-		;;
-	--skip-dpdk)
-		SKIP_DPDK=true
 		shift
 		;;
 	-h | --help)
@@ -192,56 +181,32 @@ build_ice() {
 }
 
 build_igc() {
-	case "${BUILDTYPE}" in
-	debug | debugonly | debugoptimized | plain | release) ;;
-	*)
-		echo "Invalid --buildtype '${BUILDTYPE}'" >&2
+	if modinfo igc >/dev/null 2>&1; then
+		echo "In-tree IGC driver is already installed at $(modinfo -n igc)."
+		return
+	fi
+
+	if [[ -z "${DRIVER_PACKAGE}" ]]; then
+		echo "No IGC driver package configured for ${ID}." >&2
 		exit 1
-		;;
-	esac
-
-	if [[ -z "${DPDK_SRC_DIR}" ]]; then
-		DPDK_SRC_DIR="${REPO_DIR}/../dpdk-${DPDK_VER}"
 	fi
 
-	if [[ "${SKIP_DPDK}" == "false" ]]; then
-		if [[ "${FORCE}" == "true" ]]; then
-			rm -rf "${DPDK_SRC_DIR}"
-		fi
-		if [[ ! -d "${DPDK_SRC_DIR}" ]]; then
-			git -C "$(dirname "${DPDK_SRC_DIR}")" clone https://github.com/DPDK/dpdk.git "$(basename "${DPDK_SRC_DIR}")"
-		fi
-		[[ -d "${DPDK_SRC_DIR}/.git" ]] || {
-			echo "Not a git repository: ${DPDK_SRC_DIR}" >&2
-			exit 1
-		}
-		[[ -z "$(git -C "${DPDK_SRC_DIR}" status --porcelain)" ]] || {
-			echo "DPDK source has local changes: ${DPDK_SRC_DIR}" >&2
-			exit 1
-		}
-
-		pushd "${DPDK_SRC_DIR}" >/dev/null
-		git fetch --tags origin
-		git checkout "v${DPDK_VER}"
-		if compgen -G "${REPO_DIR}/patches/dpdk/${DPDK_VER}/*.patch" >/dev/null; then
-			git am "${REPO_DIR}"/patches/dpdk/"${DPDK_VER}"/*.patch
-		fi
-		meson setup build --wipe
-		ninja -C build
-		run_as_root ninja install -C build
-		popd >/dev/null
+	echo "Installing in-tree IGC driver package ${DRIVER_PACKAGE} from the ${ID} repository."
+	install_packages "${DRIVER_PACKAGE}"
+	if ! modinfo igc >/dev/null 2>&1; then
+		echo "IGC driver is unavailable after installing ${DRIVER_PACKAGE}." >&2
+		exit 1
 	fi
-
-	pushd "${REPO_DIR}" >/dev/null
-	./build.sh "${BUILDTYPE}"
-	popd >/dev/null
 }
 
-case "${DRIVER}" in
-ice) build_ice ;;
-igc) build_igc ;;
-*)
-	echo "Unsupported driver '${DRIVER}'. Use ice or igc." >&2
+if [[ "${BUILD_ICE}" == "false" && "${BUILD_IGC}" == "false" ]]; then
+	echo "All driver flows are disabled." >&2
 	exit 1
-	;;
-esac
+fi
+
+if [[ "${BUILD_ICE}" == "true" ]]; then
+	build_ice
+fi
+if [[ "${BUILD_IGC}" == "true" ]]; then
+	build_igc
+fi

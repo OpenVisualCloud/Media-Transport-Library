@@ -15,9 +15,29 @@ export MTL_INSTALL_PREFIX
 # Before MTL build install
 : "${SETUP_ENVIRONMENT:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DPDK:=0}"
-: "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGB:=0}"
 : "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
 : "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
+
+setup_build_drivers_options=""
+setup_build_ice=0
+if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS}" == "1" ]; then
+	setup_build_ice=1
+else
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE}" == "1" ]; then
+		SETUP_BUILD_AND_INSTALL_DRIVERS=1
+		setup_build_ice=1
+	else
+		setup_build_drivers_options="--disable-ice"
+	fi
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGB}" == "1" ]; then
+		SETUP_BUILD_AND_INSTALL_DRIVERS=1
+	else
+		setup_build_drivers_options="${setup_build_drivers_options} --disable-igc"
+	fi
+fi
 
 # MTL build and install
 : "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
@@ -44,11 +64,9 @@ export MTL_INSTALL_PREFIX
 : "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:=0}"
 : "${TOOLS_RUN_SET_TAI_OFFSET:=0}"
 
-# CICD ONLY ARGUMENTS
-# Non-interactive build that sets up every dependency for MTL. Any
-# dependency install failure, including the Ice driver's kernel headers,
-# aborts the script immediately.
-# Use in containers.
+# CI/CD-only settings
+# Run in non-interactive mode for automated/containerized builds.
+# If any dependency installation fails, the script exits immediately.
 : "${CICD_BUILD:=0}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
@@ -101,7 +119,7 @@ function setup_ubuntu_install_dependencies() {
 	python3 -m pip install pyelftools ninja
 
 	# Ice driver dependencies
-	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
+	if [ "${setup_build_ice}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
 		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
@@ -110,7 +128,7 @@ function setup_ubuntu_install_dependencies() {
 		fi
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
 		echo "Installing eBPF/XDP dependencies"
 		sudo apt install -y \
 			make \
@@ -122,7 +140,7 @@ function setup_ubuntu_install_dependencies() {
 			gcc-multilib # clang llvm
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
 		echo "Installing GPU Direct dependencies"
 		ONE_API_TGZ="oneapi.tgz"
 
@@ -153,7 +171,7 @@ function setup_ubuntu_install_dependencies() {
 		rm -rf "${setup_script_folder}/level-zero-${ONE_API_GPU_VER}"
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
 		echo "Installing FFMPEG dependencies"
 		sudo apt install -y \
 			nasm \
@@ -161,7 +179,7 @@ function setup_ubuntu_install_dependencies() {
 			patch
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
+	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
 		echo "Installing JPEG-XS dependencies"
 		sudo apt install -y \
 			cmake \
@@ -170,7 +188,7 @@ function setup_ubuntu_install_dependencies() {
 			build-essential
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "Installing GStreamer dependencies"
 		sudo apt install -y \
 			libunwind-dev \
@@ -182,13 +200,13 @@ function setup_ubuntu_install_dependencies() {
 			libgstreamer1.0-dev
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "Installing OBS dependencies"
 		sudo apt install -y \
 			libobs-dev
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${HOOK_PYTHON}" == "1" ]; then
+	if [ "${HOOK_PYTHON}" == "1" ]; then
 		echo "Installing Python hook dependencies"
 		sudo apt install -y \
 			swig \
@@ -198,14 +216,14 @@ function setup_ubuntu_install_dependencies() {
 		python3 -m pip install setuptools
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${HOOK_RUST}" == "1" ]; then
+	if [ "${HOOK_RUST}" == "1" ]; then
 		echo "Installing Rust hook dependencies"
 		sudo apt install -y \
 			cargo \
 			rustc
 	fi
 
-	if [ "${CICD_BUILD}" == "1" ] || [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
+	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
 		echo "Installing MTL readpcap dependencies"
 		sudo apt install -y \
 			libpcap-dev
@@ -221,39 +239,32 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "$SETUP_ENVIRONMENT" == "1" ]; then
 		echo "$STEP Environment setup."
 
-		if [ -f /etc/os-release ]; then
-			# shellcheck disable=SC1091
-			. /etc/os-release
-			case "$ID" in
-			ubuntu)
-				echo "Detected OS: Ubuntu"
-				setup_ubuntu_install_dependencies
-				;;
-			centos)
-				echo "Detected OS: CentOS"
-				echo "For now unsuported OS, please use Ubuntu"
-				exit 2
-				;;
-			rhel)
-				echo "Detected OS: RHEL"
-				echo "For now unsuported OS, please use Ubuntu"
-				exit 2
-				;;
-			rockos | rocky)
-				echo "Detected OS: Rocky Linux"
-				echo "For now unsuported OS, please use Ubuntu"
-				exit 2
-				;;
-			*)
-				echo "OS not recognized: $ID"
-				echo "For now unsuported OS, please use Ubuntu"
-				exit 2
-				;;
-			esac
-		else
-			echo "/etc/os-release not found. Cannot determine OS."
+		case "$ID" in
+		ubuntu)
+			echo "Detected OS: Ubuntu"
+			setup_ubuntu_install_dependencies
+			;;
+		centos)
+			echo "Detected OS: CentOS"
+			echo "For now unsuported OS, please use Ubuntu"
 			exit 2
-		fi
+			;;
+		rhel)
+			echo "Detected OS: RHEL"
+			echo "For now unsuported OS, please use Ubuntu"
+			exit 2
+			;;
+		rockos | rocky)
+			echo "Detected OS: Rocky Linux"
+			echo "For now unsuported OS, please use Ubuntu"
+			exit 2
+			;;
+		*)
+			echo "OS not recognized: $ID"
+			echo "For now unsuported OS, please use Ubuntu"
+			exit 2
+			;;
+		esac
 		STEP=$((STEP + 1))
 	fi
 
@@ -298,9 +309,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 
-	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
-		echo "$STEP ICE driver build and install"
-		bash "${root_folder}/script/build_drivers.sh" --driver ice
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS}" == "1" ]; then
+		echo "$STEP Driver build and install"
+		# shellcheck disable=SC2086
+		bash "${root_folder}/script/build_drivers.sh" ${setup_build_drivers_options}
 		STEP=$((STEP + 1))
 	fi
 
@@ -639,7 +651,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	for entry in \
 		"SETUP_ENVIRONMENT:Environment bootstrap" \
 		"SETUP_BUILD_AND_INSTALL_DPDK:DPDK build/install" \
-		"SETUP_BUILD_AND_INSTALL_ICE_DRIVER:ICE driver build/install" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGB:IGC driver flow" \
 		"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain" \
 		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
 		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \
@@ -659,7 +673,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator" \
 		"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool" \
 		"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run" \
-		"CICD_BUILD:CICD mode"; do
+		"CICD_BUILD:Non interactive mode"; do
 
 		var=${entry%%:*}
 		desc=${entry#*:}

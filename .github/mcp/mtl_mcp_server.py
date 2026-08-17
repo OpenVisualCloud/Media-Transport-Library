@@ -677,7 +677,7 @@ def dpdk_build() -> str:
     rc, out = _run_rc(
         "SETUP_ENVIRONMENT=0 "
         "SETUP_BUILD_AND_INSTALL_DPDK=1 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
+        "SETUP_BUILD_AND_INSTALL_DRIVERS=0 "
         "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
         "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
         "MTL_BUILD_AND_INSTALL=0 "
@@ -922,7 +922,7 @@ def build_ebpf_xdp() -> str:
     rc, out = _run_rc(
         "SETUP_ENVIRONMENT=0 "
         "SETUP_BUILD_AND_INSTALL_DPDK=0 "
-        "SETUP_BUILD_AND_INSTALL_ICE_DRIVER=0 "
+        "SETUP_BUILD_AND_INSTALL_DRIVERS=0 "
         "SETUP_BUILD_AND_INSTALL_EBPF_XDP=1 "
         "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
         "MTL_BUILD_AND_INSTALL=0 "
