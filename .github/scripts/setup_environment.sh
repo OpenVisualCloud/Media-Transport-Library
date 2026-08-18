@@ -391,58 +391,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		echo "$STEP Plugin JPEG-XS build and install"
-
-		lib_so="libst_plugin_st22_svt_jpeg_xs.so"
-		need_build=0
-
-		# Check plugin .so
-		if ! ldconfig -p 2>/dev/null | grep -q "${lib_so}" &&
-			! test -f /usr/local/lib/x86_64-linux-gnu/${lib_so} &&
-			! test -f /usr/local/lib64/${lib_so}; then
-			echo "MTL JPEG-XS plugin not found."
-			need_build=1
-		fi
-
-		# Check core SvtJpegxs version/presence
-		if ! ldconfig -p 2>/dev/null | grep -q "libSvtJpegxs.so.0"; then
-			echo "Core SvtJpegxs library not found."
-			need_build=1
-		elif ! pkg-config --atleast-version="${SVT_JPEG_XS_MIN_VER}" SvtJpegxs 2>/dev/null; then
-			echo "Core SvtJpegxs library is outdated (< ${SVT_JPEG_XS_MIN_VER} required by FFmpeg). Rebuilding."
-			need_build=1
-		fi
-
+		echo "$STEP Plugin JPEG-XS bundle build"
 		export SVT_JPEG_XS_REPO="${setup_script_folder}/SVT-JPEG-XS"
-
-		if [ ! -d "${SVT_JPEG_XS_REPO}" ]; then
-			echo "Downloading SVT-JPEG-XS (${SVT_JPEG_XS_VER}) using wget..."
-			if ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"; then
-				wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-			fi
-			mkdir -p "${SVT_JPEG_XS_REPO}"
-			tar -xzf "${setup_script_folder}/SVT-JPEG-XS.tar.gz" -C "${SVT_JPEG_XS_REPO}" --strip-components=1
-			rm -f "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-		fi
-
-		if [ "${need_build}" -eq 0 ]; then
-			echo "=== SVT-JPEG-XS and MTL bridge plugin are already up-to-date. Alignment skipped ==="
-		else
-			# Build and install SVT-JPEG-XS library
-			pushd "${SVT_JPEG_XS_REPO}/Build/linux" >/dev/null || exit 1
-			./build.sh install
-			popd >/dev/null
-
-			# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
-			pushd "${SVT_JPEG_XS_REPO}/imtl-plugin" >/dev/null || exit 1
-			rm -rf build
-			meson setup build
-			meson compile -C build
-			sudo meson install -C build
-			popd >/dev/null
-
-			sudo ldconfig
-		fi
+		bash "${root_folder}/.github/scripts/ci/build-jpegxs.sh"
 		STEP=$((STEP + 1))
 	fi
 

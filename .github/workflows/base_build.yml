@@ -93,3 +93,14 @@ jobs:
         env:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
+
+      - name: 'system: Check eBPF/XDP prerequisites'
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
+        # After the build, because this job installs its own dependencies.
+        # It asserts the install step delivered what it promised, including
+        # the xdp-tools and libbpf versions pinned in versions.env.
+        uses: ./.github/actions/check-ebpf
+        with:
+          mode: build
+          strict: 'true'
+          require_xdp: 'true'

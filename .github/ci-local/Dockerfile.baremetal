@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+
+# The second kind of runner in this repository's CI: `runs-on: ${{ matrix.nic }}`,
+# a bare-metal host that owns a NIC and consumes the artifacts the build runner
+# produced. smoke-tests, gtest-bare-metal and the pytest workflows all land here
+# through .github/actions/validate-host.
+#
+# It is the build image plus the tooling those jobs use, so the expensive apt
+# layer is shared rather than duplicated.
+#
+# What a container cannot simulate, and the job scripts say so out loud:
+#   * VFs, PFs and PCI binding -- no devices are passed in;
+#   * the Kahawai ICE driver -- a container shares the host kernel and has no
+#     business replacing its modules;
+#   * hugepages and PTP.
+# Everything before that point -- cache restore, artifact layout, library and
+# plugin resolution, the environment the tests inherit -- is exactly what the
+# real host does, and that is where these jobs actually break.
+
+ARG BASE_IMAGE=mtl-ci-local:22.04-1000
+FROM ${BASE_IMAGE}
+
+USER root
+
+ARG RUNNER_UID=1000
+ARG RUNNER_GID=1000
+
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
+	iproute2 \
+	jq \
+	kmod \
+	openssh-client \
+	pciutils \
+	rsync \
+	tcpdump; \
+	rm -rf /var/lib/apt/lists/*
+
+USER ${RUNNER_UID}:${RUNNER_GID}
+WORKDIR /github/workspace
