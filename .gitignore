@@ -118,3 +118,6 @@ venv*
 
 # Local CI reproduction (.github/ci-local)
 .ci-local/
+
+# Claude Code personal settings
+.claude/settings.local.json
