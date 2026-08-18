@@ -7,6 +7,13 @@ set -euo pipefail
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 operation=${1:?usage: validation-workflow.sh OPERATION}
 
+build_packages=(
+	git gcc meson tar zip pkg-config python3 python3-pyelftools
+	python3-virtualenv python3-pip libnuma-dev libjson-c-dev libpcap-dev
+	libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev
+	libbpf-dev libelf1
+)
+
 bind_kernel() {
 	sudo rmmod irdma 2>/dev/null || true
 	sudo "${root_dir}/script/nicctl.sh" bind_kernel "${TEST_PF_PORT_P}" || true
@@ -15,13 +22,27 @@ bind_kernel() {
 
 case "$operation" in
 print-environment) env | grep TEST_ || true ;;
+verify-dependencies)
+	# A CI job never installs onto the runner: apt during a job mutates a shared
+	# host, races with other jobs on it and hides drift in the host image. The
+	# job only states what it needs, and a missing package is a host fault.
+	missing=()
+	for pkg in "${build_packages[@]}"; do
+		dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'ok installed' ||
+			missing+=("$pkg")
+	done
+	if [[ ${#missing[@]} -gt 0 ]]; then
+		echo "Missing build packages on this runner: ${missing[*]}" >&2
+		echo "Provision the host once with: task ci:validation -- install-dependencies" >&2
+		exit 1
+	fi
+	echo "All ${#build_packages[@]} build packages present"
+	;;
 install-dependencies)
+	# Provisioning path, run by hand on the host. No CI job calls this.
 	sudo apt update
 	sudo apt-get remove -y pipenv || true
-	sudo apt-get install -y git gcc meson tar zip pkg-config python3 python3-pyelftools \
-		python3-virtualenv python3-pip libnuma-dev libjson-c-dev libpcap-dev \
-		libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
-		libbpf-dev libelf1
+	sudo apt-get install -y "${build_packages[@]}"
 	;;
 patch-dpdk) patch -d "${root_dir}/dpdk" -p1 -i <(cat "${root_dir}/patches/dpdk/${DPDK_VERSION}"/*.patch) ;;
 build-dpdk)
@@ -33,7 +54,20 @@ build-mtl)
 	"${root_dir}/build.sh"
 	sudo ldconfig
 	;;
+verify-pipenv)
+	# Same rule for Python: the pipenv environment belongs to the host image.
+	cd "${root_dir}/tests/acceptance"
+	if ! venv_path=$(python3 -m pipenv --venv 2>/dev/null); then
+		echo "No pipenv environment for ${PWD} on this runner." >&2
+		echo "Provision the host once with: task ci:validation -- install-pipenv" >&2
+		exit 1
+	fi
+	activate_path="${venv_path}/bin/activate"
+	echo "VIRTUAL_ENV=${activate_path}" >>"${GITHUB_ENV:?}"
+	echo "VIRTUAL_ENV=${activate_path}" >>"${GITHUB_OUTPUT:?}"
+	;;
 install-pipenv)
+	# Provisioning path, run by hand on the host. No CI job calls this.
 	cd "${root_dir}/tests/acceptance"
 	python3 -m pip install pipenv
 	python3 -m pipenv install -r requirements.txt

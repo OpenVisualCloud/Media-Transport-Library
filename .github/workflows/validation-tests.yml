@@ -144,8 +144,8 @@ jobs:
           ref: 'v${{  env.DPDK_VERSION  }}'
           path: 'dpdk'
 
-      - name: 'configuration: Install the build dependency'
-        run: task ci:validation -- install-dependencies
+      - name: 'configuration: Verify the build dependencies'
+        run: task ci:validation -- verify-dependencies
 
       - name: 'configuration: Apply dpdk patches'
         if: env.DPDK_REBUILD == 'true'
@@ -158,10 +158,10 @@ jobs:
       - name: 'installation: Build mtl'
         run: task ci:validation -- build-mtl
 
-      - name: 'installation: Install pipenv environment'
+      - name: 'preparation: Verify pipenv environment'
         working-directory: tests/acceptance
         id: pipenv-install
-        run: task ci:validation -- install-pipenv
+        run: task ci:validation -- verify-pipenv
 
   # Timeout of this job is set to 12h [60m/h*12h=720m]
   validation-run-tests:
