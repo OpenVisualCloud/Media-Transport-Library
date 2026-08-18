@@ -29,6 +29,10 @@ SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH} PATH=${PATH}"
 : "${EXIT_ON_FAILURE:=1}"
 : "${NIGHTLY:=1}"                                                                    # Set to 1 to run full test suite, 0 for quick tests
 : "${TEST_CASE_TIMEOUT:=1800}"                                                       # 30 minutes per test case
+: "${HOST_OP_TIMEOUT:=180}"                                                          # Hard bound for one modprobe/nicctl/devbind call
+: "${TEST_KILL_GRACE:=30}"                                                           # SIGKILL delay after SIGTERM for a test case
+: "${MIN_VFIO_PORTS:=4}"                                                             # Ports the suite needs bound to vfio-pci
+: "${HOST_FAULT_EXIT:=3}"                                                            # Exit code meaning "host needs recovery, not a test failure"
 : "${TEST_SIP_SEED:=$((RANDOM))}"                                                    # Seed for generating TEST_P_SIP when not provided
 : "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).$((TEST_SIP_SEED % 256))"}"       # Primary test IP for gtest
 : "${TEST_R_SIP:="192.168.$((TEST_SIP_SEED % 256)).$(((TEST_SIP_SEED + 1) % 256))"}" # Remote test IP for gtest
@@ -120,13 +124,90 @@ generate_test_cases() {
 	test_cases["noctx"]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
 }
 
+dump_driver_state() {
+	echo "--- processes ---"
+	ps -eo pid,stat,wchan:32,etimes,args | grep -E 'modprobe|KahawaiTest|nicctl|dpdk-devbind' | grep -v grep || true
+	local modprobe_pid
+	modprobe_pid=$(pgrep -x modprobe | head -1)
+	if [ -n "${modprobe_pid}" ]; then
+		echo "--- /proc/${modprobe_pid}/stack ---"
+		sudo cat "/proc/${modprobe_pid}/stack" 2>/dev/null || true
+	fi
+	echo "--- modules ---"
+	lsmod | grep -E '^ice|^vfio' || true
+	echo "--- dmesg tail ---"
+	sudo dmesg -T 2>/dev/null | tail -50 || true
+}
+
+# A wedged ICE probe leaves modprobe in uninterruptible sleep, where not even
+# SIGKILL reclaims it. The script cannot fix that, but it must stop waiting:
+# an unbounded wait holds a fleet runner for GitHub's 360-minute default.
+host_fault() {
+	echo "=========================================="
+	echo "✗ Host fault: $1"
+	echo "This is a host problem, not a test failure. The host needs recovery"
+	echo "before it can run tests again, for example:"
+	echo "  echo 1 | sudo tee /sys/bus/pci/devices/<pf-bdf>/remove"
+	echo "  sleep 1"
+	echo "  echo 1 | sudo tee /sys/bus/pci/rescan"
+	echo "=========================================="
+	dump_driver_state
+	kill_test_processes
+	time_taken_by_script
+	exit "${HOST_FAULT_EXIT}"
+}
+
+# Runs one host-configuration command under a hard timeout and treats expiry
+# as a host fault. Nothing here is retried: re-running a command that already
+# hung on a faulted driver only wedges the host further.
+run_bounded() {
+	local label="$1"
+	shift
+	local retval=0
+	timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
+		"${HOST_OP_TIMEOUT}" "$@" || retval=$?
+	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
+		host_fault "${label} did not finish within ${HOST_OP_TIMEOUT}s"
+	fi
+	return "${retval}"
+}
+
+# nicctl.sh touches the same driver, so it can block the same way. It runs in
+# command substitution, where a return code is lost, so a timeout is recorded
+# in a sentinel file that the callers check before reporting "no ports found".
+nicctl_list() {
+	local retval=0
+	timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" list "$@" 2>/dev/null || retval=$?
+	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
+		touch "${TMP_FOLDER}/.nicctl_timeout"
+	fi
+	return "${retval}"
+}
+
+nicctl_wedged() {
+	[ -f "${TMP_FOLDER}/.nicctl_timeout" ]
+}
+
+vfio_port_count() {
+	nicctl_list all | awk '$3 == "vfio-pci"' | wc -l
+}
+
+# The host is already in the state the suite needs when the ICE module is
+# loaded and enough ports are bound to vfio-pci. Reloading in that state buys
+# nothing and is another chance to hit the ICE probe fault.
+ice_state_is_usable() {
+	lsmod | awk '{print $1}' | grep -qwx "ice" || return 1
+	[ "$(vfio_port_count)" -ge "${MIN_VFIO_PORTS}" ]
+}
+
 # This should never be run with active proccesses using dpdk running, as it could lead to hangs
 bind_driver_to_dpdk() {
 	echo binding driver to DPDK...
 
 	if ! lsmod | awk '{print $1}' | grep -wx "ice"; then
 		echo "ICE driver not loaded, loading..."
-		if sudo modprobe ice; then
+		if run_bounded "modprobe ice" sudo modprobe ice; then
 			sleep 3
 		else
 			echo "Warning: Failed to load ICE driver"
@@ -136,11 +217,11 @@ bind_driver_to_dpdk() {
 	fi
 
 	if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
-		"${mtl_folder}/script/nicctl.sh" list up
+		nicctl_list up
 
 		found_match=false
 		for numa in 0 1 2 3; do
-			pfs=$("${mtl_folder}/script/nicctl.sh" list up 2>/dev/null | awk -v numa="${numa}" '$3 == "ice" && $4 == numa {print $2}')
+			pfs=$(nicctl_list up | awk -v numa="${numa}" '$3 == "ice" && $4 == numa {print $2}')
 			echo "Found ICE PFs on NUMA node ${numa}: $pfs"
 
 			for p in $pfs; do
@@ -171,6 +252,9 @@ bind_driver_to_dpdk() {
 				export pf="${pf_lepszyrydzniznica}"
 			else
 				echo "No suitable DMA ports found either"
+				if nicctl_wedged; then
+					host_fault "nicctl.sh stopped responding while listing NIC ports"
+				fi
 				time_taken_by_script
 				exit 1
 			fi
@@ -178,16 +262,19 @@ bind_driver_to_dpdk() {
 
 		pf_numa=$(dpdk-devbind.py --status-dev net | grep "$pf" | awk -F 'numa_node=' '{print $2}' | awk '{print $1}')
 		echo "Binding PF $pf to DPDK driver numa node ${pf_numa}"
-		sudo -E "${mtl_folder}/script/nicctl.sh" create_tvf "$pf"
+		run_bounded "nicctl create_tvf ${pf}" sudo -E "${mtl_folder}/script/nicctl.sh" create_tvf "$pf"
 	fi
 
 	sleep 5
-	TEST_PORT_1=$("${mtl_folder}/script/nicctl.sh" list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_2=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_3=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_4=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | grep -v "${TEST_PORT_3}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+	TEST_PORT_1=$(nicctl_list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+	TEST_PORT_2=$(nicctl_list all | grep -v "${TEST_PORT_1}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+	TEST_PORT_3=$(nicctl_list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+	TEST_PORT_4=$(nicctl_list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | grep -v "${TEST_PORT_3}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
 
 	if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
+		if nicctl_wedged; then
+			host_fault "nicctl.sh stopped responding while listing NIC ports"
+		fi
 		echo "Error: Could not find enough VFIO-PCI bound ports for testing"
 		echo " TEST_PORT_1=$TEST_PORT_1"
 		echo " TEST_PORT_2=$TEST_PORT_2"
@@ -206,7 +293,7 @@ bind_driver_to_dpdk() {
 	echo "Selected ports: P=$TEST_PORT_1, R=$TEST_PORT_2"
 
 	if ! dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_P" | grep -q "unused=${dma_mechanism}"; then
-		if ! sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_P" 2>&1 | sudo tee -a "$LOG_FILE"; then
+		if ! run_bounded "dpdk-devbind DMA port P" sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_P"; then
 			echo "Error: Could not bind DMA port P ($TEST_DMA_PORT_P) to vfio-pci"
 			time_taken_by_script
 			exit 1
@@ -217,7 +304,7 @@ bind_driver_to_dpdk() {
 	fi
 
 	if ! dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_R" | grep -q "unused=${dma_mechanism}"; then
-		if ! sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_R" 2>&1 | sudo tee -a "$LOG_FILE"; then
+		if ! run_bounded "dpdk-devbind DMA port R" sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_R"; then
 			echo "Error: Could not bind DMA port R ($TEST_DMA_PORT_R) to vfio-pci"
 			time_taken_by_script
 			exit 1
@@ -231,11 +318,15 @@ bind_driver_to_dpdk() {
 }
 
 reset_ice_driver() {
-	echo "Resetting ICE driver..."
-	sudo modprobe -r ice || true
-	sleep 5
-	sudo modprobe ice || true
-	sleep 10
+	if ice_state_is_usable; then
+		echo "ICE loaded with at least ${MIN_VFIO_PORTS} vfio-pci ports, skipping reload"
+	else
+		echo "Resetting ICE driver..."
+		run_bounded "modprobe -r ice" sudo modprobe -r ice || true
+		sleep 5
+		run_bounded "modprobe ice" sudo modprobe ice || true
+		sleep 10
+	fi
 
 	export TEST_PORT_1=""
 	export TEST_PORT_2=""
@@ -274,6 +365,45 @@ check_configuration_errors() {
 	return 0
 }
 
+# Runs one test case bounded by TEST_CASE_TIMEOUT.
+#
+# The payload is not piped into `tee`: KahawaiTest runs as root under sudo, so
+# an orphan that outlives `timeout` keeps the pipe open and stalls the whole
+# pipeline no matter what the timeout did. Output goes to a per-case file that
+# `tail -F` streams to the job log instead, and the payload gets its own
+# session so every orphan can be reclaimed by session id.
+run_case_bounded() {
+	local test_name="$1"
+	local case_log="${TMP_FOLDER}/${test_name}.out"
+	local sid_file="${TMP_FOLDER}/${test_name}.sid"
+	local retval=0
+
+	sudo rm -f "${case_log}" "${sid_file}"
+	sudo install -m 0666 /dev/null "${case_log}"
+
+	tail -n 0 -F "${case_log}" &
+	local tail_pid=$!
+
+	setsid --wait bash -c 'echo $$ >"$1"; exec timeout --signal=SIGTERM --kill-after="$2" "$3" bash -c "$4"' \
+		gtest-case "${sid_file}" "${TEST_KILL_GRACE}" "${TEST_CASE_TIMEOUT}" "${test_cases[$test_name]}" \
+		>>"${case_log}" 2>&1 || retval=$?
+
+	kill "${tail_pid}" 2>/dev/null || true
+	wait "${tail_pid}" 2>/dev/null || true
+	sudo tee -a "$LOG_FILE" <"${case_log}" >/dev/null
+
+	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
+		echo "✗ Test case exceeded ${TEST_CASE_TIMEOUT}s: ${test_name}"
+		local sid
+		sid=$(cat "${sid_file}" 2>/dev/null)
+		if [ -n "${sid}" ]; then
+			sudo pkill -SIGKILL -s "${sid}" 2>/dev/null || true
+		fi
+	fi
+
+	return "${retval}"
+}
+
 run_test_with_retry() {
 	local test_name="$1"
 	local attempt=1
@@ -286,8 +416,8 @@ run_test_with_retry() {
 	while [ $attempt -le "$MAX_RETRIES" ]; do
 		echo "Attempt $attempt/$MAX_RETRIES for: $test_name"
 
-		timeout --signal=SIGKILL "${TEST_CASE_TIMEOUT}" bash -c "${test_cases[$test_name]}" 2>&1 | sudo tee -a "$LOG_FILE"
-		RETVAL=${PIPESTATUS[0]}
+		RETVAL=0
+		run_case_bounded "$test_name" || RETVAL=$?
 		if [[ $RETVAL == 0 ]]; then
 			echo "✓ Test passed: $test_name" | sudo tee -a "$LOG_FILE"
 			return 0
@@ -336,6 +466,9 @@ print_configuration() {
 	echo "EXIT_ON_FAILURE: $EXIT_ON_FAILURE"
 	echo "NIGHTLY: $NIGHTLY"
 	echo "TEST_CASE_TIMEOUT: $TEST_CASE_TIMEOUT seconds"
+	echo "HOST_OP_TIMEOUT: $HOST_OP_TIMEOUT seconds"
+	echo "TEST_KILL_GRACE: $TEST_KILL_GRACE seconds"
+	echo "MIN_VFIO_PORTS: $MIN_VFIO_PORTS"
 	echo "TEST_SIP_SEED: $TEST_SIP_SEED"
 	echo "TEST_P_SIP: $TEST_P_SIP"
 	echo "TEST_R_SIP: $TEST_R_SIP"
@@ -344,6 +477,11 @@ print_configuration() {
 	echo "=========================================="
 	echo ""
 }
+
+# Lets tests source the helpers above without running the suite.
+if [ -n "${GTEST_SH_SOURCE_ONLY:-}" ]; then
+	return 0
+fi
 
 sudo mkdir -p "${TMP_FOLDER}" 2>/dev/null
 if [ ! -d "${TMP_FOLDER}" ]; then
