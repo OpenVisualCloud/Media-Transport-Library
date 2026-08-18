@@ -59,6 +59,9 @@ dkms.conf
 !.vscode/
 .vscode/*
 !.vscode/mcp.json
+!.claude
+!.mcp.json
+.github/claude/settings.local.json
 *.log
 *.log_*
 logs_*
