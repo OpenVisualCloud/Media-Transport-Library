@@ -1679,6 +1679,15 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     s->port_user_stats.stat_pkts_offset_dropped++;
     return -EIO;
   }
+  if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+    size_t continuation_row = (size_t)line1_number + 1;
+    size_t continuation_length = payload_length - line1_length;
+    if ((continuation_row >= ops->height) ||
+        (continuation_length > s->st20_fb_size - continuation_row * s->st20_linesize)) {
+      s->port_user_stats.stat_pkts_offset_dropped++;
+      return -EIO;
+    }
+  }
 
   /* check if valid pkt len */
   size_t pkt_payload_len = mbuf->pkt_len - sizeof(struct st_rfc4175_video_hdr);

@@ -62,6 +62,11 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx);
 int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
                   uint16_t line_offset, uint16_t line_length, enum mtl_session_port port);
 
+int ut20_feed_continuation_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                               uint16_t line_num, uint16_t line_offset,
+                               uint16_t line1_length, uint16_t line2_length,
+                               enum mtl_session_port port);
+
 /* Convenience: feed packet `pkt_idx` (0 .. UT20_PKTS_PER_FRAME-1) of a
  * frame at timestamp `ts`. Auto-derives line_num/offset/length and uses
  * `pkt_idx` as the RTP sequence number (no per-port sequence tracking). */
@@ -109,6 +114,7 @@ int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t l
  * ut20_ctx_create() and before feeding any packet. */
 void ut20_ctx_set_pt(ut20_test_ctx* ctx, uint8_t pt);
 void ut20_ctx_set_ssrc(ut20_test_ctx* ctx, uint32_t ssrc);
+void ut20_ctx_set_linesize(ut20_test_ctx* ctx, uint32_t linesize);
 
 /* Force a session port's physical link up/down. A link-down port is a dead
  * wire: it never receives data and is not charged per-port loss at frame
