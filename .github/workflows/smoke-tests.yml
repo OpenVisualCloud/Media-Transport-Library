@@ -55,10 +55,9 @@ jobs:
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
-      - name: 'installation: Install pipenv environment'
+      - name: 'preparation: Verify preinstalled pytest environment'
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        id: pipenv-install
-        run: task ci:pytest-setup -- install
+        run: task ci:pytest-setup -- verify
       - name: Create session ID
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
@@ -73,12 +72,7 @@ jobs:
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
-          MTL_PATH: ${{ secrets.RUNNER_MTL_PATH }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
-          RUNNER_USERNAME: ${{ secrets.RUNNER_USERNAME }}
-          EBU_IP: ${{ secrets.RUNNER_EBU_LIST_IP }}
-          EBU_USER: ${{ secrets.RUNNER_EBU_LIST_USER }}
-          EBU_PASSWORD: ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
         run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
@@ -95,6 +89,88 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: smoke-test-report-${{ matrix.nic }}
+          path: |
+            report.html
+      - name: "Add report to summary"
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
+        run: task ci:report -- smoke-summary
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        uses: ./.github/actions/cleanup
+
+  # Runs beside run-smoke-tests, not after it: the i225 is a 2.5 GbE card, so it
+  # can only carry the low_bandwidth subset (ST 2110-22, low-rate ST 2110-20,
+  # ST 2110-30, ST 2110-40) and it has no SR-IOV, so the tests bind the PF.
+  # Non-blocking while the platform is being brought up.
+  run-smoke-tests-low-bandwidth:
+    needs: pr-gate
+    concurrency:
+      group: smoke-${{ github.workflow }}-${{ github.ref }}-i225
+      cancel-in-progress: true
+    runs-on: i225
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - name: 'preparation: Harden Runner'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+      - name: 'preparation: Checkout MTL'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        with:
+          ref: '${{ github.ref }}'
+      - name: 'preparation: Validate host and download artifacts'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: ./.github/actions/validate-host
+
+      - name: 'cleanup: Kill stale processes before test'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: ./.github/actions/cleanup
+
+      - name: 'preparation: Verify preinstalled pytest environment'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        run: task ci:pytest-setup -- verify
+      - name: Create session ID
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device env variable
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          NIC: i225
+        run: task ci:pytest-setup -- pci
+      - name: Generate test framework config files
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          INTERFACE_TYPE: PF
+          NO_CAPTURE: '1'
+          # 11 runnable cases at 90s of traffic each keeps this leg above the
+          # 20-minute floor the fleet expects of a smoke job.
+          TEST_TIME: '90'
+        run: task ci:pytest-setup -- config-single
+      - name: Export workflow tag for PCAP naming
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          WORKFLOW_TAG: ${{ github.workflow }}:i225
+        run: task ci:pytest-setup -- tag
+      - name: 'execution: Run the low-bandwidth smoke subset'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        timeout-minutes: 35
+        run: task ci:pytest-run -- smoke-low-bandwidth
+      - name: "upload report"
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        id: upload-report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-test-report-i225
           path: |
             report.html
       - name: "Add report to summary"

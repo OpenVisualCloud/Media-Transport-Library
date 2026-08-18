@@ -32,8 +32,15 @@ nightly)
 smoke)
 	"${pytest[@]}" -m smoke -x --template=html/index.html --report="${root_dir}/report.html"
 	;;
+smoke-low-bandwidth)
+	# 2.5 GbE cards (i225/i226) cannot carry an uncompressed 1080p59 ST 2110-20
+	# session, so this suite is the marked subset that fits under 2 Gbps:
+	# ST 2110-22, low-rate ST 2110-20, ST 2110-30 and ST 2110-40. It is not
+	# fail-fast: one unsupported case must not hide the state of the rest.
+	"${pytest[@]}" -m low_bandwidth --template=html/index.html --report="${root_dir}/report.html"
+	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke}" >&2
+	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac
