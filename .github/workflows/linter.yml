@@ -32,6 +32,9 @@ jobs:
         uses: github/super-linter/slim@4e51915f4a812abf59fed160bb14595c0a38a9e7 # v6
         env:
           DEFAULT_BRANCH: main
+          # No Ansible in this repository, and super-linter v6 ships an
+          # .ansible-lint.yml its own ansible-lint rejects ('parseable').
+          VALIDATE_ANSIBLE: false
           VALIDATE_CPP: false
           VALIDATE_JSCPD: false
           VALIDATE_JSON: false

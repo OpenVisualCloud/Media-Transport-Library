@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "mtl-system-setup": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.github/mcp/run_server.sh\""
+      ],
+      "env": {}
+    },
+    "mtl-acceptance-setup": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.github/mcp/run_acceptance_server.sh\""
+      ],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": [
+    "mtl-system-setup",
+    "mtl-acceptance-setup"
+  ]
+}
