@@ -40,11 +40,12 @@ else
 fi
 
 # MTL build and install
-: "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
 : "${MTL_BUILD_AND_INSTALL:=0}"
+: "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
+: "${MTL_BUILD_AND_INSTALL_FUZZ:=0}"
+: "${MTL_BUILD_AND_INSTALL_UNIT_TESTS:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:=0}"
-: "${MTL_BUILD_AND_INSTALL_FUZZ:=0}"
 
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
@@ -317,44 +318,22 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	# MTL build and install
-
+	mtl_build_options="release"
 	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-		echo "$STEP MTL debug build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh debug
-		popd >/dev/null
-		STEP=$((STEP + 1))
+		mtl_build_options="debug"
 	fi
-
-	# If both are enabled we build debug but overwrite with release
-	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
-		echo "$STEP MTL build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh
-		popd >/dev/null
-		STEP=$((STEP + 1))
-	fi
-
 	if [ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]; then
-		echo "$STEP MTL fuzzing build and install"
-		cd "${root_folder}" || exit 1
-		MTL_BUILD_ENABLE_FUZZING=true ./build.sh release enable_fuzzing
-		STEP=$((STEP + 1))
-	fi
-	# MTL build and install
-	mtl_build_options=""
-
-	if [[ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]]; then
-		echo "$STEP enable MTL_fuzzing=true"
 		mtl_build_options="${mtl_build_options} enable_fuzzing"
-		STEP=$((STEP + 1))
+	fi
+	if [ "${MTL_BUILD_AND_INSTALL_UNIT_TESTS}" == "1" ]; then
+		mtl_build_options="${mtl_build_options} unit"
 	fi
 
-	# If both are enabled we build debug but overwrite with release
-	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
-		echo "$STEP MTL build and install"
+	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ] || [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
+		echo "$STEP MTL build and install: ${mtl_build_options}"
 		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh "${mtl_build_options}"
+		# shellcheck disable=SC2086
+		./build.sh ${mtl_build_options}
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
@@ -609,6 +588,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
 		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \
 		"MTL_BUILD_AND_INSTALL:MTL release build" \
+		"MTL_BUILD_AND_INSTALL_FUZZ:MTL fuzzing build" \
+		"MTL_BUILD_AND_INSTALL_UNIT_TESTS:MTL unit tests build and run" \
 		"MTL_BUILD_AND_INSTALL_DOCKER:MTL Docker image" \
 		"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin" \
