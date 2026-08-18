@@ -56,9 +56,9 @@ jobs:
       - name: 'cleanup: Kill stale processes before test'
         uses: ./.github/actions/cleanup
 
-      - name: 'installation: Install pipenv environment'
-        id: pipenv-install
-        run: task ci:pytest-setup -- install
+      - name: 'preparation: Verify preinstalled pytest environment'
+        id: pytest-verify
+        run: task ci:pytest-setup -- verify
       - name: Create session ID
         env:
           RUNNER_NAME: ${{ runner.name }}
@@ -70,12 +70,7 @@ jobs:
       - name: Generate test framework config files
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
-          MTL_PATH: ${{ secrets.RUNNER_MTL_PATH }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
-          RUNNER_USERNAME: ${{ secrets.RUNNER_USERNAME }}
-          EBU_IP: ${{ secrets.RUNNER_EBU_LIST_IP }}
-          EBU_USER: ${{ secrets.RUNNER_EBU_LIST_USER }}
-          EBU_PASSWORD: ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
         run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
         env:

@@ -25,7 +25,7 @@ on:
         type: string
         default: tests
       shadow_host:
-        description: 'Path to shadow host credentials file (IP/USER). Leave empty to use secret.'
+        description: 'Path to shadow host credentials file (IP/USER) on the runner. Empty uses the runner default.'
         required: false
         type: string
         default: ''
@@ -64,9 +64,9 @@ jobs:
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || secrets.SHADOW_HOST) || '' }}
-      - name: Install pytest dependencies
-        run: task ci:pytest-setup -- install
+          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || '/etc/mtl-ci/shadow-host') || '' }}
+      - name: Verify preinstalled pytest environment
+        run: task ci:pytest-setup -- verify
       - name: Set session ID
         env:
           RUNNER_NAME: ${{ runner.name }}
@@ -78,12 +78,7 @@ jobs:
       - name: Generate pytest configuration files
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
-          MTL_PATH: ${{ secrets.RUNNER_MTL_PATH }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
-          RUNNER_USERNAME: ${{ secrets.RUNNER_USERNAME }}
-          EBU_IP: ${{ secrets.RUNNER_EBU_LIST_IP }}
-          EBU_USER: ${{ secrets.RUNNER_EBU_LIST_USER }}
-          EBU_PASSWORD: ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
         run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
         env:

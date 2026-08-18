@@ -63,22 +63,21 @@ jobs:
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host: '${{ secrets.SHADOW_HOST }}'
-      - name: Install pytest dependencies
-        run: task ci:pytest-setup -- install
+          shadow_host: '/etc/mtl-ci/shadow-host'
+      - name: Verify preinstalled pytest environment
+        run: task ci:pytest-setup -- verify
       - name: Set session ID
         env:
           RUNNER_NAME: ${{ runner.name }}
         run: task ci:pytest-setup -- session
       - name: Set PCI device
-        run: echo "PCI_DEVICE=${{ secrets.PERF_PCI_DEVICE || '8086:12d2,8086:12d2' }}" >> "$GITHUB_ENV"
+        run: task ci:pytest-setup -- pci-env
       - name: Generate pytest configuration files
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
           SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
           SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
-          SUT_IP: ${{ secrets.PERF_SUT_IP }}
           TEST_TIME: ${{ inputs.test_time || '120' }}
         run: task ci:pytest-setup -- config-perf
       - name: Export workflow tag for PCAP naming
