@@ -121,60 +121,46 @@ Before opening a pull request, please follow these steps:
 
 If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
 
-### 6.2. Coding style
-
-We use the super-linter action for style checks.
-
-#### 6.2.1. C/C++
-
-For C/C++ coding, you can run the following command to quickly fix the style:
+### 6.2. Set up the checks once
 
 ```bash
-./format-coding.sh
+./checkpatch.sh --bootstrap      # install pre-commit, the only prerequisite
+./checkpatch.sh --install-hooks  # run the checks automatically on commit
 ```
 
-#### 6.2.2. Python
+`--bootstrap` uses pipx or `pip --user`. If your distribution marks its system
+Python as externally managed (Fedora, Arch, Debian 12+ and others), it prints the
+package to install instead; the same list is in
+[doc/coding_standard.md §6](doc/coding_standard.md#6-platforms), together with the
+Windows and macOS routes.
 
-For Python, `black` and `isort` formatter is used.
+### 6.3. Coding style
+
+Every language in this repository is checked by one command, and it is the same
+command the git hooks and CI run:
 
 ```bash
-sudo pip install black
-sudo pip install isort
-sudo pip install pylint
+./checkpatch.sh                  # verify every tracked file
+./checkpatch.sh --staged         # verify what you are about to commit
+./format-coding.sh               # apply every autofix
 ```
 
-```bash
-black python/
-isort python/
-find python/example/ -name "*.py" -exec pylint {} \;
-```
+You do not need clang-format, shfmt, shellcheck, Node.js or any other linter on
+your `PATH`. `pre-commit` installs the pinned version of each tool itself, which
+is also what stops a different locally-installed version from silently
+reformatting hundreds of unrelated files.
 
-#### 6.2.3. Others
+[doc/coding_standard.md](doc/coding_standard.md) is the reference: the rules, which
+check runs where, and how to change one.
 
-For other languages, please check with the following example command inside the Docker container:
+### 6.4. Before you open a pull request
 
-```bash
-# super-linter
-docker run -it --rm  -v "$PWD":/opt/ --entrypoint /bin/bash github/super-linter
-
-cd /opt/
-
-# echo "shfmt check"
-find ./ -type f -name "*.sh" -exec shfmt -w {} +
-# echo "shell check"
-find ./ -name "*.sh" -exec shellcheck {} \;
-
-# hadolint check
-hadolint docker/ubuntu.dockerfile
-
-# actionlint check
-actionlint
-
-# markdownlint check
-find ./ -name "*.md" -exec markdownlint {} -c .markdown-lint.yml \;
-# find ./ -name "*.md" -exec markdownlint {} --fix -c .markdown-lint.yml \;
-
-# textlint
-find ./ -name "*.md" -exec textlint {} \;
-# find ./ -name "*.md" -exec textlint {} --fix \;
-```
+1. `./format-coding.sh` and then `./checkpatch.sh`, until it reports `clean`.
+2. If you touched code: `./build.sh` succeeds, `./build.sh unit` passes, and a
+   test covers the change at the cheapest tier that can catch it --
+   [unit](tests/unit) needs no NIC, [integration](tests/integration_tests) needs
+   VFs, [acceptance](tests/acceptance) is end-to-end.
+3. Write the commit message as
+   [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) with a
+   capitalized type: `Fix: ...`, `Add: ...`, `Docs: ...`. The full list is in
+   [doc/coding_standard.md §7](doc/coding_standard.md#7-commit-messages).

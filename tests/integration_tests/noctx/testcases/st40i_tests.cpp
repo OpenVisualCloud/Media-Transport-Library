@@ -212,9 +212,7 @@ TEST_F(NoCtxTest, st40i_split_multi_packet_roundtrip) {
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       /*strategyFactory=*/
-      [](St40pHandler*) {
-        return new SplitAncStrategy({8, 6, 4});
-      },
+      [](St40pHandler*) { return new SplitAncStrategy({8, 6, 4}); },
       [](St40pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
         handler->sessionsOpsRx.interlaced = false;
@@ -241,9 +239,7 @@ TEST_F(NoCtxTest, st40i_split_loopback) {
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       /*strategyFactory=*/
-      [](St40pHandler*) {
-        return new SplitAncStrategy({4, 4});
-      },
+      [](St40pHandler*) { return new SplitAncStrategy({4, 4}); },
       [](St40pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
         handler->sessionsOpsRx.interlaced = true;

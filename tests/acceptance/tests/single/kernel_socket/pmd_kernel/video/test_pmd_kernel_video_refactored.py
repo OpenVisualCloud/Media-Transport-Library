@@ -6,6 +6,7 @@ Uses the unified ``application`` fixture and forwards ``setup_interfaces`` to
 ``execute_test`` so that kernel-socket OS IPs are configured and registered
 for cleanup, mirroring the legacy behaviour.
 """
+
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files

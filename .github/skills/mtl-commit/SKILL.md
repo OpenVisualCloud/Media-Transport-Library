@@ -11,13 +11,13 @@ being explicitly asked to commit.
 ## Process
 
 1. Run `git status --short` and `git diff --stat`.
-2. **Run `./format-coding.sh` before staging anything.** It runs
-   markdownlint (`MD013` line-length among other rules, config at
-   [.github/linters/.markdown-lint.yml](../../linters/.markdown-lint.yml))
-   alongside clang-format/isort/black/shfmt, and now **fails the script**
-   on any violation `--fix` cannot auto-correct — fix those by hand
-   (rewrap the paragraph; a single `\n` is a soft break, it doesn't
-   change rendering), then re-run until it exits clean.
+2. **Run `./format-coding.sh` before staging anything.** It applies every
+   autofix in `.pre-commit-config.yaml` — clang-format, isort, black, shfmt,
+   markdownlint, textlint — and then **fails** on anything no autofix can
+   correct: shellcheck findings, `MD013` line lengths (rewrap the paragraph; a
+   single `\n` is a soft break and does not change rendering), flake8, yamllint.
+   Fix those by hand and re-run until it exits clean.
+   `./checkpatch.sh --staged` re-verifies just what you are about to commit.
 3. **One commit = one logical change.** Split unrelated edits with
    `git add -p`. Never bundle drive-by changes into an unrelated fix.
 4. For each commit: stage, draft the message, run `git commit -s`
