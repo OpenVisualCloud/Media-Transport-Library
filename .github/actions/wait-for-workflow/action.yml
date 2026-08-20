@@ -1,10 +1,14 @@
 name: Wait for Workflow
 description: >
-  Wait for a GitHub Actions check run to complete on the current commit.
+  Wait for one or more GitHub Actions check runs to complete successfully on the
+  current commit.
 
 inputs:
   check_name:
-    description: 'The check run name to wait for (e.g. "build", "Lint Code Base")'
+    description: >
+      Check run names to wait for, one per line (a single name is the common case).
+      Every name listed must reach conclusion success. A name that never appears is
+      a timeout, not a pass -- that is the whole point of the gate.
     required: true
   timeout:
     description: 'Maximum in-progress time in seconds'
@@ -28,10 +32,41 @@ runs:
     - name: Wait for workflow check
       id: wait
       uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-      env:
-        CHECK_NAME: ${{ inputs.check_name }}
-        WAIT_TIMEOUT: ${{ inputs.timeout }}
-        QUEUE_TIMEOUT: ${{ inputs.queue_timeout }}
-        WAIT_INTERVAL: ${{ inputs.interval }}
-      with:
-        script: return require(`${{ github.action_path }}/wait.js`)({ github, context, core })
+      name: Wait for Workflow
+      description: >
+        Wait for one or more GitHub Actions check runs to complete successfully on the
+        current commit.
+
+      inputs:
+        check_name:
+          description: >
+            Check run names to wait for, one per line. Every name listed must reach a
+            successful conclusion.
+          required: true
+        timeout:
+          description: 'Maximum in-progress or absent time in seconds'
+          required: false
+          default: '600'
+        queue_timeout:
+          description: 'Maximum queued time in seconds'
+          required: false
+          default: '4200'
+        interval:
+          description: 'Polling interval in seconds'
+          required: false
+          default: '30'
+
+      runs:
+        using: composite
+        steps:
+          - name: Wait for workflow check
+            id: wait
+            uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+            env:
+              CHECK_NAMES: ${{ inputs.check_name }}
+              WAIT_TIMEOUT: ${{ inputs.timeout }}
+              QUEUE_TIMEOUT: ${{ inputs.queue_timeout }}
+              WAIT_INTERVAL: ${{ inputs.interval }}
+            with:
+              script: return require(`${{ github.action_path }}/wait.js`)({ github, context, core })
+              const { data } = await github.rest.checks.listForRef({
