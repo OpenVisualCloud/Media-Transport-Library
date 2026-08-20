@@ -9,11 +9,13 @@ const githubRun = (status, conclusion = null) => ({
   conclusion,
 });
 
-async function run(states, timeout = 600, interval = 30, queueTimeout = 4200) {
+async function run(states, timeout = 600, interval = 30, queueTimeout = 4200, checkNames = 'build') {
   const failures = [];
   const originalSetTimeout = global.setTimeout;
   let poll = 0;
-  process.env.CHECK_NAME = 'build';
+  const polls = new Map();
+  process.env.CHECK_NAMES = checkNames;
+  delete process.env.CHECK_NAME;
   process.env.WAIT_TIMEOUT = String(timeout);
   process.env.QUEUE_TIMEOUT = String(queueTimeout);
   process.env.WAIT_INTERVAL = String(interval);
@@ -24,7 +26,12 @@ async function run(states, timeout = 600, interval = 30, queueTimeout = 4200) {
       github: {
         rest: {
           checks: {
-            listForRef: async () => ({ data: { check_runs: states[poll++] } }),
+            listForRef: async ({ check_name: checkName }) => {
+              if (Array.isArray(states)) return { data: { check_runs: states[poll++] } };
+              const namePoll = polls.get(checkName) || 0;
+              polls.set(checkName, namePoll + 1);
+              return { data: { check_runs: states[checkName][namePoll] } };
+            },
           },
         },
       },
@@ -36,6 +43,7 @@ async function run(states, timeout = 600, interval = 30, queueTimeout = 4200) {
     });
   } finally {
     global.setTimeout = originalSetTimeout;
+    delete process.env.CHECK_NAMES;
   }
 
   return failures;
@@ -76,6 +84,12 @@ async function main() {
   const [queueFailure] = await run(queuedForever, 600, 30, 120);
   assert.match(queueFailure, /sat queued for 2 minutes/);
   assert.match(queueFailure, /fleet availability, not a result/);
+
+  const multipleChecks = {
+    linux: [[githubRun('completed', 'success')]],
+    windows: [[], [githubRun('completed', 'success')]],
+  };
+  assert.deepStrictEqual(await run(multipleChecks, 600, 30, 4200, 'linux\nwindows'), []);
 
   console.log('wait-for-workflow state accounting: PASS');
 }

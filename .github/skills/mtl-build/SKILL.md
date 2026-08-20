@@ -22,15 +22,22 @@ Run from the repository root:
 ./format-coding.sh
 ```
 
-- `./format-coding.sh --check` previews changes (non-mutating check/diff
-  mode for every tool, exits 1 if anything would change) instead of writing
-  to disk. Always use this to inspect a formatting change's blast radius
-  before running the real, mutating command on a working tree that has
-  uncommitted work in it.
-- Requires `clang-format-14` (install via `sudo apt install clang-format-14`)
-- **CI rejects improperly formatted code** — always run before committing
-- Formats all C/C++ source files in the repository, plus Python (`isort` then
-  `black`) under `python/` and `tests/`, Markdown, and Shell scripts
+- `./format-coding.sh --check` previews changes (runs the fixers on a clean
+  tree, prints the full diff, then restores it; exits 1 if anything would
+  change). Use it to inspect a formatting change's blast radius. It refuses to
+  run on a dirty tree — commit or stash uncommitted work first.
+- `./checkpatch.sh` is the same rule set in verify mode.
+  `./checkpatch.sh --staged` checks only staged files — what the git hook runs.
+- Requires only `pre-commit` (`./checkpatch.sh --bootstrap`, or the distribution
+  package it names on a PEP 668 host such as Fedora, Arch or Debian 12+). It
+  installs the pinned clang-format, shfmt, shellcheck, markdownlint, yamllint,
+  actionlint and gitleaks itself — do **not** `apt install clang-format-22`, and
+  do not rely on whatever version happens to be on `PATH`.
+- **CI runs the identical hook list** — always run before committing
+- Covers C/C++, Python (`isort`, `black`, `flake8`, `ruff`), shell, Markdown
+  (syntax and prose), YAML, GitHub Actions workflows, HTML and secrets
+- Rules live in `.pre-commit-config.yaml` and `.github/linters/` only. See
+  [doc/coding_standard.md](../../../doc/coding_standard.md)
 
 ## Verification Checklist
 
@@ -40,7 +47,7 @@ After building, verify:
    - `build/lib/libmtl.so` — shared library
    - `build/tests/KahawaiTest` — integration test binary
    - `build/app/RxTxApp` — reference application
-3. Run `./format-coding.sh` and check for any formatting changes
+3. Run `./checkpatch.sh` and check that it exits clean
 
 ## Common Build Errors
 

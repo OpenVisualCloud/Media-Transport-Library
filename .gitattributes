@@ -1,0 +1,16 @@
+# Line endings. The checks in .pre-commit-config.yaml run on Linux, macOS and
+# Windows, and clang-format and shfmt both treat a CRLF file as different from
+# its LF twin -- so a Windows checkout that materialized CRLF would fail the same
+# hooks that pass everywhere else. Normalizing here is what makes the
+# cross-platform promise in doc/coding_standard.md hold.
+#
+# text=auto leaves git's binary detection alone, so the tracked PNGs and SVGs are
+# untouched, and it converts on check-in only -- content already committed with
+# CRLF stays as it is. So this renormalizes nothing and dirties no file; it
+# governs what enters the repository from here on.
+* text=auto eol=lf
+
+# Vendored third-party patch series. Byte-exact by definition: converting an EOL
+# inside a patch body changes the hunks and breaks `git apply`. Excluded from the
+# linters for the same reason.
+patches/** -text
