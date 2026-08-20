@@ -39,8 +39,7 @@ ACCEPTANCE_DISCOVER_LIB = (
 
 mcp = FastMCP(
     "mtl-acceptance-setup",
-    instructions=textwrap.dedent(
-        """\
+    instructions=textwrap.dedent("""\
         MTL Acceptance Tests Setup MCP Server — takes a host to "ready to run
         tests/acceptance/tests/single/ pytest".
 
@@ -63,8 +62,7 @@ mcp = FastMCP(
           PF) to setup_acceptance_tests_full / setup_acceptance_tests_pytest. Without
           these, test_config.yaml's `compliance` stays false and the
           `pcap_capture` fixture only skips (no capture, no EBU upload).
-        """
-    ),
+        """),
 )
 
 

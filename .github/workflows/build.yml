@@ -65,11 +65,17 @@ permissions:
   checks: read
 
 jobs:
-  # ── Gate: wait for Linter workflow on this commit ──
+  # ── Gate: wait for every Linter check on this commit ──
+  # The names below are the *check run* names produced by linter.yml, which is the
+  # matrix job name and the residual job's `name:`. They are a contract between the
+  # two workflows: renaming a job there without renaming it here does not fail the
+  # gate, it makes the gate wait for something that never arrives and then time out.
+  # That is exactly how this broke once -- it still asked for super-linter's old
+  # "Lint Code Base" check, which stopped existing when checkpatch replaced it.
   wait-for-linter:
     if: ${{ !inputs.skip_linter_check && github.ref_name != 'main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -80,8 +86,12 @@ jobs:
       - name: Wait for Linter
         uses: ./.github/actions/wait-for-workflow
         with:
-          check_name: 'Lint Code Base'
-          timeout: '600'
+          check_name: |
+            checkpatch (ubuntu-latest)
+            checkpatch (macos-latest)
+            checkpatch (windows-latest)
+            Lint checks not yet in checkpatch
+          timeout: '900'
 
   # ── Compute source checksums ──
   checksums:

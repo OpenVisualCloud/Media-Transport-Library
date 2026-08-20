@@ -56,6 +56,14 @@ dkms.conf
 *.json
 !.github/
 !.github/**
+# The blanket `.*` above hides every *new* dotfile, which is how .editorconfig and
+# .gitattributes were invisible to `git status` until they were exempted by name.
+# The other two are already tracked; they are listed so the next one cannot be
+# added and silently ignored.
+!.clang-format
+!.editorconfig
+!.gitattributes
+!.pre-commit-config.yaml
 !.vscode/
 .vscode/*
 !.vscode/mcp.json

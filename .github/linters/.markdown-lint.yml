@@ -19,6 +19,14 @@ MD026:
 MD029: false                  # Ordered list item prefix
 MD033: false                  # Allow inline HTML
 MD036: false                  # Emphasis used instead of a heading
+# Added in markdownlint-cli 0.47-0.49, after this config was vendored. Both are
+# new rules rather than fixes to old ones, so turning them on is a style decision
+# and not part of a version bump: MD060 wants every table pipe padded to the
+# header width, which reports 309 findings and rewrites 20 files, and MD059
+# rejects link text like "here". Off keeps the rule set identical across the bump;
+# enabling either is its own commit.
+MD059: false                  # Descriptive link text
+MD060: false                  # Table column style
 
 #################
 # Rules by tags #
