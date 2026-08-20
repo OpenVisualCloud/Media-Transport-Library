@@ -36,8 +36,7 @@ The Copilot workflow above has been ported to Claude Code equivalents, so the sa
 skills, and MCP servers are usable directly.
 
 Everything lives in `.github/claude/`, next to the Copilot originals it mirrors. Claude Code
-only discovers config at fixed paths, so three tracked symlinks bridge the two — the same idiom
-`.clang-format -> .github/linters/.clang-format` already uses:
+only discovers config at fixed paths, so three tracked symlinks bridge the two:
 
 | Discovery path | Real file |
 |---|---|
@@ -107,12 +106,29 @@ versions live in `versions.env` (DPDK, ICE, JPEG-XS, FFmpeg, xdp-tools, libbpf).
 ## Format and lint
 
 ```bash
-./format-coding.sh          # clang-format-14 (C/C++), isort+black (Python), shfmt (shell)
+./checkpatch.sh             # verify everything — what CI and the git hooks run
+./checkpatch.sh --staged    # verify staged files only
+./format-coding.sh          # apply every autofix
+./format-coding.sh --check  # preview the blast radius, then restore the tree
 ```
 
-`clang-format-14` specifically — CI rejects output from other versions. Run before every
-commit. `.clang-format` symlinks to `.github/linters/.clang-format`. Markdown is checked
-with `.markdown-lint.yml`, YAML/shell/actions via super-linter (see README §6.2.3).
+`.pre-commit-config.yaml` is the **single source of truth** for which tool, which version,
+which arguments and which files; rule content lives in `.github/linters/` (plus
+`.clang-format` at the root, which must stay a real file — clang-format searches upward, and
+a symlink materializes as a text file on Windows). `checkpatch.sh`, the git hooks and
+`.github/workflows/linter.yml` all run that one hook list and define no rule of their own.
+Adding a linter or changing a rule means editing that config and nowhere else.
+
+`pre-commit` installs the pinned clang-format 22.1.8, shfmt, shellcheck, markdownlint,
+textlint, yamllint, actionlint and gitleaks itself — plus its own Node — so none of them
+need to be on `PATH`; do not `apt install clang-format-22`. Bootstrap with `./checkpatch.sh --bootstrap`, install
+the hooks with `./checkpatch.sh --install-hooks`. On a PEP 668 host (Fedora, Arch,
+Debian 12+) `--bootstrap` cannot use pip and prints the distribution package instead.
+
+Four CI checks are not yet reproduced locally (`BASH_EXEC`, dotenv-linter, ESLint over
+`*.ts`, rustfmt/clippy) and run in the `residual-linters` job. See
+[doc/coding_standard.md](../../doc/coding_standard.md) for the parity table and the rationale
+behind every pin and omission.
 
 ## Tests
 
@@ -233,3 +249,6 @@ simpler media types.
 Minimal diffs; no speculative helpers, no commented-out code, no reformatting lines you
 aren't functionally changing. `./format-coding.sh` then `./build.sh` before proposing a
 change; add or extend a test at the cheapest tier that can catch the bug.
+
+A new lint or formatting rule goes in `.pre-commit-config.yaml` and nowhere else — not in a
+workflow, not in a script, not in a document. Anything else is drift by construction.

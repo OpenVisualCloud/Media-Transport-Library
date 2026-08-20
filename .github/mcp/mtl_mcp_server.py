@@ -47,8 +47,7 @@ NICCTL = REPO_ROOT / "script" / "nicctl.sh"
 
 mcp = FastMCP(
     "mtl-system-setup",
-    instructions=textwrap.dedent(
-        """\
+    instructions=textwrap.dedent("""\
         MTL System Setup MCP Server — tools for preparing a Linux host to run
         the Media Transport Library (SMPTE ST 2110 over DPDK).
 
@@ -73,8 +72,7 @@ mcp = FastMCP(
 
         Preparing tests/acceptance/ pytest (a separate .local_install tree)?
         Use the sibling `mtl-acceptance-setup` MCP server instead.
-    """
-    ),
+    """),
 )
 
 

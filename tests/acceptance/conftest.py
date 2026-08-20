@@ -100,7 +100,6 @@ def _extract_extra_fields(config: dict) -> dict:
 
     Returns a cleaned config dict suitable for TopologyModel.
     """
-    global _host_extra_config
     _host_extra_config.clear()
 
     cleaned = copy.deepcopy(config)

@@ -4,6 +4,7 @@
 
 Mirrors ``test_mode.py`` using the multi-session ``sessions=[...]`` API.
 """
+
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files, audio_files, yuv_files

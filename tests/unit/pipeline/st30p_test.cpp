@@ -134,7 +134,7 @@ TEST_F(St30PipelineRxTest, GetSessionStatsOverlay) {
   ASSERT_EQ(inject(5000), 0);
   EXPECT_EQ(inject(6000), -EBUSY);
 
-  struct st30_rx_user_stats api {};
+  struct st30_rx_user_stats api{};
   ASSERT_EQ(ut30p_get_session_stats(ctx_, &api), 0);
 
   EXPECT_EQ(api.common.stat_frames_received, frames_received());
@@ -159,7 +159,7 @@ TEST_F(St30PipelineRxTest, CorruptedDeliveredAndCounted) {
   EXPECT_EQ(frames_corrupted(), 1u)
       << "only the CORRUPTED frame must bump stat_frames_corrupted";
 
-  struct st30_rx_user_stats api {};
+  struct st30_rx_user_stats api{};
   ASSERT_EQ(ut30p_get_session_stats(ctx_, &api), 0);
   EXPECT_EQ(api.common.stat_frames_corrupted, 1u);
 }
