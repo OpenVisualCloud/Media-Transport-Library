@@ -11,6 +11,12 @@
             "command": "${workspaceFolder}/.github/mcp/run_acceptance_server.sh",
             "args": [],
             "env": {}
+        },
+        "mtl-ci-local": {
+            "type": "stdio",
+            "command": "${workspaceFolder}/.github/mcp/run_ci_server.sh",
+            "args": [],
+            "env": {}
         }
     }
 }

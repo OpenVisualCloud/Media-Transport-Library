@@ -16,6 +16,7 @@ from mfd_connect.exceptions import (
 
 logger = logging.getLogger(__name__)
 STARTUP_WAIT = 2  # Default wait time after starting the process
+_REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for the capture
 
 # pgroup size (octets) and coverage (pixels) per sampling system and bit depth,
 # from SMPTE ST 2110-20:2022 tables 1 (4:4:4), 2 (4:2:2) and 3 (4:2:0). Keyed by
@@ -169,7 +170,19 @@ class NetsniffRecorder:
             self._enable_promisc(connection)
             try:
                 self.pcap_file = self._build_pcap_path()
+                # netsniff-ng needs privilege for two separate things: it raises
+                # /proc/sys/net/core/{r,w}mem_max, and it opens a PF_PACKET
+                # socket. Unprivileged it reports "Permission denied" for the
+                # former and "Creation of PF socket failed" for the latter, and
+                # then exits 0 -- so a capture over an SSH session running as an
+                # ordinary lab user recorded nothing while looking like it had
+                # worked. sudo is how the framework's other privileged steps run
+                # (see _enable_promisc below), and it is the only option here:
+                # file capabilities are not enough, because netsniff-ng also asks
+                # for a realtime I/O priority, which needs CAP_SYS_ADMIN, and
+                # granting that to a binary is no better than running it as root.
                 cmd = [
+                    "sudo",
                     "netsniff-ng",
                     "--silent" if self.silent else "",
                     "--in",
@@ -260,6 +273,7 @@ class NetsniffRecorder:
         # Check if process is still running before trying to stop
         if not self.netsniff_process.running:
             logger.debug("netsniff-ng process has already finished.")
+            self._reap()
             self._restore_promisc()
             return
 
@@ -276,7 +290,35 @@ class NetsniffRecorder:
         else:
             logger.debug("netsniff-ng process stopped gracefully.")
         finally:
+            self._reap()
             self._restore_promisc()
+
+    def _reap(self):
+        """Make sure no root ``netsniff-ng`` survives the process handle.
+
+        ``start_process("sudo netsniff-ng ...")`` runs under ``bash -c``, so the
+        handle above signals the bash wrapper and sudo does not pass the signal
+        on to its child. The capture therefore keeps running as root, reparented
+        to PID 1: it grows the pcap while it is being uploaded and holds the
+        interface open for the next test. This is the same reason
+        ``conftest._reap_ptp_daemons`` reaps ptp4l/phc2sys by argv, and the fix
+        is the same -- ``pkill`` on the argv rather than on the handle.
+
+        SIGTERM first, because netsniff-ng flushes and closes the pcap on it;
+        SIGKILL only for anything that ignored that, where a truncated pcap is
+        still better than a leaked capture.
+        """
+        connection = self.host.connection
+        for signal_name in ("TERM", "KILL"):
+            try:
+                connection.execute_command(
+                    f"sudo pkill -{signal_name} -x netsniff-ng || true",
+                    expected_return_codes=None,
+                )
+            except Exception as e:
+                logger.debug("pkill -%s netsniff-ng: %s", signal_name, e)
+            if signal_name == "TERM":
+                sleep(_REAP_GRACE_SEC)
 
     def _enable_promisc(self, connection):
         """Enable promiscuous mode on the capture interface; remember prior state.

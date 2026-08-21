@@ -9,132 +9,157 @@ on:
     branches:
       - main
       - 'maint-**'
+# The matrix legs below already cancel their predecessor per NIC. This cancels
+# the run around them, so a superseded run does not keep a pr-gate job waiting
+# for a Build run that its own newer run has cancelled -- which shows up as a
+# failure on a commit nobody is looking at any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   checks: read
   actions: read
 jobs:
-  smoke-check-for-changes:
-    runs-on: ubuntu-22.04
+  pr-gate:
+    uses: ./.github/workflows/pr-gate.yml
     permissions:
+      contents: read
       pull-requests: read
-    outputs:
-      changed: ${{ steps.filter.outputs.linux_tests == 'true' || github.event_name == 'workflow_dispatch' }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: audit
+      checks: read
+      actions: read
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
-        id: filter
-        with:
-          filters: .github/path_filters.yml
-  build:
-    needs: smoke-check-for-changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Harden Runner
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Wait for Build workflow
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        uses: ./.github/actions/wait-for-workflow
-        with:
-          check_name: build
   run-smoke-tests:
-    needs:
-      - smoke-check-for-changes
-      - build
+    needs: pr-gate
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
       cancel-in-progress: true
     strategy:
-      matrix:
-        nic:
-          - e810
-          - e830
-          - e835
       fail-fast: false
+      # One leg per NIC label the fleet advertises, all running side by side.
+      # They differ only in the values below, so they are one job rather than a
+      # copy of it per card.
+      #
+      # The i225 is a 2.5 GbE card: an uncompressed 1080p59 ST 2110-20 session
+      # does not fit its link, so it carries the low_bandwidth subset (ST
+      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40). It has no third
+      # port to sniff with either, hence no capture and no compliance verdict.
+      # 100s of traffic per case keeps the leg above the 20-minute floor the
+      # fleet expects of a smoke job -- 11 of the 14 cases run (the other three
+      # skip on capabilities the plugins do not have), and at 90s the leg came
+      # in at 19m31s. It stays non-blocking while the platform is being brought
+      # up.
+      matrix:
+        include:
+          - nic: e810
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: e830
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: e835
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: i225
+            suite: smoke-low-bandwidth
+            job_timeout: 45
+            run_timeout: 35
+            test_time: '100'
+            no_capture: '1'
+            optional: true
     runs-on: ${{ matrix.nic }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ matrix.job_timeout }}
+    continue-on-error: ${{ matrix.optional }}
     steps:
       - name: 'preparation: Harden Runner'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ github.ref }}'
       - name: 'preparation: Validate host and download artifacts'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
+        with:
+          nic: ${{ matrix.nic }}
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
-      - name: 'installation: Install pipenv environment'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        working-directory: tests/acceptance
-        id: pipenv-install
-        run: |
-          python3 -m venv .venv
-          source .venv/bin/activate
-          pip install -r requirements.txt
+      - name: 'preparation: Ensure the acceptance virtualenv'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        run: task ci:pytest-setup -- ensure
+      # The suite reaches the DUT over SSH even when the DUT is this runner, so a
+      # key it cannot log in with fails every case at fixture setup -- and
+      # paramiko reports it as the password being refused, which it is not.
+      - name: 'preparation: Verify the login the suite makes'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        run: task ci:pytest-setup -- connection
       - name: Create session ID
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        run: |
-          runner_name=${{ runner.name }}
-          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
       - name: Set PCI device env variable
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        run: |
-          if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e825" ]; then
-            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
-          elif [ "${{ matrix.nic }}" = "e835" ]; then
-            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
-          fi
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          NIC: ${{ matrix.nic }}
+        run: task ci:pytest-setup -- pci
       - name: Generate test framework config files
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        working-directory: tests/acceptance/configs
-        run: |
-          python3 gen_config.py \
-            --session_id ${{ env.SESSION_ID }} \
-            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
-            --pci_device ${{ env.PCI_DEVICE }} \
-            --ip_address 127.0.0.1 \
-            --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path "/home/$USER/.ssh/id_ed25519" \
-            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
-            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
-            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          INTERFACE_TYPE: ${{ env.INTERFACE_TYPE }}
+          NO_CAPTURE: ${{ matrix.no_capture }}
+          TEST_TIME: ${{ matrix.test_time }}
+        run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        shell: bash
-        run: |
-          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
-      - name: 'execution: Run validation-bare-metal tests in virtual environment'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        timeout-minutes: 60
-        run: |
-          tests/acceptance/.venv/bin/python3 -m pytest --topology_config=tests/acceptance/configs/topology_config.yaml --test_config=tests/acceptance/configs/test_config.yaml -m smoke -x --template=html/index.html --report=report.html
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          WORKFLOW_TAG: ${{ github.workflow }}:${{ matrix.nic }}
+        run: task ci:pytest-setup -- tag
+      - name: 'preparation: Make room for the raw video the suite records'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          TEST_TIME: ${{ matrix.test_time }}
+        run: task ci:pytest-setup -- workspace
+      # A case whose media file is absent skips, by design, so a host that lost
+      # its asset share reports a green leg having transmitted nothing. Ask here,
+      # where the answer is three lines and names the share.
+      - name: 'preparation: Verify the media the suite reads'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        run: task ci:media-assets -- verify
+      # And a capture leg is only a compliance leg while the analyser answers.
+      # Without it the fixture fails every case that records a pcap, several
+      # minutes in and with the reason buried in a test log.
+      - name: 'preparation: Verify the compliance analyser'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' && matrix.no_capture != '1' }}
+        run: task ci:ebu-list -- verify
+      - name: 'execution: Run the ${{ matrix.suite }} suite'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        timeout-minutes: ${{ matrix.run_timeout }}
+        run: task ci:pytest-run -- ${{ matrix.suite }}
       - name: "upload report"
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         id: upload-report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -142,42 +167,10 @@ jobs:
           path: |
             report.html
       - name: "Add report to summary"
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        run: |
-          {
-            echo "## Smoke Tests Report"
-            echo ""
-            # Check if JSON report exists
-            if [ -f "report.json" ]; then
-              # Parse JSON report
-                PASSED=$(jq '.summary.passed // 0' report.json)
-                FAILED=$(jq '.summary.failed // 0' report.json)
-                SKIPPED=$(jq '.summary.skipped // 0' report.json)
-                ERROR=$(jq '.summary.errors // 0' report.json)
-              # Add summary stats
-              echo "| Status | Count |"
-              echo "| ------ | ----- |"
-              echo "| ✅ Passed | ${PASSED:-0} |"
-              echo "| ❌ Failed | ${FAILED:-0} |"
-              echo "| ⚠️ Error | ${ERROR:-0} |"
-              echo "| ⏭️ Skipped | ${SKIPPED:-0} |"
-              echo ""
-              # Add test result details if available
-              TOTAL=$((${PASSED:-0} + ${FAILED:-0} + ${ERROR:-0} + ${SKIPPED:-0}))
-              echo "**Total Tests:** $TOTAL"
-              echo ""
-              if [ "${FAILED:-0}" -gt 0 ] || [ "${ERROR:-0}" -gt 0 ]; then
-                echo "❌ **Some tests failed!** Please check the detailed report."
-              else
-                echo "✅ **All tests passed!**"
-              fi
-              echo ""
-              # Add link to full report artifact
-              echo "📄 [Download Full HTML Report](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${{ steps.upload-report.outputs.artifact-id }})"
-            else
-              echo "❌ No report.json file was generated"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        env:
+          ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
+        run: task ci:report -- smoke-summary
 
       - name: 'cleanup: Kill test processes'
         if: always()

@@ -60,10 +60,20 @@ endif
 
 stdcpp_dep = fuzz_cc.find_library('stdc++', required : true)
 
+# The fuzz wrappers #include the library sources they exercise, so the symbols
+# those sources call have to be on the fuzz target's own link line, not only on
+# libmtl's: st20 and st22 reach GPU direct, and linking against libmtl alone
+# ends in "undefined reference to symbol 'gpu_allocate_shared_buffer'" from a
+# host that has it installed. tests/unit does the same for the same reason.
+fuzz_extra_deps = []
+if gpu_direct_dep.found()
+  fuzz_extra_deps += gpu_direct_dep
+endif
+
 foreach target : fuzz_targets
   exe_name = target[0]
   src = target[1]
-  deps = [mtl_internal_dep, dpdk_dep, libm_dep, stdcpp_dep] + fuzzer_deps
+  deps = [mtl_internal_dep, dpdk_dep, libm_dep, stdcpp_dep] + fuzzer_deps + fuzz_extra_deps
   executable(
     exe_name,
     src,
