@@ -700,6 +700,19 @@ class RxTxApp(Application):
         if len(nic_port_list) == 1 and direction not in ("tx", "rx"):
             nic_port_list = nic_port_list * 2
 
+        # A single-port host sends both ends of a loopback test through one
+        # kernel-socket interface. MTL rejects two ports carrying the same name
+        # (mt_user_params_check, "same name ... for port 1 and 0"); what it does
+        # accept is one interface with the TX and the RX session both on it, so
+        # collapse the pair. Below, `len(config["interfaces"]) == 1` then points
+        # both sessions at interface 0.
+        if (
+            len(nic_port_list) == 2
+            and nic_port_list[0] == nic_port_list[1]
+            and nic_port_list[0].startswith("kernel:")
+        ):
+            nic_port_list = nic_port_list[:1]
+
         # Base legacy structure
         config = create_empty_config()
         config["tx_no_chain"] = self.params.get("tx_no_chain", False)
