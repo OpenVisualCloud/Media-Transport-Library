@@ -52,6 +52,8 @@ struct ut_txv_ctx {
   int burst_calls;
   struct rte_mbuf* burst_packets[8];
   unsigned int burst_packets_count;
+  struct rte_mbuf* held_hdr_mbuf;
+  char hdr_pool_name[RTE_MEMPOOL_NAMESIZE];
 };
 
 #include "session/st20_tx_harness.h"
@@ -142,7 +144,7 @@ ut_txv_ctx* ut_txv_create(void) {
   s->mgr = &ctx->mgr;
   s->idx = 0;
   s->active = true;
-  s->pacing.frame_time = NS_PER_MS;
+  s->pacing.frame_time = 1000000.0L; /* 1ms, round number for simple math */
   s->pacing.max_onward_epochs = 3;
   s->fps_tm.sampling_clock_rate = ST10_VIDEO_SAMPLING_RATE_90K;
   s->ops.get_next_frame = ut_txv_get_next_frame;
@@ -155,6 +157,15 @@ ut_txv_ctx* ut_txv_create(void) {
 }
 
 void ut_txv_destroy(ut_txv_ctx* ctx) {
+  if (!ctx) return;
+
+  ut_txv_release_hdr_mbuf(ctx);
+  /* by name, so a pool the session only borrowed and cleared is still reclaimed */
+  if (ctx->hdr_pool_name[0]) {
+    struct rte_mempool* pool = rte_mempool_lookup(ctx->hdr_pool_name);
+    if (pool) rte_mempool_free(pool);
+    ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  }
   free(ctx);
 }
 
@@ -182,6 +193,18 @@ void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx) {
 
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+}
+
+void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
+  ctx->session.pacing.warm_pkts = warm_pkts;
+}
+
+void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate) {
+  ctx->session.fps_tm.sampling_clock_rate = sampling_rate;
+}
+
+void ut_txv_set_ptp_time_cursor(ut_txv_ctx* ctx, uint64_t tai_ns) {
+  ctx->session.pacing.ptp_time_cursor = tai_ns;
 }
 
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable) {
@@ -357,18 +380,67 @@ out:
   return ret;
 }
 
+void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp) {
+  tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
+}
+
+int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx) {
+  static unsigned int pool_idx;
+
+  snprintf(ctx->hdr_pool_name, sizeof(ctx->hdr_pool_name), "ut_txv_hdr_pool_%u",
+           pool_idx++);
+  ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+      rte_pktmbuf_pool_create(ctx->hdr_pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+  return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] ? 0 : -ENOMEM;
+}
+
+void ut_txv_set_tx_mono_pool(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.tx_mono_pool = enable;
+}
+
+void ut_txv_set_hdr_mempool_reuse_rx(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.mbuf_mempool_reuse_rx[MTL_SESSION_PORT_P] = enable;
+}
+
+bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx) {
+  return rte_mempool_lookup(ctx->hdr_pool_name) != NULL;
+}
+
+int ut_txv_hold_hdr_mbuf(ut_txv_ctx* ctx) {
+  if (ctx->held_hdr_mbuf) return -EEXIST;
+  ctx->held_hdr_mbuf =
+      rte_pktmbuf_alloc(ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  return ctx->held_hdr_mbuf ? 0 : -ENOMEM;
+}
+
+void ut_txv_release_hdr_mbuf(ut_txv_ctx* ctx) {
+  if (!ctx->held_hdr_mbuf) return;
+  rte_pktmbuf_free(ctx->held_hdr_mbuf);
+  ctx->held_hdr_mbuf = NULL;
+}
+
+int ut_txv_mempool_free(ut_txv_ctx* ctx) {
+  return tv_mempool_free(&ctx->session);
+}
+
+bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx) {
+  return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] != NULL;
+}
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.cur_epochs;
 }
 
-uint64_t ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx) {
-  return (uint64_t)ctx->session.pacing.tsc_time_cursor;
+long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.tsc_time_cursor;
 }
 
-uint64_t ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx) {
-  return (uint64_t)ctx->session.pacing.ptp_time_cursor;
+long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.ptp_time_cursor;
 }
 
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx) {
@@ -437,4 +509,8 @@ uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_exceed_frame_time;
+}
+
+uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.rtp_time_stamp;
 }

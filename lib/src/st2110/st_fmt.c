@@ -919,6 +919,19 @@ static uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
   return (uint64_t)quotient;
 }
 
+uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
+  if (!sampling_rate) {
+    /* degrade to a no-op snap: returning 0 would put the caller's transmission
+     * start time unconditionally in the past and dump the frame at line rate */
+    err("%s, invalid sampling rate\n", __func__);
+    return tai_ns;
+  }
+
+  uint64_t tick = st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
+  if ((__uint128_t)tick * NS_PER_S / sampling_rate >= UINT64_MAX) return UINT64_MAX;
+  return st_muldiv_u64_round_closest(tick, NS_PER_S, sampling_rate);
+}
+
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   if (!sampling_rate) {
     err("%s, invalid sampling rate\n", __func__);

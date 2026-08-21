@@ -81,4 +81,6 @@ int st20_pacing_static_profiling(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port);
 
+void st_tx_video_transmitter_state_cleanup(struct st_tx_video_session_impl* s);
+
 #endif

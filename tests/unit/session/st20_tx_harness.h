@@ -47,10 +47,16 @@ void ut_txv_set_cur_epochs(ut_txv_ctx* ctx, uint64_t cur_epochs);
 void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx);
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns);
+void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts);
 /* Toggle ST20_TX_FLAG_EXACT_USER_PACING on the session's ops.flags. */
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable);
 /* Toggle ST20_TX_FLAG_USER_PACING on the session's ops.flags. */
 void ut_txv_set_user_pacing(ut_txv_ctx* ctx, bool enable);
+/* Media (RTP) sampling clock rate, e.g. 90000 for video. */
+void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate);
+/* Real TAI wall-clock cursor used as the source time for the non-user-
+ * timestamp RTP derivation path in tv_update_rtp_time_stamp(). */
+void ut_txv_set_ptp_time_cursor(ut_txv_ctx* ctx, uint64_t tai_ns);
 
 /* Mocked time sources consumed by tv_sync_pacing() via mt_get_ptp_time()/
  * mt_get_tsc(). Take effect immediately; no auto-advance between calls. */
@@ -71,11 +77,33 @@ int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
+ * above (ptp_time_cursor, sampling_clock_rate). */
+void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                  uint64_t timestamp);
+
+/* ── session-owned mempool release (tv_mempool_free) ──────────────────── */
+/* Install a private header mempool on port P, as tv_mempool_init() would.
+ * Returns 0 on success. ut_txv_destroy() releases whatever is left over. */
+int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx);
+/* Take one mbuf out of the installed pool, mimicking an mbuf the transmitter
+ * still holds. Returns 0 on success. */
+int ut_txv_hold_hdr_mbuf(ut_txv_ctx* ctx);
+void ut_txv_release_hdr_mbuf(ut_txv_ctx* ctx);
+/* Mark the installed pool as borrowed rather than session-owned. */
+void ut_txv_set_tx_mono_pool(ut_txv_ctx* ctx, bool enable);
+void ut_txv_set_hdr_mempool_reuse_rx(ut_txv_ctx* ctx, bool enable);
+/* Drives tv_mempool_free(): 0 when every pool was released, < 0 otherwise. */
+int ut_txv_mempool_free(ut_txv_ctx* ctx);
+/* Whether the session still points at the pool. */
+bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
+/* Whether the pool itself still exists, independent of the session's pointer. */
+bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
-uint64_t ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
-uint64_t ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
+long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
+long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_onward(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_drop(const ut_txv_ctx* ctx);
@@ -93,6 +121,8 @@ int ut_txv_frame_refcnt(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_port_build(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx);
+/* Result of the last ut_txv_update_rtp_time_stamp() call. */
+uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
 
 #ifdef __cplusplus
 }

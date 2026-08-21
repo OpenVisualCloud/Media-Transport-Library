@@ -40,7 +40,7 @@ class St20pUserTimestamp : public FrameTestStrategy {
   double offsetMultiplierForFrame(uint64_t frame_idx) const;
   virtual uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const;
   virtual void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                                   uint64_t expected_transmit_time_ns) const;
+                                   uint64_t expected_transmit_time_ns);
   void verifyMediaClock(uint64_t frame_idx, uint64_t timestamp_media_clk,
                         uint64_t expected_media_clk) const;
   virtual void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp);
@@ -75,7 +75,7 @@ class St20pExactUserPacing : public St20pUserTimestamp {
  protected:
   uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;
   void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                           uint64_t expected_transmit_time_ns) const override;
+                           uint64_t expected_transmit_time_ns) override;
   void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp) override;
 };
 

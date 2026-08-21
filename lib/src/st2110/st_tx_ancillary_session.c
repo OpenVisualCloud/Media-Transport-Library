@@ -410,10 +410,21 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
 
   pacing->cur_epochs = tx_ancillary_calc_epoch(s, cur_tai, required_tai);
 
-  if ((s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) && required_tai) {
+  /* the app asked for an exact start time and actually supplied one */
+  bool exact_user_pacing =
+      (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) && required_tai;
+
+  if (exact_user_pacing) {
     start_time_tai = required_tai;
   } else {
     start_time_tai = tx_ancillary_pacing_time(pacing, pacing->cur_epochs);
+  }
+  /* Only the RTP timestamp derived from ptp_time_cursor is guaranteed to equal
+   * start_time_tai's tick; an exact user start time and USER_TIMESTAMP both
+   * deliberately decouple the two already. */
+  if (!exact_user_pacing && !(s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP)) {
+    start_time_tai =
+        st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
   }
   if (start_time_tai < cur_tai) {
     s->port_user_stats.common.stat_epoch_mismatch++;

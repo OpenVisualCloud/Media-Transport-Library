@@ -457,18 +457,36 @@ Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detec
 ### TX Destroy Order (Load-Bearing)
 Dependency chain: `NIC TX descriptors → hold mbufs → hold extbuf refs → point to frame buffers`
 
-`tv_uinit()` comment: *"must uinit hw firstly as frame use shared external buffer"*:
-1. Drain ring — `mt_ring_dequeue_clean()`
-2. Free ring — `rte_ring_free()`
-3. Flush TX queue — `mt_txq_flush()` sends pad packets to push all session mbufs out of NIC
-4. Release TX queue — `mt_txq_put()`
-5. Free pad packets
-6. Free inflight — `rte_pktmbuf_free_bulk(inflight)`
-7. Free chain pool — `tv_mempool_free()`
-8. Free header pool — `tv_mempool_free()`
-9. Free frame buffers — `rte_free(frame->addr)`
+Actual sequence in `tv_uinit()`:
+1. `st_tx_video_transmitter_state_cleanup()` — free software-held mbufs: `inflight[]`,
+   `trs_inflight[]`, `trs_inflight2[]`, and one pad reference per `trs_pad_inflight_num`
+2. `tv_uinit_hw()` — drain ring (`mt_ring_dequeue_clean`), free ring, flush TX queue
+   (`mt_txq_flush()` pushes pad packets to force all session mbufs out of the NIC),
+   release queue (`mt_txq_put()`), then free the pad mbufs
+3. `tv_uinit_sw()` — free packet ring, chain + header pools (`tv_mempool_free()`),
+   then frame buffers (`tv_free_frames()` → `rte_free(frame->addr)`)
 
-**Why HW before SW (steps 1-5 before 6-9)**: After step 3, NIC holds NO references. Only then safe to free pools/frames.
+**Why software mbufs first (step 1 before 2)**: `tv_uinit_hw()` frees and NULLs `s->pad[i][j]`.
+The pad references retained by failed bursts are counted in `trs_pad_inflight_num` and can only
+be returned while the pad pointer is still live — release them later and they leak. Pads come
+from the per-interface `tx_mbuf_pool` (`mt_sys_tx_mempool()`), not a session pool, so that leak
+is never reclaimed for the process lifetime and never shows up in `tv_mempool_free()`.
+
+**Why this is not a use-after-free**: freeing a chain mbuf drops one `sh_info` reference and can
+run `tv_frame_free_cb()`. `sh_info` counts *every* live chain mbuf, NIC-owned ones included
+(`rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1)` per `rte_pktmbuf_attach_extbuf`), so the
+callback cannot fire while any packet of that frame is still in a TX descriptor.
+
+**Why HW before the pools and frames (step 2 before 3)**: after the flush the NIC holds no
+references, so the frame buffers the extbufs pointed into can finally be freed. This is the
+constraint the old *"must uinit hw firstly as frame use shared external buffer"* comment named.
+
+`st20_tx_queue_fatal_error()` reuses step 1 for a different reason — the payload pools *are*
+session-owned and shared across redundant ports, so every port must give its mbufs back before
+the pools are replaced.
+There `tv_mempool_free()`'s return value is load-bearing: `mt_mempool_free()` returns 0 even
+when it declines to free an in-use pool, so recovery escalates to `ST_EVENT_FATAL_ERROR` rather
+than dropping the session's only handle to a pool that was never freed.
 
 ### RX Destroy Order
 Actual sequence in `rv_uinit()`:

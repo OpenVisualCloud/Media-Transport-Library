@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import textwrap
+import threading
 import time
+from collections import deque
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -87,6 +90,126 @@ def _validate_bdf(bdf: str) -> str | None:
     if not re.match(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d$", bdf):
         return f"Error: invalid BDF format '{bdf}'. Expected format: 0000:af:00.0"
     return None
+
+
+def _is_noctx_filter(gtest_filter: str) -> bool:
+    return bool(
+        gtest_filter == "NoCtxTest"
+        or re.search(r"(?:^|[:*])NoCtxTest[.*:]", gtest_filter)
+    )
+
+
+def _exclude_noctx_tests(gtest_filter: str) -> str:
+    positive, separator, negative = gtest_filter.partition("-")
+    if not positive:
+        positive = "*"
+    excluded = "NoCtxTest.*"
+    if separator and negative:
+        excluded = f"{negative}:{excluded}"
+    return f"{positive}-{excluded}"
+
+
+def _test_runtime_env() -> dict[str, str]:
+    """Prefer the MTL and DPDK libraries installed by this checkout."""
+    install_root = REPO_ROOT / ".local_install"
+    library_dirs: list[Path] = []
+    for component in ("mtl", "dpdk"):
+        lib_root = install_root / component / "lib"
+        multiarch_dirs = sorted(
+            path for path in lib_root.glob("*-linux-gnu") if path.is_dir()
+        )
+        library_dirs.extend(multiarch_dirs)
+        if not multiarch_dirs and lib_root.is_dir():
+            library_dirs.append(lib_root)
+
+    existing = os.environ.get("LD_LIBRARY_PATH", "")
+    entries = [str(path) for path in library_dirs]
+    if existing:
+        entries.append(existing)
+    return {"LD_LIBRARY_PATH": os.pathsep.join(entries)}
+
+
+def _noctx_failure_excerpt(out: str) -> str:
+    """Return the first actionable failure block and final gtest verdict."""
+    lines = out.splitlines()
+    failure_start = next(
+        (
+            idx
+            for idx, line in enumerate(lines)
+            if re.search(
+                r": Failure$|\*\*\* TIMEOUT|AddressSanitizer|Segmentation fault|core dumped",
+                line,
+                re.IGNORECASE,
+            )
+        ),
+        None,
+    )
+
+    excerpt: list[str] = []
+    if failure_start is not None:
+        for line in lines[failure_start : failure_start + 40]:
+            if not line.strip() and len(excerpt) > 1:
+                break
+            excerpt.append(line)
+    else:
+        excerpt = [
+            line
+            for line in lines
+            if re.search(r"\b(error|fatal|failed)\b", line, re.IGNORECASE)
+        ][:20]
+
+    verdict = [
+        line
+        for line in lines
+        if re.match(r"^\[\s*(?:FAILED|PASSED|==========|RUN\s+)", line)
+    ][-8:]
+    for line in verdict:
+        if line not in excerpt:
+            excerpt.append(line)
+    return "\n".join(excerpt) or "No failure details were found in the test output."
+
+
+def _tail_filtered_file(
+    log_file: str, filter_str: str, lines: int, *, sudo: bool
+) -> str:
+    cmd = ["grep", "-i", "--", filter_str, log_file]
+    if sudo:
+        cmd[0:0] = ["sudo", "-n"]
+
+    process = subprocess.Popen(
+        cmd,
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    matches: deque[str] = deque(maxlen=lines)
+
+    def collect_output() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            matches.append(line.rstrip("\n"))
+
+    reader = threading.Thread(target=collect_output, daemon=True)
+    reader.start()
+    try:
+        return_code = process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        reader.join(timeout=1)
+        return "Error: filtered log read timed out after 30 seconds."
+
+    reader.join()
+    assert process.stdout is not None
+    process.stdout.close()
+    if return_code not in (0, 1):
+        return "\n".join(matches)
+    return "\n".join(matches)
 
 
 def _int_or_default(text: str, default: int = 0) -> int:
@@ -1065,16 +1188,25 @@ def run_gtest(
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
         return "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
 
+    # NoCtxTest cases require one KahawaiTest process per test (DPDK EAL
+    # cannot be re-initialised within a single process) plus the --no_ctx /
+    # --no_ctx_tests flags this tool doesn't pass. Running them here would
+    # just fail/hang, so refuse up front and point at the right tool.
+    if _is_noctx_filter(gtest_filter):
+        return (
+            "Error: NoCtxTest cases cannot be run via run_gtest (each needs its "
+            "own KahawaiTest process). Use run_noctx_tests instead."
+        )
+
     # Build command as list for safe execution
     cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
     if auto_start_stop:
         cmd_parts.append("--auto_start_stop")
     if dma_dev:
         cmd_parts.extend(["--dma_dev", dma_dev])
-    if gtest_filter:
-        cmd_parts.append(f"--gtest_filter={gtest_filter}")
+    cmd_parts.append(f"--gtest_filter={_exclude_noctx_tests(gtest_filter)}")
 
-    out = _run_output(cmd_parts, timeout=timeout_seconds)
+    out = _run_output(cmd_parts, timeout=timeout_seconds, env=_test_runtime_env())
 
     # Parse results
     passed = 0
@@ -1202,10 +1334,15 @@ def run_noctx_tests(
 
     # Enumerate matching test names (one process per test below)
     listing = _run_output(
-        f"{binary} --gtest_list_tests --no_ctx"
-        f" --port_list={port_list}"
-        f" --gtest_filter={list_filter}",
+        [
+            str(binary),
+            "--gtest_list_tests",
+            "--no_ctx",
+            f"--port_list={port_list}",
+            f"--gtest_filter={list_filter}",
+        ],
         timeout=60,
+        env=_test_runtime_env(),
     )
     # Output format: "NoCtxTest.\n  test_a\n  test_b\n"
     test_names: list[str] = []
@@ -1232,11 +1369,15 @@ def run_noctx_tests(
     for idx, name in enumerate(test_names):
         full = f"NoCtxTest.{name}"
         out = _run_output(
-            f"{binary} --auto_start_stop"
-            f" --port_list={port_list}"
-            f" --gtest_filter={full}"
-            f" --no_ctx_tests",
+            [
+                str(binary),
+                "--auto_start_stop",
+                f"--port_list={port_list}",
+                f"--gtest_filter={full}",
+                "--no_ctx_tests",
+            ],
             timeout=timeout_seconds,
+            env=_test_runtime_env(),
         )
         if "*** TIMEOUT" in out:
             status = "TIMEOUT"
@@ -1262,10 +1403,9 @@ def run_noctx_tests(
         if st != "PASS":
             for sec in sections:
                 if sec.startswith(f"===== NoCtxTest.{name}:"):
-                    tail = "\n".join(sec.splitlines()[-30:])
                     last_failure = (
-                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
-                        f"```\n{tail}\n```"
+                        f"\n### First failure: NoCtxTest.{name}\n"
+                        f"```\n{_noctx_failure_excerpt(sec)}\n```"
                     )
                     break
             break
@@ -1362,10 +1502,15 @@ def run_noctx_pf_tests(
         list_filter = f"NoCtxTest.*{gtest_filter}*"
 
     listing = _run_output(
-        f"{binary} --gtest_list_tests --no_ctx"
-        f" --port_list={port_list}"
-        f" --gtest_filter={list_filter}",
+        [
+            str(binary),
+            "--gtest_list_tests",
+            "--no_ctx",
+            f"--port_list={port_list}",
+            f"--gtest_filter={list_filter}",
+        ],
         timeout=60,
+        env=_test_runtime_env(),
     )
     test_names: list[str] = []
     current_suite = ""
@@ -1390,11 +1535,15 @@ def run_noctx_pf_tests(
     for idx, name in enumerate(test_names):
         full = f"NoCtxTest.{name}"
         out = _run_output(
-            f"{binary} --auto_start_stop"
-            f" --port_list={port_list}"
-            f" --gtest_filter={full}"
-            f" --no_ctx_tests",
+            [
+                str(binary),
+                "--auto_start_stop",
+                f"--port_list={port_list}",
+                f"--gtest_filter={full}",
+                "--no_ctx_tests",
+            ],
             timeout=timeout_seconds,
+            env=_test_runtime_env(),
         )
         if "*** TIMEOUT" in out:
             status = "TIMEOUT"
@@ -1420,10 +1569,9 @@ def run_noctx_pf_tests(
         if st != "PASS":
             for sec in sections:
                 if sec.startswith(f"===== NoCtxTest.{name}:"):
-                    tail = "\n".join(sec.splitlines()[-30:])
                     last_failure = (
-                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
-                        f"```\n{tail}\n```"
+                        f"\n### First failure: NoCtxTest.{name}\n"
+                        f"```\n{_noctx_failure_excerpt(sec)}\n```"
                     )
                     break
             break
@@ -1471,28 +1619,46 @@ def log_tail(
     source: str = "mtl_manager",
     lines: int = 50,
     filter_str: str = "",
+    log_path: str = "",
 ) -> str:
     """
     Tail MTL-related log files.
 
     Args:
-        source: Log source — 'mtl_manager', 'dmesg', 'acceptance_tests', 'syslog'.
+        source: Log source — 'mtl_manager', 'dmesg', 'acceptance_tests', 'syslog', or
+            'saved' to read one of the full logs saved by build_mtl/dpdk_build/
+            ice_driver_rebuild/install_dependencies/build_ebpf_xdp/run_gtest/
+            run_noctx_tests/run_noctx_pf_tests under build/logs/ (pass its
+            path via log_path).
         lines: Number of lines to show (default 50, max 200).
         filter_str: Optional grep filter (alphanumeric, dots, dashes, colons,
             spaces only — other characters are stripped).
+        log_path: Path to a saved log under build/logs/, as returned by the
+            tools above (e.g. 'build/logs/build_mtl_20260710_090000.log').
+            Required when source='saved'.
     """
-    if lines > 200:
-        lines = 200
+    lines = max(1, min(lines, 200))
 
     log_paths = {
         "mtl_manager": str(REPO_ROOT / "build/manager/MtlManager.log"),
         "syslog": "/var/log/syslog",
     }
 
-    if source == "dmesg":
+    saved_log = source == "saved"
+    if saved_log:
+        if not log_path:
+            return "Error: log_path is required when source='saved'."
+        logs_dir = (REPO_ROOT / "build" / "logs").resolve()
+        candidate = (REPO_ROOT / log_path).resolve()
+        if candidate.parent != logs_dir or not candidate.is_file():
+            return (
+                f"Error: '{log_path}' is not a saved log under build/logs/. "
+                "Use the exact path returned by the tool that produced it."
+            )
+        log_file = str(candidate)
+    elif source == "dmesg":
         return dmesg_tail(lines, filter_str)
-
-    if source == "acceptance_tests":
+    elif source == "acceptance_tests":
         # Find latest acceptance_tests log — resolve and verify it's under REPO_ROOT
         latest = _run_output(
             "ls -t tests/acceptance/logs/*/output.log 2>/dev/null | head -1",
@@ -1506,14 +1672,19 @@ def log_tail(
     elif source in log_paths:
         log_file = log_paths[source]
     else:
-        return f"Error: unknown source '{source}'. Use: mtl_manager, dmesg, acceptance_tests, syslog."
+        return (
+            f"Error: unknown source '{source}'. "
+            "Use: mtl_manager, dmesg, acceptance_tests, syslog, saved."
+        )
 
-    cmd = f"sudo tail -n {int(lines)} {log_file}"
     if filter_str:
         safe_filter = re.sub(r"[^a-zA-Z0-9_.\-: ]", "", filter_str)
-        cmd = f"sudo grep -i '{safe_filter}' {log_file} | tail -n {int(lines)}"
-
-    out = _run_output(cmd)
+        out = _tail_filtered_file(log_file, safe_filter, lines, sudo=not saved_log)
+    else:
+        cmd = ["tail", "-n", str(lines), log_file]
+        if not saved_log:
+            cmd.insert(0, "sudo")
+        out = _run_output(cmd)
     if not out.strip():
         return f"## Log: {source}\nNo output (file may be empty or missing)."
     return f"## Log: {source} (last {lines} lines{f', filter={filter_str}' if filter_str else ''})\n```\n{out}\n```"

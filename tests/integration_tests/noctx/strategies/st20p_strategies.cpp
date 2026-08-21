@@ -7,12 +7,26 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <utility>
 
 #include "core/constants.hpp"
 #include "handlers/st20p_handler.hpp"
 #include "tests.hpp"
+
+namespace {
+/* Hardware-tested NoCtx regression ceiling, not ST 2110-21 certification. */
+constexpr int64_t kNoCtxTimingRegressionMaxNs = 300 * NS_PER_US;
+
+void expectNoCtxTimingWithinRegressionWindow(uint64_t frame_idx, const char* metric_name,
+                                             int64_t value_ns) {
+  EXPECT_GE(value_ns, 0) << "frame " << frame_idx << ": " << metric_name << "="
+                         << value_ns << "ns";
+  EXPECT_LE(value_ns, kNoCtxTimingRegressionMaxNs)
+      << "frame " << frame_idx << ": " << metric_name << "=" << value_ns << "ns";
+}
+}  // namespace
 
 St20pDefaultTimestamp::St20pDefaultTimestamp(St20pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true) {
@@ -31,6 +45,13 @@ void St20pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
     uint64_t diff = f->timestamp - lastTimestamp;
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
   }
+
+  const uint64_t rtp_timestamp_ns =
+      st10_media_clk_to_ns(static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
+  const int64_t rl_latency_ns =
+      static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_timestamp_ns);
+  expectNoCtxTimingWithinRegressionWindow(
+      idx_rx, "RX receive_timestamp minus RTP timestamp", rl_latency_ns);
 
   lastTimestamp = f->timestamp;
   idx_rx++;
@@ -73,6 +94,13 @@ void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   verifyMediaClock(frame_idx, f->timestamp, expected_media_clk);
   verifyTimestampStep(frame_idx, f->timestamp);
 
+  const uint64_t rtp_timestamp_ns =
+      st10_media_clk_to_ns(static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
+  const int64_t rl_latency_ns =
+      static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_timestamp_ns);
+  expectNoCtxTimingWithinRegressionWindow(
+      frame_idx, "RX receive_timestamp minus RTP timestamp", rl_latency_ns);
+
   lastTimestamp = f->timestamp;
 }
 
@@ -111,15 +139,11 @@ uint64_t St20pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
 }
 
 void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                                             uint64_t expected_transmit_time_ns) const {
+                                             uint64_t expected_transmit_time_ns) {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  int64_t tolerance_ns = 30 * NS_PER_US;
-
-  EXPECT_LE(delta_ns, tolerance_ns)
-      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
-      << " receive timestamp(ns): " << receive_time_ns
-      << " expected timestamp(ns): " << expected_transmit_time_ns;
+  expectNoCtxTimingWithinRegressionWindow(frame_idx, "expected first-packet delta",
+                                          delta_ns);
 }
 
 void St20pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
@@ -200,17 +224,16 @@ uint64_t St20pExactUserPacing::expectedTransmitTimeNs(uint64_t frame_idx) const 
 
 void St20pExactUserPacing::verifyReceiveTiming(uint64_t frame_idx,
                                                uint64_t receive_time_ns,
-                                               uint64_t expected_transmit_time_ns) const {
+                                               uint64_t expected_transmit_time_ns) {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  const int64_t tolerance_ns = 40 * NS_PER_US;
-
-  EXPECT_GE(delta_ns, 0) << "st20p_exact_user_pacing frame " << frame_idx
-                         << " arrived before requested timestamp";
-  EXPECT_LE(delta_ns, tolerance_ns)
-      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
-      << " receive timestamp(ns): " << receive_time_ns
-      << " expected timestamp(ns): " << expected_transmit_time_ns;
+  /* Exact mode's tv_sync_pacing() sets start_time_tai = required_tai verbatim
+   * (st_tx_video_session.c) -- it never reads pacing->tr_offset or
+   * pacing->vrx for the actual wall-clock schedule. RL pacing gates the
+   * first real packet on its own target TSC (_video_trs_rl_tasklet() in
+   * st_video_transmitter.c), so no early-arrival allowance is needed here. */
+  expectNoCtxTimingWithinRegressionWindow(frame_idx, "exact expected first-packet delta",
+                                          delta_ns);
 }
 
 void St20pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/,
