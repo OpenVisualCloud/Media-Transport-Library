@@ -12,7 +12,6 @@
 
 namespace {
 constexpr uint16_t kMaxAncUdwPerFrame = 255;
-constexpr uint16_t kDefaultPayloadBytes = 16;
 } /* namespace */
 
 St40pHandler::St40pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,

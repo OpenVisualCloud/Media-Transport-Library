@@ -268,12 +268,12 @@ TEST_F(NoCtxTest, st40i_split_loopback) {
 TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
   initDefaultContext();
 
-  const uint16_t udp_port = 33000;
+  constexpr uint16_t udp_port = 33000;
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
       /*strategyFactory=*/[](St40pHandler*) { return new SplitAncStrategy({4}); },
-      [udp_port](St40pHandler* handler) {
+      [](St40pHandler* handler) {
         handler->sessionsOpsRx.interlaced = false;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
         handler->sessionsOpsRx.port.payload_type = 113;
