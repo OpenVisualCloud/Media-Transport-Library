@@ -28,7 +28,8 @@ Options:
   --driver <ice|igc>         Build only the selected driver flow
   --disable-ice              Do not build the ICE driver flow
   --disable-igc              Do not build the IGC driver flow
-  --build-only              Compile ICE without installing or loading it
+  --build-only               Compile ICE and leave src/ice.ko in place,
+                             without installing or loading it
   --ice-version <version>    ICE version (default: ${ICE_VER})
   --ice-download-id <id>     Intel download mirror ID (default: ${ICE_DMID})
 	--force                    Rebuild ICE
@@ -147,7 +148,7 @@ build_ice() {
 	fi
 
 	if [[ -d "ice-${ICE_VER}" ]]; then
-		if [[ "${FORCE}" == "true" ]]; then
+		if [[ "${FORCE}" == "true" || "${BUILD_ONLY}" == "true" ]]; then
 			rm -rf "ice-${ICE_VER}"
 		else
 			echo "ice-${ICE_VER} already exists. Use --force to replace it." >&2
@@ -169,7 +170,7 @@ build_ice() {
 	for patch_file in "${REPO_DIR}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
 		patch -p1 -i "${patch_file}"
 	done
-	make -C src -j"$(nproc)"
+	make -C src -j"$(nproc)" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		run_as_root make -C src install
 		run_as_root rmmod irdma || true
@@ -177,7 +178,14 @@ build_ice() {
 		run_as_root modprobe ice
 	fi
 	popd >/dev/null
-	rm -rf "ice-${ICE_VER}"
+	# --build-only asked for the module, not an installed driver, so leave it
+	# where the caller can collect it. Anyone who wanted it installed has it
+	# installed and does not need the tree.
+	if [[ "${BUILD_ONLY}" == "true" ]]; then
+		echo "Built ${SCRIPT_DIR}/ice-${ICE_VER}/src/ice.ko"
+	else
+		rm -rf "ice-${ICE_VER}"
+	fi
 }
 
 build_igc() {
