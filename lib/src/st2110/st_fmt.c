@@ -906,8 +906,8 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
   return (fmt == to_fmt) ? true : false;
 }
 
-uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
-                                     uint64_t divisor) {
+static uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
+                                            uint64_t divisor) {
   /* keep conversions reproducible without relying on floating point */
   __uint128_t product = (__uint128_t)value * multiplier;
   __uint128_t quotient = product / divisor;
@@ -921,8 +921,10 @@ uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
 
 uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
   if (!sampling_rate) {
+    /* degrade to a no-op snap: returning 0 would put the caller's transmission
+     * start time unconditionally in the past and dump the frame at line rate */
     err("%s, invalid sampling rate\n", __func__);
-    return 0;
+    return tai_ns;
   }
 
   uint64_t tick = st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);

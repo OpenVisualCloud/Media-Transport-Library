@@ -698,15 +698,20 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
 
-  if ((s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai) {
+  /* the app asked for an exact start time and actually supplied one */
+  bool exact_user_pacing =
+      (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai;
+
+  if (exact_user_pacing) {
     start_time_tai = required_tai;
   } else {
     start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
   }
   /* Only the RTP timestamp derived from ptp_time_cursor with no extra offset is
-   * guaranteed to equal start_time_tai's tick; USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH
-   * and rtp_timestamp_delta_us all deliberately decouple the two already. */
-  if (!((s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai) &&
+   * guaranteed to equal start_time_tai's tick; an exact user start time,
+   * USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH and rtp_timestamp_delta_us all
+   * deliberately decouple the two already. */
+  if (!exact_user_pacing &&
       !(s->ops.flags &
         (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
       !s->ops.rtp_timestamp_delta_us) {
@@ -2168,7 +2173,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&s->inflight[MTL_SESSION_PORT_R][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->inflight[MTL_SESSION_PORT_R][0] = false;
+      s->inflight[MTL_SESSION_PORT_R][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_R_ENQUEUE_FAIL;
       return MTL_TASKLET_ALL_DONE;
@@ -2980,7 +2985,18 @@ static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
   }
 }
 
+/* Releases every mbuf reference this port still holds in software. Must run before
+ * tv_uinit_hw(), which frees and clears s->pad[]: the pad references retained by
+ * failed bursts can only be given back while that pointer is still live.
+ *
+ * A chain mbuf may carry an extbuf reference to the frame, so freeing it drops one
+ * sh_info reference and may run tv_frame_free_cb(). That is safe here because
+ * sh_info counts every live chain mbuf, including the ones the NIC still owns: the
+ * callback cannot fire while any packet of that frame is outstanding in a TX
+ * descriptor. tv_uinit_hw() still has to precede tv_free_frames(). */
 static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
+  struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
+
   if (s->inflight[i][0]) rte_pktmbuf_free_bulk(s->inflight[i], s->bulk);
   if (s->trs_inflight_num[i])
     rte_pktmbuf_free_bulk(&s->trs_inflight[i][s->trs_inflight_idx[i]],
@@ -2988,10 +3004,9 @@ static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s
   if (s->trs_inflight_num2[i])
     rte_pktmbuf_free_bulk(&s->trs_inflight2[i][s->trs_inflight_idx2[i]],
                           s->trs_inflight_num2[i]);
-  for (unsigned int j = 0; j < s->trs_pad_inflight_num[i]; j++) {
-    if (s->pad[i][ST20_PKT_TYPE_NORMAL])
-      rte_pktmbuf_free(s->pad[i][ST20_PKT_TYPE_NORMAL]);
-  }
+  /* every pad that failed to burst kept the reference taken before the attempt */
+  if (pad)
+    for (unsigned int j = 0; j < s->trs_pad_inflight_num[i]; j++) rte_pktmbuf_free(pad);
 
   tv_transmitter_port_state_init(s, i);
 }
@@ -3007,6 +3022,8 @@ static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
     s->packet_ring = NULL;
   }
 
+  /* best effort: on teardown there is no later retry, tv_mempool_free() already
+   * warns about any pool it had to leave behind */
   tv_mempool_free(s);
 
   tv_free_frames(s);
@@ -3212,8 +3229,9 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
 
 static int tv_uinit(struct st_tx_video_session_impl* s) {
   tv_uinit_rtcp(s);
+  /* software mbufs, then hw, then pools and frames -- ordering rationale is on
+   * tv_transmitter_port_state_cleanup() */
   st_tx_video_transmitter_state_cleanup(s);
-  /* Flush submitted extbufs before freeing pools and frames. */
   tv_uinit_hw(s);
   tv_uinit_sw(s);
   return 0;
