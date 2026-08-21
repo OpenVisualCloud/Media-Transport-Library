@@ -151,6 +151,37 @@ TEST_F(St20TxRtpGateSnapTest, ExactUserPacingRejectsOneNanosecondShortLeadTime) 
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
 }
 
+TEST_F(St20TxRtpGateSnapTest, EpochDerivedStartTimeSnapsEvenWithExactUserPacingEnabled) {
+  /* EXACT_USER_PACING is enabled but the app supplied no timestamp, so
+   * tv_sync_pacing() falls back to the epoch-derived start time -- the same
+   * source as the no-flag path, and equally in need of the media-clock snap.
+   * Gating the snap on the flag alone instead of "flag AND a timestamp was
+   * actually supplied" would skip it here and leave up to half a tick between
+   * the real departure instant and the RTP timestamp derived from it. */
+  ut_txv_set_tr_offset(ctx_, 4567); /* pushes the start time off a 90kHz tick */
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  uint64_t cursor = static_cast<uint64_t>(ut_txv_ptp_time_cursor(ctx_));
+  ASSERT_NE(cursor, 0u);
+  EXPECT_EQ(cursor,
+            taiForMediaTick(roundClosest(cursor, kVideoClockHz, kNanosecondsPerSecond)))
+      << "start_time_tai " << cursor << " is not on a 90kHz tick boundary";
+}
+
+TEST_F(St20TxRtpGateSnapTest, ZeroSamplingClockRateLeavesStartTimeUnchanged) {
+  /* A zero sampling clock rate is a config error, but the snap must degrade to
+   * a no-op. Returning 0 instead would make start_time_tai unconditionally
+   * "in the past", zero time_to_tx_ns and dump the whole frame at line rate. */
+  ut_txv_set_sampling_clock_rate(ctx_, 0);
+  ut_txv_set_tr_offset(ctx_, 4567);
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  uint64_t expected = ut_txv_cur_epochs(ctx_) * kFramePeriodNs + 4567;
+  EXPECT_EQ(static_cast<uint64_t>(ut_txv_ptp_time_cursor(ctx_)), expected);
+}
+
 TEST_F(St20TxRtpGateSnapTest, DefaultPacingWithZeroWarmPktsHasNoLeadTimeFloor) {
   /* warm_pkts defaults to 0 (TSC pacing, no RL warm-up) -- any non-negative
    * lead time must be accepted, matching pre-fix behavior for this case. */
