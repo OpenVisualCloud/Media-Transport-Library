@@ -64,12 +64,22 @@ sudo ./build/tests/KahawaiTest \
 
 ## CI Script
 
-`.github/scripts/gtest.sh` provides full CI orchestration:
-- Auto-discovers VF ports and DMA devices
+`.github/scripts/gtest.sh` runs the suite on a host the job already prepared,
+and changes no host state itself:
+- Discovers the four vfio-pci ports of one PF and two DMA channels, preferring
+  that PF's NUMA node — it does not create VFs, bind devices or load a module
 - Shards `St20_rx*` and `St20_tx*` into 2 parts for parallelism
 - Randomizes station IPs
-- Retries failed tests (MAX_RETRIES=2, RETRY_DELAY=20s)
+- Retries failed tests (MAX_RETRIES=2, RETRY_DELAY=20s) on the same ports
 - TEST_CASE_TIMEOUT=1800s per test case
+
+Preparing that state is the job's own step, and it is what to run by hand when
+the script reports the host is not prepared:
+
+```bash
+sudo task ci:activate-ice      # E8xx cards, which need the Kahawai driver
+sudo task ci:bind-test-ports   # trusted VFs on one PF, two DMA channels
+```
 
 Key env vars: `TEST_PORT_1..4`, `TEST_DMA_PORT_P`, `TEST_DMA_PORT_R`, `NIGHTLY=1`
 
@@ -101,7 +111,7 @@ pass/fail.
 - `Error: DEV: Status: rx_hw_dropped_packets N` — NIC hardware drops, normal at high rates
 
 ### Actual failures
-- **SEGFAULT in `iavf_tm_node_add`** → Stock kernel ICE driver. Fix: `ice_driver_rebuild` + re-create VFs.
+- **SEGFAULT in `iavf_tm_node_add`** → Stock kernel ICE driver. Fix: `sudo task ci:activate-ice`, then `sudo task ci:bind-test-ports` to rebuild the VFs.
 - **`librte_*.so not found`** → Run `sudo ldconfig` or rebuild DPDK.
 - **Permission denied on CMakeCache.txt** → `mtl_clean_rebuild`.
 - **Test timeout** → Check if MtlManager is running. Check NUMA locality.
