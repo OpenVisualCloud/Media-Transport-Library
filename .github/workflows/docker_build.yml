@@ -11,6 +11,12 @@ on:
       - main
       - 'maint-**'
 
+# Same reason as the other build workflows: four images per run, and only the
+# newest commit's are of any use.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

@@ -1,0 +1,83 @@
+name: Provision runner
+
+# The provisioning commands from doc/ci_runner_setup.md, run on the runner that
+# needs them.
+#
+# It does not weaken "jobs install nothing". That rule is about test jobs
+# silently repairing the host they run on, which hides drift in the host image
+# and races with every other job on it. This workflow is the opposite: it is
+# `workflow_dispatch` only, it never runs on a push or a pull request, it names
+# the host it touches in the run's title, and installing is all it does. What it
+# replaces is an SSH session to a runner, on a fleet where the machines are not
+# reachable from every desk that maintains them.
+#
+# It ends with `verify`, the same check the test jobs run, so a green run means
+# the leg that was failing on this host will not fail on it again for this
+# reason.
+
+on:
+  workflow_dispatch:
+    inputs:
+      nic:
+        description: 'Runner label to provision, i.e. which host'
+        required: true
+        type: choice
+        options:
+          - e810
+          - e830
+          - e835
+          - e825
+          - i225
+          - i226
+      acceptance_venv:
+        description: 'Provision the acceptance virtualenv'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    # One at a time per host: two of these installing into the same virtualenv
+    # would race exactly the way a test job installing at test time does.
+    concurrency:
+      group: provision-${{ inputs.nic }}
+      cancel-in-progress: false
+    runs-on: ${{ inputs.nic }}
+    timeout-minutes: 30
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        with:
+          ref: '${{ github.ref }}'
+
+      - name: 'preparation: Install Task'
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      # What the host looks like before anything is changed, so a run that turns
+      # out not to have been needed still says what the host had.
+      - name: 'report: Host state before'
+        shell: bash
+        run: bash .github/scripts/lib/mtl_acceptance_discover.sh || true
+
+      - name: 'provision: Acceptance virtualenv'
+        if: ${{ inputs.acceptance_venv }}
+        shell: bash
+        run: task ci:pytest-setup -- install
+
+      # The check the test jobs run. Provisioning that does not satisfy it has
+      # not provisioned anything.
+      - name: 'verify: Acceptance virtualenv'
+        shell: bash
+        run: task ci:pytest-setup -- verify
+
+      - name: 'report: Host state after'
+        if: always()
+        shell: bash
+        run: bash .github/scripts/lib/mtl_acceptance_discover.sh || true
