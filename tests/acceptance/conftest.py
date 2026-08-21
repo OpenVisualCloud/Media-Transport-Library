@@ -1418,10 +1418,17 @@ def _register_local_libs(hosts, mtl_path):
         for part in p.split(":"):
             lib_dirs.append(os.path.join(mtl_path, part.removeprefix("./")))
 
-    # Also register plugin paths from .local_install/plugins if it exists
-    plugins_base = os.path.join(mtl_path, ".local_install/plugins")
-    if os.path.isdir(plugins_base):
-        for root, dirs, files in os.walk(plugins_base):
+    # Also register the st22 plugin trees, wherever each component's install
+    # layout put its shared objects (lib, lib64, lib/x86_64-linux-gnu). Without
+    # the jpegxs tree, ldconfig -p never lists
+    # libst_plugin_st22_svt_jpeg_xs.so and every JPEG XS test fails the
+    # require_encoder() pre-flight check (mtl_plugin_check_cmd) before it sends
+    # a packet.
+    for component in (".local_install/plugins", ".local_install/jpegxs"):
+        base = os.path.join(mtl_path, component)
+        if not os.path.isdir(base):
+            continue
+        for root, dirs, files in os.walk(base):
             if any(f.endswith(".so") for f in files):
                 lib_dirs.append(root)
 
@@ -1429,9 +1436,15 @@ def _register_local_libs(hosts, mtl_path):
     ffmpeg_bin = os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
     # /usr/local/lib precedes /etc/ld.so.conf.d/* in /etc/ld.so.conf, so any
     # stale libav*/libsw*/libpostproc* there shadows the .local_install build.
+    # Every write below lands outside the SSH user's home, and that user is not
+    # necessarily root -- a fleet runner logs in as an ordinary account with
+    # passwordless sudo, which is what every other privileged step in this file
+    # assumes. Without sudo the whole chain fails on the first redirection and
+    # the tests inherit a linker cache that knows nothing about
+    # .local_install.
     purge = (
-        "mkdir -p /var/backups/mtl_libav_shadow && "
-        "mv -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so* "
+        "sudo mkdir -p /var/backups/mtl_libav_shadow && "
+        "sudo mv -f /usr/local/lib/libav*.so* /usr/local/lib/libsw*.so* "
         "/usr/local/lib/libpostproc*.so* /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_avcodec.so* "
         "/usr/local/lib64/libst_plugin_st22_avcodec.so* "
         "/usr/local/lib/libst_plugin_st22_avcodec.so* /var/backups/mtl_libav_shadow/ "
@@ -1440,9 +1453,10 @@ def _register_local_libs(hosts, mtl_path):
     for host in hosts.values():
         try:
             host.connection.execute_command(
-                f"{purge} && printf '{conf}\\n' > /etc/ld.so.conf.d/mtl_local.conf && ldconfig"
-                f" && ln -sf {ffmpeg_bin}/ffprobe /usr/local/bin/ffprobe"
-                f" && ln -sf {ffmpeg_bin}/ffmpeg /usr/local/bin/ffmpeg",
+                f"{purge} && printf '{conf}\\n' | sudo tee /etc/ld.so.conf.d/mtl_local.conf"
+                f" > /dev/null && sudo ldconfig"
+                f" && sudo ln -sf {ffmpeg_bin}/ffprobe /usr/local/bin/ffprobe"
+                f" && sudo ln -sf {ffmpeg_bin}/ffmpeg /usr/local/bin/ffmpeg",
                 shell=True,
                 timeout=15,
             )

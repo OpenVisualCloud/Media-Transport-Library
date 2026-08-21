@@ -78,7 +78,10 @@ def test_st40p_basic(
     [
         anc_files["text_p29"],
         anc_files["text_p50"],
-        pytest.param(anc_files["text_p59"], marks=pytest.mark.smoke),
+        pytest.param(
+            anc_files["text_p59"],
+            marks=[pytest.mark.smoke, pytest.mark.low_bandwidth],
+        ),
     ],
     indirect=["media_file"],
     ids=["text_p29", "text_p50", "text_p59"],

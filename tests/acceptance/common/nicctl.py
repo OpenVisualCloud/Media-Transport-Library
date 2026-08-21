@@ -31,6 +31,8 @@ class Nicctl:
         self.mtl_path = mtl_path
         self.nicctl = self._nicctl_path
         self._iommu_group_cache = {}
+        self._vfio_granted = set()
+        self._remote_user = ""
 
     @property
     def _nicctl_path(self) -> str:
@@ -81,6 +83,7 @@ class Nicctl:
                 pci_id,
                 num_of_vfs,
             )
+            self.grant_vfio_access(existing)
             return existing
         cmd = "create_tvf" if trusted else "create_vf"
         self.connection.execute_command(
@@ -97,7 +100,67 @@ class Nicctl:
         # Use vfio_list (nicctl.sh list) to get clean VF addresses.
         # The create_vf output mixes PF and VF PCI addresses in status
         # messages, while list_vf outputs only VF addresses.
-        return self.vfio_list(pci_id)
+        vfs = self.vfio_list(pci_id)
+        self.grant_vfio_access(vfs)
+        return vfs
+
+    def grant_vfio_access(self, vfs: list) -> None:
+        """Let the test account open the ``/dev/vfio/<group>`` node of each VF.
+
+        A VF is bound to vfio-pci by root, and the IOMMU group node the kernel
+        then creates is ``0600 root:root`` unless the host carries the udev rule
+        from ``doc/run.md`` section 3.1. The suite drives the DUT over SSH as an
+        unprivileged account, so without this every case on such a host dies in
+        EAL with ``Cannot open /dev/vfio/<group>: Permission denied`` -- a whole
+        smoke leg lost to a file mode, which is what three hosts of the fleet
+        did while one that happens to carry the rule passed.
+
+        Granting it here rather than asking for the udev rule is deliberate: the
+        node is recreated with root ownership every time the VFs are, so a rule
+        installed once is a host that silently regresses, while this runs in the
+        same session that created them. It is a no-op on a host where the rule
+        is in place and the account can already open the node.
+
+        :param vfs: VF PCI addresses whose IOMMU groups have to be openable
+        """
+        groups = set()
+        for vf in vfs:
+            try:
+                groups.add(self.get_iommu_group(vf))
+            except Exception as exc:  # a VF that vanished is nicctl's problem
+                logger.debug("No IOMMU group for %s: %s", vf, exc)
+        groups -= self._vfio_granted
+        if not groups:
+            return
+        nodes = " ".join(f"/dev/vfio/{group}" for group in sorted(groups))
+        res = self.connection.execute_command(
+            f"sudo chown {self._test_user} {nodes} && sudo chmod 0600 {nodes}",
+            shell=True,
+            timeout=_NICCTL_TIMEOUT,
+            expected_return_codes=None,
+        )
+        if res.return_code != 0:
+            # Not fatal: the account may already be able to open the node, and a
+            # case that cannot says so with the EAL error this docstring names.
+            logger.warning(
+                "Could not hand %s to %s: %s",
+                nodes,
+                self._test_user,
+                (res.stderr or "").strip(),
+            )
+            return
+        logger.debug("VFIO group node(s) %s now belong to %s", nodes, self._test_user)
+        self._vfio_granted |= groups
+
+    @property
+    def _test_user(self) -> str:
+        """The account the suite reaches this host as (cached)."""
+        if not self._remote_user:
+            res = self.connection.execute_command(
+                "id -un", shell=True, timeout=_NICCTL_TIMEOUT
+            )
+            self._remote_user = res.stdout.strip()
+        return self._remote_user
 
     def disable_vf(self, pci_id: str) -> None:
         """Remove VFs on NIC.
@@ -251,6 +314,9 @@ class Nicctl:
             if not self.host.vfs:
                 self.create_vfs(nic_pci)
                 self.host.vfs = self.vfio_list(nic_pci)
+            # VFs a previous job left behind never went through create_vfs, and
+            # their group nodes belong to the root that made them.
+            self.grant_vfio_access(self.host.vfs)
         return self.host.vfs
 
 
@@ -311,6 +377,8 @@ class InterfaceSetup:
 
         :param interface_type: VF - create X VFs on first available test adapter,
                                PF - prepare list of PFs PCI addresses for test,
+                               KERNEL - MTL kernel-socket ports (kernel:<ifname>),
+                                    nothing is bound to DPDK,
                                xxVFxPF - create xx number VFs per each PF. E.G if you need 3 VFs
                                     on every PF and you have 2 PF then pass 3VFxPF param with count=6
                                     if you type just VFxPF then one VF will be created on each PF.
@@ -375,6 +443,22 @@ class InterfaceSetup:
                         self.register_cleanup(
                             self.nicctl_objs[host.name], pci_addr, interface_type
                         )
+                elif interface_type.lower() == "kernel":
+                    # MTL's kernel-socket datapath. The interface stays with
+                    # the kernel, so there is nothing to bind and nothing to
+                    # clean up, and -- unlike a DPDK port, which belongs to a
+                    # single process -- one interface can carry both ends of a
+                    # test as two sockets. That is what lets a single-port card
+                    # be tested at all, so the declared ports are reused in
+                    # order when the topology has fewer than `count` of them.
+                    ifaces = host.network_interfaces
+                    if not ifaces:
+                        raise Exception(
+                            f"No interfaces for test on host {host.name} in topology config."
+                        )
+                    selected_interfaces[host.name] = [
+                        f"kernel:{ifaces[i % len(ifaces)].name}" for i in range(count)
+                    ]
                 elif "vfxpf" in interface_type.lower():
                     vfs_count = interface_type.lower().split("vfxpf")[0]
                     vfs_count = int(vfs_count) if vfs_count else 1
