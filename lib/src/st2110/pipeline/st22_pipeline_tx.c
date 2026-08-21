@@ -825,7 +825,10 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   }
   ctx->stat_put_frame++;
 
-  MT_USDT_ST22P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat,
+  /* The USDT argument macros do arithmetic on what they are handed, which clang
+   * refuses on an _Atomic operand, so read the state out first. */
+  uint32_t usdt_stat = atomic_load_explicit(&framebuff->stat, memory_order_relaxed);
+  MT_USDT_ST22P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], usdt_stat,
                              frame->data_size);
   /* check if dump USDT enabled */
   if (!ctx->derive && MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED()) {
