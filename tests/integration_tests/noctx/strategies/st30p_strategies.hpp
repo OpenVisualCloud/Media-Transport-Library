@@ -42,11 +42,11 @@ class St30pUserTimestamp : public St30pDefaultTimestamp {
 
 class St30pRedundantLatency : public St30pUserTimestamp {
  public:
+  /* latency and startingTime describe the stream the test builds around this
+   * strategy; the timing base the strategy itself validates against comes from
+   * initializeTiming(), which every caller runs straight after construction, so
+   * neither argument is kept here. */
   St30pRedundantLatency(unsigned int latency = 30, St30pHandler* parentHandler = nullptr,
                         int startingTime = 100);
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
-
- private:
-  unsigned int latencyInMs;
-  unsigned int startingTimeInMs;
 };
