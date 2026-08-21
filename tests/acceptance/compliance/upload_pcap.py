@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 from compliance_client import PcapComplianceClient
 
@@ -29,8 +30,14 @@ def parse_args():
     parser.add_argument(
         "--password",
         type=str,
-        required=True,
-        help="Password for EBU LIST service.",
+        required=False,
+        help="Password for EBU LIST service. Prefer --password-stdin: an argument"
+        " is visible in /proc and in whatever log recorded the command line.",
+    )
+    parser.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read the password from the first line of standard input.",
     )
     parser.add_argument(
         "--proxy",
@@ -38,7 +45,12 @@ def parse_args():
         required=False,
         help="Proxy for uploading to EBU LIST service.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.password_stdin:
+        args.password = sys.stdin.readline().rstrip("\n")
+    if not args.password:
+        parser.error("a password is required: pass --password-stdin or --password")
+    return args
 
 
 def upload_pcap(file_path, ip, login, password, proxies):
