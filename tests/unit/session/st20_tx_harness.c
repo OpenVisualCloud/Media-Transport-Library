@@ -52,6 +52,8 @@ struct ut_txv_ctx {
   int burst_calls;
   struct rte_mbuf* burst_packets[8];
   unsigned int burst_packets_count;
+  struct rte_mbuf* held_hdr_mbuf;
+  char hdr_pool_name[RTE_MEMPOOL_NAMESIZE];
 };
 
 #include "session/st20_tx_harness.h"
@@ -155,6 +157,15 @@ ut_txv_ctx* ut_txv_create(void) {
 }
 
 void ut_txv_destroy(ut_txv_ctx* ctx) {
+  if (!ctx) return;
+
+  ut_txv_release_hdr_mbuf(ctx);
+  /* by name, so a pool the session only borrowed and cleared is still reclaimed */
+  if (ctx->hdr_pool_name[0]) {
+    struct rte_mempool* pool = rte_mempool_lookup(ctx->hdr_pool_name);
+    if (pool) rte_mempool_free(pool);
+    ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  }
   free(ctx);
 }
 
@@ -372,6 +383,50 @@ out:
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                   uint64_t timestamp) {
   tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
+}
+
+int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx) {
+  static unsigned int pool_idx;
+
+  snprintf(ctx->hdr_pool_name, sizeof(ctx->hdr_pool_name), "ut_txv_hdr_pool_%u",
+           pool_idx++);
+  ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+      rte_pktmbuf_pool_create(ctx->hdr_pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+  return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] ? 0 : -ENOMEM;
+}
+
+void ut_txv_set_tx_mono_pool(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.tx_mono_pool = enable;
+}
+
+void ut_txv_set_hdr_mempool_reuse_rx(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.mbuf_mempool_reuse_rx[MTL_SESSION_PORT_P] = enable;
+}
+
+bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx) {
+  return rte_mempool_lookup(ctx->hdr_pool_name) != NULL;
+}
+
+int ut_txv_hold_hdr_mbuf(ut_txv_ctx* ctx) {
+  if (ctx->held_hdr_mbuf) return -EEXIST;
+  ctx->held_hdr_mbuf =
+      rte_pktmbuf_alloc(ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  return ctx->held_hdr_mbuf ? 0 : -ENOMEM;
+}
+
+void ut_txv_release_hdr_mbuf(ut_txv_ctx* ctx) {
+  if (!ctx->held_hdr_mbuf) return;
+  rte_pktmbuf_free(ctx->held_hdr_mbuf);
+  ctx->held_hdr_mbuf = NULL;
+}
+
+int ut_txv_mempool_free(ut_txv_ctx* ctx) {
+  return tv_mempool_free(&ctx->session);
+}
+
+bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx) {
+  return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] != NULL;
 }
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
