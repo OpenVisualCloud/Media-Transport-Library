@@ -82,6 +82,24 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                   uint64_t timestamp);
 
+/* ── session-owned mempool release (tv_mempool_free) ──────────────────── */
+/* Install a private header mempool on port P, as tv_mempool_init() would.
+ * Returns 0 on success. ut_txv_destroy() releases whatever is left over. */
+int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx);
+/* Take one mbuf out of the installed pool, mimicking an mbuf the transmitter
+ * still holds. Returns 0 on success. */
+int ut_txv_hold_hdr_mbuf(ut_txv_ctx* ctx);
+void ut_txv_release_hdr_mbuf(ut_txv_ctx* ctx);
+/* Mark the installed pool as borrowed rather than session-owned. */
+void ut_txv_set_tx_mono_pool(ut_txv_ctx* ctx, bool enable);
+void ut_txv_set_hdr_mempool_reuse_rx(ut_txv_ctx* ctx, bool enable);
+/* Drives tv_mempool_free(): 0 when every pool was released, < 0 otherwise. */
+int ut_txv_mempool_free(ut_txv_ctx* ctx);
+/* Whether the session still points at the pool. */
+bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
+/* Whether the pool itself still exists, independent of the session's pointer. */
+bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
 long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
