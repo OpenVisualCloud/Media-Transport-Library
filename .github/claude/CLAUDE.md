@@ -20,6 +20,8 @@ re-deriving things from source:
 
 | Doc | Use when |
 |---|---|
+| `tasks.md` | The active work list at the repository root. Read it first for any multi-step request. `mtl-orchestrator` owns it. |
+| `upstreaming.md` | Source record for `tasks.md`: the DPDK patch set MTL carries, what upstream 26.07 covers, and why each remaining patch stays. Every task names the section it needs. |
 | `.github/copilot-docs/mtl-knowledge-base.md` | Architecture reference (§1 design, §2 scheduler, §3 memory, §4 locking, §5 pacing, §6 session lifecycle, §7 DPDK patterns, §8 testing). Read the relevant § before any non-trivial library change. |
 | `.github/instructions/mtl-c-coding.instructions.md` | Mandatory C rules — naming, memory, locking, tasklet constraints, error handling. |
 | `.github/instructions/mtl-gtest.instructions.md` | Running/debugging `KahawaiTest`, suite map, pacing modes, failure signatures. |
@@ -51,6 +53,7 @@ Edit the file under `.github/claude/`, never the symlink. Personal, machine-loca
 
 | Agent | Use for |
 |---|---|
+| `mtl-orchestrator` | First point of contact for multi-step work. Holds the work list in `tasks.md`, picks the next task, groups what can run in parallel, delegates, verifies the result, and fires Gates 5 and 6 that `mtl-developer` can only name. Does not write code. |
 | `mtl-developer` | Any code change to `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/`. Owns Gates 0–4 of the TDD loop (knowledge → failing test → implement → green build) in one context window. Also owns building and unit gtest. |
 | `mtl-reviewer` | Adversarial read-only review of a saved diff. Gate 5 — no exemption. Refuses if `git diff` is empty. Give it scope + one-line intent; do not paste the diff. |
 | `mtl-system-admin` | Host setup (hugepages, VFs, ICE, MtlManager) and running `KahawaiTest` on real VFs. MCP-only, never shell. Gate 6 for data-plane changes. |
@@ -59,7 +62,8 @@ Edit the file under `.github/claude/`, never the symlink. Personal, machine-loca
 Built-in `Explore` covers read-only Q&A and code archaeology; use it for fan-out reads instead of
 burning the specialist agents' context.
 
-**Skills** (`.github/claude/skills/`) — `mtl-build`, `mtl-write-test`, `mtl-commit`. Each is
+**Skills** (`.github/claude/skills/`) — `mtl-build`, `mtl-write-test`, `mtl-commit`,
+`mtl-ste-writing`. Each is
 itself a symlink to `.github/skills/<name>/`, whose `SKILL.md` frontmatter is already valid for
 both Copilot and Claude Code. So there is exactly one copy of every skill and it cannot drift,
 and relative links inside a skill body resolve against `.github/skills/<name>/`.
@@ -74,10 +78,16 @@ create and populate `.github/mcp/.venv` on first launch.
 `.github/instructions/*.md`. That reproduces the Copilot `applyTo:` auto-attach, so the C rules
 or the gtest/pytest instructions load when you actually work in those trees.
 
-One difference from the Copilot version worth knowing: `mtl-system-admin`'s "MCP tools only, never
-a shell" rule is enforced by its prompt rather than by withholding the Bash tool, because MCP
-wildcards in a subagent's `tools:` list aren't reliably supported. If you see it reach for Bash,
-that's a bug in the agent's behavior, not permission to allow it.
+Two differences from the Copilot version are worth knowing:
+
+* `mtl-system-admin`'s "MCP tools only, never a shell" rule is enforced by its prompt rather than
+  by withholding the Bash tool, because MCP wildcards in a subagent's `tools:` list aren't
+  reliably supported. If you see it reach for Bash, that's a bug in the agent's behavior, not
+  permission to allow it.
+* `mtl-orchestrator` has no Copilot counterpart in `.github/agents/`. The Copilot workflow leaves
+  gate-firing and the work list to the user; here one agent owns both. Everything else it uses —
+  the routing matrix, the six gates, the exemption rules — is the shared version in
+  `.github/copilot-instructions.md`, so the two sides cannot disagree on process.
 
 ## Build
 
@@ -183,8 +193,11 @@ sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_ice_driver.sh` builds the patched ICE module required for hardware rate-limit
-pacing. A SEGFAULT in `iavf_tm_node_add` means the stock ICE driver is loaded.
+`script/build_drivers.sh --driver ice` builds the patched ICE module required for hardware
+rate-limit pacing. It downloads `ice-${ICE_VER}` from the Intel download mirror and applies
+`patches/ice_drv/${ICE_VER}/*.patch` — the public release carries none of those changes, so an
+unpatched driver is always the wrong driver. A SEGFAULT in `iavf_tm_node_add` means the stock
+ICE driver is loaded.
 
 ## Architecture essentials
 
