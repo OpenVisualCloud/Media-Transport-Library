@@ -43,7 +43,8 @@ in the record rather than faults in the code.
 
 ## 3. What is finished
 
-Six tasks are **DONE** and sit under `## Done` in `tasks.md`.
+Six tasks closed. They are recorded here and in `git log`, and they have left `tasks.md`,
+which holds open work only.
 
 | Task | Result |
 |---|---|
@@ -115,10 +116,11 @@ Two measurements fix that order and are worth reading before the chain runs:
 
 ## 6. What the verification found beyond the plan
 
-`tasks.md` holds 36 tasks: 6 done, 1 blocked, 2 in progress, 27 open. **Every task numbered
-T-11 and above was found by a verification pass, not planned.** Most are defects in the
-carried patch set or in its own record, and only a re-measurement could find them. The ones
-that matter outside this move:
+`tasks.md` holds 30 open tasks: 27 `OPEN`, 1 `BLOCKED`, 2 `IN PROGRESS`. Its
+`## What needs to be done` section orders them. **Every task numbered T-11 and above was
+found by a verification pass, not planned.** Most are defects in the carried patch set or in
+its own record, and only a re-measurement could find them. The ones that matter outside this
+move:
 
 - **T-19** — the unit suite aborts after 46 of 508 tests, because a test reaches
   `rte_eal_init()` and the EAL panics on a double-registered tailq. No workflow runs the
