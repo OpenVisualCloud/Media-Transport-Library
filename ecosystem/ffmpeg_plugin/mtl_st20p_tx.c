@@ -31,6 +31,7 @@ typedef struct mtlSt20pMuxerContext {
   int fb_cnt;
   int width;
   int height;
+  int interlaced;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
   mtl_handle dev_handle;
@@ -38,6 +39,7 @@ typedef struct mtlSt20pMuxerContext {
 
   int64_t frame_counter;
   int frame_size;
+  int packet_size;
 } mtlSt20pMuxerContext;
 
 static int mtl_st20p_write_close(AVFormatContext* ctx) {
@@ -79,6 +81,11 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
 
   ops_tx.width = s->width = ctx->streams[0]->codecpar->width;
   ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
+  ops_tx.interlaced = s->interlaced ? true : false;
+  if (ops_tx.interlaced && (s->height % 2)) {
+    err(ctx, "%s, interlaced needs an even height, got %d\n", __func__, s->height);
+    return AVERROR(EINVAL);
+  }
   s->framerate = ctx->streams[0]->avg_frame_rate;
   ops_tx.fps = framerate_to_st_fps(s->framerate);
   if (ops_tx.fps == ST_FPS_MAX) {
@@ -141,6 +148,11 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
       return AVERROR(EINVAL);
   }
+  if (ops_tx.interlaced && !mtl_interlaced_fmt_supported(ops_tx.input_fmt)) {
+    err(ctx, "%s, interlaced is not supported for pixel format: %d\n", __func__,
+        s->pixel_format);
+    return AVERROR(EINVAL);
+  }
 
   ops_tx.name = "st20p_ffmpge";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
@@ -170,21 +182,16 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   }
 
   s->frame_size = st20p_tx_frame_size(s->tx_handle);
+  s->packet_size = s->interlaced ? s->frame_size * 2 : s->frame_size;
   info(ctx, "%s(%d), tx_handle %p\n", __func__, s->idx, s->tx_handle);
   return 0;
 }
 
-static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+static int mtl_st20p_write_field(AVFormatContext* ctx, const AVPacket* pkt,
+                                 bool second_field) {
   mtlSt20pMuxerContext* s = ctx->priv_data;
   struct st_frame* frame;
 
-  if (pkt->size != s->frame_size) {
-    err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__, s->idx,
-        pkt->size, s->frame_size);
-    return AVERROR(EIO);
-  }
-
-  dbg("%s(%d), start\n", __func__, s->idx);
   frame = st20p_tx_get_frame(s->tx_handle);
   if (!frame) {
     info(ctx, "%s(%d), st20p_tx_get_frame timeout\n", __func__, s->idx);
@@ -192,10 +199,36 @@ static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
   dbg(ctx, "%s(%d), st20p_tx_get_frame: %p\n", __func__, s->idx, frame);
 
-  /* todo: zero copy with external frame mode */
-  mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
+  if (s->interlaced) {
+    frame->second_field = second_field;
+    mtl_interlaced_frame_to_field(pkt->data, frame);
+  } else {
+    /* todo: zero copy with external frame mode */
+    mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
+  }
 
   st20p_tx_put_frame(s->tx_handle, frame);
+  return 0;
+}
+
+static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  mtlSt20pMuxerContext* s = ctx->priv_data;
+  int ret;
+
+  if (pkt->size != s->packet_size) {
+    err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__, s->idx,
+        pkt->size, s->packet_size);
+    return AVERROR(EIO);
+  }
+
+  dbg("%s(%d), start\n", __func__, s->idx);
+  ret = mtl_st20p_write_field(ctx, pkt, false);
+  if (ret < 0) return ret;
+  if (s->interlaced) {
+    ret = mtl_st20p_write_field(ctx, pkt, true);
+    if (ret < 0) return ret;
+  }
+
   s->frame_counter++;
   dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
@@ -215,6 +248,14 @@ static const AVOption mtl_st20p_tx_options[] = {
      {.i64 = 3},
      3,
      8,
+     ENC},
+    {"interlaced",
+     "Interlaced video, each frame carries two ST 2110-20 fields",
+     OFFSET(interlaced),
+     AV_OPT_TYPE_BOOL,
+     {.i64 = 0},
+     0,
+     1,
      ENC},
     {NULL},
 };

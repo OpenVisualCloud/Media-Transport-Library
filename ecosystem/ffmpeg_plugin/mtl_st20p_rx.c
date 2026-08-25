@@ -34,6 +34,7 @@ typedef struct MtlSt20pDemuxerContext {
   int width, height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
+  int interlaced;
   int fb_cnt;
   int timeout_sec;
   int session_init_retry;
@@ -42,6 +43,7 @@ typedef struct MtlSt20pDemuxerContext {
   st20p_rx_handle rx_handle;
 
   int64_t frame_counter;
+  int field_size;
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   bool gpu_direct_enabled;
@@ -107,6 +109,11 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     return AVERROR(EINVAL);
   }
   ops_rx.height = s->height;
+  ops_rx.interlaced = s->interlaced ? true : false;
+  if (ops_rx.interlaced && (s->height % 2)) {
+    err(ctx, "%s, interlaced needs an even height, got %d\n", __func__, s->height);
+    return AVERROR(EINVAL);
+  }
   ops_rx.fps = framerate_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
     err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
@@ -165,6 +172,11 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
       err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
       return AVERROR(EINVAL);
   }
+  if (ops_rx.interlaced && !mtl_interlaced_fmt_supported(ops_rx.output_fmt)) {
+    err(ctx, "%s, interlaced is not supported for pixel format: %s\n", __func__,
+        pix_fmt_desc->name);
+    return AVERROR(EINVAL);
+  }
   img_buf_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
   if (img_buf_size < 0) {
     err(ctx, "%s, av_image_get_buffer_size failed with %d\n", __func__, img_buf_size);
@@ -190,6 +202,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   st->codecpar->format = pix_fmt;
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
+  if (s->interlaced) st->codecpar->field_order = AV_FIELD_TT;
   avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
   ctx->packet_size = img_buf_size;
   st->codecpar->bit_rate =
@@ -238,8 +251,9 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     st20p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   img_buf_size = st20p_rx_frame_size(s->rx_handle);
-  if (img_buf_size != ctx->packet_size) {
-    err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
+  s->field_size = s->interlaced ? ctx->packet_size / 2 : ctx->packet_size;
+  if (img_buf_size != s->field_size) {
+    err(ctx, "%s, frame size mismatch %d:%d\n", __func__, img_buf_size, s->field_size);
     mtl_st20p_read_close(ctx);
     return AVERROR(EIO);
   }
@@ -255,12 +269,9 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
-  int ret = 0;
-  struct st_frame* frame;
-
-  dbg("%s(%d), start\n", __func__, s->idx);
+static struct st_frame* mtl_st20p_rx_next_frame(AVFormatContext* ctx,
+                                                MtlSt20pDemuxerContext* s) {
+  struct st_frame* frame = NULL;
 
   if (0 == s->frame_counter) {
     /*
@@ -272,19 +283,38 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
       if (frame) break;
       info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
     }
-  } else
-    frame = st20p_rx_get_frame(s->rx_handle);
+  }
+  if (!frame) frame = st20p_rx_get_frame(s->rx_handle);
 
   if (!frame) {
     info(ctx, "%s(%d), st20p_rx_get_frame timeout\n", __func__, s->idx);
-    return AVERROR(EIO);
+    return NULL;
   }
   dbg(ctx, "%s(%d), st20p_rx_get_frame: %p\n", __func__, s->idx, frame);
-  if (frame->data_size != ctx->packet_size) {
-    err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
-        __func__, s->idx, frame->data_size, ctx->packet_size);
+  if (frame->data_size != s->field_size) {
+    err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (%d expected)\n",
+        __func__, s->idx, frame->data_size, s->field_size);
     st20p_rx_put_frame(s->rx_handle, frame);
-    return AVERROR(EIO);
+    return NULL;
+  }
+  return frame;
+}
+
+static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt20pDemuxerContext* s = ctx->priv_data;
+  int ret = 0;
+  struct st_frame* frame;
+
+  dbg("%s(%d), start\n", __func__, s->idx);
+
+  frame = mtl_st20p_rx_next_frame(ctx, s);
+  if (!frame) return AVERROR(EIO);
+
+  /* a packet always starts on a first field, drop fields until the parity matches */
+  while (s->interlaced && frame->second_field) {
+    st20p_rx_put_frame(s->rx_handle, frame);
+    frame = mtl_st20p_rx_next_frame(ctx, s);
+    if (!frame) return AVERROR(EIO);
   }
 
   ret = av_new_packet(pkt, ctx->packet_size);
@@ -294,8 +324,19 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return ret;
   }
 
-  /* todo: zero copy with external frame mode */
-  mtl_memcpy(pkt->data, frame->addr[0], ctx->packet_size);
+  if (s->interlaced) {
+    mtl_interlaced_field_to_frame(frame, pkt->data);
+    st20p_rx_put_frame(s->rx_handle, frame);
+    frame = mtl_st20p_rx_next_frame(ctx, s);
+    if (!frame) {
+      av_packet_unref(pkt);
+      return AVERROR(EIO);
+    }
+    mtl_interlaced_field_to_frame(frame, pkt->data);
+  } else {
+    /* todo: zero copy with external frame mode */
+    mtl_memcpy(pkt->data, frame->addr[0], ctx->packet_size);
+  }
   st20p_rx_put_frame(s->rx_handle, frame);
 
   pkt->pts = pkt->dts = s->frame_counter++;
@@ -343,6 +384,14 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.dbl = 59.94},
      0,
      1000,
+     DEC},
+    {"interlaced",
+     "Interlaced video, each frame carries two ST 2110-20 fields",
+     OFFSET(interlaced),
+     AV_OPT_TYPE_BOOL,
+     {.i64 = 0},
+     0,
+     1,
      DEC},
     {"timeout_s",
      "Frame get timeout in seconds",

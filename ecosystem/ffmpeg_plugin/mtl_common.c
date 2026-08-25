@@ -316,3 +316,41 @@ int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value) {
       return AVERROR(EINVAL);
   }
 }
+
+/* An MTL interlaced frame holds one field's lines packed contiguously, while FFmpeg
+ * carries both fields woven line by line into a full-height buffer. */
+static void mtl_interlaced_copy(struct st_frame* field, uint8_t* frame, bool to_frame) {
+  uint8_t planes = st_frame_fmt_planes(field->fmt);
+  uint32_t field_height = st_frame_data_height(field);
+  size_t plane_offset = 0;
+
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    size_t linesize = field->linesize[plane];
+    uint8_t* woven = frame + plane_offset + (field->second_field ? linesize : 0);
+    uint8_t* packed = field->addr[plane];
+
+    for (uint32_t line = 0; line < field_height; line++) {
+      uint8_t* src = packed + linesize * line;
+      uint8_t* dst = woven + linesize * line * 2;
+      if (to_frame)
+        mtl_memcpy(dst, src, linesize);
+      else
+        mtl_memcpy(src, dst, linesize);
+    }
+    plane_offset += linesize * field_height * 2;
+  }
+}
+
+void mtl_interlaced_field_to_frame(struct st_frame* field, uint8_t* frame) {
+  mtl_interlaced_copy(field, frame, true);
+}
+
+void mtl_interlaced_frame_to_field(const uint8_t* frame, struct st_frame* field) {
+  mtl_interlaced_copy(field, (uint8_t*)frame, false);
+}
+
+bool mtl_interlaced_fmt_supported(enum st_frame_fmt fmt) {
+  /* 420 sampling packs two picture lines into one MTL line, so a single field is not
+   * line addressable */
+  return fmt != ST_FRAME_FMT_YUV420CUSTOM8 && fmt != ST_FRAME_FMT_YUV420PLANAR8;
+}
