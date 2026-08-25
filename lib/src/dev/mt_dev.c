@@ -307,6 +307,16 @@ static void* dev_eal_init_thread(void* arg) {
   return NULL;
 }
 
+static void dev_build_pci_devarg(const struct mtl_init_params* p, enum mtl_port port,
+                                 char* out, size_t len) {
+  uint32_t rl_burst_size = p->port_params[port].rl_burst_size;
+
+  if (rl_burst_size)
+    snprintf(out, len, "%s,rl_burst_size=%u", p->port[port], rl_burst_size);
+  else
+    snprintf(out, len, "%s", p->port[port]);
+}
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -314,7 +324,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   static bool eal_initted = false; /* eal cann't re-enter in one process */
   bool has_afxdp = false;
   bool has_afpkt = false;
-  char port_params[MTL_PORT_MAX][2 * MTL_PORT_MAX_LEN];
+  char port_params[MTL_PORT_MAX][MT_EAL_PORT_ARG_MAX_LEN];
   char* port_param;
   int pci_ports = 0;
   enum mtl_pmd_type pmd;
@@ -363,13 +373,13 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     }
     argc++;
     port_param = port_params[i];
-    memset(port_param, 0, 2 * MTL_PORT_MAX_LEN);
+    memset(port_param, 0, sizeof(port_params[i]));
 
     uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       const char* if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
-      snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
+      snprintf(port_param, sizeof(port_params[i]),
                "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
                MT_DPDK_AF_XDP_START_QUEUE, queue_pair_cnt);
       /* save kport info */
@@ -378,14 +388,14 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
       const char* if_name = mt_dpdk_afpkt_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
-      snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
+      snprintf(port_param, sizeof(port_params[i]),
                "eth_af_packet%d,iface=%s,framesz=2048,blocksz=4096,qpairs=%u", i, if_name,
                queue_pair_cnt + 1);
       /* save kport info */
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "eth_af_packet%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
     } else {
-      snprintf(port_param, 2 * MTL_PORT_MAX_LEN, "%s", p->port[i]);
+      dev_build_pci_devarg(p, i, port_param, sizeof(port_params[i]));
     }
     info("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;

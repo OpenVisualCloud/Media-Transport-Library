@@ -13,6 +13,7 @@ fn main() {
         let mut port_param = mtl_port_init_params {
             flags: 0,
             socket_id: 0,
+            rl_burst_size: 0,
         };
         let mut param = mtl_init_params {
             port: [port_p; 8],
