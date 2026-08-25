@@ -1,3 +1,4 @@
+---
 name: Linter
 
 on: [pull_request]
@@ -5,12 +6,80 @@ on: [pull_request]
 permissions:
   contents: read
 
+env:
+  # A workspace-relative cache location is the one path that works identically on
+  # Linux, macOS and Windows runners.
+  PRE_COMMIT_HOME: ${{ github.workspace }}/.pre-commit-cache
+  PRE_COMMIT_VERSION: 4.6.2
+
 jobs:
-  build:
+  # Every style and lint rule this repository enforces lives in
+  # .pre-commit-config.yaml, and this job runs it through the same entry point
+  # developers and the git hooks use. This workflow must stay orchestration-only:
+  # if you find yourself adding a rule or a config path here, it belongs in
+  # .pre-commit-config.yaml instead. See doc/coding_standard.md.
+  checkpatch:
+    # This name is also the check-run name build.yml's wait-for-linter gate blocks
+    # on. Rename it in both places or the gate waits 15 minutes for a check that
+    # will never appear and reports a timeout instead of a lint failure.
+    name: checkpatch (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read # for actions/checkout to fetch code
-    name: Lint Code Base
+    strategy:
+      fail-fast: false
+      matrix:
+        # Three OSes because the toolchain claims to be cross-platform; a claim
+        # nobody runs is a claim that is already broken.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.PRE_COMMIT_HOME }}
+          key: pre-commit-${{ matrix.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: python -m pip install "pre-commit==${PRE_COMMIT_VERSION}"
+
+      - name: Run checkpatch
+        run: ./checkpatch.sh
+
+  # Checks that checkpatch does not reproduce yet, kept as an explicitly named
+  # job rather than dropped quietly. Each one has a recorded reason and a
+  # migration path in the parity table in doc/coding_standard.md.
+  #
+  # This is an allow-list: super-linter runs *only* the validators set true here,
+  # and it refuses to start if true and false values are mixed, so no
+  # VALIDATE_*: false line may be added below. That is also what now keeps
+  # ansible-lint off: it walks into the tracked skill symlinks and then fails on
+  # super-linter v6's own bundled .ansible-lint.yml, which its ansible-lint
+  # rejects for the unexpected 'parseable' key. There is no Ansible here to
+  # check, so it simply never appears in this list -- the explicit
+  # VALIDATE_ANSIBLE: false the deny-list needed would now stop the job starting.
+  residual-linters:
+    # Also gated on by build.yml -- see the note on the checkpatch job name.
+    name: Lint checks not yet in checkpatch
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # for actions/checkout to fetch code
 
     steps:
       - name: Harden Runner
@@ -25,23 +94,39 @@ jobs:
           # list of changed files within `super-linter`
           fetch-depth: 0
 
-      ################################
-      # Run Linter against code base #
-      ################################
       - name: Lint Code Base
         uses: github/super-linter/slim@4e51915f4a812abf59fed160bb14595c0a38a9e7 # v6
         env:
           DEFAULT_BRANCH: main
-          # No Ansible in this repository, and super-linter v6 ships an
-          # .ansible-lint.yml its own ansible-lint rejects ('parseable').
-          VALIDATE_ANSIBLE: false
-          VALIDATE_CPP: false
-          VALIDATE_JSCPD: false
-          VALIDATE_JSON: false
-          VALIDATE_CHECKOV: false
-          VALIDATE_PYTHON_MYPY: false
-          VALIDATE_DOCKERFILE_HADOLINT: false
-          VALIDATE_PYTHON_PYLINT: false
-          VALIDATE_TYPESCRIPT_STANDARD: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
+          # .sh files must keep their executable bit. Trivial to check but there
+          # is no upstream pre-commit hook with these exact semantics -- the
+          # nearest one, check-shebang-scripts-are-executable, is broader and
+          # fails 17 pre-existing files.
+          VALIDATE_BASH_EXEC: true
+          # Secret scanning. The pre-commit gitleaks hook runs
+          # `gitleaks protect --staged`, which scans the staged diff and is a
+          # no-op for --all-files, so checkpatch cannot replace this. The old
+          # deny-list workflow ran it by default; keeping it explicit here is
+          # what stops the allow-list conversion from dropping it silently.
+          VALIDATE_GITLEAKS: true
+          # dotenv-linter. Carried over unchanged, and it currently fails all 8
+          # tracked *.env files whole-tree: script/hash_sources_*.env and
+          # script/isolation_*.env are path manifests rather than dotenv files,
+          # and versions.env trips UnorderedKey, which wants alphabetical order
+          # and would destroy its deliberate grouping. Only changed files are
+          # linted, which is why this has not blocked anyone yet.
+          VALIDATE_ENV: true
+          # eslint over 135 *.ts. Cannot move into checkpatch until
+          # tests/tools/perf_debug_mcp/package.json is tracked -- .gitignore's
+          # blanket `*.json` currently excludes it, so the project has no
+          # buildable or lintable configuration from a clean clone.
+          VALIDATE_TYPESCRIPT_ES: true
+          # rustfmt and clippy. All three edition validators were active before
+          # this split and stay active; narrowing them to 2021, which is what
+          # every Cargo.toml declares, would be a rule change.
+          VALIDATE_RUST_2015: true
+          VALIDATE_RUST_2018: true
+          VALIDATE_RUST_2021: true
+          VALIDATE_RUST_CLIPPY: true

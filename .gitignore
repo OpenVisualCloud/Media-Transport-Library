@@ -56,6 +56,14 @@ dkms.conf
 *.json
 !.github/
 !.github/**
+# The blanket `.*` above hides every *new* dotfile, which is how .editorconfig and
+# .gitattributes were invisible to `git status` until they were exempted by name.
+# The other two are already tracked; they are listed so the next one cannot be
+# added and silently ignored.
+!.clang-format
+!.editorconfig
+!.gitattributes
+!.pre-commit-config.yaml
 !.vscode/
 .vscode/*
 !.vscode/mcp.json
@@ -118,3 +126,24 @@ level-zero-*
 
 venv*
 .github/mcp/.venv/
+
+# Local CI reproduction (.github/ci-local)
+.ci-local/
+
+# Test reports the pytest suites write into the workspace root, which the
+# workflow uploads as an artifact rather than committing.
+/report.html
+/report.json
+# The custom, nightly and performance suites write theirs next to the tests.
+tests/acceptance/report.html
+tests/acceptance/report.json
+
+# The JPEG XS producer unpacks its upstream source next to the script that
+# builds it -- .github/scripts/SVT-JPEG-XS-<revision>, see
+# .github/scripts/ci/build-jpegxs.sh -- and everything under .github is
+# force-added above, so on any host that has built the dependency caches that
+# tree is reported as untracked. It is a download, not a source file.
+.github/scripts/SVT-JPEG-XS-*
+
+# Claude Code personal settings
+.claude/settings.local.json

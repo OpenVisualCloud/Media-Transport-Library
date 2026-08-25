@@ -122,9 +122,10 @@ build_ffmpeg() {
 
 	if { [ "${FFMPEG_ENABLE_SVT_JPEG_XS:-0}" == "1" ] || [ "$enable_jpegxs" = true ]; }; then
 		echo "Integrating SVT-JPEG-XS support into FFmpeg..."
-		if [ ! -d "${jpegxs_repo}" ] && ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${script_path}/SVT-JPEG-XS.tar.gz"; then
-			wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${script_path}/SVT-JPEG-XS.tar.gz"
-
+		if [ ! -f "${jpegxs_repo}/CMakeLists.txt" ]; then
+			if ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${script_path}/SVT-JPEG-XS.tar.gz"; then
+				wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${script_path}/SVT-JPEG-XS.tar.gz"
+			fi
 			mkdir -p "${jpegxs_repo}"
 			tar -xzf "${script_path}/SVT-JPEG-XS.tar.gz" -C "${jpegxs_repo}" --strip-components=1
 			rm -f "${script_path}/SVT-JPEG-XS.tar.gz"

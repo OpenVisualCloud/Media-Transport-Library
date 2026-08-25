@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 """Refactored kernel loopback ST22P JPEG XS test (new RxTxApp API)."""
+
 import pytest
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
 

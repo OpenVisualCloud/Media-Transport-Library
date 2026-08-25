@@ -21,7 +21,7 @@ This is a **client-visible, production repository**. Every change goes through r
 - **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_`/`st41_` (media APIs), `st20p_`/`st22p_`/`st30p_` (pipeline APIs).
 - **Error returns**: 0 = success, negative = error. Free resources in reverse allocation order on failure.
 - **Never block in tasklets** — no malloc, no mutex, no sleep, no INFO-level logging in data-plane paths.
-- **Formatting**: `clang-format-14` enforced by CI. Always run `./format-coding.sh` before committing.
+- **Formatting**: clang-format 14, pinned in `.pre-commit-config.yaml` and installed by `pre-commit` itself. Run `./format-coding.sh` to fix and `./checkpatch.sh` to verify — CI runs the identical hook list. See [doc/coding_standard.md](../doc/coding_standard.md).
 - **Build verification**: Always run `./build.sh` after changes to verify compilation.
 - **Logging**: Use `dbg()`/`info()`/`warn()`/`err()`. Never use `printf`.
 - **Comments**: Short and descriptive. Do not comment obvious code.
@@ -29,7 +29,13 @@ This is a **client-visible, production repository**. Every change goes through r
 ## Available Tooling
 
 - **MCP Server** (`mtl-system-setup`): 32 tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
-- **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "Explore" (read-only Q&A).
+- **Agents**:
+  "MTL Orchestrator" (runs a task board across the fleet — the only agent that invokes the others, and the one that decides what may run at once);
+  "MTL Planner" (routes multi-subsystem work);
+  "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop);
+  "MTL Reviewer" (adversarial code review — enforced exit gate);
+  "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes);
+  "Explore" (read-only Q&A).
   Pytest-environment prep (`tests/acceptance/`) has no dedicated agent — call `.github/scripts/acceptance_setup.sh` (interactive or `--auto`) or the `mtl-acceptance-setup` MCP tools directly; the interactive script already prompts for NFS/PF/EBU choices at zero token cost.
 - **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates); `/mtl-commit` (stage + commit as atomic, well-formed commits — user-triggered, never automatic).
 - **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
@@ -41,6 +47,7 @@ Use this table to pick the right subagent. Resolve ambiguity in order:
 
 | Task | Agent | Why |
 |---|---|---|
+| A task list with more than one owner, or work alternating between code, host and CI | **MTL Orchestrator** | The only agent that may invoke the others; owns the board and the parallel-safety call |
 | Multi-step work crossing 2+ subsystems (code + host + manager + plugins…) | **MTL Planner** | Decomposes and routes; no execution |
 | Edit any of `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/` | **MTL Developer (TDD)** | Owns code + tests + the six-gate TDD loop in one context window |
 | Build (`./build.sh`, `ninja -C build`, `./format-coding.sh`) | **MTL Developer (TDD)** | Build is Gate 4 of its loop |

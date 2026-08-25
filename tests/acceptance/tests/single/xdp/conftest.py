@@ -8,6 +8,7 @@ runners lack these, in which case MTL aborts with
 ``mt_socket_get_if_ip SIOCGIFADDR fail`` and the test produces an opaque rc=244
 failure.  Skip cleanly instead.
 """
+
 from __future__ import annotations
 
 import pytest

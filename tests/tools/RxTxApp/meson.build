@@ -77,7 +77,10 @@ if cc.has_argument('-msse4.2')
 endif
 
 # Keep column tracking enabled on large translation units to avoid misleading-indentation noise.
-app_c_args += ['-flarge-source-files']
+# gcc's alone: clang tracks columns regardless and rejects the flag outright.
+if cc.has_argument('-flarge-source-files')
+  app_c_args += ['-flarge-source-files']
+endif
 
 if is_windows
   ws2_32_dep = cc.find_library('ws2_32', required: true)

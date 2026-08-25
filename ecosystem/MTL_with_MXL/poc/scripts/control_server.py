@@ -41,7 +41,6 @@ state = {"p": True, "r": True, "corrupt": False}
 
 def read_ctrl_file():
     """Read current state from control file (written by us or synth_tx init)."""
-    global state
     try:
         with open(CTRL_FILE, "r") as f:
             data = json.load(f)

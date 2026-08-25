@@ -8,6 +8,7 @@ with the multi-session ``sessions=[...]`` API added to ``RxTxApp``.
 Pass criterion: process rc==0 AND ``check_rx_output`` passes for *every*
 populated session type (st20p OK + converters; st30p OK; anc OK).
 """
+
 import pytest
 from mtl_engine.media_files import (
     anc_files,
