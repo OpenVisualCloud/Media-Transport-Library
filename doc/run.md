@@ -4,7 +4,12 @@ The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supp
 
 ## Network Security
 
-Deploy RTP/UDP receivers on trusted media networks and restrict ingress with VLANs or firewall rules. MTL validates received packet fields, but network isolation limits exposure to malformed or unauthorized traffic.
+Media Transport Library implements the transport layer for SMPTE ST 2110
+protocols. It does not provide user or peer authentication, authorization,
+traffic encryption, or media-content protection. Deployments must provide these
+security controls externally and restrict network access using appropriate
+infrastructure, such as trusted media networks, VLANs, firewalls, and
+access-control policies.
 
 ## 1. IOMMU Setup
 
