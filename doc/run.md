@@ -2,6 +2,15 @@
 
 The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
 
+## Network Security
+
+Media Transport Library implements the transport layer for SMPTE ST 2110
+protocols. It does not provide user or peer authentication, authorization,
+traffic encryption, or media-content protection. Deployments must provide these
+security controls externally and restrict network access using appropriate
+infrastructure, such as trusted media networks, VLANs, firewalls, and
+access-control policies.
+
 ## 1. IOMMU Setup
 
 ### 1.1. [IOMMU Setup](chunks/_iommu_setup.md)
