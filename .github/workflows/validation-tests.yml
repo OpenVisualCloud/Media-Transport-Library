@@ -106,7 +106,6 @@ on:
 
 env:
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.11'
   DPDK_REBUILD: 'false'
 
 permissions:
@@ -135,6 +134,12 @@ jobs:
       - name: 'preparation: Print TEST_ environment'
         if: always()
         run: task ci:validation -- print-environment
+
+      - name: 'preparation: Read the pinned DPDK version'
+        if: env.DPDK_REBUILD == 'true'
+        run: |
+          . ./versions.env
+          echo "DPDK_VERSION=${DPDK_VER}" >> "$GITHUB_ENV"
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

@@ -131,13 +131,16 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
-### 2.1. Get DPDK 25.11 source code
+### 2.1. Get the DPDK source code
+
+`versions.env` in the Media Transport Library source tree holds the DPDK version to use. Read the file to set `DPDK_VER`, then check out that version.
 
 ```bash
+. $mtl_source_code/versions.env
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v25.11
-git switch -c v25.11
+git checkout v${DPDK_VER}
+git switch -c v${DPDK_VER}
 cd ..
 ```
 
@@ -145,9 +148,11 @@ cd ..
 
 Note: $mtl_source_code should be pointed to top source code tree of Media Transport Library.
 
+The patch folder holds one folder per DPDK version. `DPDK_VER` from step 2.1 selects the correct one.
+
 ```bash
 cd dpdk
-git am $mtl_source_code/patches/dpdk/25.11/*.patch
+git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
 ```
 
 ### 2.3. Build and install DPDK library
