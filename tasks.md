@@ -1,13 +1,114 @@
 # Tasks
 
-Work list for the DPDK 26.07 move. One task per `##` heading. Status is one of
-`OPEN`, `IN PROGRESS`, `BLOCKED`, `DONE`. Keep every note to one line — the history
-belongs in `git log`.
+Work list for the DPDK 26.07 move. **This file holds open work only.** One task per
+`##` heading. Status is one of `OPEN`, `IN PROGRESS`, `BLOCKED`. A task that closes
+leaves this file; it does not move to a `## Done` section.
 
-The source record is [upstreaming.md](upstreaming.md). Read the section a task names
-before you start the task.
+Two files hold the rest. [upstreaming.md](upstreaming.md) is the source record — read
+the section a task names before you start the task.
+[report-dpdk-26.07.md](report-dpdk-26.07.md) records what the round of 2026-08-24 to
+2026-08-25 finished, and how. Six tasks closed there: T-01, T-02, T-08, T-09, T-10 and
+T-33. `git log` holds the evidence for each.
 
 Prose in this file is Simplified Technical English. Use the `mtl-ste-writing` skill.
+
+## What needs to be done
+
+Thirty tasks. The 7 in the first group are the move itself; the other 23 are work the
+verification passes found on the way. Every line names the 1 thing that has to happen.
+
+### The 26.07 move — do these in order
+
+The chain is serial by construction: each step destroys the state the step before it
+measures. **D8 approves all of it with no further approval per step.**
+
+1. **T-34** — restart the session. The MCP fix is on disk and verified; Claude Code
+   negotiates the connection once, at session start. **Needs the user.** Nothing below
+   this line can run until it lands, because `mtl-system-admin` is MCP-only.
+2. **T-03** — settle whether `patches/dpdk/26.07/0004` derives the minor from
+   `DPDK_MTL_MINOR_VER` or keeps the literal, then set the pin to 26.07 and install it.
+   1 fact is stored twice today and the 2 stores disagree.
+3. **T-35** — give a shipped binary a way to set `rl_burst_size`. Cheapest first: 1 new
+   `TEST_F` in `noctx/testcases/queues.cpp` with a `_pf_` infix. Then RxTxApp, 3 edit
+   sites in `args.c`.
+4. **T-06** — Gate 6 for T-03 and for T-04. **Prove the loaded DPDK first**, with
+   `--log_level notice`, or the whole gate measures the sibling checkout's 26.03.
+5. **T-05** — closes inside T-06. Only its step 3 is left: a PF `rl` capture.
+6. **T-04** — closes when T-06 passes. Gates 0 to 5 are already done.
+7. **T-07** — the acceptance smoke suite. Budget for a venv and a `.local_install` build
+   from nothing; this checkout has neither.
+
+### Blocked on a person, not on a command
+
+Nothing on this host can answer these. Ask, or rule, then the edit is small.
+
+- **T-13** — say which DPDK versions the Windows build supports, and repair the dead
+  path filter in the same change. See T-30 first: the version pin is not why it fails.
+- **T-17** — say whether CI validation should build DPDK at all. `DPDK_REBUILD` is
+  hardcoded `'false'`, so 4 steps never run and CI will not pick up 26.07 on its own.
+- **T-20** — largely absorbed by T-03, which replaces the installed DPDK. What is left
+  is the `upstreaming.md:8` line that records the install as though it agreed with the
+  pin.
+- **T-27** — recover the author of `0001` and `hdr_split/0001`, or record that none is
+  recoverable. Needs Intel-internal history. `0009` is already closed this way.
+- **T-28** — rule whether `media@qiaoliu-mobl2.ccr.corp.intel.com` stays in 2 tracked
+  patch files. Do not rewrite history to remove it.
+- **T-31** — find somebody who can certify the DCO sign-off on `0009`, or accept the
+  placeholder on the record.
+
+### Ready now — no host, no decision, no MCP
+
+Any of these can run today. **T-19 is the one with real value.**
+
+- **T-19** — the unit suite aborts after 46 of 508 tests, because a test reaches
+  `rte_eal_init()` and the EAL panics on a double-registered tailq. **No workflow runs
+  the unit suite at all**, which is why it hid. Fix both in 1 change.
+- **T-36** — the Rust `no_std` example does not compile, and nothing builds it. Fix the
+  example and give it a build, or delete it.
+- **T-15** — `create_dcf_vf` in `script/nicctl.sh` tests a variable the script never
+  sets, so it always exits 1. Make it work with a test, or delete it.
+- **T-25** — give `format-coding.sh` a scoped mode. Tree-wide autofix inside a scoped
+  task hides collateral edits and defeats the review rule that a diff match its scope.
+- **T-23** — `DPDK_REPO` in `versions.env` names a `.tar.gz` that
+  `script/build_dpdk.sh` never reads. Wire it up or delete it.
+- **T-22** — 1 instruction sentence sits in 2 documents and is wrong in both. Fix both,
+  or delete the duplicate.
+- **T-16** — record in `upstreaming.md` §9 that `patches/dpdk/25.11/` is load-bearing
+  for the Ubuntu 22.04 AF_XDP path, so no later cleanup deletes it.
+- **T-18** — 6 stale or unresolvable `file:line` citations in `upstreaming.md`.
+  Re-resolve every number **after** `checkpatch.sh`, never before.
+- **T-24** — `upstreaming.md` §2 states "Never submitted" for 2 patches while §3
+  concedes it cannot be measured here. Mark it unverified.
+- **T-14** — delete `.github/legacy/`, or keep it and strip its 3 version literals.
+  Check `gh api …/code-scanning/default-setup` before treating its CodeQL file as the
+  only coverage.
+
+### Patch-set hygiene — metadata only, no MTL code
+
+None of these breaks a build today. Each one breaks a documented flow.
+
+- **T-30** — 24 files under `patches/dpdk/*/windows/` are not patches. They are symlinks
+  that a `core.symlinks=false` checkout wrote as text. Restore the links, and fix the
+  `git am` call site that needs `git apply`.
+- **T-21** — 13 of 23 `index` lines are stale, so `git am -3` cannot work. Say "after
+  the 9 flat patches" in any fix; there is no single apply order.
+- **T-29** — `patches/dpdk/26.03/` still carries every byte defect T-08 removed from
+  26.07. D5 keeps that directory, so the defect ships. The 26.07 fix is the template.
+- **T-26** — the filenames of `0008` and `0009` describe a different change from their
+  own `Subject:`. A rename is a set-wide change, because name order is apply order.
+- **T-32** — `0003` keeps `RTE_EXPORT_SYMBOL` for a function it renames. Harmless under
+  3 upstream build-system choices, none of them MTL's. Fix it when a body edit is
+  already needed.
+
+### Long tail — not a 26.07 task
+
+The only 2 tasks that can shrink the patch set below 11.
+
+- **T-11** — move the Rx path to `RTE_ETH_RX_OFFLOAD_TIMESTAMP` and delete `0004`. Low
+  priority, high value.
+- **T-12** — move header split to `RTE_PKTMBUF_POOL_F_PINNED_EXT_BUF` and delete
+  `hdr_split/0001`, the most invasive patch MTL carries. Lowest priority, largest
+  change.
 
 ## Decisions — locked with the user, 2026-08-24
 
@@ -22,19 +123,7 @@ Prose in this file is Simplified Technical English. Use the `mtl-ste-writing` sk
 | D7 | **T-04 answered: add an `rl_burst_size` field to `struct mtl_port_init_params`.** DPDK patch `0003` is dropped. | Corrects the D2 arithmetic: **5 dropped, 11 kept, 0 open**. The 26.07 set is 11 files, final. Unblocks T-02. T-04 part two lands code, so it needs Gates 2, 5 and 6. |
 | D8 | **The host chain T-05 → T-03 → T-06 → T-07 is approved in full.** | No further approval per step. T-05 runs first and alone, because it is the only irreversible measurement. Stop and report only on direct evidence of another live test. |
 
-## Order of work
-
-1. **T-01** and **T-05** run at the same time. T-01 reads a downloaded source tree.
-   T-05 needs the hardware and must capture the baseline **before** the bump.
-2. **T-10** can also run now. It touches only CI and documentation, and it does not
-   build, so it does not race `build/` with T-01.
-3. **T-02** needs T-01. **T-03** needs T-02. **T-04** now decides before **T-02** closes,
-   not before T-03 lands: the T-04 answer sets how many patches `patches/dpdk/26.07/`
-   holds, and Gate 5 will not approve that directory while the count is open.
-4. **T-06** needs T-03, T-05 and, to mean anything for T-04, **T-35**. **T-07** needs T-03.
-5. **T-08** and **T-09** are small and independent. Fit them anywhere.
-6. **T-11** and **T-12** are the long tail. They are the only way to shrink the patch
-   set below 11, and neither is a 26.07 task.
+## Constraints on how the work runs
 
 Only one `mtl-developer` builds at a time — one `build/` tree, one `/usr/local`. Only
 one `mtl-system-admin` runs at a time — one set of VFs, one MtlManager. A prose pass and a C
@@ -50,47 +139,12 @@ prints nothing and exits 0 on a clean tree. Also hash any file you do not
 mean to touch **before** a run: `format-coding.sh` changed `tasks.md` once during T-04, and a
 `git diff -w` comparison cannot see a textlint terminology autofix.
 
-### Where the work stands — 2026-08-24
+### The ordering constraint that governs the host chain
 
-The order above is unchanged. This records progress against it.
-
-- **Steps 1 and 2 are done.** T-01, T-08, T-09, T-10 and T-33 are **DONE** and sit under
-  `## Done`. T-05 has captured 2 of its 3 runs; the third moves to T-06.
-- **Step 3 is done. T-02 and the code half of T-04 both closed on Gate 5 with 0 blockers**, T-02
-  after 5 passes and T-04 after 3. `patches/dpdk/26.07/` holds the 11 final files, and the
-  `rl_burst_size` field with its 5 unit tests is in the tree. **Nothing further can run without
-  the host.** T-03 arms the new directory.
-- **The host chain gained a step, and a measurement fixed its order.** The installed 26.03 ice
-  PMD has no `rl_burst_size` key at all — `strings` on the shipped `librte_net_ice.so` finds
-  `proto_xtr` and `rx_low_latency` and no third key. So a run today returns an unknown-key probe
-  failure, which proves nothing. Order is T-03, then **T-35** to give a binary a way to set the
-  field, then T-06. Without T-35 the Gate 6 run measures T-03 only.
-- **What the patch set proves about itself**, all of it re-measured by Gate 5 rather than read
-  from a report. The 9 flat patches `git am` clean in order onto a pristine `dpdk-26.07`; each
-  optional patch applies after those 9; `VERSION` reads `26.07.0_mtl_`; 8 patches commit under
-  real author names and `0009` under a placeholder that T-31 owns; every body is byte-identical
-  to its 26.03 ancestor except `0004`, `windows/0001` and 2 named bytes of `0008`.
-- **The irreversible measurement is safe.** The 26.03 baseline is in
-  `/home/labrat/mtl/baseline-26.03/` — 8 files, `ls` confirms — outside the tree, captured
-  before anything rebuilt. DPDK in `/usr/local` is still `26.03.90_mtl_`.
-- **Steps 4 to 6 are blocked on tooling, not on hardware or on a decision.** T-05 step 3, T-06
-  and T-07 all need `mtl-system-admin`, which is MCP-only, and the MCP servers cannot start in
-  this session. **T-34** holds the cause and the remedy: the fix is on disk, but Claude Code
-  negotiates MCP connections once at session start, so it needs a restart. T-11 and T-12 are out
-  of scope for this move by the task text itself.
-- **The loader hazard is proven, and it changes how T-06 must run.** `LD_DEBUG=libs` on
-  `build/tests/KahawaiTest` shows the loader opening the **sibling checkout's** DPDK, not
-  `/usr/local`. So installing 26.07 into `/usr/local` does not by itself change what a test
-  loads. T-06 must prove the version from inside each run with `--log_level notice`.
-- **Every task numbered T-15 and above was found by the verification passes, not planned.**
-  `grep -c '^## T-' tasks.md` counts what is open. Most are defects in the patch set and in its
-  record that only a re-measurement could find.
-
-### The ordering constraint that still governs the host chain
-
-**T-05 had to run before T-03, and it did.** T-03 replaces the installed DPDK, so once it runs
-there is no 26.03 build left to measure. D8 approves the chain T-05 → T-03 → T-06 → T-07 in
-full, with no further approval per step.
+**T-03 is the irreversible step.** It replaces the installed DPDK, so after it runs there is
+no 26.03 build left to measure. That is why T-05 had to capture the baseline first, and it
+did: the 26.03 numbers are in `/home/labrat/mtl/baseline-26.03/`, outside the tree, where no
+rebuild can overwrite them.
 
 **Stop and report only on direct evidence that another test is running on these NICs.** An
 idle-looking host is not a reason to ask again.
@@ -812,7 +866,8 @@ T-03 arms it. That separates the reversible work from the irreversible work.
   stands on §8's uniform rule alone, which does not discriminate by author.
 - **The authorship half of this is now settled, and the answer was neither candidate.** The
   pcapng patch is Frank Du's, per `659ebc82`. Cite that commit. Dawid Wesierski was the sender
-  and Marek Kasiewicz the rebaser. See T-08.
+  and Marek Kasiewicz the rebaser. T-08 settled it; see `git log` for the patch set that
+  landed the answer.
 - **Record the true submission map, because I mis-paired it once and so did Gate 5.** The
   patchwork links at `:159-160` use **26.03 numbering**. They name 26.03 `0005`
   (`iavf-disable-runtime-queue`, patchwork 166691) and 26.03 `0006` (`pcapng`, 166396). They do
@@ -1127,260 +1182,3 @@ Recorded so that a missing task does not read as an oversight.
 | Send the testpmd `create pinned-rxpool` patch standalone | D1. The file lived in `/home/labrat/dev1/dpdk`, which no longer exists. |
 | Regenerate patch `0006` from the accepted upstream v6 file | D1, and the same dead path. 26.07 does not carry the accepted shape, so nothing breaks. |
 | Decide a route for patches `0012` and `0013` | D1 answers it: MTL keeps both. T-08 fixes their metadata. |
-
-## Done
-
-### T-08 Give the carried patches real authorship metadata — DONE 2026-08-24
-
-- **Owner:** mtl-developer
-- **Needs:** T-02
-- **Ref:** upstreaming.md §8
-- **Files:** the new `0004`, `0007`, `0008`, `0009` and `windows/0001.patch` in
-  `patches/dpdk/26.07/`
-- **The renumbering warning T-02 raised is closed, and it named the wrong file.** I re-measured
-  `patch -p1 --dry-run` on a pristine 26.07 copy: `windows/0001.patch` applies with 0 offset,
-  both alone and after the 9 flat patches. `hdr_split/0001` is the file whose hunk headers still
-  describe 26.03 — 9 hunks at offsets from -406 to +53 lines, 0 fuzz, 0 rejects. That costs
-  nothing to `patch -p1` or `git apply`, which both search for context, so it is stale metadata
-  of the same class as the `index` lines. Folded into **T-21**, not filed again.
-- **Gates:** 2 exempt (patch metadata, no MTL code); 0-4 done; 5 pass one BLOCK on 2
-  blockers, pass two APPROVE WITH COMMENTS with 0 blockers and 2 warnings, pass three
-  **REJECT — 1 blocker, 5 warnings, 4 nits**, pass four **REJECT — 1 blocker, 3 warnings,
-  2 nits**, pass five **APPROVE WITH COMMENTS — 0 blockers, 2 warnings, 3 nits**; 6 exempt.
-  **Gate 5 is satisfied.**
-- **What the finished set proves, all of it re-measured by Gate 5 rather than read from a
-  report.** The 9 flat patches `git am` clean in order onto a pristine `dpdk-26.07` with 0 fuzz
-  and 0 rejects. Each optional patch applies after those 9. `VERSION` ends `26.07.0_mtl_`.
-  Every header-bearing file reads `From nobody Mon Sep 17 00:00:00 2001` on line 1;
-  `windows/0001.patch` is outside that rule because it starts at `diff --git`, and the
-  predicate says so rather than an exemption list. 8 patches commit under 5 real author names.
-  Every body is byte-identical to its 26.03 ancestor except `0004`, `windows/0001` and 2 named
-  bytes of `0008`.
-- **1 known defect ships, deliberately and on the record.** `0009` still commits as
-  `MTL Contributor <noreply@example.com>`, because 5 routes failed to recover the author. Its
-  `Signed-off-by:` keeps the same placeholder: a real name would forge a DCO certification, and
-  deleting the trailer would edit the body and leave a DPDK patch with no sign-off. **T-31**
-  owns it and needs a person who can certify the change.
-- **The `index <pre>..<post>` lines are not maintained** — 13 stale lines in 7 of the 11 files.
-  Repairing them means regenerating bodies, which a metadata pass must not do. Plain `patch -p1`
-  and plain `git am` ignore them, so the cost lands only on a future `git am -3`. **T-21**.
-- **The standing rule this task earned, and it cost 6 recurrences to learn: state the predicate
-  and the command that enumerates it, never the count.** Every time I wrote a count next to a
-  rule, the count was the part that was wrong — a fix scoped to 3 files when 5 needed it, to 9
-  when 10 did, "4 documented apply flows" when there are 5 sites, "4 dropped" when the table
-  says 5. A predicate is checkable by a reader; a count is not.
-- **The second rule, and it is the one worth carrying furthest: an acceptance test can reward
-  the defect it is meant to catch.** My first test was
-  `grep -rn "noreply@example.com\|0000000000000000"`, which passes the moment a placeholder is
-  overwritten with **any** name. So the cheapest way to pass it was to invent an author, and an
-  earlier pass did exactly that. A bad claim is one defect; a test that pays for fabrication
-  generates them. **T-27**.
-- **Evidence that cannot fail is not evidence.** §8 argued the old line-1 hashes were fabricated
-  because `git cat-file -t` fails on them. There is no DPDK git tree on this host, so that
-  command fails on every hash — including one §2 calls a real upstream commit. The conclusion
-  survived on better grounds: the 3 hashes are a keyboard walk, a hand-typed counter and 40
-  zeros, which needs no repository to check.
-- **Routed out of this task, each with its own record:** T-21 index lines, T-24 the `0003`
-  patchwork-sender question, T-26 filename-versus-`Subject:` on `0008` and `0009`, T-27 the
-  2 remaining reattributed authors, T-29 the inherited 26.03 byte defects, T-31 the sign-off,
-  T-32 the retained export annotation.
-- **Acceptance, and the first version of it was the defect:** no `From:` in
-  `patches/dpdk/26.07/` rests on the author of the commit that added the patch file. Each one is
-  either supported by a named commit, or is a visible placeholder recorded in upstreaming.md §8
-  as unrecoverable. `git am` of the set into a scratch `dpdk-26.07` clone succeeds for all 9.
-- **Test tier:** none. Patch metadata only.
-
-### T-02 Create `patches/dpdk/26.07/` with the 11 kept patches — DONE 2026-08-24
-
-- **Owner:** mtl-developer
-- **Ref:** upstreaming.md §1, §2, §3, §4, §6
-- **Files:** `patches/dpdk/26.07/` (11 files, untracked); `upstreaming.md`
-- **Acceptance:** met on 5 passes. `for p in patches/dpdk/26.07/*.patch; do patch -p1
-  --dry-run -i $p; done` clean on a fresh `dpdk-26.07` tree, then the same for `hdr_split/`
-  and `windows/`. Every patch applies with 0 fuzz and the series ends with `VERSION` reading
-  `26.07.0_mtl_`.
-- **Test tier:** none. Patch files, then prose.
-- **Gates:** 2 exempt (no MTL code); 0-4 done; 5 pass one BLOCK, pass two **REJECT — 1 blocker,
-  3 warnings, 3 nits**, pass three **REJECT — 1 blocker, 5 warnings, 1 nit**, pass four
-  **APPROVE WITH COMMENTS — 0 blockers, 6 warnings, 2 nits**, pass five **APPROVE WITH
-  COMMENTS — 0 blockers, 2 warnings, 3 nits**; 6 exempt.
-- **The set is 11 files and final** (D7): 9 flat patches plus `hdr_split/0001` and
-  `windows/0001`. Renumbering was `0004→0001`, `0005→0002`, `0006→0003`, `0007→0004`,
-  `0009→0005`, `0010→0006`, `0011→0007`, `0012→0008`, `0013→0009`; the 2 subdirectory files
-  keep their names. `script/build_dpdk.sh:98` applies a flat `*.patch` glob, so name order is
-  apply order, and the subdirectories are applied by hand. Files were copied, not moved (D5).
-- **Every pass found the same defect shape, and it recurred 11 times: a sentence left behind
-  that reads as a completed repair.** Pass three's instance was a `##` heading I dictated
-  myself, asserting MTL "carries the burst itself" 12 lines above the sentence that denies the
-  field exists. Pass four's was "No code changes now" in §7, false because `lib/src/mt_pcap.h`
-  carries T-09's comment pointing back at that very section. Each was closed with a measurement,
-  not a rewrite.
-- **Gate 5 re-derived 24 of the document's claims from the tree and all 24 measured.** That
-  includes the §2 arithmetic from the table itself, the byte-identity of `0003`'s hunks to its
-  26.03 ancestor, the 13 stale `index` lines across 7 of 11 files, and the `git am` author list.
-  §8 is dense but reviewable; the question of shortening it is settled and closed.
-- **Two conflicts were found here and handed to their owners.** `patches/dpdk/26.07/0004`
-  hardcodes `26.07.0_mtl_` instead of deriving the minor from `DPDK_MTL_MINOR_VER`, so with
-  `versions.env` at `91` the gate in `dpdk_is_installed()` never matches and every run rebuilds
-  DPDK — **T-03** sets it to 0. The `rl_burst_size` replacement field is **T-04**.
-- **2 warnings and 3 nits survive in `upstreaming.md` and are folded into T-18**, not passed to
-  a sixth review round. The load-bearing one: `0003` names the dropped burst-size patch in some
-  sections and the shipped pcapng patch in others, and only §4 and §7 declare which.
-
-### T-33 Condense the T-08 record and move it under `## Done` — DONE 2026-08-24
-
-- **Owner:** mtl-orchestrator
-- **Files:** [tasks.md](tasks.md)
-- **Acceptance:** met. T-08 appears once, as a `###` entry under `## Done`, at 59 lines against
-  T-01's 49. Every durable finding has a home: T-18 the citation and lint rules, T-21 the
-  unmaintained `index` lines and the stale `hdr_split/0001` hunk headers, T-24 the "never
-  submitted" status, T-26 the filenames, T-27 the reattributed authors, T-29 the 26.03 copies,
-  T-30 the Windows call site, T-31 the sign-off, T-32 the export annotation.
-- **Gates:** none. This file is not code and no agent builds it.
-- **Why it existed.** The T-08 record grew to 356 lines because each of 5 Gate 5 passes found a
-  real defect and I wrote the evidence into the work list instead of leaving it in `git log`.
-  What went was my own error register — 16 numbered entries that help 1 session and mislead a
-  maintainer next month. What stayed is what a reader cannot re-derive: the 2 durable rules, the
-  1 defect that ships, and the routing table out.
-- **1 finding changed under re-measurement while condensing.** T-02's Gate 5 warning blamed
-  `windows/0001.patch` for half-renumbered hunk headers. `patch -p1 --dry-run` on a pristine
-  26.07 copy shows `windows/0001` at 0 offset and `hdr_split/0001` at 9 hunks off by up to 406
-  lines. Condensing a record is not a copy edit; it re-tests the claims.
-
-### T-01 Prove the drop list against a real DPDK 26.07 tree — DONE 2026-08-24
-
-- **Owner:** mtl-developer
-- **Ref:** upstreaming.md §3
-- **Files:** upstreaming.md (§2 and §3 only). Read-only elsewhere.
-- **Acceptance:** met, and I reproduced both halves myself.
-- **Gates:** 2 exempt (documentation); 0-4 done; 5 pass one APPROVE with 8 nits, pass two
-  fixed 4, pass three BLOCK with 4 blockers, pass four fixed them, **pass five APPROVE WITH
-  COMMENTS — 0 blockers**, pass six landed the remaining warnings as deletions; 6 exempt.
-- **The 5 greps, re-run by me against `/home/labrat/dpdk-26.07-verify/dpdk-26.07`.** Every one
-  resolves to the exact line §3 names.
-  - `0001` `iavf_rxtx.h:19` — `#define IAVF_MAX_RING_DESC        (8192 - 32)`
-  - `0002` `iavf_tm.c:825` — the `||` guard, with the capability check above it at `:813`
-  - `0003` `ice_ethdev.c:45` — `#define ICE_RL_BURST_SIZE_ARG     "rl_burst_size"`, read at
-    `:2727`
-  - `0008` `iavf_vchnl.c:1627` — `sizeof(struct virtchnl_queue_vector) * (chunk_sz - 1)`
-  - `0014` `ice_ethdev.c:4668` — `if (hw->phy_model == ICE_PHY_E830)`
-- **The 16 dry runs, re-run by me.** 10 pass and 6 fail, which is the number §3 records, not
-  the planned 5 and 11. The 6 that fail are `0001`, `0002`, `0007`, `0008`, `0014` and
-  `windows/0001`. `0001`, `0002`, `0008` and `0014` fail because 26.07 already carries the
-  change. `0007` and `windows/0001` fail on context drift and are kept.
-- **`0003` passes the dry run, and the reason needs care.** 26.07 still reads
-  `ICE_SCHED_DFLT_BURST_SIZE (15 * 1024)` at `base/ice_type.h:1103`, so the patch text still
-  applies. Upstream superseded MTL's **approach** with the `rl_burst_size` devarg; it did not
-  take MTL's change. So a reader must not treat "superseded" here as "26.07 covers it".
-  upstreaming.md `:82` and `:123` state this correctly. T-04 owns the decision.
-- **I nearly filed this as a false claim in the record and I was wrong.** The compressed note
-  read as if 26.07 carried the patch. It does not say that, and §3 spells out the distinction.
-  The lesson is about wording, not about the measurement.
-- **Note:** the 6 upstream commit hashes in §2 were read from a DPDK git tree at
-  `/home/labrat/dev1/dpdk` that no longer exists, so they are a record and not a measurement.
-  No DPDK git tree exists on this host, and `script/build_dpdk.sh` downloads a tarball, so
-  `git merge-base` cannot answer the question. Pair each dry run with its grep.
-- **The pattern broke on pass four, and this is the part worth keeping.** The developer found
-  2 false claims in its own draft and reported both: it had written that `23.03` "stays once"
-  in `header_split.md` when its own rewrite made the string appear 3 times, and it had written
-  that `build.sh` reads `versions.env` when `build.sh` holds 0 references to it and
-  `script/common.sh:9` is the real reader. I confirmed both. Deleting instead of rewriting is
-  what made the difference.
-- **My 6th error. The scope line I wrote did not cover my own findings.** I restricted the
-  developer to upstreaming.md "§3, §6 and §9 only", then gave it line-cited items in §2 and
-  §7. It read the list as an under-specified paraphrase, executed the line-numbered items,
-  left the hard-excluded §8 byte-identical, and offered to revert if I meant the restriction
-  literally. I verified §8: it hashes `7933d3287c9b67d3` from both HEAD and the working tree.
-  Name sections and line numbers from the same reading of the file, or the 2 disagree.
-- **The `4 dropped` fix forced a 2nd repair.** Changing `:58` contradicted `:109`, which read
-  "a plan of 11 keep and 5 drop". `:109` is in §3 and in scope, so it now reads "11 keep, 4
-  drop and 1 open". Both still resolve to the 16 rows in the §2 table.
-
-### T-09 Record the pcapng break at the guard — DONE 2026-08-24
-
-- **Owner:** mtl-developer
-- **Ref:** upstreaming.md §7
-- **Files:** [lib/src/mt_pcap.h:13-16](lib/src/mt_pcap.h)
-- **Acceptance:** met. `./build.sh` green, and the comment names the symbol, the accepted
-  upstream signature, and the patch that supplies the current one.
-- **Gates:** 2 exempt (comment); 0-4 done; 5 pass two APPROVE, pass three BLOCK, pass four
-  REJECT, **pass five APPROVE WITH COMMENTS — 0 blockers**; 6 exempt.
-- **How I closed it.** I read the 4 comment lines myself. They name
-  `MTL_DPDK_HAS_PCAPNG_TS`, `rte_pcapng_copy_ts()`, the `uint64_t` shape upstream accepted,
-  and the patch by `Subject:` text instead of by number. `./checkpatch.sh` exits 0.
-- **The comment sits at the guard, not the call site,** because the guard is where the
-  capture is lost. The failure analysis stays in upstreaming.md §7 only, so the 2 copies
-  cannot drift again.
-- **Gate 2 exemption proved.** `build/lib/libmtl.so.p/src_mt_pcap.c.o` hashes
-  `2addeb73a1c5fb68...e5705c74` before and after. `ninja -n` confirmed the object was dirty
-  first, so the rebuild was real and not a no-op. I reproduced the hash.
-- **4 passes failed before this one, and each wrote a new false claim.** Pass one said the
-  build breaks; it does not, because `mt_pcap.h:34-45` holds stubs and capture stops
-  instead. Pass three said a failed patch lets the stubs take over with no build error; it
-  does not, because `script/build_dpdk.sh:6` is `set -e`, the apply loop is `:98` and
-  `meson build` is `:112`, so a failed patch aborts before anything compiles. The stubs are
-  reached by an install whose `rte_pcapng.h` lacks the define. Pass four found the comment
-  had grown to 6 lines and duplicated §7, and the 2 copies had already drifted.
-- **Note:** upstreaming.md said the tree holds "exactly one definition" of
-  `MTL_DPDK_HAS_PCAPNG_TS`. Six patch files add it. The intended meaning is true, so the
-  row is restated as the measurable fact — each `patches/dpdk/*/` copy adds the define in
-  the same hunk that declares `rte_pcapng_copy_ts()`, so an install cannot get one without
-  the other.
-- **A type defect sits in the stub arm, and it is unreachable. Not filed as a task.**
-  `mt_pcap_dump()` returns `uint16_t`, a dumped-packet count, in both arms
-  (`mt_pcap.h:32` and `:47`), but the stub returns `-ENOTSUP`, which is 65503. Callers add it
-  straight to a counter — `pcap->dumped_pkts += dump; pcap->dropped_pkts += nb - dump;` at
-  `mt_cni.c:331-333`, and the same shape at `st_rx_video_session.c:1500` and
-  `st_rx_audio_session.c:704`. No call site can run it: the stub `mt_pcap_open()` returns
-  `NULL`, and every caller gates on a non-`NULL` handle (`mt_cni.c:314`). The stub should
-  return `0`. Recorded here so the next reader does not file it twice.
-
-### T-10 Make CI and the documentation read the pinned DPDK version — DONE 2026-08-24
-
-- **Owner:** mtl-developer
-- **Ref:** upstreaming.md §9
-- **Files:** [.github/workflows/validation-tests.yml:109](.github/workflows/validation-tests.yml),
-  [doc/build.md:155](doc/build.md), [doc/build_WIN.md:82](doc/build_WIN.md),
-  [doc/experimental/header_split.md:11](doc/experimental/header_split.md)
-- **Acceptance:** met. `./checkpatch.sh` clean, and no literal DPDK version outside
-  [versions.env](versions.env) and `patches/dpdk/*/`, except the 2 exceptions below.
-- **Gates:** 2 exempt; 0-4 done; 5 pass one APPROVE WITH COMMENTS, pass three BLOCK, pass
-  four REJECT on 2 blockers, **pass five APPROVE WITH COMMENTS — 0 blockers, 4 warnings,
-  1 nit**; pass six landed all 4 warnings and the nit as deletions; 6 exempt.
-- **How I closed it. I re-measured every part.** `doc/build.md` and `doc/build_WIN.md` hold
-  0 DPDK version literals. `.github/workflows/validation-tests.yml` holds 0.
-  `doc/experimental/header_split.md` holds 1 against a limit of 8, and its longest line is
-  212 characters against 400, down from 384. `doc/design.md` is byte-identical to HEAD and
-  has dropped out of `git status`. `./checkpatch.sh` exits 0.
-- **2 exceptions stay, and both are recorded, not forgotten.**
-  [doc/design.md:664](doc/design.md) and [:671](doc/design.md) keep `25.11` as the
-  deliberate Ubuntu 22.04 AF_XDP workaround, which HEAD already justifies.
-  [.github/workflows/msys2_build.yml:46](.github/workflows/msys2_build.yml) keeps
-  `[25.03, 23.11]`. A bump there answers a product question in silence, so T-13 owns it.
-- **This task shifted 2 citations in upstreaming.md, and the record says so.**
-  `doc/build.md:150` and `doc/build_WIN.md:76` now point at blank lines. The `git am` lines
-  they mean moved to `:155` and `:82`. T-18 repairs both.
-- **I reported `checkpatch.sh` as unclean here, and I was wrong.** I claimed my first
-  verification run applied `markdownlint-fix` to 4 Markdown files. My only evidence was
-  mtime, and `markdownlint-fix` moves the mtime of every Markdown file it reads even when it
-  changes no byte. A later run proved it: exit 0, mtime moved, `md5sum -c` OK on all 5 files.
-  The hook does edit content where a rule is really broken, so T-18 keeps the citation sweep
-  rule, but this task's lint runs were clean and the developer's report was right.
-- **"Header split is experimental" stays, for a reason neither I nor the developer had.**
-  `include/mtl_api.h:695` states it in the public API. My own justification was the
-  `doc/experimental/` directory name, which proves where the file sits and nothing about the
-  feature. Gate 5 supplied the real proof.
-- **Gate 5 found the worst-formed row in §9, and it was evidence I had accepted.** The
-  `doc/design.md` row cited a line **added by this same uncommitted worktree**, so the row's
-  evidence was written by the change that declared the row closed. A `git stash` would have
-  falsified it. That sentence also added a `25.11` literal, which works against this task's
-  own acceptance test, so it is deleted.
-- **Note:** §9's premise was wrong and Gate 5 proved it. The workflow never built DPDK
-  25.11. `DPDK_REBUILD` is hardcoded `'false'`, so all 4 `DPDK_VERSION` consumers never
-  run. This task fixed a latent defect, not a live one. The new `versions.env` read is also
-  unreachable. See T-17.
-- **My seventh error, and the same shape as the fourth.** I told the developer to record
-  that the original note named `v23.08`, a release DPDK never made. The developer did
-  exactly that, and the sentence narrates the document's own edit history. Gate 5 named
-  this as the mechanism behind 4 failed passes: each pass deletes a false claim and writes
-  a sentence about the deletion. Pass six is deletion only.
