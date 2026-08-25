@@ -62,8 +62,14 @@
 
     > **Note:** The DPDK repository should be located directly in the MTL repository.
 
+    `versions.env` in the MTL repository holds the DPDK version to use. Read the file to set `DPDK_VER`.
+
     ```bash
-    git clone -b v25.11 https://github.com/DPDK/dpdk.git
+    . "$MTL_PATH"/versions.env
+    ```
+
+    ```bash
+    git clone -b "v${DPDK_VER}" https://github.com/DPDK/dpdk.git
     ```
 
 1. Apply the MTL patches for DPDK
@@ -73,11 +79,11 @@
     ```
 
     ```bash
-    git am "$MTL_PATH"/patches/dpdk/25.11/*.patch
+    git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch
     ```
 
     ```bash
-    git apply "$MTL_PATH"/patches/dpdk/25.11/windows/*.patch
+    git apply "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch
     ```
 
 1. Build DPDK
