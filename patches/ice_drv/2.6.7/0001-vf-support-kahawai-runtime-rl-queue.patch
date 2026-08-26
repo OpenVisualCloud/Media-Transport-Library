@@ -1,0 +1,52 @@
+From 4eabcf24e4c13a0a625dabc594b252a670525b15 Mon Sep 17 00:00:00 2001
+From: Szumski Tomasz <tomasz.szumski@intel.com>
+Date: Fri, 11 Jul 2025 13:32:58 +0200
+Subject: [PATCH 1/5] vf: support kahawai runtime rl queue
+
+---
+ src/ice_virtchnl.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index bc68d8a..492bd65 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3679,6 +3679,11 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 
+ 	memcpy(vf->qs_bw, qs_bw, len);
+ 
++	/* for kahawai runtime rl */
++	if (vf->qs_bw)
++		if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
++			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++
+ err_bw:
+ 	kfree(qs_bw);
+ 
+@@ -3783,9 +3788,11 @@ ice_vc_cfg_txq(struct ice_vf *vf, struct ice_vsi *vsi,
+ 	vsi->tx_rings[q_idx]->dma = txqi->dma_ring_addr;
+ 	vsi->tx_rings[q_idx]->count = txqi->ring_len;
+ 
++#if 0 /* for kahawai runtime rl */
+ 	/* Disable queue before reconfiguration */
+ 	if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx, txqi->queue_id))
+ 		return VIRTCHNL_STATUS_ERR_PARAM;
++#endif
+ 
+ 	/* Configure txtime/timestamp support if enabled */
+ 	if (txqi->flags & VIRTCHNL_TXQ_FLAG_TXTIME_ENABLED) {
+@@ -4007,9 +4014,10 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
+ 			}
+ 		}
+ 	}
+-
++#if 0 /* for kahawai runtime rl */
+ 	if (ice_vf_cfg_qs_bw(vf, qci->num_queue_pairs))
+ 		goto error_param;
++#endif
+ #ifdef HAVE_NETDEV_UPPER_INFO
+ 
+ 	ice_lag_complete_vf_reset(pf->lag, act_prt);
+-- 
+2.43.0
+
