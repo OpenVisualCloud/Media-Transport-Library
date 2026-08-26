@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-"""Sweep of MTL st20p input pixel formats, driven through both RxTxApp and
-FFmpeg.
+"""Sweep of MTL st20p input pixel formats, driven through RxTxApp, FFmpeg and
+GStreamer.
 
-FFmpeg's ``-pix_fmt`` is not a separate feature to validate in isolation: the
-mtl_st20p FFmpeg plugin (ecosystem/ffmpeg_plugin/mtl_st20p_{tx,rx}.c) maps
-each AVPixelFormat straight onto an MTL ``input_fmt``/``transport_fmt`` pair
--- the same knobs RxTxApp exposes as ``pixel_format``/``transport_format``.
-One input-format table therefore drives both apps instead of duplicating the
-sweep per app (this replaces the old ffmpeg-only test_pix_fmt.py).
+A framework's own pixel-format option is not a separate feature to validate in
+isolation: the mtl_st20p FFmpeg plugin
+(ecosystem/ffmpeg_plugin/mtl_st20p_{tx,rx}.c) maps each AVPixelFormat straight
+onto an MTL ``input_fmt``/``transport_fmt`` pair, and the GStreamer plugin
+(ecosystem/gstreamer_plugin/gst_mtl_st20p_{tx,rx}.c) does the same for the
+formats it converts -- the same knobs RxTxApp exposes as
+``pixel_format``/``transport_format``. One input-format table therefore drives
+every app instead of duplicating the sweep per app. Formats a plugin does not
+implement are skipped by the adapter's own ``unsupported_reason()``, so no case
+reports a pass without having run.
 
 Each pix_fmt has its own pre-generated media asset on the NFS share (see
 ``yuv_files_input_formats`` in mtl_engine/media_files.py) -- tests must never
@@ -31,7 +35,7 @@ pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg"])
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
     "pix_fmt, media_file",
     list(yuv_files_input_formats.items()),
@@ -59,7 +63,12 @@ def test_st20p_input_format(
         test_config.get("interface_type", "VF")
     )
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+    )
     rx_output = output_files.register(f"{media_file_path}_{pix_fmt}.out")
     app.create_command(
         session_type="st20p",

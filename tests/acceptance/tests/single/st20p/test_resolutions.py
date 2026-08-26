@@ -10,18 +10,7 @@ pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support rfc format, source files need to be changed"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     [
@@ -44,7 +33,13 @@ def test_st20p_resolutions(
     media_integrity,
     media_file,
 ):
-    """Test different video resolutions."""
+    """Test different video resolutions.
+
+    The assets are RFC 4175 pixel groups, which only RxTxApp reads directly; the
+    FFmpeg and GStreamer plugins convert from planar/packed host formats instead
+    and say so through ``unsupported_reason()`` rather than through a skip mark
+    maintained here.
+    """
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
@@ -68,7 +63,12 @@ def test_st20p_resolutions(
         "test_time": test_time,
     }
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+    )
     app.create_command(**config_params)
 
     height = media_file_info.get("height", 0)

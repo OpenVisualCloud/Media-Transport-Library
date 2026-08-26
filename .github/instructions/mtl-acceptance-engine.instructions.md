@@ -62,7 +62,7 @@ A new adapter subclasses `Application` and implements exactly four methods:
 
 `RxTxApp.py` (procedural, still the backend for `tests/dual/st20p|st30p|st40/`
 and `tests/single/performance/`), `ffmpeg_app.py` (command builders called by
-`ffmpeg.py`), and `GstreamerApp.py` (the only GStreamer path) predate the
+`ffmpeg.py`), and `GstreamerApp.py` (only `tests/dual/gstreamer/`) predate the
 adapter model. Add new functionality to `Application`, not to these. Note
 the capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is modern.
 
