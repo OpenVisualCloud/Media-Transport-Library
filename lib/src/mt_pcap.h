@@ -12,8 +12,7 @@
 
 /* MTL patch "pcapng: add user timestamp support" supplies MTL_DPDK_HAS_PCAPNG_TS and
  * rte_pcapng_copy_ts(). Upstream accepted a different shape: a uint64_t timestamp
- * parameter on rte_pcapng_copy() plus rte_pcapng_tsc_to_ns(). Release v26.07 carries
- * neither. Failure analysis: upstreaming.md section 7. */
+ * parameter on rte_pcapng_copy() plus rte_pcapng_tsc_to_ns(). */
 #ifdef MTL_DPDK_HAS_PCAPNG_TS
 
 #define MT_HAS_PCAPNG_TS

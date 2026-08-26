@@ -9,45 +9,62 @@ Write prose in ASD-STE100 Simplified Technical English. This applies to document
 
 ## Rules
 
+Cite a rule by its tag, such as [S-LEN]. Do not cite a line number, because line numbers move.
+
 WORDS
-- Use one name for one thing. Do not call the same item by two different names.
-- Use the short common word: start (not begin/commence/initiate), use (not utilize/leverage), help (not facilitate), make sure (not ensure), before (not prior to), after (not subsequent to), about (not regarding/concerning), get (not obtain/acquire), show (not demonstrate), also (not additionally/furthermore/moreover).
-- Give each word one meaning. "fall" means to move down, not to decrease.
-- No marketing adjectives: seamless, robust, powerful, cutting-edge, effortless, world-class, next-generation, revolutionary.
-- American spelling.
+- **[W-ONE-NAME]** Use one name for one thing. Do not call the same item by two different names.
+- **[W-SHORT-WORD]** Use the short common word:
+  - start (not begin/commence/initiate)
+  - use (not utilize/leverage)
+  - help (not facilitate)
+  - make sure (not ensure)
+  - before (not prior to)
+  - after (not subsequent to)
+  - about (not regarding/concerning)
+  - get (not obtain/acquire)
+  - show (not demonstrate)
+  - also (not additionally/furthermore/moreover)
+- **[W-ONE-MEANING]** Give each word one meaning. "fall" means to move down, not to decrease.
+- **[W-NO-HYPE]** No marketing adjectives: seamless, robust, powerful, cutting-edge, effortless, world-class, next-generation, revolutionary.
+- **[W-US-SPELLING]** American spelling.
 
 VERBS
-- Active voice. "the parser reads the file", not "the file is read by the parser".
-- Use a verb for an action. "analyze the log", not "perform an analysis of the log".
-- No stacked auxiliaries. Not "it is important to note that this may help to improve". Write "this improves X".
-- No "-ing" main verb where a simple tense works.
+- **[V-ACTIVE]** Active voice. "the parser reads the file", not "the file is read by the parser".
+- **[V-VERB-NOT-NOUN]** Use a verb for an action. "analyze the log", not "perform an analysis of the log".
+- **[V-NO-AUX-STACK]** No stacked auxiliaries. Not "it is important to note that this may help to improve". Write "this improves X".
+- **[V-NO-ING]** No "-ing" main verb where a simple tense works.
+- **[V-NO-PHRASAL]** No phrasal verb where one verb works. Write "start the daemon", not "spin up the daemon".
 
 SENTENCES
-- One instruction per sentence. Max 20 words (instruction), max 25 (descriptive).
-- No contractions. Use articles: a, an, the, this, these.
+- **[S-ONE-IDEA]** One instruction per sentence.
+- **[S-LEN]** Cap an instruction at 20 words and descriptive text at 25 words. An instruction tells the reader to act, and every step of a numbered list is an instruction. Descriptive text is everything else. No other rule here states a sentence length, and none overrides this one.
+- **[S-COUNT]** Count the whitespace-separated tokens. Backticks do not fuse tokens, so `ethtool -i` counts as two. A token keeps every dot, hyphen, underscore, and slash, so `fw.app` and `E800-series` each count as one. Do not count a token that is punctuation only. Do not count the rule tag that starts a bullet.
+- **[S-SCOPE]** [S-LEN] counts sentences of prose. A term list, a table row, a heading, and a command on its own line are not sentences.
+- **[S-NO-CONTRACTION]** No contractions. Use articles: a, an, the, this, these.
 
 PUNCTUATION
-- No semicolons. Write two sentences. (Note: the em dash is not banned by STE, only the semicolon is — add "no em dash" yourself if you want it gone.)
+- **[P-NO-SEMICOLON]** No semicolons. Write two sentences. STE bans the semicolon and does not ban the em dash. If you want the em dash gone, add a rule for it yourself.
 
 STRUCTURE
-- One topic per paragraph, max six sentences. For steps, use a numbered vertical list, one action per item, imperative form. Put a condition before its command.
+- **[T-STRUCTURE]** One topic per paragraph, max six sentences. For steps, use a numbered vertical list, one action per item, imperative form. Put a condition before its command.
 
 Write only the requested text. No preamble, no summary, no closing remarks.
 
 ## Modes
 
-- **strict** — procedures, runbooks, safety text, error messages: apply every rule and both length caps.
-- **STE-flavored** — general prose (READMEs, PR descriptions, docs): apply the sentence, paragraph, active-voice, and no-phrasal-verb discipline; relax the ~900-word dictionary lockdown so the text keeps enough range to read naturally.
+- **strict** — procedures, runbooks, safety text, error messages: apply every rule with no exception.
+- **STE-flavored** — general prose (READMEs, PR descriptions, docs): apply the SENTENCES rules, [T-STRUCTURE], [V-ACTIVE], and [V-NO-PHRASAL]. Relax the ~900-word STE dictionary, so the text keeps enough range to read naturally.
 
 ## Self-lint (run before returning text)
 
-1. Any sentence over 20 words? Split it.
-2. Any semicolon? Replace with a period.
-3. Any contraction? Expand it.
-4. Any passive voice with a known actor? Make it active.
-5. Any "-ing" main verb, nominalization ("perform an analysis"), or phrasal verb ("spin up")? Replace with a plain verb.
-6. Same thing named two ways? Pick one name.
+1. Any sentence over its [S-LEN] cap? Split it. Count the words under [S-COUNT].
+2. Any semicolon? Replace it with a period. See [P-NO-SEMICOLON].
+3. Any contraction? Expand it. See [S-NO-CONTRACTION].
+4. Any passive voice with a known actor? Make it active. See [V-ACTIVE].
+5. Any "-ing" main verb or nominalization ("perform an analysis")? Replace it with a plain verb. See [V-NO-ING] and [V-VERB-NOT-NOUN].
+6. Any phrasal verb ("spin up")? Replace it with one verb. See [V-NO-PHRASAL].
+7. Same thing named two ways? Pick one name. See [W-ONE-NAME].
 
-The mechanical rules above are lintable and are what removes slop. Full STE also needs human judgment (the right technical noun, whether a sentence "makes good sense") — a checker cannot certify that, and slop is not about that. This skill fixes the FORM of slop. It cannot make a hollow paragraph true.
+The mechanical rules above are lintable and are what removes slop. Full STE also needs human judgment: the right technical noun, and whether a sentence makes good sense. A checker cannot certify that, and slop is not about that. This skill fixes the FORM of slop. It cannot make a hollow paragraph true.
 
 Free official standard (do not paste it in full; it is copyrighted): <https://asd-ste100.org>

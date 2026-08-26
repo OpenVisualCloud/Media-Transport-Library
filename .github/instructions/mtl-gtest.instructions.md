@@ -17,10 +17,18 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 --p_port <BDF>          Primary (producer) port
 --r_port <BDF>          Receiver port
 --auto_start_stop       Auto start/stop sessions (always use)
---pacing_way <mode>     auto (default, uses RL) | tsc (software fallback)
+--pacing_way <mode>     auto | rl | tsn | tsc | ptp | be. Default auto, which
+                        picks RL only when the driver advertises TM
+                        (lib/src/dev/mt_dev.c:1452-1461) and TSC otherwise
 --dma_dev <p>,<r>       DMA devices for DMA-accelerated tests
 --rss_mode <mode>       l3_l4 for RSS tests
 --p_sip <IP>            Primary station IP (auto-generated if omitted)
+--log_level <level>     debug | info | notice | warning | error. The binary
+                        defaults to error, which mutes the `dpdk version:`
+                        banner; notice is the quietest level that still prints it
+--no_ctx_tests          Select the NoCtxTest suite and skip the shared mtl_init
+--port_list <BDFs>      Comma-separated ports, up to MTL_PORT_MAX. Any suite
+                        accepts it; NoCtxTest uses it instead of --p_port/--r_port
 --gtest_filter=<pat>    Filter tests (supports wildcards)
 --gtest_list_tests      List tests without running
 ```
@@ -91,7 +99,9 @@ run in its own KahawaiTest process**. Never pass a filter that matches multiple
 NoCtxTest cases to a single `KahawaiTest` invocation — the second case will
 fail with `dev_eal_init, eal not support re-init`.
 
-Requires 4 VF ports. Run serially with a cooldown (10s) between processes:
+`run.sh` takes 4 VF ports (`TEST_PORT_1..4`) and waits 20s between processes.
+`run_pf.sh` takes 2 PF ports (`TEST_PF_PORT_1/2`) for the `_pf_` cases, whose
+TSN/launch-time pacing offload no VF driver advertises, and waits 10s:
 
 ```bash
 TEST_PORT_1=... TEST_PORT_2=... TEST_PORT_3=... TEST_PORT_4=... \
@@ -102,7 +112,17 @@ TEST_PORT_1=... TEST_PORT_2=... TEST_PORT_3=... TEST_PORT_4=... \
 process per test. The MCP tool `run_noctx_tests(gtest_filter=...)` does the
 same enumeration + one-process-per-test loop; it accepts filters that resolve
 to many cases (e.g. `*nonsplit*`, `NoCtxTest.st40i_*`) and reports per-test
-pass/fail.
+pass/fail. `run_noctx_pf_tests` covers the `_pf_` cases `run_noctx_tests`
+excludes. Each tool's `cooldown_seconds` default matches the script it mirrors —
+20 for `run.sh`, 10 for `run_pf.sh`.
+
+The argv both tools build, their listing parser and their sudo/exit-code
+handling are pinned by a no-NIC, no-subprocess unittest suite. Run it after any
+edit to `.github/mcp/mtl_mcp_server.py`:
+
+```bash
+.github/mcp/.venv/bin/python -m unittest discover -s .github/mcp -v
+```
 
 ## Interpreting Results
 

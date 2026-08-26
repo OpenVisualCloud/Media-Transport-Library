@@ -1,7 +1,7 @@
-From e3f5f1819f22b92d055c6d18e20aa7656c46a364 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
 Date: Fri, 1 Dec 2023 18:52:34 +0800
-Subject: [PATCH 5/6] iavf: disable runtime queue
+Subject: [PATCH] iavf: disable runtime queue
 
 Signed-off-by: Ric Li <ming3.li@intel.com>
 ---

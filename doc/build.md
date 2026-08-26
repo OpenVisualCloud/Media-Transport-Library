@@ -146,9 +146,14 @@ cd ..
 
 ### 2.2. Apply the DPDK patches required to run Media Transport Library
 
-Note: $mtl_source_code should be pointed to top source code tree of Media Transport Library.
+Note: point `$mtl_source_code` to the top source code tree of Media Transport Library.
 
 The patch folder holds one folder per DPDK version. `DPDK_VER` from step 2.1 selects the correct one.
+
+Some patches in the DPDK versions 22.03 to 23.11 are symlinks to a patch of an older version.
+They resolve without an extra step. If your clone is on a file system that cannot hold symlinks,
+Git writes each one as a text file that holds the target path, and `git am` rejects it. To
+convert the files, use the symlink step in the [Build guide for Windows](build_WIN.md).
 
 ```bash
 cd dpdk

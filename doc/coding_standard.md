@@ -7,7 +7,9 @@
 ./checkpatch.sh --staged         # verify staged files -- what the git hook runs
 ./checkpatch.sh --files a.c b.md # verify specific files
 ./format-coding.sh               # apply every autofix
-./format-coding.sh --check       # show what would change, then restore the tree
+./format-coding.sh --staged      # apply the autofixes to staged files only
+./format-coding.sh --files a.c   # apply the autofixes to specific files
+./format-coding.sh --check       # report, then restore -- same as --preview
 ./checkpatch.sh --install-hooks  # run the checks automatically on commit
 ```
 

@@ -23,7 +23,7 @@ pkg-config --modversion libdpdk
 
 ```bash
 rm build/ -rf
-ST_BUILD_ENABLE_ASAN=true ./build.sh
+MTL_BUILD_ENABLE_ASAN=true ./build.sh
 ```
 
 ## 3. Run the application to check for any memory issues

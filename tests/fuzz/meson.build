@@ -2,7 +2,7 @@
 
 fuzz_cc = meson.get_compiler('c')
 fuzz_c_args = []
-fuzz_link_args = ['-Wl,--allow-multiple-definition']
+fuzz_link_args = []
 fuzzer_deps = []
 asan_enabled = get_option('enable_asan')
 

@@ -20,10 +20,10 @@ Signed-off-by: Soumyadeep Hore <soumyadeep.hore@intel.com>
  1 file changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
-index 0f2e7aee14..746b1aba0a 100644
+index 76b8ff0a72..d823735d33 100644
 --- a/drivers/net/intel/ice/ice_ethdev.c
 +++ b/drivers/net/intel/ice/ice_ethdev.c
-@@ -7320,16 +7320,16 @@ ice_timesync_disable(struct rte_eth_dev *dev)
+@@ -7426,16 +7426,16 @@ ice_timesync_disable(struct rte_eth_dev *dev)
  }
  
  static int

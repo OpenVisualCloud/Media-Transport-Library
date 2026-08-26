@@ -2,6 +2,40 @@
 
 Snapshot date: **2026-08-24**
 
+Citation basis: repository paths resolve against the working tree, staged and unstaged edits
+included, not against `HEAD`. DPDK paths resolve against a pristine `v26.07` source tree — §3.
+A repository path is written as a Markdown link and a DPDK-tree path as bare backticks, so the
+two are told apart by shape. Citations into [doc/build.md](doc/build.md) and
+[doc/build_WIN.md](doc/build_WIN.md) quote the whole command instead of a line number, because
+those two files drifted twice under a concurrent edit and each cited site is one command that
+`grep -F` finds exactly once — keep them so. Every other line number was resolved against the
+working tree on the snapshot date, so re-resolve it after any pass that adds or deletes lines
+in the file it names: [script/nicctl.sh](script/nicctl.sh) lost 40 lines and
+[versions.env](versions.env) lost 2 in the round that wrote this.
+
+Patch numbers default to 26.03. A 26.07 number carries the words `26.07` immediately before it,
+or is a Markdown link whose path names `26.07`. §2, §7 and §8 each open with a narrower frame,
+because each is mostly about one side of the renumbering — and §8 inverts the default outright.
+Read that frame before you read their numbers.
+
+**Commit coupling.** This file describes a working tree that four uncommitted changes have
+already moved. It must land in the same commit as all four couplings below, or later, never
+before any of them. Later sections cite them by number:
+
+1. The **staged rename** of 26.03 `0012` and `0013` and of their 26.07 counterparts. Five
+   citations here name the new paths, which exist nowhere else.
+2. T-30 turning `git am` into `git apply` at
+   [.github/workflows/msys2_build.yml:136](.github/workflows/msys2_build.yml), unstaged — §8.
+3. T-30 restoring seven files under [patches/dpdk/23.11/windows/](patches/dpdk/23.11/windows/)
+   from path-string blobs to real symlinks, unstaged typechanges — §8.
+4. The unstaged metadata edits under [patches/dpdk/26.03/](patches/dpdk/26.03/) and
+   [patches/dpdk/26.07/](patches/dpdk/26.07/): 13 rewritten `index` lines plus one added in
+   26.07 `0008`, and a rewritten line 1 on 14 of the 16 26.03 files. T-21 owns the `index`
+   half — §3, §8.
+
+Every claim below is measured against that tree. Where a claim holds only at `HEAD`, or only
+after one of the four, it says so.
+
 | Item | Value |
 |---|---|
 | MTL pinned DPDK | **26.03** — [versions.env:1](versions.env) (`DPDK_VER=26.03`, `DPDK_MTL_MINOR_VER=91`) |
@@ -35,13 +69,15 @@ not a plan of action any more.
 
 ## 2. Patch set today
 
+A `new` number in the "Action on 26.07" column is a 26.07 number.
+
 `patch -p1` applies the flat glob `patches/dpdk/$DPDK_VER/*.patch` —
-[script/build_dpdk.sh:98](script/build_dpdk.sh). The `hdr_split/` and `windows/`
-subdirectories are applied by hand — `hdr_split/` per
-[doc/experimental/header_split.md:21](doc/experimental/header_split.md), `windows/` per
-[doc/build_WIN.md:86](doc/build_WIN.md), which is the only `windows/` flow that works. The
-second one, [.github/workflows/msys2_build.yml:136](.github/workflows/msys2_build.yml),
-cannot apply the file it names — §8.
+[script/build_dpdk.sh:98](script/build_dpdk.sh). Neither the `hdr_split/` nor the `windows/`
+subdirectory is in that glob. A reader applies `hdr_split/` by hand per
+[doc/experimental/header_split.md:21](doc/experimental/header_split.md) and `windows/` by hand
+per [doc/build_WIN.md](doc/build_WIN.md), which runs
+`git apply "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch`. CI applies `windows/` as
+well, at [.github/workflows/msys2_build.yml:136](.github/workflows/msys2_build.yml) — §8.
 
 | # | Patch file | Upstream state | Action on 26.07 |
 |---|---|---|---|
@@ -53,21 +89,32 @@ cannot apply the file it names — §8.
 | 0006 | [pcapng-add-user-timestamp-support](patches/dpdk/26.03/0006-pcapng-add-user-timestamp-support.patch) | Approved, never applied | Keep → new `0003`, see §7 |
 | 0007 | [config-add-mtl-version-to-version-string](patches/dpdk/26.03/0007-config-add-mtl-version-to-version-string.patch) | MTL-local by design | Keep → new `0004`, refreshed — §3 |
 | 0008 | [net-iavf-fix-large-VF-IRQ-mapping](patches/dpdk/26.03/0008-net-iavf-fix-large-VF-IRQ-mapping.patch) | Merged `cc58d28b10`, by Anatoly Burakov | **Drop** |
-| 0009 | [net-ice-fix-TxPP-timer-association-in-txtime-context](patches/dpdk/26.03/0009-net-ice-fix-TxPP-timer-association-in-txtime-context.patch) | Never submitted | Keep → new `0005` |
-| 0010 | [net-ice-fix-read-clock-to-use-PHC-hardware-time](patches/dpdk/26.03/0010-net-ice-fix-read-clock-to-use-PHC-hardware-time.patch) | Never submitted | Keep → new `0006` |
-| 0011 | [net-ice-fix-TxPP-launch-time-encoding-for-19-bit-HW-field](patches/dpdk/26.03/0011-net-ice-fix-TxPP-launch-time-encoding-for-19-bit-HW-f.patch) | Never submitted | Keep → new `0007`, see §8 |
-| 0012 | [net-ice-e830-use-direct-MMIO-for-PHC-update](patches/dpdk/26.03/0012-net-ice-e830-use-direct-MMIO-for-PHC-update.patch) | Never submitted | Keep → new `0008`, see §8 |
-| 0013 | [net-ice-always-init-PHC-owner](patches/dpdk/26.03/0013-net-ice-always-init-PHC-owner.patch) | Never submitted | Keep → new `0009`, see §8 |
+| 0009 | [net-ice-fix-TxPP-timer-association-in-txtime-context](patches/dpdk/26.03/0009-net-ice-fix-TxPP-timer-association-in-txtime-context.patch) | Unverified | Keep → new `0005` |
+| 0010 | [net-ice-fix-read-clock-to-use-PHC-hardware-time](patches/dpdk/26.03/0010-net-ice-fix-read-clock-to-use-PHC-hardware-time.patch) | Unverified | Keep → new `0006` |
+| 0011 | [net-ice-fix-TxPP-launch-time-encoding-for-19-bit-HW-field](patches/dpdk/26.03/0011-net-ice-fix-TxPP-launch-time-encoding-for-19-bit-HW-f.patch) | Unverified | Keep → new `0007`, see §8 |
+| 0012 | [net-ice-e830-use-direct-MMIO-for-PHY-timer-command](patches/dpdk/26.03/0012-net-ice-e830-use-direct-MMIO-for-PHY-timer-command.patch) | Unverified | Keep → new `0008`, see §8 |
+| 0013 | [net-ice-init-PHC-owner-when-enabling-timesync-on-a-non-owning-port](patches/dpdk/26.03/0013-net-ice-init-PHC-owner-when-enabling-timesync-on-a-n.patch) | Unverified | Keep → new `0009`, see §8 |
 | 0014 | [net-ice-gate-send-on-timestamp-offload-to-e830](patches/dpdk/26.03/0014-net-ice-gate-send-on-timestamp-offload-to-e830.patch) | Merged `b87947ed19`, written twice | **Drop** |
 | — | [hdr_split/0001-net-intel-ice-support-hdr-split-mbuf-callback](patches/dpdk/26.03/hdr_split/0001-net-intel-ice-support-hdr-split-mbuf-callback.patch) | Rejected, API "not necessary" | Keep, unchanged name, §10 |
-| — | [windows/0001](patches/dpdk/26.03/windows/0001.patch) | Never submitted | Keep, unchanged name, refreshed and lost 2 hunks — §3 |
+| — | [windows/0001](patches/dpdk/26.03/windows/0001.patch) | Unverified | Keep, unchanged name, refreshed and lost 2 hunks — §3 |
 
 The "Action on 26.07" column records the mapping T-02 executed. `patches/dpdk/26.07/`
-carries the 11 kept files and none of the 5 dropped ones. That directory is untracked, so
-this is a working-tree fact. Two rows still defer work: `0003` defers its replacement field
-to T-04 (§6), and `0007` defers the version-string conflict to T-03 (§3).
+carries the 11 kept files and none of the 5 dropped ones. Two rows still defer **mapping**
+work: `0003` defers its replacement field to T-04 (§6), and `0007` defers the version-string
+conflict to T-03 (§3). Three more tasks defer **metadata** work: §8 names T-30 against
+`windows/0001`, T-31 against `0013` (26.07 `0009`), and T-21 against the `index` lines of the
+26.03 set — the 26.07 ones are recomputed, and [tasks.md](tasks.md) marks the 26.03 half
+BLOCKED on a `v26.03.zip` download.
 
 Count: 5 dropped, 11 kept. 16 rows in, 11 files out — §6 closed the last row.
+
+**How the "Upstream state" column was obtained.** §3 covers the five drop rows. §4 covers
+the five that carry a review outcome or a design reason — `0004`, `0005`, `0006`, `0007` and
+`hdr_split/0001` — and gives the link for each. The remaining six read **Unverified**, because
+nothing on this host can measure a status for them: there is no DPDK git tree and no mail
+archive here. They are `0009` to `0013` and `windows/0001`. An earlier round labelled the last
+four of those `Never submitted`. That is a positive claim about a mail archive §3 already says
+is absent, so it is gone rather than qualified.
 
 ## 3. Verification status of the drop list — read this before you drop anything
 
@@ -77,7 +124,7 @@ any more, and no DPDK git tree exists here.** So the hashes are a record, not a
 measurement you can repeat today.
 
 `script/build_dpdk.sh` downloads a **ZIP archive**, not a git clone
-([script/build_dpdk.sh:90-97](script/build_dpdk.sh)), so `git merge-base` cannot
+([script/build_dpdk.sh:89-95](script/build_dpdk.sh)), so `git merge-base` cannot
 answer "is commit X in v26.07". Check the source instead.
 
 **Task T-01 did this on 2026-08-24.** It unpacked
@@ -112,7 +159,7 @@ tree, one patch at a time.
 | 0009 | Pass, no offset | Keep confirmed |
 | 0010 | Pass, offset 106 lines | Keep confirmed |
 | 0011 | Pass, offset 1 line | Keep confirmed |
-| 0012 | Pass. `patch` also warns "unexpectedly ends in middle of line", because the patch file has no final newline | Keep confirmed |
+| 0012 | Pass. `patch` also warned "unexpectedly ends in middle of line", because the file had no final newline: `tail -c1` is `30` at `HEAD` and in the index. The unstaged 26.03 edits added the newline, so `tail -c1` on the working tree is `0a` and a re-run does not warn | Keep confirmed |
 | 0013 | Pass, offset 106 lines | Keep confirmed |
 | 0014 | **Fail** — "Reversed (or previously applied) patch detected" | Drop confirmed |
 | hdr_split/0001 | Pass, offsets from -410 to 53 lines | Keep confirmed |
@@ -141,7 +188,7 @@ they do, and for `0003` it is the only record of a row that shipped nothing.
 * **`0007` failed on context, and the fix left a version-string conflict for T-03.** The
   26.03 patch rewrites `VERSION` from `26.03.0` to `26.03.91_mtl_`. The 26.07 file reads
   `26.07.0`, so both the context line and the target string were wrong for this release.
-  T-02 refreshed the patch as
+  T-02 refreshed the patch as 26.07
   [0004](patches/dpdk/26.07/0004-config-add-mtl-version-to-version-string.patch), which
   writes the literal `26.07.0_mtl_`. **The earlier instruction to derive that string from
   `DPDK_VER` and `DPDK_MTL_MINOR_VER` is withdrawn** — the shipped patch hardcodes it, and
@@ -169,8 +216,8 @@ they do, and for `0003` it is the only record of a row that shipped nothing.
 
 ## 4. What MTL keeps, and why
 
-Four groups. Numbers below are 26.03 numbers. The last group also uses 26.07 numbers, and
-marks each one.
+Four groups. Only the last group also gives 26.07 numbers, and there one marker covers the
+number or the pair that follows it.
 
 **Rejected on design (2 patches).** Only a change inside `lib/` removes these. See
 §10.
@@ -191,15 +238,18 @@ Neither is in `v26.07`. MTL must keep both.
 * `0006` — patchwork [166396](https://patches.dpdk.org/project/dpdk/patch/20260629093942.983145-1-dawid.wesierski@intel.com/). See §7.
 
 **MTL-local by design (2 patches).** `0007` adds the MTL version to the DPDK version
-string, which [script/build_dpdk.sh:57-70](script/build_dpdk.sh) then reads to decide
-whether a rebuild is needed. `windows/0001` carries the Windows fixups.
+string. `dpdk_is_installed()` at [script/build_dpdk.sh:59-70](script/build_dpdk.sh) then reads
+that string, and the rebuild decision it feeds is
+[script/build_dpdk.sh:79-82](script/build_dpdk.sh). `windows/0001` carries the Windows fixups.
 
-**Never submitted (5 patches).** `0009`–`0013` are genuine `net/ice` E830 and TxPP
-fixes, renumbered `0005`–`0009` in the 26.07 set. They stay out of tree now that MTL
-sends nothing upstream. Their author metadata is settled except in one file. Enumerate it
-with `grep -nE '^(From:|Signed-off-by:)' patches/dpdk/26.07/000[5-9]*.patch`: 26.07 `0005`
+**No verifiable upstream record (5 patches).** `0009`–`0013` are genuine `net/ice` E830 and
+TxPP fixes, renumbered 26.07 `0005`–`0009`. §2 marks all five **Unverified** and says why.
+They stay out of tree now that MTL sends nothing upstream. Their author
+metadata is settled except in one file. Enumerate it with
+`grep -nE '^(From:|Signed-off-by:)' patches/dpdk/26.07/000[5-9]*.patch`: 26.07 `0005`
 and `0006` name Soumyadeep Hore on both lines, 26.07 `0007` and `0008` name Marek Kasiewicz
-on both. Only 26.07 [0009](patches/dpdk/26.07/0009-net-ice-always-init-PHC-owner.patch) still
+on both. Only 26.07
+[0009](patches/dpdk/26.07/0009-net-ice-init-PHC-owner-when-enabling-timesync-on-a-n.patch) still
 reads `MTL Contributor <noreply@example.com>`, as `From:` and as `Signed-off-by:`. §8
 records why the placeholder stays for now, and task **T-31** owns it.
 
@@ -271,7 +321,7 @@ That call is the only place MTL builds the `-a <BDF>` argument for an
 `MTL_PMD_DPDK_USER` port. It sits inside `static int dev_eal_init()` at
 [lib/src/dev/mt_dev.c:320](lib/src/dev/mt_dev.c), which no unit test can enter because
 it runs `rte_eal_init()`. The string builder is therefore split out as
-`dev_build_pci_devarg()` at [mt_dev.c:310](lib/src/dev/mt_dev.c), and the unit test
+`dev_build_pci_devarg()` at [lib/src/dev/mt_dev.c:310](lib/src/dev/mt_dev.c), and the unit test
 calls that directly.
 
 Upstream behaviour of the devarg, for reference: `-a 80:00.0,rl_burst_size=2048`.
@@ -286,16 +336,24 @@ is not irrelevant. Every citation below was checked against the tree.
 
 | Finding | Evidence |
 |---|---|
-| The `net_ice` driver entry is a PF entry that asks for TM rate limiting | [lib/src/dev/mt_dev.c:29-35](lib/src/dev/mt_dev.c) declares `.port_type = MT_PORT_PF` with `.rl_type = MT_RL_TYPE_TM`. Compare `net_iavf` at [mt_dev.c:42-49](lib/src/dev/mt_dev.c), which declares `MT_PORT_VF` and the same `rl_type` |
-| `AUTO` pacing selects RL on a PF | The `ST21_TX_PACING_WAY_AUTO` block at [mt_dev.c:1452-1462](lib/src/dev/mt_dev.c) tests `rl_type == MT_RL_TYPE_TM` at line 1454 and nothing else. No PF or VF condition takes part |
-| The PF TM hierarchy is deliberate code, not an accident | [mt_dev.c:556-557](lib/src/dev/mt_dev.c) sets `ST_TM_NONLEAF_NODES_NUM_PF 7` against `..._VF 2`. `MT_DRV_IAVF` branches at [:579](lib/src/dev/mt_dev.c), [:671](lib/src/dev/mt_dev.c), [:739](lib/src/dev/mt_dev.c) and [:1479](lib/src/dev/mt_dev.c) choose between the two shapes |
-| Nothing rejects a PF BDF | `lib/` holds no PCI device-id table. The `bind_pmd` command at [script/nicctl.sh:216-224](script/nicctl.sh) checks neither vendor nor VF presence |
+| The `net_ice` driver entry is a PF entry that asks for TM rate limiting | [lib/src/dev/mt_dev.c:29-35](lib/src/dev/mt_dev.c) declares `.port_type = MT_PORT_PF` with `.rl_type = MT_RL_TYPE_TM`. Compare `net_iavf` at [lib/src/dev/mt_dev.c:42-49](lib/src/dev/mt_dev.c), which declares `MT_PORT_VF` and the same `rl_type` |
+| `AUTO` pacing selects RL on a PF | The `ST21_TX_PACING_WAY_AUTO` block at [lib/src/dev/mt_dev.c:1452-1462](lib/src/dev/mt_dev.c) tests `rl_type == MT_RL_TYPE_TM` at line 1454 and nothing else. No PF or VF condition takes part |
+| The PF TM hierarchy is deliberate code, not an accident | [lib/src/dev/mt_dev.c:556-557](lib/src/dev/mt_dev.c) sets `ST_TM_NONLEAF_NODES_NUM_PF 7` against `..._VF 2`, and three `MT_DRV_IAVF` branches pick between them: [:579](lib/src/dev/mt_dev.c), [:671](lib/src/dev/mt_dev.c), [:739](lib/src/dev/mt_dev.c) |
+| Nothing rejects a PF BDF | `lib/` holds no PCI device-id table. The `bind_pmd` command at [script/nicctl.sh:193-201](script/nicctl.sh) checks neither vendor nor VF presence |
 | A PF-with-RL case runs today | [tests/acceptance/tests/single/st20p/test_pacing_way.py:50-51](tests/acceptance/tests/single/st20p/test_pacing_way.py) crosses `interface_type` in `("VF", "PF")` with `pacing_way` in `("auto", "rl", ...)`. The suite carries `@pytest.mark.nightly` at line 55 |
 | In 26.07 the PF path still reads the compile-time burst default | `drivers/net/intel/ice/base/ice_type.h:1103` still defines `ICE_SCHED_DFLT_BURST_SIZE` as `(15 * 1024)`. `ice_init_hw()`, which spans `drivers/net/intel/ice/base/ice_common.c:1049-1212`, applies it at lines 1160-1161. `ice_sched.c:4132` then copies `hw->max_burst_size` into every rate-limit profile |
 | The VF path does not read it | `drivers/net/intel/iavf/` holds no `burst_size` reference at all. This confirms the VF analysis above |
 | `rte_tm` offers no runtime route to the burst | `drivers/net/intel/ice/ice_tm.c:316-327` and `drivers/net/intel/iavf/iavf_tm.c:492-503` both reject `committed.size` and `peak.size` with `-EINVAL`. MTL cannot set the burst through the shaper profile it already builds |
 | The devarg must never reach a VF | `drivers/net/intel/iavf/iavf_ethdev.c:2476-2480` runs `rte_kvargs_parse` against `iavf_valid_args` at `:53-63`, which holds no `rl_burst_size` key. An unknown key fails the probe with `-EINVAL` |
 | The per-port devarg field is new | `dev_eal_init()` builds the whole EAL argv itself. `struct mtl_port_init_params` at [include/mtl_api.h:542-558](include/mtl_api.h) carried only `flags` and `socket_id` until this work appended `rl_burst_size` |
+
+Three other `MT_DRV_IAVF` branches exist in [lib/src/dev/mt_dev.c](lib/src/dev/mt_dev.c), and
+the row above excludes them on purpose, because none picks a node shape:
+[:169](lib/src/dev/mt_dev.c) keeps `oerrors` out of `tx_err_packets`,
+[:1479](lib/src/dev/mt_dev.c) picks `dev_init_ratelimit_all()` over
+`dev_tx_queue_set_rl_rate()`, and [:2337](lib/src/dev/mt_dev.c) equalizes the TX and RX queue
+counts. With the three in the row and the `.drv_type` declaration at
+[:45](lib/src/dev/mt_dev.c), `grep -n MT_DRV_IAVF` on that file returns seven lines.
 
 **The new field is ABI-neutral in size.** `uint64_t flags` sits at offset 0 and
 `int socket_id` at offset 8, which left 4 bytes of tail padding. `uint32_t rl_burst_size`
@@ -316,14 +374,14 @@ Three points bound what the evidence carries into the decision.
    hierarchy commits. 26.07 validates node depth against `hw->num_tx_sched_layers` at
    `drivers/net/intel/ice/ice_tm.c:509`. If the hardware rejects MTL's tree, the port
    falls back to TSC. The warning reads "fallback to tsc as rl init fail" at
-   [mt_dev.c:1487](lib/src/dev/mt_dev.c). The burst size then stops mattering, which
+   [lib/src/dev/mt_dev.c:1487](lib/src/dev/mt_dev.c). The burst size then stops mattering, which
    bounds how much the field can buy — it does not reopen the drop.
 3. The field wins over the two alternatives that were weighed against it, a sysfs probe
    and keeping `0003` as a 12th carried patch. A carried patch pays a rebase on every
    DPDK bump for a default that upstream now exposes at runtime.
 
 **Testing gap.** [.github/scripts/gtest.sh:107](.github/scripts/gtest.sh) and
-[gtest.sh:114-116](.github/scripts/gtest.sh) are the only lines that pass
+[.github/scripts/gtest.sh:114-116](.github/scripts/gtest.sh) are the only lines that pass
 `--pacing_way`, and they pass `auto` and `tsc` only. No gtest passes `rl`, so no gtest
 can catch a PF rate-limit burst regression.
 
@@ -331,8 +389,8 @@ can catch a PF rate-limit burst regression.
 
 The 26.03 number `0006` is
 [0003](patches/dpdk/26.07/0003-pcapng-add-user-timestamp-support.patch) in 26.07. This
-section calls it `0006` where it records review history, and `0003` where it records the
-shipped file.
+section calls it `0006` for the 26.03 file — its review history, its content and its dry-run
+result — and `0003` for the shipped 26.07 file.
 
 [lib/src/mt_pcap.c:85](lib/src/mt_pcap.c) calls `rte_pcapng_copy_ts()`. That symbol
 exists only in MTL patch `0006`. Upstream rejected that shape twice and accepted a
@@ -356,8 +414,10 @@ So MTL compiles against an unpatched DPDK, and pcap capture degrades at runtime 
 Each open logs `no pcap support for this build` and returns `NULL`. An earlier symptom can
 also appear: [script/build_dpdk.sh:99](script/build_dpdk.sh) applies the set with
 `patch -p1`, and that step aborts when the patch stops applying. That script is the only
-caller that applies the DPDK set with `patch`. The four by-hand flows use `git am`
-([doc/build.md:155](doc/build.md), [doc/build_WIN.md:82](doc/build_WIN.md),
+caller that applies the DPDK set with `patch`. The four other flows use `git am`
+([doc/build.md](doc/build.md) runs `git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch`,
+[doc/build_WIN.md](doc/build_WIN.md) runs
+`git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch`,
 [doc/experimental/header_split.md:20](doc/experimental/header_split.md),
 [.github/workflows/msys2_build.yml:135](.github/workflows/msys2_build.yml)), so a reader who
 follows them sees the runtime symptom only. Both symptoms are a forecast, not a
@@ -374,27 +434,73 @@ does not debug it from zero. That watch item also landed in the code:
 [lib/src/mt_pcap.h:13-16](lib/src/mt_pcap.h) carries a comment that names both patch shapes
 and points back at this section.
 
+**`0003` keeps an export annotation for a symbol the patched tree does not export.** The patch
+renames `rte_pcapng_copy()` to `rte_pcapng_copy_ts()` and leaves `rte_pcapng_copy` a
+`static inline` wrapper in the header, but it keeps `RTE_EXPORT_SYMBOL(rte_pcapng_copy)` in the
+body. The paths that follow are DPDK-tree paths. `buildtools/gen-version-map.py:15` matches that
+annotation as source text rather than through the preprocessor, so the map that
+`lib/meson.build:287-292` generates from the sources lists a symbol the library no longer
+defines, and `:300` feeds that map to `-Wl,--version-script=`. One line keeps the link clean:
+`config/meson.build:201` adds `-Wl,--undefined-version`. What happens on Windows is untested
+here: that line is gated on `not is_windows` at `:198`, and the Windows arms of the same
+dispatch pass the map as `/def:` at `lib/meson.build:296` or `-Wl,/def:` at `:298`, so a
+Windows link may fail where a Linux link does not. Task **T-32** owns the repair and waits for
+a bump that already needs a body edit, because the one-line body fix forces a patch
+regeneration and a fresh body-integrity proof.
+
 ## 8. Carried patch metadata — what the 26.07 set says now
 
-The 26.03 numbers `0011`, `0012` and `0013` are `0007`, `0008` and `0009` in 26.07.
+**This section inverts the file-wide default.** A bare number here is a 26.07 number, because
+this section is about the 26.07 set; a 26.03 number carries the words `26.03` immediately
+before it, and one marker covers the number or the pair that follows, as in §4. The three
+numbers that move are the 26.03 `0011`, `0012` and `0013`, which are `0007`, `0008` and `0009`
+in 26.07.
 
 Line 1 of every header-bearing file in the set is now
 `From nobody Mon Sep 17 00:00:00 2001`. That is the nine flat patches plus
 [hdr_split/0001](patches/dpdk/26.07/hdr_split/0001-net-intel-ice-support-hdr-split-mbuf-callback.patch)
 — ten files, not nine. No line-1 hash was worth keeping: a `git format-patch` ID means
-nothing after a rebase, and `head -1` on the 26.03 ancestors of `0007`, `0008` and `0009`
-returns `a1b2c3d4e5f60718293a4b5c6d7e8f9011223344`,
-`0000000000000000000000000000000000000002` and 40 zeros. `From nobody` is git's own
+nothing after a rebase, and at `HEAD` `head -1` on the 26.03 ancestors of `0007`, `0008` and
+`0009` returned `a1b2c3d4e5f60718293a4b5c6d7e8f9011223344`,
+`0000000000000000000000000000000000000002` and 40 zeros. The unstaged 26.03 edits carried
+`From nobody` into those three as well, so the working tree no longer holds those values —
+re-measure them with `git show HEAD:<path> | head -1`. `From nobody` is git's own
 canonical placeholder: it asserts nothing, and the `git am` run at the end of this section
 proves it is accepted.
 [windows/0001.patch](patches/dpdk/26.07/windows/0001.patch) starts at `diff --git` with no
 mail header, so the rule does not reach it. That shape also decides which flow can apply the
 file: `git apply --check` exits 0, and `git am` exits 128 with "Patch format detection
-failed." So [doc/build_WIN.md:86](doc/build_WIN.md) works and
-[.github/workflows/msys2_build.yml:136](.github/workflows/msys2_build.yml) cannot. This is no
-live CI break — the defect is inherited from 26.03, and the msys2 matrix is `[25.03, 23.11]`
-([msys2_build.yml:46](.github/workflows/msys2_build.yml)), so CI never applies the 26.07 set.
-Task **T-30** owns the file and the call site.
+failed." The two `windows/` call sites disagreed on that, and the document is the one that was
+right: [doc/build_WIN.md](doc/build_WIN.md) runs
+`git apply "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch`, while at `HEAD`
+[.github/workflows/msys2_build.yml:136](.github/workflows/msys2_build.yml) ran `git am` over
+the same glob, which cannot work on a headerless file. Task **T-30** owns the repair and
+changed the workflow to match the document, not the reverse; that line reads `git apply` in the
+working tree, unstaged. The 26.07 set is not what fails there: the msys2 matrix is
+`[25.03, 23.11]`
+([.github/workflows/msys2_build.yml:46](.github/workflows/msys2_build.yml)), so CI never
+applies it. The headerless shape is inherited from 26.03, whose
+[windows/0001.patch](patches/dpdk/26.03/windows/0001.patch) also starts at `diff --git`. It
+does not reach `23.11`: all 11 files in
+[patches/dpdk/23.11/windows/](patches/dpdk/23.11/windows/) carry, in the working tree, a proper
+`From <sha> Mon Sep 17 00:00:00 2001` line 1, so the headerless shape does not arise there.
+
+`23.11` carries a second, unrelated shape, and T-30 keeps the two apart. At `HEAD` seven of
+those 11 files are `100644` blobs whose whole content is a relative path — the 70-byte
+`0001-Add-DDP-package-load-support-in-windows.patch` reads
+`../../21.11/windows/0001-Add-DDP-package-load-support-in-windows.patch`. T-30 restored those
+seven as real symlinks; they are the unstaged typechanges, and `head -1` on each now resolves
+to a `From` line. Neither form reaches an apply command as a path string: the "Convert patches
+for DPDK" step at [.github/workflows/msys2_build.yml:99-104](.github/workflows/msys2_build.yml)
+tests line 1 against `^../.*\.patch$` and replaces the file with what it points at, for the flat
+glob and for `windows/`, and runs before the apply step at `:128-136`.
+[doc/build_WIN.md](doc/build_WIN.md) opens the manual flow with the same conversion, and is where
+the `core.symlinks=false` materialization that produces the shape is documented. Coupling 2 in
+the header fixes the headerless fault, the only one left here. The job also never runs at all,
+because [.github/workflows/msys2_build.yml:22](.github/workflows/msys2_build.yml) gates it on
+`steps.filter.outputs.msys2_build` and [.github/path_filters.yml](.github/path_filters.yml)
+defines no `msys2_build` key. Task **T-13** owns that whole workflow, including whether it
+survives.
 
 Three files were singled out in earlier rounds. Of the three, only `0009` has a known defect
 past line 1. Confirm each with `grep -nE '^(From:|Signed-off-by:)'`:
@@ -405,9 +511,9 @@ past line 1. Confirm each with `grep -nE '^(From:|Signed-off-by:)'`:
   exists on this host, so that hash, the same hash on `0005:15`, and `327fe144ca39` on
   `0006:16` are all unverified here. None of the three hashes is claimed wrong. `0b6ff09a1f19`
   appears independently in two patches, which is weak evidence that it is real.
-* [0008](patches/dpdk/26.07/0008-net-ice-e830-use-direct-MMIO-for-PHC-update.patch)
+* [0008](patches/dpdk/26.07/0008-net-ice-e830-use-direct-MMIO-for-PHY-timer-command.patch)
   — clean past line 1. It carries no `Fixes:` line that could be wrong.
-* [0009](patches/dpdk/26.07/0009-net-ice-always-init-PHC-owner.patch)
+* [0009](patches/dpdk/26.07/0009-net-ice-init-PHC-owner-when-enabling-timesync-on-a-n.patch)
   — `From: MTL Contributor <noreply@example.com>` on line 2, and the same placeholder as
   `Signed-off-by:` on line 30. This is the only file in the set with a placeholder
   identity.
@@ -415,11 +521,13 @@ past line 1. Confirm each with `grep -nE '^(From:|Signed-off-by:)'`:
 `0009` keeps its placeholder author because no author is recoverable.
 `ice_timesync_find_src_tmr_owner` is absent from a pristine 26.07 tree (`grep -rq` exits
 1), the body carries no attribution tag (`grep -cE '^(Fixes|Cc|Reviewed-by|Acked-by):'`
-returns 0), and the sole commit that added the file
-(`git log --all --diff-filter=A -- 'patches/dpdk/*always-init-PHC-owner.patch'` returns
-`168b785a`) bundles the committer's own patches with other people's: 26.03 `0011` and
-`0012` name the committer Marek Kasiewicz as author, while `0009` and `0010` name
-Soumyadeep Hore. Committer identity is therefore evidence for neither, and no `From:` may
+returns 0), and the commit that added the 26.03 copy of the file bundles the committer's own
+patches with other people's. That commit is `168b785a`. It is not the only one to add a copy:
+`git log --all --diff-filter=A --name-only` over
+`'patches/dpdk/*always-init-PHC-owner.patch'` returns three, and the other two — `c320d08f`
+and `675833f1` — each added the 26.07 copy under its pre-rename name. In `168b785a`, 26.03
+`0011` and `0012` name the committer Marek Kasiewicz as author, while 26.03 `0009` and `0010`
+name Soumyadeep Hore. Committer identity is therefore evidence for neither, and no `From:` may
 be taken from the author of the commit that added a patch file.
 
 `0009` also keeps line 30. `From:` is an attribution, but `Signed-off-by:` is a DCO
@@ -438,31 +546,50 @@ legitimate here only because the content he signed is the content shipped: the 2
 already carries `rte_pcapng_copy_ts`, the commented-out `uint64_t cycles, timestamp;` and the
 `#if 0` block, and `0003`'s diff hunks are byte-identical to its 26.03 ancestor's.
 
-The `index <pre>..<post>` lines across this set are not maintained and must not be relied
-on. `windows/` and `hdr_split/` are never applied to the same tree, so each one is measured
-after the nine flat patches and nothing else. Compare each `<pre>` blob with
-`git hash-object` against the tree the patch meets — a flat patch after its predecessors,
-an optional patch after the nine flat patches: `0001`, `0002`, `0005`, `0006`, `0007` and
-`0009` are each stale in their one line, and `hdr_split/0001` is stale in all seven of its
-own — 13 stale lines in seven of the 11 patch files, naming eight distinct DPDK source
-files. `windows/0001` is right in all eight of its own and `0004` in both of its own. The
-remaining two, `0003` and `0008`, carry no `index` line at all. Plain `patch -p1` and plain
-`git am` ignore these lines, so the cost is nil today; `git am -3` does not, and task
-**T-21** owns that recovery path.
+The `index <pre>..<post>` lines were unmaintained across this set. Coupling 4's unstaged edits
+under [patches/dpdk/26.07/](patches/dpdk/26.07/) are what recompute them, so every count in
+this paragraph moves if those edits are dropped. `windows/` and `hdr_split/` are never applied
+to the same tree, so each one is measured after the nine flat patches and nothing else. Compare
+each `<pre>` blob with `git hash-object` against the tree the patch meets — a flat patch after
+its predecessors, an optional patch after the nine flat patches.
 
-Header lines are the whole of the metadata work, plus two bytes in `0008`, both inherited
-defects of 26.03 `0012`: it gained the final newline that `0012` lacked, which clears the
-`patch` warning §3 records, and its git signature separator regained the trailing space
-after the two dashes that the other eight flat patches already had. Check that separator
-with `grep -c '^-- $'`, which now returns 1 for all nine. No diff hunk changed as part of the
-metadata work. The bodies that do differ from 26.03 — `0004` and `windows/0001` — differ
-because the 26.07 rebase regenerated them.
+`grep -c '^index '` per file gives 0 for `0003`, 2 for `0004`, 7 for `hdr_split/0001`, 8 for
+`windows/0001` and 1 for each of the seven remaining flat patches — `0001`, `0002`, `0005`,
+`0006`, `0007`, `0008` and `0009`: 24 lines across the 11 files.
+Those 24 divide into 13 rewritten, 1 added and 10 left alone. T-21 rewrote the 13 that were
+wrong — one each in `0001`, `0002`, `0005`, `0006`, `0007` and `0009`, and all seven of
+`hdr_split/0001`'s — and added the one `0008` never had, which is why the unstaged diff there
+shows a lone `+index` and no matching `-index`. It proved the result by applying the series
+patch by patch against a pristine v26.07. The 10 left alone are `windows/0001`'s eight and
+`0004`'s two, all already right.
+
+So ten of the 11 files carry at least one such line and can be checked this way, and the
+eleventh, `0003`, carries none. That holds in the working tree only. At `HEAD` and in the index
+`0008` carries none either, so it is nine of 11 there. Plain `patch -p1` and plain `git am`
+ignore these lines, so the cost was nil either way; `git am -3` does not, and T-21 measured it
+applying the whole 26.07 series. The 26.03 `index` lines are untouched —
+`git diff -- patches/dpdk/26.03/ | grep -E '^[+-]index '` is empty, though 14 of the 16 files
+there are `M` or `RM` for the header rewrites in coupling 4 — and task **T-21** still owns them,
+blocked on a pristine 26.03 tree; the one break confirmed there so far is 26.03 `0014:26`,
+which claims `0f2e7aee14` where the real pre-image is `cc1ee7be`.
+
+Header lines are the whole of the metadata work, plus two bytes that `0008` fixed against its
+26.03 `0012` ancestor as that ancestor stood at `HEAD`. Both comparisons below are against that
+`HEAD` state. `0008` ends in a newline where 26.03 `0012` ends in `0`, which clears the `patch`
+warning §3 records, and `0008`'s git signature separator carries the trailing space after the
+two dashes that 26.03 `0012` lacks and the other eight flat patches already had. Check that
+separator with `grep -c '^-- $'`, which returns 1 for all nine. Coupling 4's unstaged edits have
+since given 26.03 `0012` both bytes, so the two files no longer differ there. No diff hunk
+changed as part of the metadata work. The bodies that do differ from 26.03 — `0004` and
+`windows/0001` — differ because the 26.07 rebase regenerated them.
 
 Why any of this matters in a tree that never posts upstream: `patch -p1` ignores the
 `From:` line, `git am` does not, and four documented flows apply the flat glob with `git am` —
 [.github/workflows/msys2_build.yml:135](.github/workflows/msys2_build.yml),
-[doc/build.md:155](doc/build.md), [doc/build_WIN.md:82](doc/build_WIN.md) and
-[doc/experimental/header_split.md:20](doc/experimental/header_split.md). `0009` therefore
+[doc/experimental/header_split.md:20](doc/experimental/header_split.md),
+[doc/build.md](doc/build.md) with `git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch`, and
+[doc/build_WIN.md](doc/build_WIN.md) with
+`git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch`. `0009` therefore
 still commits as `MTL Contributor <noreply@example.com>` in every tree built that way, and
 task **T-31** carries that open item. The other eight flat patches now commit under a real
 author — `git am` of the eight in order names Marek Kasiewicz, Ric Li, Frank Du, Dawid
@@ -471,8 +598,9 @@ they are meaningless in a tree that never posts.
 
 ## 9. Stale DPDK version references across the tree
 
-**Dated snapshot: 2026-08-24.** This round closed four of the six rows. Re-grep a row
-before you trust it. Tasks **T-10** and **T-16** in [tasks.md](tasks.md) read this table.
+**Dated snapshot: 2026-08-24.** This round closed four of the seven rows and marked two of
+the rest deliberate. Re-grep a row before you trust it. Tasks **T-10** and **T-16** in
+[tasks.md](tasks.md) read this table.
 
 | Location | Said | State after this round |
 |---|---|---|
@@ -481,6 +609,7 @@ before you trust it. Tasks **T-10** and **T-16** in [tasks.md](tasks.md) read th
 | `doc/build.md` | `patches/dpdk/25.11/` | **Closed.** The path reads `patches/dpdk/${DPDK_VER}/`. `grep 25.11` returns nothing |
 | `doc/build_WIN.md` | `patches/dpdk/25.11/` | **Closed.** Same change. `grep 25.11` returns nothing |
 | [doc/design.md:671](doc/design.md) | pin `DPDK_VER=25.11` | **Not stale — deliberate exception.** [doc/design.md:664](doc/design.md) and [:670](doc/design.md) mark the pin a deliberate Ubuntu 22.04 override |
+| [patches/dpdk/25.11/](patches/dpdk/25.11/) | the patch set that pin applies | **Not stale — load-bearing, do not delete.** That same pin sends the reader to its 7 flat patches plus `hdr_split/` and `windows/`, which the `$DPDK_VER` glob at [script/build_dpdk.sh:98](script/build_dpdk.sh) reaches. Deleting it breaks the Ubuntu 22.04 AF_XDP workaround silently |
 | `doc/experimental/header_split.md` | `patches/dpdk/23.03/` | **Closed.** `grep -o '2[0-9]\.[0-9][0-9]'` returns 1 literal, the `23.03` verification pin, on line 11 |
 
 One row stays open. Task **T-10** removes the duplication instead of editing the

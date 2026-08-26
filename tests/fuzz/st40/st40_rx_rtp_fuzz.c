@@ -20,8 +20,6 @@
 #include "st2110/st_pkt.h"
 /*
  * Include the production .c directly so that all static functions become visible.
- * Non-static symbols duplicate those in libmtl; the linker flag
- * --allow-multiple-definition resolves this safely (identical code).
  * Disable USDT to avoid linker references to probe semaphores.
  */
 #undef MTL_HAS_USDT

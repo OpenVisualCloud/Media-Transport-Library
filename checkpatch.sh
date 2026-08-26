@@ -216,6 +216,11 @@ main() {
 	script_dir=$(cd "$(dirname "$0")" && pwd)
 	root=$(cd "$script_dir" && git rev-parse --show-toplevel 2>/dev/null) ||
 		die "not inside a git repository"
+	cd "$root"
+
+	# `case` below cannot tell no argument from one empty one, which would otherwise
+	# select the tree-wide rewrite.
+	[ $# -eq 0 ] || [ -n "${1:-}" ] || die "empty argument; use --all for a tree-wide run"
 
 	mode="all"
 	files=()
@@ -233,12 +238,23 @@ main() {
 		mode="files"
 		shift
 		[ $# -gt 0 ] || die "--files needs at least one path"
-		# Passed through verbatim. pre-commit makes each path absolute *before*
-		# it chdirs to the repository root and relative again after, so relative
-		# paths from a subdirectory already work; resolving them here as well
-		# would break MSYS2, where an MSYS `pwd` is not a path native Python can
-		# resolve.
-		files=("$@")
+		# pre-commit eats a '-'-prefixed operand as a flag and fixes its whole staged
+		# set instead. Its identify lstat()s the rest, so a symlink tags {SYMLINK}
+		# and a directory {DIRECTORY}: neither satisfies types:[file], so both are
+		# dropped in silence and the run exits 0 having checked nothing. Operands
+		# stay verbatim -- absolutizing breaks MSYS2's non-native pwd.
+		for arg in "$@"; do
+			case "$arg" in
+			-*) die "path cannot start with '-': '$arg'" ;;
+			"") die "path cannot be empty" ;;
+			*)
+				{ [ -f "$arg" ] && [ ! -L "$arg" ]; } ||
+					die "not a regular file, resolved from $root: '$arg'
+    (pre-commit silently skips symlinks and directories)"
+				files+=("$arg")
+				;;
+			esac
+		done
 		;;
 	*) die "unknown option '$1' (try --help)" ;;
 	esac
@@ -246,10 +262,8 @@ main() {
 	# Only --files takes operands. Without this, `--staged lib/src/mt_sch.c`
 	# silently checks everything staged and ignores the path the user named.
 	if [ "$mode" != "files" ] && [ $# -gt 1 ]; then
-		die "unexpected argument '$2' (only --files takes paths)"
+		die "$1 takes no paths: '$2' -- use --files to name paths"
 	fi
-
-	cd "$root"
 
 	if [ "$mode" = "bootstrap" ]; then
 		bootstrap

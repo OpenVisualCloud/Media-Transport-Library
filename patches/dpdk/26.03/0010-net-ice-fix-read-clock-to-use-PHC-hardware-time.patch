@@ -1,7 +1,7 @@
-From f6165f586a5628b47e5cbb68e53e9f7865ef7088 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Soumyadeep Hore <soumyadeep.hore@intel.com>
 Date: Wed, 10 Jun 2026 10:35:10 +0530
-Subject: [PATCH 10/11] net/ice: fix read clock to use PHC hardware time
+Subject: [PATCH] net/ice: fix read clock to use PHC hardware time
 
 The ice_read_clock() function was incorrectly using clock_gettime()
 with CLOCK_MONOTONIC_RAW to return system time instead of the actual

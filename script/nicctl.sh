@@ -12,20 +12,21 @@ if [ -d "$_local_dpdk_bin" ]; then
 fi
 
 if [ $# -lt 2 ]; then
-	echo "Usage: "
-	echo "    $0 <command> <bb:dd:ff.x> [args]"
-	echo "Commands:"
-	echo "   bind_pmd                 Bind driver to DPDK PMD driver"
-	echo "   bind_kernel              Bind driver to kernel driver"
-	echo "   create_vf                Create VFs, bind to VFIO, and bring PF UP"
-	echo "   create_kvf               Create VFs and bind to kernel driver"
-	echo "   create_tvf               Create trusted VFs, bind to VFIO, and bring PF UP"
-	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
-	echo "   disable_vf               Disable VF"
-	echo "   list all                 List all NIC devices and the brief"
-	echo "   list up                  List all NIC devices and the brief with UP status"
-	echo "   list <bb:dd:ff.x>        List VFs of the specified PF"
-	exit 0
+	{
+		echo "Usage: "
+		echo "    $0 <command> <bb:dd:ff.x> [args]"
+		echo "Commands:"
+		echo "   bind_pmd                 Bind driver to DPDK PMD driver"
+		echo "   bind_kernel              Bind driver to kernel driver"
+		echo "   create_vf                Create VFs, bind to VFIO, and bring PF UP"
+		echo "   create_kvf               Create VFs and bind to kernel driver"
+		echo "   create_tvf               Create trusted VFs, bind to VFIO, and bring PF UP"
+		echo "   disable_vf               Disable VF"
+		echo "   list all                 List all NIC devices and the brief"
+		echo "   list up                  List all NIC devices and the brief with UP status"
+		echo "   list <bb:dd:ff.x>        List VFs of the specified PF"
+	} >&2
+	exit 2
 fi
 
 iommu_check() {
@@ -35,28 +36,6 @@ iommu_check() {
 		echo "Warn: no iommu_groups in $iommu_groups_dir"
 		echo "Warn: IOMMU is not enabled on this setup, please check kernel command line and BIOS settings"
 	fi
-}
-
-create_dcf_vf() {
-	local numvfs=$1
-	# Hard code
-
-	# Enable VFs
-	echo "$numvfs" >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
-
-	#enable trust
-	ip link set "$inf" vf 0 trust on
-
-	# Start to bind to DCF VFIO
-	for ((i = 0; i < "$numvfs"; i++)); do
-		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
-		vf=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
-		if [ "$i" -ne 1 ]; then
-			if dpdk-devbind.py -b vfio-pci "$vf"; then
-				echo "Bind $vf to dcf vfio success"
-			fi
-		fi
-	done
 }
 
 bind_kernel() {
@@ -164,7 +143,7 @@ list() {
 	done
 }
 
-cmdlist=("bind_kernel" "create_vf" "create_kvf" "create_tvf" "disable_vf" "bind_pmd" "create_dcf_vf" "list")
+cmdlist=("bind_kernel" "create_vf" "create_kvf" "create_tvf" "disable_vf" "bind_pmd" "list")
 
 for c in "${cmdlist[@]}"; do
 	if [ "$c" == "$1" ]; then
@@ -233,23 +212,6 @@ fi
 if [ "$cmd" == "disable_vf" ]; then
 	disable_vf
 	echo "Disable vf bdf: $bdf $inf succ"
-fi
-
-if [ "$cmd" == "create_dcf_vf" ]; then
-	if [ -z "$ice" ]; then
-		echo "only CVL device is allowed"
-		exit 1
-	fi
-
-	if [ -n "$3" ]; then
-		numvfs=$(($3 + 0))
-	else
-		#default VF number
-		numvfs=6
-	fi
-	disable_vf
-	create_dcf_vf $numvfs
-	echo "Create dcf vf bdf: $bdf $inf succ"
 fi
 
 if [ "$cmd" == "create_vf" ]; then

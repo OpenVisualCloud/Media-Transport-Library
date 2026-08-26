@@ -19,20 +19,28 @@ Run from the repository root:
 ## Format Code
 
 ```bash
-./format-coding.sh
+./format-coding.sh               # apply every autofix
+./format-coding.sh --staged      # apply the autofixes to staged files only
+./format-coding.sh --files a.c   # apply the autofixes to specific files
+./format-coding.sh --check       # report, then restore -- same as --preview
 ```
 
-- `./format-coding.sh --check` previews changes (runs the fixers on a clean
-  tree, prints the full diff, then restores it; exits 1 if anything would
-  change). Use it to inspect a formatting change's blast radius. It refuses to
-  run on a dirty tree — commit or stash uncommitted work first.
+- Scope the write modes to what you actually changed. A bare run applies the autofixes to every
+  tracked file, so `--staged` or `--files` is the right default when you are
+  fixing a handful of files.
+- `--check` previews changes (runs the fixers on a clean tree, prints the full
+  diff, then restores it). Use it to inspect a formatting change's blast radius.
+  It refuses to run on a dirty tree — commit or stash uncommitted work first.
 - `./checkpatch.sh` is the same rule set in verify mode.
   `./checkpatch.sh --staged` checks only staged files — what the git hook runs.
+  `./checkpatch.sh --files a.c` verifies specific files.
+- Exit status is `0` clean, `1` findings or anything a fixer would change, `2` a
+  usage or environment problem, `130` an interrupted `--preview` rolled back.
 - Requires only `pre-commit` (`./checkpatch.sh --bootstrap`, or the distribution
   package it names on a PEP 668 host such as Fedora, Arch or Debian 12+). It
   installs the pinned clang-format, shfmt, shellcheck, markdownlint, yamllint,
-  actionlint and gitleaks itself — do **not** `apt install clang-format-22`, and
-  do not rely on whatever version happens to be on `PATH`.
+  actionlint and gitleaks itself — do **not** `apt install` a clang-format
+  package, and do not rely on whatever version happens to be on `PATH`.
 - **CI runs the identical hook list** — always run before committing
 - Covers C/C++, Python (`isort`, `black`, `flake8`, `ruff`), shell, Markdown
   (syntax and prose), YAML, GitHub Actions workflows, HTML and secrets
@@ -60,6 +68,6 @@ After building, verify:
 | Missing `libgtest-dev` | `sudo apt install libgtest-dev` |
 | Missing `libssl-dev` | `sudo apt install libssl-dev` |
 | Missing `systemtap-sdt-dev` | `sudo apt install systemtap-sdt-dev` (for USDT probes) |
-| DPDK not found / wrong version | Build DPDK first: see [build docs](../../doc/build.md) |
+| DPDK not found / wrong version | Build DPDK first: see [build docs](../../../doc/build.md) |
 | Stale build directory | `rm -rf build && ./build.sh` or use MCP tool `mtl_clean_rebuild` |
 | Permission errors in build/ | `sudo rm -rf build && ./build.sh` |

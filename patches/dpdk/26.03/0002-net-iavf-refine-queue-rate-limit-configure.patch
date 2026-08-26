@@ -1,7 +1,7 @@
-From 33d0f922f2bed99cdab07fa8b6f60b4150845139 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Ting Xu <ting.xu@intel.com>
 Date: Tue, 19 Apr 2022 02:09:28 +0000
-Subject: [PATCH 2/6] net/iavf: refine queue rate limit configure
+Subject: [PATCH] net/iavf: refine queue rate limit configure
 
 Refine two operations when configuring queue rate limit:
 1. no need to stop port first, now can configure queue rate limit at
