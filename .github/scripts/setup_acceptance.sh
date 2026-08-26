@@ -104,6 +104,17 @@ warn() { printf '%s[setup_acceptance] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
 ok() { printf '%s[setup_acceptance] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
 err() { printf '%s[setup_acceptance] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
 
+# Free hugepage memory in MiB, derived from the ACTUAL default page size
+# (Hugepagesize in /proc/meminfo). A hardcoded *2 assumes 2 MiB pages and
+# misreports hosts booted with default_hugepagesz=1G -- 32 free 1G pages read
+# as 64 MiB instead of 32768 MiB, tripping the <1024 MiB preflight guard on a
+# host with 32 GiB free. On 2 MiB-default hosts Hugepagesize is 2048 kB, so the
+# factor is still 2.
+hugepages_free_mb() {
+	awk '/^HugePages_Free:/ {f=$2} /^Hugepagesize:/ {sz=$2} END {print f * (sz/1024)}' \
+		/proc/meminfo
+}
+
 invoking_user="${SUDO_USER:-$USER}"
 invoking_home=$(getent passwd "$invoking_user" | cut -d: -f6)
 
@@ -207,7 +218,7 @@ print_summary() {
 	log " .local_install/ffmpeg/bin/ffmpeg  : $([[ -x .local_install/ffmpeg/bin/ffmpeg ]] && echo OK || echo 'MISSING (only needed for application=ffmpeg tests)')"
 	log " libdpdk (system, for gtest)       : $(pkg-config --modversion libdpdk 2>/dev/null || echo MISSING)"
 	log " ice driver     : $(modinfo ice 2>/dev/null | awk '/^version:/ {print $2; exit}' || echo MISSING) @ $(modinfo -n ice 2>/dev/null || echo '<none>')"
-	log " hugepages free : $(awk '/HugePages_Free/ {print $2*2 " MiB"}' /proc/meminfo)"
+	log " hugepages free : $(hugepages_free_mb) MiB"
 	if mountpoint -q /mnt/media; then
 		log " /mnt/media     : $(findmnt -no SOURCE /mnt/media) ($(df -h /mnt/media | awk 'NR==2{print $5" used of "$2}'))"
 		log " media files    : $(find /mnt/media -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) entries"
@@ -301,7 +312,7 @@ stage_preflight() {
 		warn "preflight: out-of-tree ice driver not loaded (path=$ice_path)"
 		missing=1
 	fi
-	free_mb=$(awk '/HugePages_Free/ {print $2*2}' /proc/meminfo)
+	free_mb=$(hugepages_free_mb)
 	if ((free_mb < 1024)); then
 		warn "preflight: hugepages free is ${free_mb} MiB (<1024 MiB)"
 		missing=1
