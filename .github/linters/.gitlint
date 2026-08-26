@@ -42,7 +42,6 @@ ignore-revert-commits=true
 line-length=72
 
 [title-match-regex]
-# <Type>: <Subject> -- Type from the fixed set, a capital right after the
-# prefix, and no trailing period. Keep this set in step with the type list in
-# doc/coding_standard.md section 7.
-regex=^(Feat|Add|Fix|Refactor|Docs|Test|Perf|Build|Ci|Style): [A-Z].*[^.]$
+# <Type>: <Subject> -- Type from the fixed set and no trailing period. Keep this
+# set in step with the type list in doc/coding_standard.md section 7.
+regex=^(Feat|Add|Fix|Refactor|Docs|Test|Perf|Build|Ci|Style): \S.*[^.]$
