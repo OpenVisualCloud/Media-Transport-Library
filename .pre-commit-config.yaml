@@ -21,7 +21,7 @@
 # commit, quoting the blast radius from `./checkpatch.sh --preview` -- never as a
 # side effect of an unrelated change.
 
-default_install_hook_types: [pre-commit, pre-merge-commit]
+default_install_hook_types: [pre-commit, pre-merge-commit, commit-msg]
 
 # The node hooks at the bottom used whatever node the host happened to have,
 # which is not a pin at all: markdownlint-cli 0.49 needs Node 20 or newer just to
@@ -250,3 +250,19 @@ repos:
         entry: htmlhint --config .github/linters/.htmlhintrc
         additional_dependencies:
           - htmlhint@1.9.2
+
+      # Commit-message style. Alone among these hooks it runs at the commit-msg
+      # stage, not over files, so `./checkpatch.sh` never triggers it -- that
+      # script lints files and has no message to read. The git commit-msg hook
+      # (installed via default_install_hook_types above) fires it locally on
+      # every `git commit`; linter.yml runs this same hook over each commit a
+      # pull request adds, so local and CI cannot diverge and the version is
+      # pinned in exactly one place. Rules live in .github/linters/.gitlint;
+      # gitlint's own lowercase conventional-commit rule does not fit MTL's
+      # capitalized, scope-free format. See doc/coding_standard.md section 7.
+      - id: gitlint
+        name: gitlint (commit message style)
+        language: python
+        additional_dependencies: [gitlint==0.19.1]
+        entry: gitlint --config .github/linters/.gitlint --msg-filename
+        stages: [commit-msg]

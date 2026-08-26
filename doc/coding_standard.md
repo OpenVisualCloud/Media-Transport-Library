@@ -95,6 +95,14 @@ reformat waiting to happen.
 | GitHub Actions | actionlint 1.7.12 | no | `.github/linters/actionlint.yaml` |
 | HTML | htmlhint 1.9.2 | no | `.github/linters/.htmlhintrc` |
 | staged diff | gitleaks 8.30.0 | no | -- |
+| commit message | gitlint 0.19.1 | no | `.github/linters/.gitlint` |
+
+The gitlint row is the one hook that does not run over files. It runs at the
+`commit-msg` stage against the message being written, so `./checkpatch.sh` --
+which lints files and has no message to read -- never triggers it; the git
+`commit-msg` hook fires it locally and CI runs the same hook over a pull
+request's commits. [§7](#7-commit-messages) has the split between what its regular expression
+enforces and what still needs a reviewer.
 
 Read the gitleaks row narrowly. Its hook is `gitleaks git --pre-commit --staged`,
 so it scans the staged diff and *cannot* scan a whole tree -- in `--all-files`
@@ -231,6 +239,7 @@ is listed here explicitly, and runs in the `residual-linters` job of
 | `VALIDATE_TYPESCRIPT_ES` | residual | 135 `*.ts` files with no lintable project configuration from a clean clone: `.gitignore`'s blanket `*.json` leaves `tests/tools/perf_debug_mcp/package.json` untracked |
 | `VALIDATE_RUST_*`, `VALIDATE_RUST_CLIPPY` | residual | rustfmt and clippy need a Rust toolchain per environment. Carried over unchanged rather than narrowed, since narrowing the edition list would be a rule change |
 | `VALIDATE_EDITORCONFIG` | **dropped** | it was default-on before, and enforced nothing: no `.editorconfig` existed. The one that exists now declares only `charset`, `end_of_line` and shfmt's shell indent, all of which the hooks or `.gitattributes` already cover |
+| commit-message style (gitlint) | own `commit-messages` job | a message is not a file, so `checkpatch.sh` cannot reach it. The job runs the same `commit-msg` hook over each PR commit that the git `commit-msg` hook runs locally, so version and rules stay in one place. Not in `residual-linters`: that is the super-linter allow-list, and MTL's capitalized, scope-free format is not one |
 
 That job was a deny-list of nine `VALIDATE_*: false` keys and is now an
 **allow-list**, so anything not named above is no longer enforced -- the two real
@@ -262,8 +271,10 @@ minutes for the privilege. Both files carry a comment saying so.
 ./checkpatch.sh --install-hooks
 ```
 
-Installs the `pre-commit` and `pre-merge-commit` hooks. They check staged files
-only, so they cost roughly the size of your change, not the size of the tree.
+Installs the `pre-commit`, `pre-merge-commit` and `commit-msg` hooks. The first
+two check staged files only, so they cost roughly the size of your change, not
+the size of the tree; the third runs gitlint over the message you are writing
+([§7](#7-commit-messages)).
 
 To bypass in an emergency:
 
@@ -368,5 +379,25 @@ for `feat` plus `build(deps)` for dependency bumps.
 * `Style`: changes that do not affect the meaning of the code
 * `Test`: adding or correcting tests
 
-This is convention, not automation: `checkpatch.sh` checks *files*, never the
-commit message or the patch as a whole. Reviewers enforce the format.
+The mechanical half of that format *is* automated, by gitlint. The
+`commit-msg` git hook runs it on every `git commit` locally, and the
+`commit-messages` job in `.github/workflows/linter.yml` runs the same hook over
+each commit a pull request adds. `checkpatch.sh` itself still checks only
+*files* -- it has no message to read -- so message linting rides the commit-msg
+stage, not a `checkpatch.sh` run. The rules are in `.github/linters/.gitlint`,
+the version is pinned in `.pre-commit-config.yaml`, and both callers run the one
+hook, so they cannot drift.
+
+gitlint enforces what a regular expression can judge: the type prefix comes from the fixed
+set above, capitalized; a capital follows it; the subject is at most 72
+characters with no trailing period; and `git commit -s`'s `Signed-off-by`
+trailer is present. It deliberately does not use its own conventional-commit
+rule, which wants a lowercase `feat:` with scopes -- the opposite of MTL's
+format. Body-line wrapping is left off because a valid `Fixes:` or
+`Signed-off-by` footer legitimately runs past 72 and would false-positive.
+
+Everything the [mtl-commit skill](../.github/skills/mtl-commit/SKILL.md) asks
+for that a regular expression cannot judge -- imperative mood, "explain why, not how", no
+chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
+bucket as the two-world rule and the prefixes in
+[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
