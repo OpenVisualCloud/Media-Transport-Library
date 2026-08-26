@@ -1459,6 +1459,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_fastmetadata_session_has_chain_buf(s);
+  /* keep a multiple of 4, see the build asserts in tx_fastmetadata_sessions_mgr_init */
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st41_fmd_hdr);
 
   s->st41_frames_cnt = ops->framebuff_cnt;
@@ -1681,6 +1682,14 @@ static int tx_fastmetadata_sessions_mgr_init(
   int i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st41_fmd_hdr) != 58);
+  /* The payload write rounds up to a whole 4-byte word, but build_packet's room check
+   * tests the unrounded length and build_rtp_packet has no room check at all, so
+   * nothing at runtime bounds the round-up. max_pkt_len derives from st41_fmd_hdr,
+   * while the chain payload mbuf is sized from the separately declared mt_udp_hdr: a
+   * max_pkt_len off a 4-byte multiple or a divergence there exceeds the declared room. */
+  RTE_BUILD_BUG_ON((ST_PKT_MAX_ETHER_BYTES - sizeof(struct st41_fmd_hdr)) % 4 != 0);
+  RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + sizeof(struct st41_rtp_hdr) !=
+                   sizeof(struct st41_fmd_hdr));
 
   mgr->parent = impl;
   mgr->idx = idx;
