@@ -49,7 +49,7 @@ def test_st20p_fps(
     media_integrity,
     media_file,
 ):
-    """Test different frame rates for st20p with both applications."""
+    """Test different frame rates for st20p with every application."""
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]

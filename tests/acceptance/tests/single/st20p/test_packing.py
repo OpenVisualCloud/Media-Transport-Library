@@ -10,18 +10,7 @@ pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support packing mode selection"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg"])
 @pytest.mark.tx_side
 @pytest.mark.parametrize("packing", ["BPM", "GPM", "GPM_SL"])
 @pytest.mark.parametrize(
@@ -81,7 +70,13 @@ def test_st20p_packing(
     else:
         actual_test_time = max(test_time, 8)
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        packing=packing,
+    )
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,

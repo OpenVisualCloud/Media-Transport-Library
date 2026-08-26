@@ -20,20 +20,21 @@ stream. The oracles are the usual pair:
 import logging
 
 import pytest
-from mtl_engine.media_files import yuv_files_input_formats
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly, pytest.mark.ptp]
 
 logger = logging.getLogger(__name__)
 
-# 1080p25 planar 10-bit: the one asset every application can read directly, so
-# the PTP dimension is what varies between cases and nothing else.
-_MEDIA_FILE = yuv_files_input_formats["yuv422p10le"]
+# 1080p25 planar 10-bit, the same asset the fps and multicast sweeps use: the
+# one format every application reads directly, so PTP is what varies between
+# cases and nothing else.
+_MEDIA_FILE = yuv_files_422p10le["Penguin_1080p"]
 
 
 @pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
-    "media_file", [_MEDIA_FILE], indirect=["media_file"], ids=["yuv422p10le_1080p25"]
+    "media_file", [_MEDIA_FILE], indirect=["media_file"], ids=["Penguin_1080p"]
 )
 @pytest.mark.tx_and_rx
 def test_st20p_ptp(

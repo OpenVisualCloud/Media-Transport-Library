@@ -312,6 +312,11 @@ def gstreamer_ptime(audio_ptime) -> str:
 # Common Configuration
 # ============================================================================
 
+# ST 2110-20 packing mode libmtl uses when a session does not ask for one.
+# Neither plugin exposes a packing knob, so this is the only mode they can
+# produce -- see the ``unsupported_reason()`` guards in ffmpeg.py/gstreamer.py.
+MTL_DEFAULT_PACKING = "BPM"
+
 # ST 2110-30 channel-group label -> channel count. Shared by every adapter that
 # has to spell the count out (FFmpeg's ``-ac``, GStreamer's caps/``rx-channel``);
 # RxTxApp passes the label straight through to its JSON config instead.

@@ -31,6 +31,7 @@ from mtl_engine.config.mappings import (
     APP_NAME_MAP,
     FFMPEG_FORMAT_MAP,
     FFMPEG_ST30P_PTIME_MAP,
+    MTL_DEFAULT_PACKING,
     SESSION_TYPE_MAP,
     audio_channel_count,
     audio_sampling_hz,
@@ -112,6 +113,16 @@ class FFmpeg(Application):
                     f"No FFmpeg pixel format carries MTL "
                     f"pixel_format={pixel_format}; the mtl_st20p plugin "
                     f"handles {sorted(FFMPEG_FORMAT_MAP)}"
+                )
+            packing = params.get("packing")
+            if packing not in (None, MTL_DEFAULT_PACKING):
+                # mtl_st20p_tx.c declares no packing option, so the session
+                # keeps the library default; accepting GPM here would report a
+                # pass for a mode that never reached the wire.
+                return (
+                    f"The FFmpeg mtl_st20p plugin has no packing option and "
+                    f"leaves the library default {MTL_DEFAULT_PACKING}, "
+                    f"not packing={packing}"
                 )
         if session_type == "st30p":
             audio_ptime = params.get("audio_ptime")

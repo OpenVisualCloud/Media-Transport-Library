@@ -74,9 +74,9 @@ def test_st20p_input_format(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
-        # BPM matches the FFmpeg plugin's fixed packing mode (see
-        # mtl_st20p_tx.c) -- both apps must produce the same wire format so a
-        # single capture-sizing calculation covers both.
+        # BPM is the library default the FFmpeg and GStreamer plugins are stuck
+        # with (neither exposes a packing knob), so asking RxTxApp for it too
+        # keeps one capture-sizing calculation valid for every app.
         packing="BPM",
         width=media_file_info["width"],
         height=media_file_info["height"],

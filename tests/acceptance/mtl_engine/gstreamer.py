@@ -57,6 +57,7 @@ from mtl_engine.application_base import Application, ProcSpec
 from mtl_engine.config.mappings import (
     APP_NAME_MAP,
     GSTREAMER_ST20P_FORMAT_MAP,
+    MTL_DEFAULT_PACKING,
     audio_channel_count,
     audio_sampling_hz,
     gstreamer_audio_format,
@@ -165,6 +166,16 @@ class GStreamer(Application):
                     f"MTL GStreamer st20p plugin hardcodes "
                     f"{_ST20P_TRANSPORT_FORMAT} on the wire "
                     f"(gst_mtl_st20p_tx.c), not {transport_format}"
+                )
+            packing = params.get("packing")
+            if packing not in (None, MTL_DEFAULT_PACKING):
+                # No element installs a packing property, so the session keeps
+                # the library default; accepting GPM here would report a pass
+                # for a mode that never reached the wire.
+                return (
+                    f"MTL GStreamer st20p plugin has no packing property and "
+                    f"leaves the library default {MTL_DEFAULT_PACKING}, "
+                    f"not packing={packing}"
                 )
         if session_type == "st30p":
             channels = params.get("audio_channels")
