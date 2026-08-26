@@ -12,9 +12,10 @@ REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 BUILD_ICE=true
 BUILD_IGC=true
+BUILD_IAVF=true
 BUILD_ONLY=false
 FORCE=false
-if [[ "${FORCE_ICE_REBUILD:-0}" == "1" ]]; then
+if [[ "${FORCE_ICE_REBUILD:-0}" == "1" || "${FORCE_IAVF_REBUILD:-0}" == "1" ]]; then
 	FORCE=true
 fi
 usage() {
@@ -25,14 +26,17 @@ Build drivers used by Media Transport Library.
 By default, all driver flows are built.
 
 Options:
-  --driver <ice|igc>         Build only the selected driver flow
+  --driver <ice|igc|iavf>    Build only the selected driver flow
   --disable-ice              Do not build the ICE driver flow
   --disable-igc              Do not build the IGC driver flow
-  --build-only               Compile ICE and leave src/ice.ko in place,
+  --disable-iavf             Do not build the IAVF driver flow
+  --build-only               Compile ICE/IAVF and leave the built .ko in place,
                              without installing or loading it
   --ice-version <version>    ICE version (default: ${ICE_VER})
-  --ice-download-id <id>     Intel download mirror ID (default: ${ICE_DMID})
-	--force                    Rebuild ICE
+  --ice-download-id <id>     Intel download mirror ID for ICE (default: ${ICE_DMID})
+  --iavf-version <version>   IAVF version (default: ${IAVF_VER})
+  --iavf-download-id <id>    Intel download mirror ID for IAVF (default: ${IAVF_DMID})
+	--force                    Rebuild ICE/IAVF
   -h, --help                 Show this help
 USAGE
 }
@@ -59,13 +63,20 @@ while [[ $# -gt 0 ]]; do
 		ice)
 			BUILD_ICE=true
 			BUILD_IGC=false
+			BUILD_IAVF=false
 			;;
 		igc)
 			BUILD_ICE=false
 			BUILD_IGC=true
+			BUILD_IAVF=false
+			;;
+		iavf)
+			BUILD_ICE=false
+			BUILD_IGC=false
+			BUILD_IAVF=true
 			;;
 		*)
-			echo "Unsupported driver '$2'. Use ice or igc." >&2
+			echo "Unsupported driver '$2'. Use ice, igc or iavf." >&2
 			exit 1
 			;;
 		esac
@@ -77,6 +88,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--disable-igc)
 		BUILD_IGC=false
+		shift
+		;;
+	--disable-iavf)
+		BUILD_IAVF=false
 		shift
 		;;
 	--build-only)
@@ -97,6 +112,22 @@ while [[ $# -gt 0 ]]; do
 			exit 1
 		}
 		ICE_DMID="$2"
+		shift 2
+		;;
+	--iavf-version)
+		[[ $# -ge 2 ]] || {
+			echo "--iavf-version requires a value" >&2
+			exit 1
+		}
+		IAVF_VER="$2"
+		shift 2
+		;;
+	--iavf-download-id)
+		[[ $# -ge 2 ]] || {
+			echo "--iavf-download-id requires a value" >&2
+			exit 1
+		}
+		IAVF_DMID="$2"
 		shift 2
 		;;
 	--force)
@@ -197,6 +228,76 @@ build_ice() {
 	fi
 }
 
+build_iavf() {
+	local archive_name="iavf-${IAVF_VER}.tar.gz"
+	local patch_dir="${REPO_DIR}/patches/iavf_drv/${IAVF_VER}"
+	local github_archive=0
+
+	if [[ "${BUILD_ONLY}" == "false" && "${FORCE}" == "false" ]] &&
+		sudo modinfo iavf 2>/dev/null | grep -Ei "^version:[[:space:]]*(Kahawai_)?${IAVF_VER}([[:space:]]|$)" >/dev/null; then
+		echo "IAVF driver version ${IAVF_VER} is already installed. Skipping rebuild."
+		return
+	fi
+
+	cd "${SCRIPT_DIR}"
+	if [[ -f "${archive_name}" ]] && gzip -t "${archive_name}" >/dev/null 2>&1; then
+		echo "Found valid local archive ${archive_name}, skipping download."
+		if tar -tzf "${archive_name}" | grep "^ethernet-linux-iavf" >/dev/null; then
+			github_archive=1
+		fi
+	else
+		rm -f "${archive_name}"
+		wget "https://downloadmirror.intel.com/${IAVF_DMID}/${archive_name}" -O "${archive_name}" || true
+		if [[ ! -f "${archive_name}" ]] || ! gzip -t "${archive_name}" >/dev/null 2>&1; then
+			rm -f "${archive_name}"
+			wget "https://github.com/intel/ethernet-linux-iavf/archive/refs/tags/v${IAVF_VER}.tar.gz" -O "${archive_name}" || true
+			if [[ -f "${archive_name}" ]] && gzip -t "${archive_name}" >/dev/null 2>&1; then
+				github_archive=1
+			else
+				echo "Failed to download a valid ${archive_name}." >&2
+				rm -f "${archive_name}"
+				exit 1
+			fi
+		fi
+	fi
+
+	if [[ -d "iavf-${IAVF_VER}" ]]; then
+		if [[ "${FORCE}" == "true" ]]; then
+			rm -rf "iavf-${IAVF_VER}"
+		else
+			echo "iavf-${IAVF_VER} already exists. Use --force to replace it." >&2
+			exit 1
+		fi
+	fi
+
+	tar xzf "${archive_name}"
+	rm -f "${archive_name}"
+	if [[ "${github_archive}" -eq 1 && -d "ethernet-linux-iavf-${IAVF_VER}" ]]; then
+		mv "ethernet-linux-iavf-${IAVF_VER}" "iavf-${IAVF_VER}"
+	fi
+	[[ -d "iavf-${IAVF_VER}" ]] || {
+		echo "Failed to extract ${archive_name}." >&2
+		exit 1
+	}
+
+	pushd "iavf-${IAVF_VER}" >/dev/null
+	if [[ -d "${patch_dir}" ]]; then
+		shopt -s nullglob
+		for patch_file in "${patch_dir}"/*.patch; do
+			patch -p1 --no-backup-if-mismatch -i "${patch_file}"
+		done
+		shopt -u nullglob
+	fi
+	make -C src -j"$(nproc)"
+	if [[ "${BUILD_ONLY}" == "false" ]]; then
+		run_as_root make -C src install
+		run_as_root rmmod iavf || true
+		run_as_root modprobe iavf
+	fi
+	popd >/dev/null
+	rm -rf "iavf-${IAVF_VER}"
+}
+
 build_igc() {
 	if modinfo igc >/dev/null 2>&1; then
 		echo "In-tree IGC driver is already installed at $(modinfo -n igc)."
@@ -221,13 +322,16 @@ build_igc() {
 	fi
 }
 
-if [[ "${BUILD_ICE}" == "false" && "${BUILD_IGC}" == "false" ]]; then
+if [[ "${BUILD_ICE}" == "false" && "${BUILD_IGC}" == "false" && "${BUILD_IAVF}" == "false" ]]; then
 	echo "All driver flows are disabled." >&2
 	exit 1
 fi
 
 if [[ "${BUILD_ICE}" == "true" ]]; then
 	build_ice
+fi
+if [[ "${BUILD_IAVF}" == "true" ]]; then
+	build_iavf
 fi
 if [[ "${BUILD_IGC}" == "true" ]]; then
 	build_igc
