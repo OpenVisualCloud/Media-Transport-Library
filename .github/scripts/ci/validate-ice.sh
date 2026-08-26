@@ -12,6 +12,7 @@ architecture=${ICE_ARCH:-$(uname -m)}
 bundle_root=${ICE_BUNDLE_ROOT:-"${root_dir}/.local_install/ice"}
 artifact_dir="${bundle_root}/${kernel_release}/${architecture}"
 module="${artifact_dir}/ice.ko"
+iavf_module="${artifact_dir}/iavf.ko"
 metadata="${artifact_dir}/metadata.env"
 nm_command=${ICE_NM:-nm}
 modinfo_cmd=${ICE_MODINFO:-modinfo}
@@ -24,13 +25,19 @@ test -s "$module" || {
 	echo "ICE module is missing for ${kernel_release}/${architecture}" >&2
 	exit 1
 }
+test -s "$iavf_module" || {
+	echo "IAVF module is missing for ${kernel_release}/${architecture}" >&2
+	exit 1
+}
 test -s "$metadata" || {
 	echo "ICE metadata is missing for ${kernel_release}/${architecture}" >&2
 	exit 1
 }
 
-for field in schema source_hash ice_version ice_dmid kernel_release architecture \
-	compiler_sha256 kernel_compiler_sha256 kernel_abi_sha256 vermagic module_sha256 signer sig_id; do
+for field in schema source_hash ice_version ice_dmid iavf_version iavf_dmid \
+	kernel_release architecture compiler_sha256 kernel_compiler_sha256 \
+	kernel_abi_sha256 vermagic module_sha256 signer sig_id \
+	iavf_vermagic iavf_module_sha256 iavf_signer iavf_sig_id; do
 	grep -q "^${field}=" "$metadata" || {
 		echo "ICE metadata field is missing: ${field}" >&2
 		exit 1
@@ -47,9 +54,11 @@ expected_compiler_sha256=${ICE_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.gi
 	exit 1
 }
 
-test "$(metadata_value schema)" = 2
+test "$(metadata_value schema)" = 3
 test "$(metadata_value ice_version)" = "$ICE_VER"
 test "$(metadata_value ice_dmid)" = "$ICE_DMID"
+test "$(metadata_value iavf_version)" = "$IAVF_VER"
+test "$(metadata_value iavf_dmid)" = "$IAVF_DMID"
 if [ -n "${ICE_EXPECTED_SOURCE_HASH:-}" ]; then
 	expected_source_hash=$ICE_EXPECTED_SOURCE_HASH
 else
@@ -86,6 +95,10 @@ echo "$(metadata_value module_sha256)  ${module}" | sha256sum --check --status |
 	echo "ICE module SHA-256 mismatch" >&2
 	exit 1
 }
+echo "$(metadata_value iavf_module_sha256)  ${iavf_module}" | sha256sum --check --status || {
+	echo "IAVF module SHA-256 mismatch" >&2
+	exit 1
+}
 
 actual_vermagic=$($modinfo_cmd -F vermagic "$module")
 test "$actual_vermagic" = "$(metadata_value vermagic)" || {
@@ -100,6 +113,19 @@ case "$actual_vermagic" in
 	;;
 esac
 
+actual_iavf_vermagic=$($modinfo_cmd -F vermagic "$iavf_module")
+test "$actual_iavf_vermagic" = "$(metadata_value iavf_vermagic)" || {
+	echo "IAVF vermagic metadata mismatch" >&2
+	exit 1
+}
+case "$actual_iavf_vermagic" in
+"${kernel_release} "* | "${kernel_release}") ;;
+*)
+	echo "IAVF vermagic is incompatible with ${kernel_release}: ${actual_iavf_vermagic}" >&2
+	exit 1
+	;;
+esac
+
 actual_signer=$($modinfo_cmd -F signer "$module")
 actual_sig_id=$($modinfo_cmd -F sig_id "$module")
 test "$actual_signer" = "$(metadata_value signer)" || {
@@ -108,6 +134,17 @@ test "$actual_signer" = "$(metadata_value signer)" || {
 }
 test "$actual_sig_id" = "$(metadata_value sig_id)" || {
 	echo "ICE signature metadata mismatch" >&2
+	exit 1
+}
+
+actual_iavf_signer=$($modinfo_cmd -F signer "$iavf_module")
+actual_iavf_sig_id=$($modinfo_cmd -F sig_id "$iavf_module")
+test "$actual_iavf_signer" = "$(metadata_value iavf_signer)" || {
+	echo "IAVF signer metadata mismatch" >&2
+	exit 1
+}
+test "$actual_iavf_sig_id" = "$(metadata_value iavf_sig_id)" || {
+	echo "IAVF signature metadata mismatch" >&2
 	exit 1
 }
 
@@ -132,5 +169,9 @@ if [ "$secure_boot" = enabled ] && [ -z "$actual_signer" ]; then
 	echo "Secure Boot is enabled but the ICE module is unsigned" >&2
 	exit 1
 fi
+if [ "$secure_boot" = enabled ] && [ -z "$actual_iavf_signer" ]; then
+	echo "Secure Boot is enabled but the IAVF module is unsigned" >&2
+	exit 1
+fi
 
-echo "ICE artifact: valid (${kernel_release}/${architecture})"
+echo "ICE+IAVF artifact: valid (${kernel_release}/${architecture})"

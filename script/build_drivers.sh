@@ -262,7 +262,7 @@ build_iavf() {
 	fi
 
 	if [[ -d "iavf-${IAVF_VER}" ]]; then
-		if [[ "${FORCE}" == "true" ]]; then
+		if [[ "${FORCE}" == "true" || "${BUILD_ONLY}" == "true" ]]; then
 			rm -rf "iavf-${IAVF_VER}"
 		else
 			echo "iavf-${IAVF_VER} already exists. Use --force to replace it." >&2
@@ -288,14 +288,20 @@ build_iavf() {
 		done
 		shopt -u nullglob
 	fi
-	make -C src -j"$(nproc)"
+	make -C src -j"$(nproc)" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		run_as_root make -C src install
 		run_as_root rmmod iavf || true
 		run_as_root modprobe iavf
 	fi
 	popd >/dev/null
-	rm -rf "iavf-${IAVF_VER}"
+	# --build-only asked for the module, not an installed driver, so leave it
+	# where the caller (build-ice.sh packages it alongside ice.ko) can collect it.
+	if [[ "${BUILD_ONLY}" == "true" ]]; then
+		echo "Built ${SCRIPT_DIR}/iavf-${IAVF_VER}/src/iavf.ko"
+	else
+		rm -rf "iavf-${IAVF_VER}"
+	fi
 }
 
 build_igc() {

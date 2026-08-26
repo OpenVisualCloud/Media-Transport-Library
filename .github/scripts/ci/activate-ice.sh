@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Loads the cached ICE module, or leaves the running driver alone when it is
-# already that module.
+# Loads the cached ICE and IAVF modules -- they ship as one package -- or leaves
+# the running drivers alone when they are already those modules.
 #
 # Neither half is one command. Nothing under /sys/module/ice is a hash of the
 # loaded module, so "already that module" has to be asked indirectly: the cached
@@ -30,21 +30,38 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 . "${root_dir}/versions.env"
 
 kernel_release=$(uname -r)
-artifact="${root_dir}/.local_install/ice/${kernel_release}/$(uname -m)/ice.ko"
+artifact_dir="${root_dir}/.local_install/ice/${kernel_release}/$(uname -m)"
+artifact="${artifact_dir}/ice.ko"
+artifact_iavf="${artifact_dir}/iavf.ko"
 installed="/lib/modules/${kernel_release}/updates/drivers/net/ethernet/intel/ice/ice.ko"
+installed_iavf="/lib/modules/${kernel_release}/updates/drivers/net/ethernet/intel/iavf/iavf.ko"
 
 bash "${root_dir}/.github/scripts/ci/validate-ice.sh"
 desired=$(sha256sum "$artifact" | cut -d' ' -f1)
+desired_iavf=$(sha256sum "$artifact_iavf" | cut -d' ' -f1)
+
+# ice is the PF driver and is always loaded, so its /sys state settles the
+# question. iavf is the VF driver: on a PF host with no VFs it may not be loaded
+# at all, and the kernel auto-loads it from the updates/ path depmod points at
+# when a VF first appears. So the cached iavf.ko being the file on disk is what
+# matters; a loaded iavf must additionally match, or it is stale and gets reloaded.
+iavf_current() {
+	[ -f "$installed_iavf" ] &&
+		[ "$(sha256sum "$installed_iavf" | cut -d' ' -f1)" = "$desired_iavf" ] &&
+		{ [ ! -d /sys/module/iavf ] ||
+			[ "$(cat /sys/module/iavf/srcversion 2>/dev/null)" = "$(modinfo -F srcversion "$installed_iavf")" ]; }
+}
 
 is_current() {
 	[ -f "$installed" ] &&
 		[ "$(sha256sum "$installed" | cut -d' ' -f1)" = "$desired" ] &&
 		[ "$(cat /sys/module/ice/srcversion 2>/dev/null)" = "$(modinfo -F srcversion "$installed")" ] &&
-		[ "$(cat /sys/module/ice/version 2>/dev/null)" = "Kahawai_${ICE_VER}" ]
+		[ "$(cat /sys/module/ice/version 2>/dev/null)" = "Kahawai_${ICE_VER}" ] &&
+		iavf_current
 }
 
 if is_current; then
-	echo "ICE is already the cached module ${desired}, leaving it loaded"
+	echo "ICE/IAVF are already the cached modules, leaving them in place"
 	exit 0
 fi
 
@@ -85,10 +102,18 @@ modprobe -r irdma || true
 modprobe -r ice
 
 install -D -m 0644 "$artifact" "$installed"
+install -D -m 0644 "$artifact_iavf" "$installed_iavf"
 depmod -a "$kernel_release"
 modprobe ice
+# The VF teardown above cleared every VF on the ice PFs, so a loaded iavf now has
+# no devices and can be replaced in place; an unloaded one is left alone -- the
+# kernel auto-loads the depmod'd updates/ copy when a consumer creates VFs.
+if [ -d /sys/module/iavf ]; then
+	modprobe -r iavf || true
+	modprobe iavf || true
+fi
 is_current || {
-	echo "ICE did not come back up as the cached module ${desired}" >&2
+	echo "ICE/IAVF did not come back up as the cached modules" >&2
 	exit 1
 }
 
@@ -96,7 +121,7 @@ is_current || {
 # host that will not reload it is worth a line and no more.
 [ "$reload_irdma" -eq 0 ] || modprobe irdma ||
 	echo "warning: irdma did not reload, it stays unloaded" >&2
-echo "ICE loaded from the cached module ${desired}"
+echo "ICE/IAVF loaded from the cached modules ${desired} / ${desired_iavf}"
 
 # VFs are not recreated here: every consumer builds the VF state it needs, and
 # does it idempotently -- a gtest job runs bind-test-ports.sh, and the acceptance

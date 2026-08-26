@@ -69,17 +69,17 @@ tasks:
       - bash {{.CI_SCRIPTS}}/validate-jpegxs.sh
 
   ci:build-ice:
-    desc: Build a patched ICE module artifact for the running kernel ABI
+    desc: Build a patched ICE+IAVF module artifact for the running kernel ABI
     cmds:
       - bash {{.CI_SCRIPTS}}/build-ice.sh
 
   ci:validate-ice:
-    desc: Validate the cached ICE module against the running kernel ABI
+    desc: Validate the cached ICE+IAVF modules against the running kernel ABI
     cmds:
       - bash {{.CI_SCRIPTS}}/validate-ice.sh
 
   ci:activate-ice:
-    desc: Load the cached ICE module, or leave it alone if it is already loaded
+    desc: Load the cached ICE+IAVF modules, or leave them alone if already loaded
     cmds:
       - bash {{.CI_SCRIPTS}}/activate-ice.sh {{.CLI_ARGS}}
 

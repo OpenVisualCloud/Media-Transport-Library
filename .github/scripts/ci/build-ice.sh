@@ -22,9 +22,10 @@ fi
 bundle_root=${ICE_BUNDLE_ROOT:-"${root_dir}/.local_install/ice"}
 output_dir=${ICE_OUTPUT_DIR:-"${bundle_root}/${kernel_release}/${architecture}"}
 source_dir="${root_dir}/script/ice-${ICE_VER}"
+iavf_source_dir="${root_dir}/script/iavf-${IAVF_VER}"
 stage_root="${bundle_root}.tmp.$$"
 stage="${stage_root}/${kernel_release}/${architecture}"
-trap 'rm -rf "$source_dir" "$stage_root"' EXIT
+trap 'rm -rf "$source_dir" "$iavf_source_dir" "$stage_root"' EXIT
 
 test -d "/lib/modules/${kernel_release}/build" || {
 	echo "kernel headers are missing for ${kernel_release}" >&2
@@ -54,21 +55,27 @@ fi
 
 # build_drivers.sh owns the download, the patch series and the compile, and is
 # what a developer runs by hand; --build-only keeps it from installing or
-# reloading the driver of the kernel this job is running on. Nothing else is
-# specified: the igc flow it also runs only checks that the in-tree module is
-# there, which it is on every platform, so there is no reason to select a driver.
+# reloading the drivers of the kernel this job is running on. Nothing else is
+# specified: the same run builds both ice and iavf -- they ship as one package,
+# built by the same compiler against the same kernel ABI -- and the igc flow it
+# also runs only checks that the in-tree module is there, which it is on every
+# platform, so there is no reason to select a driver.
 CC="$build_compiler" bash "${root_dir}/script/build_drivers.sh" --build-only
 
 module=$(find "${source_dir}/src" -name ice.ko -type f -print -quit)
 test -n "$module"
+iavf_module=$(find "${iavf_source_dir}/src" -name iavf.ko -type f -print -quit)
+test -n "$iavf_module"
 mkdir -p "$stage"
 install -m 0644 "$module" "${stage}/ice.ko"
+install -m 0644 "$iavf_module" "${stage}/iavf.ko"
 
 hash_output=$(mktemp)
 bash "${root_dir}/script/hash_sources.sh" -o "$hash_output" >/dev/null
 source_hash=$(sed -n 's/^ice=//p' "$hash_output")
 rm -f "$hash_output"
 module_hash=$(sha256sum "${stage}/ice.ko" | cut -d' ' -f1)
+iavf_module_hash=$(sha256sum "${stage}/iavf.ko" | cut -d' ' -f1)
 compiler_hash=$producer_compiler_hash
 abi_output=$(mktemp)
 GITHUB_OUTPUT="$abi_output" bash "${root_dir}/.github/scripts/ci/ice-abi.sh"
@@ -77,10 +84,12 @@ kernel_compiler_hash=$(sed -n 's/^kernel_compiler_sha256=//p' "$abi_output")
 rm -f "$abi_output"
 
 cat >"${stage}/metadata.env" <<EOF
-schema=2
+schema=3
 source_hash=${source_hash}
 ice_version=${ICE_VER}
 ice_dmid=${ICE_DMID}
+iavf_version=${IAVF_VER}
+iavf_dmid=${IAVF_DMID}
 kernel_release=${kernel_release}
 architecture=${architecture}
 compiler_sha256=${compiler_hash}
@@ -90,6 +99,10 @@ vermagic=$(modinfo -F vermagic "${stage}/ice.ko")
 module_sha256=${module_hash}
 signer=$(modinfo -F signer "${stage}/ice.ko")
 sig_id=$(modinfo -F sig_id "${stage}/ice.ko")
+iavf_vermagic=$(modinfo -F vermagic "${stage}/iavf.ko")
+iavf_module_sha256=${iavf_module_hash}
+iavf_signer=$(modinfo -F signer "${stage}/iavf.ko")
+iavf_sig_id=$(modinfo -F sig_id "${stage}/iavf.ko")
 EOF
 
 ICE_BUNDLE_ROOT="$stage_root" \
@@ -99,4 +112,4 @@ rm -rf "$output_dir"
 mkdir -p "$(dirname "$output_dir")"
 mv "$stage" "$output_dir"
 rm -rf "$stage_root"
-echo "ICE artifact built at ${output_dir}"
+echo "ICE+IAVF artifact built at ${output_dir}"
