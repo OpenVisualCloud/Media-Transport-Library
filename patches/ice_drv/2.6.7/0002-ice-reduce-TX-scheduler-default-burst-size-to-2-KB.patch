@@ -1,4 +1,4 @@
-From 643b9e2d4809306b56b95445fb3ca5156d30d511 Mon Sep 17 00:00:00 2001
+From a653592bfda986cd1b515f47fd5bc7e6990824d1 Mon Sep 17 00:00:00 2001
 From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
 Date: Mon, 27 Apr 2026 04:39:51 -0400
 Subject: [PATCH 2/5] ice: reduce TX scheduler default burst size to 2 KB
@@ -20,22 +20,22 @@ PF/VF rate limiting behavior.
 Change-type: FeatureImplementation
 Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
 ---
- src/ice_type.h | 2 +-
+ src/SHARED/ice_type.h | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/src/ice_type.h b/src/ice_type.h
-index 079806c..9b15b42 100644
---- a/src/ice_type.h
-+++ b/src/ice_type.h
-@@ -1122,7 +1122,7 @@ enum ice_rl_type {
+diff --git a/src/SHARED/ice_type.h b/src/SHARED/ice_type.h
+index ed5397f95..d64027478 100644
+--- a/src/SHARED/ice_type.h
++++ b/src/SHARED/ice_type.h
+@@ -1407,7 +1407,7 @@ enum ice_rl_type {
  #define ICE_SCHED_DFLT_RL_PROF_ID	0
  #define ICE_SCHED_NO_SHARED_RL_PROF_ID	0xFFFF
  #define ICE_SCHED_INVAL_PROF_ID		0xFFFF
 -#define ICE_SCHED_DFLT_BURST_SIZE	(15 * 1024)	/* in bytes (15k) */
 +#define ICE_SCHED_DFLT_BURST_SIZE	(2 * 1024)	/* in bytes (2k) */
  
+ #ifndef NO_UNUSED_SCHED_CODE
  /* Access Macros for Tx Sched RL Profile data */
- #define ICE_TXSCHED_GET_RL_PROF_ID(p) le16_to_cpu((p)->info.profile_id)
 -- 
 2.43.0
 

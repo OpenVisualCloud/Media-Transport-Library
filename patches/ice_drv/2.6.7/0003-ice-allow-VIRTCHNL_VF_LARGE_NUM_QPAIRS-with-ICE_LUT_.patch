@@ -1,4 +1,4 @@
-From 1209039dc2b1524286f406dc0a243c26a35664f3 Mon Sep 17 00:00:00 2001
+From ae50cee9284cb6acc74b1242b57ccb92de694793 Mon Sep 17 00:00:00 2001
 From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
 Date: Mon, 27 Apr 2026 04:40:15 -0400
 Subject: [PATCH 3/5] ice: allow VIRTCHNL_VF_LARGE_NUM_QPAIRS with ICE_LUT_VSI
@@ -20,23 +20,23 @@ allocating enough queues for multi-session operation.
 Change-type: FeatureImplementation
 Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
 ---
- src/ice_virtchnl.c | 3 +--
+ src/CORE/ice_virtchnl.c | 3 +--
  1 file changed, 1 insertion(+), 2 deletions(-)
 
-diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
-index 492bd65..68750dd 100644
---- a/src/ice_virtchnl.c
-+++ b/src/ice_virtchnl.c
-@@ -769,8 +769,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
- 	if (test_bit(VIRTCHNL_VF_OFFLOAD_USO, vf->driver_caps))
+diff --git a/src/CORE/ice_virtchnl.c b/src/CORE/ice_virtchnl.c
+index e9b740d58..8bdcd0eb4 100644
+--- a/src/CORE/ice_virtchnl.c
++++ b/src/CORE/ice_virtchnl.c
+@@ -841,8 +841,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
  		vfres->vf_cap_flags |= BIT(VIRTCHNL_VF_OFFLOAD_USO);
  
+ #ifdef VF_LARGE_NUM_QPAIRS_SUPPORT
 -	if (test_bit(VIRTCHNL_VF_LARGE_NUM_QPAIRS, vf->driver_caps) &&
 -	    vsi->rss_lut_type != ICE_LUT_VSI)
-+if (test_bit(VIRTCHNL_VF_LARGE_NUM_QPAIRS, vf->driver_caps))
++	if (test_bit(VIRTCHNL_VF_LARGE_NUM_QPAIRS, vf->driver_caps))
  		vfres->vf_cap_flags |= BIT(VIRTCHNL_VF_LARGE_NUM_QPAIRS);
+ #endif /* VF_LARGE_NUM_QPAIRS_SUPPORT */
  
- 	/* Indicate that VF can send more flags in VIRTCHNL_OP_GET_VF_CAPS2 */
 -- 
 2.43.0
 
