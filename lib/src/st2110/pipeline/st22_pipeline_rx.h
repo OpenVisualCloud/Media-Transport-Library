@@ -51,6 +51,7 @@ struct st22p_rx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   struct st22_decode_session_impl* decode_impl;
   /* for ST22_DECODER_RESP_FLAG_BLOCK_GET */
@@ -58,6 +59,7 @@ struct st22p_rx_ctx {
   pthread_cond_t decode_block_wake_cond;
   pthread_mutex_t decode_block_wake_mutex;
   uint64_t decode_block_timeout_ns;
+  bool decode_block_wake_pending;
 
   bool ready;
   bool derive; /* output_fmt == transport_fmt */

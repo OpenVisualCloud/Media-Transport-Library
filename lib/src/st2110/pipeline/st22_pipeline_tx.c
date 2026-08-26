@@ -46,6 +46,7 @@ static void tx_st22p_notify_frame_available(struct st22p_tx_ctx* ctx) {
 static void tx_st22p_encode_block_wake(struct st22p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
+  ctx->encode_block_wake_pending = true;
   mt_pthread_cond_signal(&ctx->encode_block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
 }
@@ -297,9 +298,14 @@ static int tx_st22p_notify_event(void* priv, enum st_event event, void* args) {
 static int tx_st22p_encode_get_block_wait(struct st22p_tx_ctx* ctx) {
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->encode_block_wake_cond,
-                               &ctx->encode_block_wake_mutex,
-                               ctx->encode_block_timeout_ns);
+  while (!ctx->encode_block_wake_pending &&
+         !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+    int _ret = mt_pthread_cond_timedwait_ns(&ctx->encode_block_wake_cond,
+                                            &ctx->encode_block_wake_mutex,
+                                            ctx->encode_block_timeout_ns);
+    if (_ret) break;
+  }
+  ctx->encode_block_wake_pending = false;
   mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
   return 0;
 }
@@ -344,6 +350,7 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
       tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
   if (!framebuff && ctx->encode_block_get) { /* wait here for block mode */
     tx_st22p_encode_get_block_wait(ctx);
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
     /* get again */
     framebuff =
         tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
