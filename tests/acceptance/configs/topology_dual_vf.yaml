@@ -1,0 +1,40 @@
+---
+metadata:
+  version: '2.4'
+hosts:
+# TX side — Intel E830-CC, 0000:15:00.0 (ens33f0np0), NUMA 0
+- name: host_0
+  instantiate: true
+  role: client
+  network_interfaces:
+  - pci_device: 8086:12d2
+    interface_index: 0
+  connections:
+  - ip_address: 127.0.0.1
+    connection_type: SSHConnection
+    connection_options:
+      port: 22
+      username: root
+      password: ''
+      key_path: /home/labrat/.ssh/id_ed25519
+  extra_info:
+    mtl_path: /home/labrat/mtl/Media-Transport-Library2
+    media_path: /mnt/media
+# RX side — Intel E810-C, 0000:c9:00.0 (ens35f0np0), NUMA 1
+- name: host
+  instantiate: true
+  role: sut
+  network_interfaces:
+  - pci_device: 8086:1592
+    interface_index: 0
+  connections:
+  - ip_address: 127.0.0.1
+    connection_type: SSHConnection
+    connection_options:
+      port: 22
+      username: root
+      password: ''
+      key_path: /home/labrat/.ssh/id_ed25519
+  extra_info:
+    mtl_path: /home/labrat/mtl/Media-Transport-Library2
+    media_path: /mnt/media

@@ -1,0 +1,21 @@
+---
+metadata:
+  version: '2.4'
+hosts:
+- name: host
+  instantiate: true
+  role: sut
+  network_interfaces:
+  - pci_device: 8086:12d2
+    interface_index: 0
+  connections:
+  - ip_address: 127.0.0.1
+    connection_type: SSHConnection
+    connection_options:
+      port: 22
+      username: root
+      password: ''
+      key_path: /home/labrat/.ssh/id_ed25519
+  extra_info:
+    mtl_path: /home/labrat/mtl/Media-Transport-Library2
+    media_path: /mnt/media

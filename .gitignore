@@ -1,3 +1,6 @@
+# dpdk
+scripts/dpdk
+
 # Prerequisites
 *.d
 
