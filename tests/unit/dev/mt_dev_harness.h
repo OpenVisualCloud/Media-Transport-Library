@@ -30,6 +30,7 @@ ut_dev_ctx* ut_dev_create_ctx(void);
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx);
 void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
+/** Injects the rte_eth_dev_start() return; 0 keeps the mocked start successful. */
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);

@@ -11,8 +11,12 @@
 #
 # The name is kept because a dozen documents, skills and agent prompts invoke it.
 #
-#   ./format-coding.sh           apply every fix
-#   ./format-coding.sh --check   show what would change without changing it
+#   ./format-coding.sh                  apply every fix
+#   ./format-coding.sh --all            the same thing, said explicitly
+#   ./format-coding.sh --staged         fix staged files only
+#   ./format-coding.sh --files a.c b.md fix specific files
+#   ./format-coding.sh --check          show what would change without changing it
+#   ./format-coding.sh --preview        the same thing, spelled checkpatch's way
 #
 # Tool versions used to be checked against whatever was installed locally, which
 # meant a wrong version could silently reformat hundreds of unrelated files.
@@ -22,34 +26,41 @@
 
 set -eu
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-CHECKPATCH="$SCRIPT_DIR/checkpatch.sh"
+CHECKPATCH="$(cd "$(dirname "$0")" && pwd)/checkpatch.sh"
 
-# Before dispatching, not after: --check used to exec from the caller's directory,
-# so running it by absolute path from another repository previewed and rolled back
-# *that* repository.
-cd "$SCRIPT_DIR"
-
+# The write path forwards only the modes named here, so a new checkpatch.sh mode
+# cannot leak into it; --check and --preview exec the verify-only preview instead.
+# The operand grammar stays over there, so there is no second copy of it to drift.
 case "${1:-}" in
---check)
+--check | --preview)
 	# Non-mutating preview, including the full diff of what would change.
-	exec "$CHECKPATCH" --preview
+	shift
+	exec "$CHECKPATCH" --preview "$@"
 	;;
 -h | --help)
 	cat <<'EOF'
-Usage: ./format-coding.sh [--check]
+Usage: ./format-coding.sh [MODE]
 
-  (none)    Apply every autofix, then report anything left for a human.
-  --check   Show what would change and restore the tree. Needs a clean tree.
+Modes:
+  (none), --all        Apply every autofix to every tracked file.
+  --staged             Apply the autofixes to staged files only.
+  --files FILE...      Apply the autofixes to the named files.
+  --check, --preview   Report what would change without keeping it. Requires a
+                       clean tree; restores it afterwards.
+  -h, --help           This text.
 
-Verification, staged-only checks and hook installation live in ./checkpatch.sh.
-Rules live in .pre-commit-config.yaml and .github/linters/.
+Exit status: 0 clean, 1 findings, 2 usage or environment problem (from
+./checkpatch.sh, or locally for an unknown mode), 130 if an interrupted
+--preview rolls back.
+
+Verification, hook installation and --bootstrap live in ./checkpatch.sh.
+Rules live in .pre-commit-config.yaml and .github/linters/, never in this script.
 EOF
 	exit 0
 	;;
-"") ;;
+"" | --all | --staged | --files) ;;
 *)
-	echo "format-coding.sh: unknown option '$1' (try --help)" >&2
+	echo "format-coding.sh: no write mode for '$1' -- try --help" >&2
 	exit 2
 	;;
 esac
@@ -61,13 +72,5 @@ esac
 # wrong anyway, since it read `git diff`, which is dominated by the user's own
 # edits rather than the formatters'.
 rc=0
-"$CHECKPATCH" --all || rc=$?
-
-echo ""
-if [ "$rc" -eq 0 ]; then
-	echo "Formatting applied where needed. Review with:  git diff --stat"
-	exit 0
-fi
-
-echo "Findings above have no autofix -- fix them by hand, then re-run this script."
-exit 1
+"$CHECKPATCH" "$@" || rc=$?
+exit "$rc"

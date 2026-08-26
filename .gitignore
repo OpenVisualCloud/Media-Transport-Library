@@ -126,3 +126,9 @@ level-zero-*
 
 venv*
 .github/mcp/.venv/
+
+# Acceptance install trees. .local_install is a symlink to one of the other two
+# during an A/B run. See tasks.md, "Acceptance A/B with two install trees".
+.local_install
+local_install_old/
+local_install_new/

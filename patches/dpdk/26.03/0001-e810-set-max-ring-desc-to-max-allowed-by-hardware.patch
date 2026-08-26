@@ -1,9 +1,9 @@
-From c4e622441564203a6e8b8586dcab520286d04236 Mon Sep 17 00:00:00 2001
-From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+From nobody Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Mon, 31 Mar 2025 11:42:58 +0000
-Subject: [PATCH 1/6] e810: set max ring desc to max allowed by hardware
+Subject: [PATCH] e810: set max ring desc to max allowed by hardware
 
-Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
 ---
  drivers/net/intel/iavf/iavf_rxtx.h | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)

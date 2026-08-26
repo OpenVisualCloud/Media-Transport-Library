@@ -116,7 +116,16 @@ done
 
 build_ice() {
 	local archive_name="ice-${ICE_VER}.tar.gz"
+	local patch_root="${REPO_DIR}/patches/ice_drv"
+	local patch_dir="${patch_root}/${ICE_VER}"
 	local github_archive=0
+
+	if [[ ! -d "${patch_dir}" ]]; then
+		echo "No ICE patches for version ${ICE_VER}." >&2
+		echo "Directory does not exist: ${patch_dir}" >&2
+		echo "Available ICE versions: $(find -L "${patch_root}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | paste -sd' ')" >&2
+		exit 1
+	fi
 
 	if [[ "${BUILD_ONLY}" == "false" && "${FORCE}" == "false" ]] &&
 		sudo modinfo ice 2>/dev/null | grep -Ei "^version:[[:space:]]*Kahawai_${ICE_VER}" >/dev/null; then

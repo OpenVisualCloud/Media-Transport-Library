@@ -9,10 +9,10 @@ Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
  1 file changed, 3 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
-index da508592aa..c832fdd083 100644
+index c4b5454c53..8d709125f7 100644
 --- a/drivers/net/intel/ice/ice_rxtx.c
 +++ b/drivers/net/intel/ice/ice_rxtx.c
-@@ -1972,8 +1972,7 @@ ice_rx_scan_hw_ring(struct ci_rx_queue *rxq)
+@@ -2023,8 +2023,7 @@ ice_rx_scan_hw_ring(struct ci_rx_queue *rxq)
  				pkt_flags |= rxq->ts_flag;
  			}
  
@@ -22,7 +22,7 @@ index da508592aa..c832fdd083 100644
  				rxq->time_high =
  				   rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
  				mb->timesync = rxq->queue_id;
-@@ -2339,8 +2338,7 @@ ice_recv_scattered_pkts(void *rx_queue,
+@@ -2390,8 +2389,7 @@ ice_recv_scattered_pkts(void *rx_queue,
  			pkt_flags |= rxq->ts_flag;
  		}
  
@@ -32,7 +32,7 @@ index da508592aa..c832fdd083 100644
  			rxq->time_high =
  			   rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high);
  			first_seg->timesync = rxq->queue_id;
-@@ -2837,8 +2835,7 @@ ice_recv_pkts(void *rx_queue,
+@@ -2881,8 +2879,7 @@ ice_recv_pkts(void *rx_queue,
  			pkt_flags |= rxq->ts_flag;
  		}
  

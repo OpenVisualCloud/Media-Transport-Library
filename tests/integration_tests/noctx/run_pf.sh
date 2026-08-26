@@ -53,8 +53,18 @@ fi
 
 PORT_LIST="${TEST_PF_PORT_1},${TEST_PF_PORT_2}"
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="NoCtxTest.${NOCTX_FILTER}*_pf_*" 2>/dev/null |
-	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
+PF_FILTER="NoCtxTest.${NOCTX_FILTER}*_pf_*"
+
+# Not a pipeline: its status would be awk's, so a crashed enumerator would read as zero tests.
+raw_list=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="${PF_FILTER}" 2>/dev/null)
+list_rc=$?
+if [ "$list_rc" -ne 0 ]; then
+	echo "Error: test enumeration failed with exit code $list_rc"
+	echo "Filter was: ${PF_FILTER}"
+	exit 1
+fi
+
+test_names=$(echo "$raw_list" | awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 if [ -z "$test_names" ]; then
 	echo "No PF-only NoCtx tests found (none match *_pf_*)."

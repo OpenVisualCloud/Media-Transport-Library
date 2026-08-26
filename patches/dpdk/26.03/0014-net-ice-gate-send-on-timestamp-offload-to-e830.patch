@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: MTL Contributor <noreply@example.com>
 Date: Tue, 7 Jul 2026 00:00:00 +0000
 Subject: [PATCH] net/ice: gate SEND_ON_TIMESTAMP offload capability to E830

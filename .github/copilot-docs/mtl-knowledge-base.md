@@ -776,8 +776,13 @@ Tests needing isolated `mtl_init`/`mtl_uninit` per test. DPDK EAL cannot
 re-init within one process, so each `NoCtxTest.*` case is run in its own
 `KahawaiTest` subprocess. `noctx/run.sh` enumerates cases via
 `--gtest_list_tests` and loops; the MCP `run_noctx_tests` tool does the same
-(accepts filters that match many cases). Requires 4 ports, 10s cooldown
-between processes.
+(accepts filters that match many cases). Requires 4 ports and waits 20s between
+processes, matching `run.sh`.
+
+Cases with a `_pf_` infix need a PF port, because VF drivers do not advertise
+TSN/launch-time pacing offload. `run_noctx_tests` excludes them; `noctx/run_pf.sh`
+and the MCP `run_noctx_pf_tests` tool run only those, against 2 PF ports, and
+wait 10s between processes.
 
 ### Fuzz Tests (`tests/fuzz/`)
 

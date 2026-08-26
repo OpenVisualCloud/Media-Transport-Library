@@ -133,7 +133,7 @@ jobs:
           git config user.name github-actions
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
-          git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
+          git apply ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}

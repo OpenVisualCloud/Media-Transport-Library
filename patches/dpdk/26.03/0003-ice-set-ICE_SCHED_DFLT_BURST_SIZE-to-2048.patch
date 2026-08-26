@@ -1,7 +1,7 @@
-From 65ee1358c09bd98cd08a16598b1822f820037558 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Tue, 21 Feb 2023 09:26:05 +0800
-Subject: [PATCH 3/6] ice: set ICE_SCHED_DFLT_BURST_SIZE to 2048
+Subject: [PATCH] ice: set ICE_SCHED_DFLT_BURST_SIZE to 2048
 
 For st2110 rl burst optimization
 

@@ -15,7 +15,7 @@ Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
  7 files changed, 109 insertions(+)
 
 diff --git a/drivers/net/intel/common/rx.h b/drivers/net/intel/common/rx.h
-index ea7fb98b47..6c8e49ac37 100644
+index e0bf520ebd..8abb2a3ce9 100644
 --- a/drivers/net/intel/common/rx.h
 +++ b/drivers/net/intel/common/rx.h
 @@ -113,6 +113,8 @@ struct ci_rx_queue {
@@ -28,10 +28,10 @@ index ea7fb98b47..6c8e49ac37 100644
  		struct { /* iavf specific values */
  			const struct iavf_rxq_ops *ops; /**< queue ops */
 diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
-index c721d135f5..047c4ab8a3 100644
+index 95bfc9b504..b5380e25b2 100644
 --- a/drivers/net/intel/ice/ice_ethdev.c
 +++ b/drivers/net/intel/ice/ice_ethdev.c
-@@ -282,6 +282,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+@@ -289,6 +289,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
  	.dev_set_link_down            = ice_dev_set_link_down,
  	.dev_led_on                   = ice_dev_led_on,
  	.dev_led_off                  = ice_dev_led_off,
@@ -40,10 +40,10 @@ index c721d135f5..047c4ab8a3 100644
  	.rx_queue_stop                = ice_rx_queue_stop,
  	.tx_queue_start               = ice_tx_queue_start,
 diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
-index 0cf2b3dec0..94733f433b 100644
+index 683de7c1fe..a4fc2240ed 100644
 --- a/drivers/net/intel/ice/ice_rxtx.c
 +++ b/drivers/net/intel/ice/ice_rxtx.c
-@@ -488,6 +488,17 @@ ice_alloc_rx_queue_mbufs(struct ci_rx_queue *rxq)
+@@ -487,6 +487,17 @@ ice_alloc_rx_queue_mbufs(struct ci_rx_queue *rxq)
  				return -ENOMEM;
  			}
  
@@ -61,7 +61,7 @@ index 0cf2b3dec0..94733f433b 100644
  			mbuf_pay->next = NULL;
  			mbuf_pay->data_off = RTE_PKTMBUF_HEADROOM;
  			mbuf_pay->nb_segs = 1;
-@@ -2098,6 +2109,16 @@ ice_rx_alloc_bufs(struct ci_rx_queue *rxq)
+@@ -2127,6 +2138,16 @@ ice_rx_alloc_bufs(struct ci_rx_queue *rxq)
  			rxdp[i].read.pkt_addr = dma_addr;
  		} else {
  			mb->next = rxq->sw_split_buf[i].mbuf;
@@ -78,7 +78,7 @@ index 0cf2b3dec0..94733f433b 100644
  			pay_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mb->next));
  			rxdp[i].read.hdr_addr = dma_addr;
  			rxdp[i].read.pkt_addr = pay_addr;
-@@ -2789,6 +2810,17 @@ ice_recv_pkts(void *rx_queue,
+@@ -2811,6 +2832,17 @@ ice_recv_pkts(void *rx_queue,
  				break;
  			}
  
@@ -96,7 +96,7 @@ index 0cf2b3dec0..94733f433b 100644
  			nmb->next = nmb_pay;
  			nmb_pay->next = NULL;
  
-@@ -4946,3 +4978,34 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
+@@ -4540,3 +4572,34 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
  
  
  }
@@ -132,10 +132,10 @@ index 0cf2b3dec0..94733f433b 100644
 +	return 0;
 +}
 diff --git a/drivers/net/intel/ice/ice_rxtx.h b/drivers/net/intel/ice/ice_rxtx.h
-index 141a62a7da..f01b69c194 100644
+index 999b6b30d6..7ed114ee94 100644
 --- a/drivers/net/intel/ice/ice_rxtx.h
 +++ b/drivers/net/intel/ice/ice_rxtx.h
-@@ -289,6 +289,8 @@ uint16_t ice_xmit_pkts_vec_avx512_offload(void *tx_queue,
+@@ -303,6 +303,8 @@ uint16_t ice_xmit_pkts_vec_avx512_offload(void *tx_queue,
  int ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc);
  int ice_tx_done_cleanup(void *txq, uint32_t free_cnt);
  int ice_get_monitor_addr(void *rx_queue, struct rte_power_monitor_cond *pmc);
@@ -145,10 +145,10 @@ index 141a62a7da..f01b69c194 100644
  
  #define FDIR_PARSING_ENABLE_PER_QUEUE(ad, on) do { \
 diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
-index 1255cd6f2c..f8f552996f 100644
+index 0f336f9567..fb8736d483 100644
 --- a/lib/ethdev/ethdev_driver.h
 +++ b/lib/ethdev/ethdev_driver.h
-@@ -1287,6 +1287,13 @@ typedef int (*eth_cman_config_set_t)(struct rte_eth_dev *dev,
+@@ -1292,6 +1292,13 @@ typedef int (*eth_cman_config_set_t)(struct rte_eth_dev *dev,
  typedef int (*eth_cman_config_get_t)(struct rte_eth_dev *dev,
  				struct rte_eth_cman_config *config);
  
@@ -162,7 +162,7 @@ index 1255cd6f2c..f8f552996f 100644
  /**
   * @internal
   * Dump Rx descriptor info to a file.
-@@ -1645,6 +1652,9 @@ struct eth_dev_ops {
+@@ -1652,6 +1659,9 @@ struct eth_dev_ops {
  	/** Dump Tx descriptor info */
  	eth_tx_descriptor_dump_t eth_tx_descriptor_dump;
  
@@ -173,10 +173,10 @@ index 1255cd6f2c..f8f552996f 100644
  	eth_cman_info_get_t cman_info_get;
  	/** Initialize congestion management structure with default values */
 diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
-index c6fe0d5165..1abca2760b 100644
+index 9efeaf77cb..cef967e8f3 100644
 --- a/lib/ethdev/rte_ethdev.c
 +++ b/lib/ethdev/rte_ethdev.c
-@@ -7263,6 +7263,23 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
+@@ -7316,6 +7316,23 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
  	return ret;
  }
  
@@ -201,10 +201,10 @@ index c6fe0d5165..1abca2760b 100644
  int
  rte_eth_dev_priv_dump(uint16_t port_id, FILE *file)
 diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
-index a66c2abbdb..72cf4cbdbb 100644
+index ee400b386f..07b061076d 100644
 --- a/lib/ethdev/rte_ethdev.h
 +++ b/lib/ethdev/rte_ethdev.h
-@@ -6948,6 +6948,20 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
+@@ -6985,6 +6985,20 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
  	return rte_eth_tx_buffer_flush(port_id, queue_id, buffer);
  }
  

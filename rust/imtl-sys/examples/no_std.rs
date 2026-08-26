@@ -15,8 +15,13 @@ fn main() {
             socket_id: 0,
             rl_burst_size: 0,
         };
+        let port_loss = mtl_debug_port_packet_loss {
+            tx_stream_loss_id: 0,
+            tx_stream_loss_divider: 0,
+        };
         let mut param = mtl_init_params {
             port: [port_p; 8],
+            port_packet_loss: [port_loss; 8],
             num_ports: 1,
             pmd: [0; 8],
             sip_addr: [[192, 168, 96, 1]; 8],
@@ -26,7 +31,7 @@ fn main() {
             rx_sessions_cnt_max: 1,
             lcores: null_mut(),
             main_lcore: 0,
-            dma_dev_port: [[0; 64]; 8],
+            dma_dev_port: [[0; 64]; 32],
             num_dma_dev_port: 0,
             log_level: mtl_log_level_MTL_LOG_LEVEL_INFO,
             flags: 0,

@@ -118,7 +118,10 @@ versions live in `versions.env` (DPDK, ICE, JPEG-XS, FFmpeg, xdp-tools, libbpf).
 ```bash
 ./checkpatch.sh             # verify everything — what CI and the git hooks run
 ./checkpatch.sh --staged    # verify staged files only
+./checkpatch.sh --files a.c # verify specific files
 ./format-coding.sh          # apply every autofix
+./format-coding.sh --staged # apply the autofixes to staged files only
+./format-coding.sh --files a.c # apply the autofixes to specific files
 ./format-coding.sh --check  # preview the blast radius, then restore the tree
 ```
 

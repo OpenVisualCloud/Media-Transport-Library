@@ -19,7 +19,7 @@ Signed-off-by: Soumyadeep Hore <soumyadeep.hore@intel.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
-index 31b74be9ba..40150748d8 100644
+index 8d709125f7..4c9bf43348 100644
 --- a/drivers/net/intel/ice/ice_rxtx.c
 +++ b/drivers/net/intel/ice/ice_rxtx.c
 @@ -778,6 +778,7 @@ ice_setup_txtime_ctx(struct ci_tx_queue *txq,

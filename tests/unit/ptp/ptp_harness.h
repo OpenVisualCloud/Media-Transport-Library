@@ -4,10 +4,11 @@
  * C harness API for the PTP servo / delta-adjustment unit tests.
  *
  * The harness wraps a single `struct mt_ptp_impl` driven entirely
- * in-process: `no_timesync` is forced true so every `rte_eth_timesync_*`
- * call is bypassed and replaced by the `no_timesync_delta` accumulator,
- * letting the PI servo and delta bookkeeping run with no NIC, no
- * hugepages, and no real PHC.
+ * in-process: `no_timesync` defaults to true, which bypasses every
+ * `rte_eth_timesync_*` call in favour of the `no_timesync_delta`
+ * accumulator; `PtpT3Test` clears it in the cases that must reach the
+ * tx-timestamp override. That lets the PI servo and delta bookkeeping
+ * run with no NIC, no hugepages, and no real PHC.
  *
  * Only an opaque typedef plus plain C declarations are exposed here so
  * the header is safe to include from the C++ gtest translation units; no
@@ -56,8 +57,8 @@ void ut_ptp_set_t3_deadline_ns(ut_ptp_ctx* ctx, uint64_t deadline_ns);
 void ut_ptp_set_read_tx_ret(int ret);
 /* Timestamp (ns) the mocked read returns on success (default 0). */
 void ut_ptp_set_read_tx_ns(uint64_t ns);
-/* Default is true (NIC bypassed). Set false to route the production
- * rte_eth_timesync wrappers through the harness overrides. */
+/* Default is true (NIC bypassed). Set false to let the production wrappers call
+ * `rte_eth_timesync_*`; only the tx-timestamp read resolves to a harness stub. */
 void ut_ptp_set_no_timesync(ut_ptp_ctx* ctx, bool no_timesync);
 void ut_ptp_set_coefficient(ut_ptp_ctx* ctx, double coefficient);
 void ut_ptp_set_last_sync_ts(ut_ptp_ctx* ctx, uint64_t last_sync_ts);

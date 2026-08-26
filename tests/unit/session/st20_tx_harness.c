@@ -6,8 +6,8 @@
  * Includes the production st_tx_video_session.c directly so the file-local
  * static functions (calc_frame_count_since_epoch, tv_sync_pacing,
  * validate_user_timestamp, transmission_start_time, ...) become visible in
- * this translation unit. Non-static symbols duplicate those in libmtl;
- * --allow-multiple-definition resolves this. USDT is disabled to avoid
+ * this translation unit. Non-static symbols duplicate those in libmtl; this
+ * object's definition preempts the shared library's. USDT is disabled to avoid
  * probe-semaphore link references.
  *
  * mt_get_tsc() is mocked with a preprocessor seam instead of any production

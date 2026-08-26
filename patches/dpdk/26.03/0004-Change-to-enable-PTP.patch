@@ -1,9 +1,9 @@
-From 1df44ba751ddd8d9831cfaa123475fc0db172da8 Mon Sep 17 00:00:00 2001
-From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+From nobody Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Mon, 31 Mar 2025 12:37:40 +0000
-Subject: [PATCH 4/6] Change to enable PTP
+Subject: [PATCH] Change to enable PTP
 
-Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
 ---
  drivers/net/intel/ice/ice_rxtx.c | 9 +++------
  1 file changed, 3 insertions(+), 6 deletions(-)

@@ -1,5 +1,5 @@
-From 4e71c19df2c34303214660ea7ff73da9674ba405 Mon Sep 17 00:00:00 2001
-From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
 Date: Wed, 29 Apr 2026 03:15:36 -0400
 Subject: [PATCH] config: add mtl version to version string
 
@@ -12,7 +12,7 @@ The VERSION file is updated to 26.03.0_mtl_ and config/meson.build
 gains an elif branch (similar to the existing -rc handling) that parses
 the suffix and sets RTE_VER_SUFFIX / RTE_VER_RELEASE accordingly.
 
-Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
 ---
  VERSION            | 2 +-
  config/meson.build | 5 +++++

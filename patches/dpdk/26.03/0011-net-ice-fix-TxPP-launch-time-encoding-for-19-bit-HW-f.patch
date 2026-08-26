@@ -1,7 +1,7 @@
-From a1b2c3d4e5f60718293a4b5c6d7e8f9011223344 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Mon, 22 Jun 2026 12:00:00 +0200
-Subject: [PATCH 11/13] net/ice: fix TxPP launch time encoding for 19-bit HW
+Subject: [PATCH] net/ice: fix TxPP launch time encoding for 19-bit HW
  field
 
 The E830 Tx packet pacing (TxPP) launch-time descriptor stores the launch

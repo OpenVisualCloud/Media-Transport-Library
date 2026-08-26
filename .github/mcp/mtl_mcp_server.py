@@ -82,9 +82,291 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 def _validate_bdf(bdf: str) -> str | None:
     """Return error string if BDF is invalid, else None."""
-    if not re.match(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d$", bdf):
+    if not re.fullmatch(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d", bdf):
         return f"Error: invalid BDF format '{bdf}'. Expected format: 0000:af:00.0"
     return None
+
+
+# Enumerated KahawaiTest option values, derived from the getopt_long table in
+# tests/integration_tests/tests.cpp (--pacing_way at :256, --log_level at :174).
+_PACING_WAYS = ("auto", "rl", "tsn", "tsc", "ptp", "be")
+_LOG_LEVELS = ("debug", "info", "notice", "warning", "error")
+
+# libmtl.so declares neither RPATH nor RUNPATH, and DT_RUNPATH does not pass
+# from the test binary to its dependents, so libmtl's NEEDED librte_eal.so.26
+# resolves from ld.so.cache — where a sibling checkout's /etc/ld.so.conf.d entry
+# can precede /usr/local. Forcing this path is what makes the recorded run name
+# the DPDK under test.
+DEFAULT_LD_LIBRARY_PATH = "/usr/local/lib/x86_64-linux-gnu"
+
+# The trust bound is not root-writability — the two checkouts are user-owned —
+# but that each tree is writable only by the operator who already drives the
+# sudo this path crosses. A fourth prefix does not inherit that argument.
+_LD_PATH_PREFIXES = (
+    "/usr/local/lib",
+    str(REPO_ROOT),
+    str(REPO_ROOT.parent / "Media-Transport-Library" / ".local_install"),
+)
+
+_GTEST_FILTER_RE = re.compile(r"[a-zA-Z0-9_.*:/-]+")
+_LD_PATH_DIR = r"/[A-Za-z0-9_.+-]+(?:/[A-Za-z0-9_.+-]+)*/?"
+_LD_PATH_RE = re.compile(rf"{_LD_PATH_DIR}(?::{_LD_PATH_DIR})*")
+# Well under MAX_ARG_STRLEN, so an over-long path is a tool error rather than an
+# execve E2BIG escaping _run_rc, which catches only TimeoutExpired.
+_LD_PATH_MAX = 4096
+# The wordings sudo refuses with; its `sudo: ` prefix also fronts benign warnings.
+# Offsets are `strings -a /usr/libexec/sudo/sudoers.so` (sudo 1.9.15p5, 3994 lines);
+# the PAM arms come from `objdump -d`, not inference. IGNORECASE covers the three
+# clauses cased unlike the catalogue: `sorry, user` (:3261, :3262), `password
+# expired` (:2825), `account expired` (:2826).
+_SUDO_REFUSAL_RE = re.compile(
+    r"^.*(?:a password is required"
+    r"|is not in the sudoers file"
+    r"|is not allowed to run sudo"
+    r"|must have a tty"
+    r"|password (?:is )?expired"
+    r"|account expired"
+    r"|PAM account management error"
+    r"|account validation failure"
+    r"|sorry, user).*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+# The `pam_acct_mgmt` arms no warm cache can clear — a service error, a locked
+# account, three expiries. :2827 is both the `default` and the rc 6/9/11 target, so
+# 23 of the switch's 28 codes land there, PAM_SERVICE_ERR and PAM_SYSTEM_ERR too.
+_SUDO_PAM_ACCOUNT_WORDINGS = (
+    "pam account management error",
+    "account validation failure",
+    "account or password is expired",
+    "password expired",
+    "account expired",
+)
+# What `_run_rc` writes into the output it returns with rc -1 (mtl_setup_common.py).
+_TIMEOUT_MARKER = "*** TIMEOUT"
+_GTEST_PROGRESS_RE = re.compile(r"^\[\s+(?:RUN|PASSED|FAILED)\s+\]", re.MULTILINE)
+_DPDK_VERSION_RE = re.compile(r"dpdk version:\s*(\S.*?)\s*$", re.MULTILINE)
+_DPDK_UNKNOWN = "UNKNOWN — banner not in output; do not record this run"
+
+
+def _validate_choice(label: str, value: str, allowed: tuple[str, ...]) -> str | None:
+    """Return error string if a non-empty value is outside the allowlist."""
+    if value and value not in allowed:
+        return f"Error: invalid {label} '{value}'. Use one of: {', '.join(allowed)}"
+    return None
+
+
+def _validate_bdf_list(label: str, value: str) -> str | None:
+    """Return error string naming element N of `label` if it is not a BDF.
+
+    Not stripped: callers emit `value` unchanged, so tolerating whitespace here
+    would put a string in argv that the scalar `_validate_bdf` rejects.
+    """
+    for idx, part in enumerate(value.split(","), start=1):
+        err = _validate_bdf(part)
+        if err:
+            return f"Error: {label}_{idx} — {err.removeprefix('Error: ')}"
+    return None
+
+
+def _validate_ld_library_path(path: str) -> str | None:
+    """Return error string unless every element is an allowlisted absolute path.
+
+    Compared lexically, never through resolve(): the loader receives the literal
+    string, so accepting a string outside the allowlist because it happens to
+    resolve inside it would let the symlink be re-pointed after the check.
+    """
+    if not path:
+        return None
+    if len(path) > _LD_PATH_MAX:
+        return (
+            f"Error: ld_library_path is {len(path)} characters; the limit is "
+            f"{_LD_PATH_MAX}."
+        )
+    if not _LD_PATH_RE.fullmatch(path):
+        return (
+            f"Error: invalid ld_library_path '{path}'. Expected colon-separated "
+            "absolute paths, e.g. /usr/local/lib/x86_64-linux-gnu"
+        )
+    for element in path.split(":"):
+        if ".." in element.split("/"):
+            return f"Error: ld_library_path element '{element}' contains '..'."
+        if not any(
+            element == prefix or element.startswith(prefix + "/")
+            for prefix in _LD_PATH_PREFIXES
+        ):
+            return (
+                f"Error: ld_library_path element '{element}' is outside the "
+                f"allowlist. Allowed prefixes: {', '.join(_LD_PATH_PREFIXES)}"
+            )
+    return None
+
+
+def _env_prefix(ld_library_path: str) -> list[str]:
+    """Build the `env VAR=...` prefix that sets the loader search path."""
+    if not ld_library_path:
+        return []
+    return ["env", f"LD_LIBRARY_PATH={ld_library_path}"]
+
+
+def _sudo_env_prefix(ld_library_path: str) -> list[str]:
+    """Build the `sudo env VAR=...` prefix that re-adds LD_LIBRARY_PATH after sudo.
+
+    `sudo -E` cannot help: /usr/bin/sudo is setuid root, so glibc's
+    secure-execution mode drops LD_* at the exec of sudo itself, before sudo
+    reads any option — leaving the loader on its cache order.
+    """
+    return ["sudo", "-n", *_env_prefix(ld_library_path)]
+
+
+def _sudo_credential_error(out: str) -> str:
+    """Return an error naming sudo when `sudo -n` refused, else "".
+
+    No `rc == 0` veto. The invariant is that every clause holds a space, which
+    all seven caller-controlled parameters reject, so no caller can plant one.
+    Corroborating that, `strings -a` over the objects this tool's own argv loads
+    on this host — sudo and its PAM stack first, then librte_*, libmtl, libgtest,
+    KahawaiTest, libc, libstdc++ and the loader — puts no clause on a path to
+    captured stderr except as a genuine refusal. The sweep is host-dependent and
+    the space rejection is not, which is why the invariant carries the argument.
+
+    `pam_unix.so`, the only clause-carrying module in sudo's account stack on this host, matches too,
+    and soundly: its `(account expired)` wording is a `pam_syslog` argument, so
+    it never reaches the caller, while the `(password expired)` one is user-facing
+    through `pam_prompt` — matched correctly, because an account phase demanding
+    an immediate password change is a refusal `sudo -n` cannot get past.
+
+    A kill outranks a refusal because a killed run is what the caller must act
+    on first, whatever else the output holds.
+    """
+    if _TIMEOUT_MARKER in out:
+        return ""
+    match = _SUDO_REFUSAL_RE.search(out)
+    if not match:
+        return ""
+    wording = match.group(0).strip()
+    if any(w in wording.lower() for w in _SUDO_PAM_ACCOUNT_WORDINGS):
+        return (
+            f"Error: sudo's PAM account check refused this command — {wording}\n"
+            "This is not a test failure, and no credential cache can clear it."
+        )
+    return (
+        f"Error: sudo refused this command — {wording}\n"
+        "This is a credential failure, not a test failure. Warm the sudo "
+        "credential cache in a terminal on this host, then retry."
+    )
+
+
+def _parse_noctx_listing(listing: str, pf_only: bool) -> list[str]:
+    """Return the NoCtxTest case names in a `--gtest_list_tests` dump.
+
+    Listing format is "NoCtxTest.\\n  case_a\\n  case_b\\n", one suite header per
+    block, so a foreign suite's cases must not leak in. The binary also prints
+    ~19 unindented diagnostic lines around the block; each merely resets the
+    current suite, which is why only indentation selects a name. `pf_only` keeps
+    the same cases run_pf.sh:56 selects, but client-side, because this tool's
+    filter text can land either side of the `_pf_` infix.
+    """
+    names: list[str] = []
+    current_suite = ""
+    for raw in listing.splitlines():
+        if not raw:
+            continue
+        if not raw.startswith(" "):
+            current_suite = raw.strip().rstrip(".")
+            continue
+        name = raw.strip()
+        if not name or current_suite != "NoCtxTest":
+            continue
+        if pf_only and "_pf_" not in name:
+            continue
+        names.append(name)
+    return names
+
+
+def _extract_dpdk_version(out: str) -> str:
+    """Return the DPDK version from the mtl_init banner, or "" if not logged."""
+    match = _DPDK_VERSION_RE.search(out)
+    return match.group(1) if match else ""
+
+
+def _build_gtest_cmd(
+    binary: str,
+    p_port: str,
+    r_port: str,
+    gtest_filter: str = "",
+    dma_dev: str = "",
+    auto_start_stop: bool = True,
+    pacing_way: str = "",
+    log_level: str = "notice",
+    ld_library_path: str = DEFAULT_LD_LIBRARY_PATH,
+) -> tuple[list[str], str]:
+    """Build the KahawaiTest argv, or return ([], error) for rejected input."""
+    for label, bdf in (("p_port", p_port), ("r_port", r_port)):
+        err = _validate_bdf(bdf)
+        if err:
+            return [], f"Error: {label} — {err.removeprefix('Error: ')}"
+
+    checks = [
+        _validate_bdf_list("dma_dev", dma_dev) if dma_dev else None,
+        _validate_choice("pacing_way", pacing_way, _PACING_WAYS),
+        _validate_choice("log_level", log_level, _LOG_LEVELS),
+        _validate_ld_library_path(ld_library_path),
+    ]
+    if gtest_filter and not _GTEST_FILTER_RE.fullmatch(gtest_filter):
+        checks.append(
+            "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
+        )
+    for err in checks:
+        if err:
+            return [], err
+
+    cmd = _sudo_env_prefix(ld_library_path)
+    cmd += [binary, "--p_port", p_port, "--r_port", r_port]
+    if auto_start_stop:
+        cmd.append("--auto_start_stop")
+    if log_level:
+        cmd += ["--log_level", log_level]
+    if pacing_way:
+        cmd += ["--pacing_way", pacing_way]
+    if dma_dev:
+        cmd += ["--dma_dev", dma_dev]
+    if gtest_filter:
+        cmd.append(f"--gtest_filter={gtest_filter}")
+    return cmd, ""
+
+
+def _build_noctx_cmd(
+    binary: str,
+    port_list: str,
+    gtest_filter: str,
+    list_tests: bool = False,
+    ld_library_path: str = DEFAULT_LD_LIBRARY_PATH,
+) -> tuple[list[str], str]:
+    """Build one NoCtxTest argv, or return ([], error) for rejected input.
+
+    `gtest_filter` names exactly one case for a run; the listing form takes the
+    enumeration pattern. The NoCtx fixture forces INFO
+    (tests/integration_tests/noctx/core/test_fixture.cpp:67), so there is no
+    log_level to pass — the banner always prints.
+
+    Enumeration needs no root (tests.cpp:800-806 skips mtl_init) but still forces
+    the loader path, because ld.so resolves NEEDED at every exec.
+    """
+    checks = [
+        _validate_bdf_list("port", port_list),
+        _validate_ld_library_path(ld_library_path),
+    ]
+    if not _GTEST_FILTER_RE.fullmatch(gtest_filter):
+        checks.append("Error: invalid gtest_filter characters")
+    for err in checks:
+        if err:
+            return [], err
+
+    prefix = _env_prefix if list_tests else _sudo_env_prefix
+    cmd = prefix(ld_library_path) + [binary, "--no_ctx_tests"]
+    cmd.append("--gtest_list_tests" if list_tests else "--auto_start_stop")
+    cmd += [f"--port_list={port_list}", f"--gtest_filter={gtest_filter}"]
+    return cmd, ""
 
 
 def _int_or_default(text: str, default: int = 0) -> int:
@@ -1012,12 +1294,15 @@ def run_gtest(
     dma_dev: str = "",
     timeout_seconds: int = 600,
     auto_start_stop: bool = True,
+    pacing_way: str = "",
+    log_level: str = "notice",
+    ld_library_path: str = DEFAULT_LD_LIBRARY_PATH,
 ) -> str:
     """
     Run MTL integration tests (KahawaiTest).
 
     Auto-discovers VF ports if not specified. Returns structured pass/fail
-    counts and failure details.
+    counts, failure details, and the DPDK version the run actually loaded.
 
     Args:
         p_port: Primary port BDF (e.g. '0000:c9:01.0'). Auto-discovered if empty.
@@ -1026,6 +1311,18 @@ def run_gtest(
         dma_dev: Comma-separated DMA devices for DMA tests (e.g. '0000:00:01.0,0000:00:01.1').
         timeout_seconds: Max seconds for test run (default 600).
         auto_start_stop: Pass --auto_start_stop flag (default True).
+        pacing_way: TX pacing mode — auto, rl, tsn, tsc, ptp or be. Binary
+                    default (auto) if empty. 'rl' needs a PF port.
+        log_level: MTL log level — debug, info, notice, warning or error.
+                   Default 'notice', the quietest level that still prints the
+                   `dpdk version:` banner; the binary itself defaults to
+                   'error', which mutes it.
+        ld_library_path: Colon-separated absolute paths forced into the run via
+                    `sudo env LD_LIBRARY_PATH=...`. Defaults to the MTL DPDK in
+                    /usr/local. Pass '' to accept the loader cache order, which
+                    can serve another checkout's DPDK of the same soname. Every
+                    element must sit under /usr/local/lib, this checkout, or the
+                    sibling checkout's .local_install.
     """
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
@@ -1053,26 +1350,39 @@ def run_gtest(
         if not r_port:
             r_port = vfs[1].strip()
 
-    # Validate BDF inputs
-    for label, bdf in [("p_port", p_port), ("r_port", r_port)]:
-        err = _validate_bdf(bdf)
-        if err:
-            return f"Error: {label} — {err}"
+    cmd_parts, build_err = _build_gtest_cmd(
+        str(binary),
+        p_port=p_port,
+        r_port=r_port,
+        gtest_filter=gtest_filter,
+        dma_dev=dma_dev,
+        auto_start_stop=auto_start_stop,
+        pacing_way=pacing_way,
+        log_level=log_level,
+        ld_library_path=ld_library_path,
+    )
+    if build_err:
+        return build_err
 
-    # Sanitize gtest_filter — only allow gtest filter characters
-    if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
-        return "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
-
-    # Build command as list for safe execution
-    cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
-    if auto_start_stop:
-        cmd_parts.append("--auto_start_stop")
-    if dma_dev:
-        cmd_parts.extend(["--dma_dev", dma_dev])
-    if gtest_filter:
-        cmd_parts.append(f"--gtest_filter={gtest_filter}")
-
-    out = _run_output(cmd_parts, timeout=timeout_seconds)
+    rc, out = _run_rc(cmd_parts, timeout=timeout_seconds)
+    cred_err = _sudo_credential_error(out)
+    if cred_err:
+        return f"{cred_err}\n\n{_summarize_output('gtest', out, rc=rc)}"
+    if _TIMEOUT_MARKER in out:
+        advice = (
+            "Raise `timeout_seconds` or narrow `gtest_filter`."
+            if _GTEST_PROGRESS_RE.search(out)
+            else "No case reported starting, so the run may not have started at "
+            "all — read the log below before raising `timeout_seconds`."
+        )
+        # The counters below would read a killed run as a clean run of 0 tests.
+        # No `rc=`: the headline carries the verdict, and -1 is the harness
+        # sentinel, not an exit code the binary produced.
+        return (
+            f"Error: TIMEOUT — the run was killed after {timeout_seconds}s, so no "
+            f"result was produced. {advice}\n\n"
+            f"{_summarize_output('gtest', out)}"
+        )
 
     # Parse results
     passed = 0
@@ -1098,16 +1408,145 @@ def run_gtest(
                 total = int(m.group(1))
 
     cmd_display = " ".join(cmd_parts)
+    dpdk = _extract_dpdk_version(out) or (
+        f"{_DPDK_UNKNOWN} (needs log_level notice or lower)"
+    )
     summary = (
         f"## GTest Results\n"
         f"- Command: `{cmd_display}`\n"
+        f"- DPDK loaded: {dpdk}\n"
         f"- Total: {total}, Passed: {passed}, Failed: {failed}\n"
     )
     if failures:
         summary += "\n### Failed Tests\n" + "\n".join(f"- {f}" for f in failures)
 
     summary += sim_hint
-    return f"{summary}\n\n{_summarize_output('gtest', out)}"
+    return f"{summary}\n\n{_summarize_output('gtest', out, rc=rc)}"
+
+
+def _run_noctx_series(
+    ports: list[str],
+    list_filter: str,
+    *,
+    timeout_seconds: int,
+    cooldown_seconds: int,
+    ld_library_path: str,
+    pf_only: bool = False,
+) -> str:
+    """Enumerate NoCtxTest cases, then run each one in its own process.
+
+    DPDK EAL cannot re-init inside a PID, so one process per case is the whole
+    point — the same loop tests/integration_tests/noctx/run.sh and run_pf.sh
+    walk. Port count, the `_pf_` infix and the cooldown come from the caller;
+    neither script's `--gtest_output=xml` is reproduced, since the caller reads
+    the returned text.
+    """
+    binary = REPO_ROOT / "build/tests/KahawaiTest"
+    if not binary.is_file():
+        return "Error: KahawaiTest not built. Run `build_mtl` first."
+
+    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
+    port_list = ",".join(ports)
+
+    list_cmd, err = _build_noctx_cmd(
+        str(binary),
+        port_list,
+        list_filter,
+        list_tests=True,
+        ld_library_path=ld_library_path,
+    )
+    if err:
+        return err
+
+    rc, listing = _run_rc(list_cmd, timeout=60)
+    if _TIMEOUT_MARKER in listing:
+        return (
+            "Error: enumerating NoCtxTest cases timed out after 60s; the binary "
+            f"never listed them.\nListing output:\n{listing}"
+        )
+    if rc != 0:
+        # A loader failure lists zero cases too; only the rc tells them apart.
+        return (
+            f"Error: enumerating NoCtxTest cases failed (exit {rc}).\n"
+            f"Listing output:\n{listing}"
+        )
+    test_names = _parse_noctx_listing(listing, pf_only)
+
+    if not test_names:
+        # Zero `_pf_` cases is legitimate on a VF-only host, matching run_pf.sh's
+        # exit 0; zero cases in the full suite means the filter matched nothing.
+        headline = (
+            f"No PF-only (name contains '_pf_') NoCtxTest cases matched filter "
+            f"'{list_filter}'."
+            if pf_only
+            else f"Error: no NoCtxTest cases matched filter '{list_filter}'."
+        )
+        return f"{headline}\nListing output:\n{listing}"
+
+    sections: list[str] = []
+    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
+    dpdk_versions: list[str] = []
+    abort_note = ""
+    for idx, name in enumerate(test_names):
+        full = f"NoCtxTest.{name}"
+        out = ""
+        run_cmd, err = _build_noctx_cmd(
+            str(binary), port_list, full, ld_library_path=ld_library_path
+        )
+        if not err:
+            rc, out = _run_rc(run_cmd, timeout=timeout_seconds)
+            err = _sudo_credential_error(out)
+        if err:
+            # Break, not return: `sections` is the only copy of any case's output.
+            abort_note = f"{err}\nAborted after {idx} of {len(test_names)} cases."
+            sections.append(f"===== {full}: ABORTED =====\n{out}\n")
+            break
+        if _TIMEOUT_MARKER in out:
+            status = "TIMEOUT"
+        elif rc == 0 and re.search(r"\[\s+PASSED\s+\]\s+1\s+test", out):
+            status = "PASS"
+        else:
+            status = "FAIL"
+        version = _extract_dpdk_version(out)
+        if version and version not in dpdk_versions:
+            dpdk_versions.append(version)
+        results.append((name, status))
+        sections.append(f"===== {full}: {status} =====\n{out}\n")
+        if idx < len(test_names) - 1 and cooldown_seconds > 0:
+            time.sleep(cooldown_seconds)
+
+    combined = "\n".join(sections)
+    log_path = _save_test_log("noctx_pf" if pf_only else "noctx", combined)
+
+    passed = sum(1 for _, s in results if s == "PASS")
+    failed = sum(1 for _, s in results if s != "PASS")
+    status = "PASSED" if failed == 0 and not abort_note else "FAILED"
+
+    per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
+    last_failure = ""
+    for name, st in results:
+        if st != "PASS":
+            for sec in sections:
+                if sec.startswith(f"===== NoCtxTest.{name}:"):
+                    tail = "\n".join(sec.splitlines()[-30:])
+                    last_failure = (
+                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
+                        f"```\n{tail}\n```"
+                    )
+                    break
+            break
+
+    return (f"{abort_note}\n\n" if abort_note else "") + (
+        f"## Noctx{' PF' if pf_only else ''} Test Results\n"
+        f"- Status: {status}\n"
+        f"- Ports: {port_list}\n"
+        f"- DPDK loaded: {', '.join(dpdk_versions) or _DPDK_UNKNOWN}\n"
+        f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
+        f"- Full log: `{log_path}`\n"
+        f"\n### Per-test results\n{per_test}\n"
+        f"{last_failure}"
+        f"{sim_hint if results else ''}"
+    )
 
 
 @mcp.tool()
@@ -1118,7 +1557,8 @@ def run_noctx_tests(
     port_4: str = "",
     gtest_filter: str = "",
     timeout_seconds: int = 600,
-    cooldown_seconds: int = 10,
+    cooldown_seconds: int = 20,
+    ld_library_path: str = DEFAULT_LD_LIBRARY_PATH,
 ) -> str:
     """
     Run MTL no-context (noctx) integration tests.
@@ -1142,7 +1582,15 @@ def run_noctx_tests(
         gtest_filter: Gtest filter scoped to NoCtxTest (e.g. '*nonsplit*' or
                       'NoCtxTest.st40i_*'). All NoCtxTest cases if empty.
         timeout_seconds: Max seconds per individual test process (default 600).
-        cooldown_seconds: Sleep between tests (default 10).
+        cooldown_seconds: Sleep between tests (default 20, matching run.sh:17 —
+                      shorter makes DPDK re-init flakiness look like a defect in
+                      the code under test).
+        ld_library_path: Colon-separated absolute paths forced into every run
+                      via `sudo env LD_LIBRARY_PATH=...`. Defaults to the MTL
+                      DPDK in /usr/local. Pass '' to accept the loader cache
+                      order, which can serve another checkout's DPDK. Every
+                      element must sit under /usr/local/lib, this checkout, or
+                      the sibling checkout's .local_install.
     """
 
     # Auto-discover only if the caller supplied nothing; otherwise respect
@@ -1166,24 +1614,6 @@ def run_noctx_tests(
             "or supply port_1..port_4 explicitly."
         )
 
-    # Validate the BDFs we ended up with
-    for idx, bdf in enumerate(ports, start=1):
-        err = _validate_bdf(bdf)
-        if err:
-            return f"Error: port_{idx} — {err}"
-
-    # Sanitize gtest_filter
-    if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
-        return "Error: invalid gtest_filter characters"
-
-    binary = REPO_ROOT / "build/tests/KahawaiTest"
-    if not binary.is_file():
-        return "Error: KahawaiTest not built. Run `build_mtl` first."
-
-    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
-
-    port_list = ",".join(ports)
-
     # Default to all NoCtxTest cases; scope user filter to NoCtxTest.*
     if not gtest_filter:
         list_filter = "NoCtxTest.*"
@@ -1198,85 +1628,12 @@ def run_noctx_tests(
     if "-" not in list_filter:
         list_filter = f"{list_filter}-NoCtxTest.*_pf_*"
 
-    # Enumerate matching test names (one process per test below)
-    listing = _run_output(
-        f"{binary} --gtest_list_tests --no_ctx"
-        f" --port_list={port_list}"
-        f" --gtest_filter={list_filter}",
-        timeout=60,
-    )
-    # Output format: "NoCtxTest.\n  test_a\n  test_b\n"
-    test_names: list[str] = []
-    current_suite = ""
-    for raw in listing.splitlines():
-        if not raw or raw.startswith(("DISABLED", "Note:")):
-            continue
-        if not raw.startswith(" "):
-            current_suite = raw.strip().rstrip(".")
-        else:
-            name = raw.strip()
-            if name and current_suite == "NoCtxTest":
-                test_names.append(name)
-
-    if not test_names:
-        return (
-            f"Error: no NoCtxTest cases matched filter '{list_filter}'.\n"
-            f"Listing output:\n{listing}"
-        )
-
-    # Run each test in its own process; collect per-test results
-    sections: list[str] = []
-    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
-    for idx, name in enumerate(test_names):
-        full = f"NoCtxTest.{name}"
-        out = _run_output(
-            f"{binary} --auto_start_stop"
-            f" --port_list={port_list}"
-            f" --gtest_filter={full}"
-            f" --no_ctx_tests",
-            timeout=timeout_seconds,
-        )
-        if "*** TIMEOUT" in out:
-            status = "TIMEOUT"
-        elif re.search(r"\[\s+PASSED\s+\]\s+1\s+test", out):
-            status = "PASS"
-        else:
-            status = "FAIL"
-        results.append((name, status))
-        sections.append(f"===== {full}: {status} =====\n{out}\n")
-        if idx < len(test_names) - 1 and cooldown_seconds > 0:
-            time.sleep(cooldown_seconds)
-
-    combined = "\n".join(sections)
-    log_path = _save_test_log("noctx", combined)
-
-    passed = sum(1 for _, s in results if s == "PASS")
-    failed = sum(1 for _, s in results if s != "PASS")
-    status = "PASSED" if failed == 0 else "FAILED"
-
-    per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
-    last_failure = ""
-    for name, st in results:
-        if st != "PASS":
-            for sec in sections:
-                if sec.startswith(f"===== NoCtxTest.{name}:"):
-                    tail = "\n".join(sec.splitlines()[-30:])
-                    last_failure = (
-                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
-                        f"```\n{tail}\n```"
-                    )
-                    break
-            break
-
-    return (
-        f"## Noctx Test Results\n"
-        f"- Status: {status}\n"
-        f"- Ports: {port_list}\n"
-        f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
-        f"- Full log: `{log_path}`\n"
-        f"\n### Per-test results\n{per_test}\n"
-        f"{last_failure}"
-        f"{sim_hint}"
+    return _run_noctx_series(
+        ports,
+        list_filter,
+        timeout_seconds=timeout_seconds,
+        cooldown_seconds=cooldown_seconds,
+        ld_library_path=ld_library_path,
     )
 
 
@@ -1287,6 +1644,7 @@ def run_noctx_pf_tests(
     gtest_filter: str = "",
     timeout_seconds: int = 600,
     cooldown_seconds: int = 10,
+    ld_library_path: str = DEFAULT_LD_LIBRARY_PATH,
 ) -> str:
     """
     Run the NoCtxTest cases that require PF ports (mirrors
@@ -1307,7 +1665,14 @@ def run_noctx_pf_tests(
                       include "_pf_" yourself, it's required separately.
                       All `_pf_` cases if empty.
         timeout_seconds: Max seconds per individual test process (default 600).
-        cooldown_seconds: Sleep between tests (default 10).
+        cooldown_seconds: Sleep between tests (default 10, matching
+                      run_pf.sh:94).
+        ld_library_path: Colon-separated absolute paths forced into every run
+                      via `sudo env LD_LIBRARY_PATH=...`. Defaults to the MTL
+                      DPDK in /usr/local. Pass '' to accept the loader cache
+                      order, which can serve another checkout's DPDK. Every
+                      element must sit under /usr/local/lib, this checkout, or
+                      the sibling checkout's .local_install.
     """
 
     if not any([port_1, port_2]):
@@ -1330,22 +1695,6 @@ def run_noctx_pf_tests(
             "supply port_1/port_2 explicitly."
         )
 
-    for idx, bdf in enumerate(ports, start=1):
-        err = _validate_bdf(bdf)
-        if err:
-            return f"Error: port_{idx} — {err}"
-
-    if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
-        return "Error: invalid gtest_filter characters"
-
-    binary = REPO_ROOT / "build/tests/KahawaiTest"
-    if not binary.is_file():
-        return "Error: KahawaiTest not built. Run `build_mtl` first."
-
-    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
-
-    port_list = ",".join(ports)
-
     # Scope to NoCtxTest, same convention as run_noctx_tests: don't assume
     # where "_pf_" falls relative to the caller's filter text (the naming
     # convention puts the descriptive prefix *before* "_pf_", e.g.
@@ -1359,82 +1708,13 @@ def run_noctx_pf_tests(
     else:
         list_filter = f"NoCtxTest.*{gtest_filter}*"
 
-    listing = _run_output(
-        f"{binary} --gtest_list_tests --no_ctx"
-        f" --port_list={port_list}"
-        f" --gtest_filter={list_filter}",
-        timeout=60,
-    )
-    test_names: list[str] = []
-    current_suite = ""
-    for raw in listing.splitlines():
-        if not raw or raw.startswith(("DISABLED", "Note:")):
-            continue
-        if not raw.startswith(" "):
-            current_suite = raw.strip().rstrip(".")
-        else:
-            name = raw.strip()
-            if name and current_suite == "NoCtxTest" and "_pf_" in name:
-                test_names.append(name)
-
-    if not test_names:
-        return (
-            f"No PF-only (name contains '_pf_') NoCtxTest cases matched filter "
-            f"'{list_filter}'.\nListing output:\n{listing}"
-        )
-
-    sections: list[str] = []
-    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
-    for idx, name in enumerate(test_names):
-        full = f"NoCtxTest.{name}"
-        out = _run_output(
-            f"{binary} --auto_start_stop"
-            f" --port_list={port_list}"
-            f" --gtest_filter={full}"
-            f" --no_ctx_tests",
-            timeout=timeout_seconds,
-        )
-        if "*** TIMEOUT" in out:
-            status = "TIMEOUT"
-        elif re.search(r"\[\s+PASSED\s+\]\s+1\s+test", out):
-            status = "PASS"
-        else:
-            status = "FAIL"
-        results.append((name, status))
-        sections.append(f"===== {full}: {status} =====\n{out}\n")
-        if idx < len(test_names) - 1 and cooldown_seconds > 0:
-            time.sleep(cooldown_seconds)
-
-    combined = "\n".join(sections)
-    log_path = _save_test_log("noctx_pf", combined)
-
-    passed = sum(1 for _, s in results if s == "PASS")
-    failed = sum(1 for _, s in results if s != "PASS")
-    status = "PASSED" if failed == 0 else "FAILED"
-
-    per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
-    last_failure = ""
-    for name, st in results:
-        if st != "PASS":
-            for sec in sections:
-                if sec.startswith(f"===== NoCtxTest.{name}:"):
-                    tail = "\n".join(sec.splitlines()[-30:])
-                    last_failure = (
-                        f"\n### First failure: NoCtxTest.{name} (last 30 lines)\n"
-                        f"```\n{tail}\n```"
-                    )
-                    break
-            break
-
-    return (
-        f"## Noctx PF Test Results\n"
-        f"- Status: {status}\n"
-        f"- Ports: {port_list}\n"
-        f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
-        f"- Full log: `{log_path}`\n"
-        f"\n### Per-test results\n{per_test}\n"
-        f"{last_failure}"
-        f"{sim_hint}"
+    return _run_noctx_series(
+        ports,
+        list_filter,
+        timeout_seconds=timeout_seconds,
+        cooldown_seconds=cooldown_seconds,
+        ld_library_path=ld_library_path,
+        pf_only=True,
     )
 
 

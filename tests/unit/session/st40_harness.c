@@ -12,9 +12,8 @@
 /*
  * Include the production .c directly so that all static functions
  * (rx_ancillary_session_handle_pkt, rx_ancillary_session_reset, etc.)
- * become visible in this translation unit.  Non-static symbols will
- * duplicate those in libmtl; the linker flag --allow-multiple-definition
- * is used to resolve this safely (identical code).
+ * become visible in this translation unit.  Non-static symbols duplicate
+ * those in libmtl; this object's definition preempts the shared library's.
  * Disable USDT to avoid linker references to probe semaphores.
  */
 #undef MTL_HAS_USDT
