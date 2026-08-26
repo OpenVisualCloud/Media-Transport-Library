@@ -22,6 +22,11 @@ bind_kernel() {
 
 case "$operation" in
 print-environment) env | grep TEST_ || true ;;
+read-dpdk-version)
+	# shellcheck source=/dev/null
+	. "${root_dir}/versions.env"
+	echo "DPDK_VERSION=${DPDK_VER:?}" >>"${GITHUB_ENV:?}"
+	;;
 verify-dependencies)
 	# A CI job never installs onto the runner: apt during a job mutates a shared
 	# host, races with other jobs on it and hides drift in the host image. The

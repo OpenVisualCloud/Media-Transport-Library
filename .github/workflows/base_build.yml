@@ -75,19 +75,9 @@ jobs:
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         run: sudo -E .github/scripts/setup_environment.sh
 
-      # HOOK_RUST above builds rust/, but cargo skips examples, so this bindgen struct
-      # literal over mtl_init_params never sees a compiler. Only this one example: the
-      # imtl-rs examples need libsdl2-dev. No ancestor manifest declares [workspace], so
-      # imtl-sys resolves its own lock and needs the same `home` pin HOOK_RUST applies --
-      # apt rustc cannot build current `home`. sudo -E matches HOOK_RUST, whose cargo
-      # populated the ~/.cargo registry as root.
       - name: Build the Rust no_std example
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
-        working-directory: rust/imtl-sys
-        run: |
-          . "${GITHUB_WORKSPACE}/versions.env"
-          sudo -E cargo update home --precise "${RUST_HOOK_CARGO_VER}"
-          sudo -E cargo build --example no_std
+        run: bash .github/scripts/ci/build-rust-example.sh
 
       - name: 'upload release build artifacts'
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}

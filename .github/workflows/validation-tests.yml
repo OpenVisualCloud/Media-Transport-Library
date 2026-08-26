@@ -137,9 +137,7 @@ jobs:
 
       - name: 'preparation: Read the pinned DPDK version'
         if: env.DPDK_REBUILD == 'true'
-        run: |
-          . ./versions.env
-          echo "DPDK_VERSION=${DPDK_VER}" >> "$GITHUB_ENV"
+        run: task ci:validation -- read-dpdk-version
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

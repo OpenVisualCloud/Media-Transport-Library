@@ -61,12 +61,7 @@ jobs:
           SETUP_ENVIRONMENT: '1'
           CICD_BUILD: '1'
           SETUP_BUILD_AND_INSTALL_DPDK: ${{ steps.dpdk-cache.outputs.cache-hit == 'true' && '0' || '1' }}
-        run: |
-          # No sudo: the script sudos where it needs root, keeping the cache tree runner-owned.
-          bash .github/scripts/setup_environment.sh
-          # tests/unit/meson.build asks for dependency('gmock'); setup_environment.sh
-          # installs libgtest-dev only, and gmock.pc is in a separate Ubuntu package.
-          sudo apt-get install -y --no-install-recommends libgmock-dev
+        run: bash .github/scripts/ci/unit-test-dependencies.sh
 
       - name: Build and run the unit suite
         run: ./build.sh unit

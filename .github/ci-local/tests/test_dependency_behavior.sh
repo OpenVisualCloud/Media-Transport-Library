@@ -266,15 +266,21 @@ create_ice_fixture() {
 	kernel=$2
 	arch=$3
 	dir="${bundle_root}/${kernel}/${arch}"
+	# shellcheck disable=SC1091
+	. "${root_dir}/versions.env"
 	mkdir -p "$dir"
 	printf 'module fixture\n' >"$dir/ice.ko"
+	printf 'iavf module fixture\n' >"$dir/iavf.ko"
 	hash=$(sha256sum "$dir/ice.ko" | cut -d' ' -f1)
+	iavf_hash=$(sha256sum "$dir/iavf.ko" | cut -d' ' -f1)
 	producer_compiler_sha256=$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)
 	cat >"$dir/metadata.env" <<EOF
-schema=2
+schema=3
 source_hash=source
-ice_version=2.6.6
-ice_dmid=921605
+ice_version=${ICE_VER}
+ice_dmid=${ICE_DMID}
+iavf_version=${IAVF_VER}
+iavf_dmid=${IAVF_DMID}
 kernel_release=${kernel}
 architecture=${arch}
 compiler_sha256=${producer_compiler_sha256}
@@ -284,6 +290,10 @@ vermagic=${kernel} SMP mod_unload
 module_sha256=${hash}
 signer=
 sig_id=
+iavf_vermagic=${kernel} SMP mod_unload
+iavf_module_sha256=${iavf_hash}
+iavf_signer=
+iavf_sig_id=
 EOF
 }
 
@@ -347,6 +357,13 @@ test_ice_validation() {
 	if env "${ice_env[@]}" ICE_SECURE_BOOT_STATE='SecureBoot enabled' bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
 		fail "ICE validator accepted an unsigned module under Secure Boot"
 	fi
+	# The suite binds VFs, so a cache entry that carries ice.ko alone is unusable:
+	# the host would load the packaged ice against the distribution iavf.
+	mv "${bundle}/${kernel}/${arch}/iavf.ko" "${temporary_dir}/iavf.ko.held"
+	if env "${ice_env[@]}" bash "${root_dir}/.github/scripts/ci/validate-ice.sh" >/dev/null 2>&1; then
+		fail "ICE validator accepted a bundle without the matching IAVF module"
+	fi
+	mv "${temporary_dir}/iavf.ko.held" "${bundle}/${kernel}/${arch}/iavf.ko"
 	mokutil="${temporary_dir}/mokutil"
 	printf '#!/usr/bin/env bash\nexit 1\n' >"$mokutil"
 	chmod +x "$mokutil"
