@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
 
+# MTL pipeline stats line, emitted once per stats interval (10s by default,
+# MT_STAT_INTERVAL_S_DEFAULT) by lib/src/st2110/pipeline/st{20,30,40}_pipeline_{tx,rx}.c:
+#   TX_st20p(0), frame get try 250 succ 250, put 250, drop 0
+#   RX_st20p(0), frame get try 251 succ 250, put 250
+# The ``drop`` field exists on TX lines only. Counters reset every interval, so
+# a run total is the sum over all matching lines.
+_MTL_PIPELINE_STATS_RE = re.compile(
+    r"(?P<dir>TX|RX)_st\d\dp\(\d+\),\s*frame get try \d+ succ \d+, "
+    r"put (?P<put>\d+)(?:, drop (?P<drop>\d+))?"
+)
+
+
 # Encoder name -> MTL st22 plugin shared object, for require_encoder()
 # pre-flight checks shared across framework adapters.
 MTL_ENCODER_PLUGIN_MAP = {
@@ -374,18 +386,34 @@ class Application(ABC):
         Returns the summed drop count, or -1 if no TX pipeline stats line was
         found in the captured output.
         """
-        if not self.last_output:
+        return self.count_pipeline_frames(self.last_output, "TX", field="drop")
+
+    @staticmethod
+    def count_pipeline_frames(output: str, direction: str, field: str = "put") -> int:
+        """Sum one MTL pipeline stats counter over *output*.
+
+        ``direction`` is ``"TX"`` or ``"RX"``; ``field`` is ``"put"`` (frames
+        the pipeline handed on -- transmitted by TX, consumed by RX) or
+        ``"drop"`` (TX only).
+
+        This is library output, identical no matter which framework drives it,
+        so every adapter shares this parser rather than re-implementing it.
+        Returns -1 when *output* carries no matching stats line at all: a run
+        shorter than one stats interval produces none, and callers must treat
+        "no data" differently from "zero frames".
+        """
+        if not output:
             return -1
-        pattern = re.compile(
-            r"TX_st\d\dp\(\d+\),\s*frame get try \d+ succ \d+, put \d+, drop (\d+)"
-        )
         total = 0
         seen = False
-        for line in self.last_output.split("\n"):
-            m = pattern.search(line)
-            if m:
-                seen = True
-                total += int(m.group(1))
+        for match in _MTL_PIPELINE_STATS_RE.finditer(output):
+            if match.group("dir") != direction:
+                continue
+            value = match.group(field)
+            if value is None:
+                continue
+            seen = True
+            total += int(value)
         return total if seen else -1
 
     def _session_pacing_ways(self) -> list[str]:
@@ -538,6 +566,21 @@ class Application(ABC):
             f"video session: {non_narrow}"
         )
         return totals
+    def unsupported_reason(self, **params) -> Optional[str]:
+        """Return why this framework cannot run *params*, or ``None`` if it can.
+
+        Lets a shared test skip a case that one framework's MTL plugin simply
+        does not implement without the test body having to know which
+        framework it is driving. ``app_factory`` calls it for any keyword
+        argument it is handed and skips with the returned reason::
+
+            app = app_factory(application, session_type="st20p", pixel_format=fmt)
+
+        The default claims full support; adapters override it. Only genuine
+        plugin gaps belong here -- a missing *mapping* is a bug to fix, not a
+        capability to skip.
+        """
+        return None
 
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Hook method called before execution to perform framework-specific setup.

@@ -38,6 +38,7 @@ from mtl_engine.const import (
 from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
 from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
+from mtl_engine.gstreamer import GStreamer
 from mtl_engine.integrity_session import IntegritySession
 from mtl_engine.pcap_compliance import NO_COMPLIANCE, ComplianceSession
 from mtl_engine.ramdisk import Ramdisk
@@ -1511,19 +1512,39 @@ def _register_local_libs(hosts, mtl_path):
 def app_factory(mtl_path):
     """Return a factory that creates framework adapter instances.
 
-    Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
+    Usage: app = app_factory("ffmpeg"), app_factory("rxtxapp") or
+    app_factory("gstreamer").
+
+    Any extra keyword arguments are a *capability query*: the adapter is asked
+    whether its MTL plugin implements that parameter set
+    (``Application.unsupported_reason``) and the test is skipped with the
+    adapter's own explanation if it does not. That keeps per-framework gaps out
+    of the shared test bodies -- no ``if application == "..."`` branches -- and
+    keeps the pytest dependency out of ``mtl_engine``::
+
+        app = app_factory(application, session_type="st20p", pixel_format=fmt)
     """
 
-    def factory(application: str):
+    def factory(application: str, **supported_params):
         if application == "rxtxapp":
-            return RxTxApp(
+            app = RxTxApp(
                 app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
             )
         elif application == "ffmpeg":
-            return FFmpeg(
+            app = FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
             )
+        elif application == "gstreamer":
+            # gst-launch-1.0 is a system binary; only the MTL *plugin* lives in
+            # the build tree, and the adapter passes it via --gst-plugin-path.
+            app = GStreamer()
         else:
             raise ValueError(f"Unknown application: {application}")
+
+        if supported_params:
+            reason = app.unsupported_reason(**supported_params)
+            if reason:
+                pytest.skip(reason)
+        return app
 
     return factory

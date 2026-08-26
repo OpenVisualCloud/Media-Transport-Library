@@ -503,6 +503,16 @@ class RxTxApp(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
 
+    # ----------------------------------------------------- capabilities
+    def unsupported_reason(self, **params):
+        """Report RxTxApp gaps so a shared test can skip cleanly."""
+        if params.get("anc_split_by_packet"):
+            # The st40p JSON session (parse_json.c) has no knob for the
+            # one-ANC-packet-per-RTP-packet layout; RxTxApp always lets the
+            # library pack.
+            return "RxTxApp has no st40p split-by-packet option in its JSON config"
+        return None
+
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if the MTL codec plugin for *encoder* is not installed."""
         plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
