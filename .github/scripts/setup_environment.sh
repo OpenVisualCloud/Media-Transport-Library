@@ -18,13 +18,16 @@ export MTL_INSTALL_PREFIX
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF:=0}"
 : "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
 : "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
 
 setup_build_drivers_options=""
 setup_build_ice=0
+setup_build_iavf=0
 if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS}" == "1" ]; then
 	setup_build_ice=1
+	setup_build_iavf=1
 else
 	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE}" == "1" ]; then
 		SETUP_BUILD_AND_INSTALL_DRIVERS=1
@@ -36,6 +39,12 @@ else
 		SETUP_BUILD_AND_INSTALL_DRIVERS=1
 	else
 		setup_build_drivers_options="${setup_build_drivers_options} --disable-igc"
+	fi
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF}" == "1" ]; then
+		SETUP_BUILD_AND_INSTALL_DRIVERS=1
+		setup_build_iavf=1
+	else
+		setup_build_drivers_options="${setup_build_drivers_options} --disable-iavf"
 	fi
 fi
 
@@ -118,9 +127,9 @@ function setup_ubuntu_install_dependencies() {
 	python3 -m pip install --upgrade pip
 	python3 -m pip install pyelftools ninja
 
-	# Ice driver dependencies
-	if [ "${setup_build_ice}" == "1" ]; then
-		echo "Installing Ice driver dependencies"
+	# Ice/Iavf driver dependencies
+	if [ "${setup_build_ice}" == "1" ] || [ "${setup_build_iavf}" == "1" ]; then
+		echo "Installing kernel driver dependencies"
 
 		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
 			log_error "Error: Failed to install linux-headers-$(uname -r)."
@@ -654,6 +663,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:IGC driver flow" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF:IAVF driver flow" \
 		"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain" \
 		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
 		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \
