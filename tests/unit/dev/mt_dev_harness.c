@@ -2,6 +2,7 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -197,6 +198,22 @@ void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled) {
     ctx->impl.user_para.flags |= MTL_FLAG_PTP_ENABLE;
   else
     ctx->impl.user_para.flags &= ~MTL_FLAG_PTP_ENABLE;
+}
+
+void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
+                     uint32_t rl_burst_size) {
+  struct mtl_init_params* p = &ctx->impl.user_para;
+
+  snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", bdf);
+  p->port_params[port].rl_burst_size = rl_burst_size;
+}
+
+size_t ut_dev_pci_devarg_size(void) {
+  return MT_EAL_PORT_ARG_MAX_LEN;
+}
+
+void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, size_t len) {
+  dev_build_pci_devarg(&ctx->impl.user_para, port, out, len);
 }
 
 int ut_dev_start_port(ut_dev_ctx* ctx) {

@@ -59,9 +59,12 @@ struct st40p_tx_ctx {
   uint32_t stat_get_frame_succ;
   uint32_t stat_put_frame;
   uint32_t stat_drop_frame;
-  /* cumulative user-facing counters; reset only by reset_session_stats */
-  uint64_t stat_frames_sent;
-  uint64_t stat_frames_dropped;
+  /* cumulative user-facing counters; reset only by reset_session_stats.
+   * _Atomic because the tasklet writes them while the stats API reads them
+   * from another thread; clang rejects the C11 atomic calls below on a plain
+   * uint64_t, where gcc accepts them. */
+  _Atomic uint64_t stat_frames_sent;
+  _Atomic uint64_t stat_frames_dropped;
 };
 
 struct st40p_tx_frame {

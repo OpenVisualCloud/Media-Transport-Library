@@ -26,7 +26,8 @@ from mtl_engine.media_files import yuv_files_422p10le
         "p23",
         "p24",
         "p25",
-        "p29",
+        # Compressed, so this case fits a 2.5 GbE NIC with room to spare.
+        pytest.param("p29", marks=pytest.mark.low_bandwidth),
         "p30",
         "p50",
         "p59",

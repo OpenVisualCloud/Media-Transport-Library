@@ -53,8 +53,21 @@ PORT_LIST="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}"
 # letting them fail for the wrong reason. Run them via run_pf.sh instead.
 GTEST_FILTER="NoCtxTest.${NOCTX_FILTER}*-NoCtxTest.*_pf_*"
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="${GTEST_FILTER}" 2>/dev/null |
-	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
+# Not a pipeline: its status would be awk's, so a crashed enumerator would read as zero tests.
+raw_list=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${PORT_LIST}" --gtest_filter="${GTEST_FILTER}" 2>/dev/null)
+list_rc=$?
+if [ "$list_rc" -ne 0 ]; then
+	echo "Error: test enumeration failed with exit code $list_rc"
+	echo "Filter was: ${GTEST_FILTER}"
+	exit 1
+fi
+
+test_names=$(echo "$raw_list" | awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
+
+if [ -z "$test_names" ]; then
+	echo "No NoCtx tests found matching ${GTEST_FILTER}."
+	exit 0
+fi
 
 # Use TMP_FOLDER from environment or fallback to /tmp
 : "${TMP_FOLDER:=/tmp}"

@@ -1,18 +1,268 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+#
+# THE single source of truth for MTL's style and lint rules.
+#
+# Three callers, one rule set, no caller may define a rule of its own:
+#   ./checkpatch.sh                      verify   (humans, git hooks, CI)
+#   ./format-coding.sh                   apply fixes
+#   .github/workflows/linter.yml         CI, orchestration only
+#
+# This file decides *which tool, which version, which arguments, which files*.
+# Rule *content* lives in .github/linters/. See doc/coding_standard.md for the
+# parity table recording what each check replaced and what is still enforced by
+# the residual super-linter job.
+#
+# Adding a tool: add it here and add a row to the parity table. Nowhere else.
+#
+# Versions are pinned deliberately, and every pin below was measured clean over
+# the whole tree before being adopted. Bump with `pre-commit autoupdate` in its own
+# commit, quoting the blast radius from `./checkpatch.sh --preview` -- never as a
+# side effect of an unrelated change.
+
+default_install_hook_types: [pre-commit, pre-merge-commit, commit-msg]
+
+# The node hooks at the bottom used whatever node the host happened to have,
+# which is not a pin at all: markdownlint-cli 0.49 needs Node 20 or newer just to
+# parse its own source, so a host on 18 got a crash where CI got a clean run.
+default_language_version:
+  node: "22.14.0"
+minimum_pre_commit_version: "3.5.0"
+
+# patches/ is a vendored third-party patch series: not ours to format, and
+# rewriting a byte of it breaks `git apply`. That used to be a *global*
+# `exclude: ^patches/`, which was wrong in both directions. It protected nothing
+# -- no formatter here matches a *.patch file, because every one of them is
+# selected by language type (c, python, shell, markdown, yaml, html) and a patch
+# is none of those; removing it changed no hook's result. And it silently blinded
+# check-illegal-windows-names, whose entire job is to look at paths, to the one
+# tracked path that was illegal on Windows. So the exclusion now sits on the only
+# hook that reads bytes of every file regardless of type, and nowhere else.
+
+
 repos:
-- repo: https://github.com/gitleaks/gitleaks
-  rev: v8.16.3
-  hooks:
-  - id: gitleaks
-- repo: https://github.com/jumanjihouse/pre-commit-hooks
-  rev: 3.0.0
-  hooks:
-  - id: shellcheck
-- repo: https://github.com/pocc/pre-commit-hooks
-  rev: v1.3.5
-  hooks:
-  - id: cpplint
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.4.0
-  hooks:
-  - id: end-of-file-fixer
-  - id: trailing-whitespace
+  # ------------------------------------------------------------------- Guards
+  # Not style: five structural checks, each guarding a promise this repository
+  # has already written down and has no other way to enforce. They run first
+  # because they are the cheapest, and because a destroyed symlink or a merge
+  # marker turns every finding below into noise.
+  #
+  # Four hooks from this same repo were probed and deliberately left out:
+  #   check-json           fails 20+ tests/tools/RxTxApp/script/**/*.json, which
+  #                        use trailing commas. json-c accepts them, strict JSON
+  #                        does not. Enabling it is a fixture rewrite.
+  #   check-case-conflict  fails: tests/acceptance/mtl_engine/RxTxApp.py and
+  #                        rxtxapp.py are both tracked, so this tree cannot be
+  #                        checked out on a case-insensitive filesystem. A real
+  #                        defect, but a rename is not a lint commit.
+  #   check-yaml           yamllint already parses every YAML file.
+  #   check-symlinks       destroyed-symlinks covers the failure we actually hit.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # doc/coding_standard.md §2.1 and §6.2 hinge on .clang-format being a real
+      # file: a Windows checkout without symlink support materializes a symlink
+      # as a text file, clang-format then finds no configuration and falls back
+      # to plain LLVM style -- a whole-tree reformat waiting to happen. This is
+      # the only mechanical check for it, and it also covers the three tracked
+      # agent-tooling symlinks that are knowingly exempt from that rule.
+      - id: destroyed-symlinks
+
+      # Not hypothetical. `patches/dpdk/26.03/0012-net-ice-e830:-use-direct-\
+      # MMIO-for-PHC-update.patch` carried a colon, which is illegal on Windows,
+      # so `git checkout` there died with "error: invalid path" and exit 128 --
+      # the whole repository was uncheckoutable on a platform doc/coding_standard.md
+      # §6 claims to support, and the Windows CI job could never have gone green.
+      # The file is renamed in this commit. This hook is what keeps it renamed.
+      - id: check-illegal-windows-names
+
+      # .gitattributes governs what enters the repository; nothing checked what
+      # is already in it, and a file with mixed endings breaks shfmt and
+      # clang-format alike. --fix=no, not the hook's default --fix=auto:
+      # rewriting line endings is .gitattributes' job, not a linter's.
+      - id: mixed-line-ending
+        args: [--fix=no]
+        # The one hook here that reads every file regardless of language, so the
+        # one that needs patches/ spelled out: .gitattributes marks it `-text`
+        # precisely so those bytes survive round-tripping.
+        exclude: '^patches/'
+
+
+      - id: check-merge-conflict
+
+      # gitleaks below scans the *staged diff* and is a no-op over a whole tree
+      # (see its comment). This one takes file arguments, so it is the only
+      # secret check that actually runs under a bare `./checkpatch.sh`. Narrow --
+      # PEM blocks only -- and so complementary rather than a duplicate.
+      - id: detect-private-key
+
+  # ------------------------------------------------------------------ C / C++
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v22.1.8
+    hooks:
+      - id: clang-format
+        # The hook's own default types_or also lists json, javascript, java, c#,
+        # cuda and proto. Left alone it would run clang-format over all 187
+        # tracked JSON files. .clang-format was written for C and C++ only.
+        types_or: [c, c++]
+        # pymtl_wrap.c is SWIG-generated; vmlinux.h is kernel-generated.
+        exclude: '(pymtl_wrap\.c|vmlinux\.h)$'
+
+  # ------------------------------------------------------------------- Python
+  - repo: https://github.com/PyCQA/isort
+    rev: 8.0.1
+    hooks:
+      - id: isort
+        # isort's own default import wrapping disagrees with black's, so without
+        # this every black-clean file gets "fixed" by isort and immediately
+        # reformatted back by black. super-linter's own template is also
+        # profile=black, so this matches CI exactly.
+        #
+        # args replaces the hook manifest's default rather than extending it, so
+        # --filter-files has to be repeated here or it is silently dropped.
+        args: [--profile, black, --filter-files]
+
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      # 88 is black's own default, stated because a default is not a pin. It also
+      # looks like a contradiction of .ruff.toml's 120 and is not: black *wraps*
+      # at 88, ruff only *rejects* beyond 120, so the formatter never emits a line
+      # the linter then objects to. Leaving it implicit is how the documented
+      # Python line length came to be 120 while the enforced one was 88.
+      - id: black
+        args: [--line-length, "88"]
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.3.0
+    hooks:
+      # Kept, and not folded into ruff, for one measured reason: ruff 0.16 does
+      # not implement F824 ("dead `global` declaration") at all -- `ruff rule
+      # F824` errors out with "unknown rule". flake8 7.3 found two of them in
+      # this tree, both genuinely dead, both fixed in this commit. So the two
+      # hooks are not redundant yet, and the day ruff grows F824 this block is a
+      # one-line delete. .ruff.toml deliberately selects flake8's exact rule set
+      # so that switch stays trivial.
+      - id: flake8
+        args: [--config, .github/linters/.flake8]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      # ruff-check, not the legacy `ruff` alias, which still exists but is
+      # documented as deprecated.
+      #
+      # .ruff.toml selects E, W and F, which is flake8's rule set above, minus
+      # the one rule ruff lacks. Deliberately the same set rather than a wider
+      # one: it keeps the two hooks comparable, so retiring flake8 later is a
+      # delete and not a re-measurement.
+      #
+      # The selection must stay explicit. ruff's *implicit* default grew from
+      # roughly 40 rules to 413 between 0.4 and 0.16, so a config that names no
+      # rules does not describe a fixed check: bumping the pin silently turned
+      # this hook into 592 findings about blind excepts, datetime timezones and
+      # pyupgrade rewrites.
+      - id: ruff-check
+        args: [--config, .github/linters/.ruff.toml]
+
+  # -------------------------------------------------------------------- Shell
+  - repo: https://github.com/maxwinterstein/shfmt-py
+    rev: v4.0.0
+    hooks:
+      # The wrapper's version is not shfmt's: v4.0.0 is where shfmt-py switched
+      # to its own semver, and it bundles shfmt v3.13.1. Verified byte-identical
+      # to the shfmt v3.7.0 it replaces over all 54 tracked *.sh.
+      - id: shfmt
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      # shfmt only reformats whitespace; shellcheck is the actual static
+      # analysis (quoting bugs, unused vars). No autofix -- fix by hand.
+      # require_serial in the hook definition keeps it to one invocation so
+      # `source`d sibling scripts resolve and do not trip SC1091.
+      - id: shellcheck
+
+  # ----------------------------------------------------------------- Markdown
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint-fix
+        args: [--config, .github/linters/.markdown-lint.yml]
+
+  # --------------------------------------------------------------------- YAML
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      # Deliberately no --strict. The vendored config makes everything except
+      # key-duplicates and new-lines a warning, which is why the tree passes with
+      # 333 warnings. --strict would promote all of them to failures.
+      - id: yamllint
+        args: [-c, .github/linters/.yaml-lint.yml]
+
+  # ---------------------------------------------------------- GitHub Actions
+  - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
+    rev: v1.7.12.24
+    hooks:
+      # The pip-wheel packaging, not the upstream `language: golang` hook: that
+      # one makes every developer and CI runner download a Go toolchain per
+      # environment. Measured clean at 1.7.12.
+      - id: actionlint
+        args: [-config-file, .github/linters/actionlint.yaml]
+
+  # ------------------------------------------------------------------ Secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      # Read the hook's entry before trusting this to scan anything: it is
+      # `gitleaks git --pre-commit --staged` (spelled `gitleaks protect
+      # --staged` before v8.19) with pass_filenames: false, so it scans the
+      # staged diff and ignores the file list entirely. That is the right check
+      # for a commit hook and a no-op for --all-files, where nothing is staged.
+      # Whole-tree and pull-request secret scanning therefore stays in CI --
+      # VALIDATE_GITLEAKS in the residual job. See doc/coding_standard.md §4.
+      #
+      # This is also the one language: golang hook we accept, and only because
+      # pre-commit downloads the Go toolchain itself; contrast actionlint above.
+      - id: gitleaks
+
+  # ------------------------------------------- Node-based, no upstream hook repo
+  - repo: local
+    hooks:
+      # markdownlint checks Markdown *syntax*; textlint checks prose terminology
+      # ("repo" -> "repository"), which is what super-linter's
+      # VALIDATE_NATURAL_LANGUAGE enforced.
+      - id: textlint
+        name: textlint (prose terminology)
+        language: node
+        types: [markdown]
+        entry: textlint --config .github/linters/.textlintrc --fix
+        additional_dependencies:
+          - textlint@15.8.0
+          - textlint-rule-terminology@4.0.1
+          - textlint-filter-rule-comments@1.3.0
+
+      - id: htmlhint
+        name: htmlhint
+        language: node
+        types: [html]
+        entry: htmlhint --config .github/linters/.htmlhintrc
+        additional_dependencies:
+          - htmlhint@1.9.2
+
+      # Commit-message style. Alone among these hooks it runs at the commit-msg
+      # stage, not over files, so `./checkpatch.sh` never triggers it -- that
+      # script lints files and has no message to read. The git commit-msg hook
+      # (installed via default_install_hook_types above) fires it locally on
+      # every `git commit`; linter.yml runs this same hook over each commit a
+      # pull request adds, so local and CI cannot diverge and the version is
+      # pinned in exactly one place. Rules live in .github/linters/.gitlint;
+      # gitlint's own lowercase conventional-commit rule does not fit MTL's
+      # capitalized, scope-free format. See doc/coding_standard.md section 7.
+      - id: gitlint
+        name: gitlint (commit message style)
+        language: python
+        additional_dependencies: [gitlint==0.19.1]
+        entry: gitlint --config .github/linters/.gitlint --msg-filename
+        stages: [commit-msg]

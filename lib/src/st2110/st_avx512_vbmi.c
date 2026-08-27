@@ -1138,6 +1138,14 @@ int st20_yuv422p10le_to_rfc4175_422be10_vbmi(uint16_t* y, uint16_t* b, uint16_t*
 /* end st20_yuv422p10le_to_rfc4175_422be10_vbmi */
 
 /* begin st20_rfc4175_422le10_to_422be10_vbmi */
+/*
+ * The six permute tables below are laid out one pixel group per row, so the
+ * pattern can be read against the 422le10 packing it implements. Every element
+ * carries a trailing comment, and from clang-format 18 on that makes the
+ * formatter break the row and emit one byte per line -- 480 lines added to this
+ * file for no gain. The layout is the documentation here, so it is pinned.
+ */
+/* clang-format off */
 static uint8_t le10_to_be_permute_l0_tbl_512[64] = {
     /* simd 0 */
     0x01, 0x02, 0x03, 0x04, /* 4 bytes from pg0 */
@@ -1271,6 +1279,7 @@ static uint8_t le10_to_be_permute_r1_tbl_512[64] = {
     /* zeros */
     0x3F, 0x3F, 0x3F, 0x3F, /* zeros */
 };
+/* clang-format on */
 
 int st20_rfc4175_422le10_to_422be10_vbmi(struct st20_rfc4175_422_10_pg2_le* pg_le,
                                          struct st20_rfc4175_422_10_pg2_be* pg_be,

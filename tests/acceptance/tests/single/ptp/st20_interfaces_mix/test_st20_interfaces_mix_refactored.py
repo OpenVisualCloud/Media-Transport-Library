@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 """PTP + interface-mix ST20P test using unified app_factory pattern."""
+
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422rfc10
