@@ -1167,6 +1167,27 @@ def collect_platform_config(hosts, log_session):
             logger.warning(f"Failed to collect platform info from {host.name}: {e}")
 
 
+def _test_body_ran(request) -> bool:
+    """True when the test body ran to completion and passed.
+
+    The ``pcap_capture``/``media_integrity`` sessions enforce that the test
+    dispatched them (see their ``close()``). A case that skipped an
+    unsupported parameter combination -- or already failed -- never reached
+    ``execute_test()``, so that invariant has nothing to enforce there and
+    firing it would report a legitimate SKIP as an ERROR.
+
+    Never raises: this is evaluated on the way into a teardown that must run
+    (it stops the pcap recorder, which otherwise keeps the ramdisk busy and
+    fails the teardown ordered after it). An unexpected stash shape makes the
+    invariant apply, which is the pre-existing behaviour.
+    """
+    try:
+        call = request.node.stash[phase_report_key].get("call")
+    except Exception:  # pragma: no cover - defensive, see above
+        return True
+    return call is not None and call.passed
+
+
 @pytest.fixture(scope="function")
 def pcap_capture(
     request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
@@ -1214,6 +1235,21 @@ def pcap_capture(
                 "8K resolution detected. Disabling PCAP capture and compliance check as EBU compliance "
                 "analyser does not support 8K."
             )
+
+    if capture_disabled:
+        # Must be loud. This is the one path where a test can go green having
+        # produced no compliance verdict at all: NO_COMPLIANCE is a null
+        # session whose close() ignores ``enforce``, so the
+        # evaluated-exactly-once invariant cannot speak for it. Without this
+        # line an operator cannot tell a compliance-verified run from an
+        # opted-out one by reading the log.
+        logger.warning(
+            "Compliance check SUPPRESSED for %s: test_config has "
+            "capture_cfg.enable=false (no sniff NIC or no EBU credentials on "
+            "this host). Data-path oracles still run; no ST 2110-21 verdict "
+            "is produced.",
+            request.node.name,
+        )
 
     skip_capture = capture_disabled or is_8k
     if not skip_capture:

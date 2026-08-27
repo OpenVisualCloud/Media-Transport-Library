@@ -79,19 +79,30 @@ def gen_test_config(
     has_sniff = bool(sniff_pci_device) and not no_capture
     test_config["compliance"] = has_ebu and has_sniff
 
-    if has_sniff:
+    if test_config["compliance"]:
         test_config["ramdisk"]["pcap_dir"] = "/mnt/ramdisk/pcap"
         test_config["capture_cfg"] = {
             "enable": True,
             "pcap_dir": "/mnt/ramdisk/pcap",
             "sniff_pci_device": _bdf_to_vendor_device(sniff_pci_device),
         }
-    elif no_capture:
-        # An absent capture_cfg means "compliance is required and this host is
-        # misconfigured" to the pcap_capture fixture, which then fails every
-        # test that requests it. --no_capture is the operator saying the card
-        # has no port to spare (a single-port i225), so write the explicit
-        # opt-out the fixture looks for.
+    else:
+        # ``capture_cfg.enable: false`` has to be written out, not left
+        # implicit: the pcap_capture fixture treats an ABSENT capture_cfg as
+        # "this host can do compliance", so without it every test taking that
+        # fixture fails with "ebu_server is not configured" instead of running
+        # its data-path oracles. A host with no sniff NIC or no EBU
+        # credentials cannot produce a verdict, and the generator is what knows
+        # that, so it records the opt-out here.
+        #
+        # The branch is keyed on ``compliance`` (has_ebu AND has_sniff) rather
+        # than on ``has_sniff`` alone for the same reason: a sniff NIC with no
+        # EBU credentials can capture a pcap that nothing can then grade, and
+        # arming the capture is what produced that failure.
+        #
+        # ``--no_capture`` reaches this branch too, via ``has_sniff``: it is the
+        # operator saying the card has no port to spare -- a single-port i225,
+        # or a second port needed for a redundant (ST2022-7) test.
         test_config["capture_cfg"] = {"enable": False}
     if has_ebu:
         test_config["ebu_server"] = {
