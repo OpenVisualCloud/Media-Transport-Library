@@ -34,6 +34,7 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 - No `pthread_mutex` — use `rte_spinlock_t` (never sleeps)
 - No INFO-level logging — only DEBUG/trace in hot paths
 - No `sleep`, no blocking I/O
+- No libc `rand()`/`random()` from tasklet context — glibc serializes them on a process-global lock; use `rte_drand()`/`rte_rand_max()` (lock-free; per-lcore state on EAL lcores)
 - Use lock-free rings, zero-copy, polling tasklets
 
 **Control-plane** (session create/destroy, config) may use heap memory, mutexes, POSIX threads.
