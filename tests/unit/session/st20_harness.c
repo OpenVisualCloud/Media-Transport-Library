@@ -468,6 +468,10 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
   ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
 }
 
+void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
+  ctx->ptp_storage.no_timesync_delta = delta;
+}
+
 uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx) {
   return ctx->last_timestamp_first_pkt;
 }

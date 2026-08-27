@@ -61,11 +61,18 @@ void ut_ptp_set_no_timesync(ut_ptp_ctx* ctx, bool no_timesync);
 void ut_ptp_set_coefficient(ut_ptp_ctx* ctx, double coefficient);
 void ut_ptp_set_last_sync_ts(ut_ptp_ctx* ctx, uint64_t last_sync_ts);
 void ut_ptp_set_raw_time(uint64_t raw_ns);
+/* The mocked NIC PHC, moved only by rte_eth_timesync_adjust_time(). Lets a test
+ * assert the hardware clock really was stepped, not just that the reported
+ * timestamp is unchanged. */
+uint64_t ut_ptp_get_raw_time(void);
 void ut_ptp_set_user_time(ut_ptp_ctx* ctx, uint64_t user_ns);
 
 /* ── exercise the production code under test ──────────────────────────── */
 void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct);
 void ut_ptp_sync_from_user(ut_ptp_ctx* ctx);
+/* Same, but on the no_timesync path: the NIC PHC is never adjusted and the
+ * correction lands in the software no_timesync_delta accumulator instead. */
+void ut_ptp_sync_from_user_no_timesync(ut_ptp_ctx* ctx);
 uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns);
 /* Run the static delay_req tx-timestamp (t3) alarm handler. */
 void ut_ptp_run_t3_handler(ut_ptp_ctx* ctx);
@@ -85,7 +92,6 @@ uint64_t ut_ptp_net_tmstamp_to_ns(uint16_t sec_msb, uint32_t sec_lsb, uint32_t n
 
 /* ── getters ──────────────────────────────────────────────────────────── */
 int64_t ut_ptp_no_timesync_delta(const ut_ptp_ctx* ctx);
-int64_t ut_ptp_ptp_delta(const ut_ptp_ctx* ctx);
 int64_t ut_ptp_stat_delta_min(const ut_ptp_ctx* ctx);
 int64_t ut_ptp_stat_delta_max(const ut_ptp_ctx* ctx);
 int32_t ut_ptp_stat_delta_cnt(const ut_ptp_ctx* ctx);

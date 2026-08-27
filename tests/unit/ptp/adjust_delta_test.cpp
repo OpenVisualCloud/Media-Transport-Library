@@ -26,13 +26,14 @@ class PtpAdjustDeltaTest : public ::testing::Test {
   ut_ptp_ctx* ctx_ = nullptr;
 };
 
-/* ptp_delta is the signed running sum; stat_delta_min/max track signed
- * extremes; stat_delta_cnt and delta_result_cnt count every call. */
+/* Each delta is applied to the clock exactly once -- under no_timesync that is
+ * the no_timesync_delta accumulator, which holds the signed running sum.
+ * stat_delta_min/max track signed extremes; stat_delta_cnt and delta_result_cnt
+ * count every call. */
 TEST_F(PtpAdjustDeltaTest, SignedDeltaBookkeeping) {
   const int64_t deltas[] = {50, -30, 0, 1000000};
   for (int64_t d : deltas) ut_ptp_adjust_delta(ctx_, d, false);
 
-  EXPECT_EQ(ut_ptp_ptp_delta(ctx_), 50 - 30 + 0 + 1000000);
   EXPECT_EQ(ut_ptp_stat_delta_max(ctx_), 1000000);
   EXPECT_EQ(ut_ptp_stat_delta_min(ctx_), -30);
   EXPECT_EQ(ut_ptp_stat_delta_cnt(ctx_), 4);

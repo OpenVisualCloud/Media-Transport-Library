@@ -84,6 +84,12 @@ ut_ptp_ctx* ut_ptp_create(void) {
   ut_ptp_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
+  /* these mocks are process-global; reset them so a test that reads one without
+   * seeding it cannot inherit the previous test's value */
+  ut_g_read_tx_ret = 0;
+  ut_g_read_tx_ns = 0;
+  ut_g_raw_time_ns = 0;
+
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
 
@@ -153,6 +159,10 @@ void ut_ptp_set_raw_time(uint64_t raw_ns) {
   ut_g_raw_time_ns = raw_ns;
 }
 
+uint64_t ut_ptp_get_raw_time(void) {
+  return ut_g_raw_time_ns;
+}
+
 static uint64_t ut_ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
   ut_ptp_ctx* ctx = impl->user_para.priv;
   MTL_MAY_UNUSED(port);
@@ -173,6 +183,11 @@ void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct) {
 
 void ut_ptp_sync_from_user(ut_ptp_ctx* ctx) {
   ctx->ptp.no_timesync = false;
+  ptp_sync_from_user(&ctx->impl, &ctx->ptp);
+}
+
+void ut_ptp_sync_from_user_no_timesync(ut_ptp_ctx* ctx) {
+  ctx->ptp.no_timesync = true;
   ptp_sync_from_user(&ctx->impl, &ctx->ptp);
 }
 
@@ -220,9 +235,6 @@ uint64_t ut_ptp_net_tmstamp_to_ns(uint16_t sec_msb, uint32_t sec_lsb, uint32_t n
 
 int64_t ut_ptp_no_timesync_delta(const ut_ptp_ctx* ctx) {
   return ctx->ptp.no_timesync_delta;
-}
-int64_t ut_ptp_ptp_delta(const ut_ptp_ctx* ctx) {
-  return ctx->ptp.ptp_delta;
 }
 int64_t ut_ptp_stat_delta_min(const ut_ptp_ctx* ctx) {
   return ctx->ptp.stat_delta_min;

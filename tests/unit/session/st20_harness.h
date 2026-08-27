@@ -127,6 +127,11 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * mbuf dynfield instead of falling back to the software PTP clock. */
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
+/* Park a software PTP correction in the port's no_timesync_delta accumulator --
+ * what a real no-timesync port (any VF) holds once PTP has synced. It must never
+ * reach a HW RX timestamp. */
+void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta);
+
 /* timestamp_first_pkt captured off the most recent delivered frame's meta. */
 uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx);
 
