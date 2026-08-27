@@ -1,9 +1,9 @@
-From 7c09efeaf6e64b6afda9f5e86ec8616a5ce01c9a Mon Sep 17 00:00:00 2001
-From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+From nobody Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Fri, 11 Apr 2025 12:41:46 +0000
 Subject: [PATCH] net/intel/ice: support hdr split mbuf callback
 
-Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
 ---
  drivers/net/intel/common/rx.h      |  2 +
  drivers/net/intel/ice/ice_ethdev.c |  1 +

@@ -175,7 +175,7 @@ sudo -E ./venv/bin/python3 -m pytest \
 $PY -m smoke -v                                   # by marker
 $PY tests/single/st20p -v                         # by folder
 $PY tests/single/st40p -k multicast -v            # by substring
-$PY "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
+$PY "tests/single/st20p/test_fps.py::test_st20p_fps[|fps = p60|-Penguin_1080p-|application = rxtxapp|]"
 $PY <selector> --collect-only -q                  # dry run
 ```
 
@@ -183,20 +183,25 @@ Quote selectors containing `[` `]` or `|`.
 
 ### Markers
 
-Suite selection:
+Suite markers:
 
 | Marker | Use |
 |---|---|
 | `smoke` | Smallest set that proves the host works |
 | `nightly` | Bulk single-host coverage |
-| `performance` / `base_performance` | Capacity sweeps; long and hardware-bound |
+| `performance` | Dual-host capacity sweeps, long and hardware-bound |
+| `base_performance` | Added at collection to a test ID that holds `1080p` and `59fps` |
 | `dual` | Requires two hosts |
 | `ptp` | Uses MTL's internal PTP (`phc2sys` suppressed) |
 
-Status and policy markers: `verified` (see below), `refactored`/`original`
-(Application-based vs legacy), `tx_side`/`rx_side`/`tx_and_rx` (which side a
-test validates, and therefore whether a compliance verdict is meaningful),
-`allow_wide_compliance` (accept ST 2110-21 *wide* instead of failing).
+Neither performance marker selects a `tests/single/` test. Select the
+`tests/single/performance/` modules by path.
+
+Descriptive markers: `verified` (see below),
+`refactored` (uses the Application-based harness),
+`tx_side`/`rx_side`/`tx_and_rx` (which side a test validates, and therefore
+whether a compliance verdict is meaningful), and `allow_wide_compliance`
+(accept ST 2110-21 *wide* instead of failing).
 
 `tests/` contains `single/` and `dual/` only.
 

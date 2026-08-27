@@ -27,14 +27,8 @@ int ut_eal_init(void) {
     static char a3[] = "-c1";
     static char a4[] = "-n1";
     static char a5[] = "--no-pci";
-    static char a6[] = "--vdev=net_null0";
-    static char* args[] = {a0, a1, a2, a3, a4, a5, a6};
-    int rc = rte_eal_init(7, args);
-    if (rc < 0 && rte_eal_has_hugepages() == 0) {
-      /* EAL already initialised — fine */
-    } else if (rc < 0) {
-      return -1;
-    }
+    static char* args[] = {a0, a1, a2, a3, a4, a5};
+    if (rte_eal_init(RTE_DIM(args), args) < 0) return -1;
     g_eal_ready = true;
   }
 

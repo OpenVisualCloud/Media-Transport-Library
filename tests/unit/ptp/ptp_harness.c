@@ -6,8 +6,9 @@
  * Includes the production mt_ptp.c directly so that the file-local static
  * functions (pi_sample, ptp_adjust_delta, ptp_correct_ts,
  * ptp_net_tmstamp_to_ns, ...) become visible in this translation unit.
- * Non-static symbols duplicate those in libmtl; --allow-multiple-definition
- * resolves this. USDT is disabled to avoid probe-semaphore link references.
+ * Non-static symbols duplicate those in libmtl; this object's definition
+ * preempts the shared library's. USDT is disabled to avoid probe-semaphore
+ * link references.
  */
 
 /* mt_main.h defines _GNU_SOURCE, but ut_common.h pulls system headers first;
@@ -35,11 +36,14 @@ struct ut_ptp_ctx {
 /* pull in the public header after the struct so the opaque typedef resolves */
 #include "ptp/ptp_harness.h"
 
-/* The rte_eth_timesync_* calls reached when no_timesync=false are routed to the
- * overrides below; -Wl,--allow-multiple-definition lets them win over libdpdk. */
 static int ut_g_read_tx_ret = 0;
 static uint64_t ut_g_read_tx_ns = 0;
 
+/* The only rte_eth_timesync_* override in this object; its definition preempts libdpdk's.
+ * The three this object still imports reach librte_ethdev, which returns an error for
+ * the unregistered port_id: mt_ptp.c maps read_time's error to 0 and returns
+ * read_rx_timestamp's and adjust_time's unchanged; adjust_freq is not compiled.
+ * So no_timesync=false pins DPDK, not MTL. */
 int rte_eth_timesync_read_tx_timestamp(uint16_t port_id, struct timespec* timestamp) {
   (void)port_id;
   if (timestamp) {

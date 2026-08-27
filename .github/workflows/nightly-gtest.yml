@@ -41,7 +41,7 @@ jobs:
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ inputs.commit_sha || github.sha }}'
       - name: 'preparation: Validate host and download artifacts'
@@ -50,28 +50,26 @@ jobs:
       - name: 'cleanup: Kill stale processes before test'
         uses: ./.github/actions/cleanup
 
+      # env -u BASH_XTRACEFD for the same reason as gtest-bare-metal.yml: the
+      # descriptor the variable names does not exist in the privileged shell.
+      - name: 'preparation: Bind the test ports'
+        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
+
       - name: run gtest bare metal
         env:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
           LOG_FILE: "${{ github.workspace }}/gtest.log"
           TEST_CASE_TIMEOUT: 1800
-        run: |
-          sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
+        run: task ci:gtest-nightly
       - name: 'cleanup: Kill test processes'
         if: always()
         uses: ./.github/actions/cleanup
       - name: 'collect: System status report'
         if: always()
-        run: |
-          ./script/status_report.sh
-          # Rename to include NIC info
-          for dir in mtl_system_status_*; do
-            if [ -d "$dir" ]; then
-              mv "$dir" "system-info-${{ matrix.nic }}"
-              break
-            fi
-          done
+        env:
+          STATUS_NAME: system-info-${{ matrix.nic }}
+        run: task ci:report -- status
       - name: "upload report gtest"
         if: always()
         id: upload-report-gtest

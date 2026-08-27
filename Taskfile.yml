@@ -1,0 +1,226 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+#
+# Entry points that CI and developers share, so a local run and a runner run
+# invoke exactly the same command. Install with:
+#   go install github.com/go-task/task/v3/cmd/task@latest
+# or see https://taskfile.dev/installation/
+#
+#   task --list
+
+version: '3'
+
+vars:
+  EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
+  CI_LOCAL: '{{.TASKFILE_DIR}}/.github/ci-local'
+  CI_SCRIPTS: '{{.TASKFILE_DIR}}/.github/scripts/ci'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  ebpf:check:
+    desc: Check this host's eBPF/XDP prerequisites; name the package for each missing one
+    cmds:
+      - bash {{.EBPF_SCRIPT}} --check
+
+  ebpf:check-build:
+    desc: Check only the prerequisites building MTL needs, not xdp-tools' own
+    cmds:
+      - bash {{.EBPF_SCRIPT}} --check build
+
+  ebpf:install:
+    desc: Build and install xdp-tools + libbpf at the versions in versions.env
+    cmds:
+      - bash {{.EBPF_SCRIPT}}
+
+  ci:hash-dependencies:
+    desc: Compute deterministic dependency source hashes
+    cmds:
+      - bash {{.TASKFILE_DIR}}/script/hash_sources.sh {{.CLI_ARGS}}
+
+  ci:cache-keys:
+    desc: Emit exact dependency cache keys for the current runner
+    cmds:
+      - bash {{.CI_SCRIPTS}}/cache-keys.sh
+
+  ci:evaluate-caches:
+    desc: Validate restored caches and export build-miss state
+    cmds:
+      - bash {{.CI_SCRIPTS}}/evaluate-caches.sh
+
+  ci:validate-cache:
+    desc: Structurally validate one restored dependency cache
+    requires:
+      vars: [COMPONENT]
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-cache.sh {{.COMPONENT}}
+
+  ci:build-jpegxs:
+    desc: Build the relocatable JPEG XS runtime and bridge bundle
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-jpegxs.sh
+
+  ci:validate-jpegxs:
+    desc: Validate the relocatable JPEG XS bundle
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-jpegxs.sh
+
+  ci:build-ice:
+    desc: Build a patched ICE+IAVF module artifact for the running kernel ABI
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-ice.sh
+
+  ci:validate-ice:
+    desc: Validate the cached ICE+IAVF modules against the running kernel ABI
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-ice.sh
+
+  ci:activate-ice:
+    desc: Load the cached ICE+IAVF modules, or leave them alone if already loaded
+    cmds:
+      - bash {{.CI_SCRIPTS}}/activate-ice.sh {{.CLI_ARGS}}
+
+  ci:ice-required:
+    desc: Report whether this job's NIC needs the Kahawai ICE driver
+    cmds:
+      - bash {{.CI_SCRIPTS}}/ice-required.sh {{.CLI_ARGS}}
+
+  ci:bind-test-ports:
+    desc: Bind one PF's trusted VFs and two DMA channels to vfio-pci for the gtest suite
+    cmds:
+      - bash {{.CI_SCRIPTS}}/bind-test-ports.sh
+
+  ci:build-dependencies:
+    desc: Build dependency cache misses selected by CI_BUILD_ variables
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-dependencies.sh
+
+  ci:validate-dependencies:
+    desc: Validate every dependency -- host prerequisites and all install trees
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-dependencies.sh
+
+  ci:install-test-dependencies:
+    desc: Install pinned Python dependencies for CI contract tests
+    cmds:
+      - python3 -m pip install --disable-pip-version-check --requirement {{.CI_LOCAL}}/requirements.txt
+
+  ci:test-dependencies:
+    desc: Run focused prebuilt dependency contract and behavior tests
+    cmds:
+      - bash {{.CI_LOCAL}}/tests/test_prebuilt_dependencies.sh
+      - bash {{.CI_LOCAL}}/tests/test_dependency_behavior.sh
+      - bash {{.CI_LOCAL}}/tests/test_gtest_bounds.sh
+      - node {{.CI_LOCAL}}/tests/test_wait_for_workflow.js
+      - python3 {{.CI_LOCAL}}/tests/test_yaml_migration.py
+      - python3 {{.TASKFILE_DIR}}/.github/mcp/test_mtl_ci_mcp_server.py
+
+  ci:check-yaml:
+    desc: Reject inline programs in active workflow and composite YAML
+    cmds:
+      - bash {{.CI_SCRIPTS}}/check-yaml-policy.sh
+
+  ci:validation:
+    desc: Run one focused validation workflow operation
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validation-workflow.sh {{.CLI_ARGS}}
+
+  ci:pytest-setup:
+    desc: Prepare acceptance-test dependencies, session, NIC, or configuration
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest-setup.sh {{.CLI_ARGS}}
+
+  ci:pytest-run:
+    desc: Run one acceptance-test workflow variant
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
+
+  ci:media-assets:
+    desc: List or generate the smoke-suite test media on a host with no asset share
+    cmds:
+      - bash {{.CI_SCRIPTS}}/media-assets.sh {{.CLI_ARGS}}
+
+  ci:ebu-list:
+    desc: Check, start or stop the EBU LIST ST 2110 compliance analyser
+    summary: |
+      Runs .github/scripts/ci/ebu-list.sh {status|up|down|verify}.
+
+      `verify` is the CI-facing check: it proves the analyser answers, speaks the
+      API the acceptance framework's client speaks, and accepts the configured
+      account, and that netsniff-ng can capture the pcap in the first place. It
+      installs nothing -- it fails with the command that provisions. `up`/`down`
+      drive the docker compose stack and are meant to be run by hand.
+    cmds:
+      - bash {{.CI_SCRIPTS}}/ebu-list.sh {{.CLI_ARGS}}
+
+  ci:report:
+    desc: Collect or transform CI test reports
+    cmds:
+      - bash {{.CI_SCRIPTS}}/reports.sh {{.CLI_ARGS}}
+
+  ci:watch-run:
+    desc: Wait for the Actions runs of a commit and report which job, step and error failed
+    summary: |
+      Runs .github/scripts/ci/watch-run.sh. Read-only: it polls the API and
+      never pushes, re-runs or cancels.
+
+        task ci:watch-run                        # this branch's pushed head
+        task ci:watch-run -- --pr 1682
+        task ci:watch-run -- --run 32441346791 --quiet
+        task ci:watch-run -- --workflow smoke-tests --job i225
+
+      A bare-metal leg spends most of its life queued, and the two reasons for
+      that read the same in the Actions UI. This distinguishes them: a queued job
+      with no runner name has not been handed to a host, so it is waiting on
+      fleet availability rather than running slowly.
+
+      Exit: 0 all jobs passed, 1 a job failed, 2 the timeout expired with work
+      outstanding, 3 there was nothing to watch.
+    cmds:
+      - bash {{.CI_SCRIPTS}}/watch-run.sh {{.CLI_ARGS}}
+
+  ci:gtest-nightly:
+    desc: Run the nightly bare-metal gtest harness
+    cmds:
+      - sudo -E {{.TASKFILE_DIR}}/.github/scripts/gtest.sh
+
+  ci:workflow:
+    desc: Run one workflow orchestration helper
+    cmds:
+      - bash {{.CI_SCRIPTS}}/workflow-ops.sh {{.CLI_ARGS}}
+
+  ci:build-action:
+    desc: Build MTL locally and optionally on a remote host
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-action.sh
+
+  ci:msys2:
+    desc: Run one Windows MSYS2 build operation
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - bash .github/scripts/ci/msys2.sh {{.CLI_ARGS}}
+
+  ci:configure-host:
+    desc: Configure cached dependency paths and plugin registry on a test host
+    cmds:
+      - bash {{.CI_SCRIPTS}}/configure-host.sh {{.CLI_ARGS}}
+
+  ci:test-pr:
+    desc: Run the whole PR pipeline locally (build + pr-gate + validate-host matrix)
+    cmds:
+      - '{{.CI_LOCAL}}/test-pr-locally.sh {{.CLI_ARGS}}'
+
+  ci:build:
+    desc: Run the build workflow job locally in a container
+    cmds:
+      - '{{.CI_LOCAL}}/run-job.sh build {{.CLI_ARGS}}'
+
+  ci:validate-host:
+    desc: Run the validate-host action locally against a simulated bare-metal runner
+    vars:
+      NIC: '{{.NIC | default "e810"}}'
+    cmds:
+      - '{{.CI_LOCAL}}/run-job.sh validate-host --nic {{.NIC}} {{.CLI_ARGS}}'

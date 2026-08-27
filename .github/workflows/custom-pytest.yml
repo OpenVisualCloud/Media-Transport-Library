@@ -25,7 +25,7 @@ on:
         type: string
         default: tests
       shadow_host:
-        description: 'Path to shadow host credentials file (IP/USER). Leave empty to use secret.'
+        description: 'Path to shadow host credentials file (IP/USER) on the runner. Empty uses the runner default.'
         required: false
         type: string
         default: ''
@@ -57,69 +57,46 @@ jobs:
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
       - name: Checkout MTL
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: "${{ github.ref }}"
       - name: Validate host and download stashes
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || secrets.SHADOW_HOST) || '' }}
-      - name: Install pytest dependencies
-        working-directory: ./tests/acceptance
-        run: |
-          python3 -m venv ./.venv
-          source ./.venv/bin/activate
-          pip install -r ./requirements.txt
+          shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || '/etc/mtl-ci/shadow-host') || '' }}
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Verify the login the suite makes
+        run: task ci:pytest-setup -- connection
       - name: Set session ID
-        run: |
-          runner_name="${{ runner.name }}"
-          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
       - name: Set PCI device
-        run: |
-          if [ "${{ inputs.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "e825" ]; then
-            echo "PCI_DEVICE=8086:579d,8086:579d" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.nic }}" = "e835" ]; then
-            echo "PCI_DEVICE=8086:1249,8086:1249" >> "$GITHUB_ENV"
-          fi
+        env:
+          NIC: ${{ inputs.nic }}
+        run: task ci:pytest-setup -- pci
       - name: Generate pytest configuration files
-        working-directory: ./tests/acceptance/configs
-        run: |
-          python3 gen_config.py \
-            --session_id "${{ env.SESSION_ID }}" \
-            --mtl_path "${{ secrets.RUNNER_MTL_PATH }}" \
-            --pci_device "${{ env.PCI_DEVICE }}" \
-            --ip_address 127.0.0.1 \
-            --username "${{ secrets.RUNNER_USERNAME }}" \
-            --key_path "/home/$USER/.ssh/id_ed25519" \
-            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
-            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
-            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+        run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
-        shell: bash
-        run: |
-          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ inputs.nic }}" >> "$GITHUB_ENV"
+        env:
+          WORKFLOW_TAG: ${{ github.workflow }}:${{ inputs.nic }}
+        run: task ci:pytest-setup -- tag
 
       - name: 'cleanup: Kill stale processes before test'
         uses: ./.github/actions/cleanup
 
       - name: Run tests
-        working-directory: ./tests/acceptance
-        run: |
-          ./.venv/bin/python3 -m pytest \
-            --test_config=./configs/test_config.yaml \
-            --topology_config=./configs/topology_config.yaml \
-            ${{ inputs.marker && format('-m "{0}"', inputs.marker) || '' }} \
-            ${{ inputs.test_filter && format('-k "{0}"', inputs.test_filter) || '' }} \
-            --template=html/index.html \
-            --report=./report.html \
-            "./${{ inputs.dir }}"
+        run: task ci:pytest-run -- custom
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
+          PYTEST_MARKER: ${{ inputs.marker }}
+          PYTEST_FILTER: ${{ inputs.test_filter }}
+          TEST_PATH: ${{ inputs.dir }}
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

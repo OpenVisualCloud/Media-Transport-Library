@@ -36,9 +36,13 @@ instructions, configuration reference, and troubleshooting:
 ## Selecting tests
 
 Suite markers: `smoke`, `nightly`, `performance`, `base_performance`, `dual`,
-`ptp`. Other markers describe a test rather than select it — see
+`ptp`. Descriptive markers: `verified`, `refactored`, `tx_side`, `rx_side`,
+`tx_and_rx`, `allow_wide_compliance` — see
 [doc/acceptance_quickstart.md § Markers](../../doc/acceptance_quickstart.md#markers)
 and `pytest.ini` for the authoritative list.
+
+The two performance markers select no `tests/single/` test. Select the
+`tests/single/performance/` modules by path.
 
 ## Further reading
 

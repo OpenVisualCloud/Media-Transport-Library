@@ -28,48 +28,16 @@ permissions:
   actions: read
 
 jobs:
-  gtest-check-for-changes:
-    runs-on: ubuntu-22.04
+  pr-gate:
+    uses: ./.github/workflows/pr-gate.yml
     permissions:
+      contents: read
       pull-requests: read
-    outputs:
-      changed: ${{ steps.filter.outputs.linux_tests == 'true' || github.event_name == 'workflow_dispatch' }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: audit
-
-      - name: Clean workspace and checkout
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
-
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
-        id: filter
-        with:
-          filters: .github/path_filters.yml
-
-  build:
-    needs: gtest-check-for-changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Harden Runner
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Wait for Build workflow
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        uses: ./.github/actions/wait-for-workflow
-        with:
-          check_name: build
+      checks: read
+      actions: read
 
   run-gtest-tests:
-    needs:
-      - gtest-check-for-changes
-      - build
+    needs: pr-gate
     strategy:
       matrix:
         nic:
@@ -78,38 +46,49 @@ jobs:
           - e835
       fail-fast: false
     runs-on: ${{ matrix.nic }}
+    # Healthy legs finish in under 20 minutes. Without a bound, one wedged ICE
+    # driver load holds a fleet runner for GitHub's 360-minute default and the
+    # always() cleanup step never releases the NIC.
+    timeout-minutes: 45
     steps:
       - name: Harden Runner
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
       - name: Validate host and download artifacts
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
-
-      - name: Check and build ice driver if needed
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-        run: |
-          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_drivers.sh --driver ice; fi
+        with:
+          nic: ${{ matrix.nic }}
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
+      # sudo -E carries the whole environment across, BASH_XTRACEFD included, and
+      # that variable names a file descriptor of the shell that set it. In the
+      # privileged shell the descriptor is closed, so every step below used to
+      # open with `bash: BASH_XTRACEFD: 19: invalid value for trace file
+      # descriptor` -- a line that reads like the start of a failure and is not
+      # one. Dropping the variable is the whole fix; nothing here traces.
+      - name: Bind the test ports
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
+
       - name: Run gtest bare metal
-        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           NIGHTLY: 0
           EXIT_ON_FAILURE: 1
-        run: sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
+        run: sudo -E env -u BASH_XTRACEFD "${{ github.workspace }}/.github/scripts/gtest.sh"
 
       - name: 'cleanup: Kill test processes'
         if: always()

@@ -18,13 +18,16 @@ export MTL_INSTALL_PREFIX
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:=0}"
 : "${SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:=0}"
+: "${SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF:=0}"
 : "${SETUP_BUILD_AND_INSTALL_EBPF_XDP:=0}"
 : "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT:=0}"
 
 setup_build_drivers_options=""
 setup_build_ice=0
+setup_build_iavf=0
 if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS}" == "1" ]; then
 	setup_build_ice=1
+	setup_build_iavf=1
 else
 	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_ICE}" == "1" ]; then
 		SETUP_BUILD_AND_INSTALL_DRIVERS=1
@@ -37,14 +40,21 @@ else
 	else
 		setup_build_drivers_options="${setup_build_drivers_options} --disable-igc"
 	fi
+	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF}" == "1" ]; then
+		SETUP_BUILD_AND_INSTALL_DRIVERS=1
+		setup_build_iavf=1
+	else
+		setup_build_drivers_options="${setup_build_drivers_options} --disable-iavf"
+	fi
 fi
 
 # MTL build and install
-: "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
 : "${MTL_BUILD_AND_INSTALL:=0}"
+: "${MTL_BUILD_AND_INSTALL_DEBUG:=0}"
+: "${MTL_BUILD_AND_INSTALL_FUZZ:=0}"
+: "${MTL_BUILD_AND_INSTALL_UNIT_TESTS:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:=0}"
-: "${MTL_BUILD_AND_INSTALL_FUZZ:=0}"
 
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
@@ -118,9 +128,9 @@ function setup_ubuntu_install_dependencies() {
 	python3 -m pip install --upgrade pip
 	python3 -m pip install pyelftools ninja
 
-	# Ice driver dependencies
-	if [ "${setup_build_ice}" == "1" ]; then
-		echo "Installing Ice driver dependencies"
+	# Ice/Iavf driver dependencies
+	if [ "${setup_build_ice}" == "1" ] || [ "${setup_build_iavf}" == "1" ]; then
+		echo "Installing kernel driver dependencies"
 
 		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
 			log_error "Error: Failed to install linux-headers-$(uname -r)."
@@ -317,44 +327,32 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	# MTL build and install
-
+	mtl_build_options="release"
+	mtl_build_env=()
 	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-		echo "$STEP MTL debug build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh debug
-		popd >/dev/null
-		STEP=$((STEP + 1))
+		mtl_build_options="debug"
 	fi
-
-	# If both are enabled we build debug but overwrite with release
-	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
-		echo "$STEP MTL build and install"
-		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh
-		popd >/dev/null
-		STEP=$((STEP + 1))
-	fi
-
 	if [ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]; then
-		echo "$STEP MTL fuzzing build and install"
-		cd "${root_folder}" || exit 1
-		MTL_BUILD_ENABLE_FUZZING=true ./build.sh release enable_fuzzing
-		STEP=$((STEP + 1))
-	fi
-	# MTL build and install
-	mtl_build_options=""
-
-	if [[ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]]; then
-		echo "$STEP enable MTL_fuzzing=true"
 		mtl_build_options="${mtl_build_options} enable_fuzzing"
-		STEP=$((STEP + 1))
+		# libFuzzer is clang's, and gcc has no -fsanitize=fuzzer at all, so
+		# tests/fuzz/meson.build stops the configure with the compiler it was
+		# given. Only this build switches compiler: DPDK is installed by now and
+		# is linked rather than recompiled.
+		if ! command -v clang >/dev/null; then
+			echo "MTL_BUILD_AND_INSTALL_FUZZ needs clang: apt install clang" >&2
+			exit 1
+		fi
+		mtl_build_env=(env CC=clang CXX=clang++)
+	fi
+	if [ "${MTL_BUILD_AND_INSTALL_UNIT_TESTS}" == "1" ]; then
+		mtl_build_options="${mtl_build_options} unit"
 	fi
 
-	# If both are enabled we build debug but overwrite with release
-	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
-		echo "$STEP MTL build and install"
+	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ] || [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
+		echo "$STEP MTL build and install: ${mtl_build_options}"
 		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh "${mtl_build_options}"
+		# shellcheck disable=SC2086
+		"${mtl_build_env[@]}" ./build.sh ${mtl_build_options}
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
@@ -391,58 +389,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		echo "$STEP Plugin JPEG-XS build and install"
-
-		lib_so="libst_plugin_st22_svt_jpeg_xs.so"
-		need_build=0
-
-		# Check plugin .so
-		if ! ldconfig -p 2>/dev/null | grep -q "${lib_so}" &&
-			! test -f /usr/local/lib/x86_64-linux-gnu/${lib_so} &&
-			! test -f /usr/local/lib64/${lib_so}; then
-			echo "MTL JPEG-XS plugin not found."
-			need_build=1
-		fi
-
-		# Check core SvtJpegxs version/presence
-		if ! ldconfig -p 2>/dev/null | grep -q "libSvtJpegxs.so.0"; then
-			echo "Core SvtJpegxs library not found."
-			need_build=1
-		elif ! pkg-config --atleast-version="${SVT_JPEG_XS_MIN_VER}" SvtJpegxs 2>/dev/null; then
-			echo "Core SvtJpegxs library is outdated (< ${SVT_JPEG_XS_MIN_VER} required by FFmpeg). Rebuilding."
-			need_build=1
-		fi
-
+		echo "$STEP Plugin JPEG-XS bundle build"
 		export SVT_JPEG_XS_REPO="${setup_script_folder}/SVT-JPEG-XS"
-
-		if [ ! -d "${SVT_JPEG_XS_REPO}" ]; then
-			echo "Downloading SVT-JPEG-XS (${SVT_JPEG_XS_VER}) using wget..."
-			if ! wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/refs/tags/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"; then
-				wget -q "https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz" -O "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-			fi
-			mkdir -p "${SVT_JPEG_XS_REPO}"
-			tar -xzf "${setup_script_folder}/SVT-JPEG-XS.tar.gz" -C "${SVT_JPEG_XS_REPO}" --strip-components=1
-			rm -f "${setup_script_folder}/SVT-JPEG-XS.tar.gz"
-		fi
-
-		if [ "${need_build}" -eq 0 ]; then
-			echo "=== SVT-JPEG-XS and MTL bridge plugin are already up-to-date. Alignment skipped ==="
-		else
-			# Build and install SVT-JPEG-XS library
-			pushd "${SVT_JPEG_XS_REPO}/Build/linux" >/dev/null || exit 1
-			./build.sh install
-			popd >/dev/null
-
-			# Build and install imtl-plugin (MTL JPEG-XS encoder/decoder bridge)
-			pushd "${SVT_JPEG_XS_REPO}/imtl-plugin" >/dev/null || exit 1
-			rm -rf build
-			meson setup build
-			meson compile -C build
-			sudo meson install -C build
-			popd >/dev/null
-
-			sudo ldconfig
-		fi
+		bash "${root_folder}/.github/scripts/ci/build-jpegxs.sh"
 		STEP=$((STEP + 1))
 	fi
 
@@ -654,10 +603,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow" \
 		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:IGC driver flow" \
+		"SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF:IAVF driver flow" \
 		"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain" \
 		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
 		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \
 		"MTL_BUILD_AND_INSTALL:MTL release build" \
+		"MTL_BUILD_AND_INSTALL_FUZZ:MTL fuzzing build" \
+		"MTL_BUILD_AND_INSTALL_UNIT_TESTS:MTL unit tests build and run" \
 		"MTL_BUILD_AND_INSTALL_DOCKER:MTL Docker image" \
 		"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image" \
 		"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin" \

@@ -1,7 +1,7 @@
-From 9c05e102304f23b9b6e1b8af4ec1347d514f0507 Mon Sep 17 00:00:00 2001
+From nobody Mon Sep 17 00:00:00 2001
 From: Soumyadeep Hore <soumyadeep.hore@intel.com>
 Date: Wed, 10 Jun 2026 10:35:04 +0530
-Subject: [PATCH 09/11] net/ice: fix TxPP timer association in txtime context
+Subject: [PATCH] net/ice: fix TxPP timer association in txtime context
 
 The txtime context setup was missing the timer_num field assignment,
 leaving it at the default value of 0. This causes incorrect PHC timer

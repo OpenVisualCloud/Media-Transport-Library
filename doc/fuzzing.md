@@ -31,10 +31,18 @@ Add `-Denable_asan=true` (or `MTL_BUILD_ENABLE_ASAN=true`) if you also want
 AddressSanitizer instrumentation. Existing build directories can be reconfigured with
 `meson configure build -Denable_fuzzing=true`.
 
-The fuzz harnesses `#include` the production `.c` files directly so that all static
-functions are visible without any wrapper hooks in the library source. The linker flag
-`--allow-multiple-definition` resolves the resulting duplicate non-static symbols
-between the harness and `libmtl`.
+Neither `meson setup` nor `build.sh` builds the harnesses today: gcc fails
+`tests/fuzz/meson.build`'s `-fsanitize=fuzzer-no-link` check, and clang 18 rejects 50
+atomic operations in `lib/` (T-115).
+
+Four of the five harnesses `#include` a production `.c` file directly, so their static
+functions become visible. Such a harness defines the same non-static symbols as `libmtl`
+and needs no linker flag. `libmtl` is a shared library, and a definition in the
+executable preempts it. Preemption is global, so a call from inside `libmtl` also reaches
+the harness copy. That holds only while the build sets no `-fvisibility=hidden`,
+`-Bsymbolic`, or `-fno-semantic-interposition`, which would bind the call locally and
+silently drop the harness from coverage. Each target links exactly one harness source, so
+two harnesses never collide.
 
 ## Building
 
@@ -44,7 +52,7 @@ After configuration simply run the standard build:
 ninja -C build
 ```
 
-The following fuzz targets will be produced inside `build/tests/fuzz/`:
+Once the harnesses build, `build/tests/fuzz/` holds these targets:
 
 - `st40_rx_rtp_fuzz` – feeds arbitrary RTP payloads through
   `rx_ancillary_session_handle_pkt`, using a lightweight DPDK/EAL bootstrap.

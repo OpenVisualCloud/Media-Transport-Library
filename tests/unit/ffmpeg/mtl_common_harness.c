@@ -15,15 +15,22 @@ static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex);
 #include "../../../ecosystem/ffmpeg_plugin/mtl_common.c"
 #undef pthread_mutex_lock
 
+#include "mt_platform.h"
+
 static struct mtl_init_params ut_init_params;
 static int ut_init_calls;
 static int ut_uninit_calls;
 static int ut_lifecycle_lock_calls;
 static mtl_handle ut_handle = (mtl_handle)(uintptr_t)1;
 static pthread_mutex_t ut_init_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t ut_init_cond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t ut_init_cond;
 static bool ut_block_init;
 static bool ut_release_init;
+
+/* Once, before any harness thread: re-initializing a live condvar is undefined. */
+__attribute__((constructor)) static void ut_ffmpeg_cond_init(void) {
+  mt_pthread_cond_wait_init(&ut_init_cond);
+}
 
 static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex) {
   pthread_mutex_lock(&ut_init_mutex);
@@ -111,7 +118,7 @@ bool ut_ffmpeg_wait_for_init_calls(int count) {
   struct timespec timeout;
   bool reached;
 
-  clock_gettime(CLOCK_REALTIME, &timeout);
+  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &timeout);
   timeout.tv_sec++;
   pthread_mutex_lock(&ut_init_mutex);
   while ((ut_init_calls < count) && !ut_release_init) {
@@ -127,7 +134,7 @@ bool ut_ffmpeg_wait_for_lifecycle_lock_calls(int count) {
   struct timespec timeout;
   bool reached;
 
-  clock_gettime(CLOCK_REALTIME, &timeout);
+  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &timeout);
   timeout.tv_sec++;
   pthread_mutex_lock(&ut_init_mutex);
   while (ut_lifecycle_lock_calls < count) {

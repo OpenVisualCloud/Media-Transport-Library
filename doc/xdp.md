@@ -53,14 +53,14 @@ Ubuntu:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
+sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libpcap-dev libcap2-bin gcc-multilib
 ```
 
 CentOS/Red Hat:
 
 ```bash
 sudo yum update
-sudo yum install -y make m4 clang llvm-devel zlib-devel elfutils-libelf-devel libcap-ng-devel libcap-ng-utils
+sudo yum install -y make m4 clang llvm-devel zlib-devel elfutils-libelf-devel libcap-ng-devel libcap-ng-utils libpcap-devel
 ```
 
 Arch Linux:
@@ -77,6 +77,18 @@ Build libxdp and libbpf from the xdp-tools repository using the versions pinned 
 ./script/build_ebpf_xdp.sh
 ```
 
+### Verifying the prerequisites
+
+The script checks the host before it builds, and `--check` runs that check
+alone. It names the package to install for everything missing. CI runs it first
+in every job that later needs DPDK or AF_XDP, so a gap fails in seconds rather
+than as an unrelated `pkg-config` error minutes later.
+
+```bash
+./script/build_ebpf_xdp.sh --check   # check only, install nothing
+task ebpf:check                      # same thing, via the Taskfile
+```
+
 ### Building MTL
 
 See [Build Guide](build.md).
@@ -89,7 +101,13 @@ Run-time dependency libxdp found: YES 1.6.0
 Run-time dependency libbpf found: YES 1.5.0
 ```
 
-If not, and you have installed them, you may run this command then reconfigure the project so pkg-config can find them:
+The install script picks its library directory by planting a probe `.pc` file and
+asking `pkg-config` whether it reads it, so on a supported distribution this is
+already right — `/usr/local/lib/x86_64-linux-gnu` on Debian and Ubuntu,
+`/usr/local/lib64` on the RHEL family — and it fails loudly rather than leaving
+MTL to configure itself without AF_XDP. If your host reads neither, and you have
+installed them, run this command and reconfigure the project so pkg-config can
+find them:
 
 ```bash
 export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/:/usr/lib64/pkgconfig/

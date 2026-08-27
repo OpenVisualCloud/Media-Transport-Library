@@ -1,9 +1,9 @@
-From bd34636ca6eb5d649ccc892c49fdf21eaadf0dd3 Mon Sep 17 00:00:00 2001
-From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+From nobody Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Mon, 31 Mar 2025 12:48:41 +0000
-Subject: [PATCH 6/7] pcapng: add user timestamp support
+Subject: [PATCH] pcapng: add user timestamp support
 
-Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
 ---
  lib/pcapng/rte_pcapng.c | 11 +++++++----
  lib/pcapng/rte_pcapng.h | 43 ++++++++++++++++++++++++++++++++++++++---

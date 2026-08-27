@@ -1,0 +1,67 @@
+---
+name: Unit Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  # The unit tier needs no NIC and no root, so it is the cheapest gate MTL has.
+  # It still needs DPDK headers and libraries to compile, which is the whole cost
+  # of this job. The cache makes the second run onwards take about a minute.
+  unit-tests:
+    # One entry, so the image label has a single source and the cache key can name it.
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Nothing installs MTL here; setup_environment.sh takes the dirname of this to
+      # place DPDK under the cached path instead of system-wide.
+      MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+      PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: sums
+        uses: ./.github/actions/source-checksums
+
+      - name: 'stash: Restore DPDK cache'
+        id: dpdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          # Caches are repo-scoped and the installed prefix bakes an absolute
+          # github.workspace path into libdpdk.pc, so the key names the image label to keep
+          # a 22.04 tree off a runner with a different glibc and gcc.
+          key: stash-hosted-dpdk-${{ matrix.os }}-${{ steps.sums.outputs.dpdk }}
+          path: .local_install/dpdk
+
+      - name: Install build dependencies and DPDK
+        env:
+          SETUP_ENVIRONMENT: '1'
+          CICD_BUILD: '1'
+          SETUP_BUILD_AND_INSTALL_DPDK: ${{ steps.dpdk-cache.outputs.cache-hit == 'true' && '0' || '1' }}
+        run: bash .github/scripts/ci/unit-test-dependencies.sh
+
+      - name: Build and run the unit suite
+        run: ./build.sh unit

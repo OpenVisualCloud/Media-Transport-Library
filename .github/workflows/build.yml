@@ -25,6 +25,18 @@ on:
       mtl_hash:
         description: 'MTL source checksum'
         value: ${{ jobs.checksums.outputs.mtl }}
+      jpegxs_hash:
+        description: 'JPEG XS source checksum'
+        value: ${{ jobs.checksums.outputs.jpegxs }}
+      ice_hash:
+        description: 'ICE source checksum'
+        value: ${{ jobs.checksums.outputs.ice }}
+      jpegxs_cache_key:
+        description: 'Exact JPEG XS cache key produced by the build runner'
+        value: ${{ jobs.build.outputs.jpegxs_cache_key }}
+      ice_cache_key:
+        description: 'Exact kernel-specific ICE cache key produced by the build runner'
+        value: ${{ jobs.build.outputs.ice_cache_key }}
       ffmpeg_hash:
         description: 'ffmpeg source checksum'
         value: ${{ jobs.checksums.outputs.ffmpeg }}
@@ -35,16 +47,35 @@ on:
         description: 'st22 avcodec plugin source checksum'
         value: ${{ jobs.checksums.outputs.plugins }}
 
+# One build per pull request at a time. The build job runs on the e835 host, so
+# a superseded run is not just wasted minutes: it sits in front of the newest
+# commit in the queue for a runner the whole hardware fleet shares. Five runs of
+# this workflow queued behind one nightly is what prompted this.
+#
+# Keyed on the run id rather than the sha outside a pull request, because this
+# workflow is also called by the nightly and custom pytest workflows, where
+# github.workflow is the caller's name: two dispatches of the same commit are
+# two separate intents and must not cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   checks: read
 
 jobs:
-  # ── Gate: wait for Linter workflow on this commit ──
+  # ── Gate: wait for every Linter check on this commit ──
+  # The names below are the *check run* names produced by linter.yml, which is the
+  # matrix job name and the residual job's `name:`. They are a contract between the
+  # two workflows: renaming a job there without renaming it here does not fail the
+  # gate, it makes the gate wait for something that never arrives and then time out.
+  # That is exactly how this broke once -- it still asked for super-linter's old
+  # "Lint Code Base" check, which stopped existing when checkpatch replaced it.
   wait-for-linter:
     if: ${{ !inputs.skip_linter_check && github.ref_name != 'main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -55,15 +86,22 @@ jobs:
       - name: Wait for Linter
         uses: ./.github/actions/wait-for-workflow
         with:
-          check_name: 'Lint Code Base'
-          timeout: '600'
+          check_name: |
+            checkpatch (ubuntu-latest)
+            checkpatch (macos-latest)
+            checkpatch (windows-latest)
+            Lint checks not yet in checkpatch
+          timeout: '900'
 
   # ── Compute source checksums ──
   checksums:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     outputs:
       dpdk: ${{ steps.sums.outputs.dpdk }}
       mtl: ${{ steps.sums.outputs.mtl }}
+      jpegxs: ${{ steps.sums.outputs.jpegxs }}
+      ice: ${{ steps.sums.outputs.ice }}
       ffmpeg: ${{ steps.sums.outputs.ffmpeg }}
       gstreamer: ${{ steps.sums.outputs.gstreamer }}
       plugins: ${{ steps.sums.outputs.plugins }}
@@ -75,14 +113,26 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Install test dependencies
+        run: task ci:install-test-dependencies
+
+      - name: Verify dependency contracts
+        run: task ci:test-dependencies
+
       - id: sums
         uses: ./.github/actions/source-checksums
 
   build:
     needs: [wait-for-linter, checksums]
     if: ${{ !cancelled() && needs.checksums.result == 'success' && (needs.wait-for-linter.result == 'success' || needs.wait-for-linter.result == 'skipped') }}
-    runs-on: dpdk
+    runs-on: e835
     timeout-minutes: 60
+    outputs:
+      jpegxs_cache_key: ${{ steps.keys.outputs.jpegxs_key }}
+      ice_cache_key: ${{ steps.keys.outputs.ice_key }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -90,79 +140,149 @@ jobs:
           egress-policy: audit
 
       - name: Checkout MTL
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@main
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      # Before anything expensive: this runner is long-lived, and a missing
+      # libelf otherwise surfaces as a pkg-config failure deep inside the build.
+      # The build scope, because that is what this job consumes -- it builds no
+      # eBPF, so holding it to xdp-tools' prerequisites fails it on headers
+      # nothing it compiles includes.
+      - name: 'system: Check host prerequisites'
+        shell: bash
+        run: task ebpf:check-build
+
+      - name: Compute exact cache keys
+        id: keys
+        shell: bash
+        env:
+          HASH_DPDK: ${{ needs.checksums.outputs.dpdk }}
+          HASH_MTL: ${{ needs.checksums.outputs.mtl }}
+          HASH_JPEGXS: ${{ needs.checksums.outputs.jpegxs }}
+          HASH_ICE: ${{ needs.checksums.outputs.ice }}
+          HASH_FFMPEG: ${{ needs.checksums.outputs.ffmpeg }}
+          HASH_GSTREAMER: ${{ needs.checksums.outputs.gstreamer }}
+          HASH_PLUGINS: ${{ needs.checksums.outputs.plugins }}
+        run: task ci:cache-keys
 
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: stash-dpdk-${{ needs.checksums.outputs.dpdk }}
+          key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Restore MTL cache'
         id: mtl-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: stash-mtl-${{ needs.checksums.outputs.mtl }}
+          key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
+
+      - name: 'stash: Restore JPEG XS cache'
+        id: jpegxs-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.jpegxs_key }}
+          path: .local_install/jpegxs
 
       - name: 'stash: Restore FFmpeg cache'
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: stash-ffmpeg-${{ needs.checksums.outputs.ffmpeg }}
+          key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Restore GStreamer cache'
         id: gstreamer-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: stash-gstreamer-${{ needs.checksums.outputs.gstreamer }}
+          key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Restore plugins cache'
         id: plugins-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          key: stash-plugins-${{ needs.checksums.outputs.plugins }}
+          key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
+      - name: 'stash: Restore ICE cache'
+        id: ice-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.ice_key }}
+          path: .local_install/ice
+
       - name: Evaluate cache results
-        id: needs-build
-        shell: bash
-        run: |
-          dpdk_miss=${{ steps.dpdk-cache.outputs.cache-hit != 'true' && '1' || '0' }}
-          mtl_miss=${{ steps.mtl-cache.outputs.cache-hit != 'true' && '1' || '0' }}
-          ffmpeg_miss=${{ steps.ffmpeg-cache.outputs.cache-hit != 'true' && '1' || '0' }}
-          gstreamer_miss=${{ steps.gstreamer-cache.outputs.cache-hit != 'true' && '1' || '0' }}
-          plugins_miss=${{ steps.plugins-cache.outputs.cache-hit != 'true' && '1' || '0' }}
-
-          {
-            echo "SETUP_BUILD_AND_INSTALL_DPDK=${dpdk_miss}"
-            echo "MTL_BUILD_AND_INSTALL=${mtl_miss}"
-            echo "ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${ffmpeg_miss}"
-            echo "ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${gstreamer_miss}"
-            echo "PLUGIN_BUILD_AND_INSTALL_AVCODEC=${plugins_miss}"
-          } >> "$GITHUB_ENV"
-
-          any_miss=0
-          [[ "$dpdk_miss" == "1" || "$mtl_miss" == "1" || "$ffmpeg_miss" == "1" || "$gstreamer_miss" == "1" || "$plugins_miss" == "1" ]] && any_miss=1
-          echo "any_miss=${any_miss}" >> "$GITHUB_OUTPUT"
-
-          echo "::notice::DPDK=$( [ "$dpdk_miss" = 1 ] && echo MISS || echo HIT )  MTL=$( [ "$mtl_miss" = 1 ] && echo MISS || echo HIT )  FFmpeg=$( [ "$ffmpeg_miss" = 1 ] && echo MISS || echo HIT )  GStreamer=$( [ "$gstreamer_miss" = 1 ] && echo MISS || echo HIT )  plugins=$( [ "$plugins_miss" = 1 ] && echo MISS || echo HIT )"
-
-      # Build what is missing
-      - name: Setup environment and build
-        if: steps.needs-build.outputs.any_miss == '1'
+        id: cache-state
         shell: bash
         env:
-          MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
-          PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu/pkgconfig
-          LD_LIBRARY_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu:${{ github.workspace }}/.local_install/mtl/lib/x86_64-linux-gnu
-          TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: '1'
-          PLUGIN_BUILD_AND_INSTALL_JPEGXS: '1'
-          # Capture PHC is disciplined to TAI at runtime via phc2sys -O
-          # <live_offset>, so the kernel TAI offset is left untouched.
-          TOOLS_RUN_SET_TAI_OFFSET: '0'
-        run: |
-          bash .github/scripts/setup_environment.sh
+          CACHE_HIT_DPDK: ${{ steps.dpdk-cache.outputs.cache-hit }}
+          CACHE_HIT_MTL: ${{ steps.mtl-cache.outputs.cache-hit }}
+          CACHE_HIT_JPEGXS: ${{ steps.jpegxs-cache.outputs.cache-hit }}
+          CACHE_HIT_FFMPEG: ${{ steps.ffmpeg-cache.outputs.cache-hit }}
+          CACHE_HIT_GSTREAMER: ${{ steps.gstreamer-cache.outputs.cache-hit }}
+          CACHE_HIT_PLUGINS: ${{ steps.plugins-cache.outputs.cache-hit }}
+          CACHE_HIT_ICE: ${{ steps.ice-cache.outputs.cache-hit }}
+        run: task ci:evaluate-caches
+
+      - name: Build missing dependencies
+        if: steps.cache-state.outputs.any_miss == '1'
+        shell: bash
+        run: task ci:build-dependencies
+
+      - name: Validate dependency outputs
+        shell: bash
+        run: task ci:validate-dependencies
+
+      - name: 'stash: Save DPDK cache'
+        if: success() && steps.cache-state.outputs.dpdk_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
+
+      - name: 'stash: Save MTL cache'
+        if: success() && steps.cache-state.outputs.mtl_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.mtl_key }}
+          path: .local_install/mtl
+
+      - name: 'stash: Save JPEG XS cache'
+        if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.jpegxs_key }}
+          path: .local_install/jpegxs
+
+      - name: 'stash: Save FFmpeg cache'
+        if: success() && steps.cache-state.outputs.ffmpeg_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.ffmpeg_key }}
+          path: .local_install/ffmpeg
+
+      - name: 'stash: Save GStreamer cache'
+        if: success() && steps.cache-state.outputs.gstreamer_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.gstreamer_key }}
+          path: .local_install/gstreamer
+
+      - name: 'stash: Save plugins cache'
+        if: success() && steps.cache-state.outputs.plugins_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.plugins_key }}
+          path: .local_install/plugins
+
+      - name: 'stash: Save ICE cache'
+        if: success() && steps.cache-state.outputs.ice_miss == '1'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.keys.outputs.ice_key }}
+          path: .local_install/ice
