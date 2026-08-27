@@ -178,8 +178,12 @@ def test_st40p_interlaced(
     test_config,
     media_file,
 ):
-    """Ancillary data split per field: TX marks the stream interlaced and RX must
-    accept it instead of resetting to progressive frames."""
+    """TX marks the ancillary stream interlaced and RX must accept it.
+
+    What is asserted is that the interlaced session survives end to end, not
+    that per-field placement is correct: the pipeline API's ancillary meta
+    carries no field information for either application to set.
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -205,10 +209,7 @@ def test_st40p_interlaced(
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    ["rxtxapp", "ffmpeg", "gstreamer"],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     [anc_files["text_p59"]],
@@ -227,7 +228,14 @@ def test_st40p_split_by_packet(
     media_file,
 ):
     """Send every ancillary packet in its own RTP packet instead of packing
-    several into one, which ST 2110-40 also permits."""
+    several into one, which ST 2110-40 also permits.
+
+    Only the GStreamer plugin can actually ask for this (``split-anc-by-pkt``
+    in gst_mtl_st40p_tx.c is the sole application-level route to
+    ST40P_TX_FLAG_SPLIT_ANC_BY_PKT). RxTxApp and FFmpeg are still parametrized
+    so their ``unsupported_reason()`` states the gap as a visible skip, rather
+    than this file silently encoding which applications qualify.
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(

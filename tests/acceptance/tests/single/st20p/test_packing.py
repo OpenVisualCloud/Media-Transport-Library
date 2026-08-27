@@ -10,7 +10,7 @@ pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg"])
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.tx_side
 @pytest.mark.parametrize("packing", ["BPM", "GPM", "GPM_SL"])
 @pytest.mark.parametrize(
