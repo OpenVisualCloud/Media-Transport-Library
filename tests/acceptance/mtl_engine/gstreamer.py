@@ -38,7 +38,12 @@ Oracles (``validate_results``), in order of strength:
        hold at least :data:`_MIN_CAPTURE_RATIO` of a full-length capture, which
        is what rules out a pipeline that streamed briefly and then stopped.
     4. MTL's own pipeline stats must report frames put on both the TX and the RX
-       side; where oracle 3 cannot bound the run (st40p), missing stats fail.
+       side. Where oracle 3 cannot bound the run (st40p, whose payload size per
+       frame is the sender's choice), missing stats fail and the per-interval
+       frame counts after startup must additionally hold
+       :data:`_MIN_STEADY_FRAME_RATIO` of the rate the session was configured
+       for -- otherwise "one frame moved" would be st40p's whole throughput
+       oracle.
 Compliance (EBU) and integrity (MD5) are evaluated by the base class through
 ``capture_intent`` / ``integrity_intent`` exactly as for the other adapters --
 this adapter adds no private validation path.
@@ -115,11 +120,38 @@ _ST40P_SDID = 0x02
 # both processes pay DPDK EAL init out of the same wall-clock budget, and TX
 # re-reads the asset at every loop wrap, so a healthy run lands well under 100%
 # and the floor has to sit below the worst honest case rather than near 1.0.
+# It assumes the output mount can hold a full-length dump: if it cannot, this
+# stops measuring MTL and starts measuring free space. Sizing that mount is
+# configs/gen_config.py::_media_ramdisk_gib, which derives it from test_time.
 _MIN_CAPTURE_RATIO = 0.5
 
-# MTL prints its pipeline stats once per MT_STAT_INTERVAL_S_DEFAULT; a shorter
-# run legitimately produces no stats line at all.
+# Minimum fraction of the nominal frame rate MTL must sustain once the stream is
+# up. Far tighter than _MIN_CAPTURE_RATIO because it grades only whole stats
+# intervals after startup, so none of the slack that ratio spends on process
+# launch is needed here. Measured on st40p at test_time 30 (two printed
+# intervals) and 90 (eight): every steady interval came in within one frame of
+# nominal, p29 at 103.4% and p59 at 101.6-101.7% (extract_framerate truncates
+# those to 29 and 59 against a real 29.97 and 59.94). p50 sets the bound at
+# exactly 100.0%, having no truncation to round down, so a floor above 1.0 minus
+# per-interval jitter would fail it -- raise this only with fresh p50 data. A
+# stream delivering half the requested rate measures 50.8%, which 0.5 passed by
+# four frames and this rejects with 10 points to spare.
+_MIN_STEADY_FRAME_RATIO = 0.9
+
+# MTL prints its pipeline stats once per MT_STAT_INTERVAL_S_DEFAULT (the library
+# also exposes this as mtl_init_params.dump_period_s, which nothing in the
+# acceptance path sets). One line per *completed* interval, counters reset in the
+# print, and the pipeline layer unregisters its stat before teardown so there is
+# no partial final dump -- hence a healthy run of ``test_time`` seconds prints
+# ``test_time // _MTL_STATS_INTERVAL_S - 1`` of them. Measured: 30s -> 2, 90s ->
+# 8. If anyone gives the pipeline layer a teardown dump the way the transport
+# layer has one, the last element becomes a partial interval and the rate floor
+# below starts false-failing.
 _MTL_STATS_INTERVAL_S = 10
+
+# Intervals needed before a rate can be graded: one to discard because it
+# overlaps process startup, one to measure.
+_MIN_GRADED_INTERVALS = 2
 
 # Seconds to let a pipeline finish on SIGINT before the base class escalates.
 # Measured on an st30p run (RX + TX, one MTL session each): RX exited 0.6s after
@@ -641,30 +673,95 @@ class GStreamer(Application):
     def _check_pipeline_frames(self, result: dict) -> list[str]:
         """MTL must report frames moved in the direction this pipeline drives."""
         direction = result["label"]
-        frames = self.count_pipeline_frames(result["output"], direction)
-        if frames < 0:
-            # Runs shorter than one stats interval print no stats line, which is
-            # only tolerable while _check_rx_output's byte count can still bound
-            # the run. Whenever it cannot -- st40p always, st30p if its audio
-            # format yields no byte rate -- "file is non-empty" would be the only
-            # surviving oracle and a single frame would pass it, so absent stats
-            # are the failure instead.
-            test_time = self.params.get("test_time") or 0
-            if self._expected_rx_bytes() is None and test_time >= _MTL_STATS_INTERVAL_S:
-                return [
-                    f"no MTL {direction} pipeline stats and no expected byte "
-                    f"count for session_type={self.params.get('session_type')}, "
-                    f"so nothing bounds how long the stream ran"
-                ]
+        series = self.pipeline_frame_series(result["output"], direction)
+        if self._expected_rx_bytes() is None and len(series) < _MIN_GRADED_INTERVALS:
+            # Where _check_rx_output has no byte count to work with -- st40p,
+            # whose payload size per frame is the sender's choice -- these
+            # counters are the only throughput evidence there is, so too few of
+            # them has to fail rather than log. Passing here would leave "the
+            # process exited 0" as the entire oracle, which is the false
+            # positive this whole path exists to remove, and it would grade a
+            # 20s run (one interval) more weakly than a 15s one (zero
+            # intervals, already a failure before this change).
+            #
+            # The condition is written against the byte count rather than
+            # against session_type=="st40p" because the dependency really is
+            # "no byte oracle => stats are mandatory"; that stays right if a
+            # session type is added or if _expected_rx_bytes loses a case.
+            return [
+                f"MTL printed {len(series)} {direction} pipeline stats "
+                f"interval(s) for session_type="
+                f"{self.params.get('session_type')}, which has no expected byte "
+                f"count; {_MIN_GRADED_INTERVALS} are needed to grade a rate. "
+                f"Either test_time={self.params.get('test_time')} is under the "
+                f"{(_MIN_GRADED_INTERVALS + 1) * _MTL_STATS_INTERVAL_S}s that "
+                f"takes, or the session stopped early"
+            ]
+        if not series:
             logger.info(
                 "[GStreamer] no MTL %s pipeline stats in this run "
                 "(shorter than one stats interval)",
                 direction,
             )
             return []
-        logger.info("[GStreamer] MTL reported %d %s frames", frames, direction)
+        frames = sum(series)
         if frames == 0:
             return [f"MTL reported 0 {direction} frames"]
+        # A frame floor, not just frames>0: the stale-wake regression this suite
+        # has to catch produced clean-exiting runs at ~21% of nominal, which
+        # frames>0 passes. st40p has no byte rate, so its floor has to be counted
+        # in frames or it has no throughput oracle at all.
+        #
+        # st20p/st30p keep _check_rx_output's byte floor instead. That floor is
+        # the *looser* of the two -- _MIN_CAPTURE_RATIO spans the whole window
+        # including startup, so it tolerates a lower sustained rate than
+        # _MIN_STEADY_FRAME_RATIO does -- but those session types also have
+        # per-payload oracles the ancillary ones lack (integrity and compliance
+        # fixtures), and adding a second throughput check here would mean one
+        # more way for a healthy run to fail without closing a gap.
+        if self._expected_rx_bytes() is not None:
+            logger.info("[GStreamer] MTL reported %d %s frames", frames, direction)
+            return []
+        # st30p also lands here when _AUDIO_SAMPLE_BYTES has no entry for its
+        # format: no byte rate, and no framerate to grade a frame rate against
+        # either, so the count is reported and left ungraded.
+        framerate = self.params.get("framerate")
+        if framerate is None:
+            logger.info("[GStreamer] MTL reported %d %s frames", frames, direction)
+            return []
+        # Grade the steady state: the first printed interval overlaps startup --
+        # RX is up and counting before TX sends its first packet -- so it is not
+        # a rate sample. Measured on a healthy p59 run, the per-interval series
+        # was RX [246, 600] and TX [504, 599]: the second interval is the real
+        # rate (599/590 nominal) while including the first would drag the total
+        # to 72%. Dropping it makes the floor independent of how long startup
+        # took, rather than needing enough slack to absorb it. Non-empty by the
+        # _MIN_GRADED_INTERVALS check above, which every caller reaching here has
+        # passed.
+        steady = series[1:]
+        # extract_framerate truncates the MTL token (p59 -> 59 against a real
+        # 59.94), erring toward a lower floor, which is the right direction.
+        expected = (
+            self.extract_framerate(framerate) * len(steady) * _MTL_STATS_INTERVAL_S
+        )
+        minimum = int(expected * _MIN_STEADY_FRAME_RATIO)
+        logger.info(
+            "[GStreamer] MTL %s frame series %s; steady-state %d frames over "
+            "%ds (nominal %d, minimum %d)",
+            direction,
+            series,
+            sum(steady),
+            len(steady) * _MTL_STATS_INTERVAL_S,
+            expected,
+            minimum,
+        )
+        if sum(steady) < minimum:
+            return [
+                f"MTL moved {sum(steady)} {direction} frames in the "
+                f"{len(steady) * _MTL_STATS_INTERVAL_S}s after startup, under "
+                f"{minimum} ({_MIN_STEADY_FRAME_RATIO:.0%} of the {expected} that "
+                f"framerate={framerate} implies); per-interval series {series}"
+            ]
         return []
 
     def _check_rx_output(self) -> list[str]:

@@ -407,19 +407,37 @@ class Application(ABC):
         shorter than one stats interval produces none, and callers must treat
         "no data" differently from "zero frames".
         """
+        series = Application.pipeline_frame_series(output, direction, field)
+        return sum(series) if series else -1
+
+    @staticmethod
+    def pipeline_frame_series(
+        output: str, direction: str, field: str = "put"
+    ) -> list[int]:
+        """Per-interval values of one MTL pipeline stats counter, in order.
+
+        Arguments are as :meth:`count_pipeline_frames`, which sums this. Each
+        element is one completed ``MT_STAT_INTERVAL_S_DEFAULT`` of session
+        uptime, because the library resets its counters after every print, so
+        the list length says how long the session ran and each element says what
+        rate it ran at. A caller wanting a throughput floor needs the series
+        rather than the sum: it can drop the first element, whose interval
+        overlaps process startup, and grade the steady state instead of having to
+        guess how much of the wall clock went to getting going.
+
+        Empty when *output* carries no matching stats line at all.
+        """
         if not output:
-            return -1
-        total = 0
-        seen = False
+            return []
+        series = []
         for match in _MTL_PIPELINE_STATS_RE.finditer(output):
             if match.group("dir") != direction:
                 continue
             value = match.group(field)
             if value is None:
                 continue
-            seen = True
-            total += int(value)
-        return total if seen else -1
+            series.append(int(value))
+        return series
 
     def _session_pacing_ways(self) -> list[str]:
         """Return final per-session pacing ways in attach order."""
