@@ -4,8 +4,71 @@
 
 import argparse
 import subprocess
+import sys
 
 import yaml
+
+# Peak rate at which a single-host case writes its RX dump. The heaviest writer
+# is test_st20p_resolutions, which parametrizes over every yuv_files_422rfc10
+# entry: RFC4175 PG2BE10 is 2.5 B/px, so 8K p25 (7680x4320) is 2.074 GB/s and 4K
+# p60 is 1.244 GB/s. Nothing bounds the dump for those -- RxTxApp's
+# rx_max_file_size defaults to 0 and only one test sets a cap -- so the mount has
+# to be sized for the full run.
+_PEAK_RX_BYTES_PER_S = 2_100_000_000
+
+# The media tmpfs holds that dump alongside the input asset copied onto it.
+_MEDIA_ASSET_HEADROOM_GIB = 8
+
+# Never leave the mount smaller than the fixed size this replaced, whatever
+# test_time or the RAM clamp below say.
+_MEDIA_RAMDISK_FLOOR_GIB = 16
+
+
+def _mem_total_gib() -> int:
+    """RAM of the machine running this generator, in GiB, or 0 if unreadable.
+
+    ``MemTotal`` counts hugetlb, which the acceptance suite reserves heavily
+    (24x1 GiB per NUMA node at session start, plus 2048x2 MiB from the setup
+    script), so the figure overstates what is actually available for a tmpfs.
+    """
+    try:
+        with open("/proc/meminfo") as meminfo:
+            for line in meminfo:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) // (1 << 20)
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def _media_ramdisk_gib(test_time: int) -> int:
+    """Size cap for the media tmpfs, derived from the configured ``test_time``.
+
+    Under-sizing this mount does not merely truncate an RX dump: filesink
+    reports ENOSPC as a pipeline error, and the byte-throughput oracles read the
+    shortfall as an MTL delivery failure, so a healthy run fails for want of
+    disk. tmpfs allocates lazily, so a generous cap costs nothing until a test
+    actually writes that much.
+
+    Two limits are applied after the derived size, in this order: half of RAM,
+    then :data:`_MEDIA_RAMDISK_FLOOR_GIB`. The floor wins, so on a host with 32
+    GiB or less the cap can still exceed half of RAM -- deliberately, because
+    that is the fixed size this calculation replaced and lowering it would be a
+    regression for small hosts. RAM is read on the machine running the generator,
+    which in a dual-host topology is not necessarily the host being sized.
+    """
+    dump_gib = -(-_PEAK_RX_BYTES_PER_S * test_time // (1 << 30))  # ceiling
+    want_gib = dump_gib + _MEDIA_ASSET_HEADROOM_GIB
+    mem_total_gib = _mem_total_gib()
+    capped_gib = min(want_gib, mem_total_gib // 2) if mem_total_gib else want_gib
+    if capped_gib < want_gib:
+        print(
+            f"warning: media ramdisk capped at {capped_gib} GiB (half of "
+            f"{mem_total_gib} GiB RAM) but test_time={test_time} can write up to "
+            f"{dump_gib} GiB; the heaviest tests/single cases may hit ENOSPC",
+            file=sys.stderr,
+        )
+    return max(capped_gib, _MEDIA_RAMDISK_FLOOR_GIB)
 
 
 def _bdf_to_vendor_device(pci_id: str) -> str:
@@ -53,7 +116,10 @@ def gen_test_config(
         "media_path": media_path,
         "test_time": test_time,
         "ramdisk": {
-            "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 16},
+            "media": {
+                "mountpoint": "/mnt/ramdisk/media",
+                "size_gib": _media_ramdisk_gib(test_time),
+            },
             "tmpfs_size_gib": 8,
         },
     }

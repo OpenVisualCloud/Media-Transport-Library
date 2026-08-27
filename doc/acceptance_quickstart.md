@@ -127,8 +127,9 @@ ebu_server:                      # omit to leave compliance disabled
   user: <user>
   password: <password>
 ramdisk:
-  media: {mountpoint: /mnt/ramdisk/media, size_gib: 32}
-  pcap:  {mountpoint: /mnt/ramdisk/pcap,  size_gib: 768}
+  media: {mountpoint: /mnt/ramdisk/media, size_gib: 67}
+  pcap_dir: /mnt/ramdisk/pcap
+  tmpfs_size_gib: 8
 ```
 
 Capture needs a **second** NIC port in a different IOMMU group from the one
