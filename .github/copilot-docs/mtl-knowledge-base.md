@@ -135,6 +135,12 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
+### Pthread-Mode Tasklets Are Unregistered Non-EAL Threads
+- `MTL_FLAG_TASKLET_THREAD` schedulers come from a bare `pthread_create()` (`mt_sch.c`); `lib/` contains zero `rte_thread_register()` calls
+- So `rte_lcore_id()` returns `LCORE_ID_ANY` and any DPDK per-lcore-variable API degrades to the single shared "unregistered" instance
+- For `rte_rand()` / `rte_rand_max()` / `rte_drand()` that instance is documented MT-unsafe when multiple unregistered non-EAL threads call in parallel (`rte_random.h`)
+- `rte_thread_register()` is not the fix — `rte_lcore.h` warns it breaks the multi-process feature
+
 ### Quota System
 Sessions assigned to schedulers by weight in "1080p-equivalents":
 1. Search existing schedulers for capacity on right NUMA node
