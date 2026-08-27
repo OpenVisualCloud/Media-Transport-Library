@@ -222,7 +222,6 @@ struct mt_ptp_impl {
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   enum mt_ptp_addr_mode master_addr_mode;
   int16_t master_utc_offset; /* offset to UTC of current master PTP */
-  int64_t ptp_delta;         /* current delta for PTP */
 
   uint64_t t1;
   uint8_t t1_domain_number;

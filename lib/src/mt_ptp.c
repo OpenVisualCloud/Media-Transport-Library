@@ -524,7 +524,6 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
 #endif
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
-  ptp->ptp_delta += delta;
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
     ptp->delta_result_sum = labs(delta) * ptp->delta_result_cnt;
@@ -1144,6 +1143,7 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   }
 
   ptp->delta_result_cnt++;
+  /* correction goes to the clock only -- see mbuf_hw_time_stamp */
   ptp_timesync_adjust_time(ptp, delta);
   dbg("%s(%d), delta %" PRId64 "\n", __func__, port, delta);
   ptp->connected = true;
@@ -1613,12 +1613,20 @@ uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return ptp_get_raw_time(mt_get_ptp(impl, port));
 }
 
+/* The mbuf holds a raw NIC RX timestamp; no software PTP offset may be added.
+ * With timesync, ptp_timesync_adjust_time() steps the PHC it derives from, so it
+ * already carries the correction and re-adding grows without bound. Without
+ * timesync -- any port missing MT_IF_FEATURE_TIMESYNC: every VF, the
+ * kernel/AF_XDP backends, and PFs whose PMD cannot enable it -- that adjust only
+ * moves no_timesync_delta, a TSC-domain offset whose addition shifted every
+ * timestamp by the TSC-to-TAI gap and failed every ST 2110-21 frame. The NIC
+ * clock is therefore trusted as-is; where it is not PTP-synced, timestamps are
+ * free-running and nothing corrects them. */
 static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
                                    enum mtl_port port) {
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
   uint64_t time_stamp =
       *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
-  time_stamp += ptp->ptp_delta;
   return ptp_correct_ts(ptp, time_stamp);
 }
 
