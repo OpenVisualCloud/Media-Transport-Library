@@ -375,14 +375,10 @@ def audio_sampling_hz(audio_sampling) -> int:
         )
 
 
-# Session type mapping for FFmpeg and GStreamer
+# FFmpeg ``-f`` device name per session type. The GStreamer plugin needs no such
+# map: it names an element pair per session type (see mtl_engine.gstreamer).
 SESSION_TYPE_MAP = {
     "ffmpeg": {
-        "st20p": "mtl_st20p",
-        "st22p": "mtl_st22p",
-        "st30p": "mtl_st30p",
-    },
-    "gstreamer": {
         "st20p": "mtl_st20p",
         "st22p": "mtl_st22p",
         "st30p": "mtl_st30p",

@@ -14,33 +14,31 @@ Topology (single host, mirroring the FFmpeg adapter):
     2. ``prepare_execution(build, host)`` resolves the RX output path and
        verifies the MTL plugin is loadable.
     3. ``execute_test(...)`` starts RX, waits ``sleep_interval``, starts TX,
-       runs for the wall-clock ``test_time``, then stops both with the base
-       class' SIGINT -> SIGKILL ladder (``gst-launch-1.0`` shuts the pipeline
-       down cleanly on SIGINT and exits 0).
+       runs for ``test_time`` plus any PTP sync allowance, then stops both with
+       the base class' SIGINT -> SIGKILL ladder (``gst-launch-1.0`` shuts the
+       pipeline down cleanly on SIGINT and exits 0).
     4. ``validate_results()`` applies the oracles described below.
 
-Both pipelines read a *real* media file and loop it with
-``multifilesrc loop=true``, the GStreamer analogue of FFmpeg's
-``-stream_loop -1``: the sources under test are the pre-generated assets on
-the NFS share, never synthetic patterns generated at runtime. ``rawvideoparse``
-/ ``rawaudioparse`` re-chunk each whole-file buffer into correctly sized
-frames, which is what makes a plain file source work without per-format
-``blocksize`` arithmetic. Downstream back-pressure (the MTL sink blocks until a
-framebuffer frees up) paces the loop, so only one file's worth of data is in
-flight at a time.
+TX reads a *real* media asset and replays it for the whole window (see
+:meth:`GStreamer._looping_source`), the GStreamer analogue of FFmpeg's
+``-stream_loop -1`` -- never a synthetic pattern. ``rawvideoparse`` /
+``rawaudioparse`` re-chunk the byte stream into correctly sized frames, so no
+per-format ``blocksize`` arithmetic is needed, and the MTL sink's blocking frame
+get paces the loop.
 
 Oracles (``validate_results``), in order of strength:
     1. Every ``gst-launch-1.0`` exited 0. Measured behaviour: unknown element
-       or property -> 1, runtime error -> 255, SIGINT -> 0. A missing return
-       code (process had to be SIGKILLed) is logged, not failed -- DPDK
-       cleanup can outlive the grace period.
+       or property -> 1, runtime error -> 255, handled SIGINT -> 0 once the
+       grace period covers MTL/DPDK teardown (see :data:`_STOP_GRACEFUL_S`).
+       Only a code our own stop ladder produced (SIGKILL, or none at all) is
+       tolerated, with a warning.
     2. No ``ERROR:`` / ``erroneous pipeline`` line in either pipeline's output.
     3. The RX output file exists and is non-empty; where the expected byte rate
        follows exactly from the session parameters (st20p, st30p) it must also
        hold at least :data:`_MIN_CAPTURE_RATIO` of a full-length capture, which
        is what rules out a pipeline that streamed briefly and then stopped.
-    4. MTL's own pipeline stats, when the run was long enough to emit them,
-       must report frames put on both the TX and the RX side.
+    4. MTL's own pipeline stats must report frames put on both the TX and the RX
+       side; where oracle 3 cannot bound the run (st40p), missing stats fail.
 Compliance (EBU) and integrity (MD5) are evaluated by the base class through
 ``capture_intent`` / ``integrity_intent`` exactly as for the other adapters --
 this adapter adds no private validation path.
@@ -105,18 +103,31 @@ _ST30P_MAX_CHANNELS = 8
 # Bytes per audio sample per channel, per MTL audio_format.
 _AUDIO_SAMPLE_BYTES = {"PCM8": 1, "PCM16": 2, "PCM24": 3}
 
-# ANC data/secondary-data ID. Matches what RxTxApp transmits
-# (``dst->meta[0].did = 0x43; dst->meta[0].sdid = 0x02;`` in
-# tests/tools/RxTxApp/src/tx_ancillary_app.c) so both applications put the same
+# ANC data/secondary-data ID. Matches what RxTxApp's st40p sender transmits
+# (``meta[0].did = 0x43; meta[0].sdid = 0x02;`` in
+# tests/tools/RxTxApp/src/tx_st40p_app.c) so both applications put the same
 # ancillary packet on the wire and a compliance verdict is comparable.
 _ST40P_DID = 0x43
 _ST40P_SDID = 0x02
 
-# Minimum fraction of a full-length capture the RX side must produce. RX starts
-# first and both processes pay DPDK EAL init out of the same wall-clock budget,
-# so a 100% capture never happens; conversely a pipeline that only streamed for
-# a moment cannot reach half the nominal byte count.
+# Minimum fraction of a full-length capture the RX side must produce. This
+# bounds how long the stream ran; it is not a pacing grade. RX starts first and
+# both processes pay DPDK EAL init out of the same wall-clock budget, and TX
+# re-reads the asset at every loop wrap, so a healthy run lands well under 100%
+# and the floor has to sit below the worst honest case rather than near 1.0.
 _MIN_CAPTURE_RATIO = 0.5
+
+# MTL prints its pipeline stats once per MT_STAT_INTERVAL_S_DEFAULT; a shorter
+# run legitimately produces no stats line at all.
+_MTL_STATS_INTERVAL_S = 10
+
+# Seconds to let a pipeline finish on SIGINT before the base class escalates.
+# Measured on an st30p run (RX + TX, one MTL session each): RX exited 0.6s after
+# ``kill -2``, TX took 21.7s, all of it inside ``Setting pipeline to NULL`` ->
+# MTL session free -> DPDK cleanup, so the 10s universal default always SIGKILLed
+# the TX pipeline. This covers the measured cost with margin; a larger geometry
+# can still exceed it, which _check_pipeline_exit() treats as a warning.
+_STOP_GRACEFUL_S = 30
 
 
 class GStreamer(Application):
@@ -237,8 +248,11 @@ class GStreamer(Application):
 
         tx_cmd = self._pipeline(
             self._looping_source(),
+            # Caps are the only route to ops_tx.interlaced: gst_mtl_st20p_tx.c
+            # installs no property and reads the negotiated interlace-mode.
             f"rawvideoparse format={gstreamer_video_format(pixel_format)} "
-            f"width={width} height={height} framerate={framerate}",
+            f"width={width} height={height} framerate={framerate} "
+            f"interlaced={_gst_bool(self.params.get('interlaced'))}",
             self._mtl_element("st20p", is_tx=True, nic_port_list=nic_port_list),
         )
         rx_cmd = self._pipeline(
@@ -309,6 +323,9 @@ class GStreamer(Application):
                     f"tx-sdid={_ST40P_SDID}",
                     "input-format=raw-udw",
                     f"tx-interlaced={_gst_bool(self.params.get('interlaced'))}",
+                    # ST40P_TX_FLAG_SPLIT_ANC_BY_PKT (gst_mtl_st40p_tx.c:511):
+                    # one ANC packet per RTP packet instead of several packed
+                    # into one, which ST 2110-40 also permits.
                     "split-anc-by-pkt="
                     f"{_gst_bool(self.params.get('anc_split_by_packet'))}",
                 ],
@@ -336,11 +353,12 @@ class GStreamer(Application):
         return " ! ".join((f"{self.get_executable_path()} {stages[0]}",) + stages[1:])
 
     def _looping_source(self) -> str:
-        """A file source that streams the input asset for the whole test window.
+        """TX file source that replays the asset for the whole window.
 
-        ``multifilesrc loop=true`` restarts the file when it runs out, the same
-        role FFmpeg's ``-stream_loop -1`` plays in the other adapter. It emits
-        one buffer per pass, which the downstream raw parser splits into frames.
+        ``multifilesrc`` with a single location and ``loop=true`` is GStreamer's
+        equivalent of FFmpeg's ``-stream_loop -1``: one element, and it re-emits
+        the file indefinitely so the run length is decided by when the harness
+        stops the pipeline rather than by the asset's duration.
         """
         return f"multifilesrc location={self.params['input_file']} loop=true"
 
@@ -361,14 +379,15 @@ class GStreamer(Application):
         """
         tx_element, rx_element = _ELEMENTS[session_type]
         dst_ip = self._dst_ip()
+        is_multicast = ipaddress.ip_address(dst_ip).is_multicast
         props = [
             f"dev-port={nic_port_list[0] if is_tx else nic_port_list[1]}",
             f"dev-ip={ip_pools.tx[0] if is_tx else ip_pools.rx[0]}",
             # TX ``ip`` is the destination; RX ``ip`` is the multicast group to
             # join, or the sender's address for unicast
             # (gst_mtl_common_parse_{tx,rx}_port_arguments).
-            f"ip={dst_ip if is_tx or _is_multicast(dst_ip) else ip_pools.tx[0]}",
-            f"udp-port={self._udp_port()}",
+            f"ip={dst_ip if is_tx or is_multicast else ip_pools.tx[0]}",
+            f"udp-port={self.params['port']}",
             f"payload-type={self.params['payload_type']}",
         ]
         queues = self.params.get("tx_queues_cnt" if is_tx else "rx_queues_cnt")
@@ -383,9 +402,6 @@ class GStreamer(Application):
             # Each pipeline runs its own MTL instance, so both need the flag.
             props.append("enable-ptp=true")
         return " ".join([tx_element if is_tx else rx_element] + props + (extra or []))
-
-    def _udp_port(self) -> int:
-        return int(self.params.get("port") or 20000)
 
     def _dst_ip(self) -> str:
         """Destination address the TX side sends to.
@@ -503,12 +519,14 @@ class GStreamer(Application):
                 host=host,
                 label="RX",
                 bounded=False,
+                graceful_s=_STOP_GRACEFUL_S,
             ),
             ProcSpec(
                 cmd=f"{self._tx_commands[0]} --gst-plugin-path={self._plugin_path}",
                 host=host,
                 label="TX",
                 bounded=False,
+                graceful_s=_STOP_GRACEFUL_S,
             ),
         ]
 
@@ -583,11 +601,20 @@ class GStreamer(Application):
         """Return code and error-text checks for one pipeline."""
         label, code, output = result["label"], result["return_code"], result["output"]
         problems = []
-        if code is None:
-            # SIGKILLed after the grace period; DPDK teardown can be slow and
-            # the data checks below still speak for the run.
+        # ``None`` and -9/137 both mean our own stop ladder ran out of patience
+        # and used SIGKILL -- see _stop_unbounded_proc, which documents both the
+        # SIGKILL leg and the unreadable return code that can follow it.
+        # _STOP_GRACEFUL_S is measured on one session pair, so a larger geometry
+        # can legitimately exceed it; failing on that would report a harness
+        # timing artifact as a product bug. What the run actually produced is
+        # bounded by the oracles below instead.
+        if code in (None, -9, 137):
             logger.warning(
-                "[GStreamer] %s return code unavailable (force-killed)", label
+                "[GStreamer] %s pipeline was SIGKILLed after %ds of grace "
+                "(return code %s); relying on the data oracles for this run",
+                label,
+                _STOP_GRACEFUL_S,
+                code,
             )
         elif code != 0:
             problems.append(f"{label} pipeline exited with {code}")
@@ -616,8 +643,19 @@ class GStreamer(Application):
         direction = result["label"]
         frames = self.count_pipeline_frames(result["output"], direction)
         if frames < 0:
-            # Runs shorter than one MTL stats interval print no stats line; the
-            # output-size check below is the oracle in that case.
+            # Runs shorter than one stats interval print no stats line, which is
+            # only tolerable while _check_rx_output's byte count can still bound
+            # the run. Whenever it cannot -- st40p always, st30p if its audio
+            # format yields no byte rate -- "file is non-empty" would be the only
+            # surviving oracle and a single frame would pass it, so absent stats
+            # are the failure instead.
+            test_time = self.params.get("test_time") or 0
+            if self._expected_rx_bytes() is None and test_time >= _MTL_STATS_INTERVAL_S:
+                return [
+                    f"no MTL {direction} pipeline stats and no expected byte "
+                    f"count for session_type={self.params.get('session_type')}, "
+                    f"so nothing bounds how long the stream ran"
+                ]
             logger.info(
                 "[GStreamer] no MTL %s pipeline stats in this run "
                 "(shorter than one stats interval)",
@@ -642,6 +680,11 @@ class GStreamer(Application):
         size = int((result.stdout or "0").strip() or 0)
         if size == 0:
             return [f"RX output file is empty: {out_file}"]
+        # Sized against the requested ``test_time``, never the PTP-extended
+        # wall clock: no frame moves during PTP sync, so charging the capture
+        # for those seconds would fail a healthy run whose lock took a while.
+        # A run that gets its full window plus leftover sync time can exceed
+        # 100% here, which is fine -- this is a floor, not a target.
         expected = self._expected_rx_bytes()
         if expected:
             minimum = int(expected * _MIN_CAPTURE_RATIO)
@@ -655,7 +698,7 @@ class GStreamer(Application):
                 return [
                     f"RX captured {size} bytes, under {minimum} "
                     f"({_MIN_CAPTURE_RATIO:.0%} of the {expected} expected for "
-                    f"{self.params['test_time']}s) -- the stream did not run "
+                    f"{self.params.get('test_time')}s) -- the stream did not run "
                     f"for the test window"
                 ]
         return []
@@ -703,10 +746,6 @@ def _st20p_frame_size(pixel_format: str, width: int, height: int) -> int:
         return ((width + 47) // 48) * 128 * height
     # YUV422PLANAR10LE: 2 bytes per component, 2 components per pixel.
     return width * height * 4
-
-
-def _is_multicast(address: str) -> bool:
-    return ipaddress.ip_address(address).is_multicast
 
 
 def _gst_bool(value) -> str:

@@ -695,6 +695,13 @@ class FFmpeg(Application):
         if not self._tx_commands:
             raise RuntimeError("FFmpeg TX command(s) missing after prepare_execution")
 
+        # PTP sync burns wall-clock before the first frame moves, so the run
+        # window has to grow by it -- otherwise ``compliance.arm()`` returns
+        # with the budget already spent and both processes are stopped before
+        # any data is captured. FFmpeg commands carry no ``--test_time`` token
+        # to rewrite; only the wall-clock budget changes.
+        effective_test_time, _ = self._apply_ptp_extension(test_time)
+
         specs = [ProcSpec(cmd=self.command, host=host, label="RX", bounded=False)]
         for idx, tx_cmd in enumerate(self._tx_commands, start=1):
             specs.append(
@@ -711,9 +718,9 @@ class FFmpeg(Application):
         self._run_proc_group(
             specs,
             build=build,
-            test_time=test_time,
+            test_time=effective_test_time,
             sleep_interval=sleep_interval,
-            wall_clock_seconds=test_time,
+            wall_clock_seconds=effective_test_time,
             cleanup_host=host,
             after_last_start=lambda _proc: compliance.arm(intent),
         )

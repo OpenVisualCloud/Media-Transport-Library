@@ -116,6 +116,10 @@ class ProcSpec:
         bounded: True if the command self-terminates (e.g. wrapped in
             ``timeout N`` or has its own ``--test_time``). False for
             indefinitely-running streams that the orchestrator must stop.
+        graceful_s: SIGINT grace for this one process, overriding the universal
+            ``stop_graceful_s``. Only for a process measured to need longer --
+            an under-sized grace turns a clean exit into a SIGKILL, which
+            costs the exit code the caller then has to judge.
         captured_output: Filled in by :meth:`Application._run_proc_group`
             after stdout has been read.
         proc: Filled in by :meth:`Application._run_proc_group` with the
@@ -126,6 +130,7 @@ class ProcSpec:
     host: object
     label: str
     bounded: bool = True
+    graceful_s: Optional[int] = None
     captured_output: str = ""
     proc: object = field(default=None, repr=False)
 
@@ -806,10 +811,10 @@ class Application(ABC):
         (each helper already records the pytest failure internally).
 
         Integrity is evaluated *before* ``_dispatch_validate`` deliberately:
-        FFmpeg's ``validate_results()`` deletes the tracked RX output file
-        (via ``_cleanup_output_files``) once its own check is done, so the
-        integrity verdict must consume the file first -- this is what lets
-        callers drop ``keep_output=True``.
+        the FFmpeg and GStreamer ``validate_results()`` delete the tracked RX
+        output file (via ``_cleanup_output_files``) once their own checks are
+        done, so the integrity verdict must consume the file first -- this is
+        what lets callers drop ``keep_output=True``.
         """
         compliance_ok, compliance_exc = True, None
         try:
@@ -856,11 +861,11 @@ class Application(ABC):
         Two waiting strategies, picked by the caller:
 
         * ``wall_clock_seconds`` set: the orchestrator sleeps that long, then
-          tears every spec down (used by FFmpeg whose RX/TX streams never
-          self-terminate).
-        * ``proc_wait_timeout`` set: each ``bounded=True`` spec is awaited
-          with that timeout (used by RxTxApp/Gstreamer whose commands carry
-          their own ``timeout N`` shell wrapper).
+          tears every spec down. Used by FFmpeg and GStreamer, whose pipelines
+          stream a looped source and never self-terminate.
+        * ``proc_wait_timeout`` set: each ``bounded=True`` spec is awaited with
+          that timeout. Used by RxTxApp, whose command carries its own
+          ``--test_time`` and shell ``timeout`` wrapper.
 
         For each spec, ``cmd`` must already be timeout-wrapped if ``bounded``.
         Stdout is read inside ``finally`` and assigned to ``spec.captured_output``;
@@ -922,7 +927,7 @@ class Application(ABC):
             # already exited (timeout wrapper or proc.wait above).
             for spec in specs:
                 if not spec.bounded and spec.proc is not None:
-                    self._stop_unbounded_proc(spec.proc, spec.label)
+                    self._stop_unbounded_proc(spec.proc, spec.label, spec.graceful_s)
             if cleanup_host is not None:
                 # Drains every comm alias in MTL_APP_NAMES (incl. DPDK-renamed
                 # RxTxApp_main). Single call covers ffmpeg + RxTxApp orphans.
@@ -932,12 +937,18 @@ class Application(ABC):
             self._process = None
         return specs
 
-    def _stop_unbounded_proc(self, proc, label: str) -> None:
+    def _stop_unbounded_proc(
+        self, proc, label: str, graceful_s: Optional[int] = None
+    ) -> None:
         """SIGINT → SIGKILL ladder for indefinitely-running processes.
 
         Reuses :meth:`_signal_and_wait` so DPDK applications get a chance to
         run ``rte_eal_cleanup()`` before being force-killed (otherwise the
         VFIO group fd leaks and ``nicctl disable_vf`` blocks).
+
+        ``graceful_s`` (from :attr:`ProcSpec.graceful_s`) overrides the
+        universal ``stop_graceful_s`` for one process that is measured to need
+        longer than the shared default.
 
         After SIGKILL, the kernel takes a moment to reap the process and the
         SSH-side ``proc.running`` poll may still return True briefly; we wait
@@ -946,7 +957,8 @@ class Application(ABC):
         """
         if proc is None:
             return
-        graceful_s = self.params.get("stop_graceful_s", 10)
+        if graceful_s is None:
+            graceful_s = self.params.get("stop_graceful_s", 10)
         if self._signal_and_wait(proc, signal.SIGINT, graceful_s):
             return
         logger.info(
