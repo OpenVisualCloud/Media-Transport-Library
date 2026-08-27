@@ -211,6 +211,48 @@ uint64_t ut20_stat_wrong_ssrc(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_wrong_interlace(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_offset_dropped(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_wrong_len(const ut20_test_ctx* ctx);
+/* Bumped when a pkt cannot be placed in the frame: no seq base yet, or an
+ * ST 2110-22 box parse failure. */
+uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx);
+/* Bumped once per frame whose first pkt carried accepted ST 2110-22 boxes. */
+uint64_t ut20_stat_st22_boxes(const ut20_test_ctx* ctx);
+
+/* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
+
+/* Switch the session into ST 2110-22 frame mode: install the st22 rx info and
+ * route packets through rv_handle_st22_pkt. Call once after ut20_ctx_create*()
+ * and before feeding. The synthetic geometry is reused as-is, so
+ * st20_frame_size (40 * pkts_per_frame) is the codestream frame budget. */
+void ut20_ctx_enable_st22(ut20_test_ctx* ctx);
+
+/* Frames handed to the st22 notify_frame_ready callback. */
+uint64_t ut20_st22_frames_ready(const ut20_test_ctx* ctx);
+/* frame_total_size reported with the last delivered st22 frame. */
+size_t ut20_st22_last_frame_size(const ut20_test_ctx* ctx);
+
+/* Feed one RFC 9134 codestream packet directly to rv_handle_st22_pkt.
+ * `pkt_counter` is the combined P&Sep counter (0 selects the first-packet path
+ * that parses the boxes), `payload`/`payload_length` the bytes after the rtp
+ * hdr. Returns the production handler's return code. */
+int ut20_feed_st22_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                       uint32_t pkt_counter, bool marker, const void* payload,
+                       uint16_t payload_length, enum mtl_session_port port);
+
+/* Feed a first packet whose mbuf->data_len claims `data_len` bytes regardless of
+ * the `payload_length` bytes actually written. Below ut20_st22_hdr_len() this
+ * forges a runt datagram; above the payload end it leaves planted bytes past the
+ * declared datagram, where a parser that overreads sees them. */
+int ut20_feed_st22_pkt_data_len(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                                const void* payload, uint16_t payload_length,
+                                uint16_t data_len, enum mtl_session_port port);
+
+/* Bytes of RFC 9134 headers that precede the codestream payload in a packet. */
+uint16_t ut20_st22_hdr_len(void);
+
+/* Write a jpvs box followed by a colr box into `buf` (needs 60 bytes) with the
+ * given on-the-wire lbox values, and return the bytes written. Pass the real
+ * struct sizes (42 / 18) for a well-formed pair. */
+uint16_t ut20_st22_build_boxes(void* buf, uint32_t jpvs_lbox, uint32_t colr_lbox);
 
 /* Fixed geometry constant: number of packets that make up one full frame
  * in the harness's synthetic 16x2 YUV422-10bit configuration. Tests use it
