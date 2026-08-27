@@ -207,8 +207,13 @@ build_ice() {
 	}
 
 	pushd "ice-${ICE_VER}" >/dev/null
-	for patch_file in "${REPO_DIR}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
-		patch -p1 -i "${patch_file}"
+	for patch_file in "${patch_dir}"/*.patch; do
+		# --batch: a patch that does not fit this release must fail the build, not
+		# stop on "File to patch:" and wait for a terminal nobody is watching.
+		patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
+			echo "Failed to apply $(basename "${patch_file}") to ice-${ICE_VER}." >&2
+			exit 1
+		}
 	done
 	make -C src -j"$(nproc)" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
@@ -284,7 +289,10 @@ build_iavf() {
 	if [[ -d "${patch_dir}" ]]; then
 		shopt -s nullglob
 		for patch_file in "${patch_dir}"/*.patch; do
-			patch -p1 --no-backup-if-mismatch -i "${patch_file}"
+			patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
+				echo "Failed to apply $(basename "${patch_file}") to iavf-${IAVF_VER}." >&2
+				exit 1
+			}
 		done
 		shopt -u nullglob
 	fi

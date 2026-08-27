@@ -1,4 +1,4 @@
-From 3d2a421c45b2946fc42486d5899c1773dcdf76e4 Mon Sep 17 00:00:00 2001
+From 0fc2a2e96c1078c9cc382f6fc81a48984759038f Mon Sep 17 00:00:00 2001
 From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
 Date: Mon, 27 Apr 2026 04:39:34 -0400
 Subject: [PATCH 1/5] ice: support VF runtime rate-limit queue reconfiguration
@@ -22,14 +22,14 @@ media sessions on that port.
 Change-type: FeatureImplementation
 Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
 ---
- src/CORE/ice_virtchnl.c | 31 +++++++++++++++++++++----------
- 1 file changed, 21 insertions(+), 10 deletions(-)
+ src/ice_virtchnl.c | 28 +++++++++++++++++++++-------
+ 1 file changed, 21 insertions(+), 7 deletions(-)
 
-diff --git a/src/CORE/ice_virtchnl.c b/src/CORE/ice_virtchnl.c
-index f56c7d362..e9b740d58 100644
---- a/src/CORE/ice_virtchnl.c
-+++ b/src/CORE/ice_virtchnl.c
-@@ -3831,7 +3831,7 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg, u16 msglen)
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index bc68d8a..f2a7e45 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3608,7 +3608,7 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
  	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
  	struct virtchnl_queues_bw_cfg *qbw =
  		(struct virtchnl_queues_bw_cfg *)msg;
@@ -38,7 +38,7 @@ index f56c7d362..e9b740d58 100644
  	struct ice_vsi *vsi;
  	size_t len;
  	u16 i;
-@@ -3905,8 +3905,28 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg, u16 msglen)
+@@ -3677,8 +3677,28 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
  		qs_bw[i].tc = qbw->cfg[i].tc;
  	}
  
@@ -67,29 +67,23 @@ index f56c7d362..e9b740d58 100644
  err_bw:
  	kfree(qs_bw);
  
-@@ -4192,11 +4212,6 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
- 			vsi->tx_rings[q_idx]->dma = qpi->txq.dma_ring_addr;
- 			vsi->tx_rings[q_idx]->count = qpi->txq.ring_len;
+@@ -3783,10 +3803,6 @@ ice_vc_cfg_txq(struct ice_vf *vf, struct ice_vsi *vsi,
+ 	vsi->tx_rings[q_idx]->dma = txqi->dma_ring_addr;
+ 	vsi->tx_rings[q_idx]->count = txqi->ring_len;
  
--			/* Disable any existing queue first */
--			if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx,
--						      qpi->txq.queue_id))
--				goto error_param;
+-	/* Disable queue before reconfiguration */
+-	if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx, txqi->queue_id))
+-		return VIRTCHNL_STATUS_ERR_PARAM;
 -
- 			/* Configure a queue with the requested settings */
- 			if (ice_vsi_cfg_single_txq(vsi, vsi->tx_rings, q_idx)) {
- 				dev_warn(ice_pf_to_dev(pf), "VF-%d failed to configure TX queue %d\n",
-@@ -4303,10 +4318,6 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
- #endif /* ADQ_SUPPORT */
+ 	/* Configure txtime/timestamp support if enabled */
+ 	if (txqi->flags & VIRTCHNL_TXQ_FLAG_TXTIME_ENABLED) {
+ 		struct ice_tx_ring *tx_ring = vsi->tx_rings[q_idx];
+@@ -4008,8 +4024,6 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
+ 		}
  	}
  
--#ifdef ADV_AVF_SUPPORT
 -	if (ice_vf_cfg_qs_bw(vf, qci->num_queue_pairs))
 -		goto error_param;
--#endif
- #ifdef LAG_SUPPORT
  #ifdef HAVE_NETDEV_UPPER_INFO
  
--- 
-2.43.0
-
+ 	ice_lag_complete_vf_reset(pf->lag, act_prt);
