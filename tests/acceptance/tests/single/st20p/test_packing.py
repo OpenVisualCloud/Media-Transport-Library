@@ -4,25 +4,40 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.tx_side
-@pytest.mark.parametrize("packing", ["BPM", "GPM", "GPM_SL"])
 @pytest.mark.parametrize(
-    "media_file",
+    ("application", "packing", "media_file"),
     [
-        yuv_files_422rfc10["Penguin_720p"],
-        yuv_files_422rfc10["Penguin_1080p"],
-        yuv_files_422rfc10["Penguin_4K"],
-        yuv_files_422rfc10["Penguin_8K"],
+        *[
+            pytest.param(
+                "rxtxapp",
+                packing,
+                media_file,
+                id=f"rxtxapp-{packing}-{name}",
+            )
+            for packing in ("BPM", "GPM", "GPM_SL")
+            for name, media_file in yuv_files_422rfc10.items()
+        ],
+        pytest.param(
+            "ffmpeg",
+            "BPM",
+            yuv_files_422p10le["Penguin_1080p"],
+            id="ffmpeg-BPM-Penguin_1080p",
+        ),
+        pytest.param(
+            "gstreamer",
+            "BPM",
+            yuv_files_422p10le["Penguin_1080p"],
+            id="gstreamer-BPM-Penguin_1080p",
+        ),
     ],
     indirect=["media_file"],
-    ids=["Penguin_720p", "Penguin_1080p", "Penguin_4K", "Penguin_8K"],
 )
 def test_st20p_packing(
     application,

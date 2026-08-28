@@ -27,23 +27,19 @@ per-format ``blocksize`` arithmetic is needed, and the MTL sink's blocking frame
 get paces the loop.
 
 Oracles (``validate_results``), in order of strength:
-    1. Every ``gst-launch-1.0`` exited 0. Measured behaviour: unknown element
-       or property -> 1, runtime error -> 255, handled SIGINT -> 0 once the
-       grace period covers MTL/DPDK teardown (see :data:`_STOP_GRACEFUL_S`).
-       Only a code our own stop ladder produced (SIGKILL, or none at all) is
-       tolerated, with a warning.
+    1. Every ``gst-launch-1.0`` exited cleanly after the harness sent SIGINT.
+       A process that requires SIGKILL is a failure.
     2. No ``ERROR:`` / ``erroneous pipeline`` line in either pipeline's output.
-    3. The RX output file exists and is non-empty; where the expected byte rate
-       follows exactly from the session parameters (st20p, st30p) it must also
-       hold at least :data:`_MIN_CAPTURE_RATIO` of a full-length capture, which
-       is what rules out a pipeline that streamed briefly and then stopped.
-    4. MTL's own pipeline stats must report frames put on both the TX and the RX
-       side. Where oracle 3 cannot bound the run (st40p, whose payload size per
-       frame is the sender's choice), missing stats fail and the per-interval
-       frame counts after startup must additionally hold
-       :data:`_MIN_STEADY_FRAME_RATIO` of the rate the session was configured
-       for -- otherwise "one frame moved" would be st40p's whole throughput
-       oracle.
+     3. The ST20 RX artifact contains one complete frame for integrity; ST30
+         contains at least :data:`_MIN_CAPTURE_RATIO` of its full-window bytes.
+     4. For ST20 and ST40, MTL's per-interval frame counts prove throughput: the
+         RX side must report enough intervals to grade, and every graded
+       direction must hold :data:`_MIN_STEADY_FRAME_RATIO` of the rate the
+       session was configured for -- otherwise "one frame moved" would be
+       st40p's whole throughput oracle. Only RX is required to have gradeable
+       intervals; see :meth:`GStreamer._check_pipeline_frames` for why TX is
+       graded when it can be but never required to be.
+
 Compliance (EBU) and integrity (MD5) are evaluated by the base class through
 ``capture_intent`` / ``integrity_intent`` exactly as for the other adapters --
 this adapter adds no private validation path.
@@ -115,41 +111,19 @@ _AUDIO_SAMPLE_BYTES = {"PCM8": 1, "PCM16": 2, "PCM24": 3}
 _ST40P_DID = 0x43
 _ST40P_SDID = 0x02
 
-# Minimum fraction of a full-length capture the RX side must produce. This
-# bounds how long the stream ran; it is not a pacing grade. RX starts first and
-# both processes pay DPDK EAL init out of the same wall-clock budget, and TX
-# re-reads the asset at every loop wrap, so a healthy run lands well under 100%
-# and the floor has to sit below the worst honest case rather than near 1.0.
-# It assumes the output mount can hold a full-length dump: if it cannot, this
-# stops measuring MTL and starts measuring free space. Sizing that mount is
-# configs/gen_config.py::_media_ramdisk_gib, which derives it from test_time.
+# Minimum fraction of a full-length audio capture the RX side must produce.
+# ST20 keeps one complete frame for integrity and uses MTL frame counters to
+# prove full-window throughput without filling the media ramdisk.
 _MIN_CAPTURE_RATIO = 0.5
 
-# Minimum fraction of the nominal frame rate MTL must sustain once the stream is
-# up. Far tighter than _MIN_CAPTURE_RATIO because it grades only whole stats
-# intervals after startup, so none of the slack that ratio spends on process
-# launch is needed here. Measured on st40p at test_time 30 (two printed
-# intervals) and 90 (eight): every steady interval came in within one frame of
-# nominal, p29 at 103.4% and p59 at 101.6-101.7% (extract_framerate truncates
-# those to 29 and 59 against a real 29.97 and 59.94). p50 sets the bound at
-# exactly 100.0%, having no truncation to round down, so a floor above 1.0 minus
-# per-interval jitter would fail it -- raise this only with fresh p50 data. A
-# stream delivering half the requested rate measures 50.8%, which 0.5 passed by
-# four frames and this rejects with 10 points to spare.
+# Minimum fraction of nominal frames required in each completed interval after
+# startup. Healthy p29/p50/p59 runs met nominal; 0.9 leaves jitter margin while
+# rejecting the measured half-rate and stale-wake failures.
 _MIN_STEADY_FRAME_RATIO = 0.9
 
-# MTL prints its pipeline stats once per MT_STAT_INTERVAL_S_DEFAULT (the library
-# also exposes this as mtl_init_params.dump_period_s, which nothing in the
-# acceptance path sets). One line per *completed* interval, counters reset in the
-# print, and the pipeline layer unregisters its stat before teardown so there is
-# no partial final dump -- hence a pipeline prints one per completed interval of
-# its own uptime, which is the wall-clock window it was given minus its
-# ``mtl_init``. RX gets the whole window, TX the window minus ``sleep_interval``,
-# so the two directions do not always print the same count. Measured at
-# test_time=30: RX [248, 600], TX [505, 599]; at test_time=20 both printed one.
-# If anyone gives the pipeline layer a teardown dump the way the transport layer
-# has one, the last element becomes a partial interval and the rate floor below
-# starts false-failing.
+# MTL prints and resets pipeline counters after each completed 10s interval; it
+# does not print a partial interval during teardown. RX starts first, so TX can
+# legitimately have one fewer sample.
 _MTL_STATS_INTERVAL_S = 10
 
 # Intervals needed before a rate can be graded: one to discard because it
@@ -162,11 +136,7 @@ _RX_LABEL = "RX"
 _TX_LABEL = "TX"
 
 # Seconds to let a pipeline finish on SIGINT before the base class escalates.
-# Measured on an st30p run (RX + TX, one MTL session each): RX exited 0.6s after
-# ``kill -2``, TX took 21.7s, all of it inside ``Setting pipeline to NULL`` ->
-# MTL session free -> DPDK cleanup, so the 10s universal default always SIGKILLed
-# the TX pipeline. This covers the measured cost with margin; a larger geometry
-# can still exceed it, which _check_pipeline_exit() treats as a warning.
+# ST30P teardown measured 21.7s, so the universal 10s default is insufficient.
 _STOP_GRACEFUL_S = 30
 
 
@@ -195,11 +165,16 @@ class GStreamer(Application):
         Only genuine limitations of the MTL GStreamer plugin are listed; every
         parameter combination not mentioned here is expected to work.
         """
+        session_type = params.get("session_type")
+        if session_type is not None and session_type not in _ELEMENTS:
+            return (
+                f"MTL GStreamer plugin supports {sorted(_ELEMENTS)}, "
+                f"not session_type={session_type}"
+            )
         if params.get("enable_rtcp"):
             # gst_mtl_common.c installs no RTCP property on any MTL element, so
             # there is no way to ask the plugin for an RTCP-enabled session.
             return "MTL GStreamer plugin exposes no RTCP property (gst_mtl_common.c)"
-        session_type = params.get("session_type")
         if session_type == "st20p":
             pixel_format = params.get("pixel_format")
             if (
@@ -229,6 +204,8 @@ class GStreamer(Application):
                     f"not packing={packing}"
                 )
         if session_type == "st30p":
+            if params.get("audio_sampling") == "44.1kHz":
+                return "MTL ST30 does not define a packet time for 44.1 kHz audio"
             channels = params.get("audio_channels")
             if channels is not None:
                 count = audio_channel_count(channels)
@@ -309,7 +286,7 @@ class GStreamer(Application):
                     f"rx-interlaced={_gst_bool(self.params.get('interlaced'))}",
                 ],
             ),
-            "filesink location={out}",
+            "multifilesink location={out} max-files=1",
         )
         return tx_cmd, rx_cmd
 
@@ -363,11 +340,6 @@ class GStreamer(Application):
                     f"tx-sdid={_ST40P_SDID}",
                     "input-format=raw-udw",
                     f"tx-interlaced={_gst_bool(self.params.get('interlaced'))}",
-                    # ST40P_TX_FLAG_SPLIT_ANC_BY_PKT (gst_mtl_st40p_tx.c:511):
-                    # one ANC packet per RTP packet instead of several packed
-                    # into one, which ST 2110-40 also permits.
-                    "split-anc-by-pkt="
-                    f"{_gst_bool(self.params.get('anc_split_by_packet'))}",
                 ],
             ),
         )
@@ -587,6 +559,7 @@ class GStreamer(Application):
                 "label": spec.label,
                 "return_code": self._safe_return_code(spec.proc),
                 "output": spec.captured_output or "",
+                "exited_before_stop": spec.exited_before_stop,
             }
             for spec in specs
         ]
@@ -606,9 +579,9 @@ class GStreamer(Application):
         )
 
     # ----------------------------------------------------- compliance
-    def _resolve_capture_dst_ip(self):
+    def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
         """Destination IP netsniff filters on -- the address TX transmits to."""
-        return self._dst_ip()
+        return (self._dst_ip(),)
 
     # ----------------------------------------------------- validate
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
@@ -641,29 +614,19 @@ class GStreamer(Application):
         """Return code and error-text checks for one pipeline."""
         label, code, output = result["label"], result["return_code"], result["output"]
         problems = []
-        # ``None`` and -9/137 both mean our own stop ladder ran out of patience
-        # and used SIGKILL -- see _stop_unbounded_proc, which documents both the
-        # SIGKILL leg and the unreadable return code that can follow it.
-        # _STOP_GRACEFUL_S is measured on one session pair, so a larger geometry
-        # can legitimately exceed it; failing on that would report a harness
-        # timing artifact as a product bug. What the run actually produced is
-        # bounded by the oracles below instead.
+        if result.get("exited_before_stop") is None:
+            problems.append(
+                f"{label} pipeline liveness could not be verified at teardown"
+            )
+        elif result["exited_before_stop"]:
+            problems.append(f"{label} pipeline exited before the test window ended")
         if code in (None, -9, 137):
-            logger.warning(
-                "[GStreamer] %s pipeline was SIGKILLed after %ds of grace "
-                "(return code %s); relying on the data oracles for this run",
-                label,
-                _STOP_GRACEFUL_S,
-                code,
+            problems.append(
+                f"{label} pipeline did not exit cleanly after "
+                f"{_STOP_GRACEFUL_S}s of grace (return code {code})"
             )
         elif code != 0:
             problems.append(f"{label} pipeline exited with {code}")
-        # ``ERROR:`` prefixes gst-launch's bus errors ("ERROR: from element ...",
-        # "ERROR: pipeline doesn't want to preroll") and its parse failures --
-        # the authoritative "this pipeline did not work" signal. Element-internal
-        # GST_ERROR lines (the debug log's " ERROR " column) are surfaced for
-        # triage but do not fail on their own: they are advisory unless the
-        # element also fails the pipeline, which the checks above catch.
         errors = [
             line.strip()
             for line in output.splitlines()
@@ -673,29 +636,23 @@ class GStreamer(Application):
             problems.append(
                 f"{label} pipeline reported {len(errors)} error(s), first: {errors[0]}"
             )
-        for line in output.splitlines():
-            if " ERROR " in line:
-                logger.warning("[GStreamer] %s element error: %s", label, line.strip())
+        element_errors = [
+            line.strip() for line in output.splitlines() if " ERROR " in line
+        ]
+        if element_errors:
+            problems.append(
+                f"{label} pipeline reported {len(element_errors)} element error(s), "
+                f"first: {element_errors[0]}"
+            )
         return problems
 
     def _check_pipeline_frames(self) -> list[str]:
-        """MTL's per-interval frame counters must show a sustained frame rate.
+        """Grade MTL frame counters where they are the throughput oracle.
 
-        Every direction with enough intervals is graded, but only RX is
-        *required* to have them. RX runs for the whole wall-clock window and
-        starts first, so it has the most room for a slow ``mtl_init``, and it is
-        the direction that proves frames actually arrived. TX starts
-        ``sleep_interval`` later and can legitimately print one fewer interval,
-        which is why a short TX series is not a failure on its own -- while
-        requiring RX keeps a prematurely killed receiver from passing on the
-        sender's counters, which ``_check_pipeline_exit`` tolerates by design.
-
-        Only session types ``_check_rx_output`` cannot grade in bytes reach the
-        rate check -- st40p, whose UDW payload size per frame is the sender's
-        choice. Where a byte floor exists it stays the only throughput oracle,
-        so a healthy run has one way to fail here rather than two.
+        RX must provide enough intervals because it runs for the full window;
+        TX starts later and may legitimately provide one fewer sample.
         """
-        expected_bytes = self._expected_rx_bytes()
+        rate_checked_session = self.params.get("session_type") in ("st20p", "st40p")
         problems: list[str] = []
         judged: list[str] = []  # directions a throughput verdict was reached for
         for result in self._results:
@@ -709,8 +666,9 @@ class GStreamer(Application):
                 )
                 continue
             if sum(series) == 0:
-                problems.append(f"MTL reported 0 {direction} frames")
-                judged.append(direction)
+                if direction == _RX_LABEL or len(series) >= _MIN_GRADED_INTERVALS:
+                    problems.append(f"MTL reported 0 {direction} frames")
+                    judged.append(direction)
                 continue
             logger.info(
                 "[GStreamer] MTL %s frame series %s (%d frames)",
@@ -718,55 +676,43 @@ class GStreamer(Application):
                 series,
                 sum(series),
             )
-            if expected_bytes or len(series) < _MIN_GRADED_INTERVALS:
+            if not rate_checked_session or len(series) < _MIN_GRADED_INTERVALS:
                 continue
             judged.append(direction)
             problems += self._check_steady_frame_rate(direction, series)
-        if not expected_bytes and _RX_LABEL not in judged:
+        if rate_checked_session and _RX_LABEL not in judged:
             problems.append(
                 f"MTL printed no gradeable {_RX_LABEL} stats for session_type="
                 f"{self.params.get('session_type')}, whose throughput these "
                 f"counters are the only evidence of; {_MIN_GRADED_INTERVALS} "
-                f"intervals are needed to grade a rate. Either "
-                f"test_time={self.params.get('test_time')} is under the "
-                f"{(_MIN_GRADED_INTERVALS + 1) * _MTL_STATS_INTERVAL_S}s that "
-                f"takes, or the session stopped early"
+                f"completed intervals need "
+                f"{_MIN_GRADED_INTERVALS * _MTL_STATS_INTERVAL_S}s of pipeline "
+                f"uptime plus initialization; test_time="
+                f"{self.params.get('test_time')} was insufficient or the "
+                f"session stopped early"
             )
         return problems
 
     def _check_steady_frame_rate(self, direction: str, series: list[int]) -> list[str]:
-        """Grade ``series`` against ``framerate``, minus the startup interval.
-
-        A frame floor rather than frames>0: the stale-wake regression this suite
-        has to catch produced clean-exiting runs at ~21% of nominal.
-
-        The first printed interval is not a rate sample -- RX is up and counting
-        before TX sends its first packet. Measured on a healthy p59 run the
-        series was RX [246, 600] and TX [504, 599]: the second interval is the
-        real rate, while including the first drags the total to 72%.
-        """
+        """Grade each completed interval after the partial startup interval."""
         steady = series[1:]
-        # extract_framerate truncates the MTL token (p59 -> 59 against a real
-        # 59.94), erring toward a lower floor.
         framerate = self.params["framerate"]
-        expected = (
-            self.extract_framerate(framerate) * len(steady) * _MTL_STATS_INTERVAL_S
-        )
-        minimum = int(expected * _MIN_STEADY_FRAME_RATIO)
+        # p59 is truncated to 59 rather than 59.94, producing a conservative floor.
+        nominal = self.extract_framerate(framerate) * _MTL_STATS_INTERVAL_S
+        minimum = int(nominal * _MIN_STEADY_FRAME_RATIO)
         logger.info(
-            "[GStreamer] %s steady-state %d frames over %ds "
-            "(nominal %d, minimum %d)",
+            "[GStreamer] %s steady-state intervals %s (nominal %d each, minimum %d)",
             direction,
-            sum(steady),
-            len(steady) * _MTL_STATS_INTERVAL_S,
-            expected,
+            steady,
+            nominal,
             minimum,
         )
-        if sum(steady) < minimum:
+        starved = [frames for frames in steady if frames < minimum]
+        if starved:
             return [
-                f"MTL moved {sum(steady)} {direction} frames in the "
-                f"{len(steady) * _MTL_STATS_INTERVAL_S}s after startup, under "
-                f"{minimum} ({_MIN_STEADY_FRAME_RATIO:.0%} of the {expected} that "
+                f"MTL moved {min(starved)} {direction} frames in a "
+                f"{_MTL_STATS_INTERVAL_S}s interval after startup, under {minimum} "
+                f"({_MIN_STEADY_FRAME_RATIO:.0%} of the {nominal} that "
                 f"framerate={framerate} implies); per-interval series {series}"
             ]
         return []
@@ -791,7 +737,11 @@ class GStreamer(Application):
         # 100% here, which is fine -- this is a floor, not a target.
         expected = self._expected_rx_bytes()
         if expected:
-            minimum = int(expected * _MIN_CAPTURE_RATIO)
+            minimum = (
+                expected
+                if self.params.get("session_type") == "st20p"
+                else int(expected * _MIN_CAPTURE_RATIO)
+            )
             logger.info(
                 "[GStreamer] RX captured %d bytes (nominal %d, minimum %d)",
                 size,
@@ -799,6 +749,11 @@ class GStreamer(Application):
                 minimum,
             )
             if size < minimum:
+                if self.params.get("session_type") == "st20p":
+                    return [
+                        f"RX captured {size} bytes, under one complete "
+                        f"{expected}-byte video frame"
+                    ]
                 return [
                     f"RX captured {size} bytes, under {minimum} "
                     f"({_MIN_CAPTURE_RATIO:.0%} of the {expected} expected for "
@@ -808,36 +763,27 @@ class GStreamer(Application):
         return []
 
     def _expected_rx_bytes(self) -> Optional[int]:
-        """Bytes a full-length RX capture holds, or ``None`` when not exact.
+        """Bytes required in the RX artifact, or ``None`` when not exact.
 
-        Only computed where the byte rate follows from the session parameters
-        alone. st40p is excluded on purpose: its raw-UDW payload size per frame
-        is decided by the sender's ancillary content, so any bound here would be
-        a guess, and its frame delivery is covered by the MTL stats check.
+        ST20 retains one complete frame for integrity while frame counters prove
+        throughput. ST30 retains the duration-sized byte oracle. ST40 is
+        excluded because its raw-UDW payload size is sender-defined.
         """
         test_time = self.params.get("test_time") or 0
         session_type = self.params.get("session_type")
         if not test_time:
             return None
         if session_type == "st20p":
-            frame_size = _st20p_frame_size(
+            return _st20p_frame_size(
                 self.params["pixel_format"],
                 int(self.params["width"]),
                 int(self.params["height"]),
             )
-            return (
-                frame_size
-                * self.extract_framerate(self.params["framerate"])
-                * test_time
-            )
         if session_type == "st30p":
-            sample_bytes = _AUDIO_SAMPLE_BYTES.get(self.params["audio_format"])
-            if not sample_bytes:
-                return None
             return (
                 audio_sampling_hz(self.params["audio_sampling"])
                 * audio_channel_count(self.params["audio_channels"])
-                * sample_bytes
+                * _AUDIO_SAMPLE_BYTES[self.params["audio_format"]]
                 * test_time
             )
         return None

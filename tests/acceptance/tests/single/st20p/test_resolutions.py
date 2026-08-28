@@ -4,21 +4,33 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
 
+_RESOLUTION_CASES = [
+    *[
+        pytest.param(
+            "rxtxapp",
+            media_file,
+            marks=pytest.mark.smoke if name == "Penguin_1080p" else (),
+            id=f"rxtxapp-rfc-{name}",
+        )
+        for name, media_file in yuv_files_422rfc10.items()
+    ],
+    *[
+        pytest.param(application, media_file, id=f"{application}-planar-{name}")
+        for application in ("rxtxapp", "ffmpeg", "gstreamer")
+        for name, media_file in yuv_files_422p10le.items()
+    ],
+]
+
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
-    "media_file",
-    [
-        pytest.param(v, marks=pytest.mark.smoke) if k == "Penguin_1080p" else v
-        for k, v in yuv_files_422rfc10.items()
-    ],
+    ("application", "media_file"),
+    _RESOLUTION_CASES,
     indirect=["media_file"],
-    ids=list(yuv_files_422rfc10.keys()),
 )
 def test_st20p_resolutions(
     application,
@@ -35,10 +47,8 @@ def test_st20p_resolutions(
 ):
     """Test different video resolutions.
 
-    The assets are RFC 4175 pixel groups, which only RxTxApp reads directly; the
-    FFmpeg and GStreamer plugins convert from planar/packed host formats instead
-    and say so through ``unsupported_reason()`` rather than through a skip mark
-    maintained here.
+    RFC 4175 assets exercise RxTxApp directly; planar assets exercise every
+    adapter's conversion path.
     """
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")

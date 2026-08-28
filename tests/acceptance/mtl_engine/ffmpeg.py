@@ -59,6 +59,13 @@ _SESSION_TYPE_TO_MODE = {
     "st30p": _MODE_ST30P,
 }
 
+_ST20P_PLUGIN_INPUT_FORMATS = frozenset(FFMPEG_FORMAT_MAP) - {
+    "YUV422PLANAR8",
+    "YUV420PLANAR8",
+    "YUV420PLANAR10LE",
+    "RGBA",
+}
+
 
 class FFmpeg(Application):
     """FFmpeg framework adapter (single-host RX+TX orchestrator)."""
@@ -108,11 +115,14 @@ class FFmpeg(Application):
             )
         if session_type == "st20p":
             pixel_format = params.get("pixel_format")
-            if pixel_format is not None and pixel_format not in FFMPEG_FORMAT_MAP:
+            if (
+                pixel_format is not None
+                and pixel_format not in _ST20P_PLUGIN_INPUT_FORMATS
+            ):
                 return (
                     f"No FFmpeg pixel format carries MTL "
                     f"pixel_format={pixel_format}; the mtl_st20p plugin "
-                    f"handles {sorted(FFMPEG_FORMAT_MAP)}"
+                    f"handles {sorted(_ST20P_PLUGIN_INPUT_FORMATS)}"
                 )
             packing = params.get("packing")
             if packing not in (None, MTL_DEFAULT_PACKING):

@@ -97,8 +97,8 @@ subclass). Migration is **unfinished**, so they are far from dead:
   adapter.
 * `ffmpeg_app.py` — command builders still called by the modern `ffmpeg.py`;
   its validation logic is not reused.
-* `GstreamerApp.py` — only backs `tests/dual/gstreamer/`; single-host
-  GStreamer runs through the `gstreamer.py` adapter.
+* `GstreamerApp.py` — backs dual-host and specialized single-host GStreamer
+  tests. Shared single-host behavior runs through the `gstreamer.py` adapter.
 
 Do not extend these, and do not add a 29th `RxTxApp.py` importer. New work
 goes through `Application`.

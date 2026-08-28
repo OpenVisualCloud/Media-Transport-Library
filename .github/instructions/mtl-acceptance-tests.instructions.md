@@ -1,5 +1,5 @@
 ---
-description: "Use when the user asks to RUN, collect, debug, or diagnose pytest cases under tests/acceptance/tests/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/acceptance/logs/. For AUTHORING new cases see mtl-acceptance-authoring.instructions.md. For host setup (build, hugepages, NFS, configs): call `.github/scripts/acceptance_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-acceptance-setup` MCP tools directly — no dedicated agent."
+description: "Use when the user asks to RUN, collect, debug, or diagnose pytest cases under tests/acceptance/tests/single/ (st20p, st22p, st30p, st40p, st41, ffmpeg, gstreamer, dma, ptp, rss_mode, rx_timing, udp, virtio_user, xdp, kernel_socket); running by marker (-m smoke/-m nightly); investigating logs under tests/acceptance/logs/. For AUTHORING new cases see mtl-acceptance-authoring.instructions.md. For host setup (build, hugepages, NFS, configs): call `.github/scripts/acceptance_setup.sh status`/`setup` (interactive, prompts for NFS/PF/EBU choices) or the `mtl-acceptance-setup` MCP tools directly — no dedicated agent."
 name: "MTL Acceptance Tests — Run Tests"
 applyTo: "tests/acceptance/tests/single/**"
 ---
@@ -67,7 +67,7 @@ hardware-bound). The full marker set and its authoring rules live in
 |---|---|---|
 | `st20p`/`st22p`/`st30p`/`st40p`/`st41`/`dma`/`ptp`/`rss_mode`/`rx_timing`/`udp`/`virtio_user`/`xdp`/`kernel_socket` | RxTxApp | `.local_install/mtl/bin/RxTxApp` |
 | `ffmpeg/`, or any `application="ffmpeg"` param | in-repo FFmpeg + MTL muxer | `ecosystem/ffmpeg_plugin/FFmpeg-release-*/ffmpeg` (system ffmpeg unused) |
-| any `application="gstreamer"` param | in-repo GStreamer plugin | `ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so` |
+| `gstreamer/`, or any `application="gstreamer"` param | in-repo GStreamer plugin | `ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so` |
 | `performance/` | RxTxApp capacity sweep | RxTxApp; very long |
 
 ## Logs

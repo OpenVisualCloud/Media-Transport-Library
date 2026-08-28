@@ -4,79 +4,8 @@
 
 import argparse
 import subprocess
-import sys
 
 import yaml
-
-# Peak rate at which a single-host case writes its RX dump. The heaviest writer
-# is test_st20p_resolutions, which parametrizes over every yuv_files_422rfc10
-# entry: RFC4175 PG2BE10 is 2.5 B/px, so 8K p25 (7680x4320) is 2.074 GB/s and 4K
-# p60 is 1.244 GB/s. Nothing bounds the dump for those -- RxTxApp's
-# rx_max_file_size defaults to 0 and only one test sets a cap -- so the mount has
-# to be sized for the full run.
-_PEAK_RX_BYTES_PER_S = 2_100_000_000
-
-# The media tmpfs holds that dump alongside the input asset copied onto it.
-_MEDIA_ASSET_HEADROOM_GIB = 8
-
-# Never leave the mount smaller than the fixed size this replaced, whatever
-# test_time or the RAM clamp below say.
-_MEDIA_RAMDISK_FLOOR_GIB = 16
-
-
-def _usable_mem_gib() -> int:
-    """RAM available to a tmpfs on the machine running this generator, in GiB.
-
-    Returns 0 if ``/proc/meminfo`` is unreadable. ``MemTotal`` counts hugetlb,
-    which the acceptance suite reserves heavily (24x1 GiB per NUMA node at
-    session start, plus 2048x2 MiB from the setup script), so it is reduced by
-    ``Hugetlb``. ``MemAvailable`` is not used: it moves with page cache, which
-    would make the generated config depend on when it was generated.
-    """
-    fields = {}
-    try:
-        with open("/proc/meminfo") as meminfo:
-            for line in meminfo:
-                name, _, rest = line.partition(":")
-                if name in ("MemTotal", "Hugetlb"):
-                    fields[name] = int(rest.split()[0])
-    except (OSError, ValueError, IndexError):
-        return 0
-    if "MemTotal" not in fields:
-        return 0
-    return max(0, fields["MemTotal"] - fields.get("Hugetlb", 0)) // (1 << 20)
-
-
-def _media_ramdisk_gib(test_time: int) -> int:
-    """Size cap for the media tmpfs, derived from the configured ``test_time``.
-
-    Under-sizing this mount does not merely truncate an RX dump: filesink
-    reports ENOSPC as a pipeline error, and the byte-throughput oracles read the
-    shortfall as an MTL delivery failure, so a healthy run fails for want of
-    disk. tmpfs allocates lazily, so a generous cap costs nothing until a test
-    actually writes that much.
-
-    Two limits are applied after the derived size, in this order: half of the
-    non-hugetlb RAM, then :data:`_MEDIA_RAMDISK_FLOOR_GIB`. The floor wins, so
-    on a small host the cap can still exceed half of RAM -- deliberately,
-    because that is the fixed size this calculation replaced and lowering it
-    would be a regression for small hosts. RAM is read on the machine running
-    the generator, which in a dual-host topology is not necessarily the host
-    being sized.
-    """
-    dump_gib = -(-_PEAK_RX_BYTES_PER_S * test_time // (1 << 30))  # ceiling
-    want_gib = dump_gib + _MEDIA_ASSET_HEADROOM_GIB
-    usable_gib = _usable_mem_gib()
-    capped_gib = min(want_gib, usable_gib // 2) if usable_gib else want_gib
-    if capped_gib < want_gib:
-        print(
-            f"warning: media ramdisk capped at {capped_gib} GiB (half of the "
-            f"{usable_gib} GiB not reserved as hugepages) but test_time="
-            f"{test_time} can write up to {dump_gib} GiB; the heaviest "
-            f"tests/single cases may hit ENOSPC",
-            file=sys.stderr,
-        )
-    return max(capped_gib, _MEDIA_RAMDISK_FLOOR_GIB)
 
 
 def _bdf_to_vendor_device(pci_id: str) -> str:
@@ -124,10 +53,7 @@ def gen_test_config(
         "media_path": media_path,
         "test_time": test_time,
         "ramdisk": {
-            "media": {
-                "mountpoint": "/mnt/ramdisk/media",
-                "size_gib": _media_ramdisk_gib(test_time),
-            },
+            "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 16},
             "tmpfs_size_gib": 8,
         },
     }
@@ -153,31 +79,13 @@ def gen_test_config(
     has_sniff = bool(sniff_pci_device) and not no_capture
     test_config["compliance"] = has_ebu and has_sniff
 
-    if test_config["compliance"]:
+    if has_sniff:
         test_config["ramdisk"]["pcap_dir"] = "/mnt/ramdisk/pcap"
         test_config["capture_cfg"] = {
             "enable": True,
             "pcap_dir": "/mnt/ramdisk/pcap",
             "sniff_pci_device": _bdf_to_vendor_device(sniff_pci_device),
         }
-    else:
-        # ``capture_cfg.enable: false`` has to be written out, not left
-        # implicit: the pcap_capture fixture treats an ABSENT capture_cfg as
-        # "this host can do compliance", so without it every test taking that
-        # fixture fails with "ebu_server is not configured" instead of running
-        # its data-path oracles. A host with no sniff NIC or no EBU
-        # credentials cannot produce a verdict, and the generator is what knows
-        # that, so it records the opt-out here.
-        #
-        # The branch is keyed on ``compliance`` (has_ebu AND has_sniff) rather
-        # than on ``has_sniff`` alone for the same reason: a sniff NIC with no
-        # EBU credentials can capture a pcap that nothing can then grade, and
-        # arming the capture is what produced that failure.
-        #
-        # ``--no_capture`` reaches this branch too, via ``has_sniff``: it is the
-        # operator saying the card has no port to spare -- a single-port i225,
-        # or a second port needed for a redundant (ST2022-7) test.
-        test_config["capture_cfg"] = {"enable": False}
     if has_ebu:
         test_config["ebu_server"] = {
             "ebu_ip": ebu_ip,

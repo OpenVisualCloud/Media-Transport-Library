@@ -18,12 +18,7 @@ _SMOKE_CASE = ("PCM16", "M")
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st30p audio pipeline"
-            ),
-        ),
+        "ffmpeg",
         "gstreamer",
     ],
 )
@@ -237,24 +232,24 @@ def test_st30p_format(
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
+    ("application", "audio_ptime", "media_file"),
     [
-        "rxtxapp",
-        "ffmpeg",
-        "gstreamer",
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        audio_files["PCM8"],
-        audio_files["PCM16"],
-        audio_files["PCM24"],
+        *[
+            pytest.param(
+                application, ptime, media_file, id=f"{application}-{ptime}-{name}"
+            )
+            for application in ("rxtxapp", "gstreamer")
+            for ptime in ("1", "0.12", "0.25", "0.33", "4")
+            for name, media_file in audio_files.items()
+        ],
+        *[
+            pytest.param("ffmpeg", ptime, media_file, id=f"ffmpeg-{ptime}-{name}")
+            for ptime in ("1", "0.12")
+            for name, media_file in audio_files.items()
+        ],
     ],
     indirect=["media_file"],
-    ids=["PCM8", "PCM16", "PCM24"],
 )
-@pytest.mark.parametrize("audio_ptime", ["1", "0.12", "0.25", "0.33", "4"])
 @pytest.mark.tx_and_rx
 def test_st30p_ptime(
     application,

@@ -27,9 +27,10 @@ capture_cfg:
 ramdisk:
   media:
     mountpoint: /mnt/ramdisk/media
-    size_gib: 67
-  pcap_dir: /mnt/ramdisk/pcap
-  tmpfs_size_gib: 8
+    size_gib: 32
+  pcap:
+    mountpoint: /mnt/ramdisk/pcap
+    size_gib: 768
 ```
 
 ### Key Parameters
@@ -79,13 +80,9 @@ Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
 
 - **ramdisk**: RAM disk configuration for high-performance testing
   - **media.mountpoint**: Mount point for media RAM disk
-  - **media.size_gib**: tmpfs size cap for the media RAM disk, in GiB.
-    `gen_config.py` derives it from `test_time` and the peak RX dump rate,
-    clamped to half of RAM. tmpfs allocates lazily, so the cap only reserves
-    what is written.
-  - **pcap_dir**: Mount point for the packet capture RAM disk, mounted only
-    when `capture_cfg.enable` is true
-  - **tmpfs_size_gib**: Size of the packet capture RAM disk, in GiB
+  - **media.size_gib**: Size of media RAM disk in GiB
+  - **pcap.mountpoint**: Mount point for packet capture RAM disk
+  - **pcap.size_gib**: Size of packet capture RAM disk in GiB
 
 ### [`topology_config.yaml`](topology_config.yaml)
 

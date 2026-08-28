@@ -120,6 +120,8 @@ class ProcSpec:
             ``stop_graceful_s``. Only for a process measured to need longer --
             an under-sized grace turns a clean exit into a SIGKILL, which
             costs the exit code the caller then has to judge.
+        exited_before_stop: For unbounded processes, whether the process had
+            already exited when the wall-clock test window ended.
         captured_output: Filled in by :meth:`Application._run_proc_group`
             after stdout has been read.
         proc: Filled in by :meth:`Application._run_proc_group` with the
@@ -131,6 +133,7 @@ class ProcSpec:
     label: str
     bounded: bool = True
     graceful_s: Optional[int] = None
+    exited_before_stop: Optional[bool] = None
     captured_output: str = ""
     proc: object = field(default=None, repr=False)
 
@@ -217,6 +220,9 @@ class Application(ABC):
         # silently leak into the next test and cause spurious failures.
         self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
+        unsupported = self.unsupported_reason(**self.params)
+        if unsupported:
+            raise ValueError(unsupported)
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
 
@@ -589,6 +595,7 @@ class Application(ABC):
             f"video session: {non_narrow}"
         )
         return totals
+
     def unsupported_reason(self, **params) -> Optional[str]:
         """Return why this framework cannot run *params*, or ``None`` if it can.
 
@@ -943,6 +950,12 @@ class Application(ABC):
         finally:
             # Unbounded specs need an explicit stop ladder; bounded specs
             # already exited (timeout wrapper or proc.wait above).
+            for spec in specs:
+                if not spec.bounded and spec.proc is not None:
+                    try:
+                        spec.exited_before_stop = not spec.proc.running
+                    except Exception:
+                        spec.exited_before_stop = None
             for spec in specs:
                 if not spec.bounded and spec.proc is not None:
                     self._stop_unbounded_proc(spec.proc, spec.label, spec.graceful_s)

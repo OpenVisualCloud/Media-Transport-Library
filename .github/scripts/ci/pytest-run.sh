@@ -13,6 +13,16 @@ pytest=("${venv_python}" -m pytest
 	--topology_config="${acceptance_dir}/configs/topology_config.yaml")
 
 case "${1:-}" in
+acceptance-unit)
+	# tests/acceptance_unit is the cheap tier: it imports the engine and the
+	# config generator directly and needs no NIC, no configs and no root, so it
+	# is deliberately NOT run through the ${pytest[@]} prefix above -- passing
+	# --test_config/--topology_config would drag in the pytest_mfd_config plugin
+	# and a host topology it has no use for. PYTHONPATH is what makes
+	# `mtl_engine` and `common` importable from outside tests/acceptance.
+	(cd "$root_dir" && PYTHONPATH="${acceptance_dir}" "${venv_python}" -m pytest \
+		-q tests/acceptance_unit)
+	;;
 custom)
 	args=(--template=html/index.html --report="${acceptance_dir}/report.html")
 	[[ -n ${PYTEST_MARKER:-} ]] && args+=(-m "$PYTEST_MARKER")
@@ -55,7 +65,7 @@ smoke | smoke-low-bandwidth)
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests)
 	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
+	echo "Usage: $0 {acceptance-unit|custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac

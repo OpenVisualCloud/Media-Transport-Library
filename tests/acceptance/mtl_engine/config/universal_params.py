@@ -34,8 +34,6 @@ UNIVERSAL_PARAMS = {
     "audio_channels": ["U02"],  # Audio channel configuration
     "audio_sampling": "96kHz",  # Audio sampling rate
     "audio_ptime": "1",  # Audio packet time
-    # Ancillary (ST 2110-40) parameters
-    "anc_split_by_packet": False,  # One ANC packet per RTP packet instead of packing
     # Legacy video/audio/ancillary session parameters
     "video_format": "",  # Video format for legacy video sessions
     "pg_format": "",  # Pixel group format for legacy video sessions

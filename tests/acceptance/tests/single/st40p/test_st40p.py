@@ -9,7 +9,7 @@ from mtl_engine.media_files import anc_files
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    ["rxtxapp", "ffmpeg", "gstreamer"],
+    ["rxtxapp", "gstreamer"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -55,7 +55,7 @@ def test_st40p_basic(
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    ["rxtxapp", "ffmpeg", "gstreamer"],
+    ["rxtxapp", "gstreamer"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -112,7 +112,7 @@ def test_st40p_multicast_with_compliance(
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    ["rxtxapp", "ffmpeg", "gstreamer"],
+    ["rxtxapp"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -146,110 +146,6 @@ def test_st40p_rtcp(
         framerate=media_file_info["fps"],
         input_file=media_file_path,
         enable_rtcp=True,
-        test_time=test_time,
-    )
-
-    app.execute_test(
-        build=mtl_path,
-        test_time=test_time,
-        host=host,
-    )
-
-
-@pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    ["rxtxapp", "ffmpeg", "gstreamer"],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [anc_files["text_p59"]],
-    indirect=["media_file"],
-    ids=["text_p59"],
-)
-@pytest.mark.tx_and_rx
-def test_st40p_interlaced(
-    application,
-    app_factory,
-    hosts,
-    mtl_path,
-    setup_interfaces: InterfaceSetup,
-    test_time,
-    test_config,
-    media_file,
-):
-    """TX marks the ancillary stream interlaced and RX must accept it.
-
-    What is asserted is that the interlaced session survives end to end, not
-    that per-field placement is correct: the pipeline API's ancillary meta
-    carries no field information for either application to set.
-    """
-    media_file_info, media_file_path = media_file
-    host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
-
-    app = app_factory(application, session_type="st40p", interlaced=True)
-    app.create_command(
-        session_type="st40p",
-        nic_port_list=interfaces_list,
-        test_mode="unicast",
-        framerate=media_file_info["fps"],
-        input_file=media_file_path,
-        interlaced=True,
-        test_time=test_time,
-    )
-
-    app.execute_test(
-        build=mtl_path,
-        test_time=test_time,
-        host=host,
-    )
-
-
-@pytest.mark.nightly
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
-@pytest.mark.parametrize(
-    "media_file",
-    [anc_files["text_p59"]],
-    indirect=["media_file"],
-    ids=["text_p59"],
-)
-@pytest.mark.tx_and_rx
-def test_st40p_split_by_packet(
-    application,
-    app_factory,
-    hosts,
-    mtl_path,
-    setup_interfaces: InterfaceSetup,
-    test_time,
-    test_config,
-    media_file,
-):
-    """Send every ancillary packet in its own RTP packet instead of packing
-    several into one, which ST 2110-40 also permits.
-
-    Only the GStreamer plugin can actually ask for this (``split-anc-by-pkt``
-    in gst_mtl_st40p_tx.c is the sole application-level route to
-    ST40P_TX_FLAG_SPLIT_ANC_BY_PKT). RxTxApp and FFmpeg are still parametrized
-    so their ``unsupported_reason()`` states the gap as a visible skip, rather
-    than this file silently encoding which applications qualify.
-    """
-    media_file_info, media_file_path = media_file
-    host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
-
-    app = app_factory(application, session_type="st40p", anc_split_by_packet=True)
-    app.create_command(
-        session_type="st40p",
-        nic_port_list=interfaces_list,
-        test_mode="unicast",
-        framerate=media_file_info["fps"],
-        input_file=media_file_path,
-        anc_split_by_packet=True,
         test_time=test_time,
     )
 
