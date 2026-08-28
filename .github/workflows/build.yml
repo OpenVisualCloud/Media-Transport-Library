@@ -163,49 +163,49 @@ jobs:
 
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Restore MTL cache'
         id: mtl-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
 
       - name: 'stash: Restore JPEG XS cache'
         id: jpegxs-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.jpegxs_key }}
           path: .local_install/jpegxs
 
       - name: 'stash: Restore FFmpeg cache'
         id: ffmpeg-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Restore GStreamer cache'
         id: gstreamer-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Restore plugins cache'
         id: plugins-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
       - name: 'stash: Restore ICE cache'
         id: ice-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice
@@ -234,49 +234,49 @@ jobs:
 
       - name: 'stash: Save DPDK cache'
         if: success() && steps.cache-state.outputs.dpdk_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Save MTL cache'
         if: success() && steps.cache-state.outputs.mtl_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
 
       - name: 'stash: Save JPEG XS cache'
         if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.jpegxs_key }}
           path: .local_install/jpegxs
 
       - name: 'stash: Save FFmpeg cache'
         if: success() && steps.cache-state.outputs.ffmpeg_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Save GStreamer cache'
         if: success() && steps.cache-state.outputs.gstreamer_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Save plugins cache'
         if: success() && steps.cache-state.outputs.plugins_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
       - name: 'stash: Save ICE cache'
         if: success() && steps.cache-state.outputs.ice_miss == '1'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice
