@@ -185,7 +185,7 @@ sudo ./venv/bin/python3 -m pytest \
 sudo ./venv/bin/python3 -m pytest \
   --topology_config=configs/topology_config.yaml \
   --test_config=configs/test_config.yaml \
-  "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]" -v
+  "tests/single/st20p/test_fps.py::test_st20p_fps[|fps = p60|-Penguin_1080p-|application = rxtxapp|]" -v
 ```
 
 #### Example 2: Using Environment-Specific Configurations

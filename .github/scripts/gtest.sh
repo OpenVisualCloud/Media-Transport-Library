@@ -1,5 +1,15 @@
 #!/bin/bash
 # shellcheck disable=SC2317
+#
+# Runs the KahawaiTest suite on a host that is already prepared for it: the ICE
+# driver loaded by `sudo task ci:activate-ice`, and the ports created by
+# `sudo task ci:bind-test-ports`.
+#
+# This script changes no host state. It finds the ports, runs the cases and
+# reports. A port that is missing is reported with the command that creates it
+# and never created here: bringing a driver or a set of VFs back underneath a
+# suite that is already running is how a bare-metal runner ends up wedged for
+# hours, and preparing the host is the CI/CD side's job, not the tests'.
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -19,32 +29,37 @@ else
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
 fi
 
-# sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env
-SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH} PATH=${PATH}"
+# sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env. A tree
+# with no .local_install never set it, and a caller running under `set -u` is
+# entitled to source this script without tripping over that.
+SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} PATH=${PATH}"
 
 : "${MAX_RETRIES:=2}"
 : "${RETRY_DELAY:=20}"
 : "${TMP_FOLDER:=/tmp/mtl_gtest_$(date +%Y%m%d_%H%M%S)_$$}"
 : "${LOG_FILE:=${TMP_FOLDER}/gtest.log}"
 : "${EXIT_ON_FAILURE:=1}"
-: "${NIGHTLY:=1}"                                                                    # Set to 1 to run full test suite, 0 for quick tests
-: "${TEST_CASE_TIMEOUT:=1800}"                                                       # 30 minutes per test case
-: "${TEST_SIP_SEED:=$((RANDOM))}"                                                    # Seed for generating TEST_P_SIP when not provided
-: "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).$((TEST_SIP_SEED % 256))"}"       # Primary test IP for gtest
-: "${TEST_R_SIP:="192.168.$((TEST_SIP_SEED % 256)).$(((TEST_SIP_SEED + 1) % 256))"}" # Remote test IP for gtest
+: "${NIGHTLY:=1}"                                       # Set to 1 to run full test suite, 0 for quick tests
+: "${TEST_CASE_TIMEOUT:=1800}"                          # 30 minutes per test case
+: "${HOST_OP_TIMEOUT:=180}"                             # Hard bound for one nicctl listing
+: "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
+: "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
+: "${DMA_CHANNELS:=2}"                                  # DMA channels a case is given when the host serves them
+: "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"          # Where the ports are looked up; the contract tests point this at a fixture
+: "${PROC_MEMINFO:=/proc/meminfo}"                      # Where the hugepages are counted; likewise a fixture under test
+: "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
+: "${TEST_SIP_SEED:=$((RANDOM))}"                       # Seed for the test subnet, so two hosts rarely share one
+: "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).1"}" # Address of the primary port. Host octet stays in 1..254
+# KahawaiTest takes only --p_sip. It counts the host octet up for each further
+# port, so the address of the redundant port follows from the primary one. This
+# value is reported, not passed.
+: "${TEST_R_SIP:="${TEST_P_SIP%.*}.$(((${TEST_P_SIP##*.} % 254) + 1))"}"
 
 if [ "${NIGHTLY}" -eq 0 ]; then
 	FAIL_FAST="--gtest_fail_fast" # Skips remaining tests on first failure
 else
 	FAIL_FAST=""
 fi
-
-for dma in "CBDMA" "idxd" "ioatdma"; do
-	if dpdk-devbind.py --status-dev dma | grep -q "$dma"; then
-		export dma_mechanism="$dma"
-		break
-	fi
-done
 
 export KAHAWAI_TEST_BINARY
 export MAX_RETRIES
@@ -83,165 +98,255 @@ time_taken_by_script() {
 	echo "=========================================="
 }
 
-# Use fail-fast for quick tests, and sharding for st2110_20 to reduce execution time
+# ── the host ────────────────────────────────────────────────────────────────
+
+dump_driver_state() {
+	echo "--- processes ---"
+	# pgrep rather than a grep over ps, which would report the greps themselves.
+	local pids
+	mapfile -t pids < <(pgrep -f 'KahawaiTest|nicctl|devbind' || true)
+	if [ "${#pids[@]}" -gt 0 ]; then
+		ps -o pid,stat,wchan:32,etimes,args -p "${pids[@]}"
+	fi
+	# A driver that faulted takes its callers with it, into uninterruptible
+	# sleep. Their kernel stacks are what says where it went.
+	for pid in $(ps -eo pid=,stat= | awk '$2 ~ /D/ {print $1}'); do
+		echo "--- /proc/${pid}/stack ($(ps -o args= -p "${pid}" 2>/dev/null)) ---"
+		sudo cat "/proc/${pid}/stack" 2>/dev/null || true
+	done
+	echo "--- modules ---"
+	lsmod | grep -E '^ice|^vfio' || true
+	echo "--- dmesg tail ---"
+	sudo dmesg -T 2>/dev/null | tail -50 || true
+}
+
+# A faulted NIC driver leaves the processes that ask it questions in
+# uninterruptible sleep, where not even SIGKILL reclaims them. This script
+# cannot fix that, but it must stop waiting: an unbounded wait holds a fleet
+# runner for GitHub's 360-minute default.
+host_fault() {
+	echo "=========================================="
+	echo "✗ Host fault: $1"
+	echo "This is a host problem, not a test failure. The host needs recovery"
+	echo "before it can run tests again, for example:"
+	echo "  echo 1 | sudo tee /sys/bus/pci/devices/<pf-bdf>/remove"
+	echo "  sleep 1"
+	echo "  echo 1 | sudo tee /sys/bus/pci/rescan"
+	echo "=========================================="
+	dump_driver_state
+	kill_test_processes
+	time_taken_by_script
+	exit "${HOST_FAULT_EXIT}"
+}
+
+# nicctl.sh asks the same driver the tests do, so it can block the same way, and
+# a timeout here means the host is faulted rather than empty -- so it is recorded
+# in a sentinel file that the callers check before reporting "no ports found".
+#
+# The listing goes to a file rather than up a pipe. timeout signals its own child
+# and nothing below it, so a nicctl.sh stuck in a sysfs read leaves that read
+# holding the pipe open, and a caller reading it would wait out the whole hang it
+# just gave up on.
+nicctl_list() {
+	local destination=$1
+	shift
+	local retval=0
+	timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" list "$@" \
+		>"${destination}" 2>/dev/null || retval=$?
+	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
+		touch "${TMP_FOLDER}/.nicctl_timeout"
+	fi
+	return "${retval}"
+}
+
+nicctl_wedged() {
+	[ -f "${TMP_FOLDER}/.nicctl_timeout" ]
+}
+
+not_prepared() {
+	echo "✗ $1"
+	echo "The host is not prepared for the suite. Prepare it with:"
+	echo "  sudo task ci:activate-ice       # E8xx cards, which need the Kahawai driver"
+	echo "  sudo task ci:bind-test-ports"
+	time_taken_by_script
+	exit 1
+}
+
+# The DMA channels a case can be given: bound to vfio-pci, and on one NUMA node
+# when a node is named.
+dma_channels() {
+	dpdk-devbind.py --status-dev dma |
+		awk -v want="${1:-}" '$1 !~ /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\.[0-9a-f]+$/ {next}
+			/drv=vfio-pci/ && (want == "" || $0 ~ ("numa_node=" want)) {print $1}'
+}
+
+# Prints the vfio-pci ports of the first PF in a nicctl.sh listing that has
+# enough of them.
+#
+# They have to belong to one PF: a transmitter and a receiver on two different
+# cards are on two different networks, and every case here expects the pair to
+# see each other. A prepared host has six VFs on one PF, but a VF another suite
+# left bound is listed too, so group before choosing.
+ports_of_one_pf() {
+	local listing=$1 port pf group=()
+	declare -A by_pf=()
+	while read -r port; do
+		pf=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/${port}/physfn" 2>/dev/null)")
+		by_pf["${pf:-standalone}"]+="${port} "
+	done < <(awk '$3 == "vfio-pci" {print $2}' "${listing}")
+
+	for pf in $(printf '%s\n' "${!by_pf[@]}" | sort); do
+		read -r -a group <<<"${by_pf[$pf]}"
+		if [ "${#group[@]}" -ge "${MIN_VFIO_PORTS}" ]; then
+			printf '%s\n' "${group[@]}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# What the suite runs on: four ports of one PF, and two DMA channels beside
+# them. Reading, only -- see the header.
+discover_ports() {
+	local listing="${TMP_FOLDER}/ports.listing" ports=() channels=() numa dma_list free_pages
+
+	nicctl_list "${listing}" all || true
+	mapfile -t ports < <(ports_of_one_pf "${listing}")
+	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
+		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+		cat "${listing}"
+		not_prepared "No PF has the ${MIN_VFIO_PORTS} vfio-pci ports the suite needs."
+	fi
+
+	# Hugepages are as much a prerequisite as a port: every case is a DPDK
+	# process, and one that finds none stops inside EAL on "Cannot get hugepage
+	# information" -- a message about DPDK, on a host that has simply been
+	# rebooted since it was prepared. Read and named here, reserved by the
+	# preparation step, same rule as the ports above.
+	free_pages=$(awk '/^HugePages_Free:/ {print $2}' "${PROC_MEMINFO}")
+	if [ "${free_pages:-0}" -eq 0 ]; then
+		not_prepared "No free 2 MB hugepages on this host, and every case's EAL needs them."
+	fi
+
+	# The DMA channels of the ports' own NUMA node, and only those. The library
+	# pairs a session with a channel of the port's socket and no other
+	# (mt_dma_request_dev, doc/dma.md 3.4), so a channel on another node
+	# registers, is counted by st_test_dma_available -- and is then never handed
+	# to a session. Passing one makes every DMA case run without the offload it
+	# is testing instead of skipping: on an E810 host whose card sits on NUMA 2
+	# with the channels on 0 and 1, that turned digest_ooo_slice_4320p into 143
+	# incomplete frames against a limit of 16.
+	numa=$(awk -v port="${ports[0]}" '$2 == port {print $4}' "${listing}")
+	mapfile -t channels < <(dma_channels "${numa}")
+
+	# A host with no channel of its own runs the suite without DMA offload rather
+	# than not at all. Every case that copies with DMA asks the library for a
+	# channel first (st_test_dma_available) and reports itself skipped when there
+	# is none, so refusing here would cost the leg every case that has nothing to
+	# do with DMA -- and serving a channel is the preparation step's job
+	# (`sudo task ci:bind-test-ports`), not this script's.
+	if [ "${#channels[@]}" -eq 0 ]; then
+		if [ "$(dma_channels | wc -l)" -gt 0 ]; then
+			echo "This host's DMA channels are not on NUMA node ${numa}, which is where the ports"
+			echo "are, so none of them can be used here."
+		else
+			echo "No DMA channel on vfio-pci: 'sudo task ci:bind-test-ports' serves them."
+		fi
+		echo "The suite runs without DMA offload, and its DMA cases will report themselves"
+		echo "skipped."
+	fi
+
+	# Exported for the noctx tests, which take the four ports from the
+	# environment and run one process per case.
+	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
+	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
+	export TEST_DMA_PORT_P="${channels[0]:-}" TEST_DMA_PORT_R="${channels[1]:-}"
+	# What every case is given, built once: the option with the channels this
+	# host serves, and nothing at all when it serves none -- an empty --dma_dev
+	# is a device named "" for the library to look for and not find.
+	if [ "${#channels[@]}" -gt 0 ]; then
+		dma_list=${channels[*]}
+		export TEST_DMA_ARG="--dma_dev \"${dma_list// /,}\""
+	else
+		export TEST_DMA_ARG=""
+	fi
+}
+
+# ── the cases ───────────────────────────────────────────────────────────────
+
+# One case is the binary with one gtest filter, the ports discovered above, and
+# at most a few EAL or pacing options; everything else is the same for all of
+# them, so it lives here rather than in twenty copies.
+#
+# case_env is passed to the env(1) that SUDO_PREFIX already runs the binary
+# under, because sudo's environment handling is not this script's to assume.
+kahawai_case() {
+	local name=$1 filter=$2 case_env=$3
+	shift 3
+	test_cases["$name"]="${SUDO_PREFIX} ${case_env} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" ${TEST_DMA_ARG} $* ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_${name}.xml --gtest_filter=${filter}"
+}
+
+dpdk_case() {
+	local name=$1 filter=$2
+	shift 2
+	kahawai_case "$name" "$filter" '' "$@"
+}
+
 generate_test_cases() {
 	test_cases=()
 
-	# Baseline suite (always run). NIGHTLY=0 must be a strict subset of NIGHTLY=1.
-	test_cases["st2110_20_rx_shard0"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard0.xml --gtest_filter=St20_rx*"
-	test_cases["st2110_20_rx_shard1"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_rx_shard1.xml --gtest_filter=St20_rx*"
-	test_cases["st2110_20_tx_shard0"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=0 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard0.xml --gtest_filter=St20_tx*"
-	test_cases["st2110_20_tx_shard1"]="${SUDO_PREFIX} GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=1 \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20_tx_shard1.xml --gtest_filter=St20_tx*"
-	test_cases["st2110_20p"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_20p.xml --gtest_filter=St20p*"
-	test_cases["st2110_22_rx"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_rx.xml --gtest_filter=St22_rx*"
-	test_cases["st2110_22_tx"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22_tx.xml --gtest_filter=St22_tx*"
-	test_cases["st2110_22p"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_22p.xml --gtest_filter=St22p*"
-	test_cases["st2110_3x"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_3x.xml --gtest_filter=St3*"
-	test_cases["st2110_4x"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st2110_4x.xml --gtest_filter=St4*"
+	# The baseline suite, always run. NIGHTLY=0 must be a strict subset of
+	# NIGHTLY=1, so nothing below this block may be dropped from it.
+	#
+	# St20_rx and St20_tx are the two longest suites, so each is split over two
+	# shards that run as two cases.
+	local direction shard
+	for direction in rx tx; do
+		for shard in 0 1; do
+			kahawai_case "st2110_20_${direction}_shard${shard}" "St20_${direction}*" \
+				"GTEST_TOTAL_SHARDS=2 GTEST_SHARD_INDEX=${shard}"
+		done
+	done
+	dpdk_case st2110_20p 'St20p*'
+	dpdk_case st2110_22_rx 'St22_rx*'
+	dpdk_case st2110_22_tx 'St22_tx*'
+	dpdk_case st2110_22p 'St22p*'
+	dpdk_case st2110_3x 'St3*'
+	dpdk_case st2110_4x 'St4*'
 
 	if [ "${NIGHTLY}" -ne 1 ]; then
 		return
 	fi
 
-	# Nightly additions
-	test_cases["digest_1080p_timeout_interval"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_digest_1080p_timeout_interval.xml --gtest_filter=*digest_1080p_timeout_interval*"
-	test_cases["Misc"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Misc.xml --gtest_filter=Misc*"
-	test_cases["Main"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Main.xml --gtest_filter=Main*"
-	test_cases["Sch"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Sch.xml --gtest_filter=Sch*"
-	test_cases["Dma_va"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode va ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_va.xml --gtest_filter=Dma*"
-	test_cases["Dma_pa"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --iova_mode pa ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Dma_pa.xml --gtest_filter=Dma*"
-	test_cases["Cvt"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_Cvt.xml --gtest_filter=Cvt*"
-	test_cases["st20p_auto_pacing_pa"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode pa --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_pa.xml --gtest_filter=Main*:St20p*:-*ext*"
-	test_cases["st20p_auto_pacing_va"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_auto_pacing_va.xml --gtest_filter=Main*:St20p*:-*ext*"
-	test_cases["st20p_tsc_pacing"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode va --multi_src_port ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_tsc_pacing.xml --gtest_filter=Main*:St20p*:-*ext*"
-	test_cases["st20p_kernel_loopback"]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\"  --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
-	test_cases["st20s"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port \"${TEST_PORT_1}\" --r_port \"${TEST_PORT_2}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20s.xml --gtest_filter=St20s*"
-	test_cases["redundant_stats"]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
-	test_cases["noctx"]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
+	# Nightly additions: the suites that are too slow for a pull request, and
+	# the transports again under other IOVA, pacing and RSS modes.
+	dpdk_case Misc 'Misc*'
+	dpdk_case Main 'Main*'
+	dpdk_case Sch 'Sch*'
+	dpdk_case Cvt 'Cvt*'
+	dpdk_case st20s 'St20s*'
+	dpdk_case Dma_va 'Dma*' --iova_mode va
+	dpdk_case Dma_pa 'Dma*' --iova_mode pa
+	dpdk_case digest_1080p_timeout_interval '*digest_1080p_timeout_interval*' \
+		--rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port
+	dpdk_case st20p_auto_pacing_pa 'Main*:St20p*:-*ext*' \
+		--rss_mode l3_l4 --pacing_way auto --iova_mode pa --multi_src_port
+	dpdk_case st20p_auto_pacing_va 'Main*:St20p*:-*ext*' \
+		--rss_mode l3_l4 --pacing_way auto --iova_mode va --multi_src_port
+	dpdk_case st20p_tsc_pacing 'Main*:St20p*:-*ext*' \
+		--rss_mode l3_l4 --pacing_way tsc --iova_mode va --multi_src_port
+
+	# Three that do not fit the shape above: the redundant-path cases take one
+	# port list instead of a pair and no DMA, the kernel-socket datapath takes
+	# no DPDK port and no root, and noctx is a script of its own because DPDK
+	# EAL cannot be re-initialised in one process.
+	test_cases[redundant_stats]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
+	test_cases[st20p_kernel_loopback]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
+	test_cases[noctx]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
 }
 
-# This should never be run with active proccesses using dpdk running, as it could lead to hangs
-bind_driver_to_dpdk() {
-	echo binding driver to DPDK...
-
-	if ! lsmod | awk '{print $1}' | grep -wx "ice"; then
-		echo "ICE driver not loaded, loading..."
-		if sudo modprobe ice; then
-			sleep 3
-		else
-			echo "Warning: Failed to load ICE driver"
-			time_taken_by_script
-			exit 1
-		fi
-	fi
-
-	if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
-		"${mtl_folder}/script/nicctl.sh" list up
-
-		found_match=false
-		for numa in 0 1 2 3; do
-			pfs=$("${mtl_folder}/script/nicctl.sh" list up 2>/dev/null | awk -v numa="${numa}" '$3 == "ice" && $4 == numa {print $2}')
-			echo "Found ICE PFs on NUMA node ${numa}: $pfs"
-
-			for p in $pfs; do
-				TEST_DMA_PORT_P=$(dpdk-devbind.py -s | awk -v mech="$dma_mechanism" -v numa="${numa}" '$0 ~ mech && $0 ~ ("numa_node=" numa) {print $1; exit}')
-				TEST_DMA_PORT_R=$(dpdk-devbind.py -s | awk -v mech="$dma_mechanism" -v numa="${numa}" -v p="${TEST_DMA_PORT_P}" '$0 ~ mech && $0 ~ ("numa_node=" numa) && $1 != p {print $1; exit}')
-				if [ -n "${TEST_DMA_PORT_P}" ] && [ -n "${TEST_DMA_PORT_R}" ]; then
-					export pf_numa="${numa}"
-					export pf="${p}"
-					found_match=true
-					break
-				elif [ -n "${TEST_DMA_PORT_P}" ] && [ -n "$(dpdk-devbind.py -s | awk -v mech="$dma_mechanism" -v p="${TEST_DMA_PORT_P}" '$0 ~ mech && $1 != p {print $1}' | head -1)" ]; then
-					export TEST_DMA_PORT_LEPSZYRYDZNIZNICA="${TEST_DMA_PORT_P}"
-					TEST_DMA_PORT_LEPSZYRYDZNIZNICB="$(dpdk-devbind.py -s | awk -v mech="$dma_mechanism" -v p="${TEST_DMA_PORT_P}" '$0 ~ mech && $1 != p {print $1}' | head -1)"
-					export TEST_DMA_PORT_LEPSZYRYDZNIZNICB
-					pf_lepszyrydzniznica="${p}"
-					export pf_lepszyrydzniznica
-				fi
-			done
-			[ "$found_match" = true ] && break
-		done
-
-		if [ -z "${pf}" ] || [ -z "$TEST_DMA_PORT_P" ] || [ -z "$TEST_DMA_PORT_R" ]; then
-			echo "Error: Could not find ICE PF with matching DMA ports"
-			if [ -n "${TEST_DMA_PORT_LEPSZYRYDZNIZNICA}" ] && [ -n "${TEST_DMA_PORT_LEPSZYRYDZNIZNICB}" ]; then
-				echo "Found DMA ports without matching numa node: $TEST_DMA_PORT_LEPSZYRYDZNIZNICA, $TEST_DMA_PORT_LEPSZYRYDZNIZNICB"
-				export TEST_DMA_PORT_P="${TEST_DMA_PORT_LEPSZYRYDZNIZNICA}"
-				export TEST_DMA_PORT_R="${TEST_DMA_PORT_LEPSZYRYDZNIZNICB}"
-				export pf="${pf_lepszyrydzniznica}"
-			else
-				echo "No suitable DMA ports found either"
-				time_taken_by_script
-				exit 1
-			fi
-		fi
-
-		pf_numa=$(dpdk-devbind.py --status-dev net | grep "$pf" | awk -F 'numa_node=' '{print $2}' | awk '{print $1}')
-		echo "Binding PF $pf to DPDK driver numa node ${pf_numa}"
-		sudo -E "${mtl_folder}/script/nicctl.sh" create_tvf "$pf"
-	fi
-
-	sleep 5
-	TEST_PORT_1=$("${mtl_folder}/script/nicctl.sh" list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_2=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_3=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-	TEST_PORT_4=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | grep -v "${TEST_PORT_3}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
-
-	if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
-		echo "Error: Could not find enough VFIO-PCI bound ports for testing"
-		echo " TEST_PORT_1=$TEST_PORT_1"
-		echo " TEST_PORT_2=$TEST_PORT_2"
-		echo " TEST_PORT_3=$TEST_PORT_3"
-		echo " TEST_PORT_4=$TEST_PORT_4"
-		time_taken_by_script
-		exit 1
-	fi
-
-	# for the noctx tests
-	export TEST_PORT_1
-	export TEST_PORT_2
-	export TEST_PORT_3
-	export TEST_PORT_4
-
-	echo "Selected ports: P=$TEST_PORT_1, R=$TEST_PORT_2"
-
-	if ! dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_P" | grep -q "unused=${dma_mechanism}"; then
-		if ! sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_P" 2>&1 | sudo tee -a "$LOG_FILE"; then
-			echo "Error: Could not bind DMA port P ($TEST_DMA_PORT_P) to vfio-pci"
-			time_taken_by_script
-			exit 1
-		fi
-		echo "Successfully bound DMA port P $(dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_P") to vfio-pci"
-	else
-		echo "DMA port P $(dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_P") already bound to vfio-pci"
-	fi
-
-	if ! dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_R" | grep -q "unused=${dma_mechanism}"; then
-		if ! sudo dpdk-devbind.py --bind vfio-pci "$TEST_DMA_PORT_R" 2>&1 | sudo tee -a "$LOG_FILE"; then
-			echo "Error: Could not bind DMA port R ($TEST_DMA_PORT_R) to vfio-pci"
-			time_taken_by_script
-			exit 1
-		fi
-		echo "Successfully bound DMA port R $(dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_R") to vfio-pci"
-	else
-		echo "DMA port R $(dpdk-devbind.py --status-dev dma | grep "$TEST_DMA_PORT_R") already bound to vfio-pci"
-	fi
-
-	generate_test_cases
-}
-
-reset_ice_driver() {
-	echo "Resetting ICE driver..."
-	sudo modprobe -r ice || true
-	sleep 5
-	sudo modprobe ice || true
-	sleep 10
-
-	export TEST_PORT_1=""
-	export TEST_PORT_2=""
-	export TEST_PORT_3=""
-	export TEST_PORT_4=""
-}
+# ── running them ────────────────────────────────────────────────────────────
 
 kill_test_processes() {
 	# Kill by process group if available
@@ -274,6 +379,58 @@ check_configuration_errors() {
 	return 0
 }
 
+# The payload's own program, in a variable so that this shell does not expand it:
+# $$ is the pid of the new session's leader, and $1..$4 are what setsid passes on.
+case_program=$(
+	cat <<'PROGRAM'
+echo $$ >"$1"
+exec timeout --signal=SIGTERM --kill-after="$2" "$3" bash -c "$4"
+PROGRAM
+)
+
+# Runs one test case bounded by TEST_CASE_TIMEOUT.
+#
+# The payload is not piped into `tee`: KahawaiTest runs as root under sudo, so
+# an orphan that outlives `timeout` keeps the pipe open and stalls the whole
+# pipeline no matter what the timeout did. Output goes to a per-case file that
+# `tail -F` streams to the job log instead, and the payload gets its own
+# session so every orphan can be reclaimed by session id.
+run_case_bounded() {
+	local test_name="$1"
+	local case_log="${TMP_FOLDER}/${test_name}.out"
+	local sid_file="${TMP_FOLDER}/${test_name}.sid"
+	local retval=0
+
+	sudo rm -f "${case_log}" "${sid_file}"
+	sudo install -m 0666 /dev/null "${case_log}"
+
+	tail -n 0 -F "${case_log}" &
+	local tail_pid=$!
+
+	setsid --wait bash -c "${case_program}" gtest-case \
+		"${sid_file}" "${TEST_KILL_GRACE}" "${TEST_CASE_TIMEOUT}" "${test_cases[$test_name]}" \
+		>>"${case_log}" 2>&1 || retval=$?
+
+	kill "${tail_pid}" 2>/dev/null || true
+	wait "${tail_pid}" 2>/dev/null || true
+	sudo cat "${case_log}" | sudo tee -a "$LOG_FILE" >/dev/null
+
+	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
+		echo "✗ Test case exceeded ${TEST_CASE_TIMEOUT}s: ${test_name}"
+		local sid
+		sid=$(cat "${sid_file}" 2>/dev/null)
+		if [ -n "${sid}" ]; then
+			sudo pkill -SIGKILL -s "${sid}" 2>/dev/null || true
+		fi
+	fi
+
+	return "${retval}"
+}
+
+# A retry runs the same case on the same ports. It deliberately does not touch
+# the driver or the VFs in between: a case that only passes after its NIC has
+# been rebuilt underneath it is not a pass worth reporting, and the rebuild is
+# how the runner used to get wedged.
 run_test_with_retry() {
 	local test_name="$1"
 	local attempt=1
@@ -286,8 +443,8 @@ run_test_with_retry() {
 	while [ $attempt -le "$MAX_RETRIES" ]; do
 		echo "Attempt $attempt/$MAX_RETRIES for: $test_name"
 
-		timeout --signal=SIGKILL "${TEST_CASE_TIMEOUT}" bash -c "${test_cases[$test_name]}" 2>&1 | sudo tee -a "$LOG_FILE"
-		RETVAL=${PIPESTATUS[0]}
+		RETVAL=0
+		run_case_bounded "$test_name" || RETVAL=$?
 		if [[ $RETVAL == 0 ]]; then
 			echo "✓ Test passed: $test_name" | sudo tee -a "$LOG_FILE"
 			return 0
@@ -302,9 +459,6 @@ run_test_with_retry() {
 			if [ $attempt -lt "$MAX_RETRIES" ]; then
 				echo "Waiting $RETRY_DELAY seconds before retry..."
 				sleep "$RETRY_DELAY"
-
-				reset_ice_driver
-				bind_driver_to_dpdk
 				((attempt++))
 			else
 				break
@@ -324,7 +478,6 @@ run_test_with_retry() {
 }
 
 print_configuration() {
-	echo "Starting MTL test suite..."
 	echo "=========================================="
 	echo "Configuration:"
 	echo "=========================================="
@@ -336,14 +489,22 @@ print_configuration() {
 	echo "EXIT_ON_FAILURE: $EXIT_ON_FAILURE"
 	echo "NIGHTLY: $NIGHTLY"
 	echo "TEST_CASE_TIMEOUT: $TEST_CASE_TIMEOUT seconds"
+	echo "HOST_OP_TIMEOUT: $HOST_OP_TIMEOUT seconds"
+	echo "TEST_KILL_GRACE: $TEST_KILL_GRACE seconds"
 	echo "TEST_SIP_SEED: $TEST_SIP_SEED"
 	echo "TEST_P_SIP: $TEST_P_SIP"
 	echo "TEST_R_SIP: $TEST_R_SIP"
 	echo "FAIL_FAST: ${FAIL_FAST:-<not set>}"
-	echo "dma_mechanism: ${dma_mechanism:-<not set>}"
+	echo "TEST_PORT_1..4: ${TEST_PORT_1} ${TEST_PORT_2} ${TEST_PORT_3} ${TEST_PORT_4}"
+	echo "DMA channels: ${TEST_DMA_ARG:-<none, the DMA cases skip themselves>}"
 	echo "=========================================="
 	echo ""
 }
+
+# Lets tests source the helpers above without running the suite.
+if [ -n "${GTEST_SH_SOURCE_ONLY:-}" ]; then
+	return 0
+fi
 
 sudo mkdir -p "${TMP_FOLDER}" 2>/dev/null
 if [ ! -d "${TMP_FOLDER}" ]; then
@@ -351,28 +512,11 @@ if [ ! -d "${TMP_FOLDER}" ]; then
 	exit 1
 fi
 
-print_configuration
-
+echo "Starting MTL test suite..."
 kill_test_processes
-
-reset_ice_driver
-bind_driver_to_dpdk
-
-if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ]; then
-	echo "Error: TEST_PORT_1 or TEST_PORT_2 environment variables are not set"
-	echo "TEST_PORT_1=$TEST_PORT_1"
-	echo "TEST_PORT_2=$TEST_PORT_2"
-	time_taken_by_script
-	exit 1
-fi
-
-if [ -z "$TEST_DMA_PORT_P" ] || [ -z "$TEST_DMA_PORT_R" ]; then
-	echo "Error: TEST_DMA_PORT_P or TEST_DMA_PORT_R environment variables are not set"
-	echo "TEST_DMA_PORT_P=$TEST_DMA_PORT_P"
-	echo "TEST_DMA_PORT_R=$TEST_DMA_PORT_R"
-	time_taken_by_script
-	exit 1
-fi
+discover_ports
+generate_test_cases
+print_configuration
 
 for test_name in "${!test_cases[@]}"; do
 	echo "$test_name" "${test_cases[$test_name]}"

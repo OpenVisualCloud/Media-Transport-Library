@@ -30,7 +30,7 @@ std::vector<uint8_t> make_udw(uint16_t n, uint8_t seed) {
 }
 
 struct st40_meta make_meta(uint16_t did, uint16_t sdid, uint16_t udw_size) {
-  struct st40_meta m {};
+  struct st40_meta m{};
   m.did = did;
   m.sdid = sdid;
   m.udw_size = udw_size;
@@ -51,7 +51,7 @@ TEST_F(St40TxCorruptParityTest, DecodeFailsOnParityNotChecksum) {
 
   ut40_tx_corrupt_parity(buf.data(), meta.udw_size);
 
-  struct st40_meta out {};
+  struct st40_meta out{};
   std::vector<uint8_t> udw_out(8, 0);
   uint32_t consumed = 0;
   EXPECT_EQ(st40_rfc8331_decode_packet(buf.data(), written, &out, udw_out.data(),
@@ -85,7 +85,7 @@ TEST_F(St40TxCorruptParityTest, ZeroUdwSizeStillCorrupted) {
 
   ut40_tx_corrupt_parity(buf.data(), meta.udw_size);
 
-  struct st40_meta out {};
+  struct st40_meta out{};
   uint32_t consumed = 0;
   EXPECT_EQ(st40_rfc8331_decode_packet(buf.data(), written, &out, nullptr, 0, &consumed),
             ST40_RFC8331_DECODE_PARITY_FAIL);

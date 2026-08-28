@@ -1,0 +1,53 @@
+---
+name: Unit Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  # The unit tier needs no NIC and no root, so it is the cheapest gate MTL has.
+  # It still needs DPDK headers and libraries to compile.
+  unit-tests:
+    # One entry keeps the runner image label in one place.
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Nothing installs MTL here; setup_environment.sh takes the dirname of this
+      # to place DPDK under a workspace-local path instead of system-wide.
+      MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+      PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install build dependencies and DPDK
+        env:
+          SETUP_ENVIRONMENT: '1'
+          CICD_BUILD: '1'
+          SETUP_BUILD_AND_INSTALL_DPDK: '1'
+        run: bash .github/scripts/ci/unit-test-dependencies.sh
+
+      - name: Build and run the unit suite
+        run: ./build.sh unit

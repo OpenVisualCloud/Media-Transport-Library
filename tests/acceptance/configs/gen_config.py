@@ -43,6 +43,7 @@ def gen_test_config(
     test_time: int = 60,
     no_capture: bool = False,
     capture_pci_device: str = None,
+    interface_type: str = None,
 ) -> str:
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
 
@@ -56,6 +57,13 @@ def gen_test_config(
             "tmpfs_size_gib": 8,
         },
     }
+
+    # Cards without SR-IOV (i225/i226) have no VF to hand to DPDK, so their
+    # tests bind the PF itself, and a single-port card cannot even do that --
+    # it takes MTL's kernel-socket datapath (KERNEL). Tests read this through
+    # test_config["interface_type"]; leaving it out keeps the VF default.
+    if interface_type:
+        test_config["interface_type"] = interface_type
 
     has_ebu = all([ebu_ip, ebu_user, ebu_password])
     # capture_pci_device is the preferred, unambiguous way to designate the
@@ -78,6 +86,13 @@ def gen_test_config(
             "pcap_dir": "/mnt/ramdisk/pcap",
             "sniff_pci_device": _bdf_to_vendor_device(sniff_pci_device),
         }
+    elif no_capture:
+        # An absent capture_cfg means "compliance is required and this host is
+        # misconfigured" to the pcap_capture fixture, which then fails every
+        # test that requests it. --no_capture is the operator saying the card
+        # has no port to spare (a single-port i225), so write the explicit
+        # opt-out the fixture looks for.
+        test_config["capture_cfg"] = {"enable": False}
     if has_ebu:
         test_config["ebu_server"] = {
             "ebu_ip": ebu_ip,
@@ -240,6 +255,18 @@ def main() -> None:
         help="Disable packet capture so the 2nd NIC port is available for redundant (ST2022-7) tests",
     )
     parser.add_argument(
+        "--interface_type",
+        type=str,
+        default=None,
+        choices=["VF", "PF", "KERNEL"],
+        help=(
+            "How the tests attach to the NIC: VF (default, SR-IOV cards), "
+            "PF (cards without SR-IOV, e.g. a two-port i225/i226) or KERNEL "
+            "(MTL's kernel-socket datapath, the only one a single-port card "
+            "can serve)"
+        ),
+    )
+    parser.add_argument(
         "--capture_pci_device",
         type=str,
         default=None,
@@ -277,6 +304,7 @@ def main() -> None:
         test_time=args.test_time,
         no_capture=args.no_capture,
         capture_pci_device=args.capture_pci_device,
+        interface_type=args.interface_type,
     )
 
     with open("test_config.yaml", "w") as file:

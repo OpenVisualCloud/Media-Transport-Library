@@ -228,6 +228,8 @@ TEST(St22PipelineConcurrency, RxSingleProducerMultiConsumerNoDeadlock) {
   EXPECT_EQ(produced.load(), kTarget);
   EXPECT_EQ(consumed.load(), kTarget) << "frames lost or duplicated";
   EXPECT_TRUE(ut22p_framebuff_cnt(ctx) == kFrameCnt);
+  EXPECT_GT(ut22p_stub_call_count(), 0U)
+      << "st22p_rx_put_frame never reached the transport put path";
 
   ut22p_ctx_destroy(ctx);
 }

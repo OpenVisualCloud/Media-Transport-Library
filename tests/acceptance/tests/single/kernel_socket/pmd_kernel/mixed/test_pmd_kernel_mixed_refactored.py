@@ -5,6 +5,7 @@
 Mirrors ``test_pmd_kernel_mixed.py`` using the multi-session
 ``sessions=[...]`` API of the refactored ``RxTxApp`` class.
 """
+
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import (

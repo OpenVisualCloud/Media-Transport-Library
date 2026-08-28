@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+#
+# Commit-message rule content for MTL. The tool (gitlint) and its pinned version
+# live in .pre-commit-config.yaml; only the rules live here, exactly as
+# .github/linters/ owns rule content for every other linter. See
+# doc/coding_standard.md section 7.
+#
+# These mechanical rules mirror the mtl-commit skill and section 7: the fixed,
+# capitalized type set, a 72-char subject, a blank line before the body, and the
+# Signed-off-by trailer that `git commit -s` adds. Everything the skill asks for
+# that a regex cannot judge -- imperative mood, "why not how", body-line
+# wrapping, no chat leakage -- stays a reviewer's call, in the same bucket as the
+# two-world rule and the prefixes in mtl-c-coding.instructions.md.
+
+[general]
+# MTL's format is Conventional Commits with the type capitalized and no scope or
+# '!' marker, so gitlint's own conventional-commit contrib rule (which wants a
+# lowercase 'feat:') is deliberately not used. title-match-regex below encodes
+# the real format instead.
+#
+# contrib-body-requires-signed-off-by makes the Signed-off-by trailer mandatory,
+# matching the mtl-commit skill's `git commit -s` rule.
+contrib=contrib-body-requires-signed-off-by
+
+# Three body rules are switched off on purpose:
+#   body-max-line-length -- a legitimate footer such as
+#     Fixes: <sha> ("<subject>") or a long Signed-off-by runs past 72, so this
+#     would false-positive on valid trailers. Body prose wrapping stays a review
+#     item, alongside imperative mood.
+#   body-is-missing / body-min-length -- section 7 allows a subject-only commit
+#     for a trivial change; these fire when there is no body or a short one.
+ignore=body-max-line-length,body-is-missing,body-min-length
+
+ignore-merge-commits=true
+ignore-fixup-commits=true
+ignore-squash-commits=true
+ignore-revert-commits=true
+
+[title-max-length]
+# 72 hard, per the mtl-commit skill (50 ideal is advice a linter cannot judge).
+line-length=72
+
+[title-match-regex]
+# <Type>: <Subject> -- Type from the fixed set and no trailing period. Keep this
+# set in step with the type list in doc/coding_standard.md section 7.
+regex=^(Feat|Add|Fix|Refactor|Docs|Test|Perf|Build|Ci|Style): \S.*[^.]$

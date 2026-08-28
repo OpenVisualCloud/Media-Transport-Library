@@ -151,13 +151,10 @@ void St30pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
-St30pRedundantLatency::St30pRedundantLatency(unsigned int latency,
+St30pRedundantLatency::St30pRedundantLatency(unsigned int /*latency*/,
                                              St30pHandler* parentHandler,
-                                             int startingTime)
-    : St30pUserTimestamp(parentHandler),
-      latencyInMs(latency),
-      startingTimeInMs(static_cast<unsigned int>(startingTime)) {
-  startingTime = (50 + latencyInMs) * NS_PER_MS;
+                                             int /*startingTime*/)
+    : St30pUserTimestamp(parentHandler) {
 }
 
 void St30pRedundantLatency::rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {

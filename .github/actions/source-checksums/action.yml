@@ -1,8 +1,5 @@
 name: Source Checksums
-description: >
-  Compute deterministic SHA-256 hashes for each component group.
-  Waterfall: dpdk → mtl → {ffmpeg, gstreamer, plugins}.
-  A parent change forces all children to rehash automatically.
+description: Compute deterministic SHA-256 hashes for CI dependency caches.
 
 outputs:
   dpdk:
@@ -11,6 +8,12 @@ outputs:
   mtl:
     description: 'Hash for MTL sources (includes DPDK hash)'
     value: ${{ steps.compute.outputs.mtl }}
+  jpegxs:
+    description: 'Hash for JPEG XS bundle sources (includes MTL hash)'
+    value: ${{ steps.compute.outputs.jpegxs }}
+  ice:
+    description: 'Hash for patched ICE driver sources'
+    value: ${{ steps.compute.outputs.ice }}
   ffmpeg:
     description: 'Hash for FFmpeg plugin sources (includes MTL hash)'
     value: ${{ steps.compute.outputs.ffmpeg }}
@@ -24,10 +27,8 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install Task
+      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
     - id: compute
       shell: bash
-      run: |
-        set -euo pipefail
-        echo "::group::Source Checksums"
-        "${{ github.workspace }}/script/hash_sources.sh" -o "$GITHUB_OUTPUT"
-        echo "::endgroup::"
+      run: task ci:hash-dependencies -- -o "$GITHUB_OUTPUT"

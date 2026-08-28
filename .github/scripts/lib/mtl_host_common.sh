@@ -109,12 +109,15 @@ mh_ice_driver_status_report() {
 
 # Build + install the patched out-of-tree ICE driver, then reload it.
 # NOTE: reloading ice destroys any existing VFs on every PF.
+# MTL_INSTALL_PREFIX is cleared on purpose: with a prefix set, build_drivers.sh
+# packages the .ko into that tree instead of installing it into this kernel.
 mh_ice_driver_rebuild() {
 	(
 		cd "$MH_REPO_ROOT" &&
 			SETUP_ENVIRONMENT=0 \
 				SETUP_BUILD_AND_INSTALL_DPDK=0 \
 				SETUP_BUILD_AND_INSTALL_DRIVERS=0 \
+				MTL_INSTALL_PREFIX='' \
 				SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 \
 				SETUP_BUILD_AND_INSTALL_DRIVERS_IGC=0 \
 				SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \

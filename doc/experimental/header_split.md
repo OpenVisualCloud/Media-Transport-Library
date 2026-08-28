@@ -6,15 +6,19 @@ Header split is a hardware-based feature for RX memory copy offload. It can leve
 
 ## 2. Build DPDK with header split patch
 
-Note: please checkout DPDK to v23.03 as it is verified. It has known raw flow issues with DPDK v23.08 and v23.11.
+Note: header split is experimental.
+
+To reproduce the verified configuration, set `DPDK_VER=23.03` in `versions.env` before you run the commands below. Restore the pin after you finish.
+
+Note: point `$mtl_source_code` to the top source code tree of Media Transport Library.
 
 ```bash
+. $mtl_source_code/versions.env
 cd dpdk
-# checkout v23.03 version
-git checkout v23.03
-git switch -c v23.03
-git am $mtl_source_code/patches/dpdk/23.03/*.patch
-git am $mtl_source_code/patches/dpdk/23.03/hdr_split/0001-net-ice-support-hdr-split-mbuf-callback.patch
+git checkout v${DPDK_VER}
+git switch -c v${DPDK_VER}
+git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
+git am $mtl_source_code/patches/dpdk/${DPDK_VER}/hdr_split/*.patch
 
 # build dpdk
 rm build -rf
