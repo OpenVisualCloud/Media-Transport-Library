@@ -1,0 +1,89 @@
+From 0fc2a2e96c1078c9cc382f6fc81a48984759038f Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Mon, 27 Apr 2026 04:39:34 -0400
+Subject: [PATCH 1/5] ice: support VF runtime rate-limit queue reconfiguration
+
+ST2110 media streams require per-queue hardware rate limiting
+(ST 2110-21 narrow/wide sender compliance) that must be
+adjustable at runtime as sessions are created and destroyed.
+
+Apply BW configuration immediately in ice_vc_cfg_q_bw() after
+storing the per-queue shaper parameters, instead of deferring
+to ice_vc_cfg_qs_msg() queue setup time. Remove the queue
+disable step during TX queue reconfiguration to prevent
+tearing down queues that are actively pacing media traffic.
+Remove the deferred ice_vf_cfg_qs_bw() call at queue setup
+since BW is now applied in the dedicated BW handler.
+
+Without this, changing any VF queue rate limit requires
+tearing down all TX queues on the VSI, disrupting all active
+media sessions on that port.
+
+Change-type: FeatureImplementation
+Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+---
+ src/ice_virtchnl.c | 28 +++++++++++++++++++++-------
+ 1 file changed, 21 insertions(+), 7 deletions(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index bc68d8a..f2a7e45 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3608,7 +3608,7 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+ 	struct virtchnl_queues_bw_cfg *qbw =
+ 		(struct virtchnl_queues_bw_cfg *)msg;
+-	struct ice_vf_qs_bw *qs_bw;
++	struct ice_vf_qs_bw *qs_bw, *qs_bw_tmp;
+ 	struct ice_vsi *vsi;
+ 	size_t len;
+ 	u16 i;
+@@ -3677,8 +3677,28 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 		qs_bw[i].tc = qbw->cfg[i].tc;
+ 	}
+ 
++	qs_bw_tmp = kmemdup(vf->qs_bw, len, GFP_KERNEL);
++	if (!qs_bw_tmp) {
++		v_ret = VIRTCHNL_STATUS_ERR_NO_MEMORY;
++		goto err_bw;
++	}
++
+ 	memcpy(vf->qs_bw, qs_bw, len);
+ 
++	if (ice_vf_cfg_qs_bw(vf, qbw->num_queues)) {
++		dev_warn(ice_pf_to_dev(vf->pf), "Unable to configure queue bandwidth for VF-%d\n",
++			 vf->vf_id);
++		memcpy(vf->qs_bw, qs_bw_tmp, len);
++
++		if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
++			dev_warn(ice_pf_to_dev(vf->pf),
++				 "VF-%d BW rollback failed; HW inconsistent until VF reset\n",
++				 vf->vf_id);
++		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++	}
++
++	kfree(qs_bw_tmp);
++
+ err_bw:
+ 	kfree(qs_bw);
+ 
+@@ -3783,10 +3803,6 @@ ice_vc_cfg_txq(struct ice_vf *vf, struct ice_vsi *vsi,
+ 	vsi->tx_rings[q_idx]->dma = txqi->dma_ring_addr;
+ 	vsi->tx_rings[q_idx]->count = txqi->ring_len;
+ 
+-	/* Disable queue before reconfiguration */
+-	if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx, txqi->queue_id))
+-		return VIRTCHNL_STATUS_ERR_PARAM;
+-
+ 	/* Configure txtime/timestamp support if enabled */
+ 	if (txqi->flags & VIRTCHNL_TXQ_FLAG_TXTIME_ENABLED) {
+ 		struct ice_tx_ring *tx_ring = vsi->tx_rings[q_idx];
+@@ -4008,8 +4024,6 @@ static int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
+ 		}
+ 	}
+ 
+-	if (ice_vf_cfg_qs_bw(vf, qci->num_queue_pairs))
+-		goto error_param;
+ #ifdef HAVE_NETDEV_UPPER_INFO
+ 
+ 	ice_lag_complete_vf_reset(pf->lag, act_prt);
