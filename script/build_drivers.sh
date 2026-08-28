@@ -12,9 +12,10 @@ REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 BUILD_ICE=true
 BUILD_IGC=true
+BUILD_IAVF=true
 BUILD_ONLY=false
 FORCE=false
-if [[ "${FORCE_ICE_REBUILD:-0}" == "1" ]]; then
+if [[ "${FORCE_ICE_REBUILD:-0}" == "1" || "${FORCE_IAVF_REBUILD:-0}" == "1" ]]; then
 	FORCE=true
 fi
 usage() {
@@ -25,13 +26,24 @@ Build drivers used by Media Transport Library.
 By default, all driver flows are built.
 
 Options:
-  --driver <ice|igc>         Build only the selected driver flow
+  --driver <ice|igc|iavf>    Build only the selected driver flow
   --disable-ice              Do not build the ICE driver flow
   --disable-igc              Do not build the IGC driver flow
-  --build-only              Compile ICE without installing or loading it
+  --disable-iavf             Do not build the IAVF driver flow
+  --build-only               Compile ICE/IAVF and leave the built .ko in place,
+                             without installing or loading it
+
+Environment:
+  MTL_INSTALL_PREFIX         Install into this tree instead of the system, as every
+                             build script of this repository does. A kernel module
+                             cannot go in a prefix and be loaded, so the two .ko go
+                             to <prefix parent>/ice/<kernel release>/<architecture>
+                             and nothing is installed or reloaded.
   --ice-version <version>    ICE version (default: ${ICE_VER})
-  --ice-download-id <id>     Intel download mirror ID (default: ${ICE_DMID})
-	--force                    Rebuild ICE
+  --ice-download-id <id>     Intel download mirror ID for ICE (default: ${ICE_DMID})
+  --iavf-version <version>   IAVF version (default: ${IAVF_VER})
+  --iavf-download-id <id>    Intel download mirror ID for IAVF (default: ${IAVF_DMID})
+	--force                    Rebuild ICE/IAVF
   -h, --help                 Show this help
 USAGE
 }
@@ -58,13 +70,20 @@ while [[ $# -gt 0 ]]; do
 		ice)
 			BUILD_ICE=true
 			BUILD_IGC=false
+			BUILD_IAVF=false
 			;;
 		igc)
 			BUILD_ICE=false
 			BUILD_IGC=true
+			BUILD_IAVF=false
+			;;
+		iavf)
+			BUILD_ICE=false
+			BUILD_IGC=false
+			BUILD_IAVF=true
 			;;
 		*)
-			echo "Unsupported driver '$2'. Use ice or igc." >&2
+			echo "Unsupported driver '$2'. Use ice, igc or iavf." >&2
 			exit 1
 			;;
 		esac
@@ -76,6 +95,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--disable-igc)
 		BUILD_IGC=false
+		shift
+		;;
+	--disable-iavf)
+		BUILD_IAVF=false
 		shift
 		;;
 	--build-only)
@@ -98,6 +121,22 @@ while [[ $# -gt 0 ]]; do
 		ICE_DMID="$2"
 		shift 2
 		;;
+	--iavf-version)
+		[[ $# -ge 2 ]] || {
+			echo "--iavf-version requires a value" >&2
+			exit 1
+		}
+		IAVF_VER="$2"
+		shift 2
+		;;
+	--iavf-download-id)
+		[[ $# -ge 2 ]] || {
+			echo "--iavf-download-id requires a value" >&2
+			exit 1
+		}
+		IAVF_DMID="$2"
+		shift 2
+		;;
 	--force)
 		FORCE=true
 		shift
@@ -114,9 +153,27 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+# The prefix is what makes the module the deliverable instead of the running
+# driver: the host that builds a .ko is not always the host that loads it, and CI
+# caches the pair per kernel release. Same sibling-directory shape as build_dpdk.sh.
+BUNDLE_DIR=""
+if [[ -n "${MTL_INSTALL_PREFIX:-}" ]]; then
+	BUNDLE_DIR="$(dirname "${MTL_INSTALL_PREFIX}")/ice/$(uname -r)/$(uname -m)"
+	BUILD_ONLY=true
+fi
+
 build_ice() {
 	local archive_name="ice-${ICE_VER}.tar.gz"
+	local patch_root="${REPO_DIR}/patches/ice_drv"
+	local patch_dir="${patch_root}/${ICE_VER}"
 	local github_archive=0
+
+	if [[ ! -d "${patch_dir}" ]]; then
+		echo "No ICE patches for version ${ICE_VER}." >&2
+		echo "Directory does not exist: ${patch_dir}" >&2
+		echo "Available ICE versions: $(find -L "${patch_root}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | paste -sd' ')" >&2
+		exit 1
+	fi
 
 	if [[ "${BUILD_ONLY}" == "false" && "${FORCE}" == "false" ]] &&
 		sudo modinfo ice 2>/dev/null | grep -Ei "^version:[[:space:]]*Kahawai_${ICE_VER}" >/dev/null; then
@@ -147,7 +204,7 @@ build_ice() {
 	fi
 
 	if [[ -d "ice-${ICE_VER}" ]]; then
-		if [[ "${FORCE}" == "true" ]]; then
+		if [[ "${FORCE}" == "true" || "${BUILD_ONLY}" == "true" ]]; then
 			rm -rf "ice-${ICE_VER}"
 		else
 			echo "ice-${ICE_VER} already exists. Use --force to replace it." >&2
@@ -166,10 +223,15 @@ build_ice() {
 	}
 
 	pushd "ice-${ICE_VER}" >/dev/null
-	for patch_file in "${REPO_DIR}"/patches/ice_drv/"${ICE_VER}"/*.patch; do
-		patch -p1 -i "${patch_file}"
+	for patch_file in "${patch_dir}"/*.patch; do
+		# --batch: a patch that does not fit this release must fail the build, not
+		# stop on "File to patch:" and wait for a terminal nobody is watching.
+		patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
+			echo "Failed to apply $(basename "${patch_file}") to ice-${ICE_VER}." >&2
+			exit 1
+		}
 	done
-	make -C src -j"$(nproc)"
+	make -C src -j"$(nproc)" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		run_as_root make -C src install
 		run_as_root rmmod irdma || true
@@ -177,7 +239,101 @@ build_ice() {
 		run_as_root modprobe ice
 	fi
 	popd >/dev/null
-	rm -rf "ice-${ICE_VER}"
+	# A prefix takes the module, so the tree has done its job. Plain --build-only
+	# leaves the tree where the caller can collect it, and an install has the
+	# driver and does not need the tree either.
+	if [[ -n "${BUNDLE_DIR}" ]]; then
+		install -D -m 0644 "${SCRIPT_DIR}/ice-${ICE_VER}/src/ice.ko" "${BUNDLE_DIR}/ice.ko"
+		echo "Installed ${BUNDLE_DIR}/ice.ko"
+		rm -rf "ice-${ICE_VER}"
+	elif [[ "${BUILD_ONLY}" == "true" ]]; then
+		echo "Built ${SCRIPT_DIR}/ice-${ICE_VER}/src/ice.ko"
+	else
+		rm -rf "ice-${ICE_VER}"
+	fi
+}
+
+build_iavf() {
+	local archive_name="iavf-${IAVF_VER}.tar.gz"
+	local patch_dir="${REPO_DIR}/patches/iavf_drv/${IAVF_VER}"
+	local github_archive=0
+
+	if [[ "${BUILD_ONLY}" == "false" && "${FORCE}" == "false" ]] &&
+		sudo modinfo iavf 2>/dev/null | grep -Ei "^version:[[:space:]]*(Kahawai_)?${IAVF_VER}([[:space:]]|$)" >/dev/null; then
+		echo "IAVF driver version ${IAVF_VER} is already installed. Skipping rebuild."
+		return
+	fi
+
+	cd "${SCRIPT_DIR}"
+	if [[ -f "${archive_name}" ]] && gzip -t "${archive_name}" >/dev/null 2>&1; then
+		echo "Found valid local archive ${archive_name}, skipping download."
+		if tar -tzf "${archive_name}" | grep "^ethernet-linux-iavf" >/dev/null; then
+			github_archive=1
+		fi
+	else
+		rm -f "${archive_name}"
+		wget "https://downloadmirror.intel.com/${IAVF_DMID}/${archive_name}" -O "${archive_name}" || true
+		if [[ ! -f "${archive_name}" ]] || ! gzip -t "${archive_name}" >/dev/null 2>&1; then
+			rm -f "${archive_name}"
+			wget "https://github.com/intel/ethernet-linux-iavf/archive/refs/tags/v${IAVF_VER}.tar.gz" -O "${archive_name}" || true
+			if [[ -f "${archive_name}" ]] && gzip -t "${archive_name}" >/dev/null 2>&1; then
+				github_archive=1
+			else
+				echo "Failed to download a valid ${archive_name}." >&2
+				rm -f "${archive_name}"
+				exit 1
+			fi
+		fi
+	fi
+
+	if [[ -d "iavf-${IAVF_VER}" ]]; then
+		if [[ "${FORCE}" == "true" || "${BUILD_ONLY}" == "true" ]]; then
+			rm -rf "iavf-${IAVF_VER}"
+		else
+			echo "iavf-${IAVF_VER} already exists. Use --force to replace it." >&2
+			exit 1
+		fi
+	fi
+
+	tar xzf "${archive_name}"
+	rm -f "${archive_name}"
+	if [[ "${github_archive}" -eq 1 && -d "ethernet-linux-iavf-${IAVF_VER}" ]]; then
+		mv "ethernet-linux-iavf-${IAVF_VER}" "iavf-${IAVF_VER}"
+	fi
+	[[ -d "iavf-${IAVF_VER}" ]] || {
+		echo "Failed to extract ${archive_name}." >&2
+		exit 1
+	}
+
+	pushd "iavf-${IAVF_VER}" >/dev/null
+	if [[ -d "${patch_dir}" ]]; then
+		shopt -s nullglob
+		for patch_file in "${patch_dir}"/*.patch; do
+			patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
+				echo "Failed to apply $(basename "${patch_file}") to iavf-${IAVF_VER}." >&2
+				exit 1
+			}
+		done
+		shopt -u nullglob
+	fi
+	make -C src -j"$(nproc)" CC="${CC:-cc}"
+	if [[ "${BUILD_ONLY}" == "false" ]]; then
+		run_as_root make -C src install
+		run_as_root rmmod iavf || true
+		run_as_root modprobe iavf
+	fi
+	popd >/dev/null
+	# iavf goes in the same bundle as ice: they ship as one package, and the kernel
+	# auto-loads iavf when a VF appears, so the pair has to match.
+	if [[ -n "${BUNDLE_DIR}" ]]; then
+		install -D -m 0644 "${SCRIPT_DIR}/iavf-${IAVF_VER}/src/iavf.ko" "${BUNDLE_DIR}/iavf.ko"
+		echo "Installed ${BUNDLE_DIR}/iavf.ko"
+		rm -rf "iavf-${IAVF_VER}"
+	elif [[ "${BUILD_ONLY}" == "true" ]]; then
+		echo "Built ${SCRIPT_DIR}/iavf-${IAVF_VER}/src/iavf.ko"
+	else
+		rm -rf "iavf-${IAVF_VER}"
+	fi
 }
 
 build_igc() {
@@ -204,13 +360,25 @@ build_igc() {
 	fi
 }
 
-if [[ "${BUILD_ICE}" == "false" && "${BUILD_IGC}" == "false" ]]; then
+if [[ "${BUILD_ICE}" == "false" && "${BUILD_IGC}" == "false" && "${BUILD_IAVF}" == "false" ]]; then
 	echo "All driver flows are disabled." >&2
 	exit 1
 fi
 
+# Before the download: an out-of-tree module needs the headers of the kernel it is
+# built for, and make reports that as a missing target deep in the driver tree.
+if [[ "${BUILD_ICE}" == "true" || "${BUILD_IAVF}" == "true" ]]; then
+	test -d "/lib/modules/$(uname -r)/build" || {
+		echo "kernel headers are missing for $(uname -r): install linux-headers-$(uname -r)" >&2
+		exit 1
+	}
+fi
+
 if [[ "${BUILD_ICE}" == "true" ]]; then
 	build_ice
+fi
+if [[ "${BUILD_IAVF}" == "true" ]]; then
+	build_iavf
 fi
 if [[ "${BUILD_IGC}" == "true" ]]; then
 	build_igc

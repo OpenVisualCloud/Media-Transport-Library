@@ -7,7 +7,9 @@
 # Waterfall:
 #   dpdk      = hash(dpdk_paths)
 #   mtl       = hash(mtl_paths + dpdk_checksum)
-#   ffmpeg    = hash(ffmpeg_paths + mtl_checksum)
+#   jpegxs    = hash(jpegxs_paths + mtl_checksum)
+#   ice       = hash(ice_paths)
+#   ffmpeg    = hash(ffmpeg_paths + jpegxs_checksum)
 #   gstreamer = hash(gstreamer_paths + mtl_checksum)
 #   plugins   = hash(plugins_paths + mtl_checksum)
 
@@ -86,8 +88,16 @@ mtl_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_mtl.env")
 mtl="$(hash_string "${dpdk} ${mtl_paths_hash}")"
 
 # shellcheck disable=SC2046
+jpegxs_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_jpegxs.env"))"
+jpegxs="$(hash_string "${mtl} ${jpegxs_paths_hash}")"
+
+# shellcheck disable=SC2046
+ice_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_ice.env"))"
+ice="$(hash_string "$ice_paths_hash")"
+
+# shellcheck disable=SC2046
 ffmpeg_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_ffmpeg.env"))"
-ffmpeg="$(hash_string "${mtl} ${ffmpeg_paths_hash}")"
+ffmpeg="$(hash_string "${jpegxs} ${ffmpeg_paths_hash}")"
 
 # shellcheck disable=SC2046
 gstreamer_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_gstreamer.env"))"
@@ -103,6 +113,8 @@ if [ -n "$OUTPUT_ENV" ]; then
 	{
 		echo "dpdk=${dpdk}"
 		echo "mtl=${mtl}"
+		echo "jpegxs=${jpegxs}"
+		echo "ice=${ice}"
 		echo "ffmpeg=${ffmpeg}"
 		echo "gstreamer=${gstreamer}"
 		echo "plugins=${plugins}"
@@ -112,6 +124,8 @@ fi
 printf '  %-20s %s\n' \
 	"dpdk:" "${dpdk}" \
 	"mtl:" "${mtl}" \
+	"jpegxs:" "${jpegxs}" \
+	"ice:" "${ice}" \
 	"ffmpeg:" "${ffmpeg}" \
 	"gstreamer:" "${gstreamer}" \
 	"plugins:" "${plugins}"
