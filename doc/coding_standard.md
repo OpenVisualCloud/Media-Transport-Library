@@ -250,20 +250,18 @@ line may be added back.
 
 ### 4.1. The build gate depends on these names
 
-`.github/workflows/build.yml` will not build until every check in this workflow has
-passed: its `wait-for-linter` job polls the check runs on the commit, and `build`
-declares `needs: [wait-for-linter, checksums]`, so a lint failure skips the build
-rather than wasting a DPDK compile on it.
+`.github/workflows/build.yml` will not build until the file linters have passed.
+The `Lint Code Base` job aggregates the three `checkpatch` matrix jobs and
+`Lint checks not yet in checkpatch`; the build's `wait-for-linter` job polls that
+one stable check-run name. A lint failure therefore skips the build rather than
+wasting a DPDK compile on it. Commit-message style remains an independent pull
+request check and does not block the compile.
 
-The coupling is by *check-run name*, which is the job's `name:` -- `checkpatch
-(ubuntu-latest)`, `checkpatch (macos-latest)`, `checkpatch (windows-latest)` and
-`Lint checks not yet in checkpatch`. Nothing validates that the two lists match.
-Renaming a job here without updating `build.yml` does not fail the gate, it makes
-the gate wait for a check that never arrives and then report a timeout, which looks
-like infrastructure flake rather than the configuration error it is. That is how it
-broke once: the gate still asked for super-linter's `Lint Code Base`, which stopped
-existing the moment `checkpatch` replaced it, and every pull request paid ten
-minutes for the privilege. Both files carry a comment saying so.
+The workflow coupling is by the aggregate job's `name:`. Renaming `Lint Code
+Base` without updating `build.yml` makes the gate wait for a check that never
+arrives and report a timeout, which looks like infrastructure failure instead of
+a configuration error. The aggregate keeps the matrix details visible without
+requiring consumers to duplicate every platform-specific check name.
 
 ## 5. Git hooks
 

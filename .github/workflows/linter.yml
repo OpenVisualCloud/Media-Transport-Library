@@ -19,9 +19,8 @@ jobs:
   # if you find yourself adding a rule or a config path here, it belongs in
   # .pre-commit-config.yaml instead. See doc/coding_standard.md.
   checkpatch:
-    # This name is also the check-run name build.yml's wait-for-linter gate blocks
-    # on. Rename it in both places or the gate waits 15 minutes for a check that
-    # will never appear and reports a timeout instead of a lint failure.
+    # Lint Code Base below aggregates every platform into the stable check-run
+    # name consumed by build.yml.
     name: checkpatch (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
@@ -75,7 +74,6 @@ jobs:
   # check, so it simply never appears in this list -- the explicit
   # VALIDATE_ANSIBLE: false the deny-list needed would now stop the job starting.
   residual-linters:
-    # Also gated on by build.yml -- see the note on the checkpatch job name.
     name: Lint checks not yet in checkpatch
     runs-on: ubuntu-latest
     permissions:
@@ -130,6 +128,30 @@ jobs:
           VALIDATE_RUST_2018: true
           VALIDATE_RUST_2021: true
           VALIDATE_RUST_CLIPPY: true
+
+  lint-result:
+    name: Lint Code Base
+    needs: [checkpatch, residual-linters]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Require successful file linters
+        env:
+          CHECKPATCH_RESULT: ${{ needs.checkpatch.result }}
+          RESIDUAL_RESULT: ${{ needs.residual-linters.result }}
+        run: |
+          if [[ "$CHECKPATCH_RESULT" != success || "$RESIDUAL_RESULT" != success ]]; then
+            echo "checkpatch=$CHECKPATCH_RESULT residual-linters=$RESIDUAL_RESULT"
+            exit 1
+          fi
 
   # Commit-message style -- the one check that is neither a file linter nor part
   # of the super-linter allow-list, because gitlint reads a commit message and no
