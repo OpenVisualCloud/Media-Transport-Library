@@ -46,9 +46,18 @@ module.exports = async ({ github, context, core }) => {
         passed.add(checkName);
         continue;
       }
-      const failed = runs.find((run) => run.status === 'completed' && run.conclusion !== 'success');
-      const pending = runs.some((run) => run.status !== 'completed');
-      const inProgress = runs.some((run) => run.status === 'in_progress');
+      // A cancelled or skipped check is not a result. Two events on one commit --
+      // a push and the pull_request synchronize it causes -- give the commit two
+      // run sets, and the concurrency group cancels the older one. That leaves a
+      // completed/cancelled "build" check on the same sha while the live build has
+      // not created its check yet, so reading the cancel as a failure ends this
+      // gate in seconds on a build that is about to start. Dropping those runs
+      // lets the state fall back to "not found", and the absent budget then waits
+      // for the live check.
+      const live = runs.filter((run) => run.conclusion !== 'cancelled' && run.conclusion !== 'skipped');
+      const failed = live.find((run) => run.status === 'completed' && run.conclusion !== 'success');
+      const pending = live.some((run) => run.status !== 'completed');
+      const inProgress = live.some((run) => run.status === 'in_progress');
       if (failed && !pending) {
         core.setFailed(`"${checkName}" finished with: ${failed.conclusion}`);
         return;
