@@ -11,13 +11,21 @@ being explicitly asked to commit.
 ## Process
 
 1. Run `git status --short` and `git diff --stat`.
-2. **Run `./format-coding.sh` before staging anything.** It runs
-   markdownlint (`MD013` line-length among other rules, config at
-   [.github/linters/.markdown-lint.yml](../../linters/.markdown-lint.yml))
-   alongside clang-format/isort/black/shfmt, and now **fails the script**
-   on any violation `--fix` cannot auto-correct — fix those by hand
-   (rewrap the paragraph; a single `\n` is a soft break, it doesn't
-   change rendering), then re-run until it exits clean.
+2. **Format only what you are committing.** Stage the logical change, then run
+   `./format-coding.sh --staged` — or `./format-coding.sh --files a.c b.md`
+   before staging. A bare `./format-coding.sh` applies the autofixes to every
+   tracked file, which is the wrong default when the commit is three files.
+   The fixers write into the working tree, so `git add` whatever they change.
+   `--staged` stashes your unstaged changes first, so on a partially-staged file
+   whose autofix collides with the unstaged hunk it rolls that fix back and
+   exits `1` — stage the whole file, or use `--files` before splitting it.
+   It applies every autofix in `.pre-commit-config.yaml` — clang-format, isort,
+   black, shfmt, markdownlint, textlint — and then **fails** on anything no
+   autofix can correct: shellcheck findings, `MD013` line lengths (rewrap the
+   paragraph; a single `\n` is a soft break and does not change rendering),
+   flake8, yamllint. Fix those by hand and re-run until it exits clean — except after the rollback above, where re-running cannot help (`0`
+   clean, `1` findings, `2` a usage or environment problem).
+   `./checkpatch.sh --staged` re-verifies just what you are about to commit.
 3. **One commit = one logical change.** Split unrelated edits with
    `git add -p`. Never bundle drive-by changes into an unrelated fix.
 4. For each commit: stage, draft the message, run `git commit -s`
@@ -39,7 +47,7 @@ being explicitly asked to commit.
 ```
 
 - **Type** (capitalised): `Feat`, `Add`, `Fix`, `Refactor`, `Docs`, `Test`,
-  `Perf`, `Build`, `Ci`, `Style`. See [doc/coding_standard.md](../../doc/coding_standard.md).
+  `Perf`, `Build`, `Ci`, `Style`. See [doc/coding_standard.md](../../../doc/coding_standard.md).
 - This project does **not** use Conventional-Commits scopes (`Fix(parser):`)
   or breaking markers (`!`). Flag a breaking API/behaviour change with a
   `BREAKING-CHANGE:` footer instead.
