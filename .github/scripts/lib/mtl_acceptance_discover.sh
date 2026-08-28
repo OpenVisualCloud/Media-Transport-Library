@@ -34,6 +34,11 @@ VD_LOCAL_PREFIX_DEFAULT="$VD_REPO_ROOT/.local_install/mtl"
 # shellcheck source=mtl_host_common.sh disable=SC1091
 source "$VD_LIB_DIR/mtl_host_common.sh"
 
+# Where the acceptance virtualenv lives, so this report names the directory the
+# jobs actually verify rather than a second guess at it.
+# shellcheck source-path=SCRIPTDIR source=mtl_acceptance_venv.sh disable=SC1091
+source "$VD_LIB_DIR/mtl_acceptance_venv.sh"
+
 # Intel E810/E830/E825/E835 PCI vendor:device IDs — matches the vendor/device
 # check already used by .github/scripts/setup_acceptance.sh's preflight stage
 # and gen_config.py's PF autodetection, so all three agree on what a valid
@@ -185,7 +190,8 @@ vd_report_nfs() {
 # ---------------------------------------------------------------------------
 vd_report_venv_configs() {
 	echo "## Pytest venv / configs"
-	echo "- tests/acceptance/venv: $([[ -x "$VD_REPO_ROOT/tests/acceptance/venv/bin/python3" ]] && echo OK || echo MISSING)"
+	# shellcheck disable=SC2154 # both come from mtl_acceptance_venv.sh, which the caller sources
+	echo "- venv ($acceptance_venv): $([[ -x "$venv_python" ]] && echo OK || echo MISSING)"
 	local topo="$VD_REPO_ROOT/tests/acceptance/configs/topology_config.yaml"
 	local tcfg="$VD_REPO_ROOT/tests/acceptance/configs/test_config.yaml"
 	echo "- topology_config.yaml: $([[ -f "$topo" ]] && echo OK || echo MISSING)"

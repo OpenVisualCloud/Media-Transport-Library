@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+#
+# Entry points that CI and developers share, so a local run and a runner run
+# invoke exactly the same command. Install with:
+#   go install github.com/go-task/task/v3/cmd/task@latest
+# or see https://taskfile.dev/installation/
+#
+#   task --list
+
+version: '3'
+
+vars:
+  EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
+  CI_SCRIPTS: '{{.TASKFILE_DIR}}/.github/scripts/ci'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  ebpf:check:
+    desc: Check this host's eBPF/XDP prerequisites; name the package for each missing one
+    cmds:
+      - bash {{.EBPF_SCRIPT}} --check
+
+  ebpf:check-build:
+    desc: Check only the prerequisites building MTL needs, not xdp-tools' own
+    cmds:
+      - bash {{.EBPF_SCRIPT}} --check build
+
+  ebpf:install:
+    desc: Build and install xdp-tools + libbpf at the versions in versions.env
+    cmds:
+      - bash {{.EBPF_SCRIPT}}
+
+  ci:hash-dependencies:
+    desc: Compute deterministic dependency source hashes
+    cmds:
+      - bash {{.TASKFILE_DIR}}/script/hash_sources.sh {{.CLI_ARGS}}
+
+  ci:cache-keys:
+    desc: Emit exact dependency cache keys for the current runner
+    cmds:
+      - bash {{.CI_SCRIPTS}}/cache-keys.sh
+
+  ci:evaluate-caches:
+    desc: Validate restored caches and export build-miss state
+    cmds:
+      - bash {{.CI_SCRIPTS}}/evaluate-caches.sh
+
+  ci:validate-cache:
+    desc: Structurally validate one restored dependency cache
+    requires:
+      vars: [COMPONENT]
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-cache.sh {{.COMPONENT}}
+
+  ci:build-jpegxs:
+    desc: Build the relocatable JPEG XS runtime and bridge bundle
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-jpegxs.sh
+
+  ci:validate-jpegxs:
+    desc: Validate the relocatable JPEG XS bundle
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-jpegxs.sh
+
+  ci:validate-ice:
+    desc: Validate the cached ICE+IAVF modules against the running kernel
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-ice.sh
+
+  ci:activate-ice:
+    desc: Load the cached ICE+IAVF modules, or leave them alone if already loaded
+    cmds:
+      - bash {{.CI_SCRIPTS}}/activate-ice.sh
+
+  ci:ice-required:
+    desc: Report whether this job's NIC needs the Kahawai ICE driver
+    cmds:
+      - bash {{.CI_SCRIPTS}}/ice-required.sh {{.CLI_ARGS}}
+
+  ci:bind-test-ports:
+    desc: Bind one PF's trusted VFs and two DMA channels to vfio-pci for the gtest suite
+    cmds:
+      - bash {{.CI_SCRIPTS}}/bind-test-ports.sh
+
+  ci:build-dependencies:
+    desc: Build dependency cache misses selected by CI_BUILD_ variables
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-dependencies.sh
+
+  ci:validate-dependencies:
+    desc: Validate every dependency -- host prerequisites and all install trees
+    cmds:
+      - bash {{.CI_SCRIPTS}}/validate-dependencies.sh
+
+  ci:pytest-setup:
+    desc: Prepare acceptance-test dependencies, session, NIC, or configuration
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest-setup.sh {{.CLI_ARGS}}
+
+  ci:pytest-run:
+    desc: Run one acceptance-test workflow variant
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
+
+  ci:media-assets:
+    desc: List or generate the smoke-suite test media on a host with no asset share
+    cmds:
+      - bash {{.CI_SCRIPTS}}/media-assets.sh {{.CLI_ARGS}}
+
+  ci:ebu-list:
+    desc: Check, start or stop the EBU LIST ST 2110 compliance analyser
+    summary: |
+      Runs .github/scripts/ci/ebu-list.sh {status|up|down|verify}.
+
+      `verify` is the CI-facing check: it proves the analyser answers, speaks the
+      API the acceptance framework's client speaks, and accepts the configured
+      account, and that netsniff-ng can capture the pcap in the first place. It
+      installs nothing -- it fails with the command that provisions. `up`/`down`
+      drive the docker compose stack and are meant to be run by hand.
+    cmds:
+      - bash {{.CI_SCRIPTS}}/ebu-list.sh {{.CLI_ARGS}}
+
+  ci:report:
+    desc: Collect or transform CI test reports
+    cmds:
+      - bash {{.CI_SCRIPTS}}/reports.sh {{.CLI_ARGS}}
+
+  ci:gtest-nightly:
+    desc: Run the nightly bare-metal gtest harness
+    cmds:
+      - sudo -E {{.TASKFILE_DIR}}/.github/scripts/gtest.sh
+
+  ci:workflow:
+    desc: Run one workflow orchestration helper
+    cmds:
+      - bash {{.CI_SCRIPTS}}/workflow-ops.sh {{.CLI_ARGS}}
+
+  ci:build-action:
+    desc: Build MTL locally and optionally on a remote host
+    cmds:
+      - bash {{.CI_SCRIPTS}}/build-action.sh
+
+  ci:msys2:
+    desc: Run one Windows MSYS2 build operation
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - bash .github/scripts/ci/msys2.sh {{.CLI_ARGS}}
+
+  ci:configure-host:
+    desc: Configure cached dependency paths and plugin registry on a test host
+    cmds:
+      - bash {{.CI_SCRIPTS}}/configure-host.sh {{.CLI_ARGS}}

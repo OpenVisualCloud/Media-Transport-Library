@@ -1,0 +1,124 @@
+name: Provision runner
+
+# The provisioning commands from doc/ci_runner_setup.md, run on the runner that
+# needs them.
+#
+# It does not weaken "jobs install nothing". That rule is about test jobs
+# silently repairing the host they run on, which hides drift in the host image
+# and races with every other job on it. This workflow is the opposite: it is
+# `workflow_dispatch` only, it never runs on a push or a pull request, it names
+# the host it touches in the run's title, and installing is all it does. What it
+# replaces is an SSH session to a runner, on a fleet where the machines are not
+# reachable from every desk that maintains them.
+#
+# It ends with `verify`, the same check the test jobs run, so a green run means
+# the leg that was failing on this host will not fail on it again for this
+# reason.
+
+on:
+  workflow_dispatch:
+    inputs:
+      nic:
+        description: 'Runner label to provision, i.e. which host'
+        required: true
+        type: choice
+        options:
+          - e810
+          - e830
+          - e835
+          - e825
+          - i225
+          - i226
+          - dpdk
+      acceptance_venv:
+        description: 'Provision the acceptance virtualenv'
+        type: boolean
+        default: true
+      host_packages:
+        description: 'Install the host build packages with apt'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    # One at a time per host: two of these installing into the same virtualenv
+    # would race exactly the way a test job installing at test time does.
+    concurrency:
+      group: provision-${{ inputs.nic }}
+      cancel-in-progress: false
+    runs-on: ${{ inputs.nic }}
+    timeout-minutes: 30
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        with:
+          ref: '${{ github.ref }}'
+
+      - name: 'preparation: Install Task'
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      # What the host looks like before anything is changed, so a run that turns
+      # out not to have been needed still says what the host had.
+      - name: 'report: Host state before'
+        shell: bash
+        run: bash .github/scripts/lib/mtl_acceptance_discover.sh || true
+
+      # The `dpdk` build host installs nothing at build time either, so a host
+      # that holds no GStreamer development package stops the plugin build on a
+      # missing gstreamer-1.0.pc, while the next host builds it. This step
+      # installs the apt lists that setup_environment.sh already holds, and
+      # builds nothing: sourcing the script runs no step, because the script
+      # guards its body with [[ "${BASH_SOURCE[0]}" == "${0}" ]], and each flag
+      # below selects an apt list only. There is still one package list.
+      - name: 'provision: Host build packages'
+        if: ${{ inputs.host_packages }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1
+          export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
+          # shellcheck disable=SC1091
+          source .github/scripts/setup_environment.sh
+          setup_ubuntu_install_dependencies
+
+      # The check the build job makes when it builds the plugin. meson stops on
+      # a missing gstreamer-1.0.pc, so this is the same question, asked in one
+      # second instead of after two minutes of build.
+      - name: 'verify: Host build packages'
+        if: ${{ inputs.host_packages }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! pkg-config --exists gstreamer-1.0; then
+            echo "::error::This host still holds no gstreamer-1.0.pc after the install." >&2
+            exit 1
+          fi
+          echo "gstreamer-1.0 $(pkg-config --modversion gstreamer-1.0)"
+
+      - name: 'provision: Acceptance virtualenv'
+        if: ${{ inputs.acceptance_venv }}
+        shell: bash
+        run: task ci:pytest-setup -- install
+
+      # The check the test jobs run. Provisioning that does not satisfy it has
+      # not provisioned anything. It asks about the virtualenv, so it holds only
+      # when this run made one.
+      - name: 'verify: Acceptance virtualenv'
+        if: ${{ inputs.acceptance_venv }}
+        shell: bash
+        run: task ci:pytest-setup -- verify
+
+      - name: 'report: Host state after'
+        if: always()
+        shell: bash
+        run: bash .github/scripts/lib/mtl_acceptance_discover.sh || true

@@ -29,7 +29,9 @@ pytestmark = pytest.mark.verified
         "p23",
         "p24",
         "p25",
-        pytest.param("p29", marks=pytest.mark.smoke),
+        # 1080p at 29.97 fps is ~1.3 Gbps on the wire, the highest-rate
+        # uncompressed video case that still fits a 2.5 GbE NIC.
+        pytest.param("p29", marks=[pytest.mark.smoke, pytest.mark.low_bandwidth]),
         "p30",
         "p50",
         "p59",

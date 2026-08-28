@@ -28,24 +28,16 @@ jobs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
           ref: main
-      
+
+    - name: 'Install Task'
+      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
 
     - name: 'Install dependencies'
-      run: |
-        sudo apt-get update -y && \
-        sudo apt-get install -y --no-install-recommends \
-            git build-essential meson python3 python3-pyelftools pkg-config \
-            libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
-            libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
-            libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
-            nasm wget unzip && \
-        sudo apt-get clean && \
-        sudo rm -rf /var/lib/apt/lists/*
+      run: task ci:workflow -- coverity-dependencies
 
     - name: 'Build and install DPDK'
-      run: |
-        cd script
-        ./build_dpdk.sh
+      run: task ci:workflow -- coverity-dpdk
 
     - name: 'Run coverity'
       uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1.8.0
@@ -56,9 +48,8 @@ jobs:
         build_language: 'cxx'
         build_platform: 'linux64'
         working-directory: '${{ github.workspace }}'
-        command: ./build.sh 
-    - uses: actions/upload-artifact@v7.0.1
+        command: ./build.sh
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: coverity-reports
         path: '${{ github.workspace }}/cov-int'
-        
