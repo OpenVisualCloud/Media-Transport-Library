@@ -54,7 +54,7 @@ shift $((OPTIND - 1))
 dpdk_folder="dpdk-${DPDK_VER}"
 
 # Check if the correct MTL-patched DPDK is already installed via pkg-config.
-# Since 26.03, MTL patches embed "_mtl_" in the version (e.g. "26.03.9_mtl_").
+# Since 26.03, MTL patches start the version with "${DPDK_VER}.${DPDK_MTL_MINOR_VER}_mtl_".
 # Older versions use a plain version string match.
 dpdk_is_installed() {
 	local installed_ver
