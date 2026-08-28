@@ -273,6 +273,12 @@ static int mt_user_params_check(struct mtl_init_params* p) {
       return -EINVAL;
     }
 
+    /* only the EAL PCI devarg path carries rl_burst_size to the driver */
+    if (p->port_params[i].rl_burst_size && pmd != MTL_PMD_DPDK_USER) {
+      warn("%s(%d), rl_burst_size %u ignored on pmd type %d\n", __func__, i,
+           p->port_params[i].rl_burst_size, pmd);
+    }
+
     /* af xdp check */
     if (mtl_pmd_is_af_xdp(p->pmd[i])) {
       if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)

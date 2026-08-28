@@ -39,6 +39,16 @@
 
 #define MT_EAL_MAX_ARGS (32)
 
+/**
+ * Width of one EAL port argument: a PCI devarg or a vdev string, with its options.
+ * Widest writer is the eth_af_packet vdev at 109 bytes: 54 literal + 6 conversion digits
+ * + 48-byte iface + NUL. qpairs takes 5 digits because queue_pair_cnt + 1 on a uint16_t
+ * reaches 65536; the iface cap is MTL_PORT_MAX_LEN - 1 less the 15-char
+ * "dpdk_af_packet:" prefix. net_af_xdp is 102 and a PCI devarg 89, so 128 leaves 19
+ * bytes of margin.
+ */
+#define MT_EAL_PORT_ARG_MAX_LEN (2 * MTL_PORT_MAX_LEN)
+
 #define MT_TX_MEMPOOL_PREFIX "T_"
 #define MT_RX_MEMPOOL_PREFIX "R_"
 
