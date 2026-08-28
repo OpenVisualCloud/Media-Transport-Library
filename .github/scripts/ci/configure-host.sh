@@ -83,9 +83,42 @@ registry)
 environment)
 	jpeg_pc=$(find "${local_install}/jpegxs" -name SvtJpegxs.pc -print -quit)
 	test -n "$jpeg_pc"
+
+	# The MTL GStreamer elements must come from the cache and from nowhere else.
+	# GST_PLUGIN_PATH below only adds a directory to the search: GStreamer also
+	# reads its system plugin directories, so a libgstmtl_*.so that an earlier
+	# install left in one of them is a second plugin of the same name. Which of
+	# the two answers a pipeline then follows from the order the registry was
+	# built in, and not from this variable, so a test can run against a plugin
+	# that no job put there and that no cache key covers. The same reason
+	# activate-ice.sh takes the loaded driver out before it loads the cached one.
+	#
+	# Only the MTL plugins go. The core, base and good plugins stay: the
+	# pipelines of the suite need videotestsrc, filesink and their like, and
+	# those come from the packages of the host.
+	for gst_dir in /usr/lib/x86_64-linux-gnu/gstreamer-1.0 \
+		/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0 \
+		/usr/local/lib/gstreamer-1.0 \
+		"${HOME:-/root}/.local/share/gstreamer-1.0/plugins"; do
+		[ -d "$gst_dir" ] || continue
+		for stale in "${gst_dir}"/libgstmtl_*.so; do
+			[ -e "$stale" ] || continue
+			rm -f "$stale" 2>/dev/null || sudo rm -f "$stale"
+			echo "gstreamer: removed the system plugin ${stale}"
+		done
+	done
+
+	# A registry of this job alone. The cached one under ~/.cache names the files
+	# it read the last time, and these runners are long-lived, so it can hold an
+	# entry for a plugin that the loop above has just taken away. GStreamer then
+	# reports the element and fails to load it.
+	gst_registry="${RUNNER_TEMP:-/tmp}/gstreamer-registry.bin"
+	rm -f "$gst_registry"
+
 	{
 		echo "LD_LIBRARY_PATH=${local_install}/jpegxs/lib:${local_install}/jpegxs/lib64:${local_install}/dpdk/lib/x86_64-linux-gnu:${local_install}/mtl/lib/x86_64-linux-gnu:${local_install}/ffmpeg/lib:${local_install}/gstreamer/gstreamer-1.0${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 		echo "GST_PLUGIN_PATH=${local_install}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
+		echo "GST_REGISTRY=${gst_registry}"
 		echo "PKG_CONFIG_PATH=$(dirname "$jpeg_pc"):${local_install}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${local_install}/mtl/lib/x86_64-linux-gnu/pkgconfig"
 	} >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	printf '%s\n' "${local_install}/mtl/bin" "${local_install}/ffmpeg/bin" \
