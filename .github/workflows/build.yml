@@ -94,35 +94,35 @@ jobs:
 
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: stash-dpdk-${{ needs.checksums.outputs.dpdk }}
           path: .local_install/dpdk
 
       - name: 'stash: Restore MTL cache'
         id: mtl-cache
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: stash-mtl-${{ needs.checksums.outputs.mtl }}
           path: .local_install/mtl
 
       - name: 'stash: Restore FFmpeg cache'
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: stash-ffmpeg-${{ needs.checksums.outputs.ffmpeg }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Restore GStreamer cache'
         id: gstreamer-cache
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: stash-gstreamer-${{ needs.checksums.outputs.gstreamer }}
           path: .local_install/gstreamer
 
       - name: 'stash: Restore plugins cache'
         id: plugins-cache
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: stash-plugins-${{ needs.checksums.outputs.plugins }}
           path: .local_install/plugins
