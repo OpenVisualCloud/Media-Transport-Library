@@ -61,6 +61,12 @@ check() {
 			missing+=("${item%%:*}: apt install ${item#*:} -- libdpdk.pc requires it")
 	done
 	command_exists make || missing+=("make: apt install make")
+	# DPDK's buildtools/meson.build asks python3 for the elftools module and stops
+	# `meson setup` with "python3 is missing modules: elftools". Checked here
+	# because the stop comes after the job has downloaded and patched DPDK, and
+	# the message names neither a package nor the host.
+	python3 -c 'import elftools' 2>/dev/null ||
+		missing+=("python3 elftools: apt install python3-pyelftools -- DPDK meson requires it")
 
 	if [ "${scope}" != build ]; then
 		# xdp-tools' own prerequisites: it links libcap-ng to drop capabilities,
