@@ -1,0 +1,26 @@
+From 66b6d55dc9839dabf19c48f2e43e5917a505b8b4 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Wed, 26 Aug 2026 08:00:00 +0000
+Subject: [PATCH 5/5] version: update to Kahawai_2.6.7
+
+Signed-off-by: Wesierski, Dawid <dawid.wesierski@intel.com>
+---
+ src/ice_main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ice_main.c b/src/ice_main.c
+index 3406a4a..5764817 100644
+--- a/src/ice_main.c
++++ b/src/ice_main.c
+@@ -33,7 +33,7 @@
+ #define DRV_VERSION_MINOR 6
+ #define DRV_VERSION_BUILD 7
+ 
+-#define DRV_VERSION	"2.6.7"
++#define DRV_VERSION	"Kahawai_2.6.7"
+ #define DRV_SUMMARY	"Intel(R) Ethernet Connection E800 Series Linux Driver"
+ #ifdef ICE_ADD_PROBES
+ #define DRV_VERSION_EXTRA "_probes"
+-- 
+2.43.0
+

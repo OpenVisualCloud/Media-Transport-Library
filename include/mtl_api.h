@@ -547,6 +547,14 @@ struct mtl_port_init_params {
    * the detail.
    */
   int socket_id;
+  /**
+   * Optional for MTL_PMD_DPDK_USER. TX scheduler rate limit burst size in bytes, passed
+   * to the ice PF driver as the rl_burst_size devarg on this port. Zero keeps the
+   * hardware default. Only set this for a port DPDK drives as an ice PF: the iavf driver
+   * rejects the key, so a VF port fails to probe with -EINVAL. The ice driver validates
+   * the range and fails the probe if the value is out of it.
+   */
+  uint32_t rl_burst_size;
 };
 
 /**

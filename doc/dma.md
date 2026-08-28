@@ -51,6 +51,49 @@ dpdk-devbind.py -b vfio-pci 0000:80:04.1
 dpdk-devbind.py -b vfio-pci 0000:80:04.2
 ```
 
+### 2.3. Intel DSA and the vfio-pci denylist
+
+A DSA device (`8086:0b25`, SPR and later) is on `vfio-pci`'s built-in denylist, so
+the bind above fails with `Cannot bind to driver vfio-pci: [Errno 22]` and `dmesg`
+reads `exists in vfio-pci device denylist, driver probing disallowed`. The module
+parameter that turns the denylist off is read-only once the module is loaded, so
+it has to be given at load time:
+
+```bash
+sudo modprobe -r vfio-pci
+sudo modprobe vfio-pci disable_denylist=1
+cat /sys/module/vfio_pci/parameters/disable_denylist   # Y
+```
+
+Reloading is a runtime operation — nothing holds `vfio_pci` open unless a device
+is in use by a running application — so this does not need a reboot. To make it
+survive one:
+
+```bash
+echo 'options vfio-pci disable_denylist=1' | sudo tee /etc/modprobe.d/vfio-pci.conf
+```
+
+A device that comes up on the kernel's `idxd` driver does not have to be released
+by hand: `dpdk-devbind.py -b vfio-pci <bdf>` unbinds it from `idxd` and binds it
+here in one step.
+
+One DSA device is enough for several sessions. It exposes one dmadev per work
+queue — 16 of them on EMR, `0000:00:01.0-q0` through `-q15` — and MTL enumerates
+every dmadev that was probed (`RTE_DMA_FOREACH_DEV` in `mt_dma.c`) rather than
+looking for a name, so a host with a single device still offloads and `--dma_dev`
+takes one BDF as happily as four:
+
+```text
+MT: mt_dma_init(0), dma dev id 0 name 0000:00:01.0-q0 capa 0x500000041 numa 0 desc 64:4096
+MT: mt_dma_init(1), dma dev id 1 name 0000:00:01.0-q1 capa 0x500000041 numa 0 desc 64:4096
+```
+
+The other way to use DSA — leaving it on `idxd` and configuring work queues with
+`accel-config` — is not usable here: those dmadevs are named `wq<X>.<Y>`, the
+device argument has to be prefixed with `dpdk_`, and DPDK does not support
+multi-process for them. MTL and the gtest suite run a transmitter and a receiver
+as two processes, so the vfio-pci mode above is the only one that applies.
+
 ## 3. Pass the DMA configuration to lib
 
 ### 3.1. DMA configuration in RxTxApp
