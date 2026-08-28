@@ -7,23 +7,35 @@
  * put_frame references.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* The pipeline calls transport-layer st22_rx_* entry points that st20_harness.c
+ * also pulls in for real via st_rx_video_session.c. Redirect st22_rx_put_framebuff to a
+ * distinctly named local stub at compile time so the two objects cannot both define it
+ * as a global symbol. */
+#define st22_rx_put_framebuff ut22p_stub_put_framebuff
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st22_pipeline_rx.c"
 #pragma GCC diagnostic pop
+#undef st22_rx_put_framebuff
 
 #include "common/ut_common.h"
 
-/* libmtl stub: put_frame returns the codestream buffer to the transport. */
+static uint64_t ut22p_stub_calls;
 
-int st22_rx_put_framebuff(st22_rx_handle handle, void* frame) {
+int ut22p_stub_put_framebuff(st22_rx_handle handle, void* frame) {
   (void)handle;
   (void)frame;
+  __atomic_fetch_add(&ut22p_stub_calls, 1, __ATOMIC_RELAXED);
   return 0;
+}
+
+uint64_t ut22p_stub_call_count(void) {
+  return __atomic_load_n(&ut22p_stub_calls, __ATOMIC_RELAXED);
 }
 
 struct ut22p_ctx {

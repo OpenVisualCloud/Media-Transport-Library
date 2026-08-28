@@ -88,6 +88,12 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
   return nb_pkts;
 }
 
+/* st20_tx_harness.c compiles st_video_transmitter.c too, and UnitTest links both
+ * objects, so the three external functions of the file would be defined twice.
+ * Give this copy private names: this harness drives only the static tasklets. */
+#define st_video_resolve_pacing_tasklet ut_trs_resolve_pacing_tasklet
+#define st_video_transmitter_init ut_trs_transmitter_init
+#define st_video_transmitter_uinit ut_trs_transmitter_uinit
 #define mt_get_tsc ut_trs_tsc_time_fn
 #define mt_get_ptp_time ut_trs_ptp_time_fn
 #define mt_txq_burst ut_trs_txq_burst_mock
@@ -95,6 +101,9 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
 #undef mt_get_tsc
 #undef mt_get_ptp_time
 #undef mt_txq_burst
+#undef st_video_resolve_pacing_tasklet
+#undef st_video_transmitter_init
+#undef st_video_transmitter_uinit
 
 int ut_trs_init(void) {
   return ut_eal_init();

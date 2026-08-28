@@ -72,7 +72,7 @@ cd $mtl_source_code
 
 #### 9.2.2. Prepare VFIO Access
 
-Follow the shared VFIO permissions flow in [Run Guide](run.md#31-allow-current-user-to-access-devvfio-devices).
+Follow the shared VFIO permissions flow in [Run Guide](../run.md#31-allow-current-user-to-access-devvfio-devices).
 Load the VFIO kernel modules before binding the I226-V to `vfio-pci`:
 
 ```bash

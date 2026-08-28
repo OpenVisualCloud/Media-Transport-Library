@@ -51,6 +51,10 @@ int ut22p_frame_idx(const struct st_frame* frame);
 /* Raw stat value of framebuffer i (for diagnostics). */
 int ut22p_frame_stat(const ut22p_ctx* ctx, int i);
 
+/* Times the harness stub ran; 0 means put_frame stopped reaching the transport
+ * put path. */
+uint64_t ut22p_stub_call_count(void);
+
 #ifdef __cplusplus
 }
 #endif

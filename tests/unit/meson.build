@@ -4,13 +4,28 @@ add_languages('cpp', required : true)
 
 unit_cpp_args = ['-Wall', '-Werror']
 unit_c_args = ['-Wall', '-Werror']
-unit_link_args = ['-Wl,--allow-multiple-definition']
+# Deliberately no '-Wl,--allow-multiple-definition': harnesses shadow production symbols by
+# #define rename, so a real duplicate must fail the link.
+unit_link_args = []
+
+# rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
+# libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
+# its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
+# against: --disable-new-dtags turns Meson's rpath into DT_RPATH, the only rpath ld.so searches
+# when resolving a dlopened driver's own dependencies.
+unit_link_args += '-Wl,--disable-new-dtags'
+unit_build_rpath = dpdk_dep.get_variable(pkgconfig : 'libdir')
 
 unit_include_dirs = [
   include_directories('../../include'),
   include_directories('../../lib/src'),
   include_directories('.'),
 ]
+
+# Answers the <mtl/*.h> of the ecosystem sources the harnesses compile in place.
+# It writes into the build side of include_directories('.') above, so it must run
+# before the executable that reads it.
+subdir('mtl')
 
 gtest_dep = dependency('gtest', required : true)
 gmock_dep = dependency('gmock', required : true)
@@ -109,6 +124,7 @@ executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
   link_args : unit_link_args,
+  build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
                   usdt_provider_header_dep] + unit_extra_deps,

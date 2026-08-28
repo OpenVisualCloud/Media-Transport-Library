@@ -1,0 +1,26 @@
+# Vendored from super-linter v6's TEMPLATES/.ruff.toml, which is what CI has been
+# enforcing implicitly, then widened to absorb flake8 -- this is now the only
+# Python lint rule set in the repository. Measured clean over all 213 tracked *.py.
+#
+# The template's `cache-dir = "/tmp/.ruff_cache"` is deliberately dropped -- an
+# absolute POSIX path is not portable to Windows. ruff falls back to ./.ruff_cache,
+# which .gitignore covers.
+
+# Inherited from the retired .github/linters/.flake8, which set max-line-length 120.
+line-length = 120
+
+[lint]
+# E, W and F are pycodestyle plus pyflakes, which is precisely what flake8 ran:
+# it had no `select` of its own, and the one remaining group in its default set,
+# C90 (mccabe), is inert unless max-complexity is given, which it was not. So this
+# file enforces what the two tools enforced together, and both were measured to
+# report nothing over the whole tree.
+#
+# The selection has to stay explicit. ruff's *implicit* default is a property of
+# the pinned version rather than of this file: about 40 rules at 0.4, 413 at 0.16.
+# A config that names no rules therefore turns a routine bump into a silent
+# 592-finding rule change. Widening this list is a deliberate decision and its own
+# commit.
+select = ["E", "W", "F"]
+# E203 conflicts with black's slice formatting.
+ignore = ["E203"]

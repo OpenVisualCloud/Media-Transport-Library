@@ -353,4 +353,4 @@ the wrapper leaks a clock owner into later NIC reconfiguration.
 
 `.github/scripts/acceptance_setup.sh` discovers (`status`) and prepares
 (`setup`) this contract end-to-end — see
-[acceptance_quickstart.md](acceptance_quickstart.md#recommended-automated-setup-script).
+[acceptance_quickstart.md](acceptance_quickstart.md#recommended-automated-setup).

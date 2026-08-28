@@ -3,6 +3,17 @@
     "comments": true
   },
   "rules": {
-    "terminology": true
+    "terminology": {
+      "defaultTerms": true,
+      "exclude": [
+        "(?<!\\.)png\\b"
+      ],
+      "terms": [
+        [
+          "(?<!\\.|pca)png\\b",
+          "PNG"
+        ]
+      ]
+    }
   }
 }
