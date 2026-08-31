@@ -22,14 +22,14 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
-  TOOLS_BUILD_AND_INSTALL_MTL_READCAP: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
   TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
 
 permissions:
   contents: read
 jobs:
   changes:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       pull-requests: read
     outputs:
@@ -53,7 +53,7 @@ jobs:
   ubuntu-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Harden Runner
@@ -77,7 +77,7 @@ jobs:
   ubuntu-ebpf-xdp-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Harden Runner
@@ -93,3 +93,23 @@ jobs:
         env:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
+
+  ubuntu-debug:
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: ebpf-xdp build
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
+        run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          MTL_BUILD_AND_INSTALL: 1
+          MTL_BUILD_AND_INSTALL_FUZZ: 1
