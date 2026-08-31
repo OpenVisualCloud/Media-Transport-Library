@@ -415,7 +415,7 @@ packet-count anomalies are immediately visible in CI output without opening the
 artifact.
 
 The GStreamer ST40P plugin also exposes test-only RTP/ANC mutation knobs to exercise error handling; see
-[ecosystem/gstreamer_plugin/README.md](ecosystem/gstreamer_plugin/README.md#st40p-test-mode-knobs)
+[ecosystem/gstreamer_plugin/README.md](../ecosystem/gstreamer_plugin/README.md#513-st40p-test-mode-knobs-debug-builds-only)
 for the full list and usage. The knobs can be combined with `split-anc-by-pkt=true` to stress the
 split-mode path, and the RX side can record the resulting frame-info via `frame-info-path` for
 inspection.

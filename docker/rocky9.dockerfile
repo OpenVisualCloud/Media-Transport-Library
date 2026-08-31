@@ -16,7 +16,14 @@ ENV TZ="Europe/Warsaw"
 
 SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 
-# Install build dependencies (including eBPF/XDP deps)
+# Install build dependencies (including eBPF/XDP deps).
+#
+# glibc-devel.i686 is the RHEL counterpart of the gcc-multilib the Ubuntu images
+# install, and it is here for one header: clang compiling the manager's XDP
+# object reaches /usr/include/features.h, which includes gnu/stubs-32.h. Without
+# it the whole image fails at `Generating mtl.xdp.temp.o`, and only once
+# pkg-config can see libxdp -- before that meson leaves the target out and the
+# gap stays hidden.
 WORKDIR "${MTL_REPO}"
 RUN dnf install -y epel-release && \
     dnf config-manager --set-enabled crb && \
@@ -27,7 +34,8 @@ RUN dnf install -y epel-release && \
         git gcc gcc-c++ make pkg-config ninja-build \
         numactl-devel json-c-devel libpcap-devel gtest-devel \
         SDL2-devel SDL2_ttf-devel openssl-devel systemtap-sdt-devel \
-        m4 clang llvm zlib-devel elfutils-libelf-devel libcap-ng-devel libcap-ng-utils && \
+        m4 clang llvm zlib-devel elfutils-libelf-devel libcap-ng-devel libcap-ng-utils \
+        glibc-devel.i686 && \
     dnf clean all && \
     python3 -m pip --no-cache-dir install --upgrade pip setuptools meson ninja
 

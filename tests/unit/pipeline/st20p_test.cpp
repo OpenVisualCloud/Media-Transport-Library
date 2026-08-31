@@ -168,7 +168,7 @@ TEST_F(St20PipelineRxTest, GetSessionStatsOverlay) {
   ASSERT_EQ(inject_complete(6000), 0);
   EXPECT_EQ(inject_complete(7000), -EBUSY);
 
-  struct st20_rx_user_stats api {};
+  struct st20_rx_user_stats api{};
   ASSERT_EQ(ut20p_get_session_stats(ctx_, &api), 0);
 
   EXPECT_EQ(api.common.stat_frames_received, frames_received());

@@ -138,7 +138,7 @@ static inline bool tx_ancillary_test_frame_active(
   do {                                                                             \
     if (tx_ancillary_test_frame_active(_s) && (_s)->split_payload && (_cnt) > 0 && \
         (_idx) >= (_cnt))                                                          \
-      (_idx) = (_cnt)-1;                                                           \
+      (_idx) = (_cnt) - 1;                                                         \
   } while (0)
 
 /**

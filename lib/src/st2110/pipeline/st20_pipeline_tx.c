@@ -867,7 +867,10 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   }
   ctx->stat_put_frame++;
 
-  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat);
+  /* The USDT argument macros do arithmetic on what they are handed, which clang
+   * refuses on an _Atomic operand, so read the state out first. */
+  uint32_t usdt_stat = atomic_load_explicit(&framebuff->stat, memory_order_relaxed);
+  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], usdt_stat);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
     int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
@@ -991,7 +994,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   }
   ctx->stat_put_frame++;
 
-  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat);
+  /* The USDT argument macros do arithmetic on what they are handed, which clang
+   * refuses on an _Atomic operand, so read the state out first. */
+  uint32_t usdt_stat = atomic_load_explicit(&framebuff->stat, memory_order_relaxed);
+  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], usdt_stat);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
     int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
