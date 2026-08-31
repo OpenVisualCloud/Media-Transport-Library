@@ -339,6 +339,8 @@ int st30p_rx_put_frame_abort(st30p_rx_handle handle, struct st30_frame* frame);
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */
 st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops);
+/** Update the source for the rx st2110-30 pipeline session. */
+int st30p_rx_update_source(st30p_rx_handle handle, struct st_rx_source_info* src);
 /** Wake up the block wait on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is enabled.*/
 int st30p_rx_wake_block(st30p_rx_handle handle);
 /** Set the block timeout time on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is
