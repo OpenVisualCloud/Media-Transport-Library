@@ -104,7 +104,6 @@ mtl_system_status_*
 *.pcm
 *.wav
 script/ice-*
-script/iavf-*
 script/dpdk-*
 script/*.zip*
 script/xdp-tools

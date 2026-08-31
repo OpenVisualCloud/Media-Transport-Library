@@ -14,14 +14,13 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 local_install="${root_dir}/.local_install"
 
 # The prefix sends every component to its own directory under .local_install, which
-# is what lets one cache entry hold one component. ICE is no exception: the two .ko
-# go to .local_install/ice/<kernel release>/<architecture>, and the build host
+# is what lets one cache entry hold one component. ICE is no exception: the .ko
+# goes to .local_install/ice/<kernel release>/<architecture>, and the build host
 # packages a driver it never loads. IGC stays off, because its flow only checks that
 # the in-tree module is there, which it is on every platform.
 export MTL_INSTALL_PREFIX="${local_install}/mtl"
 export SETUP_BUILD_AND_INSTALL_DPDK=${CI_BUILD_DPDK:-1}
 export SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=${CI_BUILD_ICE:-1}
-export SETUP_BUILD_AND_INSTALL_DRIVERS_IAVF=${CI_BUILD_ICE:-1}
 export MTL_BUILD_AND_INSTALL=${CI_BUILD_MTL:-1}
 export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${CI_BUILD_FFMPEG:-1}
 export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=${CI_BUILD_GSTREAMER:-1}

@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Loads the cached ICE and IAVF modules -- they ship as one package. The load is
-# unconditional: the modules that were loaded before are taken out, and the ones
-# in the cache are put in their place.
+# Loads the cached ICE module. The load is unconditional: the module that was
+# loaded before is taken out, and the one in the cache is put in its place.
 #
 # It was conditional on srcversion before, and that was not enough. A srcversion
 # match says only that the loaded module was built from the same source. It does
@@ -33,29 +32,19 @@ updates_dir="/lib/modules/${kernel_release}/updates/drivers/net/ethernet/intel"
 bash "${root_dir}/.github/scripts/ci/validate-ice.sh"
 
 # Unconditional: the file at the updates/ path modprobe prefers has to be the
-# cached module, or the next auto-load brings back the old one. iavf is the one
-# that needs this -- the kernel auto-loads it when a VF first appears, so its file
-# matters even while nothing has it loaded.
+# cached module, or the next auto-load brings back the old one.
 install -D -m 0644 "${artifact_dir}/ice.ko" "${updates_dir}/ice/ice.ko"
-install -D -m 0644 "${artifact_dir}/iavf.ko" "${updates_dir}/iavf/iavf.ko"
 depmod -a "$kernel_release"
 
-# Whether the modules the kernel holds now are the ones in the cache. Only the
-# check that follows the load reads this: the load itself does not ask.
+# Whether the module the kernel holds now is the one in the cache. Only the check
+# that follows the load reads this: the load itself does not ask.
 #
 # ice is the PF driver and is always loaded on a host that needs it, so it must be
-# loaded and match. iavf is the VF driver: with no VFs it may not be loaded at
-# all, which is not a mismatch.
+# loaded and match.
 loaded_is_cached() {
-	local module
-	for module in ice iavf; do
-		if [ ! -d "/sys/module/${module}" ]; then
-			[ "$module" = iavf ] || return 1
-			continue
-		fi
-		[ "$(cat "/sys/module/${module}/srcversion")" = \
-			"$(modinfo -F srcversion "${artifact_dir}/${module}.ko")" ] || return 1
-	done
+	[ -d /sys/module/ice ] || return 1
+	[ "$(cat /sys/module/ice/srcversion)" = \
+		"$(modinfo -F srcversion "${artifact_dir}/ice.ko")" ]
 }
 
 # VFs of the ice PFs only. A card on another driver is none of our business.
@@ -73,18 +62,12 @@ if [ -d /sys/module/ice ]; then
 	modprobe -r ice
 fi
 modprobe ice
-# The VF teardown above cleared every VF on the ice PFs, so a loaded iavf now has
-# no devices and can be replaced; an unloaded one is left to the auto-load.
-if [ -d /sys/module/iavf ]; then
-	modprobe -r iavf
-	modprobe iavf
-fi
 
 loaded_is_cached || {
-	echo "ICE/IAVF did not come back up as the cached modules" >&2
+	echo "ICE did not come back up as the cached module" >&2
 	exit 1
 }
-echo "ICE/IAVF loaded from the cached modules"
+echo "ICE loaded from the cached module"
 
 # VFs are not recreated here: every consumer builds the VF state it needs, and
 # does it idempotently -- a gtest job runs bind-test-ports.sh, and the acceptance

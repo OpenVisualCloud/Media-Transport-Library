@@ -68,12 +68,12 @@ tasks:
       - bash {{.CI_SCRIPTS}}/validate-jpegxs.sh
 
   ci:validate-ice:
-    desc: Validate the cached ICE+IAVF modules against the running kernel
+    desc: Validate the cached ICE module against the running kernel
     cmds:
       - bash {{.CI_SCRIPTS}}/validate-ice.sh
 
   ci:activate-ice:
-    desc: Load the cached ICE+IAVF modules, or leave them alone if already loaded
+    desc: Load the cached ICE module, or leave it alone if already loaded
     cmds:
       - bash {{.CI_SCRIPTS}}/activate-ice.sh
 

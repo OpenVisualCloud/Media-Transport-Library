@@ -54,19 +54,17 @@ back to compiling or installing JPEG XS on the test host.
 ### ICE artifact
 
 An ICE kernel module is tied to its target kernel. The bundle is a stash like
-every other one -- `ice.ko` and `iavf.ko`, and no metadata beside them -- and its
-cache key is:
+every other one -- `ice.ko`, and no metadata beside it -- and its cache key is:
 
-- the ICE and IAVF versions, download identifiers and MTL patches, as one source
-  hash; and
+- the ICE version, download identifier and MTL patches, as one source hash; and
 - the target kernel release and architecture.
 
 The common validation-fleet kernel is a runner-provisioning invariant, so one
 producer job serves the fleet. NIC model is not an ICE build input and must not
 create separate producer jobs or cache entries.
 
-The build must preserve both modules in a dedicated bundle directory before
-removing the driver source tree. Validation reads the files it restored: it
+The build must preserve the module in a dedicated bundle directory before
+removing the driver source tree. Validation reads the file it restored: it
 rejects a bundle whose `modinfo -F vermagic` does not match the running kernel,
 and one whose `ice.ko` has no `ice_vc_cfg_q_bw`, which is the Kahawai VF rate
 limiter and the one thing a stock driver of the same kernel would pass without.
@@ -80,14 +78,14 @@ the kernel is the state.
 ICE activation is a host-maintenance operation and must be implemented as one
 idempotent Taskfile command. The processes that hold a NIC are already stopped by
 the cleanup action every job runs first, so activation does not repeat that. When
-the running modules differ it must:
+the running module differs it must:
 
 1. remove the existing VFs of the `ice` PFs, and leave a card on another driver
   alone;
 2. unload dependent modules such as `irdma`, then unload `ice`;
-3. install and load the validated modules with the host's normal module tooling;
+3. install and load the validated module with the host's normal module tooling;
   and
-4. verify that the loaded modules are now the cached ones.
+4. verify that the loaded module is now the cached one.
 
 It does not reload `irdma`: nothing in the suite uses RDMA, and the module returns
 on the next boot. It must not recreate VFs: every consumer builds the VF state it
