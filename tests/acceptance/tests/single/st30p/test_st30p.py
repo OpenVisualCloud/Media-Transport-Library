@@ -157,6 +157,7 @@ def test_st30p_channel(
 
 
 @pytest.mark.smoke
+@pytest.mark.low_bandwidth
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",

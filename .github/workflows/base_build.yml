@@ -22,8 +22,16 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
-  TOOLS_BUILD_AND_INSTALL_MTL_READCAP: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
   TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
+
+# A superseded run of this workflow builds a commit nobody is looking at any
+# more, and its four legs each spend most of an hour installing the same
+# toolchain. Cancel it, like build.yml and the bare-metal workflows do, so the
+# checks a pull request shows belong to its newest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -67,6 +75,10 @@ jobs:
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         run: sudo -E .github/scripts/setup_environment.sh
 
+      - name: Build the Rust no_std example
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
+        run: bash .github/scripts/ci/build-rust-example.sh
+
       - name: 'upload release build artifacts'
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -87,9 +99,32 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # No separate prerequisite step: build_ebpf_xdp.sh checks the host before
+      # it builds, and asserts the pinned xdp-tools and libbpf versions after
+      # installing them.
       - name: ebpf-xdp build
         if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         run: sudo -E .github/scripts/setup_environment.sh
         env:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
+
+  ubuntu-debug:
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Debug and fuzz build
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
+        run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          MTL_BUILD_AND_INSTALL: 1
+          MTL_BUILD_AND_INSTALL_FUZZ: 1

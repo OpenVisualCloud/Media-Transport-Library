@@ -496,13 +496,17 @@ class ComplianceSession:
         ebu_proxy = self.ebu_server.get("proxy", None)
         proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
         try:
+            # The password goes over stdin, not in the argument list: mfd_connect
+            # logs every command it runs at CMD level, and these logs are the
+            # pytest artifact of a public CI run.
             compliance_upl = capturer.host.connection.execute_command(
                 "python3 ./tests/acceptance/compliance/upload_pcap.py"
                 f" --ip {ebu_ip}"
                 f" --user {ebu_login}"
-                f" --password {ebu_passwd}"
+                " --password-stdin"
                 f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
                 cwd=f"{str(self.mtl_path)}",
+                input_data=f"{ebu_passwd}\n",
             )
             if compliance_upl.return_code != 0:
                 self._fail(
@@ -542,8 +546,13 @@ class ComplianceSession:
             return report
         finally:
             try:
+                # netsniff-ng captures under sudo, so the pcap belongs to root.
+                # The default pcap_dir is /tmp, which is sticky, and there the
+                # unprivileged test account cannot unlink a root-owned file --
+                # every run would leave its capture behind and eventually fill
+                # the filesystem with multi-gigabyte pcaps.
                 capturer.host.connection.execute_command(
-                    f"rm -f '{capturer.pcap_file}'"
+                    f"sudo rm -f '{capturer.pcap_file}'"
                 )
                 logger.debug(f"Removed pcap file: {capturer.pcap_file}")
             except ConnectionCalledProcessError as e:

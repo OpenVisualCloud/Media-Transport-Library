@@ -337,14 +337,18 @@ static void test_random_ip(struct st_tests_context* ctx) {
     p_ip[3] = 1;
   }
 
-  /* add interfaces ip addresses */
+  /* Give each port after the primary one address in the primary subnet. The
+     host octet counts up from the primary one, and stays in 1..254 so no port
+     takes the network or the broadcast address. It must come from the primary
+     host octet, not from p_ip[0]: with a --p_sip the first octet is the user's
+     network, so p_ip[0] + i collides with the primary address as soon as the
+     two happen to be equal, and mt_user_params_check rejects the run with
+     "same ip ... for port 1 and 0". */
   for (int i = MTL_PORT_R; p->port[i][0] != '\0'; i++) {
-    /* Skip if user already set this port's IP */
-    if (i == MTL_PORT_P && ctx->user_p_sip) continue;
     p->sip_addr[i][0] = p_ip[0];
     p->sip_addr[i][1] = p_ip[1];
     p->sip_addr[i][2] = p_ip[2];
-    p->sip_addr[i][3] = p_ip[0] + i;
+    p->sip_addr[i][3] = (uint8_t)((p_ip[3] - 1 + i) % 254 + 1);
   }
 
   srand(st_test_get_monotonic_time());
