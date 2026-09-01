@@ -578,7 +578,7 @@ _config_names_capture_device() {
 }
 
 stage_configs() {
-	local detected_bdf detected_vendor_device cur_vd need_regen=0 repaired=0
+	local detected_bdf detected_vendor_device cur_vd need_regen=0 repaired=0 would_repair=0
 	local cfg=tests/acceptance/configs/test_config.yaml
 	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2|579d|1249)' | head -1 | awk '{print "0000:"$1}')
 	if [[ -n "$detected_bdf" ]]; then
@@ -674,6 +674,7 @@ stage_configs() {
 				# conditional on one.
 				if [[ "$CHECK_ONLY" == "1" ]]; then
 					notice "configs: no capture_cfg — pcap tests would hard-FAIL on 'ebu_server is not configured' (CHECK_ONLY=1, not repaired)"
+					would_repair=1
 				elif _append_capture_disabled; then
 					notice "configs: no capture_cfg — appended 'capture_cfg: {enable: false}' so pcap tests skip the verdict instead of hard-FAILing"
 					repaired=1
@@ -705,6 +706,7 @@ stage_configs() {
 				# it — a hand-raised size is kept.
 				if [[ "$CHECK_ONLY" == "1" ]]; then
 					notice "configs: ramdisk.media.size_gib=$cur_media_gib is below the ${want_media_gib} GiB a ${sized_test_time}s run needs (CHECK_ONLY=1, not repaired)"
+					would_repair=1
 				elif _raise_media_size_gib "$want_media_gib"; then
 					notice "configs: raised ramdisk.media.size_gib $cur_media_gib -> $want_media_gib for a ${sized_test_time}s run"
 					repaired=1
@@ -722,6 +724,16 @@ stage_configs() {
 			fi
 		fi
 		if ((!need_regen)); then
+			if ((would_repair)); then
+				# CHECK_ONLY found repairs it deliberately did not apply, so the
+				# config is still broken for pytest. Report that the way every
+				# other stage reports it — rc=2, which run_stage renders as
+				# "would-install" — instead of printing the findings above and
+				# then a healthy summary row, which is what
+				# mtl-acceptance-tests.instructions.md tells the operator names
+				# the broken stage.
+				return 2
+			fi
 			return 0
 		fi
 		# Regeneration writes the file from gen_test_config()'s fixed key set,
@@ -766,12 +778,30 @@ stage_configs() {
 				log "configs: previous $cfg kept as $backup before regenerating"
 			fi
 		fi
+		# Each of the three fields is carried forward on its own. Gating all three
+		# on EBU_IP being empty lets a partial invocation destroy the other two:
+		# EBU_PASSWORD is env-only — never a flag, so it cannot leak into ps — so
+		# `--ebu-ip=X --ebu-user=Y` with EBU_PASSWORD unset leaves it empty,
+		# gen_config.py's has_ebu = all([ip, user, password]) goes false, and the
+		# whole ebu_server block is dropped from a config that had all three. The
+		# operator asked to enable compliance and would instead lose the stored
+		# password.
+		local -a carried=()
 		if [[ -z "$EBU_IP" ]]; then
 			EBU_IP=$(_yaml_block_field ebu_server ebu_ip)
+			[[ -z "$EBU_IP" ]] || carried+=("ebu_ip=$EBU_IP")
+		fi
+		if [[ -z "$EBU_USER" ]]; then
 			EBU_USER=$(_yaml_block_field ebu_server user)
+			[[ -z "$EBU_USER" ]] || carried+=("user=$EBU_USER")
+		fi
+		if [[ -z "$EBU_PASSWORD" ]]; then
 			EBU_PASSWORD=$(_yaml_block_field ebu_server password)
-			[[ -z "$EBU_IP" ]] ||
-				log "configs: carrying forward ebu_server ebu_ip=$EBU_IP from the existing config"
+			# Named, never echoed.
+			[[ -z "$EBU_PASSWORD" ]] || carried+=(password)
+		fi
+		if ((${#carried[@]})); then
+			log "configs: carrying forward ebu_server ${carried[*]} from the existing config"
 		fi
 		# gen_config.py passes an already-resolved vendor:device through
 		# _bdf_to_vendor_device unchanged, so the stored value is a valid
