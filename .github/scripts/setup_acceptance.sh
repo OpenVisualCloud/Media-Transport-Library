@@ -592,6 +592,24 @@ stage_configs() {
 		local cur_test_time sized_test_time
 		cur_compliance=$(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')
 		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/acceptance/configs/test_config.yaml && echo 1 || echo 0)
+		# Whether a regeneration could actually turn compliance on. gen_config.py
+		# sets compliance = has_ebu AND has_sniff, and the regeneration below
+		# forces --no_capture whenever CAPTURE_PCI_DEVICE is unset, so EBU
+		# credentials on their own never flip it — either the operator passed a
+		# capture PF, or one is stored in the config for the carry-forward below
+		# to pick up. Deciding this before the trigger is what keeps the trigger
+		# convergent: without it, a host with EBU credentials and no capture PF —
+		# a combination this script's header documents as supported — regenerates
+		# on every warm re-run, and each regeneration drops the keys
+		# gen_test_config() cannot express.
+		local can_enable_compliance=0
+		if [[ -n "$CAPTURE_PCI_DEVICE" ]] ||
+			[[ -n "$(_yaml_block_field capture_cfg sniff_pci_device)" ]]; then
+			can_enable_compliance=1
+		fi
+		if [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]] && ((!can_enable_compliance)); then
+			notice "configs: EBU_IP is set but no capture PF is known, so compliance stays disabled — pass --capture-pci-device to enable it"
+		fi
 		# 'size_gib:' under ramdisk.media, anchored so it cannot match
 		# 'tmpfs_size_gib:'. want_media_gib is what gen_config.py would derive
 		# for the window below on this host; empty if the probe cannot run, in
@@ -628,10 +646,12 @@ stage_configs() {
 		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
 			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
 			need_regen=1
-		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]]; then
+		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]] && ((can_enable_compliance)); then
 			# Ordered ahead of the in-place repairs below: an operator who
 			# passes EBU_IP is asking for a compliance-enabled config, which
-			# only a regeneration can produce.
+			# only a regeneration can produce. Guarded so it fires only when the
+			# regeneration can deliver it; when it cannot, this falls through to
+			# the in-place repairs instead of rewriting the file to no effect.
 			warn "configs: EBU_IP provided but compliance not yet enabled in existing config — regenerating"
 			need_regen=1
 		elif [[ -n "$CAPTURE_PCI_DEVICE" ]] && ! _config_names_capture_device "$CAPTURE_PCI_DEVICE"; then
@@ -716,7 +736,20 @@ stage_configs() {
 			# does not emit is dropped — and a key missing from the list is
 			# exactly the case where the operator has no warning and would need
 			# the .bak most. One cp of a 1 KB file is the cheaper side of that.
-			cp -f "$cfg" "$cfg.bak"
+			#
+			# It also must not overwrite an earlier backup. A second regeneration
+			# copies the ALREADY-regenerated file, so a fixed destination would
+			# replace the only surviving copy of the keys the first regeneration
+			# dropped — and silently, because by then those keys are gone from
+			# the live file too, so the notice below is not taken. Numbering
+			# rather than timestamping keeps that collision-free by
+			# construction: two regenerations in the same second cannot land on
+			# one name.
+			local backup="$cfg.bak" backup_n=0
+			while [[ -e "$backup" ]]; do
+				backup="$cfg.bak.$((++backup_n))"
+			done
+			cp -f "$cfg" "$backup"
 			local -a lost=()
 			grep -q '^interface_type:' "$cfg" && lost+=(interface_type)
 			grep -q '^[[:space:]]*sniff_interface:' "$cfg" && lost+=(capture_cfg.sniff_interface)
@@ -728,9 +761,9 @@ stage_configs() {
 			grep -q '^[[:space:]]*silent:' "$cfg" && lost+=(capture_cfg.silent)
 			[[ "$(_yaml_block_field ebu_server proxy)" =~ ^(false|)$ ]] || lost+=(ebu_server.proxy)
 			if ((${#lost[@]})); then
-				notice "configs: regeneration cannot express ${lost[*]} — previous file kept as ${cfg}.bak; re-apply those keys by hand"
+				notice "configs: regeneration cannot express ${lost[*]} — previous file kept as $backup; re-apply those keys by hand"
 			else
-				log "configs: previous $cfg kept as ${cfg}.bak before regenerating"
+				log "configs: previous $cfg kept as $backup before regenerating"
 			fi
 		fi
 		if [[ -z "$EBU_IP" ]]; then
