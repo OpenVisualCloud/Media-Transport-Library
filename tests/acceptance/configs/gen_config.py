@@ -4,8 +4,127 @@
 
 import argparse
 import subprocess
+import sys
 
 import yaml
+
+# Peak rate at which a single-host case writes its RX dump. Nothing bounds that
+# dump -- RxTxApp's rx_max_file_size defaults to 0 and only one test sets a cap,
+# and the GStreamer adapter's st20p RX filesink is unbounded for the same reason
+# -- so the mount has to hold the full run. RFC4175 PG2BE10 is 2.5 B/px, so the
+# heaviest routinely-selected writers are media_files.yuv_files['i4320p29'] (8K
+# 29.97, 2.486 GB/s, in test_pacing_way's load set) and ['i2160p119'] (4K
+# 119.88, same rate); test_st20p_resolutions' 8K p25 is 2.074 GB/s.
+#
+# This is deliberately NOT the registry maximum. The legacy sweep in
+# tests/single/gstreamer/video_resolution parametrizes over every yuv_files
+# entry, topping out at 'i4320p119' (9.943 GB/s) -- 60 s of that is 596 GB, which
+# no tmpfs on a realistic host can hold at any cap. Those cases depend on short
+# windows and on the run stopping before the mount fills.
+#
+# Nothing warns about that overrun: the ENOSPC warning below fires only when the
+# *RAM clamp* pulls the mount below the size this rate implies, so a case that
+# writes faster than this rate hits ENOSPC with no prior notice. Raising the rate
+# to cover the sweep is not the fix -- it would push the derived size past half
+# of RAM on every host, so the clamp would bind, every generated config would
+# carry the warning, and the number would stop meaning anything.
+_PEAK_RX_BYTES_PER_S = 2_500_000_000
+
+# The media tmpfs holds that dump alongside the input asset copied onto it.
+_MEDIA_ASSET_HEADROOM_GIB = 8
+
+# Never leave the mount smaller than the fixed size this replaced, whatever
+# test_time or the RAM clamp below say.
+_MEDIA_RAMDISK_FLOOR_GIB = 16
+
+# Shortest run a GStreamer case can actually have: its oracles grade a duration
+# -- completed MTL stats intervals, or bytes per second of window -- and neither
+# survives a short window, so ``GStreamer._graded_wall_clock()`` raises one to
+# this. The dump keeps growing for that whole extended window, so the mount must
+# be sized against it and not against a smaller configured test_time. Kept as a
+# literal rather than imported because this generator has to run under a bare
+# python3 from ``configs/``; ``acceptance_unit/test_gen_config.py`` asserts the
+# two constants still agree.
+_MIN_GSTREAMER_WALL_CLOCK_S = 30
+
+
+def _usable_mem_gib() -> int:
+    """RAM available to a tmpfs on the machine running this generator, in GiB.
+
+    Returns 0 if ``/proc/meminfo`` is unreadable. ``MemTotal`` counts hugetlb,
+    which the acceptance suite reserves heavily, so it is reduced by ``Hugetlb``.
+    ``MemAvailable`` is not used: it moves with page cache, which would make the
+    generated config depend on when it was generated.
+
+    ``Hugetlb`` is whatever is reserved when the config is *generated*, which is
+    the setup script's 2 MiB pool but usually not yet the suite's session-scoped
+    1 GiB pool -- so the subtraction understates the eventual reservation and the
+    half-of-RAM clamp below is looser than it looks. That is the safe direction
+    for a cap on a lazily-allocated tmpfs, and generating a config after a run
+    would otherwise change its contents.
+    """
+    fields = {}
+    try:
+        with open("/proc/meminfo") as meminfo:
+            for line in meminfo:
+                name, _, rest = line.partition(":")
+                if name in ("MemTotal", "Hugetlb"):
+                    fields[name] = int(rest.split()[0])
+    except (OSError, ValueError, IndexError):
+        return 0
+    if "MemTotal" not in fields:
+        return 0
+    return max(0, fields["MemTotal"] - fields.get("Hugetlb", 0)) // (1 << 20)
+
+
+def _media_ramdisk_gib(test_time: int) -> int:
+    """Size cap for the media tmpfs, derived from the configured ``test_time``.
+
+    Under-sizing this mount does not merely truncate an RX dump: filesink
+    reports ENOSPC as a pipeline error, and the byte-throughput oracles read the
+    shortfall as an MTL delivery failure, so a healthy run fails for want of
+    disk. tmpfs allocates lazily, so a generous cap costs nothing until a test
+    actually writes that much.
+
+    Two limits are applied after the derived size, in this order: half of the
+    non-hugetlb RAM, then :data:`_MEDIA_RAMDISK_FLOOR_GIB`. The floor wins, so
+    on a small host the cap can still exceed half of RAM -- deliberately,
+    because that is the fixed size this calculation replaced and lowering it
+    would be a regression for small hosts. RAM is read on the machine running
+    the generator, which in a dual-host topology is not necessarily the host
+    being sized.
+
+    Sizing uses a longer window than the configured one: a ``test_time`` below
+    :data:`_MIN_GSTREAMER_WALL_CLOCK_S` is extended by the GStreamer frame-rate
+    oracle, and the dump grows for the extended window. It is not the longest
+    window a case can run for, though: ``enable_ptp`` cases add ``ptp_sync_time``
+    (50 s by default) on top, in ``ApplicationBase._apply_ptp_extension``. That
+    is deliberately not modelled -- ``enable_ptp`` is a per-case parameter this
+    generator cannot see, the extra seconds are a sync *budget* that mostly
+    carries no traffic, and pricing every config for a window no case without
+    PTP ever reaches would make the half-of-RAM clamp bind everywhere. The
+    consequence is real and bounded: on a host large enough that the clamp does
+    not bind, a PTP case whose lock is fast can write past the derived size.
+    Note the deliberate asymmetry with the adapters' byte-throughput floors,
+    which stay on the *requested* ``test_time``: disk has to be over-provisioned
+    and a delivery floor has to be under-stated, or one of the two produces a
+    spurious failure.
+    """
+    sized_time = max(test_time, _MIN_GSTREAMER_WALL_CLOCK_S)
+    dump_gib = -(-_PEAK_RX_BYTES_PER_S * sized_time // (1 << 30))  # ceiling
+    want_gib = dump_gib + _MEDIA_ASSET_HEADROOM_GIB
+    usable_gib = _usable_mem_gib()
+    capped_gib = min(want_gib, usable_gib // 2) if usable_gib else want_gib
+    size_gib = max(capped_gib, _MEDIA_RAMDISK_FLOOR_GIB)
+    if size_gib < want_gib:
+        print(
+            f"warning: media ramdisk sized at {size_gib} GiB (half of the "
+            f"{usable_gib} GiB not reserved as hugepages, floored at "
+            f"{_MEDIA_RAMDISK_FLOOR_GIB}) but a {sized_time}s run can write up "
+            f"to {dump_gib} GiB; the heaviest tests/single cases may hit ENOSPC",
+            file=sys.stderr,
+        )
+    return size_gib
 
 
 def _bdf_to_vendor_device(pci_id: str) -> str:
@@ -53,7 +172,10 @@ def gen_test_config(
         "media_path": media_path,
         "test_time": test_time,
         "ramdisk": {
-            "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 16},
+            "media": {
+                "mountpoint": "/mnt/ramdisk/media",
+                "size_gib": _media_ramdisk_gib(test_time),
+            },
             "tmpfs_size_gib": 8,
         },
     }
@@ -79,13 +201,31 @@ def gen_test_config(
     has_sniff = bool(sniff_pci_device) and not no_capture
     test_config["compliance"] = has_ebu and has_sniff
 
-    if has_sniff:
+    if test_config["compliance"]:
         test_config["ramdisk"]["pcap_dir"] = "/mnt/ramdisk/pcap"
         test_config["capture_cfg"] = {
             "enable": True,
             "pcap_dir": "/mnt/ramdisk/pcap",
             "sniff_pci_device": _bdf_to_vendor_device(sniff_pci_device),
         }
+    else:
+        # ``capture_cfg.enable: false`` has to be written out, not left
+        # implicit: the pcap_capture fixture treats an ABSENT capture_cfg as
+        # "this host can do compliance", so without it every test taking that
+        # fixture fails with "ebu_server is not configured" instead of running
+        # its data-path oracles. A host with no sniff NIC or no EBU
+        # credentials cannot produce a verdict, and the generator is what knows
+        # that, so it records the opt-out here.
+        #
+        # The branch is keyed on ``compliance`` (has_ebu AND has_sniff) rather
+        # than on ``has_sniff`` alone for the same reason: a sniff NIC with no
+        # EBU credentials can capture a pcap that nothing can then grade, and
+        # arming the capture is what produced that failure.
+        #
+        # ``--no_capture`` arrives here too, through ``has_sniff``: it is the
+        # operator saying the card has no port to spare -- a single-port i225,
+        # or a second port needed for a redundant (ST2022-7) test.
+        test_config["capture_cfg"] = {"enable": False}
     if has_ebu:
         test_config["ebu_server"] = {
             "ebu_ip": ebu_ip,

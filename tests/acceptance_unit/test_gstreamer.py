@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
+from types import SimpleNamespace
+
 import pytest
 from mtl_engine import ip_pools
 from mtl_engine.application_base import ProcSpec
@@ -19,6 +21,7 @@ def _stats(direction: str, frames: list[int]) -> str:
 def _app(rx: list[int], tx: list[int]) -> GStreamer:
     app = GStreamer()
     app.params = {"session_type": "st40p", "framerate": "p59", "test_time": 30}
+    app._wall_clock_s = 30
     app._results = [
         {"label": "RX", "output": _stats("RX", rx)},
         {"label": "TX", "output": _stats("TX", tx)},
@@ -38,6 +41,23 @@ def test_frame_oracle_requires_gradeable_rx_series():
     problems = _app([248], [505, 599])._check_pipeline_frames()
 
     assert any("no gradeable RX stats" in problem for problem in problems)
+
+
+def test_frame_oracle_diagnostic_names_the_real_wall_clock():
+    """The diagnostic must name the window the pipelines really got.
+
+    ``_graded_wall_clock`` and ``_apply_ptp_extension`` both raise the wall
+    clock above the requested ``test_time``, so the two numbers routinely
+    disagree and an operator triaging this needs the one that was used.
+    """
+    app = _app([248], [505, 599])
+    app.params["test_time"] = 15
+    app._wall_clock_s = 30
+
+    problems = app._check_pipeline_frames()
+
+    assert any("ran for 30s" in problem for problem in problems)
+    assert not any("ran for 15s" in problem for problem in problems)
 
 
 def test_frame_oracle_rejects_one_starved_interval():
@@ -66,6 +86,7 @@ def test_st20p_frame_oracle_requires_gradeable_rx_series():
         "width": 1920,
         "height": 1080,
     }
+    app._wall_clock_s = 30
     app._results = [
         {"label": "RX", "output": _stats("RX", [100])},
         {"label": "TX", "output": _stats("TX", [100])},
@@ -250,7 +271,7 @@ def test_create_command_rejects_unsupported_packing(monkeypatch):
         raise AssertionError("unsupported packing was silently ignored")
 
 
-def test_st20p_command_bounds_rx_output_to_one_frame(monkeypatch):
+def _st20p_app(monkeypatch, **overrides) -> GStreamer:
     monkeypatch.setattr(ip_pools, "tx", ["192.168.0.1"])
     monkeypatch.setattr(ip_pools, "rx", ["192.168.0.2"])
     app = GStreamer()
@@ -261,15 +282,157 @@ def test_st20p_command_bounds_rx_output_to_one_frame(monkeypatch):
         height=1080,
         framerate="p25",
         pixel_format="YUV422PLANAR10LE",
-        input_file="/tmp/input.yuv",
+        input_file="/mnt/media/input.yuv",
         source_ip="192.168.0.1",
         destination_ip="192.168.0.2",
+        test_time=30,
     )
+    app.params.update(overrides)
+    return app
+
+
+def test_st20p_rx_dump_is_unbounded_like_the_other_adapters(monkeypatch):
+    app = _st20p_app(monkeypatch)
 
     _, rx_cmd = app._build_st20p_cmds(app.params["nic_port_list"])
 
-    assert "multifilesink location={out} max-files=1" in rx_cmd
-    assert app._expected_rx_bytes() == 1920 * 1080 * 4
+    # A one-frame sink would make the byte oracle and the MD5 integrity check
+    # pass on a session that delivered a single frame out of the whole window.
+    assert "filesink location={out}" in rx_cmd
+    assert "multifilesink" not in rx_cmd
+    assert "max-files" not in rx_cmd
+
+
+def test_st20p_expected_bytes_cover_the_whole_window(monkeypatch):
+    app = _st20p_app(monkeypatch)
+
+    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 25 * 30
+
+
+def test_st20p_expected_bytes_scale_with_framerate_and_time(monkeypatch):
+    app = _st20p_app(monkeypatch, framerate="p59", test_time=15)
+
+    # p59 truncates to 59, not 59.94, so the floor stays conservative.
+    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 59 * 15
+
+
+def test_st20p_expected_bytes_use_mtls_compact_v210_size(monkeypatch):
+    app = _st20p_app(monkeypatch, pixel_format="v210", framerate="p25", test_time=1)
+
+    # These bytes are an MTL RX dump, so the floor has to follow st_frame_size()
+    # -- packed 3 pixels per 8 bytes with no row padding -- and not GStreamer's
+    # 48-pixel-padded stride. 1920 is a multiple of 48 so the two agree here;
+    # test_video_integrity.py covers the width where they do not.
+    assert app._expected_rx_bytes() == 1920 * 1080 * 8 // 3 * 25
+
+
+def _with_rx_dump(app: GStreamer, size: int) -> None:
+    """Point ``_check_rx_output`` at an RX dump of exactly ``size`` bytes."""
+    app._output_files = ["/mnt/ramdisk/media/out.yuv"]
+    app._host = SimpleNamespace(
+        connection=SimpleNamespace(
+            execute_command=lambda *_args, **_kwargs: SimpleNamespace(
+                return_code=0, stdout=str(size)
+            )
+        )
+    )
+
+
+def test_rx_byte_floor_rejects_a_short_dump(monkeypatch):
+    """The floor, not just the existence check, has to fail a truncated dump.
+
+    Everything above pins what ``_expected_rx_bytes`` computes; this is the one
+    case that pins the comparison it feeds. Without it, dropping the ``size <
+    minimum`` branch leaves the tier green while a session that delivered a
+    handful of frames passes on a non-empty file.
+    """
+    app = _st20p_app(monkeypatch)
+    expected = app._expected_rx_bytes()
+    _with_rx_dump(app, int(expected * 0.5) - 1)
+
+    problems = app._check_rx_output()
+
+    assert len(problems) == 1
+    assert "50% of" in problems[0]
+
+
+def test_rx_byte_floor_accepts_a_dump_at_the_floor(monkeypatch):
+    """Half the nominal bytes is the pass/fail boundary, and it passes.
+
+    The floor is deliberately generous -- pipeline startup, and PTP sync when
+    enabled, are unpaid seconds inside the window -- so a run that clears it by
+    one byte must not be reported as a delivery failure.
+    """
+    app = _st20p_app(monkeypatch)
+    expected = app._expected_rx_bytes()
+    _with_rx_dump(app, int(expected * 0.5) + 1)
+
+    assert app._check_rx_output() == []
+
+
+def test_graded_window_extends_a_too_short_window():
+    for session_type in ("st20p", "st30p", "st40p"):
+        app = GStreamer()
+        app.params["session_type"] = session_type
+
+        # Every session type gets the floor: st20p/st40p because the frame-rate
+        # oracle needs completed stats intervals, st30p because its byte floor
+        # is a fraction of framerate x window and a short window is mostly
+        # pipeline startup.
+        assert app._graded_wall_clock(15) == 30, session_type
+
+
+def test_graded_window_keeps_a_sufficient_window():
+    app = GStreamer()
+    app.params["session_type"] = "st20p"
+
+    assert app._graded_wall_clock(30) == 30
+    assert app._graded_wall_clock(90) == 90
+
+
+def test_window_floor_does_not_resize_the_byte_oracle(monkeypatch):
+    """The floor must move only the wall clock, never the requested test_time.
+
+    ``_expected_rx_bytes`` and ``capture_intent`` are both sized from
+    ``params["test_time"]``; charging them for seconds the caller did not ask
+    for would fail a healthy run.
+    """
+    app = _st20p_app(monkeypatch, test_time=15)
+
+    assert app._graded_wall_clock(15) == 30
+    assert app.params["test_time"] == 15
+    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 25 * 15
+
+
+def test_execute_test_runs_for_the_graded_window(monkeypatch):
+    """The floor is worthless unless ``execute_test`` actually waits for it.
+
+    ``_graded_wall_clock`` returning 30 changes nothing if the run still stops
+    at the configured 15s: the frame oracle then grades a window that cannot
+    hold :data:`_MIN_GRADED_INTERVALS` completed stats intervals and fails a
+    healthy session. This pins the wiring, not the arithmetic.
+    """
+    app = _st20p_app(monkeypatch, test_time=15)
+    app.command = "gst-launch-1.0 rx"
+    app._tx_commands = ["gst-launch-1.0 tx"]
+
+    seen: dict = {}
+    monkeypatch.setattr(app, "prepare_execution", lambda **_kwargs: None)
+    monkeypatch.setattr(app, "capture_intent", lambda: None)
+    monkeypatch.setattr(app, "integrity_intent", lambda *_args: None)
+    monkeypatch.setattr(app, "_finalize_run", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        app, "_run_proc_group", lambda _specs, **kwargs: seen.update(kwargs)
+    )
+
+    assert app.execute_test(build="/unused", test_time=15, host=object()) is True
+
+    # Both the sleep and the value validate_results reports against must move.
+    assert seen["wall_clock_seconds"] == 30
+    assert seen["test_time"] == 30
+    assert app._wall_clock_s == 30
+    # ...while the requested window, which sizes the byte oracle, must not.
+    assert app.params["test_time"] == 15
 
 
 def test_ffmpeg_create_command_rejects_unsupported_session():

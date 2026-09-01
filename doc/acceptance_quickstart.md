@@ -115,6 +115,7 @@ the `0000:18:00.0` bus address. Supplying a BDF raises
 build: /home/<you>/Media-Transport-Library/
 mtl_path: /home/<you>/Media-Transport-Library/
 media_path: /mnt/media
+test_time: 30                    # GStreamer raises anything below 30 to 30
 interface_type: VF               # VF | PF | VFxPF | 2VFxPF | 3VFxPF
 capture_cfg:
   enable: false                  # true enables EBU LIST compliance capture
@@ -123,17 +124,35 @@ capture_cfg:
   sniff_pci_device: 8086:1592    # vendor:device of the capture NIC
   phc_sync: true                 # discipline the local PHC to system TAI
 ebu_server:                      # omit to leave compliance disabled
-  host: 10.0.0.9
+  ebu_ip: 10.0.0.9               # read as ebu_ip, not host
   user: <user>
   password: <password>
+  proxy: false                   # or a proxy URL for the EBU LIST host
 ramdisk:
-  media: {mountpoint: /mnt/ramdisk/media, size_gib: 32}
-  pcap:  {mountpoint: /mnt/ramdisk/pcap,  size_gib: 768}
+  media:                         # block style, as gen_config.py writes it
+    mountpoint: /mnt/ramdisk/media
+    size_gib: 78
+  pcap_dir: /mnt/ramdisk/pcap
+  tmpfs_size_gib: 8
 ```
+
+`ramdisk.media.size_gib` is `ceil(2.5 GB/s x max(test_time, 30)) + 8` GiB,
+clamped to half the non-hugetlb RAM and floored at 16 — so 78 at `test_time:
+30` on a 467 GiB host. Nothing bounds an RX dump, and a mount too small to hold
+one makes `filesink` report ENOSPC, which the byte-throughput oracles read as an
+MTL delivery failure. `setup --pytest-only` raises a short `size_gib` in place —
+that one key and nothing else — so a hand-edited config keeps every operator-only
+key it carries. It sizes against the larger of `--test-time` and the file's own
+`test_time`, and patches nothing it cannot read: a flow-style `media: {…}` block
+has no `size_gib:` line of its own, so the repair only reports it. Keep the block
+style above.
 
 Capture needs a **second** NIC port in a different IOMMU group from the one
 carrying traffic. Without `ebu_server`, tests still run — the compliance
-verdict is simply skipped.
+verdict is simply skipped — but only because `capture_cfg.enable: false` is
+present. Deleting the whole `capture_cfg` block instead is read as "this host
+does compliance" and hard-FAILs every `pcap_capture` test with `ebu_server is
+not configured`.
 
 ### Test media
 
@@ -257,7 +276,7 @@ directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
 | `Permission denied (publickey)` for `root@127.0.0.1` | Public key not in `/root/.ssh/authorized_keys`. |
 | `ValueError: q must be exactly 160, 224, or 256 bits long` | DSA key. `ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa && ssh-copy-id root@localhost`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
-| `EBU server configuration not found`, test still PASSED | Data path passed, compliance skipped. Configure `ebu_server` + `capture_cfg`. |
+| `Compliance check SUPPRESSED ... capture_cfg.enable=false`, test still PASSED | Data path passed, no ST 2110-21 verdict. Configure `ebu_server` + `capture_cfg` to get one. |
 | Test hangs past `--time` + ~30 s | Stale process: `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0`. |
 | EAL hugepage or VF binding errors | Hugepages exhausted, or VFs not bound to `vfio-pci`. Re-run setup. |
 | `RxTxApp` segfault in `iavf_tm_node_add` | Stock kernel `ice` loaded instead of the patched out-of-tree build. Re-run setup. |

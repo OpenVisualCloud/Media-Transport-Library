@@ -8,6 +8,10 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 acceptance_dir="${root_dir}/tests/acceptance"
 # shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
 . "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
+# venv_python is assigned by the lib sourced just above. The source= directive
+# names the file but shellcheck only reads it under --external-sources, which
+# the pre-commit hook does not pass, so from here it looks unassigned.
+# shellcheck disable=SC2154
 pytest=("${venv_python}" -m pytest
 	--test_config="${acceptance_dir}/configs/test_config.yaml"
 	--topology_config="${acceptance_dir}/configs/topology_config.yaml")

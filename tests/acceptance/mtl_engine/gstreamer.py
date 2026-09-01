@@ -30,15 +30,21 @@ Oracles (``validate_results``), in order of strength:
     1. Every ``gst-launch-1.0`` exited cleanly after the harness sent SIGINT.
        A process that requires SIGKILL is a failure.
     2. No ``ERROR:`` / ``erroneous pipeline`` line in either pipeline's output.
-     3. The ST20 RX artifact contains one complete frame for integrity; ST30
-         contains at least :data:`_MIN_CAPTURE_RATIO` of its full-window bytes.
-     4. For ST20 and ST40, MTL's per-interval frame counts prove throughput: the
-         RX side must report enough intervals to grade, and every graded
+    3. The ST20 and ST30 RX artifacts each hold at least
+       :data:`_MIN_CAPTURE_RATIO` of their full-window bytes, so the MD5
+       integrity check grades the whole dump exactly as it does for the RxTxApp
+       and FFmpeg adapters -- neither of which bounds its RX dump either.
+    4. For ST20 and ST40, MTL's per-interval frame counts prove throughput: the
+       RX side must report enough intervals to grade, and every graded
        direction must hold :data:`_MIN_STEADY_FRAME_RATIO` of the rate the
        session was configured for -- otherwise "one frame moved" would be
        st40p's whole throughput oracle. Only RX is required to have gradeable
        intervals; see :meth:`GStreamer._check_pipeline_frames` for why TX is
        graded when it can be but never required to be.
+
+Both (3) and (4) grade a duration, so every session extends its wall clock to
+:data:`_MIN_GRADED_WALL_CLOCK_S` rather than relax an oracle that a shorter
+window cannot satisfy -- see :meth:`GStreamer._graded_wall_clock`.
 
 Compliance (EBU) and integrity (MD5) are evaluated by the base class through
 ``capture_intent`` / ``integrity_intent`` exactly as for the other adapters --
@@ -51,6 +57,7 @@ import ipaddress
 import logging
 from typing import Optional
 
+from common.integrity.video_integrity import calculate_yuv_frame_size
 from mtl_engine import ip_pools
 from mtl_engine.application_base import Application, ProcSpec
 from mtl_engine.config.mappings import (
@@ -111,9 +118,13 @@ _AUDIO_SAMPLE_BYTES = {"PCM8": 1, "PCM16": 2, "PCM24": 3}
 _ST40P_DID = 0x43
 _ST40P_SDID = 0x02
 
-# Minimum fraction of a full-length audio capture the RX side must produce.
-# ST20 keeps one complete frame for integrity and uses MTL frame counters to
-# prove full-window throughput without filling the media ramdisk.
+# Minimum fraction of a full-length capture the RX side must produce, for both
+# the ST20 video dump and the ST30 audio dump. What it adds depends on the
+# session type: for st20p it is a second, independent bound on average
+# throughput alongside the per-interval frame counters, which are what catch a
+# session that delivered the right total unevenly; for st30p, absent from
+# ``_RATE_CHECKED_SESSIONS``, it is the *only* throughput oracle there is, so it
+# must not be lowered without rate-checking st30p as well.
 _MIN_CAPTURE_RATIO = 0.5
 
 # Minimum fraction of nominal frames required in each completed interval after
@@ -129,6 +140,29 @@ _MTL_STATS_INTERVAL_S = 10
 # Intervals needed before a rate can be graded: one to discard because it
 # overlaps process startup, one to measure.
 _MIN_GRADED_INTERVALS = 2
+
+# Session types whose throughput verdict comes from the MTL frame counters, so
+# the run has to be long enough for one interval to be gradeable. st40p has no
+# byte oracle at all (``_expected_rx_bytes`` returns None for it), which is why
+# a short window is lengthened rather than excused: excusing it would leave "the
+# process exited 0" as st40p's entire throughput check.
+_RATE_CHECKED_SESSIONS = ("st20p", "st40p")
+
+# Shortest wall clock any session may run for. Two things need it:
+#
+# * The frame-rate oracle needs _MIN_GRADED_INTERVALS completed stats lines. MTL
+#   arms the stats alarm inside ``mtl_init`` -- ``rte_eal_alarm_set`` in
+#   mt_stat_init (lib/src/mt_stat.c), reached from mt_main.c *after* rte_eal_init
+#   -- so the first line lands one whole interval after that init completes,
+#   never at process start. Two intervals to grade one, plus a third interval's
+#   worth of allowance for gst-launch startup and EAL init. Measured on an E810
+#   host: test_time=20 printed one RX interval, test_time=30 printed two.
+# * The byte floors are a fraction of framerate x window, but the window is
+#   measured from the RX start while TX only starts ``sleep_interval`` (4s) later
+#   and then pays its own gst + EAL init. That fixed cost is a minority of a 30s
+#   window and a majority of a 10s one, so a short window fails st30p -- which is
+#   not rate-checked -- on the byte floor alone.
+_MIN_GRADED_WALL_CLOCK_S = (_MIN_GRADED_INTERVALS + 1) * _MTL_STATS_INTERVAL_S
 
 # ProcSpec labels, also the direction tokens MTL prints in its stats lines, so
 # ``pipeline_frame_series`` can select a direction by the label that produced it.
@@ -150,6 +184,11 @@ class GStreamer(Application):
         self._plugin_path: str | None = None
         # One record per pipeline of the last run: label, return code, output.
         self._results: list[dict] = []
+        # Wall clock the pipelines actually ran for, which is the requested
+        # ``test_time`` plus any PTP extension and rate-check floor. Only the
+        # frame-counter diagnostic reads it; the oracles stay sized against the
+        # requested window.
+        self._wall_clock_s: Optional[int] = None
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -286,7 +325,12 @@ class GStreamer(Application):
                     f"rx-interlaced={_gst_bool(self.params.get('interlaced'))}",
                 ],
             ),
-            "multifilesink location={out} max-files=1",
+            # Unbounded, like RxTxApp (``rx_max_file_size`` defaults to 0) and
+            # the FFmpeg adapter: the whole window has to reach disk for the
+            # byte oracle and the MD5 integrity check to mean anything. The
+            # media ramdisk is sized for it -- see ``_media_ramdisk_gib`` in
+            # tests/acceptance/configs/gen_config.py.
+            "filesink location={out}",
         )
         return tx_cmd, rx_cmd
 
@@ -496,8 +540,11 @@ class GStreamer(Application):
 
         RX starts first because ``mtl_st20p_rx``/``mtl_st30p_rx`` have to be
         listening before the sender's pacing settles. Neither pipeline
-        self-terminates (the source loops), so the wall-clock ``test_time``
-        bounds the run and the base helper stops both.
+        self-terminates (the source loops), so a wall clock bounds the run and
+        the base helper stops both. That wall clock is ``test_time`` extended by
+        PTP sync and then raised to :data:`_MIN_GRADED_WALL_CLOCK_S` -- it is
+        what the run lasts, while ``self.params["test_time"]`` keeps the
+        requested value for the oracles sized against it.
 
         Dual-host orchestration is not supported: both pipelines share one
         host's DPDK process group. Passing those keys is a caller bug.
@@ -524,6 +571,8 @@ class GStreamer(Application):
         # PTP sync happens before any frame moves, so the data window has to be
         # extended by it. gst pipelines carry no ``--test_time`` to rewrite.
         effective_test_time, _ = self._apply_ptp_extension(test_time)
+        effective_test_time = self._graded_wall_clock(effective_test_time)
+        self._wall_clock_s = effective_test_time
 
         specs = [
             ProcSpec(
@@ -577,6 +626,40 @@ class GStreamer(Application):
             integrity=integrity,
             integrity_intent=self.integrity_intent(build, host),
         )
+
+    def _graded_wall_clock(self, effective_test_time: int) -> int:
+        """Raise the wall clock to the shortest window the oracles can grade.
+
+        Below :data:`_MIN_GRADED_WALL_CLOCK_S` a healthy run fails: st20p/st40p
+        cannot print :data:`_MIN_GRADED_INTERVALS` stats lines for
+        :meth:`_check_pipeline_frames`, and every session's byte floor charges
+        for a window whose fixed startup cost it cannot amortise. Extending the
+        wall clock is the right side to give on -- st40p has no byte-count oracle
+        to fall back on (``_expected_rx_bytes`` returns None for it), so relaxing
+        the requirement instead would turn a false fail into a silent false pass.
+
+        Only the returned wall clock moves; ``self.params["test_time"]`` keeps
+        the requested value, so ``capture_intent()`` and
+        :meth:`_expected_rx_bytes` stay sized against the window the caller
+        asked for. ``configs/gen_config.py`` sizes the media tmpfs against the
+        extended window, because the RX dump grows for all of it.
+        """
+        if effective_test_time >= _MIN_GRADED_WALL_CLOCK_S:
+            return effective_test_time
+        logger.warning(
+            "[GStreamer] extending the %s run from the configured %ds to %ds: "
+            "the oracles need %d completed %ds MTL stats intervals and a window "
+            "long enough to absorb pipeline startup, and a shorter one fails a "
+            "healthy session. Raise test_config.yaml::test_time to at least %d "
+            "to avoid this.",
+            self.params.get("session_type"),
+            effective_test_time,
+            _MIN_GRADED_WALL_CLOCK_S,
+            _MIN_GRADED_INTERVALS,
+            _MTL_STATS_INTERVAL_S,
+            _MIN_GRADED_WALL_CLOCK_S,
+        )
+        return _MIN_GRADED_WALL_CLOCK_S
 
     # ----------------------------------------------------- compliance
     def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
@@ -652,17 +735,21 @@ class GStreamer(Application):
         RX must provide enough intervals because it runs for the full window;
         TX starts later and may legitimately provide one fewer sample.
         """
-        rate_checked_session = self.params.get("session_type") in ("st20p", "st40p")
+        rate_checked_session = self.params.get("session_type") in _RATE_CHECKED_SESSIONS
         problems: list[str] = []
         judged: list[str] = []  # directions a throughput verdict was reached for
         for result in self._results:
             direction = result["label"]
             series = self.pipeline_frame_series(result["output"], direction)
             if not series:
-                logger.info(
-                    "[GStreamer] no MTL %s pipeline stats in this run "
-                    "(shorter than one stats interval)",
+                logger.warning(
+                    "[GStreamer] no MTL %s pipeline stats in this run, over a "
+                    "%ss wall clock floored at %ss to fit %d intervals: the "
+                    "session printed no counter line at all",
                     direction,
+                    self._wall_clock_s,
+                    _MIN_GRADED_WALL_CLOCK_S,
+                    _MIN_GRADED_INTERVALS,
                 )
                 continue
             if sum(series) == 0:
@@ -681,15 +768,32 @@ class GStreamer(Application):
             judged.append(direction)
             problems += self._check_steady_frame_rate(direction, series)
         if rate_checked_session and _RX_LABEL not in judged:
+            # st40p is in _RATE_CHECKED_SESSIONS but has no byte oracle at all
+            # -- _expected_rx_bytes() returns None for it, so _check_rx_output
+            # only checks the dump exists. Saying "only bounds the average"
+            # there would tell the operator the average throughput was still
+            # verified when nothing was.
+            try:
+                bounded = self._expected_rx_bytes() is not None
+            except (KeyError, ValueError):
+                # A geometry the size table does not know is also a geometry no
+                # byte floor can be derived from, so it bounds nothing either.
+                bounded = False
+            fallback = (
+                "_check_rx_output bounds only the average"
+                if bounded
+                else "there is no byte-count oracle for this session type"
+            )
             problems.append(
                 f"MTL printed no gradeable {_RX_LABEL} stats for session_type="
-                f"{self.params.get('session_type')}, whose throughput these "
-                f"counters are the only evidence of; {_MIN_GRADED_INTERVALS} "
-                f"completed intervals need "
+                f"{self.params.get('session_type')}, whose per-interval "
+                f"steadiness these counters are the only evidence of "
+                f"({fallback}); "
+                f"{_MIN_GRADED_INTERVALS} completed intervals need "
                 f"{_MIN_GRADED_INTERVALS * _MTL_STATS_INTERVAL_S}s of pipeline "
-                f"uptime plus initialization; test_time="
-                f"{self.params.get('test_time')} was insufficient or the "
-                f"session stopped early"
+                f"uptime plus initialization, and the pipelines ran for "
+                f"{self._wall_clock_s}s -- the session stopped early or "
+                f"initialization overran that budget"
             )
         return problems
 
@@ -730,18 +834,15 @@ class GStreamer(Application):
         size = int((result.stdout or "0").strip() or 0)
         if size == 0:
             return [f"RX output file is empty: {out_file}"]
-        # Sized against the requested ``test_time``, never the PTP-extended
-        # wall clock: no frame moves during PTP sync, so charging the capture
-        # for those seconds would fail a healthy run whose lock took a while.
-        # A run that gets its full window plus leftover sync time can exceed
-        # 100% here, which is fine -- this is a floor, not a target.
+        # Sized against the requested ``test_time``, never the wall clock the
+        # PTP extension or :meth:`_graded_wall_clock` produced: no frame
+        # moves during PTP sync, so charging the capture for those seconds would
+        # fail a healthy run whose lock took a while. A run that gets its full
+        # window plus those extra seconds can exceed 100% here, which is fine --
+        # this is a floor, not a target.
         expected = self._expected_rx_bytes()
         if expected:
-            minimum = (
-                expected
-                if self.params.get("session_type") == "st20p"
-                else int(expected * _MIN_CAPTURE_RATIO)
-            )
+            minimum = int(expected * _MIN_CAPTURE_RATIO)
             logger.info(
                 "[GStreamer] RX captured %d bytes (nominal %d, minimum %d)",
                 size,
@@ -749,11 +850,6 @@ class GStreamer(Application):
                 minimum,
             )
             if size < minimum:
-                if self.params.get("session_type") == "st20p":
-                    return [
-                        f"RX captured {size} bytes, under one complete "
-                        f"{expected}-byte video frame"
-                    ]
                 return [
                     f"RX captured {size} bytes, under {minimum} "
                     f"({_MIN_CAPTURE_RATIO:.0%} of the {expected} expected for "
@@ -765,8 +861,8 @@ class GStreamer(Application):
     def _expected_rx_bytes(self) -> Optional[int]:
         """Bytes required in the RX artifact, or ``None`` when not exact.
 
-        ST20 retains one complete frame for integrity while frame counters prove
-        throughput. ST30 retains the duration-sized byte oracle. ST40 is
+        ST20 and ST30 are both duration-sized -- frame_size x framerate x
+        test_time and sample_rate x channels x sample_bytes x test_time. ST40 is
         excluded because its raw-UDW payload size is sender-defined.
         """
         test_time = self.params.get("test_time") or 0
@@ -774,10 +870,16 @@ class GStreamer(Application):
         if not test_time:
             return None
         if session_type == "st20p":
-            return _st20p_frame_size(
-                self.params["pixel_format"],
-                int(self.params["width"]),
-                int(self.params["height"]),
+            # extract_framerate truncates p59 to 59 and p119 to 119, so the
+            # product is a conservative floor rather than an exact target.
+            return (
+                _st20p_frame_size(
+                    self.params["pixel_format"],
+                    int(self.params["width"]),
+                    int(self.params["height"]),
+                )
+                * self.extract_framerate(self.params["framerate"])
+                * test_time
             )
         if session_type == "st30p":
             return (
@@ -790,12 +892,13 @@ class GStreamer(Application):
 
 
 def _st20p_frame_size(pixel_format: str, width: int, height: int) -> int:
-    """Bytes one st20p frame occupies in the RX dump."""
-    if pixel_format == "v210":
-        # 6 pixels per 16 bytes, each row padded to a 48-pixel group.
-        return ((width + 47) // 48) * 128 * height
-    # YUV422PLANAR10LE: 2 bytes per component, 2 components per pixel.
-    return width * height * 4
+    """Bytes one st20p frame occupies in the RX dump.
+
+    Delegates to the same table the MD5 integrity check chunks the dump with
+    (``common.integrity.video_integrity``), so the byte oracle and the integrity
+    verdict can never disagree about where a frame boundary is.
+    """
+    return calculate_yuv_frame_size(width, height, pixel_format)
 
 
 def _gst_bool(value) -> str:

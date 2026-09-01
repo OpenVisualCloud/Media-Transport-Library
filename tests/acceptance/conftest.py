@@ -1215,6 +1215,22 @@ def pcap_capture(
                 "analyser does not support 8K."
             )
 
+    if capture_disabled:
+        # Must be loud. This is one of two paths where a test can go green
+        # having produced no compliance verdict at all (the other is the 8K
+        # opt-out just above, which logs its own reason): NO_COMPLIANCE is a
+        # null session whose close() ignores ``enforce``, so the
+        # evaluated-exactly-once invariant cannot speak for it. Without this
+        # line an operator cannot tell a compliance-verified run from an
+        # opted-out one by reading the log.
+        logger.warning(
+            "Compliance check SUPPRESSED for %s: test_config has "
+            "capture_cfg.enable=false (no sniff NIC or no EBU credentials on "
+            "this host). Data-path oracles still run; no ST 2110-21 verdict "
+            "is produced.",
+            request.node.name,
+        )
+
     skip_capture = capture_disabled or is_8k
     if not skip_capture:
         host = _select_capture_host(hosts)
@@ -1339,6 +1355,14 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
 
     if report["setup"].failed:
         result = fail_test("Setup")
+    elif report["setup"].skipped:
+        # A fixture called pytest.skip() -- e.g. ``media_file`` on an asset the
+        # NFS share does not carry. There is no "call" phase at all in that
+        # case, so without this branch it falls into the '"call" not in report'
+        # arm below and a SKIPPED test is transcribed into report.csv as "Fail".
+        # pytest's own verdict is unchanged either way; only the CSV was wrong.
+        logger.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")
+        result = "Skip"
     elif ("call" not in report) or report["call"].failed:
         compliance = get_compliance_result(case_id)
         stage = "Compliance" if compliance == "Fail" else "Test"
