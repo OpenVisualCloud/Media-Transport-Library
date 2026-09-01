@@ -8,7 +8,11 @@ from mtl_engine import ip_pools
 from mtl_engine.application_base import ProcSpec
 from mtl_engine.config.mappings import GSTREAMER_AUDIO_FORMAT_MAP
 from mtl_engine.ffmpeg import FFmpeg
-from mtl_engine.gstreamer import _AUDIO_SAMPLE_BYTES, GStreamer
+from mtl_engine.gstreamer import (
+    _AUDIO_SAMPLE_BYTES,
+    _MIN_GRADED_WALL_CLOCK_S,
+    GStreamer,
+)
 
 
 def _stats(direction: str, frames: list[int]) -> str:
@@ -310,20 +314,79 @@ def test_st20p_expected_bytes_cover_the_whole_window(monkeypatch):
 
 
 def test_st20p_expected_bytes_scale_with_framerate_and_time(monkeypatch):
-    app = _st20p_app(monkeypatch, framerate="p59", test_time=15)
+    app = _st20p_app(monkeypatch, framerate="p59", test_time=45)
 
-    # p59 truncates to 59, not 59.94, so the floor stays conservative.
-    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 59 * 15
+    # p59 truncates to 59, not 59.94, so the floor stays conservative. 45s is
+    # past _MIN_GRADED_WALL_CLOCK_S, so it is the window itself -- the clamp
+    # below covers the shorter side.
+    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 59 * 45
 
 
 def test_st20p_expected_bytes_use_mtls_compact_v210_size(monkeypatch):
-    app = _st20p_app(monkeypatch, pixel_format="v210", framerate="p25", test_time=1)
+    app = _st20p_app(
+        monkeypatch,
+        pixel_format="v210",
+        framerate="p25",
+        test_time=_MIN_GRADED_WALL_CLOCK_S,
+    )
 
     # These bytes are an MTL RX dump, so the floor has to follow st_frame_size()
     # -- packed 3 pixels per 8 bytes with no row padding -- and not GStreamer's
     # 48-pixel-padded stride. 1920 is a multiple of 48 so the two agree here;
     # test_video_integrity.py covers the width where they do not.
-    assert app._expected_rx_bytes() == 1920 * 1080 * 8 // 3 * 25
+    assert app._expected_rx_bytes() == 1920 * 1080 * 8 // 3 * 25 * (
+        _MIN_GRADED_WALL_CLOCK_S
+    )
+
+
+def _st30p_app(**overrides) -> GStreamer:
+    app = GStreamer()
+    app.params.update(
+        session_type="st30p",
+        audio_format="PCM16",
+        audio_channels=["U02"],
+        audio_sampling="48kHz",
+        test_time=10,
+    )
+    app.params.update(overrides)
+    return app
+
+
+# 48kHz x 2ch x 2 bytes.
+_ST30P_BYTES_PER_S = 48000 * 2 * 2
+
+
+def test_expected_bytes_follow_the_extended_window():
+    """A short run's floor has to grow with the window ``_graded_wall_clock`` gives it.
+
+    st30p is not in ``_RATE_CHECKED_SESSIONS``, so this floor is its whole
+    throughput verdict. Sized on the requested 10s while the run actually streams
+    for 30, it asks for 5s of audio out of ~24 delivered -- a session that died
+    after 5s would pass.
+    """
+    app = _st30p_app()
+
+    assert app._expected_rx_bytes() == _ST30P_BYTES_PER_S * _MIN_GRADED_WALL_CLOCK_S
+
+
+def test_expected_bytes_exclude_ptp_dead_time():
+    """PTP sync seconds move no frames, so they must not be charged for.
+
+    This is why the clamp is ``_MIN_GRADED_WALL_CLOCK_S - ptp_dead`` and not a
+    plain ``max(test_time, _MIN_GRADED_WALL_CLOCK_S)``: the latter would demand
+    30s of audio from a run that streams for 10 and spends 50 waiting for a lock,
+    failing a healthy session.
+    """
+    app = _st30p_app(enable_ptp=True, ptp_sync_time=50)
+
+    assert app._expected_rx_bytes() == _ST30P_BYTES_PER_S * 10
+
+
+def test_expected_bytes_keep_a_long_window_untouched():
+    """No CI leg is affected: past the minimum, the window is test_time verbatim."""
+    app = _st30p_app(test_time=60)
+
+    assert app._expected_rx_bytes() == _ST30P_BYTES_PER_S * 60
 
 
 def _with_rx_dump(app: GStreamer, size: int) -> None:
@@ -390,18 +453,21 @@ def test_graded_window_keeps_a_sufficient_window():
     assert app._graded_wall_clock(90) == 90
 
 
-def test_window_floor_does_not_resize_the_byte_oracle(monkeypatch):
-    """The floor must move only the wall clock, never the requested test_time.
+def test_window_floor_moves_the_wall_clock_not_the_requested_test_time(monkeypatch):
+    """The floor must move the wall clock, never ``params["test_time"]`` itself.
 
-    ``_expected_rx_bytes`` and ``capture_intent`` are both sized from
-    ``params["test_time"]``; charging them for seconds the caller did not ask
-    for would fail a healthy run.
+    ``capture_intent`` takes a fixed-length sample of the stream and is sized
+    from the requested value, so charging it for seconds the caller did not ask
+    for would fail a healthy run. ``_expected_rx_bytes`` is the deliberate
+    exception -- the RX dump really does grow for the whole extended window -- so
+    it follows the floor instead.
     """
     app = _st20p_app(monkeypatch, test_time=15)
 
     assert app._graded_wall_clock(15) == 30
     assert app.params["test_time"] == 15
-    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 25 * 15
+    assert app.capture_intent().capture_time == 15
+    assert app._expected_rx_bytes() == 1920 * 1080 * 4 * 25 * _MIN_GRADED_WALL_CLOCK_S
 
 
 def test_execute_test_runs_for_the_graded_window(monkeypatch):

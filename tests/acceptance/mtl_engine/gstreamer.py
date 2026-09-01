@@ -639,10 +639,12 @@ class GStreamer(Application):
         the requirement instead would turn a false fail into a silent false pass.
 
         Only the returned wall clock moves; ``self.params["test_time"]`` keeps
-        the requested value, so ``capture_intent()`` and
-        :meth:`_expected_rx_bytes` stay sized against the window the caller
-        asked for. ``configs/gen_config.py`` sizes the media tmpfs against the
-        extended window, because the RX dump grows for all of it.
+        the requested value, so ``capture_intent()`` stays sized against the
+        window the caller asked for -- the compliance capture is a fixed-length
+        sample of the stream, not a measurement of its total.
+        :meth:`_expected_rx_bytes` does follow this extension, because the RX
+        dump grows for all of it, and so does the media tmpfs
+        ``configs/gen_config.py`` sizes for the same reason.
         """
         if effective_test_time >= _MIN_GRADED_WALL_CLOCK_S:
             return effective_test_time
@@ -834,12 +836,10 @@ class GStreamer(Application):
         size = int((result.stdout or "0").strip() or 0)
         if size == 0:
             return [f"RX output file is empty: {out_file}"]
-        # Sized against the requested ``test_time``, never the wall clock the
-        # PTP extension or :meth:`_graded_wall_clock` produced: no frame
-        # moves during PTP sync, so charging the capture for those seconds would
-        # fail a healthy run whose lock took a while. A run that gets its full
-        # window plus those extra seconds can exceed 100% here, which is fine --
-        # this is a floor, not a target.
+        # Sized against the seconds frames actually move in -- see
+        # :meth:`_expected_rx_bytes`, which follows :meth:`_graded_wall_clock`'s
+        # extension but not the PTP one. A run that gets its full window can
+        # exceed 100% here, which is fine -- this is a floor, not a target.
         expected = self._expected_rx_bytes()
         if expected:
             minimum = int(expected * _MIN_CAPTURE_RATIO)
@@ -852,9 +852,9 @@ class GStreamer(Application):
             if size < minimum:
                 return [
                     f"RX captured {size} bytes, under {minimum} "
-                    f"({_MIN_CAPTURE_RATIO:.0%} of the {expected} expected for "
-                    f"{self.params.get('test_time')}s) -- the stream did not run "
-                    f"for the test window"
+                    f"({_MIN_CAPTURE_RATIO:.0%} of the {expected} expected for the "
+                    f"streaming window) -- the stream did not run for the test "
+                    f"window"
                 ]
         return []
 
@@ -862,13 +862,35 @@ class GStreamer(Application):
         """Bytes required in the RX artifact, or ``None`` when not exact.
 
         ST20 and ST30 are both duration-sized -- frame_size x framerate x
-        test_time and sample_rate x channels x sample_bytes x test_time. ST40 is
+        window and sample_rate x channels x sample_bytes x window. ST40 is
         excluded because its raw-UDW payload size is sender-defined.
         """
         test_time = self.params.get("test_time") or 0
         session_type = self.params.get("session_type")
         if not test_time:
             return None
+        # The window is the span frames actually move in, which is not always the
+        # requested test_time. :meth:`_graded_wall_clock` lengthens a short run
+        # to _MIN_GRADED_WALL_CLOCK_S and frames move for every second of that
+        # extension, so a floor left on the requested value is a fraction of a
+        # fraction: at test_time=10 it demands 5s of data from a 30s run that
+        # delivers ~24s. For st30p, absent from _RATE_CHECKED_SESSIONS, that
+        # floor is the entire throughput verdict, so a session that stalls after
+        # 5s would still pass.
+        #
+        # The PTP extension is the opposite case and stays excluded: no frame
+        # moves during sync, so charging the capture for those seconds would fail
+        # a healthy run whose lock took a while. Hence the graded minimum less the
+        # dead sync seconds -- which is how long _graded_wall_clock's own output,
+        # max(test_time + ptp_dead, _MIN_GRADED_WALL_CLOCK_S), spends streaming.
+        # Whenever the requested window already reaches the minimum on its own,
+        # this is just test_time.
+        ptp_dead = (
+            self.params.get("ptp_sync_time", 50)
+            if self.params.get("enable_ptp", False)
+            else 0
+        )
+        window = max(test_time, _MIN_GRADED_WALL_CLOCK_S - ptp_dead)
         if session_type == "st20p":
             # extract_framerate truncates p59 to 59 and p119 to 119, so the
             # product is a conservative floor rather than an exact target.
@@ -879,14 +901,14 @@ class GStreamer(Application):
                     int(self.params["height"]),
                 )
                 * self.extract_framerate(self.params["framerate"])
-                * test_time
+                * window
             )
         if session_type == "st30p":
             return (
                 audio_sampling_hz(self.params["audio_sampling"])
                 * audio_channel_count(self.params["audio_channels"])
                 * _AUDIO_SAMPLE_BYTES[self.params["audio_format"]]
-                * test_time
+                * window
             )
         return None
 
