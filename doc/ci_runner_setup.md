@@ -80,7 +80,9 @@ secrets. Point `MTL_CI_RUNNER_ENV` elsewhere to test the mechanism locally.
 
 The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
-`USER`.
+`USER`. That covers the shadow half only, so the perf rig states the other half
+as `SUT_IP` in `runner.env`. `config-perf` needs both and reports which file to
+edit when one is missing, rather than falling back to an address of its own.
 
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.

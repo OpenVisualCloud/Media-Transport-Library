@@ -407,12 +407,17 @@ config-single)
 	(cd "$acceptance_dir/configs" && "${venv_python}" gen_config.py "${args[@]}")
 	;;
 config-perf)
+	# Both halves of the perf pair are lab facts, so both come from the runner:
+	# SHADOW_IP from /etc/mtl-ci/shadow-host through validate-host, SUT_IP from
+	# runner.env. gen_config.py takes the client first and the SUT last, so the
+	# order here is what decides which host gets role: sut.
 	load_runner_env
 	(cd "$acceptance_dir/configs" && "${venv_python}" gen_config.py \
 		--session_id "${SESSION_ID:?SESSION_ID is required}" \
 		--mtl_path "$root_dir" "$root_dir" \
 		--pci_device "${PCI_DEVICE:?PCI_DEVICE is required}" "$PCI_DEVICE" \
-		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
+		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" \
+		"${SUT_IP:?SUT_IP is required; set it in ${runner_env}}" \
 		--username "${SHADOW_USER:?SHADOW_USER is required}" \
 		--key_path "$(acceptance_key)" \
 		--test_time "${TEST_TIME:-120}" --no_capture)
