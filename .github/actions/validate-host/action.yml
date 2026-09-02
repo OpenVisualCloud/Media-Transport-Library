@@ -138,6 +138,13 @@ runs:
       shell: bash
       run: task ci:configure-host -- environment
 
+    # Must precede any capture: the acceptance suite disciplines the capture
+    # NIC's PHC onto TAI using this offset, and a kernel that reports 0 parks it
+    # on UTC instead. See doc/ci_runner_setup.md.
+    - name: Set the kernel TAI-UTC offset
+      shell: bash
+      run: task ci:configure-host -- clock-tai
+
     - name: Read shadow host credentials
       id: shadow-creds
       if: inputs.shadow_host != ''

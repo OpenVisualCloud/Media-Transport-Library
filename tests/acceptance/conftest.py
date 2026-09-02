@@ -428,6 +428,30 @@ def _host_tai_utc_offset(host) -> int:
         return 0
 
 
+def _phc2sys_failure_detail(host, log_path: str) -> str:
+    """Return phc2sys's own reason for failing, for use in a log message.
+
+    phc2sys runs with its output redirected to *log_path*, and its diagnostics
+    are the only thing that separates the ways it can refuse to start: an
+    interface with no PHC prints ``interface <if> does not have a PHC``, one
+    with no kernel netdev prints ``unknown clock <if>: No such device``, and a
+    collision with a second daemon prints something else again. All three end
+    the same way -- an undisciplined capture clock -- so the message has to say
+    which one happened. Guessing instead of reading the file phc2sys just wrote
+    is why every CI leg reported one hard-coded cause for all of them.
+    """
+    try:
+        out = host.connection.execute_command(
+            f"tail -n 3 '{log_path}'", expected_return_codes=None
+        ).stdout
+    except Exception as e:  # a diagnostic, never the thing under test
+        return f"could not read {log_path}: {e}"
+    detail = " / ".join(
+        line.strip() for line in (out or "").splitlines() if line.strip()
+    )
+    return detail or f"{log_path} is empty"
+
+
 def _start_capture_phc_sync(host, iface: str):
     """Discipline the capture NIC's PHC to TAI for the capture.
 
@@ -480,8 +504,12 @@ def _start_capture_phc_sync(host, iface: str):
     time.sleep(0.2)  # fail fast (e.g. iface has no PHC)
     if not proc.running:
         logger.warning(
-            "phc2sys exited immediately (iface=%s has no PHC?). log=%s",
+            "phc2sys exited immediately on %s, leaving the capture PHC "
+            "free-running -- ST 2110-21 VRX will then measure the PHC's offset "
+            "from the media clock rather than the sender's pacing. phc2sys "
+            "said: %s (full log %s)",
             iface,
+            _phc2sys_failure_detail(host, log_path),
             log_path,
         )
         _reap_ptp_daemons(host, patterns=("phc2sys",))
@@ -492,10 +520,13 @@ def _start_capture_phc_sync(host, iface: str):
     # on-wire pacing.
     if not _wait_phc_sync_converged(host, log_path):
         logger.warning(
-            "phc2sys did not converge within %ss on %s; capture timestamps may "
-            "carry a clock offset. log=%s",
+            "phc2sys did not converge within %ss on %s, so capture timestamps "
+            "carry a clock offset and ST 2110-21 VRX will measure that offset "
+            "rather than the sender's pacing. Last phc2sys output: %s "
+            "(full log %s)",
             _PHC_SYNC_TIMEOUT_SEC,
             iface,
+            _phc2sys_failure_detail(host, log_path),
             log_path,
         )
     return proc
