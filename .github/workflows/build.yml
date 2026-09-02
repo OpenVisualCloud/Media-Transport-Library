@@ -60,9 +60,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
+# actions: read is for wait-for-linter, which scopes the checks it waits for to
+# linter.yml's own runs on this sha. A workflow_call caller has to grant it too if
+# it ever passes skip_linter_check: false -- all three current callers pass true,
+# so that requirement is dormant.
 permissions:
   contents: read
   checks: read
+  actions: read
 
 jobs:
   # ── Gate: wait for every Linter check on this commit ──
@@ -91,6 +96,7 @@ jobs:
             checkpatch (macos-latest)
             checkpatch (windows-latest)
             Lint checks not yet in checkpatch
+          workflow: linter.yml
           timeout: '900'
 
   # ── Compute source checksums ──

@@ -18,9 +18,14 @@ jobs:
   # developers and the git hooks use. This workflow must stay orchestration-only:
   # if you find yourself adding a rule or a config path here, it belongs in
   # .pre-commit-config.yaml instead. See doc/coding_standard.md.
+  #
+  # That rule is about style and lint rules. `gate-tests` below is not one -- it is
+  # a unit test suite, and .pre-commit-config.yaml records why it cannot be a hook
+  # -- so it is not a violation of this invariant and must not be deleted as one.
   checkpatch:
-    # Lint Code Base below aggregates every platform into the stable check-run
-    # name consumed by build.yml.
+    # build.yml's gate waits for these three matrix check runs by name, one per
+    # platform, not for the Lint Code Base roll-up below -- that one exists for
+    # branch protection. See doc/coding_standard.md section 4.1.
     name: checkpatch (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
@@ -129,9 +134,57 @@ jobs:
           VALIDATE_RUST_2021: true
           VALIDATE_RUST_CLIPPY: true
 
+  # Tests over the scripting the bare-metal workflows depend on but that no test
+  # tier covers: .github/actions/wait-for-workflow, which decides whether those
+  # workflows run at all (doc/coding_standard.md section 4.1 records what a wrong
+  # match cost), and script/nicctl.sh, whose PF parsing decides whether the
+  # acceptance suite gets VFs. Neither is a lint rule, so neither is a
+  # .pre-commit-config.yaml hook; see the note where that config declines the first.
+  # A job rather than a step in checkpatch above, because those three check-run names
+  # are a contract with build.yml's gate and not the place to add an unrelated
+  # failure mode.
+  gate-tests:
+    name: CI scripting tests
+    runs-on: ubuntu-latest
+    # The tests drive a polling loop whose only exits are its own timeouts, and
+    # node:test imposes no per-test limit. Without a bound here, a regression in a
+    # termination condition holds a runner for GitHub's 360-minute default and
+    # blocks the Lint Code Base roll-up below for all of it, instead of going red
+    # in a minute. Same reasoning as gtest-bare-metal.yml's bound.
+    timeout-minutes: 5
+    permissions:
+      contents: read # for actions/checkout to fetch code
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # The same version .pre-commit-config.yaml pins for its node hooks, so
+          # there is one node version in this repository rather than two.
+          node-version: '22.14.0'
+
+      # The explicit file, not the directory: the test runner's own discovery
+      # skips dot-directories, so nothing under .github is ever found by a
+      # directory argument and it tries to execute the directory instead.
+      - name: Run wait-for-workflow gate tests
+        run: node --test .github/actions/wait-for-workflow/wait.test.js
+
+      # Stubs dpdk-devbind.py, so it needs neither a NIC nor root and runs here
+      # rather than on the bare-metal runners it protects.
+      - name: Run nicctl tests
+        run: bash script/nicctl_test.sh
+
   lint-result:
     name: Lint Code Base
-    needs: [checkpatch, residual-linters]
+    needs: [checkpatch, residual-linters, gate-tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
@@ -143,13 +196,14 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Require successful file linters
+      - name: Require successful checks
         env:
           CHECKPATCH_RESULT: ${{ needs.checkpatch.result }}
           RESIDUAL_RESULT: ${{ needs.residual-linters.result }}
+          GATE_TESTS_RESULT: ${{ needs.gate-tests.result }}
         run: |
-          if [[ "$CHECKPATCH_RESULT" != success || "$RESIDUAL_RESULT" != success ]]; then
-            echo "checkpatch=$CHECKPATCH_RESULT residual-linters=$RESIDUAL_RESULT"
+          if [[ "$CHECKPATCH_RESULT" != success || "$RESIDUAL_RESULT" != success || "$GATE_TESTS_RESULT" != success ]]; then
+            echo "checkpatch=$CHECKPATCH_RESULT residual-linters=$RESIDUAL_RESULT gate-tests=$GATE_TESTS_RESULT"
             exit 1
           fi
 

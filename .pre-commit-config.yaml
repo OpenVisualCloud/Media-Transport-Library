@@ -251,6 +251,18 @@ repos:
         additional_dependencies:
           - htmlhint@1.9.2
 
+      # The unit tests over .github/actions/wait-for-workflow are deliberately
+      # NOT a hook here, though they guard something real. They use built-in
+      # `node:test`, and a `language: node` hook with no additional_dependencies
+      # aborts with "must have package.json or additional_dependencies", so the
+      # only spelling available is `language: system` -- whatever node the host
+      # happens to have, or none, which is the exact unpinned-node failure the
+      # default_language_version note at the top of this file exists to record.
+      # It would also make `./checkpatch.sh` die on a host with no node, against
+      # doc/coding_standard.md section 6.1's promise that pre-commit provisions
+      # every toolchain itself. They run in linter.yml's `gate-tests` job on a
+      # pinned Node instead.
+
       # Commit-message style. Alone among these hooks it runs at the commit-msg
       # stage, not over files, so `./checkpatch.sh` never triggers it -- that
       # script lints files and has no message to read. The git commit-msg hook
