@@ -80,6 +80,7 @@ unit_sources = [
   'session/st20/stats_test.cpp',
   'session/st20/err_packets_test.cpp',
   'session/st20/timestamp_source_test.cpp',
+  'session/st20/st22_box_parse_test.cpp',
   'session/st20_tx_harness.c',
   'session/st20_tx/epoch_test.cpp',
   'session/st20_tx/pacing_test.cpp',

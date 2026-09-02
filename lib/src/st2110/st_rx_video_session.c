@@ -1972,21 +1972,38 @@ struct st22_box {
 
 /* Video Support Box and Color Specification Box */
 static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
+                               uint16_t payload_length,
                                struct st_rx_video_slot_impl* slot) {
   uint32_t jpvs_len = 0;
   uint32_t colr_len = 0;
+  uint32_t left = payload_length; /* payload not consumed by a box yet */
   struct st22_box* box;
 
-  box = boxes;
-  if (0 == strncmp(box->tbox, "jpvs", 4)) {
-    jpvs_len = ntohl(box->lbox);
-    boxes += jpvs_len;
+  /* lbox is network-supplied: bound every box by what is left of this pkt,
+   * else advancing lands outside the mbuf */
+  if (left >= sizeof(*box)) {
+    box = boxes;
+    if (0 == strncmp(box->tbox, "jpvs", 4)) {
+      jpvs_len = ntohl(box->lbox);
+      if ((jpvs_len < sizeof(*box)) || (jpvs_len > left)) {
+        dbg("%s(%d): err jpvs_len %u, left %u\n", __func__, s->idx, jpvs_len, left);
+        return -EIO;
+      }
+      boxes += jpvs_len;
+      left -= jpvs_len;
+    }
   }
 
-  box = boxes;
-  if (0 == strncmp(box->tbox, "colr", 4)) {
-    colr_len = ntohl(box->lbox);
-    boxes += colr_len;
+  if (left >= sizeof(*box)) {
+    box = boxes;
+    if (0 == strncmp(box->tbox, "colr", 4)) {
+      colr_len = ntohl(box->lbox);
+      if ((colr_len < sizeof(*box)) || (colr_len > left)) {
+        dbg("%s(%d): err colr_len %u, left %u\n", __func__, s->idx, colr_len, left);
+        return -EIO;
+      }
+      boxes += colr_len;
+    }
   }
 
   if ((jpvs_len + colr_len) > 512) {
@@ -2015,6 +2032,12 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
                               enum mtl_session_port s_port, bool ctrl_thread) {
   MTL_MAY_UNUSED(s_port);
   MTL_MAY_UNUSED(ctrl_thread);
+  /* a pkt shorter than the hdr would underflow payload_length below; the kernel
+   * socket path can deliver a datagram smaller than the rtp hdr */
+  if (mbuf->data_len < sizeof(struct st22_rfc9134_video_hdr)) {
+    s->port_user_stats.stat_pkts_wrong_len_dropped++;
+    return -EIO;
+  }
   struct st20_rx_ops* ops = &s->ops;
   // size_t hdr_offset = mbuf->l2_len + mbuf->l3_len + mbuf->l4_len;
   size_t hdr_offset =
@@ -2131,7 +2154,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       if (s->st22_ops_flags & ST22_RX_FLAG_DISABLE_BOXES) {
         slot->st22_box_hdr_length = 0;
       } else {
-        ret = rv_parse_st22_boxes(s, payload, slot);
+        ret = rv_parse_st22_boxes(s, payload, payload_length, slot);
         if (ret < 0) {
           s->port_user_stats.stat_pkts_idx_dropped++;
           return -EIO;
@@ -2154,6 +2177,12 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   /* copy payload */
   uint32_t offset;
   if (!pkt_counter) { /* first pkt */
+    /* box hdr length was measured against the pkt that declared it; a later
+     * pkt with pkt_counter 0 may be shorter and underflow payload_length */
+    if (payload_length < slot->st22_box_hdr_length) {
+      s->port_user_stats.stat_pkts_wrong_len_dropped++;
+      return -EIO;
+    }
     offset = 0;
     payload += slot->st22_box_hdr_length;
     payload_length -= slot->st22_box_hdr_length;

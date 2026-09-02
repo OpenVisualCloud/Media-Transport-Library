@@ -54,6 +54,9 @@ struct ut20_test_ctx {
   bool hold_frames;
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
+  struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
+  uint64_t st22_frames_ready;
+  size_t st22_last_frame_size;
 };
 
 #include "session/st20_harness.h"
@@ -68,21 +71,23 @@ static uint64_t ut20_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
 
 /* ── frame-ready callback ─────────────────────────────────────────────── */
 
+static void ut20_release_frame(ut20_test_ctx* ctx, void* frame) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  if (!s->st20_frames) return;
+  for (int i = 0; i < s->st20_frames_cnt; i++) {
+    if (s->st20_frames[i].addr == frame) {
+      rte_atomic32_dec(&s->st20_frames[i].refcnt);
+      return;
+    }
+  }
+}
+
 static int ut20_notify_frame_ready(void* priv, void* frame,
                                    struct st20_rx_frame_meta* meta) {
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
-  if (ctx->hold_frames) return 0;
-
-  struct st_rx_video_session_impl* s = &ctx->session;
-  for (int i = 0; i < s->st20_frames_cnt; i++) {
-    if (!s->st20_frames) break;
-    if (s->st20_frames[i].addr == frame) {
-      rte_atomic32_dec(&s->st20_frames[i].refcnt);
-      break;
-    }
-  }
+  if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
   return 0;
 }
 
@@ -391,6 +396,117 @@ int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts
   return rc;
 }
 
+/* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
+
+static int ut20_st22_notify_frame_ready(void* priv, void* frame,
+                                        struct st22_rx_frame_meta* meta) {
+  ut20_test_ctx* ctx = priv;
+  if (!ctx || !frame) return 0;
+  ctx->st22_frames_ready++;
+  ctx->st22_last_frame_size = meta->frame_total_size;
+  if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
+  return 0;
+}
+
+void ut20_ctx_enable_st22(ut20_test_ctx* ctx) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  s->st22_info = &ctx->st22_info;
+  ctx->st22_info.notify_frame_ready = ut20_st22_notify_frame_ready;
+  s->st22_ops_flags = 0;
+  s->pkt_handler = rv_handle_st22_pkt;
+}
+
+/* Build one RFC 9134 codestream packet. `payload`/`payload_length` are the
+ * bytes right after the rtp hdr (boxes first, if any). A non-zero
+ * `data_len_override` is written into mbuf->data_len verbatim, so a test can
+ * declare a datagram shorter than the bytes it wrote (or shorter than the hdr,
+ * as the kernel socket path can deliver). */
+static struct rte_mbuf* make_st22_mbuf(uint32_t seq, uint32_t ts, uint32_t pkt_counter,
+                                       bool marker, const void* payload,
+                                       uint16_t payload_length,
+                                       uint16_t data_len_override) {
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  if (!m) return NULL;
+
+  size_t total = sizeof(struct st22_rfc9134_video_hdr) + payload_length;
+  /* the buffer has to hold whatever data_len ends up claiming */
+  size_t needed = (data_len_override > total) ? data_len_override : total;
+  if (rte_pktmbuf_tailroom(m) < needed) {
+    rte_pktmbuf_free(m);
+    return NULL;
+  }
+
+  uint8_t* buf = rte_pktmbuf_mtod(m, uint8_t*);
+  memset(buf, 0, total);
+
+  size_t hdr_offset =
+      sizeof(struct st22_rfc9134_video_hdr) - sizeof(struct st22_rfc9134_rtp_hdr);
+  struct st22_rfc9134_rtp_hdr* rtp = (struct st22_rfc9134_rtp_hdr*)(buf + hdr_offset);
+
+  rtp->base.version = 2;
+  rtp->base.marker = marker ? 1 : 0;
+  rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
+  rtp->base.tmstamp = htonl(ts);
+  /* P counter (11 bit) counts pkts in a sep unit, Sep counter (11 bit) the
+   * sep units; the handler recombines them as p + sep * 2048 */
+  uint32_t p_counter = pkt_counter % 2048;
+  uint32_t sep_counter = pkt_counter / 2048;
+  rtp->p_counter_lo = p_counter & 0xFF;
+  rtp->p_counter_hi = (p_counter >> 8) & 0x7;
+  rtp->sep_counter_lo = sep_counter & 0x1F;
+  rtp->sep_counter_hi = (sep_counter >> 5) & 0x3F;
+
+  if (payload && payload_length)
+    memcpy(buf + sizeof(struct st22_rfc9134_video_hdr), payload, payload_length);
+
+  m->data_len = data_len_override ? data_len_override : (uint16_t)total;
+  m->pkt_len = m->data_len;
+  m->next = NULL;
+  return m;
+}
+
+int ut20_feed_st22_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                       uint32_t pkt_counter, bool marker, const void* payload,
+                       uint16_t payload_length, enum mtl_session_port port) {
+  struct rte_mbuf* m =
+      make_st22_mbuf(seq, ts, pkt_counter, marker, payload, payload_length, 0);
+  if (!m) return -1;
+  int rc = rv_handle_st22_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+int ut20_feed_st22_pkt_data_len(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                                const void* payload, uint16_t payload_length,
+                                uint16_t data_len, enum mtl_session_port port) {
+  struct rte_mbuf* m =
+      make_st22_mbuf(seq, ts, 0, false, payload, payload_length, data_len);
+  if (!m) return -1;
+  int rc = rv_handle_st22_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+uint16_t ut20_st22_hdr_len(void) {
+  return (uint16_t)sizeof(struct st22_rfc9134_video_hdr);
+}
+
+uint16_t ut20_st22_build_boxes(void* buf, uint32_t jpvs_lbox, uint32_t colr_lbox) {
+  struct st22_jpvs jpvs;
+  struct st22_colr colr;
+
+  memset(&jpvs, 0, sizeof(jpvs));
+  jpvs.lbox = htonl(jpvs_lbox);
+  memcpy(jpvs.tbox, "jpvs", 4);
+  memset(&colr, 0, sizeof(colr));
+  colr.lbox = htonl(colr_lbox);
+  memcpy(colr.tbox, "colr", 4);
+
+  memcpy(buf, &jpvs, sizeof(jpvs));
+  memcpy((uint8_t*)buf + sizeof(jpvs), &colr, sizeof(colr));
+  return (uint16_t)(sizeof(jpvs) + sizeof(colr));
+}
+
 int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
                      uint16_t line_offset, uint16_t line_length,
                      enum mtl_session_port port, uint8_t pt) {
@@ -570,6 +686,22 @@ uint64_t ut20_stat_offset_dropped(const ut20_test_ctx* ctx) {
 
 uint64_t ut20_stat_wrong_len(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_wrong_len_dropped;
+}
+
+uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_idx_dropped;
+}
+
+uint64_t ut20_stat_st22_boxes(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_st22_boxes;
+}
+
+uint64_t ut20_st22_frames_ready(const ut20_test_ctx* ctx) {
+  return ctx->st22_frames_ready;
+}
+
+size_t ut20_st22_last_frame_size(const ut20_test_ctx* ctx) {
+  return ctx->st22_last_frame_size;
 }
 
 uint64_t ut20_stat_port_err_packets(const ut20_test_ctx* ctx,
