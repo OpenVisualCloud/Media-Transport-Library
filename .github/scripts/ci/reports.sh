@@ -8,6 +8,15 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 
 flatten_reports() {
 	local directory=$1 pattern=$2 source_name=$3 extension=$4
+	if [[ ! -d ${root_dir}/${directory} ]]; then
+		# The download that fills this directory is allowed to find nothing: a
+		# source run that failed before uploading has no report artifacts, and
+		# the baseline downloads are continue-on-error. Nothing to flatten is
+		# not an error here -- combine-all is what decides whether enough data
+		# arrived.
+		echo "::warning::No ${directory} directory; no ${extension} reports to flatten"
+		return 0
+	fi
 	cd "${root_dir}/${directory}"
 	for report_dir in ./${pattern}; do
 		if [[ -d $report_dir && -f $report_dir/$source_name ]]; then
@@ -41,8 +50,11 @@ performance)
 		echo "::warning::No performance logs found; skipping report generation"
 	fi
 	;;
-flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
-flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' gtest.log log ;;
+# No default for REPORT_DIR: the download-artifact `path:` differs per caller
+# (python-reports, pytest-reports, baseline-pytest-reports, ...), so any default
+# would silently be wrong for every caller but one. Each caller names its own.
+flatten-pytest) flatten_reports "${REPORT_DIR:?REPORT_DIR is required}" 'nightly-test-report-*' report.html html ;;
+flatten-gtest) flatten_reports "${REPORT_DIR:?REPORT_DIR is required}" 'nightly-gtest-report-*' gtest.log log ;;
 list-system-info)
 	if [[ -d ${root_dir}/system-info-reports ]]; then
 		echo "System info reports found:"

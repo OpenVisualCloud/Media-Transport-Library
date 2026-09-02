@@ -130,6 +130,8 @@ jobs:
           path: python-reports  # Downloads all artifacts into this directory
           merge-multiple: false  # Each artifact in separate subdirectory
       - name: Flatten report directory structure
+        env:
+          REPORT_DIR: python-reports
         run: task ci:report -- flatten-pytest
       - name: Install report dependencies
         run: task ci:report -- install-dependencies

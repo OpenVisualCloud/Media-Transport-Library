@@ -159,14 +159,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate input directories
-    if not Path(args.pytest_dir).exists():
-        print(f"Error: Pytest directory not found: {args.pytest_dir}")
-        sys.exit(1)
-
-    if not Path(args.gtest_dir).exists():
-        print(f"Error: GTest directory not found: {args.gtest_dir}")
-        sys.exit(1)
+    # A suite whose run failed before uploading leaves no directory at all, which
+    # means "no data from that suite", not a broken invocation. Report it and keep
+    # going, the way the baseline directories below already do -- the real gate is
+    # the both-sides-empty check further down.
+    for label, directory in (("Pytest", args.pytest_dir), ("GTest", args.gtest_dir)):
+        if not Path(directory).exists():
+            print(f"Warning: {label} directory not found: {directory}")
 
     # Collect all test data
     print("Collecting pytest reports...")
