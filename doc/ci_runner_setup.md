@@ -214,6 +214,35 @@ baked path resolve to the drivers that were actually restored, and
 so it also serves the acceptance tests, which reach the host over SSH and inherit
 none of the job's environment.
 
+## The plugin registry has to be a file, for the same reason
+
+MTL loads its ST 2110-22 codec plugins from a JSON registry, and finds it in one of
+two ways (`lib/src/mt_config.c`): `KAHAWAI_CFG_PATH` if set, otherwise the
+cwd-relative literal `kahawai.json`. `task ci:configure-host -- registry` renders
+the registry correctly — `.github/workflows/kahawai_template.json` with the
+JPEG-XS plugin of *this* run's cache substituted in — but exporting
+`KAHAWAI_CFG_PATH` through `GITHUB_ENV` only reaches the steps of the job. The
+apps do not run in a step. They run over SSH and then under sudo, inheriting
+nothing, so they took the fallback: `kahawai.json` relative to the cwd of an SSH
+session, which is the login user's home directory.
+
+That made JPEG-XS depend on a file nobody tracks. Where a human had put one there,
+st22p passed; where none existed, or where the one that did was still the tracked
+repository `kahawai.json` with its `st22_svt_jpegxs` entries at `"enabled": 0`, the
+plugin never registered and every JPEG-XS case failed the same way:
+
+```text
+Warn: st_plugin_register, dlopen /usr/local/lib64/libst_plugin_st22_sample.so fail
+Error: st22_get_encoder, fail to get, input fmt: YUV422PLANAR10LE, output fmt: JPEGXS_CODESTREAM
+Error: st22p_tx_create(0), get encoder fail -22
+```
+
+RxTxApp then exits 251 and the FFmpeg leg writes an empty file. The stage now
+installs the rendered registry in the login user's home under both names the
+library will look for, `kahawai.json` and `.kahawai.json`, and keeps the export for
+the in-step consumers. A host needs no hand-made registry, and one that has an old
+one is corrected on every run.
+
 ## The EBU LIST compliance analyser
 
 The acceptance framework does not judge ST 2110 compliance itself. The

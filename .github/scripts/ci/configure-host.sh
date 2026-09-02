@@ -79,6 +79,24 @@ registry)
 		-e "s|/usr/local/lib64/libst_plugin_st22_svt_jpeg_xs.so|${jpegxs}|" \
 		-e "s|REPLACE_BY_CICD_PLUGIN_DIR|${avcodec_dir}|" "$config"
 	echo "KAHAWAI_CFG_PATH=${config}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
+
+	# That export reaches the steps of this job and nothing else. The acceptance
+	# suite starts every app over SSH to localhost and then under sudo, so it
+	# inherits none of the job's environment -- the same reason dpdk-plugins above
+	# is a symlink and not a variable. With KAHAWAI_CFG_PATH unset in that shell
+	# mt_config_init falls back to the cwd-relative "kahawai.json", and the cwd of
+	# an SSH session is the login user's home, so the registry has to be a file
+	# there or st22p gets whatever a human last left in that directory. Both
+	# spellings, because both are read: the plain name is what the fallback opens,
+	# the dotted one is what the hosts that already pass point KAHAWAI_CFG_PATH at.
+	# Write one and not the other and the fleet stays split, which is what it was:
+	# on the hosts with neither, every JPEG-XS case died in st22_get_encoder with
+	# "fail to get, input fmt: YUV422PLANAR10LE" because the registry it did find
+	# still carried the disabled st22_svt_jpegxs entries of the tracked kahawai.json.
+	for installed in "${HOME:?HOME is required}/kahawai.json" "${HOME}/.kahawai.json"; do
+		cp "$config" "$installed"
+	done
+	echo "plugin registry: ${config}, installed in ${HOME} for the apps started over SSH"
 	;;
 environment)
 	jpeg_pc=$(find "${local_install}/jpegxs" -name SvtJpegxs.pc -print -quit)
