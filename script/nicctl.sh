@@ -38,13 +38,51 @@ iommu_check() {
 	fi
 }
 
+# The `<key>=` field dpdk-devbind.py prints for a device, or empty. Field-wise,
+# because the `sed -e s/.*<key>=//g | awk '{print $1;}'` this replaces yields the *next*
+# field whenever the wanted one is empty: a PF bound to a kernel driver that has
+# registered no netdev prints `if=` with nothing after it, which read back as the
+# literal `drv=ice` and made every `-z "$inf"` test below take the netdev-present
+# branch on a PF that has no netdev.
+devbind_field() {
+	dpdk-devbind.py -s | awk -v dev="$1" -v key="$2=" '
+		$1 == dev {
+			for (i = 2; i <= NF; i++)
+				if (index($i, key) == 1) {
+					print substr($i, length(key) + 1)
+					exit
+				}
+		}'
+}
+
 bind_kernel() {
-	kernel_drv=$(dpdk-devbind.py -s | grep "$bdf" | sed -e s/.*unused=//g | awk '{print $1;}')
+	# `unused=` is every driver that is not currently bound, the DPDK ones included --
+	# for a PF already on ice it reads `vfio-pci` -- so binding what it names bound the
+	# PF to the DPDK driver, which is the opposite of this function's job.
+	kernel_drv=$(devbind_field "$bdf" unused | tr , '\n' |
+		grep -vx -e vfio-pci -e uio_pci_generic -e igb_uio | head -1)
 	if [ -n "$kernel_drv" ]; then
 		dpdk-devbind.py -b "$kernel_drv" "$bdf"
 	else
 		echo "No kernel drv found for $bdf"
 	fi
+}
+
+# sriov_numvfs and `ip link set <if> vf N` both need the PF's netdev, and the write to
+# sriov_numvfs does not return while the PF is rebuilding -- a CI run that hit this took
+# SIGTERM and stayed alive until its SSH connection dropped a minute later. So the
+# netdev is confirmed before anything is written, not after. ice unregisters and
+# re-registers it across a PF rebuild, so the window is transient: wait it out.
+wait_for_netdev() {
+	local waited
+	for ((waited = 0; waited < 15; waited++)); do
+		inf=$(devbind_field "$bdf" if)
+		if [ -n "$inf" ]; then
+			return 0
+		fi
+		sleep 1
+	done
+	return 1
 }
 
 disable_vf() {
@@ -58,7 +96,7 @@ create_vf() {
 	echo "$numvfs" >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
 	# wait VF driver
 	bifurcated_driver=0
-	kernel_drv=$(dpdk-devbind.py -s | grep "$bdf.*drv" | sed -e s/.*drv=//g | awk '{print $1;}')
+	kernel_drv=$(devbind_field "$bdf" drv)
 	# check if mellanox driver is loaded, NVIDIA/Mellanox PMD uses bifurcated driver
 	if [[ $kernel_drv == *"mlx"* ]]; then
 		bifurcated_driver=1
@@ -69,7 +107,7 @@ create_vf() {
 	for ((i = 0; i < numvfs; i++)); do
 		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
 		vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
-		vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+		vfif=$(devbind_field "$vfport" if)
 		if [ -n "$vfif" ]; then
 			ip link set "$vfif" down
 		fi
@@ -94,7 +132,7 @@ create_kvf() {
 	for ((i = 0; i < numvfs; i++)); do
 		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
 		vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
-		vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+		vfif=$(devbind_field "$vfport" if)
 		echo "Bind $vfport($vfif) to kernel success"
 	done
 }
@@ -178,11 +216,11 @@ if [ -z "$bdf_stat" ]; then
 fi
 echo "$bdf_stat"
 
-inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+inf=$(devbind_field "$bdf" if)
 if [ "$cmd" == "bind_kernel" ]; then
 	if [ -z "$inf" ]; then
 		bind_kernel
-		inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+		inf=$(devbind_field "$bdf" if)
 		echo "Bind bdf: $bdf to kernel $inf succ"
 	else
 		echo "bdf: $bdf to kernel $inf already"
@@ -205,7 +243,13 @@ fi
 # suppose bind kernel should be called for following commands
 if [ -z "$inf" ]; then
 	bind_kernel
-	inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+	inf=$(devbind_field "$bdf" if)
+	if [ -z "$inf" ] && ! wait_for_netdev; then
+		echo "$bdf is bound to '$(devbind_field "$bdf" drv)' but has no netdev." >&2
+		echo "$cmd needs one to set VF trust and bring the PF up, and writing sriov_numvfs" >&2
+		echo "without one does not return. Check dmesg for an ice PF reset that did not finish." >&2
+		exit 1
+	fi
 	echo "Bind bdf: $bdf to kernel $inf succ"
 fi
 

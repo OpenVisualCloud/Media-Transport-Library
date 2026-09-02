@@ -87,6 +87,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Run from `tests/acceptance/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
+| `RemoteProcessTimeoutExpired` from `common/nicctl.py::create_vfs`, last `nicctl.sh` output a `dpdk-devbind.py` line with empty `if=` | **NOT setup.** PF is on `ice` with no netdev, i.e. mid-reset: a `sriov_numvfs` write there never returns and survives SIGTERM. `nicctl.sh` now fails fast with `has no netdev`. Check `dmesg` for an unfinished reset, reload ice, confirm `ip link` shows the PF. |
 | `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `--ebu-ip=`/`--ebu-user=`/`--ebu-password=`/`--capture-pci-device=` (ask the user first) so `ebu_server`/`capture_cfg` get populated in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
