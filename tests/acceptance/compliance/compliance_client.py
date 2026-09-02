@@ -7,6 +7,29 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def no_verdict_reason(report):
+    """Return why *report* carries no compliance verdict, or None if it has one.
+
+    Neither shape may fall through to the ordinary verdict: an analyzed report
+    with no streams has ``not_compliant_streams == 0``, which would otherwise
+    read as "compliant" about a capture that held nothing to judge.
+    """
+    if not report:
+        return (
+            "EBU LIST report is unavailable or was never analyzed, so compliance "
+            "was not evaluated."
+        )
+    if not report.get("streams"):
+        return (
+            "EBU LIST analyzed the capture but found no ST 2110 streams in it, so "
+            "there was no compliance verdict to give. Most often the transmitter "
+            "was not running for the capture window, the sniffer port does not "
+            "see the stream, or the capture filter's destination IP does not "
+            "match it."
+        )
+    return None
+
+
 class PcapComplianceClient:
     def __init__(
         self,
@@ -118,23 +141,19 @@ class PcapComplianceClient:
     def check_compliance(self, report=None):
         """
         Check the compliance result from the downloaded report.
-        Returns True if compliant, False otherwise.
+        Returns ``(verdict, report)``, the verdict being True if compliant,
+        False if non-compliant, and None when the report carries no verdict at
+        all -- see :func:`no_verdict_reason`.
         """
         if report is None:
             report = self.download_report()
 
-        # download_report() may return False on failure/timeout
-        if not report:
-            logger.error("Compliance report is unavailable or not analyzed")
+        reason = no_verdict_reason(report)
+        if reason:
+            logger.error("%s", reason)
             return None, report
 
-        streams = report.get("streams") or []
-        if not streams:
-            logger.warning(
-                "Compliance report contains no streams; treating as non-compliant"
-            )
-            return False, report
-
+        streams = report["streams"]
         not_compliant_streams = report.get("not_compliant_streams", 1)
         unknown_media_streams = [
             (idx, stream)
