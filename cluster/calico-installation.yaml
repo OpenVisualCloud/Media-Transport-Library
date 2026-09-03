@@ -1,0 +1,34 @@
+# Calico network configuration for this lab.
+#
+# VXLAN with BGP disabled: no switch configuration is required, so the cluster
+# comes up identically on any customer network. The pod CIDR must match the
+# --pod-network-cidr passed to kubeadm init (see scripts/install-k8s-cluster.sh).
+#
+# The lab workload does not use the pod network for video: frames move between
+# the decoder and encoder Pods through MXL shared memory in /dev/shm. The CNI
+# only carries control traffic and metrics scrapes, which is why a plain VXLAN
+# overlay is good enough and never appears in the measurements.
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    bgp: Disabled
+    # Match kubelet's chosen node address on multi-NIC hosts. Calico's default
+    # first-found detection can otherwise build VXLAN tunnels from an unrelated
+    # management or provisioning interface.
+    nodeAddressAutodetectionV4:
+      kubernetes: NodeInternalIP
+    ipPools:
+    - name: default-ipv4-ippool
+      cidr: 10.244.0.0/16
+      encapsulation: VXLAN
+      natOutgoing: Enabled
+      nodeSelector: all()
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}

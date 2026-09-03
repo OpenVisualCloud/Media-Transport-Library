@@ -31,7 +31,6 @@ jobs:
       actions: read
 
   run-smoke-tests:
-    name: run-smoke-tests (${{ matrix.nic }})
     needs: pr-gate
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}

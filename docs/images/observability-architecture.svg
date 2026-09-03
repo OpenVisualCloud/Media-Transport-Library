@@ -1,0 +1,333 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1080">
+  <defs>
+    <style>
+      .monitoring  { fill: #e8f4f8; stroke: #0066cc; stroke-width: 2; }
+      .worker      { fill: #fff8e1; stroke: #ff9800; stroke-width: 2; }
+      .service     { fill: #e8f5e9; stroke: #4caf50; stroke-width: 2; }
+      .exporter    { fill: #f3e5f5; stroke: #9c27b0; stroke-width: 2; }
+      .cadvisor    { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; }
+      .rdt         { fill: #fce4ec; stroke: #c62828; stroke-width: 2; }
+      .probe       { fill: #f1f8e9; stroke: #558b2f; stroke-width: 2; }
+      .pod         { fill: #ffe0b2; stroke: #ff9800; stroke-width: 1.5; }
+      .scrape-zone { fill: #f9f9f9; stroke: #888; stroke-width: 1; }
+      .text-title  { font-size: 14px; font-weight: bold; font-family: Arial, sans-serif; }
+      .text-label  { font-size: 11px; font-family: Arial, sans-serif; }
+      .text-small  { font-size: 9px;  font-family: Arial, sans-serif; }
+    </style>
+    <!-- Standard scrape arrow (Prometheus pulling from a source) -->
+    <marker id="ah-grey"  markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#555"/></marker>
+    <marker id="ah-pcm"   markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#9c27b0"/></marker>
+    <marker id="ah-cad"   markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#1565c0"/></marker>
+    <marker id="ah-ne"    markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4caf50"/></marker>
+    <marker id="ah-fps"   markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#ff6600"/></marker>
+    <marker id="ah-rdt"   markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#c62828"/></marker>
+    <marker id="ah-probe" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#558b2f"/></marker>
+  </defs>
+
+  <!-- ─── Title ─────────────────────────────────────────────────── -->
+  <text x="600" y="22" class="text-title" text-anchor="middle" font-size="17">Observability Stack Architecture</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MONITORING NAMESPACE
+       ═══════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="30" width="1160" height="310" class="monitoring" rx="6"/>
+  <text x="40" y="50" class="text-title">MONITORING NAMESPACE (Kubernetes Cluster)</text>
+
+  <!-- Prometheus -->
+  <rect x="40" y="62" width="270" height="130" class="service" rx="5"/>
+  <text x="175" y="81"  class="text-label" text-anchor="middle" font-weight="bold">Prometheus Server</text>
+  <text x="175" y="99"  class="text-small" text-anchor="middle">Port: 9090 (LAB: 19090)</text>
+  <text x="175" y="113" class="text-small" text-anchor="middle">Jobs scraped:</text>
+  <text x="175" y="127" class="text-small" text-anchor="middle">pcm-sensor-server (5 s)</text>
+  <text x="175" y="141" class="text-small" text-anchor="middle">node-exporter  •  kubelet/cAdvisor</text>
+  <text x="175" y="155" class="text-small" text-anchor="middle">kube-state-metrics  •  FPS sidecars</text>
+  <text x="175" y="169" class="text-small" text-anchor="middle">platform-probe (on demand)</text>
+  <text x="175" y="183" class="text-small" text-anchor="middle">Retention: 7 days</text>
+
+  <!-- Grafana -->
+  <rect x="340" y="62" width="240" height="130" class="service" rx="5"/>
+  <text x="460" y="81"  class="text-label" text-anchor="middle" font-weight="bold">Grafana</text>
+  <text x="460" y="99"  class="text-small" text-anchor="middle">Port 3000 → 13000</text>
+  <text x="460" y="113" class="text-small" text-anchor="middle">Dashboards:</text>
+  <text x="460" y="127" class="text-small" text-anchor="middle">UPI traffic, DRAM BW</text>
+  <text x="460" y="141" class="text-small" text-anchor="middle">L3 hit ratio, per-CPU</text>
+  <text x="460" y="155" class="text-small" text-anchor="middle">FPS per stream</text>
+  <text x="460" y="169" class="text-small" text-anchor="middle">LLC / MBM (RDT)</text>
+
+  <!-- Prometheus Operator -->
+  <rect x="610" y="62" width="230" height="130" class="service" rx="5"/>
+  <text x="725" y="81"  class="text-label" text-anchor="middle" font-weight="bold">Prometheus Operator</text>
+  <text x="725" y="99"  class="text-small" text-anchor="middle">Watches CRDs:</text>
+  <text x="725" y="113" class="text-small" text-anchor="middle">• ServiceMonitor (PCM, node-exp,</text>
+  <text x="725" y="127" class="text-small" text-anchor="middle">  cAdvisor, platform-probe)</text>
+  <text x="725" y="141" class="text-small" text-anchor="middle">• PodMonitor (FPS sidecars)</text>
+  <text x="725" y="155" class="text-small" text-anchor="middle">Updates Prometheus</text>
+  <text x="725" y="169" class="text-small" text-anchor="middle">scrape config automatically</text>
+
+  <!-- kube-prometheus-stack -->
+  <rect x="870" y="62" width="290" height="130" class="service" rx="5"/>
+  <text x="1015" y="81"  class="text-label" text-anchor="middle" font-weight="bold">kube-prometheus-stack (Helm)</text>
+  <text x="1015" y="99"  class="text-small" text-anchor="middle">Deploys bundled:</text>
+  <text x="1015" y="113" class="text-small" text-anchor="middle">• Prometheus + Operator</text>
+  <text x="1015" y="127" class="text-small" text-anchor="middle">• Grafana</text>
+  <text x="1015" y="141" class="text-small" text-anchor="middle">• node-exporter DaemonSet</text>
+  <text x="1015" y="155" class="text-small" text-anchor="middle">• kube-state-metrics</text>
+  <text x="1015" y="169" class="text-small" text-anchor="middle">• AlertManager</text>
+
+  <!-- Scrape Config Layer -->
+  <rect x="40" y="210" width="1130" height="115" class="scrape-zone" rx="4" stroke-dasharray="6,3"/>
+  <text x="60" y="228" class="text-label" font-weight="bold" fill="#444">Kubernetes Scrape Configuration (per worker)</text>
+
+  <!-- Service+EndpointSlice box -->
+  <rect x="55"  y="236" width="170" height="80" class="service" rx="3"/>
+  <text x="140" y="252" class="text-label" text-anchor="middle" font-weight="bold">Service (headless)</text>
+  <text x="140" y="267" class="text-small" text-anchor="middle">+ EndpointSlice</text>
+  <text x="140" y="281" class="text-small" text-anchor="middle">pcm-sensor-server</text>
+  <text x="140" y="295" class="text-small" text-anchor="middle">&lt;node_ip&gt;:9738</text>
+  <text x="140" y="309" class="text-small" text-anchor="middle">(one per worker)</text>
+
+  <!-- ServiceMonitor PCM -->
+  <rect x="240" y="236" width="165" height="80" class="service" rx="3"/>
+  <text x="322" y="252" class="text-label" text-anchor="middle" font-weight="bold">ServiceMonitor</text>
+  <text x="322" y="267" class="text-small" text-anchor="middle">pcm-sensor-server</text>
+  <text x="322" y="281" class="text-small" text-anchor="middle">interval: 5 s</text>
+  <text x="322" y="295" class="text-small" text-anchor="middle">honorLabels: true</text>
+
+  <!-- ServiceMonitor cAdvisor/kubelet -->
+  <rect x="420" y="236" width="165" height="80" class="cadvisor" rx="3"/>
+  <text x="502" y="252" class="text-label" text-anchor="middle" font-weight="bold">ServiceMonitor</text>
+  <text x="502" y="267" class="text-small" text-anchor="middle">kubelet / cAdvisor</text>
+  <text x="502" y="281" class="text-small" text-anchor="middle">port: 10250</text>
+  <text x="502" y="295" class="text-small" text-anchor="middle">interval: 15 s</text>
+
+  <!-- ServiceMonitor node-exporter -->
+  <rect x="600" y="236" width="165" height="80" class="service" rx="3"/>
+  <text x="682" y="252" class="text-label" text-anchor="middle" font-weight="bold">ServiceMonitor</text>
+  <text x="682" y="267" class="text-small" text-anchor="middle">node-exporter</text>
+  <text x="682" y="281" class="text-small" text-anchor="middle">port: 9100</text>
+  <text x="682" y="295" class="text-small" text-anchor="middle">interval: 15 s</text>
+
+  <!-- PodMonitor FPS -->
+  <rect x="780" y="236" width="165" height="80" class="service" rx="3"/>
+  <text x="862" y="252" class="text-label" text-anchor="middle" font-weight="bold">PodMonitor</text>
+  <text x="862" y="267" class="text-small" text-anchor="middle">mxl-ffmpeg-fps</text>
+  <text x="862" y="281" class="text-small" text-anchor="middle">port: 8000, per run</text>
+  <text x="862" y="295" class="text-small" text-anchor="middle">interval: 5 s</text>
+
+  <!-- ServiceMonitor platform-probe -->
+  <rect x="960" y="236" width="195" height="80" class="probe" rx="3"/>
+  <text x="1057" y="252" class="text-label" text-anchor="middle" font-weight="bold">ServiceMonitor</text>
+  <text x="1057" y="267" class="text-small" text-anchor="middle">mxl-platform-probe</text>
+  <text x="1057" y="281" class="text-small" text-anchor="middle">DIMM speed, topology</text>
+  <text x="1057" y="295" class="text-small" text-anchor="middle">on-demand / pre-run</text>
+
+  <!-- Prometheus ↔ Grafana -->
+  <line x1="460" y1="62" x2="310" y2="62" stroke="#555" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#ah-grey)"/>
+  <text x="385" y="57" class="text-small" text-anchor="middle" fill="#555">HTTP API</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       WORKER NODE 1
+       ═══════════════════════════════════════════════════════════════ -->
+  <rect x="20"  y="360" width="575" height="700" class="worker" rx="6"/>
+  <text x="40"  y="380" class="text-title">WORKER NODE 1</text>
+
+  <!-- ── Host-level exporters ── -->
+  <!-- PCM (systemd) -->
+  <rect x="40"  y="390" width="165" height="120" class="exporter" rx="4"/>
+  <text x="122" y="408" class="text-label" text-anchor="middle" font-weight="bold">PCM Exporter</text>
+  <text x="122" y="424" class="text-small" text-anchor="middle">systemd service</text>
+  <text x="122" y="438" class="text-small" text-anchor="middle">Port: 9738</text>
+  <text x="122" y="452" class="text-small" text-anchor="middle">UPI traffic, DRAM BW</text>
+  <text x="122" y="466" class="text-small" text-anchor="middle">L3 hit/miss, /dev/cpu/*/msr</text>
+  <text x="122" y="480" class="text-small" text-anchor="middle">CPUAffinity: 0-3 (both sockets)</text>
+  <text x="122" y="499" class="text-small" text-anchor="middle" fill="#9c27b0">→ scrape :9738/metrics</text>
+
+  <!-- node-exporter (DaemonSet Pod) -->
+  <rect x="220" y="390" width="165" height="120" class="exporter" rx="4"/>
+  <text x="302" y="408" class="text-label" text-anchor="middle" font-weight="bold">node-exporter</text>
+  <text x="302" y="424" class="text-small" text-anchor="middle">DaemonSet Pod</text>
+  <text x="302" y="438" class="text-small" text-anchor="middle">Port: 9100</text>
+  <text x="302" y="452" class="text-small" text-anchor="middle">Per-CPU seconds</text>
+  <text x="302" y="466" class="text-small" text-anchor="middle">disk I/O, network</text>
+  <text x="302" y="480" class="text-small" text-anchor="middle">reserved-CPU validation</text>
+  <text x="302" y="499" class="text-small" text-anchor="middle" fill="#4caf50">→ scrape :9100/metrics</text>
+
+  <!-- cAdvisor (kubelet built-in) -->
+  <rect x="400" y="390" width="165" height="120" class="cadvisor" rx="4"/>
+  <text x="482" y="408" class="text-label" text-anchor="middle" font-weight="bold">cAdvisor</text>
+  <text x="482" y="424" class="text-small" text-anchor="middle">(kubelet built-in)</text>
+  <text x="482" y="438" class="text-small" text-anchor="middle">Port: 10250</text>
+  <text x="482" y="452" class="text-small" text-anchor="middle">container_cpu_usage</text>
+  <text x="482" y="466" class="text-small" text-anchor="middle">container_memory_*</text>
+  <text x="482" y="480" class="text-small" text-anchor="middle">encoder vs decoder attr.</text>
+  <text x="482" y="499" class="text-small" text-anchor="middle" fill="#1565c0">→ scrape :10250/metrics/cadvisor</text>
+
+  <!-- RDT helper -->
+  <rect x="40"  y="530" width="165" height="110" class="rdt" rx="4"/>
+  <text x="122" y="548" class="text-label" text-anchor="middle" font-weight="bold">mxl-rdt-host</text>
+  <text x="122" y="564" class="text-small" text-anchor="middle">systemd helper</text>
+  <text x="122" y="578" class="text-small" text-anchor="middle">/sys/fs/resctrl</text>
+  <text x="122" y="592" class="text-small" text-anchor="middle">LLC occupancy (MBM)</text>
+  <text x="122" y="606" class="text-small" text-anchor="middle">Memory bandwidth</text>
+  <text x="122" y="626" class="text-small" text-anchor="middle" fill="#c62828">per-cgroup, on demand</text>
+
+  <!-- Platform probe -->
+  <rect x="220" y="530" width="165" height="110" class="probe" rx="4"/>
+  <text x="302" y="548" class="text-label" text-anchor="middle" font-weight="bold">mxl-platform-probe</text>
+  <text x="302" y="564" class="text-small" text-anchor="middle">sudo dmidecode -t memory</text>
+  <text x="302" y="578" class="text-small" text-anchor="middle">DIMM speed &amp; slots</text>
+  <text x="302" y="592" class="text-small" text-anchor="middle">CPU model, NUMA topo</text>
+  <text x="302" y="606" class="text-small" text-anchor="middle">theoretical DRAM peak</text>
+  <text x="302" y="626" class="text-small" text-anchor="middle" fill="#558b2f">→ scraped pre-run</text>
+
+  <!-- Pods row -->
+  <rect x="40"  y="660" width="245" height="130" class="pod" rx="4"/>
+  <text x="162" y="679" class="text-label" text-anchor="middle" font-weight="bold">Decoder Pod</text>
+  <text x="162" y="696" class="text-small" text-anchor="middle">FFmpeg decode → v210</text>
+  <text x="162" y="710" class="text-small" text-anchor="middle">FPS Sidecar  port: 8000</text>
+  <text x="162" y="724" class="text-small" text-anchor="middle">mxl_ffmpeg_fps</text>
+  <text x="162" y="738" class="text-small" text-anchor="middle">cAdvisor tracks CPU/mem</text>
+  <text x="162" y="776" class="text-small" text-anchor="middle" fill="#ff6600">→ scrape :8000/metrics (FPS)</text>
+
+  <rect x="310" y="660" width="260" height="130" class="pod" rx="4"/>
+  <text x="440" y="679" class="text-label" text-anchor="middle" font-weight="bold">Encoder Pod</text>
+  <text x="440" y="696" class="text-small" text-anchor="middle">FFmpeg encode → H.264</text>
+  <text x="440" y="710" class="text-small" text-anchor="middle">FPS Sidecar  port: 8000</text>
+  <text x="440" y="724" class="text-small" text-anchor="middle">mxl_ffmpeg_fps</text>
+  <text x="440" y="738" class="text-small" text-anchor="middle">cAdvisor tracks CPU/mem</text>
+  <text x="440" y="776" class="text-small" text-anchor="middle" fill="#ff6600">→ scrape :8000/metrics (FPS)</text>
+
+  <rect x="40" y="814" width="530" height="34" style="fill:#f5f5f5;stroke:#888;stroke-width:1;" rx="3"/>
+  <text x="305" y="836" class="text-label" text-anchor="middle">/dev/shm/mxl (tmpfs) — zero-copy MXL flow between Decoder and Encoder</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       WORKER NODE N
+       ═══════════════════════════════════════════════════════════════ -->
+  <rect x="605"  y="360" width="575" height="700" class="worker" rx="6"/>
+  <text x="625"  y="380" class="text-title">WORKER NODE N</text>
+
+  <!-- PCM -->
+  <rect x="625" y="390" width="165" height="120" class="exporter" rx="4"/>
+  <text x="707" y="408" class="text-label" text-anchor="middle" font-weight="bold">PCM Exporter</text>
+  <text x="707" y="424" class="text-small" text-anchor="middle">systemd service</text>
+  <text x="707" y="438" class="text-small" text-anchor="middle">Port: 9738</text>
+  <text x="707" y="452" class="text-small" text-anchor="middle">UPI traffic, DRAM BW</text>
+  <text x="707" y="466" class="text-small" text-anchor="middle">L3 hit/miss, /dev/cpu/*/msr</text>
+  <text x="707" y="480" class="text-small" text-anchor="middle">CPUAffinity: 0-3 (both sockets)</text>
+  <text x="707" y="499" class="text-small" text-anchor="middle" fill="#9c27b0">→ scrape :9738/metrics</text>
+
+  <!-- node-exporter -->
+  <rect x="805" y="390" width="165" height="120" class="exporter" rx="4"/>
+  <text x="887" y="408" class="text-label" text-anchor="middle" font-weight="bold">node-exporter</text>
+  <text x="887" y="424" class="text-small" text-anchor="middle">DaemonSet Pod</text>
+  <text x="887" y="438" class="text-small" text-anchor="middle">Port: 9100</text>
+  <text x="887" y="452" class="text-small" text-anchor="middle">Per-CPU seconds</text>
+  <text x="887" y="466" class="text-small" text-anchor="middle">disk I/O, network</text>
+  <text x="887" y="480" class="text-small" text-anchor="middle">reserved-CPU validation</text>
+  <text x="887" y="499" class="text-small" text-anchor="middle" fill="#4caf50">→ scrape :9100/metrics</text>
+
+  <!-- cAdvisor -->
+  <rect x="985" y="390" width="165" height="120" class="cadvisor" rx="4"/>
+  <text x="1067" y="408" class="text-label" text-anchor="middle" font-weight="bold">cAdvisor</text>
+  <text x="1067" y="424" class="text-small" text-anchor="middle">(kubelet built-in)</text>
+  <text x="1067" y="438" class="text-small" text-anchor="middle">Port: 10250</text>
+  <text x="1067" y="452" class="text-small" text-anchor="middle">container_cpu_usage</text>
+  <text x="1067" y="466" class="text-small" text-anchor="middle">container_memory_*</text>
+  <text x="1067" y="480" class="text-small" text-anchor="middle">encoder vs decoder attr.</text>
+  <text x="1067" y="499" class="text-small" text-anchor="middle" fill="#1565c0">→ scrape :10250/metrics/cadvisor</text>
+
+  <!-- RDT -->
+  <rect x="625" y="530" width="165" height="110" class="rdt" rx="4"/>
+  <text x="707" y="548" class="text-label" text-anchor="middle" font-weight="bold">mxl-rdt-host</text>
+  <text x="707" y="564" class="text-small" text-anchor="middle">systemd helper</text>
+  <text x="707" y="578" class="text-small" text-anchor="middle">/sys/fs/resctrl</text>
+  <text x="707" y="592" class="text-small" text-anchor="middle">LLC occupancy (MBM)</text>
+  <text x="707" y="606" class="text-small" text-anchor="middle">Memory bandwidth</text>
+  <text x="707" y="626" class="text-small" text-anchor="middle" fill="#c62828">per-cgroup, on demand</text>
+
+  <!-- Platform probe -->
+  <rect x="805" y="530" width="165" height="110" class="probe" rx="4"/>
+  <text x="887" y="548" class="text-label" text-anchor="middle" font-weight="bold">mxl-platform-probe</text>
+  <text x="887" y="564" class="text-small" text-anchor="middle">sudo dmidecode -t memory</text>
+  <text x="887" y="578" class="text-small" text-anchor="middle">DIMM speed &amp; slots</text>
+  <text x="887" y="592" class="text-small" text-anchor="middle">CPU model, NUMA topo</text>
+  <text x="887" y="606" class="text-small" text-anchor="middle">theoretical DRAM peak</text>
+  <text x="887" y="626" class="text-small" text-anchor="middle" fill="#558b2f">→ scraped pre-run</text>
+
+  <!-- Pods -->
+  <rect x="625" y="660" width="245" height="130" class="pod" rx="4"/>
+  <text x="747" y="679" class="text-label" text-anchor="middle" font-weight="bold">Decoder Pod</text>
+  <text x="747" y="696" class="text-small" text-anchor="middle">FFmpeg decode → v210</text>
+  <text x="747" y="710" class="text-small" text-anchor="middle">FPS Sidecar  port: 8000</text>
+  <text x="747" y="724" class="text-small" text-anchor="middle">mxl_ffmpeg_fps</text>
+  <text x="747" y="738" class="text-small" text-anchor="middle">cAdvisor tracks CPU/mem</text>
+  <text x="747" y="776" class="text-small" text-anchor="middle" fill="#ff6600">→ scrape :8000/metrics (FPS)</text>
+
+  <rect x="895" y="660" width="260" height="130" class="pod" rx="4"/>
+  <text x="1025" y="679" class="text-label" text-anchor="middle" font-weight="bold">Encoder Pod</text>
+  <text x="1025" y="696" class="text-small" text-anchor="middle">FFmpeg encode → H.264</text>
+  <text x="1025" y="710" class="text-small" text-anchor="middle">FPS Sidecar  port: 8000</text>
+  <text x="1025" y="724" class="text-small" text-anchor="middle">mxl_ffmpeg_fps</text>
+  <text x="1025" y="738" class="text-small" text-anchor="middle">cAdvisor tracks CPU/mem</text>
+  <text x="1025" y="776" class="text-small" text-anchor="middle" fill="#ff6600">→ scrape :8000/metrics (FPS)</text>
+
+  <rect x="625" y="814" width="530" height="34" style="fill:#f5f5f5;stroke:#888;stroke-width:1;" rx="3"/>
+  <text x="890" y="836" class="text-label" text-anchor="middle">/dev/shm/mxl (tmpfs) — zero-copy MXL flow between Decoder and Encoder</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SCRAPE ARROWS — all connected from source boxes to Prometheus
+       All arrows terminate at the bottom of the Prometheus box (y=192).
+       Each arrow: goes up from source, jogs to x of its ServiceMonitor
+       column, then up to Prometheus bottom.
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Legend (bottom) -->
+  <rect x="20" y="1032" width="1160" height="38" style="fill:#fafafa;stroke:#ccc;stroke-width:1;" rx="4"/>
+  <line x1="35" y1="1051" x2="80" y2="1051" stroke="#9c27b0" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#ah-pcm)"/>
+  <text x="85" y="1055" class="text-small">PCM (UPI/DRAM/L3)</text>
+  <line x1="220" y1="1051" x2="265" y2="1051" stroke="#1565c0" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#ah-cad)"/>
+  <text x="270" y="1055" class="text-small">cAdvisor (container CPU/mem)</text>
+  <line x1="455" y1="1051" x2="500" y2="1051" stroke="#4caf50" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#ah-ne)"/>
+  <text x="505" y="1055" class="text-small">node-exporter (per-CPU, disk, net)</text>
+  <line x1="705" y1="1051" x2="750" y2="1051" stroke="#ff6600" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#ah-fps)"/>
+  <text x="755" y="1055" class="text-small">FPS sidecars (mxl_ffmpeg_fps)</text>
+  <line x1="910" y1="1051" x2="955" y2="1051" stroke="#558b2f" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#ah-probe)"/>
+  <text x="960" y="1055" class="text-small">platform-probe (DIMM/CPU)</text>
+
+  <!-- ── PCM scrape arrows: Worker1 PCM → Prometheus (via EndpointSlice) ── -->
+  <!-- W1 PCM top-centre = x=122, y=390 → up to y=340 → right to x=140 → up to y=192 -->
+  <path d="M 122 390 L 122 350 L 140 350 L 140 192" stroke="#9c27b0" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-pcm)"/>
+  <!-- W2 PCM -->
+  <path d="M 707 390 L 707 350 L 145 350" stroke="#9c27b0" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+  <!-- (shares the same vertical bus; single arrow to Prometheus already drawn above) -->
+
+  <!-- ── node-exporter scrape arrows ── -->
+  <!-- W1: x=302, y=390 → up to y=344 → right to x=682 → up to y=192 -->
+  <path d="M 302 390 L 302 344 L 682 344 L 682 316" stroke="#4caf50" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-ne)"/>
+  <!-- W2: x=887 -->
+  <path d="M 887 390 L 887 344" stroke="#4caf50" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+
+  <!-- ── cAdvisor scrape arrows ── -->
+  <!-- W1: x=482, y=390 → up to y=338 → right to x=502 → up to y=316 -->
+  <path d="M 482 390 L 482 338 L 502 338 L 502 316" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-cad)"/>
+  <!-- W2: x=1067 -->
+  <path d="M 1067 390 L 1067 338 L 503 338" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+
+  <!-- ── FPS sidecar scrape arrows ── -->
+  <!-- W1 Decoder: x=162, y=660 → up to y=332 → right to x=862 → up to y=316 -->
+  <path d="M 162 660 L 162 332 L 862 332 L 862 316" stroke="#ff6600" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-fps)"/>
+  <!-- W1 Encoder + W2 pods share the same bus -->
+  <path d="M 440 660 L 440 332" stroke="#ff6600" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+  <path d="M 747 660 L 747 332" stroke="#ff6600" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+  <path d="M 1025 660 L 1025 332" stroke="#ff6600" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+
+  <!-- ── Platform probe scrape arrows ── -->
+  <!-- W1: x=302, y=530 → left-bus to x=1057 column -->
+  <path d="M 302 530 L 302 326 L 1057 326 L 1057 316" stroke="#558b2f" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-probe)"/>
+  <!-- W2: x=887 -->
+  <path d="M 887 530 L 887 326" stroke="#558b2f" stroke-width="1.5" stroke-dasharray="5,3" fill="none"/>
+
+  <!-- Prometheus → ServiceMonitors (Operator reconciles) -->
+  <line x1="175" y1="192" x2="175" y2="236" stroke="#555" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#ah-grey)"/>
+
+</svg>

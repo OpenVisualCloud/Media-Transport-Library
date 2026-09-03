@@ -1,0 +1,13 @@
+[
+  {"Category": "CPU", "Attribute": "Model name", "Value": "Intel(R) Xeon(R) Gold 6154 CPU @ 3.00GHz"},
+  {"Category": "CPU", "Attribute": "Microarchitecture", "Value": "Skylake"},
+  {"Category": "CPU", "Attribute": "Sockets", "Value": "2"},
+  {"Category": "CPU", "Attribute": "Cores per Socket", "Value": "18"},
+  {"Category": "CPU", "Attribute": "Logical CPUs", "Value": "72"},
+  {"Category": "CPU", "Attribute": "NUMA Nodes", "Value": "2"},
+  {"Category": "CPU", "Attribute": "Base Frequency", "Value": "3.0 GHz"},
+  {"Category": "CPU", "Attribute": "Max Turbo Frequency", "Value": "3.7 GHz"},
+  {"Category": "Memory", "Attribute": "Total Memory", "Value": "192 GB"},
+  {"Category": "Memory", "Attribute": "Memory Type", "Value": "DDR4"},
+  {"Category": "Memory", "Attribute": "Configured Memory Speed", "Value": "2666 MT/s"}
+]

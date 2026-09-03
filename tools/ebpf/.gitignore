@@ -1,7 +1,0 @@
-# generated file
-et
-*.skel.h
-vmlinux.h
-*.o
-lcore_monitor
-udp_monitor

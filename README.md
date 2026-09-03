@@ -1,166 +1,149 @@
-# Media Transport Library
+# AMWA DMF Kubernetes Reference Recipe
 
-> [!TIP]
-> [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
+A step-by-step guide for deploying and validating AMWA DMF (Alliance for Media
+Workflow Association — Distributed Media Foundation) workloads on Kubernetes,
+using CBC FFmpeg-MXL as the reference media container.
 
-[![Base build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml)
-[![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
-[![OpenSSF
-Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
-[![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/30596/badge.svg)](https://scan.coverity.com/projects/media-transport-library)
+This guide shows:
+- how to build a Kubernetes cluster from bare Ubuntu with the
+  CPU QoS plugins DMF containers require (static CPU Manager, Topology Manager,
+  Intel RDT)
+- how to build, profile and deploy the FFmpeg-MXL container as standardised DMF
+  decoder and encoder Pods
+- how to generate a DMF-CRM deployment manifest from container profiling data;
+- how to benchmark three density scenarios and understand the results
+- how to protect the workload from co-tenant interference using Intel RDT CAT and
+  MBA policies
 
-> [!IMPORTANT]  
-> All Source code and features on the main branch are for the purpose of testing or evaluation and not production ready. Evaluated code is tagged with the corresponding release version.
+On the reference machine, the three density cases produce **12 → 14 → 20 streams**
+for the same hardware and the same FFmpeg command line, with nothing changed but
+Kubernetes CPU placement policy:
 
-## 1. Overview
+| Case | What changes | Streams at ≥ 59.5 FPS | Cross-socket UPI | CPU per stream |
+|---|---|---|---|---|
+| `baseline` | No changes applied (Burstable Pods, scheduler decides) | **12** | 46.0 GB/s | 5.77 cores |
+| `numa-pool` | both Pods of a stream confined to one socket | **14** | 0.55 GB/s | 5.01 cores |
+| `pinned` | Guaranteed Pods, exclusive cores, NUMA-aligned | **20** | 1.44 GB/s | 4.76 cores |
 
-The Media Transport Library(MTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
-The Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
+##  Step by step guide to Installing K8s and tooling, Profiling and Deploying FFmpeg-mxl Pods
 
-If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
+Step by Step Guide
+For a new deployment, follow the single-page
+**[clean-host quickstart](docs/QUICKSTART.md)**. It covers both direct and proxied
+networks, a one-stream smoke test, and the full density campaign. Use the numbered
+documents below when a step needs platform-specific detail.
 
-### 1.1. Features
+| Step | Document | What you get |
+|---|---|---|
+| **Quickstart** | [QUICKSTART.md](docs/QUICKSTART.md) | **Start here:** clean hosts to a measured MXL run |
+| **0** | [00-before-you-start.md](docs/00-before-you-start.md) | Detailed host, tool, SSH, and inventory prerequisites |
+| - | [00-design.md](docs/00-design.md) | DMF architecture overview and lab design — read once, keep open |
+| 1 | [01-bios-bkc.md](docs/01-bios-bkc.md) | Xeon BIOS settings required for DMF QoS, and how to verify them |
+| 2 | [02-kubernetes-install.md](docs/02-kubernetes-install.md) | Kubernetes cluster from bare Ubuntu with all DMF-required plugins |
+| 3 | [03-cpu-qos.md](docs/03-cpu-qos.md) | Static CPU Manager, Topology Manager and RDT — the QoS layer DMF depends on |
+| 4 | [04-perfspect-baseline.md](docs/04-perfspect-baseline.md) | Platform baseline report — capture before any measurement |
+| 5 | [05-ffmpeg-mxl-container.md](docs/05-ffmpeg-mxl-container.md) | Build the CBC FFmpeg-MXL container and prepare test media |
+| 6 | [06-observability.md](docs/06-observability.md) | Observability stack: Prometheus, Grafana, node-exporter, Intel PCM |
+| 7 | [07-container-deployment.md](docs/07-container-deployment.md) | Deploy decoder and encoder containers as Kubernetes Pods |
+| 8 | [08-profiling-manifest.md](docs/08-profiling-manifest.md) | Profile containers and capture the resolved run artifacts (`metrics.csv`, `config.json`, `workload.yaml`) |
+| 9 | [09-density.md](docs/09-density.md) | Benchmark the three density cases: baseline, NUMA pooling, pinned |
+| 10 | [10-metrics.md](docs/10-metrics.md) | Understand and interpret benchmark results |
+| 11 | [11-noisy-neighbor.md](docs/11-noisy-neighbor.md) | Noisy neighbor testing — measure co-tenant interference |
+| 12 | [12-rdt-qos.md](docs/12-rdt-qos.md) | Apply Intel RDT CAT and MBA to restore performance isolation |
+| 13 | [13-mcp-profiling.md](docs/13-mcp-profiling.md) | Deep-dive profiling — diagnose why a specific stream missed its deadline |
+| 14 | [14-reference-bkc.md](docs/14-reference-bkc.md) | Reference platform (BKC) — the exact hardware all published numbers came from |
+| 15 | [15-dmf-crm-manifest.md](docs/15-dmf-crm-manifest.md) | Generate a DMF CRM manifest from a completed profile and PerfSpect baseline |
 
-* Supported data path backend: DPDK PMD, native kernel socket, and AF_XDP with eBPF filter.
-* Non-root run.
-* Multi-process handling, allowing for up to 8 NICs per process.
-* Virtualization support by SR-IOV.
-* Built-in PTP protocol with hardware timestamp offload.
-* FFMPEG plugin, OBS(Open Broadcaster Software) plugin, and Intel® Media SDK support.
-* In addition to the native C/C++ API, it also offers bindings for [Python](python/README.md) and [Rust](rust/README.md).
-
-#### 1.1.1. ST2110 features
-
-* Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
-* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7.
-* 1080p, 1080i, 720p, 4k, 8k and others.
-* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98.
-* All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
-* SIMD color space converter between big-endian and little-endian.
-* ST2110-22 with encoder/decoder plugin interface.
-* ST2022-6 by RTP passthrough interface.
-* ST2110-20 RX timing compliance parser with hardware RX timestamp offload.
-
-### 1.2. Architecture
-
-The Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
-
-The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
-
-* DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'poll mode' driver. This approach provides direct hardware access, eliminates heavy user/kernel context switches, and avoids IRQ (Interrupt Request) switches. As a result, DPDK PMDs deliver ultra-low latency and high throughput, making them ideal for demanding networking applications.
-* Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems.
-* AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
-
-The library introduces a tasklet-based asynchronous scheduler that optimizes CPU resource utilization, facilitating integration with various packet processing units and accelerators.
-
-Additionally, the packet pacing module offers support for various pacing algorithms, including RL (Rate Limit), which is partially hardware-offloaded, and TSC (timestamp Counter), which is fully software-based.
-
-MTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
-
-For the detail design, please refer to [Design Guide](doc/design.md).
-
-![Overall Architecture](doc/png/arch.svg)
-
-### 1.3. Ethernet supported
-
-MTL offers versatile Ethernet support, thanks to its compatibility with DPDK PMD, kernel socket, and AF_XDP backends.
-
-For DPDK PMD support, you can refer to the DPDK PMD site <https://doc.dpdk.org/guides/nics/> for a comprehensive list of supported Ethernet hardware.
-
-In cases where your NIC is not supported by DPDK, MTL provides a fallback option with kernel (Linux) socket transport support.
-
-However, please note that our daily development and validation is primarily conducted on the Intel E810 and E830 series cards, so we can't guarantee the status for other network interface cards (NICs).
-
-An important point to note is that narrow pacing of TX is only supported for the Intel E810 and E830 series together with DPDK PMD due to the rate limit feature. All other type of usage have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
-
-## 2. Build
-
-Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [doc/fuzzing.md](doc/fuzzing.md).
-
-For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
-
-## 3. Run ST2110
-
-Please refer to [Run Guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
-
-For Windows, please refer to [Run Guide on Windows](doc/run_WIN.md).
-
-Additionally, please refer to the [VM Guide](doc/vm.md) and [Windows VM Guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
-
-For AWS (cloud environment), please refer to [AWS Run Guide](doc/aws.md) for instructions on how to set up and run the demo.
-
-To run this library on the kernel network stack with the built-in kernel NIC driver, please follow the instructions provided in the [kernel socket guide](doc/kernel_socket.md).
-
-## 4. ST2110 Programmers guide
-
-To quickly develop applications based on the Media Transport Library, please refer to section ["ST2110 API" in Design Guide](doc/design.md#6-st2110-api).
-
-## 5. Publication
-
-MHV'23: A Real-time Media Transport Stack Based on Commercial Off-the-shelf Hardware. <https://dl.acm.org/doi/10.1145/3588444.3591002>
-
-Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https://www.intel.com/content/www/us/en/content-details/786203/open-source-library-enables-real-time-media-over-ip-networks.html>
-
-2022 DPDK Userspace Summit: Real-time and low latency media transport stack based on DPDK. <https://www.youtube.com/watch?v=fiiOvHezpBs>
-
-## 6. How to Contribute
-
-We welcome community contributions to the Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
-
-### 6.1. Fork this repository
-
-Before opening a pull request, please follow these steps:
-
-1. [Fork](https://github.com/OpenVisualCloud/Media-Transport-Library/fork) this repository to your own space.
-2. Create a new branch for your changes.
-3. Make your changes and commit them.
-4. Push your changes to your forked repository.
-5. Open a pull request to the main repository.
-
-If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
-
-### 6.2. Set up the checks once
+## Quickstart — from bare hardware to first DMF benchmark
 
 ```bash
-./checkpatch.sh --bootstrap      # install pre-commit, the only prerequisite
-./checkpatch.sh --install-hooks  # run the checks automatically on commit
+# 1. Describe your machines (node names, SSH addresses, CPU topology)
+#    Edit config/nodes.env and config/lab.env — see 02-kubernetes-install.md
+
+# 2. SSH keys: controller → every worker
+scripts/setup-controller-worker-ssh.sh
+
+# 3. Platform prerequisites
+scripts/check-bios.sh                    # verify BIOS BKC (01-bios-bkc.md)
+
+# 4. Install Kubernetes with DMF plugins
+scripts/install-k8s-cluster.sh           # kubeadm + Calico (02-kubernetes-install.md)
+scripts/configure-cpu-qos.sh             # static CPU Manager + Topology Manager (03-cpu-qos.md)
+
+# 5. Platform baseline
+scripts/configure-power.sh               # P-state/governor/EPB/EPP/ELC (04-perfspect-baseline.md)
+scripts/run-perfspect.sh                 # capture PerfSpect report (04-perfspect-baseline.md)
+
+# 6. Build the FFmpeg-MXL container
+scripts/build-ffmpeg-mxl-image.sh        # builds on the worker (05-ffmpeg-mxl-container.md)
+scripts/stage-media.sh <clip.mp4>        # stage test media
+
+# 7. Install observability
+scripts/bootstrap-worker.sh             # Intel PCM, RDT helper, stress-ng
+scripts/install-observability.sh        # Prometheus and Grafana (06-observability.md)
+
+# 8. Deploy and profile (07-container-deployment.md, 08-profiling-manifest.md)
+scripts/setup.sh                        # install the mxl-perf runner
+scripts/preflight.sh                    # verify the cluster is ready
+
+# 9. Run the three DMF density benchmark cases
+scripts/run-campaign.sh campaigns/density.env
+open results/summary.html               # 3 rows: baseline, numa-pool, pinned
 ```
 
-`--bootstrap` uses pipx or `pip --user`. If your distribution marks its system
-Python as externally managed (Fedora, Arch, Debian 12+ and others), it prints the
-package to install instead; the same list is in
-[doc/coding_standard.md §6](doc/coding_standard.md#6-platforms), together with the
-Windows and macOS routes.
+## Folder Directory Overview
 
-### 6.3. Coding style
-
-Every language in this repository is checked by one command, and it is the same
-command the git hooks and CI run:
-
-```bash
-./checkpatch.sh                  # verify every tracked file
-./checkpatch.sh --staged         # verify what you are about to commit
-./format-coding.sh               # apply every autofix
+```
+config/lab.env          every tunable, commented; the one file to edit
+config/nodes.env        SSH inventory: host addresses and login (fill in first)
+scenarios/              the three benchmark cases: baseline, numa-pool, pinned
+noisy-neighbors/        the four co-tenant profiles: host-a, pod-a, pod-b, pod-c
+campaigns/              ready-made run lists (density, RDT sweeps)
+scripts/                one script per step of the guide, all idempotent
+python/mxlperf/         the runner: plan → deploy → collect → report → summarize
+observability/          Helm values and the host PCM scrape wiring
+cluster/                Calico network configuration
+docs/                   the numbered guide above
+results/                one directory per run, plus summary.html / summary.xlsx
 ```
 
-You do not need clang-format, shfmt, shellcheck, Node.js or any other linter on
-your `PATH`. `pre-commit` installs the pinned version of each tool itself, which
-is also what stops a different locally-installed version from silently
-reformatting hundreds of unrelated files.
+## Requirements
 
-[doc/coding_standard.md](doc/coding_standard.md) is the reference: the rules, which
-check runs where, and how to change one.
+* Two hosts: a controller (any modest machine) and at least one Intel Xeon worker
+  with Intel RDT support, running Ubuntu 22.04 or 24.04.
+* A non-root login that exists on every host, with passwordless SSH from the
+  controller and `sudo` on the workers. The login name goes in `config/nodes.env`;
+  nothing in this repo assumes a particular username, hostname or IP address.
+* `kubectl`, `helm` and `python3` on the controller.
+* One 1080p60 source clip (not shipped here — see
+  [05-ffmpeg-mxl-container.md](docs/05-ffmpeg-mxl-container.md)).
 
-### 6.4. Before you open a pull request
+Full detail, with the commands, is in
+[00-before-you-start.md](docs/00-before-you-start.md). In short:
 
-1. `./format-coding.sh` and then `./checkpatch.sh`, until it reports `clean`.
-2. If you touched code: `./build.sh` succeeds, `./build.sh unit` passes, and a
-   test covers the change at the cheapest tier that can catch it --
-   [unit](tests/unit) needs no NIC, [integration](tests/integration_tests) needs
-   VFs, [acceptance](tests/acceptance) is end-to-end.
-3. Write the commit message as
-   [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) with a
-   capitalized type: `Fix: ...`, `Add: ...`, `Docs: ...`. The full list is in
-   [doc/coding_standard.md §7](doc/coding_standard.md#7-commit-messages).
+* Two clean hosts: a control plane (any small machine) and at least one Intel Xeon
+  worker with Intel RDT, running Ubuntu 22.04 or 24.04.
+* One login that exists on both hosts with the same name, able to become root, and
+  passwordless SSH from the control-plane host to itself and to every worker. The
+  login goes in `config/nodes.env`; nothing in this repo assumes a particular user,
+  hostname or address. `root` is supported and makes the install unattended; any
+  `sudo`-capable login works and prompts per host.
+* Behind a proxy: two lines in `config/lab.env` (`LAB_HTTP_PROXY`,
+  `LAB_HTTPS_PROXY`), and the cluster installer configures `apt`, containerd,
+  `kubeadm` and `kubectl` on every node from them. Every script also keeps the
+  cluster's own addresses out of the proxy for itself, so nothing here needs a
+  hand-written `no_proxy`.
+* On the control-plane host: `git` (or `unzip`), `curl`, `python3`, `python3-venv`
+  and `helm`. `kubectl` is installed for you in chapter 2. The worker needs nothing
+  installed by hand.
+* Outbound internet from every host — the installers fetch containerd, Kubernetes,
+  Calico, Helm charts, PerfSpect, PCM and the FFmpeg-MXL sources.
+* One 1080p60 source clip. It is not shipped here; see
+  [05-ffmpeg-mxl-container.md](docs/05-ffmpeg-mxl-container.md).
+
+Every published number was measured on the platform recorded in
+[14-reference-bkc.md](docs/14-reference-bkc.md). Different silicon produces
+different absolute stream counts; the *ordering* of the three cases should
+reproduce on any dual-socket Intel Xeon with RDT and the BIOS settings from
+[01-bios-bkc.md](docs/01-bios-bkc.md).

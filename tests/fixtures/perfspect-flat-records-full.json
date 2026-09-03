@@ -1,0 +1,24 @@
+[
+  {"Category": "CPU", "Attribute": "Model name", "Value": "Intel(R) Xeon(R) Gold 6154 CPU @ 3.00GHz"},
+  {"Category": "CPU", "Attribute": "Microarchitecture", "Value": "Skylake"},
+  {"Category": "CPU", "Attribute": "Sockets", "Value": "2"},
+  {"Category": "CPU", "Attribute": "Cores per Socket", "Value": "18"},
+  {"Category": "CPU", "Attribute": "Logical CPUs", "Value": "72"},
+  {"Category": "CPU", "Attribute": "NUMA Nodes", "Value": "2"},
+  {"Category": "CPU", "Attribute": "Base Frequency", "Value": "3.0 GHz"},
+  {"Category": "CPU", "Attribute": "Flags", "Value": "avx,avx2,avx512f"},
+
+  {"Category": "Memory", "Attribute": "Total Memory", "Value": "192 GB"},
+  {"Category": "Memory", "Attribute": "Memory Type", "Value": "DDR4"},
+  {"Category": "Memory", "Attribute": "Configured Memory Speed", "Value": "2666 MT/s"},
+
+  {"Category": "Network", "Attribute": "Interface Name", "Value": "ens1f0"},
+  {"Category": "Network", "Attribute": "Input Bandwidth", "Value": "12.5 GB/s"},
+  {"Category": "Network", "Attribute": "Output Bandwidth", "Value": "12.5 GB/s"},
+  {"Category": "Network", "Attribute": "Features", "Value": "rdma,jumbo_frames"},
+
+  {"Category": "Storage", "Attribute": "Device Name", "Value": "nvme1n1"},
+  {"Category": "Storage", "Attribute": "Media Type", "Value": "NVMe"},
+  {"Category": "Storage", "Attribute": "Read Throughput", "Value": "6800 MB/s"},
+  {"Category": "Storage", "Attribute": "Write Throughput", "Value": "3200 MB/s"}
+]

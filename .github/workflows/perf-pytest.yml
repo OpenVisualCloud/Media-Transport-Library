@@ -63,7 +63,7 @@ jobs:
         id: validate
         uses: ./.github/actions/validate-host
         with:
-          shadow_host: '/etc/mtl-ci/runner.env'
+          shadow_host: '/etc/mtl-ci/shadow-host'
       - name: Ensure the acceptance virtualenv
         run: task ci:pytest-setup -- ensure
       - name: Set session ID

@@ -1,0 +1,11 @@
+category,metric,unit,value,scope,session,role
+CPU,FFmpeg CPU demand,cores,avg=4.823000;min=4.620000;max=5.100000,process,s01,encoder
+CPU,FFmpeg CPU demand,cores,avg=0.812000;min=0.790000;max=0.850000,process,s01,decoder
+CPU,average FFmpeg utilization per measured used CPU,%,avg=96.460000;min=91.200000;max=100.000000,process,s01,encoder
+CPU Placement,allowed CPU IDs,cpu-list,4-8,process,s01,encoder
+CPU Placement,allowed CPU IDs,cpu-list,0,process,s01,decoder
+Prometheus,workload_memory_bytes,native,avg=524288000.000000;min=500000000.000000;max=548000000.000000,"{""pod"": ""mxl-encoder-s01""}",s01,encoder
+Prometheus,workload_memory_bytes,native,avg=209715200.000000;min=200000000.000000;max=220000000.000000,"{""pod"": ""mxl-decoder-s01""}",s01,decoder
+Prometheus,workload_cpu_cores,native,avg=4.823000;min=4.620000;max=5.100000,"{""pod"": ""mxl-encoder-s01""}",s01,encoder
+Prometheus,workload_cpu_cores,native,avg=0.812000;min=0.790000;max=0.850000,"{""pod"": ""mxl-decoder-s01""}",s01,decoder
+FFmpeg progress,fps,frames/s,avg=25.000000;min=24.950000;max=25.010000,measurement-window frame delta,s01,encoder

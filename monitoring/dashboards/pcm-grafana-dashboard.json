@@ -1,0 +1,507 @@
+{
+  "uid": "intel-pcm-mxl",
+  "title": "Intel PCM — k8s-w2 (FFmpeg-MXL Scenario 1)",
+  "tags": [
+    "intel",
+    "pcm",
+    "crm-workloads"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "rate_window",
+        "type": "custom",
+        "label": "Rate window",
+        "query": "1m,2m,5m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "options": [
+          {
+            "text": "1m",
+            "value": "1m",
+            "selected": false
+          },
+          {
+            "text": "2m",
+            "value": "2m",
+            "selected": true
+          },
+          {
+            "text": "5m",
+            "value": "5m",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Memory bandwidth (DRAM)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory bandwidth — total / read / write (GB/s)",
+      "description": "System-wide DRAM bandwidth. PCM DRAM_Reads/Writes counters are in BYTES; the {aggregate=\"system\",socket=\"\"} series is the pre-computed grand total (do NOT sum the per-core/per-socket series — that double/triple-counts).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\"}[$rate_window])) / 1e9",
+          "legendFormat": "total"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(DRAM_Reads{aggregate=\"system\",socket=\"\"}[$rate_window]) / 1e9",
+          "legendFormat": "read"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(DRAM_Writes{aggregate=\"system\",socket=\"\"}[$rate_window]) / 1e9",
+          "legendFormat": "write"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Memory BW now (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\"}[$rate_window])) / 1e9",
+          "legendFormat": "mem BW"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory bandwidth per socket (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"\",socket=~\".+\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"\",socket=~\".+\"}[$rate_window])) / 1e9",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cache (LLC / L2)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 (LLC) misses & hits per second (system)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\"}[$rate_window])",
+          "legendFormat": "L3 misses/s"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\"}[$rate_window])",
+          "legendFormat": "L3 hits/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 (LLC) hit ratio (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\"}[$rate_window]) / clamp_min(rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\"}[$rate_window]) + rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\"}[$rate_window]), 1)",
+          "legendFormat": "L3 hit ratio"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "PCIe",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "PCIe bandwidth read / write (GB/s) — expected ~idle",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(PCIe_Read_Bytes{aggregate=\"system\",socket=\"\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe read"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(PCIe_Write_Bytes{aggregate=\"system\",socket=\"\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe write"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Power & Frequency",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Power — Package & DRAM (W, total of both sockets)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"system\",socket=\"\"}[$rate_window])",
+          "legendFormat": "Package (total)"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(DRAM_Joules_Consumed{aggregate=\"system\",socket=\"\"}[$rate_window])",
+          "legendFormat": "DRAM (total)"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"\",socket=~\".+\"}[$rate_window])",
+          "legendFormat": "Package socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Average active core frequency (GHz)",
+      "description": "freq = nominal(2.4 GHz) * dClock_Unhalted_Thread / dClock_Unhalted_Ref, using the system-aggregate counters.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2.4 * rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Ref{aggregate=\"system\",socket=\"\"}[$rate_window]), 1)",
+          "legendFormat": "avg active freq"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Package power now (W, total)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"system\",socket=\"\"}[$rate_window])"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DRAM power now (W, total)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(DRAM_Joules_Consumed{aggregate=\"system\",socket=\"\"}[$rate_window])"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Avg active freq now (GHz)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2.4 * rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Ref{aggregate=\"system\",socket=\"\"}[$rate_window]), 1)"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+grafana:
+  enabled: true
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}
+    serviceMonitorNamespaceSelector: {}
+prometheus-node-exporter:
+  enabled: true
+kube-state-metrics:
+  enabled: true

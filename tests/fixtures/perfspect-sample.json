@@ -1,0 +1,47 @@
+{
+  "host": "k8s-w2",
+  "date": "2024-01-15T10:00:00Z",
+  "perfspect_version": "1.4.0",
+  "CPU": {
+    "Model name:": "Intel(R) Xeon(R) 6767P",
+    "Microarchitecture": "Granite Rapids",
+    "Socket(s):": "2",
+    "Core(s) per socket:": "64",
+    "CPU(s):": "128",
+    "NUMA node(s):": "2",
+    "CPU MHz": "2500.0",
+    "CPU max MHz:": "3900.0",
+    "Hyperthreading": "Disabled",
+    "L3 cache:": "672 MiB (2 instances)",
+    "Flags": "avx512f avx512cd avx512bw avx512dq avx512vl avx2 sse4_2 aes"
+  },
+  "Memory": {
+    "total_gb": "503",
+    "dimms": [
+      {
+        "locator": "CPU_SrcID#0_MC#0_Chan#0_DIMM#0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 6400
+      },
+      {
+        "locator": "CPU_SrcID#0_MC#1_Chan#0_DIMM#0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 6400
+      },
+      {
+        "locator": "CPU_SrcID#1_MC#0_Chan#0_DIMM#0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 6400
+      },
+      {
+        "locator": "CPU_SrcID#1_MC#1_Chan#0_DIMM#0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 6400
+      }
+    ]
+  }
+}

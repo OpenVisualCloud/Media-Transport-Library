@@ -1,0 +1,1329 @@
+{
+  "uid": "intel-pcm-extended",
+  "title": "Intel PCM \u2014 Extended Hardware Counters (Deep Dive)",
+  "description": "Comprehensive Intel PCM hardware counter view for deep investigation of CPU, cache, memory, power, PCIe, and thermal behaviour. Requires the PCM DaemonSet (monitoring/setup.sh pcm). PCM and PerfSpect cannot own the PMU simultaneously.",
+  "tags": [
+    "intel",
+    "pcm",
+    "hardware",
+    "extended"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "rate_window",
+        "type": "custom",
+        "label": "Rate window",
+        "description": "PromQL rate() window \u2014 must be >= 2\u00d7 scrape interval (15 s default).",
+        "query": "1m,2m,5m",
+        "current": {
+          "text": "2m",
+          "value": "2m"
+        },
+        "options": [
+          {
+            "text": "1m",
+            "value": "1m",
+            "selected": false
+          },
+          {
+            "text": "2m",
+            "value": "2m",
+            "selected": true
+          },
+          {
+            "text": "5m",
+            "value": "5m",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Instance",
+        "description": "PCM exporter instance (node:port). Use 'All' to show the aggregate series.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(DRAM_Reads, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {}
+      },
+      {
+        "name": "socket",
+        "type": "query",
+        "label": "Socket",
+        "description": "NUMA socket number exposed by PCM.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(DRAM_Reads{socket!=\"\"}, socket)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "System Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Memory BW now (GB/s)",
+      "description": "System-wide DRAM read + write bandwidth.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])) / 1e9",
+          "legendFormat": "mem BW"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Package power now (W)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 150
+              },
+              {
+                "color": "red",
+                "value": 250
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Avg active freq (GHz)",
+      "description": "2.4 GHz nominal \u00d7 (Clock_Unhalted_Thread / Clock_Unhalted_Ref).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2.4 * rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Ref{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "L3 hit ratio (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Core / Thread Activity",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Unhalted thread cycles \u2014 system total (cycles/s)",
+      "description": "Rate of Clock_Unhalted_Thread for the whole system. Measures how many cycles threads were not idle.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "unhalted cycles/s (system)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Unhalted thread cycles per socket (cycles/s)",
+      "description": "Per-socket unhalted thread cycles. Use the Socket variable to filter.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Clock_Unhalted_Thread{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Instructions & Cycles (IPC)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Instructions Retired \u2014 system (ops/s)",
+      "description": "Rate of Instructions_Retired counter for the whole system.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Instructions_Retired_Any{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "instructions/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "IPC \u2014 Instructions per Cycle (system)",
+      "description": "IPC = Instructions_Retired / Clock_Unhalted_Thread. Values >1 indicate good CPU utilisation; <1 suggests stalls.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Instructions_Retired_Any{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "IPC"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "L2 / L3 Cache",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 (LLC) hits & misses per second \u2014 system",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L3 hits/s"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L3 misses/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 hit ratio (%) \u2014 system",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "L3 hit ratio"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 hits & misses per socket",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(L3_Cache_Hits{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L3 hits socket {{socket}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(L3_Cache_Misses{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L3 misses socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L2 cache requests per second \u2014 system",
+      "description": "L2_Cache_Hits and L2_Cache_Misses give the L2 request volume.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(L2_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L2 hits/s"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(L2_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "L2 misses/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L2 hit ratio (%) \u2014 system",
+      "description": "L2 hits divided by L2 hits + misses. This is cache effectiveness, not request volume.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(L2_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(L2_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(L2_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "L2 hit ratio"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "L3 miss rate (%) \u2014 system",
+      "description": "L3 misses divided by L3 hits + misses. Higher values mean more accesses fall through to DRAM. LLC occupancy/footprint is collected separately in this repository's Intel RDT run results, not from the live PCM Prometheus exporter.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(L3_Cache_Hits{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(L3_Cache_Misses{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "L3 miss rate"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "DRAM / Memory Bandwidth",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DRAM bandwidth \u2014 total / read / write (GB/s)",
+      "description": "System-wide DRAM bandwidth. The {aggregate=\"system\",socket=\"\"} series is the pre-computed grand total \u2014 do NOT sum per-socket rows alongside it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 49
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])) / 1e9",
+          "legendFormat": "total"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(DRAM_Reads{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "read"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(DRAM_Writes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "write"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Total DRAM BW now (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 49
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])) / 1e9"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DRAM bandwidth per socket (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(DRAM_Reads{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])) / 1e9",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Interconnect / NUMA",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "UPI incoming utilisation \u2014 max and per socket (%)",
+      "description": "Shows the most utilised incoming UPI link overall and, for each socket, the most utilised incoming link on that socket.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max({__name__=~\"Utilization_Incoming_Data_Traffic_On_Link_[0-3]\",aggregate=\"system\",socket=\"\",instance=~\"$instance\"})",
+          "legendFormat": "max incoming utilisation"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (socket) ({__name__=~\"Utilization_Incoming_Data_Traffic_On_Link_[0-3]\",aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"})",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "UPI incoming utilisation per link (%)",
+      "description": "Breaks out the incoming utilisation exported on each PCM UPI link counter.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "Utilization_Incoming_Data_Traffic_On_Link_0{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}",
+          "legendFormat": "Link 0"
+        },
+        {
+          "refId": "B",
+          "expr": "Utilization_Incoming_Data_Traffic_On_Link_1{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}",
+          "legendFormat": "Link 1"
+        },
+        {
+          "refId": "C",
+          "expr": "Utilization_Incoming_Data_Traffic_On_Link_2{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}",
+          "legendFormat": "Link 2"
+        },
+        {
+          "refId": "D",
+          "expr": "Utilization_Incoming_Data_Traffic_On_Link_3{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}",
+          "legendFormat": "Link 3"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "UPI incoming utilisation vs DRAM bandwidth",
+      "description": "Compares the most utilised incoming UPI link against total DRAM bandwidth so remote traffic is not mistaken for PCIe or local-memory load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DRAM total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "GBs"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max({__name__=~\"Utilization_Incoming_Data_Traffic_On_Link_[0-3]\",aggregate=\"system\",socket=\"\",instance=~\"$instance\"})",
+          "legendFormat": "max incoming utilisation"
+        },
+        {
+          "refId": "B",
+          "expr": "(rate(DRAM_Reads{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) + rate(DRAM_Writes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])) / 1e9",
+          "legendFormat": "DRAM total"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Power & Frequency",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Power \u2014 Package & DRAM (W)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "Package (system)"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(DRAM_Joules_Consumed{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "DRAM (system)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Power per socket (W)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 83
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Package_Joules_Consumed{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "Package socket {{socket}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(DRAM_Joules_Consumed{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "DRAM socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Average active core frequency (GHz)",
+      "description": "freq = 2.4 GHz nominal \u00d7 (Clock_Unhalted_Thread / Clock_Unhalted_Ref). clamp_min protects against division-by-zero when the ref counter is zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 91
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2.4 * rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Ref{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "avg active freq"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Active frequency per socket (GHz)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 91
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2.4 * rate(Clock_Unhalted_Thread{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window]) / clamp_min(rate(Clock_Unhalted_Ref{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window]), 1)",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reference clock vs active cycles \u2014 system total (cycles/s)",
+      "description": "Clock_Unhalted_Ref is the invariant reference-clock counter used in the active-frequency calculation. Comparing it with Clock_Unhalted_Thread helps diagnose whether the frequency panel reflects active-core work rather than ordinary host CPU utilisation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 99
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(Clock_Unhalted_Ref{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "ref cycles/s"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(Clock_Unhalted_Thread{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window])",
+          "legendFormat": "active cycles/s"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "PCIe",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 107
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "PCIe bandwidth \u2014 read / write (GB/s)",
+      "description": "System-wide PCIe bandwidth. In a software-only video workload (no discrete GPU) this is expected to be near idle.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 108
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(PCIe_Read_Bytes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe read"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(PCIe_Write_Bytes{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe write"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "PCIe bandwidth per socket (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 116
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(PCIe_Read_Bytes{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe read socket {{socket}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(PCIe_Write_Bytes{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}[$rate_window]) / 1e9",
+          "legendFormat": "PCIe write socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Thermal & Idle Metrics",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 124
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Thermal headroom \u2014 OS-reported (\u00b0C below TjMax)",
+      "description": "Thermal_Headroom is degrees Celsius below the thermal limit (TjMax). Higher values mean cooler operation. Available when the Linux MSR driver is present.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 125
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "Thermal_Headroom{aggregate=\"system\",socket=\"\",instance=~\"$instance\"}",
+          "legendFormat": "headroom (system)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Thermal headroom per socket (\u00b0C below TjMax)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 125
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "Thermal_Headroom{aggregate=\"\",socket=~\"$socket\",instance=~\"$instance\"}",
+          "legendFormat": "socket {{socket}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Measurement interval (\u00b5s)",
+      "description": "Measurement_Interval_in_us reports the actual time PCM spent measuring. Useful for diagnosing PCM scrape reliability.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 133
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 5
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "Measurement_Interval_in_us{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    }
+  ]
+}

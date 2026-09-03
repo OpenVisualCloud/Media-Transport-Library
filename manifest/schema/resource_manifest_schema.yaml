@@ -1,0 +1,263 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+title: MXL Media Function Parameters Schema
+description: Schema for validating MXL Media Function resource manifest files
+type: object
+required:
+  - apiVersion
+  - kind
+  - metadata
+  - spec
+properties:
+  apiVersion:
+    type: string
+    pattern: "^mxl\\.media\\.fn/v[0-9]+[a-z]+[0-9]+$"
+    description: API version of the resource
+
+  kind:
+    type: string
+    const: MxlMediaFunctionParameters
+    description: Type of Kubernetes-like resource
+
+  metadata:
+    type: object
+    required:
+      - name
+    properties:
+      name:
+        type: string
+        description: Unique name for this media function configuration
+      label:
+        type: object
+        properties:
+          app:
+            type: string
+          function:
+            type: string
+      namespace:
+        type: string
+        description: Kubernetes namespace
+
+  spec:
+    type: object
+    required:
+      - role
+    properties:
+      role:
+        type: string
+        description: The role of this media function (e.g., video-writer, audio-processor)
+
+      flow:
+        type: object
+        properties:
+          label:
+            type: string
+
+      inputs:
+        type: array
+        description: Media input specifications
+        items:
+          type: object
+          properties:
+            format:
+              type: object
+              properties:
+                video:
+                  type: object
+                  properties:
+                    media_type:
+                      type: string
+                    frame_width:
+                      type: integer
+                      minimum: 1
+                    frame_height:
+                      type: integer
+                      minimum: 1
+                    frame_rate:
+                      type: string
+                audio:
+                  type: object
+                  properties:
+                    media_type:
+                      type: string
+                    sample_rate:
+                      type: integer
+                    channels:
+                      type: integer
+          patternProperties:
+            "^(primary-feed|secondary-feed|.*-feed)$":
+              type: "null"
+
+      outputs:
+        type: object
+        description: Media output specifications
+        patternProperties:
+          "^.*$":
+            type: object
+            properties:
+              format:
+                type: object
+                properties:
+                  video:
+                    type: object
+                    properties:
+                      media_type:
+                        type: string
+                      frame_width:
+                        type: integer
+                        minimum: 1
+                      frame_height:
+                        type: integer
+                        minimum: 1
+                      frame_rate:
+                        type: string
+                  audio:
+                    type: object
+                    properties:
+                      media_type:
+                        type: string
+                      sample_rate:
+                        type: integer
+                      channels:
+                        type: integer
+      args:
+        type: array
+        items:
+          type: object
+
+      requirements:
+        type: object
+        description: Resource requirements for the media function
+        properties:
+          cpu:
+            type: object
+            properties:
+              cpu:
+                type: string
+                pattern: "^[0-9]+(m|\\.[0-9]+)?$"
+                description: CPU in Kubernetes format (millicores)
+              features:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: "null"
+
+          memory:
+            type: array
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [ram, hbm, pmem]
+                size:
+                  type: string
+                  pattern: "^[0-9]+(Mi|Gi|Ti)$"
+                  description: Memory size in Kubernetes format
+                throughput:
+                  type: object
+                  properties:
+                    read:
+                      type: string
+                    write:
+                      type: string
+                    total:
+                      type: string
+
+          host_capabilities:
+            type: object
+            description: Host platform capabilities
+            properties:
+              cpu:
+                type: object
+                properties:
+                  numa_nodes:
+                    type: integer
+                    minimum: 1
+                  number_of_cores:
+                    type: integer
+                    minimum: 1
+                  base_frequency:
+                    type: string
+                  generation:
+                    type: string
+                  features:
+                    type: array
+                    items:
+                      type: string
+
+              network:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    bandwidth:
+                      type: object
+                      properties:
+                        input:
+                          type: string
+                        output:
+                          type: string
+                    features:
+                      type: array
+                      items:
+                        type: string
+
+              gpu:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    generation:
+                      type: string
+                    memory:
+                      type: string
+                    compute_units:
+                      type: string
+                    capabilities:
+                      type: array
+                      items:
+                        type: string
+
+              memory:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    node:
+                      type: integer
+                      minimum: 0
+                    type:
+                      type: string
+                      enum: [ram, hbm, pmem]
+                    generation:
+                      type: string
+                    size:
+                      type: string
+                    throughput:
+                      type: object
+                      properties:
+                        total:
+                          type: string
+
+              storage:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum: [nvme, ssd, hdd]
+                    throughput:
+                      type: object
+                      properties:
+                        read:
+                          type: string
+                        write:
+                          type: string

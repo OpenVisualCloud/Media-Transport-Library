@@ -1,0 +1,64 @@
+{
+  "host": "k8s-w2",
+  "date": "2024-01-15T10:00:00Z",
+  "perfspect_version": "1.4.0",
+  "CPU": {
+    "Model name:": "Intel(R) Xeon(R) 6767P",
+    "Microarchitecture": "Granite Rapids",
+    "Socket(s):": "2",
+    "Core(s) per socket:": "64",
+    "CPU(s):": "128",
+    "NUMA node(s):": "2",
+    "CPU MHz": "2500.0",
+    "Flags": "avx avx2 avx512f"
+  },
+  "Memory": {
+    "total_gb": "512",
+    "Configured Memory Speed": "5600 MT/s",
+    "dimms": [
+      {
+        "locator": "CPU0_DIMM0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 5600
+      },
+      {
+        "locator": "CPU1_DIMM0",
+        "size_gb": 32,
+        "type": "DDR5",
+        "speed_mt_s": 5600
+      }
+    ]
+  },
+  "Network": {
+    "interfaces": [
+      {
+        "name": "eth0",
+        "rx_gbps": "25",
+        "tx_gbps": "25",
+        "features": [
+          "rdma",
+          "jumbo_frames"
+        ]
+      },
+      {
+        "name": "eth1",
+        "available_input_bandwidth": "10 GB/s"
+      }
+    ]
+  },
+  "Storage": {
+    "devices": [
+      {
+        "name": "nvme0n1",
+        "media_type": "NVMe SSD",
+        "read_throughput": "7000 MB/s",
+        "write_throughput": "5000 MB/s"
+      },
+      {
+        "name": "sda",
+        "type": "HDD"
+      }
+    ]
+  }
+}

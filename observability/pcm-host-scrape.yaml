@@ -1,0 +1,70 @@
+# Makes Prometheus scrape the host Intel PCM exporter on a worker.
+#
+# PCM runs as a systemd service on the worker (scripts/install-pcm-host.sh), not
+# as a Pod: inside a Pod its threads inherit the Pod's cpuset, and under a dense
+# pinned workload that cpuset can collapse onto a single socket - which hides
+# exactly the cross-socket UPI traffic this lab measures.
+#
+# A Kubernetes Service normally selects Pods. Here it has no selector and a
+# hand-written EndpointSlice instead, which points at the worker's node IP. The
+# ServiceMonitor then makes kube-prometheus-stack scrape it under the job name
+# "pcm-sensor-server", which is what python/mxlperf/collect.py queries.
+#
+# __NODE__ and __NODE_IP__ are substituted by scripts/install-observability.sh.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pcm-sensor-server
+  namespace: monitoring
+  labels:
+    app: pcm-sensor-server
+    release: monitoring
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9738
+      targetPort: 9738
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: pcm-sensor-server-__NODE__
+  namespace: monitoring
+  labels:
+    app: pcm-sensor-server
+    release: monitoring
+    kubernetes.io/service-name: pcm-sensor-server
+addressType: IPv4
+ports:
+  - name: metrics
+    protocol: TCP
+    port: 9738
+endpoints:
+  - addresses: ["__NODE_IP__"]
+    conditions:
+      ready: true
+    nodeName: __NODE__
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pcm-sensor-server
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  serviceDiscoveryRole: EndpointSlice
+  namespaceSelector:
+    matchNames: ["monitoring"]
+  selector:
+    matchLabels:
+      app: pcm-sensor-server
+  endpoints:
+    - port: metrics
+      interval: 5s
+      scrapeTimeout: 5s
+      # Keep the raw host:port as the instance label; collect.py matches the
+      # worker's node IP against it.
+      honorLabels: true

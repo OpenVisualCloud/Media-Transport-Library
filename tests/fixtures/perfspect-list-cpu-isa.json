@@ -1,0 +1,65 @@
+{
+  "CPU": [
+    {
+      "CPU Model": "Intel(R) Xeon(R) 6767P",
+      "CPUs": "128",
+      "Cores per Socket": "64",
+      "NUMA Nodes": "2",
+      "Sockets": "2",
+      "Base Frequency": "2.4GHz",
+      "Microarchitecture": "GNR_X2"
+    }
+  ],
+  "ISA": [
+    {
+      "AMX-COMPLEX Instruction": "No",
+      "AMX-FP16 Instruction": "Yes",
+      "AVX-512 Foundation": "Yes",
+      "AVX-IFMA Instruction": "No",
+      "AVX-NE-CONVERT Instruction": "No",
+      "AVX-VNNI-INT8 Instruction": "No",
+      "Advanced Encryption Standard New Instructions (AES-NI)": "Yes",
+      "Advanced Matrix Extensions (AMX)": "Yes",
+      "Advanced Vector Extensions (AVX512_FP16)": "Yes",
+      "Cache Line Demote (CLDEMOTE)": "Yes",
+      "Compare and Add if Condition is Met (CMPCCXADD)": "No",
+      "Enqueue Command Instruction (ENQCMD)": "Yes",
+      "Move 64 Bytes as Direct Store (MOVDIR64B)": "Yes",
+      "Move Doubleword as Direct Store (MOVDIRI)": "Yes",
+      "PREFETCHIT0/1 Instruction": "Yes",
+      "SERIALIZE Instruction": "Yes",
+      "SHA1/SHA256 Instruction Extensions (SHA_NI)": "Yes",
+      "Transactional Synchronization Extensions (TSXLDTRK)": "Yes",
+      "UMONITOR, UMWAIT, TPAUSE Instructions": "Yes",
+      "Vector AES": "Yes",
+      "Vector Neural Network Instructions (AVX512_BF16)": "Yes",
+      "Vector Neural Network Instructions (AVX512_VNNI)": "Yes"
+    }
+  ],
+  "DIMM": [
+    {
+      "Socket": "0",
+      "Channel": "0",
+      "Configured Speed": "6400 MT/s",
+      "Size": "32 GB",
+      "Type": "DDR5"
+    }
+  ],
+  "Memory": [
+    {
+      "Installed Memory": "512GB (16x32GB DDR5 6400MT/s [6400MT/s])",
+      "Populated Memory Channels": "16",
+      "MemTotal": "527976696 kB",
+      "Buffers": "892408 kB",
+      "Cached": "21015728 kB",
+      "MemAvailable": "519348168 kB",
+      "MemFree": "499532432 kB",
+      "HugePages_Total": "0",
+      "Hugepagesize": "2048 kB",
+      "Transparent Huge Pages": "madvise",
+      "Automatic NUMA Balancing": "Enabled",
+      "Clustering Mode": "UMA 4 (Quad)",
+      "Total Memory Encryption (TME)": "Disabled"
+    }
+  ]
+}

@@ -1,0 +1,922 @@
+{
+  "uid": "intel-perfspect-mxl",
+  "title": "Intel PerfSpect — k8s-w2 (FFmpeg-MXL Scenario 1)",
+  "tags": [
+    "intel",
+    "perfspect",
+    "crm-workloads",
+    "tma"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Top-Down Microarchitecture Analysis (TMA)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "TMA Level 1 — pipeline-slot breakdown (%)",
+      "description": "Where the CPU's issue slots go. The four sum to ~100%. Backend_Bound dominating means the workload waits on data/execution resources rather than instruction supply. PerfSpect publishes already-computed percentages (gauges) — no rate() needed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 35,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_Frontend_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Frontend Bound"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_Bad_Speculation{job=\"perfspect-exporter\"}",
+          "legendFormat": "Bad Speculation"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_Backend_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Backend Bound"
+        },
+        {
+          "refId": "D",
+          "expr": "perfspect_Retiring{job=\"perfspect-exporter\"}",
+          "legendFormat": "Retiring (useful)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "TMA now (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_Backend_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Backend"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_Retiring{job=\"perfspect-exporter\"}",
+          "legendFormat": "Retiring"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_Bad_Speculation{job=\"perfspect-exporter\"}",
+          "legendFormat": "Bad Spec"
+        },
+        {
+          "refId": "D",
+          "expr": "perfspect_Frontend_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Frontend"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Backend Bound breakdown — Memory vs Core (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_Memory_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Memory Bound"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_Core_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Core Bound"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory Bound breakdown by level (%)",
+      "description": "Splits memory stalls across the cache/memory hierarchy. L3_Bound + Store_Bound + DRAM_Bound being prominent points to cross-core sharing, store-buffer pressure, and DRAM latency rather than capacity.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_L1_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "L1 Bound"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_L2_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "L2 Bound"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_L3_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "L3 Bound"
+        },
+        {
+          "refId": "D",
+          "expr": "perfspect_DRAM_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "DRAM Bound"
+        },
+        {
+          "refId": "E",
+          "expr": "perfspect_Store_Bound{job=\"perfspect-exporter\"}",
+          "legendFormat": "Store Bound"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Execution efficiency",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPI / IPC",
+      "description": "Cycles-per-instruction (lower is better) and its reciprocal IPC. kernel_CPI isolates kernel-mode cost.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_cpi{job=\"perfspect-exporter\"}",
+          "legendFormat": "CPI"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_ipc{job=\"perfspect-exporter\"}",
+          "legendFormat": "IPC"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_kernel_cpi{job=\"perfspect-exporter\"}",
+          "legendFormat": "kernel CPI"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Frequency — core vs uncore (GHz)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ghz",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_cpu_operating_frequency{job=\"perfspect-exporter\"}",
+          "legendFormat": "core"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_uncore_frequency{job=\"perfspect-exporter\"}",
+          "legendFormat": "uncore"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU utilization (%) and throughput (GIPS)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GIPS"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_cpu_utilization{job=\"perfspect-exporter\"}",
+          "legendFormat": "CPU util %"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_cpu_util_kernel{job=\"perfspect-exporter\"}",
+          "legendFormat": "kernel %"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_giga_instructions_per_sec{job=\"perfspect-exporter\"}",
+          "legendFormat": "GIPS"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Branch misprediction ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 4,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_branch_misprediction_ratio{job=\"perfspect-exporter\"}",
+          "legendFormat": "branch mispredict ratio"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Memory bandwidth & NUMA",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory bandwidth — total / read / write (GB/s)",
+      "description": "PerfSpect publishes bandwidth in MB/sec; divided by 1000 here for GB/s. Cross-checks against the PCM dashboard's DRAM bandwidth panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_memory_bandwidth_total{job=\"perfspect-exporter\"} / 1000",
+          "legendFormat": "total"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_memory_bandwidth_read{job=\"perfspect-exporter\"} / 1000",
+          "legendFormat": "read"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_memory_bandwidth_write{job=\"perfspect-exporter\"} / 1000",
+          "legendFormat": "write"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Mem BW now (GB/s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "GBs",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_memory_bandwidth_total{job=\"perfspect-exporter\"} / 1000",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "NUMA — reads to local vs remote DRAM (%)",
+      "description": "Share of demand DRAM reads served by the local socket vs the remote socket. High remote % indicates cross-socket traffic that inflates latency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_numa_reads_addressed_to_local_dram{job=\"perfspect-exporter\"}",
+          "legendFormat": "local DRAM"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_numa_reads_addressed_to_remote_dram{job=\"perfspect-exporter\"}",
+          "legendFormat": "remote DRAM"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLC demand read miss latency — local vs remote (ns)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ns",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_llc_demand_data_read_miss_latency{job=\"perfspect-exporter\"}",
+          "legendFormat": "overall"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_llc_demand_data_read_miss_latency_for_local_requests{job=\"perfspect-exporter\"}",
+          "legendFormat": "local"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_llc_demand_data_read_miss_latency_for_remote_requests{job=\"perfspect-exporter\"}",
+          "legendFormat": "remote"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cache hierarchy (misses per instruction)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MPI — L1D / L2 / LLC (misses per instruction)",
+      "description": "Misses Per Instruction at each level. Lower is better; rising LLC MPI with steady L1/L2 implies working-set spill to memory.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 53
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 4,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_l1d_mpi{job=\"perfspect-exporter\"}",
+          "legendFormat": "L1D MPI"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_l2_mpi{job=\"perfspect-exporter\"}",
+          "legendFormat": "L2 MPI"
+        },
+        {
+          "refId": "C",
+          "expr": "perfspect_llc_data_read_mpi_demand_plus_prefetch{job=\"perfspect-exporter\"}",
+          "legendFormat": "LLC data read MPI"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Uop delivery — DSB vs MITE (%)",
+      "description": "Decoded-icache (DSB) vs legacy decode (MITE) uop delivery. Falling DSB share signals front-end inefficiency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_percent_uops_delivered_from_decoded_icache{job=\"perfspect-exporter\"}",
+          "legendFormat": "DSB"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_percent_uops_delivered_from_legacy_decode_pipeline{job=\"perfspect-exporter\"}",
+          "legendFormat": "MITE"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Power",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Power — package & DRAM (W)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 0,
+        "y": 62
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "placement": "right"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_package_power{job=\"perfspect-exporter\"}",
+          "legendFormat": "package"
+        },
+        {
+          "refId": "B",
+          "expr": "perfspect_dram_power{job=\"perfspect-exporter\"}",
+          "legendFormat": "DRAM"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Package power now (W)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 62
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "perfspect_package_power{job=\"perfspect-exporter\"}",
+          "legendFormat": "package"
+        }
+      ]
+    }
+  ]
+}
