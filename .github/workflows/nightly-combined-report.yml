@@ -141,6 +141,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Flatten pytest report structure
+        env:
+          REPORT_DIR: pytest-reports
         run: task ci:report -- flatten-pytest
 
       - name: Flatten gtest report structure
