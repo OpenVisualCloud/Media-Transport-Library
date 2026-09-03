@@ -831,8 +831,9 @@ static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   uint32_t brat_m =
       8 * s->st22_codestream_size * s->fps_tm.mul / s->fps_tm.den / 1024 / 1024;
   jpvi->brat = htonl(brat_m);
-  /* hardcode to 59.94 now */
-  uint32_t frat = (1 << 24) | 60;
+  const uint32_t den = s->fps_tm.den == 1001 ? 2 : 1;
+  const uint32_t num = s->fps_tm.den == 1001 ? s->fps_tm.mul / 1000 : s->fps_tm.mul;
+  uint32_t frat = (s->ops.interlaced << 30) | ((den & 0x3f) << 24) | ((num >> s->ops.interlaced) & 0xffff);
   jpvi->frat = htonl(frat);
   /* hardcode to 10bit ycbcr 422 */
   uint16_t schar = (0x1 << 15) | ((10 - 1) << 4);
