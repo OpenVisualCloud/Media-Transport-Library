@@ -175,9 +175,22 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
     return NULL;
   }
 
+  const int max_retry = 5;
+  int retry = 0;
+
+retry:
   mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  if (!r_flow) {
+    err("%s(%d), rte_flow_create fail for queue %d, retry %d, %s\n", __func__, port, q,
+        retry, mt_string_safe(error.message));
+    retry++;
+    if (retry < max_retry) {
+      mt_sleep_ms(10); /* WA: to wait pf finish the vf request */
+      goto retry;
+    }
+  }
 
   /* WA specific for e810 for PF interfaces */
   if (!has_ip_flow && !r_flow) {
@@ -264,7 +277,7 @@ static int rx_flow_free(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp) {
   enum mtl_port port = inf->port;
   struct rte_flow_error error;
   int ret;
-  int max_retry = 5;
+  const int max_retry = 5;
   int retry = 0;
 
 retry:
