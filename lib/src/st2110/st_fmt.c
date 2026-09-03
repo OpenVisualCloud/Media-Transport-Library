@@ -734,10 +734,9 @@ int st_frame_period_ns(enum st_fps fps, uint64_t* period_ns) {
   struct st_fps_timing fps_tm;
   int ret;
 
-  memset(&fps_tm, 0, sizeof(fps_tm));
-
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
+  if (!fps_tm.mul) return -EINVAL;
 
   /* truncated from the exact rational rate, not from the rounded framerate */
   *period_ns = (uint64_t)NS_PER_S * fps_tm.den / fps_tm.mul;
