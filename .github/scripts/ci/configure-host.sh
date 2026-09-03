@@ -128,7 +128,8 @@ shadow-credentials)
 	credentials=${SHADOW_HOST_FILE:?SHADOW_HOST_FILE is required}
 	# shellcheck disable=SC1090
 	. "$credentials"
-	printf 'ip=%s\nuser=%s\n' "${IP:?IP is required}" "${USER:?USER is required}" \
+	printf 'ip=%s\nuser=%s\n' "${SHADOW_IP:-${IP:?IP is required}}" \
+		"${SHADOW_USER:-${USER:?USER is required}}" \
 		>>"${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 	;;
 shadow-sync)
