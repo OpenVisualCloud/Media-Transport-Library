@@ -730,6 +730,19 @@ int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
   return -EINVAL;
 }
 
+int st_frame_period_ns(enum st_fps fps, uint64_t* period_ns) {
+  struct st_fps_timing fps_tm;
+  int ret;
+
+  ret = st_get_fps_timing(fps, &fps_tm);
+  if (ret < 0) return ret;
+  if (!fps_tm.mul) return -EINVAL;
+
+  /* truncated from the exact rational rate, not from the rounded framerate */
+  *period_ns = (uint64_t)NS_PER_S * fps_tm.den / fps_tm.mul;
+  return 0;
+}
+
 double st_frame_rate(enum st_fps fps) {
   int i;
 
