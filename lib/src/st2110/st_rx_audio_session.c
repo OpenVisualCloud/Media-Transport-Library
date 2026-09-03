@@ -5,6 +5,7 @@
 #include "st_rx_audio_session.h"
 
 #include <math.h>
+#include <rte_random.h>
 
 #include "../datapath/mt_queue.h"
 #include "../mt_handle_guard.h"
@@ -709,8 +710,8 @@ static int ra_dump_pcap(struct st_rx_audio_session_impl* s, struct rte_mbuf** mb
 
 static bool ra_simulate_pkt_loss(struct st_rx_audio_session_impl* s) {
   if (s->burst_loss_cnt == 0) {
-    if (((float)rand() / (float)RAND_MAX) < s->sim_loss_rate) {
-      s->burst_loss_cnt = rand() % s->burst_loss_max + 1;
+    if (rte_drand() < s->sim_loss_rate) {
+      s->burst_loss_cnt = (uint16_t)(rte_rand_max(s->burst_loss_max) + 1);
     } else {
       return false;
     }
