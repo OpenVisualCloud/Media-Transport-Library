@@ -4,36 +4,40 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
+@pytest.mark.tx_side
 @pytest.mark.parametrize(
-    "application",
+    ("application", "packing", "media_file"),
     [
-        "rxtxapp",
+        *[
+            pytest.param(
+                "rxtxapp",
+                packing,
+                media_file,
+                id=f"rxtxapp-{packing}-{name}",
+            )
+            for packing in ("BPM", "GPM", "GPM_SL")
+            for name, media_file in yuv_files_422rfc10.items()
+        ],
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support packing mode selection"
-            ),
+            "BPM",
+            yuv_files_422p10le["Penguin_1080p"],
+            id="ffmpeg-BPM-Penguin_1080p",
+        ),
+        pytest.param(
+            "gstreamer",
+            "BPM",
+            yuv_files_422p10le["Penguin_1080p"],
+            id="gstreamer-BPM-Penguin_1080p",
         ),
     ],
-)
-@pytest.mark.tx_side
-@pytest.mark.parametrize("packing", ["BPM", "GPM", "GPM_SL"])
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        yuv_files_422rfc10["Penguin_720p"],
-        yuv_files_422rfc10["Penguin_1080p"],
-        yuv_files_422rfc10["Penguin_4K"],
-        yuv_files_422rfc10["Penguin_8K"],
-    ],
     indirect=["media_file"],
-    ids=["Penguin_720p", "Penguin_1080p", "Penguin_4K", "Penguin_8K"],
 )
 def test_st20p_packing(
     application,
@@ -81,7 +85,13 @@ def test_st20p_packing(
     else:
         actual_test_time = max(test_time, 8)
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        packing=packing,
+    )
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,

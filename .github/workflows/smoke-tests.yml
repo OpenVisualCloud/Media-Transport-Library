@@ -154,6 +154,14 @@ jobs:
       - name: 'preparation: Verify the compliance analyser'
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' && matrix.no_capture != '1' }}
         run: task ci:ebu-list -- verify
+      # The oracles the suite below grades with -- frame-size tables, the RX byte
+      # floor, the generated ramdisk size -- have their own no-NIC test tier.
+      # Run it first: it takes under a second, and a broken oracle otherwise
+      # surfaces as a confusing data-path failure an hour into the real suite.
+      - name: 'execution: Grade the suite oracles'
+        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        timeout-minutes: 5
+        run: task ci:pytest-run -- acceptance-unit
       - name: 'execution: Run the ${{ matrix.suite }} suite'
         if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         timeout-minutes: ${{ matrix.run_timeout }}

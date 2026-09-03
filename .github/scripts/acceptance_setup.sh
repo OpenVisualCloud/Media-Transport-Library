@@ -65,6 +65,19 @@ Flags for 'setup' (all optional; interactive mode prompts for anything unset):
   --ffmpeg / --no-ffmpeg     Build the FFmpeg plugin into .local_install (default: on).
   --gstreamer / --no-gstreamer  Build the GStreamer plugin (default: off).
   --test-time=N              test_config.yaml::test_time in seconds (default 30).
+                              Below 30, a GStreamer case on the mtl_engine
+                              adapter extends its own wall clock back up to 30s,
+                              because each of that adapter's oracles grades a
+                              duration: MTL prints pipeline frame counters once
+                              per 10s and two completed intervals are what grade
+                              a rate, and a window short enough to be mostly
+                              pipeline startup fails the RX byte floor. The
+                              legacy GstreamerApp cases (everything under
+                              tests/dual/gstreamer/ and tests/single/gstreamer/)
+                              have no such floor and run for exactly N.
+                              Also sizes ramdisk.media.size_gib, at
+                              ceil(2.5 GB/s x max(N, 30)) + 8 GiB, then capped
+                              at half the non-hugetlb RAM and floored at 16 GiB.
   --ebu-ip=IP                EBU LIST server IP, for PCAP compliance checking.
   --ebu-user=USER            EBU LIST server username (paired with --ebu-ip).
                               Password: set EBU_PASSWORD in the environment,

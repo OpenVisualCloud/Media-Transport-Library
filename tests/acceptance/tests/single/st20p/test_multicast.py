@@ -10,13 +10,7 @@ pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        "ffmpeg",
-    ],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     [
@@ -71,7 +65,12 @@ def test_st20p_multicast(
     else:
         actual_test_time = max(test_time, 8)
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+    )
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,

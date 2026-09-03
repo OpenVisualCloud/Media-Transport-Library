@@ -9,15 +9,7 @@ from mtl_engine.media_files import anc_files
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
-        ),
-    ],
+    ["rxtxapp", "gstreamer"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -47,7 +39,7 @@ def test_st40p_basic(
         test_config.get("interface_type", "VF")
     )
 
-    app = app_factory(application)
+    app = app_factory(application, session_type="st40p")
     app.create_command(
         session_type="st40p",
         nic_port_list=interfaces_list,
@@ -63,15 +55,7 @@ def test_st40p_basic(
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
-        ),
-    ],
+    ["rxtxapp", "gstreamer"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -107,7 +91,7 @@ def test_st40p_multicast_with_compliance(
     # EBU compliance verdict needs many ancillary packets to classify.
     test_time = max(test_time, 90)
 
-    app = app_factory(application)
+    app = app_factory(application, session_type="st40p")
     app.create_command(
         session_type="st40p",
         nic_port_list=interfaces_list,
@@ -128,15 +112,7 @@ def test_st40p_multicast_with_compliance(
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
-        ),
-    ],
+    ["rxtxapp"],
 )
 @pytest.mark.parametrize(
     "media_file",
@@ -162,7 +138,7 @@ def test_st40p_rtcp(
         test_config.get("interface_type", "VF")
     )
 
-    app = app_factory(application)
+    app = app_factory(application, session_type="st40p", enable_rtcp=True)
     app.create_command(
         session_type="st40p",
         nic_port_list=interfaces_list,

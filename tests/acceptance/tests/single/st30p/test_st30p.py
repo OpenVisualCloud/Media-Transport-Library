@@ -18,12 +18,8 @@ _SMOKE_CASE = ("PCM16", "M")
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st30p audio pipeline"
-            ),
-        ),
+        "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -59,7 +55,9 @@ def test_st30p_integrity(
     out_file_url = output_files.register(str(log_dir / "out.wav"))
     host = list(hosts.values())[0]
 
-    app = app_factory(application)
+    app = app_factory(
+        application, session_type="st30p", audio_format=media_file_info["format"]
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
@@ -88,6 +86,7 @@ def test_st30p_integrity(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -133,7 +132,12 @@ def test_st30p_channel(
         str(host.connection.path(media_file_path).parent / "out.pcm")
     )
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st30p",
+        audio_format=media_file_info["format"],
+        audio_channels=[audio_channel],
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
@@ -164,6 +168,7 @@ def test_st30p_channel(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -200,7 +205,9 @@ def test_st30p_format(
         str(host.connection.path(media_file_path).parent / "out.pcm")
     )
 
-    app = app_factory(application)
+    app = app_factory(
+        application, session_type="st30p", audio_format=media_file_info["format"]
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
@@ -225,23 +232,24 @@ def test_st30p_format(
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
+    ("application", "audio_ptime", "media_file"),
     [
-        "rxtxapp",
-        "ffmpeg",
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        audio_files["PCM8"],
-        audio_files["PCM16"],
-        audio_files["PCM24"],
+        *[
+            pytest.param(
+                application, ptime, media_file, id=f"{application}-{ptime}-{name}"
+            )
+            for application in ("rxtxapp", "gstreamer")
+            for ptime in ("1", "0.12", "0.25", "0.33", "4")
+            for name, media_file in audio_files.items()
+        ],
+        *[
+            pytest.param("ffmpeg", ptime, media_file, id=f"ffmpeg-{ptime}-{name}")
+            for ptime in ("1", "0.12")
+            for name, media_file in audio_files.items()
+        ],
     ],
     indirect=["media_file"],
-    ids=["PCM8", "PCM16", "PCM24"],
 )
-@pytest.mark.parametrize("audio_ptime", ["1", "0.12", "0.25", "0.33", "4"])
 @pytest.mark.tx_and_rx
 def test_st30p_ptime(
     application,
@@ -258,10 +266,6 @@ def test_st30p_ptime(
     media_integrity,
 ):
     """Test st30p with different ptime values."""
-    # FFmpeg mtl_st30p plugin only supports ptime "1ms" and "125us".
-    if application == "ffmpeg" and audio_ptime not in ("1", "0.12"):
-        pytest.skip(f"FFmpeg st30p plugin does not support ptime={audio_ptime}")
-
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -271,7 +275,12 @@ def test_st30p_ptime(
         str(host.connection.path(media_file_path).parent / "out.pcm")
     )
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st30p",
+        audio_format=media_file_info["format"],
+        audio_ptime=audio_ptime,
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
@@ -300,6 +309,7 @@ def test_st30p_ptime(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -338,7 +348,12 @@ def test_st30p_sampling(
         str(host.connection.path(media_file_path).parent / "out.pcm")
     )
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st30p",
+        audio_format=media_file_info["format"],
+        audio_sampling=audio_sampling,
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
@@ -367,6 +382,7 @@ def test_st30p_sampling(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -401,7 +417,9 @@ def test_st30p_multicast(
     log_dir.mkdir(parents=True, exist_ok=True)
     out_file_url = str(log_dir / "out.wav")
 
-    app = app_factory(application)
+    app = app_factory(
+        application, session_type="st30p", audio_format=media_file_info["format"]
+    )
     app.create_command(
         session_type="st30p",
         nic_port_list=interfaces_list,
