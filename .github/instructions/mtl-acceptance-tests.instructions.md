@@ -50,16 +50,20 @@ cd tests/acceptance
 PY="sudo -E ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml"
 
 $PY -m smoke -v                                              # marker
-$PY tests/single/st20p/fps/test_fps.py -m smoke --tb=short -v # proven first pass: p29/ParkJoy_1080p
+$PY tests/single/st20p/test_fps.py -m smoke -k rxtxapp -v    # proven first pass: p29
 $PY tests/single/st20p -v                                    # folder
 $PY tests/single/st40p -k multicast -v                       # substring
-$PY "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]" -v   # exact (quote brackets)
+$PY "tests/single/st20p/test_fps.py::test_st20p_fps[|fps = p60|-Penguin_1080p-|application = rxtxapp|]" -v   # exact id, quoting required
 $PY <selector> --collect-only -q                             # dry run
 ```
 
-Selection markers: `smoke` (smallest), `nightly` (bulk single-host), `performance` (long,
-hardware-bound). The full marker set and its authoring rules live in
-[mtl-acceptance-authoring.instructions.md](mtl-acceptance-authoring.instructions.md#markers).
+Selection markers for `tests/single/`: `smoke` (smallest set that proves the host works),
+`nightly` (bulk single-host coverage), `ptp` (uses MTL's internal PTP). The performance
+markers (`performance`, `base_performance`) apply to `tests/dual/` items — select the
+`tests/single/performance/` modules by path, not by marker. `tests/acceptance/pytest.ini` holds
+the authoritative list. For the descriptive markers (`verified`, `refactored`,
+`tx_side`/`rx_side`/`tx_and_rx`, `allow_wide_compliance`) see
+[acceptance_quickstart.md § Markers](../../doc/acceptance_quickstart.md#markers).
 
 ## Backend per category
 
@@ -115,6 +119,13 @@ If you hit something not in this table: read `logs/latest/*.log` (sudo), match a
 ## Reporting
 
 Selector + counts (`X passed, Y failed, Z skipped`); for each FAIL/ERROR: 1-line root cause + offending log line + path to `logs/latest/`.
+
+`--tb` defaults to `auto`, which prints source context and the function arguments for each
+failure. Add `--showlocals` to see local variables, which `auto` never prints. Detail does not
+increase from `long` to `auto` to `short` to `line`, and `auto` equals `long` until the traceback
+exceeds two frames. Keep `auto` when one test fails, because `short` shows only one source line
+for each frame. Pass `--tb=short` when many tests fail, because `auto` prints more lines for each
+one. Pass `--tb=line` for one path line plus the exception message for each failure.
 
 ## See also
 
