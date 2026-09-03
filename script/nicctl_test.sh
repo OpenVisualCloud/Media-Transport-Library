@@ -10,10 +10,11 @@
 # does not return while the PF is rebuilding. Three smoke legs died there, each
 # taking SIGTERM and outliving it until the SSH connection dropped 60s later.
 #
-# No NIC and no root: dpdk-devbind.py is stubbed through MTL_INSTALL_PREFIX, which
-# nicctl.sh prepends to PATH. The BDF is one that exists on no host, so any write to
-# /sys/bus/pci/devices/<bdf>/sriov_numvfs fails with ENOENT -- the presence or
-# absence of that error is how the tests below tell "wrote" from "refused to write".
+# No NIC and no root: dpdk-devbind.py and modprobe are stubbed through
+# MTL_INSTALL_PREFIX, which nicctl.sh prepends to PATH. The BDF is one that exists on
+# no host, so any write to /sys/bus/pci/devices/<bdf>/sriov_numvfs fails with ENOENT
+# -- the presence or absence of that error is how the tests below tell "wrote" from
+# "refused to write".
 
 set -u
 
@@ -23,6 +24,12 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "${scratch}/dpdk/bin"
 stub="${scratch}/dpdk/bin/dpdk-devbind.py"
+
+# create_tvf runs `modprobe vfio-pci` before the sriov_numvfs write, and `set -e` makes
+# a failure there fatal, so an unprivileged run aborts short of the branch under test.
+# Loading the module is not what these tests assert.
+printf '#!/bin/sh\nexit 0\n' >"${scratch}/dpdk/bin/modprobe"
+chmod +x "${scratch}/dpdk/bin/modprobe"
 
 bdf=0000:98:00.0
 no_netdev="${bdf} 'Ethernet Controller E810-C for QSFP 1592' numa_node=2 if= drv=ice unused=vfio-pci"
