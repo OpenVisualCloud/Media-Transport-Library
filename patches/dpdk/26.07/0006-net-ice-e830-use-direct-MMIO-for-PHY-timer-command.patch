@@ -14,6 +14,7 @@ Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/net/intel/ice/base/ice_ptp_hw.c b/drivers/net/intel/ice/base/ice_ptp_hw.c
+index 5688f969ce..8c535c95ae 100644
 --- a/drivers/net/intel/ice/base/ice_ptp_hw.c
 +++ b/drivers/net/intel/ice/base/ice_ptp_hw.c
 @@ -5627,8 +5627,10 @@

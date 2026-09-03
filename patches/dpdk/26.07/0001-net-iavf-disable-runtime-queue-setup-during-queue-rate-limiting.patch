@@ -1,0 +1,37 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Mon, 13 Jul 2026 05:42:40 -0400
+Subject: [PATCH] net/iavf: do not advertise runtime queue setup
+
+Runtime queue setup corrupts queue state on an E810 VF. An Rx queue
+that was stopped once never receives again, and the flow rule still
+sends the stream to that queue, so the VF discards every packet of it.
+
+Take RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP and
+RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP away. The ethdev layer then
+rejects a queue setup call on a running port, and an application must
+set up each queue before it starts the port.
+
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_ethdev.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
+index d601ec3b6a..e475b64971 100644
+--- a/drivers/net/intel/iavf/iavf_ethdev.c
++++ b/drivers/net/intel/iavf/iavf_ethdev.c
+@@ -1160,9 +1160,9 @@ iavf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 	dev_info->reta_size = vf->vf_res->rss_lut_size;
+ 	dev_info->flow_type_rss_offloads = IAVF_RSS_OFFLOAD_ALL;
+ 	dev_info->max_mac_addrs = IAVF_NUM_MACADDR_MAX;
+-	dev_info->dev_capa =
+-		RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP |
+-		RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP;
++	/* Runtime queue setup corrupts E810 VF queue state. */
++	dev_info->dev_capa &= ~(RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP |
++				RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP);
+ 	dev_info->rx_offload_capa =
+ 		RTE_ETH_RX_OFFLOAD_VLAN_STRIP |
+ 		RTE_ETH_RX_OFFLOAD_QINQ_STRIP |
