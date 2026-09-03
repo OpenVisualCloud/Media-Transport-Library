@@ -10,6 +10,15 @@ inputs:
       Every name listed must reach conclusion success. A name that never appears is
       a timeout, not a pass -- that is the whole point of the gate.
     required: true
+  workflow:
+    description: >
+      Workflow FILENAME the checks must belong to, e.g. build.yml or linter.yml
+      -- the same filename contract .github/scripts/ci/find-nightly-runs.js uses
+      for workflow_id, not the workflow's display name. Required, because a check
+      run's name is its job name and matches across workflows: without this the
+      gate for `build` also accepts the `build` job of GitHub's Pages deployment.
+      The caller needs `actions: read` for the lookup.
+    required: true
   timeout:
     description: 'Maximum in-progress time in seconds'
     required: false
@@ -34,6 +43,7 @@ runs:
       uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
       env:
         CHECK_NAMES: ${{ inputs.check_name }}
+        WORKFLOW_FILE: ${{ inputs.workflow }}
         WAIT_TIMEOUT: ${{ inputs.timeout }}
         QUEUE_TIMEOUT: ${{ inputs.queue_timeout }}
         WAIT_INTERVAL: ${{ inputs.interval }}

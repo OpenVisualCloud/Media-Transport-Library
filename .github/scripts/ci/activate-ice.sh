@@ -67,6 +67,30 @@ loaded_is_cached || {
 	echo "ICE did not come back up as the cached module" >&2
 	exit 1
 }
+
+# srcversion says the right source is loaded, not that the load worked. Every ice
+# PF must also have come back with a netdev, and `modprobe ice` returning means
+# every probe has finished -- ice_driver sets no probe_type, so they run
+# synchronously -- which makes a PF with no netdev here one that failed to register
+# one, not one still working on it. Waiting cannot help; only another load can.
+#
+# Not a harmless state to hand on: sriov_numvfs and `ip link set <if> vf` both need
+# that netdev, and the write to sriov_numvfs on a PF without one does not return,
+# so the suite spends 60s per attempt and reports an SSH timeout naming nothing.
+# Two loads have left one PF of a pair this way, function 0 both times. So the card
+# is named here, where the driver was loaded, instead of downstream.
+missing=""
+for pf in /sys/bus/pci/drivers/ice/0000:*; do
+	[ -e "$pf" ] || continue
+	[ -d "${pf}/net" ] || missing="${missing} $(basename "$pf")"
+done
+if [ -n "$missing" ]; then
+	echo "ICE loaded, but these PFs registered no netdev:${missing}" >&2
+	echo "Re-running reloads the driver, which has recovered this before. If it" >&2
+	echo "persists, dmesg carries the probe error." >&2
+	exit 1
+fi
+
 echo "ICE loaded from the cached module"
 
 # VFs are not recreated here: every consumer builds the VF state it needs, and

@@ -72,6 +72,9 @@ jobs:
         uses: ./.github/actions/wait-for-workflow
         with:
           check_name: build
+          # Without this the gate also accepts the `build` job of GitHub's Pages
+          # deployment run, which finishes minutes before the real build.
+          workflow: build.yml
           # Five minutes inside this job's timeout-minutes, so the wait ends with
           # "no runner ever picked the build up" instead of a bare job timeout.
           queue_timeout: '4200'

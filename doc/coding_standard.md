@@ -243,25 +243,55 @@ is listed here explicitly, and runs in the `residual-linters` job of
 
 That job was a deny-list of nine `VALIDATE_*: false` keys and is now an
 **allow-list**, so anything not named above is no longer enforced -- the two real
-cases are in the table, and a file type census found no tracked `*.js`, `*.css`,
-`*.xml`, `*.go`, `*.rb`, `*.java` or `*.sql` for the rest to have applied to.
+cases are in the table, and a file type census found no tracked `*.css`, `*.xml`,
+`*.go`, `*.rb`, `*.java` or `*.sql` for the rest to have applied to. `*.js` is the
+exception, and a real gap: four files are tracked, all of them CI glue under
+`.github/`, and neither `VALIDATE_JAVASCRIPT_ES` nor any hook in
+`.pre-commit-config.yaml` reaches them -- `clang-format` is restricted to
+`types_or: [c, c++]`. Giving JavaScript a linter is its own change.
 super-linter aborts if `true` and `false` are mixed, so no `VALIDATE_*: false`
 line may be added back.
 
 ### 4.1. The build gate depends on these names
 
 `.github/workflows/build.yml` will not build until the file linters have passed.
-The `Lint Code Base` job aggregates the three `checkpatch` matrix jobs and
-`Lint checks not yet in checkpatch`; the build's `wait-for-linter` job polls that
-one stable check-run name. A lint failure therefore skips the build rather than
-wasting a DPDK compile on it. Commit-message style remains an independent pull
-request check and does not block the compile.
+Its `wait-for-linter` job polls the four check-run names `linter.yml` produces --
+`checkpatch (ubuntu-latest)`, `checkpatch (macos-latest)`,
+`checkpatch (windows-latest)` and `Lint checks not yet in checkpatch` -- and every
+one must reach success. `Lint Code Base` is a roll-up for branch protection, over
+those jobs and over `gate-tests`, not what the gate waits for. A lint failure
+therefore skips the build rather than wasting a DPDK compile on it.
+Commit-message style remains an independent pull request check and does not block
+the compile.
 
-The workflow coupling is by the aggregate job's `name:`. Renaming `Lint Code
-Base` without updating `build.yml` makes the gate wait for a check that never
+The coupling is by job `name:`. Renaming a job in `linter.yml` without updating
+`build.yml` does not fail the gate; it makes the gate wait for a check that never
 arrives and report a timeout, which looks like infrastructure failure instead of
-a configuration error. The aggregate keeps the matrix details visible without
-requiring consumers to duplicate every platform-specific check name.
+a configuration error.
+
+A name alone is not an address, so both users of
+`.github/actions/wait-for-workflow` -- this gate and `pr-gate.yml`'s wait for
+`build` -- must also pass `workflow:`, a workflow *filename* (`linter.yml`,
+`build.yml`). A check run's name is only its job name and carries no workflow
+identity, so the action resolves that file's runs on the commit and accepts a
+check run only from one of their check suites. Unscoped, the wait for `build`
+also matched the `build` job of GitHub's own
+`dynamic/pages/pages-build-deployment` run, which reports the same
+`github-actions` app slug and finishes minutes earlier: the gate passed in half a
+second, and the bare-metal jobs behind it then failed restoring caches the build
+had not saved yet. Pages is not the only collider -- `gtest-bare-metal.yml` also
+produces a check run named `build` on the same commit. The lookup needs
+`actions: read` in the calling workflow's `permissions`.
+
+That JavaScript has unit tests,
+`node --test .github/actions/wait-for-workflow/wait.test.js`, which pin the scoping, the
+required `workflow:` input, and each of the three waiting budgets. They run in
+`linter.yml`'s `gate-tests` job rather than as a `pre-commit` hook: they use
+built-in `node:test`, a `language: node` hook with no `additional_dependencies`
+refuses to install, and the `language: system` alternative means whatever node the
+host happens to have -- unpinned, and `./checkpatch.sh` dead on a host with none,
+against [§6.1](#61-installing-the-engine). The job pins the same Node version this
+repository's `pre-commit` node hooks use.
 
 ## 5. Git hooks
 

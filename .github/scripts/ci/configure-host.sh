@@ -79,6 +79,123 @@ registry)
 		-e "s|/usr/local/lib64/libst_plugin_st22_svt_jpeg_xs.so|${jpegxs}|" \
 		-e "s|REPLACE_BY_CICD_PLUGIN_DIR|${avcodec_dir}|" "$config"
 	echo "KAHAWAI_CFG_PATH=${config}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
+
+	# That export reaches the steps of this job and nothing else. The acceptance
+	# suite starts every app over SSH to localhost and then under sudo, so it
+	# inherits none of the job's environment -- the same reason dpdk-plugins above
+	# is a symlink and not a variable. With KAHAWAI_CFG_PATH unset in that shell
+	# mt_config_init falls back to the cwd-relative "kahawai.json", and the cwd of
+	# an SSH session is the login user's home, so the registry has to be a file
+	# there or st22p gets whatever a human last left in that directory. Both
+	# spellings, because both are read: the plain name is what the fallback opens,
+	# the dotted one is what the hosts that already pass point KAHAWAI_CFG_PATH at.
+	# Write one and not the other and the fleet stays split, which is what it was:
+	# on the hosts with neither, every JPEG-XS case died in st22_get_encoder with
+	# "fail to get, input fmt: YUV422PLANAR10LE" because the registry it did find
+	# still carried the disabled st22_svt_jpegxs entries of the tracked kahawai.json.
+	for installed in "${HOME:?HOME is required}/kahawai.json" "${HOME}/.kahawai.json"; do
+		cp "$config" "$installed"
+	done
+	echo "plugin registry: ${config}, installed in ${HOME} for the apps started over SSH"
+	;;
+clock-tai)
+	# ST 2110 RTP timestamps are on the PTP/TAI timescale; the Linux system
+	# clock is UTC. The kernel carries the difference as a settable constant,
+	# and on a host where no PTP or NTP stack ever set it, it reads 0 -- which
+	# claims TAI == UTC and is wrong by every leap second since 1972.
+	#
+	# Two things consume it, so 0 is not cosmetic. RxTxApp reads CLOCK_TAI to
+	# stamp outgoing media (doc/chunks/_run_i226.md), and the acceptance
+	# suite's conftest._host_tai_utc_offset reads it to compute the phc2sys -O
+	# that lands the capture NIC's PHC on TAI. With 0 the capture clock is
+	# parked on UTC, 37s off the media clock, and ST 2110-21 VRX is then
+	# measuring the gap between two timescales rather than MTL's pacing. Every
+	# smoke leg that reached the compliance analyser logged "TAI-UTC offset
+	# reads 0" first; see doc/ci_runner_setup.md.
+	#
+	# tzdata's leap-second table is the source, not a hard-coded 37, so this
+	# stays correct across the next leap second. Entries are stamped in the NTP
+	# epoch (1900-01-01, 2208988800s before the Unix one) and the table may
+	# announce a future one, so take the last entry already in effect.
+	table=/usr/share/zoneinfo/leap-seconds.list
+	if [ ! -r "$table" ]; then
+		echo "clock-tai: ${table} is missing -- install tzdata" >&2
+		exit 1
+	fi
+	offset=$(awk -v now="$(($(date +%s) + 2208988800))" \
+		'!/^#/ && NF >= 2 && $1 + 0 <= now { v = $2 } END { print v + 0 }' "$table")
+	if [ "$offset" -le 0 ]; then
+		echo "clock-tai: no leap-second entry in effect found in ${table}" >&2
+		exit 1
+	fi
+
+	# clock_adjtime(CLOCK_REALTIME, {modes: ADJ_TAI, constant: offset}). No
+	# shell tool sets this: adjtimex(8) is not packaged on the runners, and
+	# chronyd would need a leapsectz configuration and a running daemon.
+	sudo python3 - "$offset" <<-'PY'
+		import ctypes, sys, time
+
+		L = ctypes.c_long
+
+
+		class Timeval(ctypes.Structure):
+		    _fields_ = [("tv_sec", L), ("tv_usec", L)]
+
+
+		# struct timex, x86_64: 208 bytes. Asserted below rather than trusted,
+		# because a short struct would make the kernel write past what we
+		# allocated and a mislaid field would silently set the wrong knob.
+		class Timex(ctypes.Structure):
+		    _fields_ = [
+		        ("modes", ctypes.c_uint), ("offset", L), ("freq", L),
+		        ("maxerror", L), ("esterror", L), ("status", ctypes.c_int),
+		        ("constant", L), ("precision", L), ("tolerance", L),
+		        ("time", Timeval), ("tick", L), ("ppsfreq", L), ("jitter", L),
+		        ("shift", ctypes.c_int), ("stabil", L), ("jitcnt", L),
+		        ("calcnt", L), ("errcnt", L), ("stbcnt", L),
+		        ("tai", ctypes.c_int), ("padding", ctypes.c_int * 11),
+		    ]
+
+
+		assert ctypes.sizeof(Timex) == 208, ctypes.sizeof(Timex)
+
+		ADJ_TAI = 0x0080
+		CLOCK_REALTIME = 0
+		libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+
+		def kernel_tai():
+		    tx = Timex()
+		    tx.modes = 0  # read-only query
+		    if libc.clock_adjtime(CLOCK_REALTIME, ctypes.byref(tx)) < 0:
+		        raise OSError(ctypes.get_errno(), "clock_adjtime query failed")
+		    return tx.tai
+
+
+		want = int(sys.argv[1])
+		have = kernel_tai()
+		if have == want:
+		    print(f"clock-tai: kernel TAI-UTC offset already {have}s")
+		    sys.exit(0)
+
+		tx = Timex()
+		tx.modes = ADJ_TAI
+		tx.constant = want
+		if libc.clock_adjtime(CLOCK_REALTIME, ctypes.byref(tx)) < 0:
+		    raise OSError(ctypes.get_errno(), "clock_adjtime(ADJ_TAI) failed")
+
+		# Read back through both interfaces: the timex field proves the write
+		# landed where intended, the clock difference proves the kernel acted on
+		# it. A silent no-op here is the failure this whole stage exists to stop.
+		readback = kernel_tai()
+		live = round(time.clock_gettime(time.CLOCK_TAI) - time.clock_gettime(time.CLOCK_REALTIME))
+		if readback != want or live != want:
+		    raise SystemExit(
+		        f"clock-tai: set {want}s but kernel reports timex.tai={readback}s "
+		        f"and CLOCK_TAI-CLOCK_REALTIME={live}s"
+		    )
+		print(f"clock-tai: kernel TAI-UTC offset {have}s -> {want}s")
+	PY
 	;;
 environment)
 	jpeg_pc=$(find "${local_install}/jpegxs" -name SvtJpegxs.pc -print -quit)

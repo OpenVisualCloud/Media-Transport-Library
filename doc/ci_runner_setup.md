@@ -156,8 +156,11 @@ the receiver on a VF of port 1. Both therefore need a link. With only the first
 port cabled, MTL reports `dev_detect_link(1), link not connected for
 0000:<bus>:11.0` and `mt_dev_create` fails with `-5` before any traffic; with the
 first port cabled but nothing on the second, traffic flows and the capture stays
-empty, which EBU LIST returns as a report with `total_streams: 0` and the suite
-reads as non-compliant. Neither is an MTL fault, and neither is visible from the
+empty, which EBU LIST returns as a report with `total_streams: 0`. The suite fails
+the leg for that — it has no compliance verdict — but reports it as an
+analysed-but-empty capture rather than as non-compliance, so the reader is not
+sent to ST 2110-21 timing analysis for a cabling fault.
+Neither case is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 
@@ -213,6 +216,35 @@ baked path resolve to the drivers that were actually restored, and
 `.github/actions/validate-host` runs it right after the restore. It is a symlink,
 so it also serves the acceptance tests, which reach the host over SSH and inherit
 none of the job's environment.
+
+## The plugin registry has to be a file, for the same reason
+
+MTL loads its ST 2110-22 codec plugins from a JSON registry, and finds it in one of
+two ways (`lib/src/mt_config.c`): `KAHAWAI_CFG_PATH` if set, otherwise the
+cwd-relative literal `kahawai.json`. `task ci:configure-host -- registry` renders
+the registry correctly — `.github/workflows/kahawai_template.json` with the
+JPEG-XS plugin of *this* run's cache substituted in — but exporting
+`KAHAWAI_CFG_PATH` through `GITHUB_ENV` only reaches the steps of the job. The
+apps do not run in a step. They run over SSH and then under sudo, inheriting
+nothing, so they took the fallback: `kahawai.json` relative to the cwd of an SSH
+session, which is the login user's home directory.
+
+That made JPEG-XS depend on a file nobody tracks. Where a human had put one there,
+st22p passed; where none existed, or where the one that did was still the tracked
+repository `kahawai.json` with its `st22_svt_jpegxs` entries at `"enabled": 0`, the
+plugin never registered and every JPEG-XS case failed the same way:
+
+```text
+Warn: st_plugin_register, dlopen /usr/local/lib64/libst_plugin_st22_sample.so fail
+Error: st22_get_encoder, fail to get, input fmt: YUV422PLANAR10LE, output fmt: JPEGXS_CODESTREAM
+Error: st22p_tx_create(0), get encoder fail -22
+```
+
+RxTxApp then exits 251 and the FFmpeg leg writes an empty file. The stage now
+installs the rendered registry in the login user's home under both names the
+library will look for, `kahawai.json` and `.kahawai.json`, and keeps the export for
+the in-step consumers. A host needs no hand-made registry, and one that has an old
+one is corrected on every run.
 
 ## The EBU LIST compliance analyser
 
@@ -271,6 +303,62 @@ Use `--noproxy` (or `no_proxy`) for anything aimed at the analyser: a lab host
 exports `http_proxy` for internet access, and without it an upload to a lab
 address is handed to a proxy that cannot route there. The Python client avoids
 the same trap by setting `session.trust_env = False`.
+
+### The capture clock decides whether VRX means anything
+
+ST 2110-21 has two analyses, and they do not depend on the same thing. Cinst is a
+spacing measure: it only needs the intervals between captured packets, so it is
+right whatever the capture clock reads. VRX is an *absolute* measure — it compares
+each packet's arrival against the schedule implied by its RTP timestamp — so it is
+only a statement about the sender's pacing if the capture clock and the media
+clock agree. Point it at a clock that does not, and VRX reports the gap between
+two clocks under a name that reads like a pacing defect.
+
+Two things have to be true for that agreement, and on a fresh host neither is.
+
+The first is the kernel's TAI-UTC offset. RTP media timestamps are on TAI, the
+system clock is UTC, and the kernel carries the difference as a settable constant
+that reads **0** until a PTP or NTP stack sets it — claiming TAI == UTC, wrong by
+every leap second since 1972. `conftest._host_tai_utc_offset` reads it to compute
+the `phc2sys -O` that lands the capture NIC's PHC on TAI, so a 0 parks that PHC on
+UTC, 37s away from the media clock. `RxTxApp` reads `CLOCK_TAI` directly too, so
+the same 0 mis-stamps outgoing media at the source. `task ci:configure-host --
+clock-tai` sets it from tzdata's `leap-seconds.list` (the table, not a hard-coded
+37, so it survives the next leap second), and `validate-host` runs that stage on
+every leg. Check it by hand with:
+
+```bash
+python3 -c 'import time; print(round(time.clock_gettime(time.CLOCK_TAI)
+  - time.clock_gettime(time.CLOCK_REALTIME)))'      # must print 37, not 0
+```
+
+The second is that `phc2sys` actually runs. The capture PHC free-runs otherwise,
+and its offset from the media clock is then whatever it happens to be since the
+NIC came up — arbitrary, and different on every boot. That is what an
+undisciplined capture looks like in a report: a VRX histogram only three to five
+buckets wide, which is *better* pacing than narrow's VRX_full limit of 8, sitting
+at an offset of a thousand-odd packet slots, with Cinst simultaneously reporting
+`narrow`. Two analyses of one stream cannot disagree that far about the sender;
+when they do, the disagreement is the clock. Repeated runs of one test on one host
+give the game away completely — the offset moves by thousands of slots between
+runs while the spread stays at three.
+
+So a warning from `_start_capture_phc_sync` is not cosmetic. It says the leg's VRX
+number is about a clock, and the compliance verdict that follows should be read as
+unavailable rather than as a pacing result. The warning quotes phc2sys's own
+reason, because the ways it declines are different faults with the same
+consequence:
+
+| phc2sys says | Means |
+|---|---|
+| `interface <if> does not have a PHC` | the chosen capture PF has no hardware clock — wrong PF, or a NIC without PTP |
+| `unknown clock <if>: No such device` | no kernel netdev by that name; the PF is bound to `vfio-pci`, or was renamed |
+| nothing, and the offset never reaches tolerance | it is running but losing — usually a second daemon on the same PHC |
+
+`@pytest.mark.ptp` tests are the one case where its absence is correct: `ptp_sync`
+already runs `ptp4l` on that PHC, and a second daemon would fight it for the
+clock. The fixture skips the discipline for those, and for a `capture_cfg.phc_sync:
+false` host where MTL itself paces from the NIC PHC.
 
 ### Proving the chain without a working transmitter
 
