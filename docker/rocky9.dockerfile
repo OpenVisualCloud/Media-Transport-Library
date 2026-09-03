@@ -80,17 +80,20 @@ WORKDIR /home/imtl/
 RUN dnf install -y epel-release && \
     dnf install -y --allowerasing \
         ca-certificates sudo curl unzip \
-        numactl-libs json-c libpcap SDL2 SDL2_ttf openssl-libs zlib elfutils-libelf libcap-ng libatomic && \
+        numactl-libs json-c libpcap SDL2 SDL2_ttf openssl-libs zlib elfutils-libelf libcap-ng libatomic pciutils && \
     dnf clean all && \
     echo "Add user: imtl(20001) with group vfio(2110)" && \
     groupadd -g 2110 vfio && \
     useradd -m -G vfio,root -u 20001 imtl
 
 # Copy libraries and binaries
+COPY --from=builder /usr/local/lib/x86_64-linux-gnu/* /usr/local/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/local/bin/* /usr/local/bin/
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder "${MTL_REPO}/build" "/home/imtl"
 COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/build/RxTxApp" "/home/imtl/RxTxApp"
 COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/script" "/home/imtl/scripts"
+COPY --chown=imtl --from=builder "${MTL_REPO}/script" "/home/imtl/script"
 
 RUN ldconfig
 SHELL ["/bin/bash", "-c"]
