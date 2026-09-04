@@ -378,7 +378,7 @@ pci-env)
 	# For runners that carry no NIC label (the perf SUT pair): the host states
 	# which ports the perf rig owns, and an E830 pair is the default.
 	load_runner_env
-	printf 'PCI_DEVICE=%s\n' "${PCI_DEVICE:-8086:12d2,8086:12d2}" \
+	printf 'PCI_DEVICE=%s\n' "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2,8086:12d2}}" \
 		>>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 config-single)

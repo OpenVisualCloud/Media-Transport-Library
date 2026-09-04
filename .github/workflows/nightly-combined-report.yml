@@ -141,6 +141,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Flatten pytest report structure
+        env:
+          REPORT_DIR: pytest-reports
         run: task ci:report -- flatten-pytest
 
       - name: Flatten gtest report structure
@@ -195,13 +197,19 @@ jobs:
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
         env:
           REPORT_DIR: baseline-pytest-reports
-        run: task ci:report -- flatten-pytest
+        run: |
+          if [[ -d $REPORT_DIR ]]; then
+            task ci:report -- flatten-pytest
+          fi
 
       - name: Flatten baseline gtest report structure
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
         env:
           REPORT_DIR: baseline-gtest-reports
-        run: task ci:report -- flatten-gtest
+        run: |
+          if [[ -d $REPORT_DIR ]]; then
+            task ci:report -- flatten-gtest
+          fi
 
       - name: Get baseline pytest run metadata
         id: baseline-pytest-metadata
