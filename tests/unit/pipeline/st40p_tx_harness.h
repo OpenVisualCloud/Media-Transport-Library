@@ -36,11 +36,40 @@ int ut40p_tx_init(void);
 ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt);
 void ut40p_tx_ctx_destroy(ut40p_tx_ctx* ctx);
 
+/**
+ * Turn on ST40P_TX_FLAG_BLOCK_GET behaviour: init the block cond/mutex, arm the
+ * wake_on_destroy hook, and set the blocking get_frame timeout. Call before any
+ * blocking get_frame. Mirrors the block setup st40p_tx_create() performs.
+ *
+ * timeout_ns is how long a blocking get_frame() should wait for a free frame
+ * before giving up and returning NULL.
+ */
+void ut40p_tx_ctx_enable_blocking(ut40p_tx_ctx* ctx, uint64_t timeout_ns);
+
+/**
+ * Fire the same wake used internally whenever a frame slot becomes free
+ * (wraps st40p_tx_wake_block(), i.e. tx_st40p_block_wake()). Fires
+ * unconditionally, whether or not anyone is currently blocked in get_frame().
+ * Use this to simulate an unrelated wake independently of actually freeing a
+ * slot.
+ */
+void ut40p_tx_wake_block(ut40p_tx_ctx* ctx);
+
+/**
+ * Force ctx->lc_destroying, bypassing the CAS handshake real st40p_tx_free()
+ * uses. Lets a test flip the flag mid-call to race the destroy-vs-claim
+ * window inside the blocking wait loop, without a full teardown.
+ */
+void ut40p_tx_force_destroying(ut40p_tx_ctx* ctx);
+
 int ut40p_tx_framebuff_cnt(const ut40p_tx_ctx* ctx);
 
 /* producer (app) side */
 struct st40_frame_info* ut40p_tx_get_frame(ut40p_tx_ctx* ctx);
 int ut40p_tx_put_frame(ut40p_tx_ctx* ctx, struct st40_frame_info* frame);
+
+/* Cancel a got frame: IN_USER -> FREE (wraps st40p_tx_put_frame_abort). */
+int ut40p_tx_put_frame_abort(ut40p_tx_ctx* ctx, struct st40_frame_info* frame);
 
 /* consumer (transport) side: returns 0 and sets *idx on success, -EBUSY when
  * no READY frame is pending. */

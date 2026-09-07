@@ -38,6 +38,7 @@ struct ut30p_tx_ctx {
   struct st30p_tx_ctx pipeline;
   struct st30p_tx_frame* framebuffs;
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st30p_tx_harness.h"
@@ -85,8 +86,30 @@ ut30p_tx_ctx* ut30p_tx_ctx_create(int framebuff_cnt) {
 
 void ut30p_tx_ctx_destroy(ut30p_tx_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut30p_tx_ctx_enable_blocking(ut30p_tx_ctx* ctx, uint64_t timeout_ns) {
+  struct st30p_tx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->wake_on_destroy = (void (*)(void*))tx_st30p_block_wake;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut30p_tx_wake_block(ut30p_tx_ctx* ctx) {
+  st30p_tx_wake_block(&ctx->pipeline);
+}
+
+void ut30p_tx_force_destroying(ut30p_tx_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
 int ut30p_tx_framebuff_cnt(const ut30p_tx_ctx* ctx) {
@@ -99,6 +122,10 @@ struct st30_frame* ut30p_tx_get_frame(ut30p_tx_ctx* ctx) {
 
 int ut30p_tx_put_frame(ut30p_tx_ctx* ctx, struct st30_frame* frame) {
   return st30p_tx_put_frame(&ctx->pipeline, frame);
+}
+
+int ut30p_tx_put_frame_abort(ut30p_tx_ctx* ctx, struct st30_frame* frame) {
+  return st30p_tx_put_frame_abort(&ctx->pipeline, frame);
 }
 
 int ut30p_tx_next_frame(ut30p_tx_ctx* ctx, uint16_t* idx) {
