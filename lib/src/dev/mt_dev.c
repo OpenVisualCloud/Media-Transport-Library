@@ -307,16 +307,6 @@ static void* dev_eal_init_thread(void* arg) {
   return NULL;
 }
 
-static void dev_build_pci_devarg(const struct mtl_init_params* p, enum mtl_port port,
-                                 char* out, size_t len) {
-  uint32_t rl_burst_size = p->port_params[port].rl_burst_size;
-
-  if (rl_burst_size)
-    snprintf(out, len, "%s,rl_burst_size=%u", p->port[port], rl_burst_size);
-  else
-    snprintf(out, len, "%s", p->port[port]);
-}
-
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -395,7 +385,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "eth_af_packet%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
     } else {
-      dev_build_pci_devarg(p, i, port_param, sizeof(port_params[i]));
+      snprintf(port_param, sizeof(port_params[i]), "%s", p->port[i]);
     }
     info("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;
