@@ -205,9 +205,9 @@ if (-not (Test-Path -LiteralPath $patchDir)) {
 Assert-Command -Name git -Hint 'Install Git for Windows and ensure git.exe is on PATH.'
 Assert-Command -Name meson -Hint 'Install Meson (pip install meson) and ensure meson is on PATH.'
 Assert-Command -Name ninja -Hint 'Install Ninja and ensure ninja.exe is on PATH.'
-Assert-Command -Name cl -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
-Assert-Command -Name link -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
-Assert-Command -Name lib -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
+Assert-Command -Name cl.exe -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
+Assert-Command -Name link.exe -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
+Assert-Command -Name lib.exe -Hint 'Run this script from an MSVC Developer PowerShell/Command Prompt.'
 
 if ($Force) {
     foreach ($ownedPath in @($sourceDirectory, $BuildDirectory, $InstallDirectory)) {
