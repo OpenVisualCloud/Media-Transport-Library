@@ -147,6 +147,10 @@ So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
 "$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
 already the cached one).
 
+After driver activation, verify that each expected PF has a kernel netdev and
+that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
+A loaded module alone does not establish capture readiness.
+
 #### A capture leg needs both ports cabled
 
 `gen_config.py` takes the sniff device from the second `--pci_device` entry, which
@@ -156,8 +160,8 @@ the receiver on a VF of port 1. Both therefore need a link. With only the first
 port cabled, MTL reports `dev_detect_link(1), link not connected for
 0000:<bus>:11.0` and `mt_dev_create` fails with `-5` before any traffic; with the
 first port cabled but nothing on the second, traffic flows and the capture stays
-empty, which EBU LIST returns as a report with `total_streams: 0` and the suite
-reads as non-compliant. Neither is an MTL fault, and neither is visible from the
+empty, which EBU LIST returns as a report with `total_streams: 0` and no compliance
+verdict. Neither is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 
@@ -271,6 +275,31 @@ Use `--noproxy` (or `no_proxy`) for anything aimed at the analyser: a lab host
 exports `http_proxy` for internet access, and without it an upload to a lab
 address is handed to a proxy that cannot route there. The Python client avoids
 the same trap by setting `session.trust_env = False`.
+
+### TAI and capture clock requirements
+
+The sender's media clock is `CLOCK_TAI` (`app_platform.h`, and the FFmpeg
+plugin's `ptp_get_time_fn`), so the capture PHC has to sit on the same clock.
+The suite therefore reads the host's live TAI-UTC offset at capture time and
+passes it to `phc2sys -O`, instead of imposing an offset of its own. What
+matters is that sender and capture agree, not what the offset is: a host that
+reports 0 puts both on UTC.
+
+Do not set the kernel offset from a job. It is host-wide state, and the fleet
+watchdog cron re-asserts its own expected value every ten minutes; a job that
+disagrees loses the race mid-run, and every `CLOCK_TAI` reader on the host --
+including a session that is streaming -- sees the media clock jump by the
+leap-second offset. Change the watchdog's expected value if the fleet needs a
+different one.
+
+CI activation retries a PF that reports no hardware RX timestamps or PHC once,
+after every PF has probed and before VFs are created, because a PF probed ahead
+of its shared-clock owner comes up without one. A PF still without one is
+reported and not failed: only the sniff PF's timestamps reach a verdict, and the
+acceptance suite gates that interface itself — a capture clock that will not
+synchronise blocks the test. PTP tests and hosts using `capture_cfg.phc_sync:
+false` need their configured clock arrangement verified rather than an additional
+competing `phc2sys` process.
 
 ### Proving the chain without a working transmitter
 

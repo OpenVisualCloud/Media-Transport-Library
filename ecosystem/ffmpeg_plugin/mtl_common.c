@@ -20,6 +20,7 @@
 #include "mtl_common.h"
 
 #include <pthread.h>
+#include <time.h>
 
 static mtl_handle g_mtl_shared_handle = NULL;
 static int g_mtl_ref_cnt;
@@ -33,6 +34,14 @@ enum st_fps framerate_to_st_fps(AVRational framerate) {
   double fps = (double)framerate.num / (double)framerate.den;
 
   return st_frame_rate_to_st_fps(fps);
+}
+
+static uint64_t mtl_get_tai_time(void* priv) {
+  struct timespec ts;
+
+  (void)priv;
+  if (clock_gettime(CLOCK_TAI, &ts) < 0) return 0;
+  return (uint64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
 }
 
 static int mtl_parse_pacing_way(AVFormatContext* ctx, const char* value,
@@ -112,6 +121,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
     if (args->ptp_unicast) p->flags |= MTL_FLAG_PTP_UNICAST_ADDR;
     info(ctx, "%s, PTP enabled (pi=%d unicast=%d)\n", __func__, args->ptp_pi,
          args->ptp_unicast);
+  } else {
+    p->ptp_get_time_fn = mtl_get_tai_time;
   }
 
   if (args->dma_dev) {
@@ -164,6 +175,8 @@ static bool mtl_dev_params_compatible(const struct mtl_init_params* requested,
 
   requested_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
   active_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
+  requested_resources.ptp_get_time_fn = NULL;
+  active_resources.ptp_get_time_fn = NULL;
   return !memcmp(&requested_resources, &active_resources, sizeof(requested_resources));
 }
 
