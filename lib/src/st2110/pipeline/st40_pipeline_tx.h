@@ -46,6 +46,7 @@ struct st40p_tx_ctx {
   bool ready;
 
   int frames_per_sec;
+  uint64_t frame_period_ns; /* derived from ops.fps at create, non-zero */
 
   /* for ST40P_TX_FLAG_BLOCK_GET */
   bool block_get;

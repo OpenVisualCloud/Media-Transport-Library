@@ -69,6 +69,7 @@ struct st22p_tx_ctx {
   int usdt_frame_cnt;
 
   size_t src_size;
+  uint64_t frame_period_ns; /* derived from ops.fps at create, non-zero */
 
   rte_atomic32_t stat_encode_fail;
   /* get frame stat */

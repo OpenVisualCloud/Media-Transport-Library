@@ -117,7 +117,7 @@ static bool tx_st40p_if_frame_late(struct st40p_tx_ctx* ctx,
 
   uint64_t frame_tai = frame_info->timestamp;
   uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
-  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+  uint64_t frame_period_ns = ctx->frame_period_ns;
 
   if (cur_tai < frame_tai + frame_period_ns)
     return false; /* within acceptable TX window */
@@ -650,6 +650,13 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
     return NULL;
   }
 
+  uint64_t frame_period_ns;
+  ret = st_frame_period_ns(ops->fps, &frame_period_ns);
+  if (ret < 0) {
+    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
+    return NULL;
+  }
+
   port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
   if (port >= MTL_PORT_MAX) return NULL;
   int socket = mt_socket_id(impl, port);
@@ -671,6 +678,7 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_TX;
   ctx->wake_on_destroy = (void (*)(void*))tx_st40p_block_wake;
+  ctx->frame_period_ns = frame_period_ns;
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
