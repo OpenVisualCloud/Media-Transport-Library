@@ -407,25 +407,35 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
 
 
 def _host_tai_utc_offset(host) -> int:
-    """Return the host's current TAI-UTC offset in seconds (e.g. 37).
+    """Return the host's current TAI-UTC offset in seconds (0 or e.g. 37).
 
-    ST 2110 media (RTP) timestamps are on the PTP/TAI timescale, while the
-    Linux system clock (``CLOCK_REALTIME``) is UTC -- the two differ by the
-    accumulated leap seconds. The kernel exposes the live offset as
-    ``CLOCK_TAI - CLOCK_REALTIME``; we read it on the capture host so the value
-    stays correct across future leap seconds instead of hard-coding 37.
+    The transmitters time their RTP timestamps off ``CLOCK_TAI`` (RxTxApp via
+    ``app_platform.h``, FFmpeg via the plugin's ``ptp_get_time_fn``), which the
+    kernel derives from ``CLOCK_REALTIME`` plus this offset. Reading the live
+    value is what puts the capture PHC on the transmitter's clock, so whatever
+    the host reports is the right answer -- including 0, which simply means
+    both ends sit on UTC. Never impose an offset instead: it is host-wide
+    state, and moving it would step the media clock of any session already
+    streaming.
+
+    ``host`` is the capture host, so this holds while the transmitter runs
+    there too -- every ``tests/single/`` case, and so every capture CI takes.
+    A dual-host capture would have to read the offset on the sending host.
     """
     cmd = (
         "python3 -c 'import time;"
         "print(round(time.clock_gettime(time.CLOCK_TAI)"
         "-time.clock_gettime(time.CLOCK_REALTIME)))'"
     )
-    try:
-        out = host.connection.execute_command(cmd, expected_return_codes=None).stdout
-        return int((out or "0").strip())
-    except Exception as e:
-        logger.warning("Could not read TAI-UTC offset on %s: %s", host.name, e)
-        return 0
+    out = host.connection.execute_command(cmd, expected_return_codes={0}).stdout
+    text = (out or "").strip()
+    if not text:
+        # Never fall back to 0: it is a legitimate offset, so a silent default
+        # would be indistinguishable from a host that really reports 0.
+        raise RuntimeError(
+            f"Reading the TAI-UTC offset on {host.name} produced no output: {cmd}"
+        )
+    return int(text)
 
 
 def _start_capture_phc_sync(host, iface: str):
@@ -434,34 +444,24 @@ def _start_capture_phc_sync(host, iface: str):
     ST 2110-21 compliance needs hardware (on-wire) capture timestamps so RX
     interrupt coalescing cannot smear packet spacing. Those timestamps come
     from the NIC PHC, which free-runs -- its absolute offset from the RTP media
-    epoch makes ST 2110-21 VRX fail. The RTP media clock is TAI, so we discipline
-    the PHC onto TAI: ``phc2sys -s CLOCK_REALTIME`` tracks the system clock (UTC)
-    and ``-O <tai_utc_offset>`` adds the leap-second offset so the PHC lands on
-    TAI. The wall clock is the source and is never adjusted.
+    epoch makes ST 2110-21 VRX fail. The transmitters read ``CLOCK_TAI``, so we
+    discipline the PHC onto that same clock: ``phc2sys -s CLOCK_REALTIME`` tracks
+    the system clock (UTC) and ``-O <tai_utc_offset>`` adds the host's live
+    TAI-UTC offset, reproducing ``CLOCK_TAI`` on the PHC. The wall clock is the
+    source and is never adjusted.
 
     The function blocks until the PHC has actually converged onto TAI --
     starting the capture while phc2sys is still slewing a tens-of-ms offset
     makes ST 2110-21 VRX fail even with flawless on-wire pacing.
 
-    Returns the process handle (or ``None`` if it failed to start). Always reap
+    Returns the process handle or raises if synchronization fails. Always reap
     via :func:`_reap_ptp_daemons`, never via the handle (sudo+bash wrapper).
     """
     # Clear any straggler before starting a fresh one.
     _reap_ptp_daemons(host, patterns=("phc2sys",))
     log_path = f"/tmp/phc2sys-{iface}.log"
-    # phc2sys ``-O`` drives the slave (PHC) to ``master + O``; with the system
-    # clock (UTC) as master this lands the PHC on TAI = UTC + tai_utc_offset.
+    # phc2sys ``-O`` drives the slave (PHC) to ``master + O``.
     tai_utc_offset = _host_tai_utc_offset(host)
-    if tai_utc_offset == 0:
-        # A genuine 0 (kernel TAI offset never set by a PTP stack) parks the PHC
-        # on UTC -- exactly the 37s timescale error this discipline removes --
-        # so the absolute-offset (VRX) check would silently regress.
-        logger.warning(
-            "TAI-UTC offset reads 0 on %s; capture PHC will be disciplined to "
-            "UTC and ST 2110-21 VRX may fail. Set the kernel TAI offset "
-            "(ptp4l/adjtimex) on the capture host.",
-            host.name,
-        )
     # ``-S 0.001`` steps the (free-running) PHC straight onto TAI when the
     # initial offset exceeds 1ms instead of slewing for tens of seconds;
     # once synced the offset stays sub-microsecond so no further steps occur.
@@ -475,28 +475,21 @@ def _start_capture_phc_sync(host, iface: str):
             cmd, stderr_to_stdout=True, output_file=log_path
         )
     except Exception as e:
-        logger.warning("Failed to start phc2sys on %s: %s", iface, e)
-        return None
+        _reap_ptp_daemons(host, patterns=("phc2sys",))
+        raise RuntimeError(f"Failed to start phc2sys on {iface}: {e}") from e
     time.sleep(0.2)  # fail fast (e.g. iface has no PHC)
     if not proc.running:
-        logger.warning(
-            "phc2sys exited immediately (iface=%s has no PHC?). log=%s",
-            iface,
-            log_path,
-        )
         _reap_ptp_daemons(host, patterns=("phc2sys",))
-        return None
+        raise RuntimeError(f"phc2sys exited on {iface}; inspect {log_path}")
     # Wait for the PHC to actually converge. Capturing before convergence leaves
     # a large fixed PHC<->TAI offset (a free-running PHC can be tens of ms off
     # the media clock); that offset fails ST 2110-21 VRX even with perfect
     # on-wire pacing.
-    if not _wait_phc_sync_converged(host, log_path):
-        logger.warning(
-            "phc2sys did not converge within %ss on %s; capture timestamps may "
-            "carry a clock offset. log=%s",
-            _PHC_SYNC_TIMEOUT_SEC,
-            iface,
-            log_path,
+    if not _wait_phc_sync_converged(host, log_path) or not proc.running:
+        _reap_ptp_daemons(host, patterns=("phc2sys",))
+        raise RuntimeError(
+            f"phc2sys did not hold sync on {iface} (no in-tolerance offset "
+            f"within {_PHC_SYNC_TIMEOUT_SEC}s, or it exited); inspect {log_path}"
         )
     return proc
 
@@ -1191,8 +1184,10 @@ def pcap_capture(
     """
     capture_cfg = test_config.get("capture_cfg", {}) or {}
     session = NO_COMPLIANCE
+    sync_phc = False
     phc_sync_active = False
     phc_sync_host = None
+    yielded = False
     # Compliance is REQUIRED by default for any test that requests this
     # fixture -- capture_cfg.enable absent or true both mean "on". The only
     # way to opt out via config is an explicit `capture_cfg.enable: false` (a
@@ -1270,11 +1265,15 @@ def pcap_capture(
         # ptp4l on this PHC, so a second daemon (phc2sys) would fight it for the
         # clock.
         ptp_marked = request.node.get_closest_marker("ptp") is not None
-        if capture_cfg.get("phc_sync", True) and not ptp_marked:
-            if _start_capture_phc_sync(host, capture_iface) is not None:
-                phc_sync_active = True
-                phc_sync_host = host
+        sync_phc = capture_cfg.get("phc_sync", True) and not ptp_marked
     try:
+        if sync_phc:
+            # This raises when the PHC will not discipline, and it runs inside
+            # the try so that teardown still closes the session already built.
+            _start_capture_phc_sync(host, capture_iface)
+            phc_sync_active = True
+            phc_sync_host = host
+        yielded = True
         yield session
     finally:
         if phc_sync_active and phc_sync_host is not None:
@@ -1286,7 +1285,12 @@ def pcap_capture(
         # only catches a test that requested the fixture but never dispatched
         # it at all. A test that already failed never got that far, so
         # enforcing there would only bury the real failure.
-        session.close(enforce_dispatch=not _phase_incomplete(request))
+        #
+        # `yielded` is the same rule for a raise *before* the yield: that
+        # unwinds this generator inline, before pytest builds a setup report,
+        # so _phase_incomplete() sees an empty stash and cannot tell that the
+        # fixture itself failed.
+        session.close(enforce_dispatch=yielded and not _phase_incomplete(request))
 
 
 @pytest.fixture(scope="function")

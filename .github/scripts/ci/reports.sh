@@ -136,10 +136,12 @@ smoke-summary)
 				echo '**All tests passed.**'
 			fi
 			echo
-			printf '[Download Full HTML Report](https://github.com/%s/actions/runs/%s/artifacts/%s)\n' \
-				"${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
-				"${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}" \
-				"${ARTIFACT_ID:?ARTIFACT_ID is required}"
+			if [[ -n ${ARTIFACT_ID:-} ]]; then
+				printf '[Download Full HTML Report](https://github.com/%s/actions/runs/%s/artifacts/%s)\n' \
+					"${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+					"${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}" \
+					"${ARTIFACT_ID}"
+			fi
 		else
 			echo 'No report.json file was generated'
 		fi

@@ -113,12 +113,7 @@ build_ffmpeg() {
 		extra_config_flags+=("--extra-cflags=-DMTL_GPU_DIRECT_ENABLED")
 	fi
 
-	local jpegxs_repo="${SVT_JPEG_XS_REPO:-}"
-	if [ -z "$jpegxs_repo" ]; then
-		if [ -d "${script_path}/../../.github/scripts/SVT-JPEG-XS" ]; then
-			jpegxs_repo="${script_path}/../../.github/scripts/SVT-JPEG-XS"
-		fi
-	fi
+	local jpegxs_repo="${SVT_JPEG_XS_REPO:-${script_path}/../../.github/scripts/SVT-JPEG-XS}"
 
 	if { [ "${FFMPEG_ENABLE_SVT_JPEG_XS:-0}" == "1" ] || [ "$enable_jpegxs" = true ]; }; then
 		echo "Integrating SVT-JPEG-XS support into FFmpeg..."

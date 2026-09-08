@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <mtl/mtl_api.h>
 #include <stdint.h>
+#include <time.h>
 
 typedef struct AVFormatContext AVFormatContext;
 typedef struct AVRational {
@@ -52,6 +53,7 @@ struct StTxSessionPortArgs;
 struct st_rx_port;
 struct st_tx_port;
 
+int ut_ffmpeg_clock_gettime(clockid_t clock_id, struct timespec* ts);
 void ut_ffmpeg_reset(void);
 mtl_handle ut_ffmpeg_get(const struct StDevArgs* args, int* idx);
 int ut_ffmpeg_put(mtl_handle handle);

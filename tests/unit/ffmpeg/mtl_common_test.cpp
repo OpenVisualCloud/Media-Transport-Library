@@ -13,6 +13,17 @@
 #define MTL_FFMPEG_UNIT_TEST
 #include "../../../ecosystem/ffmpeg_plugin/mtl_common.h"
 
+static timespec g_clock_time;
+static clockid_t g_clock_id;
+static int g_clock_result;
+
+int ut_ffmpeg_clock_gettime(clockid_t clock_id, struct timespec* ts) {
+  g_clock_id = clock_id;
+  if (g_clock_result) return g_clock_result;
+  *ts = g_clock_time;
+  return 0;
+}
+
 struct FfmpegOptionContext {
   StDevArgs devArgs;
 };
@@ -35,6 +46,9 @@ class FfmpegMtlCommonTest : public testing::Test {
  protected:
   void SetUp() override {
     ut_ffmpeg_reset();
+    g_clock_time = {};
+    g_clock_id = CLOCK_REALTIME;
+    g_clock_result = 0;
   }
 };
 
@@ -406,6 +420,36 @@ TEST_F(FfmpegMtlCommonTest, InvalidSparseIpRejectsBeforeMtlInit) {
   EXPECT_EQ(ut_ffmpeg_init_calls(), 0);
 }
 
+TEST_F(FfmpegMtlCommonTest, SoftwareClockReturnsTaiNanoseconds) {
+  StDevArgs args = {};
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&args, &idx);
+  ASSERT_NE(handle, nullptr);
+  const mtl_init_params* params = ut_ffmpeg_last_init_params();
+  EXPECT_FALSE(params->flags & MTL_FLAG_PTP_ENABLE);
+  ASSERT_NE(params->ptp_get_time_fn, nullptr);
+  g_clock_time = {1700000037, 123456789};
+  EXPECT_EQ(params->ptp_get_time_fn(params->priv), UINT64_C(1700000037123456789));
+  EXPECT_EQ(g_clock_id, CLOCK_TAI);
+  g_clock_time = {1700000099, 987654321};
+  EXPECT_EQ(params->ptp_get_time_fn(params->priv), UINT64_C(1700000099987654321));
+  EXPECT_EQ(g_clock_id, CLOCK_TAI);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+}
+
+TEST_F(FfmpegMtlCommonTest, SoftwareClockReadFailureReturnsZero) {
+  StDevArgs args = {};
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&args, &idx);
+  ASSERT_NE(handle, nullptr);
+  const mtl_init_params* params = ut_ffmpeg_last_init_params();
+  ASSERT_NE(params->ptp_get_time_fn, nullptr);
+  g_clock_result = -1;
+  EXPECT_EQ(params->ptp_get_time_fn(params->priv), 0u);
+  EXPECT_EQ(g_clock_id, CLOCK_TAI);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+}
+
 TEST_F(FfmpegMtlCommonTest, PtpEnableLeavesDefaultPacing) {
   StDevArgs args = {};
   args.ptp_enable = 1;
@@ -420,6 +464,7 @@ TEST_F(FfmpegMtlCommonTest, PtpEnableLeavesDefaultPacing) {
   EXPECT_TRUE(params->flags & MTL_FLAG_PTP_PI);
   EXPECT_TRUE(params->flags & MTL_FLAG_PTP_UNICAST_ADDR);
   EXPECT_EQ(params->pacing, ST21_TX_PACING_WAY_AUTO);
+  EXPECT_EQ(params->ptp_get_time_fn, nullptr);
   ASSERT_EQ(ut_ffmpeg_put(handle), 0);
 }
 
