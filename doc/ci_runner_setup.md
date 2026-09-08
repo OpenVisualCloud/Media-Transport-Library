@@ -160,8 +160,8 @@ the receiver on a VF of port 1. Both therefore need a link. With only the first
 port cabled, MTL reports `dev_detect_link(1), link not connected for
 0000:<bus>:11.0` and `mt_dev_create` fails with `-5` before any traffic; with the
 first port cabled but nothing on the second, traffic flows and the capture stays
-empty, which EBU LIST returns as a report with `total_streams: 0` and the suite
-reads as non-compliant. Neither is an MTL fault, and neither is visible from the
+empty, which EBU LIST returns as a report with `total_streams: 0` and no compliance
+verdict. Neither is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 

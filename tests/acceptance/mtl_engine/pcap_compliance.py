@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol
 
-from compliance.compliance_client import PcapComplianceClient
+from compliance.compliance_client import PcapComplianceClient, no_verdict_reason
 from mfd_connect.exceptions import ConnectionCalledProcessError
 
 from .csv_report import update_compliance_result
@@ -34,6 +34,14 @@ logger = logging.getLogger(__name__)
 # packet -- arming capture too early pulls startup transients into the
 # compliance window and causes spurious VRX failures.
 CAPTURE_SETTLE_TIME = 12
+
+# How many times to analyse an uploaded capture before concluding that it really
+# holds no stream. EBU LIST occasionally drops an ingest: its pre-processor logs
+# "Processing time: 0.000 s" and "Added 0 new streams", then marks the pcap
+# analyzed, so the empty report is terminal and polling longer cannot recover it.
+# Re-analysing the capture already on the analyser recovers it -- observed to fix
+# every dropped ingest seen so far -- so retry that before failing the test.
+_ANALYSIS_ATTEMPTS = 3
 
 
 def _video_streams(report: dict) -> list[dict]:
@@ -380,10 +388,10 @@ class ComplianceSession:
         or ``capture_cfg.enable: false`` -- a missing ``ebu_server`` or a
         capture that failed to produce a pcap file are hard compliance
         failures, never a silent pass. Returns True when compliant, skipped,
-        or not applicable. Returns False only when non-compliant/
-        unconfigured and ``fail_on_error`` is False. Raises
-        ``AssertionError`` when non-compliant/unconfigured and
-        ``fail_on_error`` is True.
+        or not applicable. A failure -- non-compliant, unconfigured, or
+        analyzed with no verdict at all -- returns False when
+        ``fail_on_error`` is False and raises ``AssertionError`` when it is
+        True.
         """
         self._evaluated = True
         if not self.enabled:
@@ -486,8 +494,12 @@ class ComplianceSession:
         Raises ``AssertionError`` (via :meth:`_fail`) on any transport
         failure -- the upload command failing, its output not containing the
         expected UUID marker, or the report remaining unavailable/not analyzed
-        after polling. An analyzed non-compliance verdict is reported
-        separately. Removes the pcap file afterward regardless of outcome.
+        after polling. Also raises on both analyzed outcomes that are not a
+        pass: a non-compliance verdict, and a report carrying no verdict at
+        all because the capture held no streams (see
+        :func:`no_verdict_reason`) -- the latter only after re-analysing the
+        capture, see :data:`_ANALYSIS_ATTEMPTS`. Removes the pcap file
+        afterward regardless of outcome.
         """
         capturer = self._recorder
         ebu_ip = self.ebu_server.get("ebu_ip", None)
@@ -530,7 +542,23 @@ class ComplianceSession:
                 proxies={"http": ebu_proxy, "https": ebu_proxy},
             )
             report = uploader.download_report()
+            for attempt in range(2, _ANALYSIS_ATTEMPTS + 1):
+                # Only the analyzed-but-empty report is the dropped ingest this
+                # recovers. An unavailable one means nothing was analyzed at all
+                # -- a down or backlogged analyser -- which re-analysing the
+                # same file cannot change.
+                if not report or report.get("streams"):
+                    break
+                logger.warning(
+                    "EBU LIST found no streams in PCAP UUID %s; re-analysing the "
+                    "capture already on the analyser (attempt %d/%d)",
+                    uuid,
+                    attempt,
+                    _ANALYSIS_ATTEMPTS,
+                )
+                report = uploader.reanalyze(report)
             if not report:
+                # Only this site knows the UUID; no_verdict_reason cannot cite it.
                 self._fail(
                     "EBU LIST report unavailable or not analyzed after polling "
                     f"for PCAP UUID {uuid}; compliance was not evaluated",
@@ -540,7 +568,8 @@ class ComplianceSession:
             if not result:
                 logger.info(f"Compliance report: {report}")
                 self._fail(
-                    "EBU LIST analyzed the PCAP and reported non-compliance",
+                    no_verdict_reason(report)
+                    or "EBU LIST analyzed the PCAP and reported non-compliance",
                     fail_on_error,
                 )
             return report

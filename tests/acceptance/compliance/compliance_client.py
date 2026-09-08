@@ -6,6 +6,34 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# How many seconds a re-analysis gets to publish a report distinct from the one
+# it replaces. Measured at 3 ms on an idle EBU LIST 2.2.2; the margin is for a
+# loaded one, and the wait ends as soon as the new report appears.
+REANALYSIS_TIMEOUT = 10
+
+
+def no_verdict_reason(report):
+    """Return why *report* carries no compliance verdict, or None if it has one.
+
+    Neither shape may fall through to the ordinary verdict: an analyzed report
+    with no streams has ``not_compliant_streams == 0``, which would otherwise
+    read as "compliant" about a capture that held nothing to judge.
+    """
+    if not report:
+        return (
+            "EBU LIST report is unavailable or was never analyzed, so compliance "
+            "was not evaluated."
+        )
+    if not report.get("streams"):
+        return (
+            "EBU LIST analyzed the capture but found no ST 2110 streams in it, so "
+            "there was no compliance verdict to give. Most often the transmitter "
+            "was not running for the capture window, the sniffer port does not "
+            "see the stream, or the capture filter's destination IP does not "
+            "match it."
+        )
+    return None
+
 
 class PcapComplianceClient:
     def __init__(
@@ -115,26 +143,53 @@ class PcapComplianceClient:
         )
         return False
 
-    def check_compliance(self, report=None):
+    def reanalyze(self, previous=None):
+        """Re-run the analysis on the PCAP already held by the server.
+
+        EBU LIST queues its stream pre-processor a path without waiting for the
+        upload to reach disk, so a busy analyser can read zero packets and still
+        mark the PCAP analyzed. That empty report is terminal -- polling longer
+        cannot improve it -- but the uploaded file is complete, so re-analyzing
+        it in place recovers the streams without transferring the capture again.
+
+        *previous* is the report being replaced, used to tell the fresh one
+        apart from it. Returns the report of the fresh analysis, in the same
+        shape :meth:`download_report` returns.
+        """
+        if not self.pcap_id:
+            raise ValueError("No PCAP ID available to reanalyze.")
+        url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/reanalyze"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = self.session.put(
+            url, headers=headers, verify=False, proxies=self.proxies
+        )
+        response.raise_for_status()
+        # The pre-processor clears ``analyzed`` when it claims the request, but
+        # not necessarily before the first poll, so a poll can still return the
+        # report being replaced. The fresh one is told apart by capture_date,
+        # which a dropped ingest leaves at 0 and a real analysis fills in. If
+        # none ever appears the capture really holds no stream, and the report
+        # in hand is the right answer -- so this waits, it does not fail.
+        stale = (previous or {}).get("capture_date")
+        report = self.download_report()
+        for _ in range(REANALYSIS_TIMEOUT):
+            if not report or report.get("capture_date") != stale:
+                break
+            time.sleep(1)
+            report = self.download_report()
+        return report
+
+    def check_compliance(self, report):
         """
         Check the compliance result from the downloaded report.
-        Returns True if compliant, False otherwise.
+        Returns ``(verdict, report)``, the verdict being True if compliant,
+        False if non-compliant, and None when the report carries no verdict at
+        all -- see :func:`no_verdict_reason`.
         """
-        if report is None:
-            report = self.download_report()
-
-        # download_report() may return False on failure/timeout
-        if not report:
-            logger.error("Compliance report is unavailable or not analyzed")
+        if no_verdict_reason(report):
             return None, report
 
-        streams = report.get("streams") or []
-        if not streams:
-            logger.warning(
-                "Compliance report contains no streams; treating as non-compliant"
-            )
-            return False, report
-
+        streams = report["streams"]
         not_compliant_streams = report.get("not_compliant_streams", 1)
         unknown_media_streams = [
             (idx, stream)
