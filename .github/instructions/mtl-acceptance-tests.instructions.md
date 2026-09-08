@@ -50,10 +50,10 @@ cd tests/acceptance
 PY="sudo -E ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml"
 
 $PY -m smoke -v                                              # marker
-$PY tests/single/st20p/fps/test_fps.py -m smoke --tb=short -v # proven first pass: p29/ParkJoy_1080p
+$PY tests/single/st20p/test_fps.py -m smoke --tb=short -v    # proven first pass: p29/Penguin_1080p
 $PY tests/single/st20p -v                                    # folder
 $PY tests/single/st40p -k multicast -v                       # substring
-$PY "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]" -v   # exact (quote brackets)
+$PY "tests/single/st20p/test_fps.py::test_st20p_fps[|fps = p29|-Penguin_1080p-|application = rxtxapp|]" -v   # exact (quote brackets)
 $PY <selector> --collect-only -q                             # dry run
 ```
 
@@ -66,8 +66,8 @@ hardware-bound). The full marker set and its authoring rules live in
 | Category | Backend | Build artifact |
 |---|---|---|
 | `st20p`/`st22p`/`st30p`/`st40p`/`st41`/`dma`/`ptp`/`rss_mode`/`rx_timing`/`udp`/`virtio_user`/`xdp`/`kernel_socket` | RxTxApp | `.local_install/mtl/bin/RxTxApp` |
-| `ffmpeg/` | in-repo FFmpeg + MTL muxer | `ecosystem/ffmpeg_plugin/FFmpeg-release-*/ffmpeg` (system ffmpeg unused) |
-| `gstreamer/` | in-repo GStreamer plugin | `ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so` |
+| `ffmpeg/`, or any `application="ffmpeg"` param | in-repo FFmpeg + MTL muxer | `ecosystem/ffmpeg_plugin/FFmpeg-release-*/ffmpeg` (system ffmpeg unused) |
+| `gstreamer/`, or any `application="gstreamer"` param | in-repo GStreamer plugin | `ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so` |
 | `performance/` | RxTxApp capacity sweep | RxTxApp; very long |
 
 ## Logs
@@ -87,7 +87,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Run from `tests/acceptance/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
-| `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `--ebu-ip=`/`--ebu-user=`/`--ebu-password=`/`--capture-pci-device=` (ask the user first) so `ebu_server`/`capture_cfg` get populated in `test_config.yaml`. |
+| `Compliance check SUPPRESSED ... capture_cfg.enable=false` (test still PASSED) | Data path passed; no ST 2110-21 verdict produced. Expected with no sniff NIC or no EBU credentials. For a verdict, re-run setup with `--ebu-ip=`/`--ebu-user=`/`--capture-pci-device=` and `EBU_PASSWORD` in the env (ask the user first). |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
@@ -101,6 +101,8 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `Incorrect format … PCIDevice` / `not found on host` | **(setup)** `pci_device` must be `vendor:device`, not BDF. |
 | `TypeError: 'ExtraInfoModel' object is not subscriptable` | **(setup)** Stale `extra_info.custom_interface`. |
 | `capture_cfg.sniff_pci_device=<BDF> not found` | **(setup)** Same — vendor:device not BDF. Config generation patches this automatically; if it's still a raw BDF the config predates that fix, so regenerate it with `acceptance_setup.sh setup --pytest-only`. |
+| `ebu_server is not configured` as a hard FAIL on *every* `pcap_capture` test | **(setup)** No `capture_cfg` block at all, which `pcap_capture` reads as "this host does compliance". `gen_config.py` writes `capture_cfg.enable: false` when it cannot grade a pcap; `setup --pytest-only` appends exactly that key and nothing else. That yields the SUPPRESSED row above, not a verdict. |
+| GStreamer `filesink` reports `No space left on device`, or a short RX dump reads as a delivery failure | **(setup)** `ramdisk.media.size_gib` is below `ceil(2.5 GB/s x max(test_time, 30)) + 8` GiB. `setup --pytest-only` raises that one key in place, never shrinking a hand-raised size. The `may hit ENOSPC` warning covers only the RAM clamp, never a case writing faster than 2.5 GB/s. |
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** Stock kernel ice loaded instead of the MTL out-of-tree patched ice (`versions.env::ICE_VER`). Re-run setup — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |

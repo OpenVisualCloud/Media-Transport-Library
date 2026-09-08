@@ -53,6 +53,24 @@ def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
 
 
 def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
+    if file_format in ("v210", "V210"):
+        # Packed 4:2:2 10-bit: 3 pixels per 8 bytes, no row padding. This has to
+        # match what MTL writes, since these bytes are an RX dump:
+        # ``st_frame_size()`` (lib/src/st2110/st_fmt.c) computes ``pixels * 8 /
+        # 3`` for ST_FRAME_FMT_V210 and rejects a pixel count that is not a
+        # multiple of 3. GStreamer's own v210 stride instead pads each row up to
+        # a 48-pixel (128-byte) group, so the two agree only at widths that are
+        # multiples of 48. Of the widths in media_files.py that is 720, 1920,
+        # 3840 and 7680 but NOT 1280, where the padded stride is 3456 B against
+        # MTL's 3413 1/3 -- so follow MTL, which is what produced the bytes.
+        # 8/3 is inexact in binary floating point, hence the integer form rather
+        # than a ``pixel_size`` below.
+        if (width * height) % 3:
+            raise ValueError(
+                f"v210 needs width*height to be a multiple of 3, got "
+                f"{width}x{height}; MTL cannot encode this frame"
+            )
+        return width * height * 8 // 3
     match file_format:
         case "YUV422RFC4175PG2BE10" | "yuv422p10rfc4175":
             pixel_size = 2.5
@@ -67,11 +85,17 @@ def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
         case "YUV444PLANAR12LE" | "GBRPLANAR12LE" | "yuv444p12le" | "gbrp12le":
             # 3 planes (Y/U/V or G/B/R), 12-bit samples padded to 2 bytes each
             pixel_size = 6
-        case "yuv420p":
-            # I420: full Y plane + quarter-size U + quarter-size V
+        case "yuv420p" | "YUV420CUSTOM8":
+            # I420: full Y plane + quarter-size U + quarter-size V.
+            # YUV420CUSTOM8 is MTL's name for the same bytes -- st_frame_size()
+            # sends it through st20_frame_size(ST20_FMT_YUV_420_8BIT), a 6-byte
+            # group covering 4 pixels -- and it is the file_format
+            # media_files.yuv_files_input_formats['yuv420p'] carries, so this
+            # arm is what lets test_input_formats grade that asset at all.
             pixel_size = 1.5
-        case "UYVY" | "uyvy422":
-            # Packed 4:2:2 8-bit, 2 bytes per pixel
+        case "UYVY" | "uyvy422" | "YUV422CUSTOM8":
+            # Packed 4:2:2 8-bit, 2 bytes per pixel. st_fmt.c sizes
+            # YUV422CUSTOM8, YUV422PLANAR8 and UYVY identically (pixels * 2).
             pixel_size = 2
         case "Y210" | "y210le":
             # Packed 4:2:2 10-bit, 2 samples per pixel × 2 bytes per sample

@@ -62,5 +62,6 @@ linux_tests: &linux_tests
   - '.github/workflows/upl*'
   - 'tests/unittest/**'
   - 'tests/acceptance/**'
+  - 'tests/acceptance_unit/**'
   - *ice_build
   - *ubuntu_build

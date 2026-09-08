@@ -299,6 +299,7 @@ _MTL_APP_BASE_NAMES = [
     "RxTxApp",
     "KahawaiTest",
     "ffmpeg",
+    "gst-launch-1.0",
     "gtest.sh",
 ]
 

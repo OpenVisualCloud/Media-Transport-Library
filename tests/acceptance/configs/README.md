@@ -24,13 +24,13 @@ capture_cfg:
   pcap_dir: /mnt/ramdisk/pcap
   capture_time: 5
   interface: null
+test_time: 30
 ramdisk:
   media:
     mountpoint: /mnt/ramdisk/media
-    size_gib: 32
-  pcap:
-    mountpoint: /mnt/ramdisk/pcap
-    size_gib: 768
+    size_gib: 78
+  pcap_dir: /mnt/ramdisk/pcap
+  tmpfs_size_gib: 8
 ```
 
 ### Key Parameters
@@ -80,9 +80,18 @@ Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
 
 - **ramdisk**: RAM disk configuration for high-performance testing
   - **media.mountpoint**: Mount point for media RAM disk
-  - **media.size_gib**: Size of media RAM disk in GiB
-  - **pcap.mountpoint**: Mount point for packet capture RAM disk
-  - **pcap.size_gib**: Size of packet capture RAM disk in GiB
+  - **media.size_gib**: tmpfs size cap for the media RAM disk, in GiB.
+    `gen_config.py` derives it as `ceil(2.5 GB/s x window) + 8` GiB for the
+    input asset, where the window is `max(test_time, 30)` — the GStreamer
+    adapter raises a shorter `test_time` to 30 s so its duration-graded oracles
+    have something to grade. So `test_time: 30` gives 78. Then clamped to half
+    the non-hugetlb RAM and floored at 16 GiB. tmpfs allocates lazily, so the
+    cap only reserves what is written; under-sizing it, by contrast, makes
+    `filesink` report ENOSPC and the byte oracles read the shortfall as an MTL
+    delivery failure.
+  - **pcap_dir**: Mount point for the packet capture RAM disk, mounted only
+    when `capture_cfg.enable` is true
+  - **tmpfs_size_gib**: Size of the packet capture RAM disk, in GiB
 
 ### [`topology_config.yaml`](topology_config.yaml)
 

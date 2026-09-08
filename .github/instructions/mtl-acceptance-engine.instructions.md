@@ -57,14 +57,41 @@ A new adapter subclasses `Application` and implements exactly four methods:
   `logger.warning` — never `return` quietly.
 - The compliance verdict and `validate_results()` must each run even if the
   other fails (`_finalize_run` catches them independently).
+- **An oracle that needs a longer run must lengthen the run, not lower its
+  bar.** `GStreamer._graded_wall_clock()` is the precedent: every oracle it has
+  grades a duration — st20p/st40p by MTL's per-interval frame counters, which
+  need two completed 10 s intervals, and st30p by bytes per second of window,
+  where a short window is mostly pipeline startup. So a `test_time` under 30 s
+  extends the wall clock (with a `logger.warning`) instead of excusing the
+  check; st40p has no byte oracle to fall back on, so relaxing the interval
+  count there would turn a false fail into a false pass. Extend only the local
+  wall clock: `self.params["test_time"]` stays the requested value, because
+  `_apply_ptp_extension` also adds up to 50 s of non-delivering time and a byte
+  floor charged for it would fail a healthy PTP run. `gen_config.py` sizes the
+  ramdisk against the *extended* window — over-provision disk, under-state
+  delivery.
+- **The RX dump must cover the whole window, and one adapter grades that it
+  does.** No adapter caps the dump by default — RxTxApp leaves
+  `rx_max_file_size` at 0 and the GStreamer st20p sink is a plain `filesink` —
+  because a one-frame sink would let a byte floor and the MD5 integrity check
+  pass on a session that delivered one frame out of the window. Only
+  `GStreamer._expected_rx_bytes()` then checks the dump is full-length; RxTxApp
+  grades delivery from MTL's log counters instead, and FFmpeg's
+  `check_output_video_yuv` only asserts `output_file_size > 0`. So when adding a
+  *log-counter* oracle, RxTxApp is the parity reference and FFmpeg is not; a
+  *byte* oracle has only the GStreamer one to copy. The media ramdisk is sized
+  for the full dump by `configs/gen_config.py::_media_ramdisk_gib()`.
 
 ## Legacy modules — do not extend
 
 `RxTxApp.py` (procedural, still the backend for `tests/dual/st20p|st30p|st40/`
 and `tests/single/performance/`), `ffmpeg_app.py` (command builders called by
-`ffmpeg.py`), and `GstreamerApp.py` (the only GStreamer path) predate the
-adapter model. Add new functionality to `Application`, not to these. Note
-the capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is modern.
+`ffmpeg.py`), and `GstreamerApp.py` (everything under `tests/dual/gstreamer/`
+and `tests/single/gstreamer/`; those 8 modules get no wall-clock floor and run
+for exactly the configured `test_time`)
+predate the adapter model. Add new functionality to `Application`, not to
+these. Note the capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is
+modern.
 
 ## Before handing back
 

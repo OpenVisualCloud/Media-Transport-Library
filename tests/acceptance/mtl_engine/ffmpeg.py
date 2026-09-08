@@ -27,7 +27,17 @@ from mtl_engine.application_base import (
     ProcSpec,
     mtl_plugin_check_cmd,
 )
-from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
+from mtl_engine.config.mappings import (
+    APP_NAME_MAP,
+    FFMPEG_FORMAT_MAP,
+    FFMPEG_ST30P_PTIME_MAP,
+    MTL_DEFAULT_PACKING,
+    SESSION_TYPE_MAP,
+    audio_channel_count,
+    audio_sampling_hz,
+    ffmpeg_pix_fmt,
+    ffmpeg_ptime,
+)
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.pcap_compliance import NO_COMPLIANCE
@@ -47,6 +57,13 @@ _MODE_ST30P = "st30p"  # FFmpeg RX + FFmpeg TX via mtl_st30p (audio)
 _SESSION_TYPE_TO_MODE = {
     "st22p": _MODE_ST22P,
     "st30p": _MODE_ST30P,
+}
+
+_ST20P_PLUGIN_INPUT_FORMATS = frozenset(FFMPEG_FORMAT_MAP) - {
+    "YUV422PLANAR8",
+    "YUV420PLANAR8",
+    "YUV420PLANAR10LE",
+    "RGBA",
 }
 
 
@@ -82,6 +99,53 @@ class FFmpeg(Application):
 
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["ffmpeg"]
+
+    # ----------------------------------------------------- capabilities
+    def unsupported_reason(self, **params):
+        """Report MTL FFmpeg plugin gaps so a shared test can skip cleanly."""
+        session_type = params.get("session_type")
+        if session_type is not None and session_type not in SESSION_TYPE_MAP["ffmpeg"]:
+            # ecosystem/ffmpeg_plugin registers muxers/demuxers for these
+            # session types only -- there is no ancillary (st40p) or
+            # fastmetadata (st41) device to select with ``-f``.
+            return (
+                f"The MTL FFmpeg plugin implements "
+                f"{sorted(SESSION_TYPE_MAP['ffmpeg'])} devices, "
+                f"not session_type={session_type}"
+            )
+        if session_type == "st20p":
+            pixel_format = params.get("pixel_format")
+            if (
+                pixel_format is not None
+                and pixel_format not in _ST20P_PLUGIN_INPUT_FORMATS
+            ):
+                return (
+                    f"No FFmpeg pixel format carries MTL "
+                    f"pixel_format={pixel_format}; the mtl_st20p plugin "
+                    f"handles {sorted(_ST20P_PLUGIN_INPUT_FORMATS)}"
+                )
+            packing = params.get("packing")
+            if packing not in (None, MTL_DEFAULT_PACKING):
+                # mtl_st20p_tx.c declares no packing option, so the session
+                # keeps the library default; accepting GPM here would report a
+                # pass for a mode that never reached the wire.
+                return (
+                    f"The FFmpeg mtl_st20p plugin has no packing option and "
+                    f"leaves the library default {MTL_DEFAULT_PACKING}, "
+                    f"not packing={packing}"
+                )
+        if session_type == "st30p":
+            audio_ptime = params.get("audio_ptime")
+            if (
+                audio_ptime is not None
+                and str(audio_ptime) not in FFMPEG_ST30P_PTIME_MAP
+            ):
+                return (
+                    f"The FFmpeg mtl_st30p plugin implements only "
+                    f"{sorted(FFMPEG_ST30P_PTIME_MAP)} packet times, "
+                    f"not audio_ptime={audio_ptime}"
+                )
+        return None
 
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if *encoder* is not available on *host*.
@@ -460,36 +524,18 @@ class FFmpeg(Application):
             "PCM16": ("s16be", "pcm16", "mtl_st30p_pcm16", ""),
             "PCM8": ("s8", "pcm8", "mtl_st30p", "-c:a pcm_s8 "),
         }
-        ff_fmt, pcm_fmt, tx_muxer, tx_codec = fmt_map.get(
-            audio_format, ("s24be", "pcm24", "mtl_st30p", "")
-        )
+        if audio_format not in fmt_map:
+            # Falling back to PCM24 would stream a different format than the
+            # test asked for and still report a pass.
+            raise ValueError(
+                f"The FFmpeg mtl_st30p plugin does not support "
+                f"audio_format={audio_format!r}; supported: {sorted(fmt_map)}"
+            )
+        ff_fmt, pcm_fmt, tx_muxer, tx_codec = fmt_map[audio_format]
 
-        # Map sampling rate string → numeric Hz.
-        sr_map = {"48kHz": 48000, "96kHz": 96000, "44.1kHz": 44100}
-        sample_rate = sr_map.get(audio_sampling, 48000)
-
-        # Determine channel count from the channel list.
-        ch_count_map = {
-            "M": 1,
-            "DM": 2,
-            "ST": 2,
-            "LtRt": 2,
-            "51": 6,
-            "71": 8,
-            "222": 24,
-            "SGRP": 4,
-            "U01": 1,
-            "U02": 2,
-        }
-        if isinstance(audio_channels, list):
-            ch_label = audio_channels[0] if audio_channels else "U02"
-        else:
-            ch_label = audio_channels
-        channels = ch_count_map.get(ch_label, 2)
-
-        # Map ptime to FFmpeg option string.
-        ptime_map = {"1": "1ms", "0.12": "125us", "0.125": "125us", "125us": "125us"}
-        ptime_str = ptime_map.get(str(audio_ptime), "1ms")
+        sample_rate = audio_sampling_hz(audio_sampling)
+        channels = audio_channel_count(audio_channels)
+        ptime_str = ffmpeg_ptime(audio_ptime)
 
         # TX: raw audio → mtl_st30p muxer (format-specific)
         self._tx_commands = [
@@ -659,6 +705,13 @@ class FFmpeg(Application):
         if not self._tx_commands:
             raise RuntimeError("FFmpeg TX command(s) missing after prepare_execution")
 
+        # PTP sync burns wall-clock before the first frame moves, so the run
+        # window has to grow by it -- otherwise ``compliance.arm()`` returns
+        # with the budget already spent and both processes are stopped before
+        # any data is captured. FFmpeg commands carry no ``--test_time`` token
+        # to rewrite; only the wall-clock budget changes.
+        effective_test_time, _ = self._apply_ptp_extension(test_time)
+
         specs = [ProcSpec(cmd=self.command, host=host, label="RX", bounded=False)]
         for idx, tx_cmd in enumerate(self._tx_commands, start=1):
             specs.append(
@@ -675,9 +728,9 @@ class FFmpeg(Application):
         self._run_proc_group(
             specs,
             build=build,
-            test_time=test_time,
+            test_time=effective_test_time,
             sleep_interval=sleep_interval,
-            wall_clock_seconds=test_time,
+            wall_clock_seconds=effective_test_time,
             cleanup_host=host,
             after_last_start=lambda _proc: compliance.arm(intent),
         )

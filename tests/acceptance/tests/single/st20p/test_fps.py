@@ -10,13 +10,7 @@ pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        "ffmpeg",
-    ],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422p10le["Penguin_1080p"]],
@@ -55,7 +49,7 @@ def test_st20p_fps(
     media_integrity,
     media_file,
 ):
-    """Test different frame rates for st20p with both applications."""
+    """Test different frame rates for st20p with every application."""
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
@@ -79,7 +73,12 @@ def test_st20p_fps(
         "test_time": test_time,
     }
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+    )
     app.create_command(**config_params)
 
     actual_test_time = test_time

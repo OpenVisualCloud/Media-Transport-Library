@@ -5,7 +5,10 @@
 set -euo pipefail
 
 echo 'Killing any running DPDK or MTL related processes...'
-for process in gtest.sh KahawaiTest ffmpeg RxTxApp; do
+# gst-launch-1.0_ is the wrapper the acceptance suite invokes; both spellings
+# have to be killed or a hung GStreamer pipeline outlives the job and its NIC
+# queues and hugepages are still held when the next one starts.
+for process in gtest.sh KahawaiTest ffmpeg gst-launch-1.0 gst-launch-1.0_ RxTxApp; do
 	sudo killall -SIGKILL "$process" || true
 done
 echo 'Cleaning up supporting processes...'

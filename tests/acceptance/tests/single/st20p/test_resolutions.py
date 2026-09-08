@@ -4,32 +4,33 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
+
+_RESOLUTION_CASES = [
+    *[
+        pytest.param(
+            "rxtxapp",
+            media_file,
+            marks=pytest.mark.smoke if name == "Penguin_1080p" else (),
+            id=f"rxtxapp-rfc-{name}",
+        )
+        for name, media_file in yuv_files_422rfc10.items()
+    ],
+    *[
+        pytest.param(application, media_file, id=f"{application}-planar-{name}")
+        for application in ("rxtxapp", "ffmpeg", "gstreamer")
+        for name, media_file in yuv_files_422p10le.items()
+    ],
+]
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support rfc format, source files need to be changed"
-            ),
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        pytest.param(v, marks=pytest.mark.smoke) if k == "Penguin_1080p" else v
-        for k, v in yuv_files_422rfc10.items()
-    ],
+    ("application", "media_file"),
+    _RESOLUTION_CASES,
     indirect=["media_file"],
-    ids=list(yuv_files_422rfc10.keys()),
 )
 def test_st20p_resolutions(
     application,
@@ -44,7 +45,11 @@ def test_st20p_resolutions(
     media_integrity,
     media_file,
 ):
-    """Test different video resolutions."""
+    """Test different video resolutions.
+
+    RFC 4175 assets exercise RxTxApp directly; planar assets exercise every
+    adapter's conversion path.
+    """
     media_file_info, media_file_path = media_file
     rx_output = output_files.register(f"{media_file_path}.out")
     host = list(hosts.values())[0]
@@ -68,7 +73,12 @@ def test_st20p_resolutions(
         "test_time": test_time,
     }
 
-    app = app_factory(application)
+    app = app_factory(
+        application,
+        session_type="st20p",
+        pixel_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+    )
     app.create_command(**config_params)
 
     height = media_file_info.get("height", 0)

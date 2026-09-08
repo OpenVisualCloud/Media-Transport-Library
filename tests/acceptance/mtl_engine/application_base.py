@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
 
+# MTL pipeline stats line, emitted once per stats interval (10s by default,
+# MT_STAT_INTERVAL_S_DEFAULT) by lib/src/st2110/pipeline/st{20,30,40}_pipeline_{tx,rx}.c:
+#   TX_st20p(0), frame get try 250 succ 250, put 250, drop 0
+#   RX_st20p(0), frame get try 251 succ 250, put 250
+# The ``drop`` field exists on TX lines only. Counters reset every interval, so
+# a run total is the sum over all matching lines.
+_MTL_PIPELINE_STATS_RE = re.compile(
+    r"(?P<dir>TX|RX)_st\d\dp\(\d+\),\s*frame get try \d+ succ \d+, "
+    r"put (?P<put>\d+)(?:, drop (?P<drop>\d+))?"
+)
+
+
 # Encoder name -> MTL st22 plugin shared object, for require_encoder()
 # pre-flight checks shared across framework adapters.
 MTL_ENCODER_PLUGIN_MAP = {
@@ -104,6 +116,12 @@ class ProcSpec:
         bounded: True if the command self-terminates (e.g. wrapped in
             ``timeout N`` or has its own ``--test_time``). False for
             indefinitely-running streams that the orchestrator must stop.
+        graceful_s: SIGINT grace for this one process, overriding the universal
+            ``stop_graceful_s``. Only for a process measured to need longer --
+            an under-sized grace turns a clean exit into a SIGKILL, which
+            costs the exit code the caller then has to judge.
+        exited_before_stop: For unbounded processes, whether the process had
+            already exited when the wall-clock test window ended.
         captured_output: Filled in by :meth:`Application._run_proc_group`
             after stdout has been read.
         proc: Filled in by :meth:`Application._run_proc_group` with the
@@ -114,6 +132,8 @@ class ProcSpec:
     host: object
     label: str
     bounded: bool = True
+    graceful_s: Optional[int] = None
+    exited_before_stop: Optional[bool] = None
     captured_output: str = ""
     proc: object = field(default=None, repr=False)
 
@@ -200,6 +220,9 @@ class Application(ABC):
         # silently leak into the next test and cause spurious failures.
         self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
+        unsupported = self.unsupported_reason(**self.params)
+        if unsupported:
+            raise ValueError(unsupported)
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
 
@@ -374,19 +397,53 @@ class Application(ABC):
         Returns the summed drop count, or -1 if no TX pipeline stats line was
         found in the captured output.
         """
-        if not self.last_output:
-            return -1
-        pattern = re.compile(
-            r"TX_st\d\dp\(\d+\),\s*frame get try \d+ succ \d+, put \d+, drop (\d+)"
-        )
-        total = 0
-        seen = False
-        for line in self.last_output.split("\n"):
-            m = pattern.search(line)
-            if m:
-                seen = True
-                total += int(m.group(1))
-        return total if seen else -1
+        return self.count_pipeline_frames(self.last_output, "TX", field="drop")
+
+    @staticmethod
+    def count_pipeline_frames(output: str, direction: str, field: str = "put") -> int:
+        """Sum one MTL pipeline stats counter over *output*.
+
+        ``direction`` is ``"TX"`` or ``"RX"``; ``field`` is ``"put"`` (frames
+        the pipeline handed on -- transmitted by TX, consumed by RX) or
+        ``"drop"`` (TX only).
+
+        This is library output, identical no matter which framework drives it,
+        so every adapter shares this parser rather than re-implementing it.
+        Returns -1 when *output* carries no matching stats line at all: a run
+        shorter than one stats interval produces none, and callers must treat
+        "no data" differently from "zero frames".
+        """
+        series = Application.pipeline_frame_series(output, direction, field)
+        return sum(series) if series else -1
+
+    @staticmethod
+    def pipeline_frame_series(
+        output: str, direction: str, field: str = "put"
+    ) -> list[int]:
+        """Per-interval values of one MTL pipeline stats counter, in order.
+
+        Arguments are as :meth:`count_pipeline_frames`, which sums this. Each
+        element is one completed ``MT_STAT_INTERVAL_S_DEFAULT`` of session
+        uptime, because the library resets its counters after every print, so
+        the list length says how long the session ran and each element says what
+        rate it ran at. A caller wanting a throughput floor needs the series
+        rather than the sum: it can drop the first element, whose interval
+        overlaps process startup, and grade the steady state instead of having to
+        guess how much of the wall clock went to getting going.
+
+        Empty when *output* carries no matching stats line at all.
+        """
+        if not output:
+            return []
+        series = []
+        for match in _MTL_PIPELINE_STATS_RE.finditer(output):
+            if match.group("dir") != direction:
+                continue
+            value = match.group(field)
+            if value is None:
+                continue
+            series.append(int(value))
+        return series
 
     def _session_pacing_ways(self) -> list[str]:
         """Return final per-session pacing ways in attach order."""
@@ -538,6 +595,22 @@ class Application(ABC):
             f"video session: {non_narrow}"
         )
         return totals
+
+    def unsupported_reason(self, **params) -> Optional[str]:
+        """Return why this framework cannot run *params*, or ``None`` if it can.
+
+        Lets a shared test skip a case that one framework's MTL plugin simply
+        does not implement without the test body having to know which
+        framework it is driving. ``app_factory`` calls it for any keyword
+        argument it is handed and skips with the returned reason::
+
+            app = app_factory(application, session_type="st20p", pixel_format=fmt)
+
+        The default claims full support; adapters override it. Only genuine
+        plugin gaps belong here -- a missing *mapping* is a bug to fix, not a
+        capability to skip.
+        """
+        return None
 
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Hook method called before execution to perform framework-specific setup.
@@ -763,10 +836,10 @@ class Application(ABC):
         (each helper already records the pytest failure internally).
 
         Integrity is evaluated *before* ``_dispatch_validate`` deliberately:
-        FFmpeg's ``validate_results()`` deletes the tracked RX output file
-        (via ``_cleanup_output_files``) once its own check is done, so the
-        integrity verdict must consume the file first -- this is what lets
-        callers drop ``keep_output=True``.
+        the FFmpeg and GStreamer ``validate_results()`` delete the tracked RX
+        output file (via ``_cleanup_output_files``) once their own checks are
+        done, so the integrity verdict must consume the file first -- this is
+        what lets callers drop ``keep_output=True``.
         """
         compliance_ok, compliance_exc = True, None
         try:
@@ -813,11 +886,11 @@ class Application(ABC):
         Two waiting strategies, picked by the caller:
 
         * ``wall_clock_seconds`` set: the orchestrator sleeps that long, then
-          tears every spec down (used by FFmpeg whose RX/TX streams never
-          self-terminate).
-        * ``proc_wait_timeout`` set: each ``bounded=True`` spec is awaited
-          with that timeout (used by RxTxApp/Gstreamer whose commands carry
-          their own ``timeout N`` shell wrapper).
+          tears every spec down. Used by FFmpeg and GStreamer, whose pipelines
+          stream a looped source and never self-terminate.
+        * ``proc_wait_timeout`` set: each ``bounded=True`` spec is awaited with
+          that timeout. Used by RxTxApp, whose command carries its own
+          ``--test_time`` and shell ``timeout`` wrapper.
 
         For each spec, ``cmd`` must already be timeout-wrapped if ``bounded``.
         Stdout is read inside ``finally`` and assigned to ``spec.captured_output``;
@@ -879,7 +952,13 @@ class Application(ABC):
             # already exited (timeout wrapper or proc.wait above).
             for spec in specs:
                 if not spec.bounded and spec.proc is not None:
-                    self._stop_unbounded_proc(spec.proc, spec.label)
+                    try:
+                        spec.exited_before_stop = not spec.proc.running
+                    except Exception:
+                        spec.exited_before_stop = None
+            for spec in specs:
+                if not spec.bounded and spec.proc is not None:
+                    self._stop_unbounded_proc(spec.proc, spec.label, spec.graceful_s)
             if cleanup_host is not None:
                 # Drains every comm alias in MTL_APP_NAMES (incl. DPDK-renamed
                 # RxTxApp_main). Single call covers ffmpeg + RxTxApp orphans.
@@ -889,12 +968,18 @@ class Application(ABC):
             self._process = None
         return specs
 
-    def _stop_unbounded_proc(self, proc, label: str) -> None:
+    def _stop_unbounded_proc(
+        self, proc, label: str, graceful_s: Optional[int] = None
+    ) -> None:
         """SIGINT → SIGKILL ladder for indefinitely-running processes.
 
         Reuses :meth:`_signal_and_wait` so DPDK applications get a chance to
         run ``rte_eal_cleanup()`` before being force-killed (otherwise the
         VFIO group fd leaks and ``nicctl disable_vf`` blocks).
+
+        ``graceful_s`` (from :attr:`ProcSpec.graceful_s`) overrides the
+        universal ``stop_graceful_s`` for one process that is measured to need
+        longer than the shared default.
 
         After SIGKILL, the kernel takes a moment to reap the process and the
         SSH-side ``proc.running`` poll may still return True briefly; we wait
@@ -903,7 +988,8 @@ class Application(ABC):
         """
         if proc is None:
             return
-        graceful_s = self.params.get("stop_graceful_s", 10)
+        if graceful_s is None:
+            graceful_s = self.params.get("stop_graceful_s", 10)
         if self._signal_and_wait(proc, signal.SIGINT, graceful_s):
             return
         logger.info(

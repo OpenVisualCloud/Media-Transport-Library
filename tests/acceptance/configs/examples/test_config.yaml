@@ -1,19 +1,38 @@
 session_id: 0
 mtl_path: path/to/Media-Transport-Library
 media_path: /mnt/media
+# Seconds each streaming case runs for. The GStreamer adapter raises anything
+# below 30 to 30, because its oracles grade a duration: two completed 10s MTL
+# stats intervals for the frame-rate check, and bytes-per-second of window for
+# the RX artifact floor.
+test_time: 30
 ramdisk:
   media:
     mountpoint: /mnt/ramdisk/media
-    size_gib: 32
-  pcap:
-    mountpoint: /mnt/ramdisk/pcap
-    size_gib: 768
-compliance: false
+    # gen_config.py derives this: ceil(2.5 GB/s peak RX dump rate x the longest
+    # window a case can run for) + 8 GiB for the input asset copied onto the
+    # mount, so 30s -> 70 + 8. Then clamped to half the non-hugetlb RAM and
+    # floored at 16 GiB, so a small host gets less than this. It is a tmpfs cap,
+    # allocated lazily, so over-sizing costs nothing unwritten.
+    size_gib: 78
+  # ramdisk.pcap_dir is written only when compliance is true; the pcap ramdisk
+  # has no other user. tmpfs_size_gib is unconditional.
+  pcap_dir: /mnt/ramdisk/pcap
+  tmpfs_size_gib: 8
+# True only when the host has BOTH a dedicated capture NIC and EBU credentials.
+# When it does not, gen_config.py writes exactly `capture_cfg: {enable: false}`
+# and omits ramdisk.pcap_dir -- an ABSENT capture_cfg is read by the
+# pcap_capture fixture as "this host does compliance", which hard-FAILs every
+# pcap test with "ebu_server is not configured". The ebu_server block below is
+# keyed on the credentials alone, so it is still written on a host that has them
+# but no capture NIC; nothing reads it while compliance is false.
+compliance: true
 capture_cfg:
-  enable: false
+  enable: true
   pcap_dir: /mnt/ramdisk/pcap
   # Optional: pick a different NIC for netsniff-ng capture than the one used by the test.
   # Priority: sniff_interface > sniff_interface_index > sniff_pci_device.
+  sniff_pci_device: 8086:12d2
   # sniff_interface_index: 1
   # ST 2110-21 capture uses NIC hardware (on-wire) RX timestamps; the capture
   # PHC is disciplined to TAI (phc_sync) so the absolute-offset check passes.

@@ -40,8 +40,9 @@ When a feature needs a new knob:
   [config/universal_params.py](../../tests/acceptance/mtl_engine/config/universal_params.py)
   (else `set_params` raises `Unknown parameter`);
 - wire the translation in each adapter's config/command builder
-  (`rxtxapp.py`, `ffmpeg.py`, `GstreamerApp.py`) — only in the ones that
-  support it.
+  (`rxtxapp.py`, `ffmpeg.py`, `gstreamer.py`) — only in the ones that
+  support it, and have the others report the gap from
+  `unsupported_reason()` so `app_factory` skips with a precise reason.
 
 Never hardcode a framework's config shape (JSON keys, CLI flags) in the test.
 

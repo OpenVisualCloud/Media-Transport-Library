@@ -92,6 +92,12 @@ cd "$repo_root" || exit 1
 # -------------------- run-log tee --------------------
 RUN_LOG="/tmp/setup_acceptance-$(date -u +%Y%m%dT%H%M%SZ).log"
 exec > >(tee -a "$RUN_LOG") 2>&1
+# fd 3 is that same stream, saved for the few messages that must reach the
+# operator even from inside a stage: run_stage captures a stage's stdout and
+# stderr into a temp file and, when the stage succeeds with VERBOSE=0 (the
+# default), deletes it — so an ordinary warn from a *successful* stage reaches
+# neither the console nor the run log.
+exec 3>&2
 
 # -------------------- pretty output --------------------
 RED=$'\033[1;31m'
@@ -101,6 +107,9 @@ GRN=$'\033[1;32m'
 CLR=$'\033[0m'
 log() { printf '%s[setup_acceptance]%s %s\n' "$CYN" "$CLR" "$*" >&2; }
 warn() { printf '%s[setup_acceptance] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
+# Same as warn, but on fd 3 so it survives run_stage's output capture. For
+# things the operator has to act on or know a file changed under them.
+notice() { printf '%s[setup_acceptance] NOTE:%s %s\n' "$YEL" "$CLR" "$*" >&3; }
 ok() { printf '%s[setup_acceptance] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
 err() { printf '%s[setup_acceptance] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
 
@@ -466,8 +475,111 @@ stage_venv() {
 		}
 }
 
+# Read one scalar out of a top-level block of the existing test_config.yaml,
+# e.g. _yaml_block_field ebu_server ebu_ip. An empty block name reads a
+# top-level scalar instead: _yaml_block_field '' test_time. Prints nothing if
+# the block or the key is absent. awk rather than a yaml parser because the
+# blocks it reads are flat maps of scalars and that does not justify a second
+# python startup. Takes the whole remainder of the line rather than $2, so a
+# value containing spaces (an EBU password) survives; \047 is a single quote,
+# spelled in octal to keep the awk program single-quotable in shell.
+#
+# Two things the value has to survive, because hand-written configs have both:
+# quotes, and a trailing `# ...` comment. An unquoted scalar ends at the first
+# ` #', so the comment is stripped; a quoted one ends at its closing quote, so
+# anything after it — comment included — is dropped with the quotes.
+_yaml_block_field() {
+	awk -v block="$1" -v key="$2:" '
+		BEGIN { top = (block == ""); if (!top) block = block ":" }
+		!top && $1 == block { inside = 1; next }
+		!top && inside && /^[^[:space:]]/ { inside = 0 }
+		(top ? /^[^[:space:]]/ : inside) && $1 == key {
+			sub(/^[[:space:]]*[^:]*:[[:space:]]*/, "")
+			sub(/[[:space:]]*\r?$/, "")
+			q = substr($0, 1, 1)
+			if (q == "\"" || q == "\047") {
+				rest = substr($0, 2)
+				close_at = index(rest, q)
+				if (close_at > 0) {
+					$0 = substr(rest, 1, close_at - 1)
+				}
+			} else {
+				sub(/[[:space:]]+#.*$/, "")
+				sub(/[[:space:]]+$/, "")
+			}
+			print
+			exit
+		}
+	' tests/acceptance/configs/test_config.yaml 2>/dev/null
+}
+
+# The two repairs below edit one key of an existing test_config.yaml in place.
+# Regenerating for either would be wrong: gen_test_config() emits only the keys
+# it knows about, so it cannot round-trip the ones only an operator can set --
+# top-level interface_type (read at ~80 call sites across 40 files via
+# test_config.get("interface_type", "VF")), capture_cfg.sniff_interface /
+# sniff_interface_index / phc_sync / capture_time / silent, ebu_server.proxy --
+# and unlike the regenerating triggers, these two fire on hosts where nothing
+# changed and nothing was asked.
+
+# Raise ramdisk.media.size_gib, leaving every other byte of the file alone.
+# Anchored so 'size_gib:' must follow the leading whitespace directly, which is
+# what makes it unable to match 'tmpfs_size_gib:' (a sibling under ramdisk:, at
+# indent 2 — not at column 0) at any indent. It patches the *first* indented
+# 'size_gib:' in the file, which is ramdisk.media's only while media: precedes
+# any other block carrying that key, as every generated config has it. Fails
+# without touching the file if no such line is there.
+_raise_media_size_gib() {
+	local want="$1" cfg=tests/acceptance/configs/test_config.yaml
+	# Create the temp file with the config's own mode before the redirect
+	# truncates it: this file stores ebu_server.password in plaintext, and an
+	# operator who chmod'd it must not silently get 0644 back.
+	cp --attributes-only --preserve=mode,ownership "$cfg" "$cfg.new" 2>/dev/null || :
+	awk -v want="$want" '
+		!patched && /^[[:space:]]+size_gib:/ {
+			sub(/:.*$/, ": " want)
+			patched = 1
+		}
+		{ print }
+		END { exit patched ? 0 : 1 }
+	' "$cfg" >"$cfg.new" || {
+		rm -f "$cfg.new"
+		return 1
+	}
+	mv "$cfg.new" "$cfg"
+}
+
+# Append the compliance opt-out gen_config.py's 'enable: false' branch exists to
+# write. A config predating that branch names no sniff NIC anywhere, so false is
+# the only value it could truthfully take; an operator who wants compliance
+# passes EBU_IP plus --capture-pci-device, which regenerates instead. Appending
+# a top-level key at column 0 closes whatever block preceded it.
+_append_capture_disabled() {
+	local cfg=tests/acceptance/configs/test_config.yaml
+	[[ -z "$(tail -c1 "$cfg")" ]] || printf '\n' >>"$cfg"
+	printf 'capture_cfg:\n  enable: false\n' >>"$cfg"
+}
+
+# True when the existing config's capture_cfg.sniff_pci_device already names the
+# capture NIC the operator just passed. CAPTURE_PCI_DEVICE is a BDF while the
+# config stores vendor:device (what the framework's PCIDevice parser wants), so
+# resolve it the same way gen_config.py does before comparing. A BDF lspci
+# cannot resolve counts as "not named": regenerating from the explicit flag is
+# what the operator asked for, and only a regeneration can add the capture PF to
+# topology_config.yaml's network_interfaces.
+_config_names_capture_device() {
+	local want="$1" stored
+	stored=$(_yaml_block_field capture_cfg sniff_pci_device)
+	[[ -n "$stored" ]] || return 1
+	if [[ "$want" == *.* ]]; then
+		want=$(lspci -s "${want#0000:}" -n 2>/dev/null | awk '{print $3}')
+	fi
+	[[ -n "$want" && "$stored" == "$want" ]]
+}
+
 stage_configs() {
-	local detected_bdf detected_vendor_device cur_vd need_regen=0
+	local detected_bdf detected_vendor_device cur_vd need_regen=0 repaired=0 would_repair=0
+	local cfg=tests/acceptance/configs/test_config.yaml
 	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2|579d|1249)' | head -1 | awk '{print "0000:"$1}')
 	if [[ -n "$detected_bdf" ]]; then
 		detected_vendor_device=$(lspci -s "${detected_bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
@@ -476,25 +588,239 @@ stage_configs() {
 	if [[ -f tests/acceptance/configs/topology_config.yaml &&
 		-f tests/acceptance/configs/test_config.yaml ]]; then
 		cur_vd=$(grep -m1 'pci_device:' tests/acceptance/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
-		local cur_compliance cur_has_capture
+		local cur_compliance cur_has_capture cur_media_gib want_media_gib
+		local cur_test_time sized_test_time
 		cur_compliance=$(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')
 		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/acceptance/configs/test_config.yaml && echo 1 || echo 0)
+		# Whether a regeneration could actually turn compliance on. gen_config.py
+		# sets compliance = has_ebu AND has_sniff, and the regeneration below
+		# forces --no_capture whenever CAPTURE_PCI_DEVICE is unset, so EBU
+		# credentials on their own never flip it — either the operator passed a
+		# capture PF, or one is stored in the config for the carry-forward below
+		# to pick up. Deciding this before the trigger is what keeps the trigger
+		# convergent: without it, a host with EBU credentials and no capture PF —
+		# a combination this script's header documents as supported — regenerates
+		# on every warm re-run, and each regeneration drops the keys
+		# gen_test_config() cannot express.
+		local can_enable_compliance=0
+		if [[ -n "$CAPTURE_PCI_DEVICE" ]] ||
+			[[ -n "$(_yaml_block_field capture_cfg sniff_pci_device)" ]]; then
+			can_enable_compliance=1
+		fi
+		if [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]] && ((!can_enable_compliance)); then
+			notice "configs: EBU_IP is set but no capture PF is known, so compliance stays disabled — pass --capture-pci-device to enable it"
+		fi
+		# 'size_gib:' under ramdisk.media, anchored so it cannot match
+		# 'tmpfs_size_gib:'. want_media_gib is what gen_config.py would derive
+		# for the window below on this host; empty if the probe cannot run, in
+		# which case the size comparison below is skipped rather than guessed.
+		cur_media_gib=$(grep -m1 -E '^[[:space:]]+size_gib:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')
+		# The window to size against is the LARGER of TEST_TIME and the
+		# test_time already in the file. TEST_TIME defaults to 30 whether or not
+		# --test-time was passed, while the file's value is what pytest will
+		# actually run for -- so sizing against TEST_TIME alone would "raise"
+		# the mount to 78 GiB on a config that runs for 60s and needs 148.
+		# test_time itself is left as the file has it, and said so below: this
+		# repair path exists precisely to touch one key.
+		cur_test_time=$(_yaml_block_field '' test_time)
+		sized_test_time="$TEST_TIME"
+		if [[ "$cur_test_time" =~ ^[0-9]+$ ]] && ((cur_test_time > sized_test_time)); then
+			sized_test_time="$cur_test_time"
+		fi
+		# The sizer's stderr is where it says the derived size had to be clamped
+		# to half of RAM ("may hit ENOSPC"), so it goes to the console rather
+		# than /dev/null — but only once a size came back, since before
+		# stage_venv the same stderr is just an ImportError.
+		local sizer_err
+		sizer_err=$(mktemp)
+		want_media_gib=$(cd tests/acceptance/configs 2>/dev/null &&
+			"../venv/bin/python3" -c "import gen_config, sys; print(gen_config._media_ramdisk_gib(int(sys.argv[1])))" \
+				"$sized_test_time" 2>"$sizer_err")
+		if [[ -n "$want_media_gib" && -s "$sizer_err" ]]; then
+			notice "configs: $(tr '\n' ' ' <"$sizer_err")"
+		fi
+		rm -f "$sizer_err"
+		if [[ -z "$want_media_gib" && -n "$cur_media_gib" ]]; then
+			notice "configs: could not run the ramdisk sizer (venv or gen_config.py unavailable) — ramdisk.media.size_gib left at $cur_media_gib, unchecked against a ${sized_test_time}s run"
+		fi
 		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
 			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
 			need_regen=1
-		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]]; then
+		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]] && ((can_enable_compliance)); then
+			# Ordered ahead of the in-place repairs below: an operator who
+			# passes EBU_IP is asking for a compliance-enabled config, which
+			# only a regeneration can produce. Guarded so it fires only when the
+			# regeneration can deliver it; when it cannot, this falls through to
+			# the in-place repairs instead of rewriting the file to no effect.
 			warn "configs: EBU_IP provided but compliance not yet enabled in existing config — regenerating"
 			need_regen=1
-		elif [[ -n "$CAPTURE_PCI_DEVICE" && "$cur_has_capture" != "1" ]]; then
-			warn "configs: CAPTURE_PCI_DEVICE provided but capture_cfg missing from existing config — regenerating"
+		elif [[ -n "$CAPTURE_PCI_DEVICE" ]] && ! _config_names_capture_device "$CAPTURE_PCI_DEVICE"; then
+			# Same reason: --capture-pci-device is only honoured by a
+			# regeneration (it also has to reach topology_config.yaml's
+			# network_interfaces), so without this trigger an explicitly passed
+			# capture NIC is a silent no-op on an existing config — and the
+			# repair path below would write 'capture_cfg.enable: false' in the
+			# same run, the exact opposite of what was asked.
+			warn "configs: --capture-pci-device=$CAPTURE_PCI_DEVICE is not the sniff device in the existing config — regenerating"
 			need_regen=1
-		elif [[ -n "$detected_vendor_device" ]]; then
-			log "configs: kept (already present, NIC=$cur_vd)"
 		else
-			log "configs: kept (already present)"
+			if [[ "$cur_has_capture" != "1" ]]; then
+				# An ABSENT capture_cfg is read by the pcap_capture fixture as
+				# "this host does compliance", so every test taking that
+				# fixture fails with "ebu_server is not configured" instead of
+				# running its data-path oracles. Configs predating
+				# gen_config.py's explicit 'enable: false' have no capture_cfg
+				# at all, and no env var announces that — so this cannot be
+				# conditional on one.
+				if [[ "$CHECK_ONLY" == "1" ]]; then
+					notice "configs: no capture_cfg — pcap tests would hard-FAIL on 'ebu_server is not configured' (CHECK_ONLY=1, not repaired)"
+					would_repair=1
+				elif _append_capture_disabled; then
+					notice "configs: no capture_cfg — appended 'capture_cfg: {enable: false}' so pcap tests skip the verdict instead of hard-FAILing"
+					repaired=1
+				else
+					err "configs: no capture_cfg and it could not be appended to $cfg — add a 'capture_cfg:' block with 'enable: false' by hand"
+					return 1
+				fi
+			fi
+			# Only on this path: the regenerating branches above do apply
+			# TEST_TIME, so there would be nothing half-applied to report.
+			if [[ "$cur_test_time" =~ ^[0-9]+$ && "$cur_test_time" != "$TEST_TIME" ]]; then
+				notice "configs: test_time in $cfg is ${cur_test_time}s, not the requested ${TEST_TIME}s — left as-is (delete the configs to regenerate at ${TEST_TIME}s); the ramdisk is sized for the longer of the two, ${sized_test_time}s"
+			fi
+			if [[ -z "$want_media_gib" ]]; then
+				: # sizer unavailable; already reported above
+			elif [[ ! "$cur_media_gib" =~ ^[0-9]+$ ]]; then
+				# Either no anchored 'size_gib:' line (a flow-style
+				# `media: {…, size_gib: N}` block, or no ramdisk block at all)
+				# or a non-numeric value. Both leave nothing this repair can
+				# compare or patch, and neither may reach the numeric test
+				# below: under `set -u`-style strictness an unset/garbage
+				# operand aborts the stage instead of reporting anything.
+				notice "configs: could not read a numeric ramdisk.media.size_gib from $cfg (found '${cur_media_gib:-<no anchored size_gib: line>}') — left alone, unchecked against the ${want_media_gib} GiB a ${sized_test_time}s run needs; set it by hand or delete the configs to regenerate"
+			elif ((cur_media_gib < want_media_gib)); then
+				# Too small a media ramdisk is not a truncated artifact:
+				# filesink reports ENOSPC as a pipeline error and the
+				# byte-throughput oracles read the shortfall as an MTL delivery
+				# failure, so a healthy run fails for want of disk. Only grows
+				# it — a hand-raised size is kept.
+				if [[ "$CHECK_ONLY" == "1" ]]; then
+					notice "configs: ramdisk.media.size_gib=$cur_media_gib is below the ${want_media_gib} GiB a ${sized_test_time}s run needs (CHECK_ONLY=1, not repaired)"
+					would_repair=1
+				elif _raise_media_size_gib "$want_media_gib"; then
+					notice "configs: raised ramdisk.media.size_gib $cur_media_gib -> $want_media_gib for a ${sized_test_time}s run"
+					repaired=1
+				else
+					err "configs: ramdisk.media.size_gib=$cur_media_gib is below the ${want_media_gib} GiB a ${sized_test_time}s run needs and no 'size_gib:' line could be patched — raise it in $cfg by hand"
+					return 1
+				fi
+			fi
+			if ((repaired)); then
+				log "configs: repaired in place — no other key touched"
+			elif [[ -n "$detected_vendor_device" ]]; then
+				log "configs: kept (already present, NIC=$cur_vd)"
+			else
+				log "configs: kept (already present)"
+			fi
 		fi
 		if ((!need_regen)); then
+			if ((would_repair)); then
+				# CHECK_ONLY found repairs it deliberately did not apply, so the
+				# config is still broken for pytest. Report that the way every
+				# other stage reports it — rc=2, which run_stage renders as
+				# "would-install" — instead of printing the findings above and
+				# then a healthy summary row, which is what
+				# mtl-acceptance-tests.instructions.md tells the operator names
+				# the broken stage.
+				return 2
+			fi
 			return 0
+		fi
+		# Regeneration writes the file from gen_test_config()'s fixed key set,
+		# so anything only an operator can set is lost. Name those keys and keep
+		# a copy instead of dropping them silently, and carry forward the two
+		# things the env may not hold: EBU credentials and the sniff NIC.
+		# Without the latter the regen forces --no_capture and compliance goes
+		# false, silently downgrading a compliance-capable host.
+		if [[ "$CHECK_ONLY" != "1" ]]; then
+			# The copy is unconditional. The list below names the keys worth
+			# calling out, but it cannot be exhaustive — anything gen_test_config()
+			# does not emit is dropped — and a key missing from the list is
+			# exactly the case where the operator has no warning and would need
+			# the .bak most. One cp of a 1 KB file is the cheaper side of that.
+			#
+			# It also must not overwrite an earlier backup. A second regeneration
+			# copies the ALREADY-regenerated file, so a fixed destination would
+			# replace the only surviving copy of the keys the first regeneration
+			# dropped — and silently, because by then those keys are gone from
+			# the live file too, so the notice below is not taken. Numbering
+			# rather than timestamping keeps that collision-free by
+			# construction: two regenerations in the same second cannot land on
+			# one name.
+			local backup="$cfg.bak" backup_n=0
+			while [[ -e "$backup" ]]; do
+				backup="$cfg.bak.$((++backup_n))"
+			done
+			cp -f "$cfg" "$backup"
+			local -a lost=()
+			grep -q '^interface_type:' "$cfg" && lost+=(interface_type)
+			grep -q '^[[:space:]]*sniff_interface:' "$cfg" && lost+=(capture_cfg.sniff_interface)
+			grep -q '^[[:space:]]*sniff_interface_index:' "$cfg" && lost+=(capture_cfg.sniff_interface_index)
+			grep -q '^[[:space:]]*phc_sync:' "$cfg" && lost+=(capture_cfg.phc_sync)
+			grep -q '^[[:space:]]*capture_time:' "$cfg" && lost+=(capture_cfg.capture_time)
+			grep -q '^[[:space:]]*frames_number:' "$cfg" && lost+=(capture_cfg.frames_number)
+			grep -q '^[[:space:]]*packets_number:' "$cfg" && lost+=(capture_cfg.packets_number)
+			grep -q '^[[:space:]]*silent:' "$cfg" && lost+=(capture_cfg.silent)
+			[[ "$(_yaml_block_field ebu_server proxy)" =~ ^(false|)$ ]] || lost+=(ebu_server.proxy)
+			if ((${#lost[@]})); then
+				notice "configs: regeneration cannot express ${lost[*]} — previous file kept as $backup; re-apply those keys by hand"
+			else
+				log "configs: previous $cfg kept as $backup before regenerating"
+			fi
+		fi
+		# Each of the three fields is carried forward on its own. Gating all three
+		# on EBU_IP being empty lets a partial invocation destroy the other two:
+		# EBU_PASSWORD is env-only — never a flag, so it cannot leak into ps — so
+		# `--ebu-ip=X --ebu-user=Y` with EBU_PASSWORD unset leaves it empty,
+		# gen_config.py's has_ebu = all([ip, user, password]) goes false, and the
+		# whole ebu_server block is dropped from a config that had all three. The
+		# operator asked to enable compliance and would instead lose the stored
+		# password.
+		local -a carried=()
+		if [[ -z "$EBU_IP" ]]; then
+			EBU_IP=$(_yaml_block_field ebu_server ebu_ip)
+			[[ -z "$EBU_IP" ]] || carried+=("ebu_ip=$EBU_IP")
+		fi
+		if [[ -z "$EBU_USER" ]]; then
+			EBU_USER=$(_yaml_block_field ebu_server user)
+			[[ -z "$EBU_USER" ]] || carried+=("user=$EBU_USER")
+		fi
+		if [[ -z "$EBU_PASSWORD" ]]; then
+			EBU_PASSWORD=$(_yaml_block_field ebu_server password)
+			# Named, never echoed.
+			[[ -z "$EBU_PASSWORD" ]] || carried+=(password)
+		fi
+		if ((${#carried[@]})); then
+			log "configs: carrying forward ebu_server ${carried[*]} from the existing config"
+		fi
+		# gen_config.py passes an already-resolved vendor:device through
+		# _bdf_to_vendor_device unchanged, so the stored value is a valid
+		# --capture_pci_device. Only carried forward while that device is still
+		# in the machine: the trigger above fires precisely when NICs moved, and
+		# naming a departed sniff device turns every pcap test into a hard
+		# "sniff_pci_device not found" instead of a green run with the
+		# "Compliance check SUPPRESSED" warning.
+		if [[ -z "$CAPTURE_PCI_DEVICE" ]]; then
+			local stored_sniff
+			stored_sniff=$(_yaml_block_field capture_cfg sniff_pci_device)
+			if [[ -z "$stored_sniff" ]]; then
+				:
+			elif lspci -d "$stored_sniff" -n 2>/dev/null | grep -q .; then
+				CAPTURE_PCI_DEVICE="$stored_sniff"
+				log "configs: carrying forward capture_cfg sniff_pci_device=$CAPTURE_PCI_DEVICE"
+			else
+				notice "configs: stored sniff_pci_device=$stored_sniff is no longer present — compliance will be disabled; pass --capture-pci-device to re-enable it"
+			fi
 		fi
 	fi
 	check_only_or_install "configs" || return $?
@@ -532,12 +858,29 @@ stage_configs() {
 	# PCIDevice parser wants, not a bus address) and assigns interface_index
 	# scoped per vendor:device group itself, so no post-hoc patching is
 	# needed here.
+	# gen_config.py's stderr carries the one warning it can emit — the media
+	# ramdisk had to be clamped to half of RAM, so heavy cases "may hit ENOSPC"
+	# — and on this path run_stage would swallow it: it captures the stage's
+	# output to a temp file and deletes it when the stage succeeds. So it is
+	# re-emitted through notice (fd 3), the same way the size probe above does.
+	local gen_err gen_rc=0
+	gen_err=$(mktemp)
 	(cd tests/acceptance/configs &&
 		"../venv/bin/python3" gen_config.py \
 			--session_id 0 --mtl_path "$repo_root" \
 			--pci_device "$pci_device_arg" --ip_address 127.0.0.1 \
 			--username root --key_path "$SSH_KEY" "${capture_args[@]}" \
-			--media_path /mnt/media --test_time "$TEST_TIME" "${ebu_args[@]}")
+			--media_path /mnt/media --test_time "$TEST_TIME" "${ebu_args[@]}") \
+		2>"$gen_err" || gen_rc=$?
+	if [[ -s "$gen_err" ]]; then
+		if ((gen_rc)); then
+			cat "$gen_err" >&2
+		else
+			notice "configs: $(tr '\n' ' ' <"$gen_err")"
+		fi
+	fi
+	rm -f "$gen_err"
+	return "$gen_rc"
 }
 
 # ============================================================================
