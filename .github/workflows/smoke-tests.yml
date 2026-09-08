@@ -160,15 +160,16 @@ jobs:
         timeout-minutes: ${{ matrix.run_timeout }}
         run: task ci:pytest-run -- ${{ matrix.suite }}
       - name: "upload report"
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ always() && needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         id: upload-report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: smoke-test-report-${{ matrix.nic }}
           path: |
             report.html
+            report.json
       - name: "Add report to summary"
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: ${{ always() && needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
         run: task ci:report -- smoke-summary
