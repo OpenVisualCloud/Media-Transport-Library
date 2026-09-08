@@ -12,7 +12,9 @@ static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex);
 
 #define MTL_FFMPEG_UNIT_TEST
 #define pthread_mutex_lock ut_ffmpeg_lifecycle_mutex_lock
+#define clock_gettime ut_ffmpeg_clock_gettime
 #include "../../../ecosystem/ffmpeg_plugin/mtl_common.c"
+#undef clock_gettime
 #undef pthread_mutex_lock
 
 #include "mt_platform.h"
