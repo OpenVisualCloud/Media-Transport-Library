@@ -67,6 +67,64 @@ loaded_is_cached || {
 	echo "ICE did not come back up as the cached module" >&2
 	exit 1
 }
+
+# ICE probes synchronously. A missing netdev after modprobe is a failed probe;
+# reject it before VF configuration can block on the incomplete PF.
+missing=""
+for pf in /sys/bus/pci/drivers/ice/0000:*; do
+	[ -e "$pf" ] || continue
+	[ -d "${pf}/net" ] || missing="${missing} $(basename "$pf")"
+done
+if [ -n "$missing" ]; then
+	echo "ICE loaded, but these PFs registered no netdev:${missing}" >&2
+	echo "Re-running reloads the driver, which has recovered this before. If it" >&2
+	echo "persists, dmesg carries the probe error." >&2
+	exit 1
+fi
+
+command -v ethtool >/dev/null || {
+	echo "ICE timestamp validation requires ethtool" >&2
+	exit 1
+}
+
+pf_has_hw_timestamp() {
+	local netdev capabilities
+	for netdev in "$1"/net/*; do
+		[ -e "$netdev" ] || return 1
+		capabilities=$(LC_ALL=C ethtool -T "$(basename "$netdev")") || return 1
+		grep -Eq '^[[:space:]]*hardware-receive[[:space:]]*$' <<<"$capabilities" || return 1
+		grep -Eq '^PTP Hardware Clock: [0-9]+[[:space:]]*$' <<<"$capabilities" || return 1
+	done
+}
+
+# A PF probed before its shared-clock owner comes up without a PHC and needs a
+# retry once every probe has finished. Only the sniff PF's timestamps decide a
+# compliance verdict, and the acceptance suite gates that one interface itself,
+# so a PF still without a PHC here is reported rather than failed: every job
+# that validates an ICE host runs this, and most of them never capture.
+for pf in /sys/bus/pci/drivers/ice/0000:*; do
+	[ -e "$pf" ] || continue
+	pf_has_hw_timestamp "$pf" && continue
+	bdf=$(basename "$pf")
+	numvfs=$(cat "${pf}/sriov_numvfs" 2>/dev/null) || numvfs=unreadable
+	if [ "$numvfs" != 0 ]; then
+		echo "ICE ${bdf}: skipping PTP recovery, sriov_numvfs is ${numvfs}" >&2
+		continue
+	fi
+	echo "ICE ${bdf}: retrying probe for hardware RX timestamps and PHC"
+	for action in unbind bind; do
+		# shellcheck disable=SC2016
+		if ! timeout --kill-after=5s 30s bash -c 'printf "%s\n" "$1" > "$2"' _ \
+			"$bdf" "/sys/bus/pci/drivers/ice/${action}"; then
+			echo "ICE ${bdf}: ${action} failed or timed out during PTP recovery" >&2
+			exit 1
+		fi
+	done
+	pf_has_hw_timestamp "$pf" ||
+		echo "ICE ${bdf}: still no hardware RX timestamps or PHC after rebind;" \
+			"a capture on this PF would use software timestamps" >&2
+done
+
 echo "ICE loaded from the cached module"
 
 # VFs are not recreated here: every consumer builds the VF state it needs, and

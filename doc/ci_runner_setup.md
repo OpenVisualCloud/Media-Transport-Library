@@ -147,6 +147,10 @@ So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
 "$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
 already the cached one).
 
+After driver activation, verify that each expected PF has a kernel netdev and
+that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
+A loaded module alone does not establish capture readiness.
+
 #### A capture leg needs both ports cabled
 
 `gen_config.py` takes the sniff device from the second `--pci_device` entry, which
