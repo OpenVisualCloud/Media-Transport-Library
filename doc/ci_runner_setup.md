@@ -276,6 +276,31 @@ exports `http_proxy` for internet access, and without it an upload to a lab
 address is handed to a proxy that cannot route there. The Python client avoids
 the same trap by setting `session.trust_env = False`.
 
+### TAI and capture clock requirements
+
+The sender's media clock is `CLOCK_TAI` (`app_platform.h`, and the FFmpeg
+plugin's `ptp_get_time_fn`), so the capture PHC has to sit on the same clock.
+The suite therefore reads the host's live TAI-UTC offset at capture time and
+passes it to `phc2sys -O`, instead of imposing an offset of its own. What
+matters is that sender and capture agree, not what the offset is: a host that
+reports 0 puts both on UTC.
+
+Do not set the kernel offset from a job. It is host-wide state, and the fleet
+watchdog cron re-asserts its own expected value every ten minutes; a job that
+disagrees loses the race mid-run, and every `CLOCK_TAI` reader on the host --
+including a session that is streaming -- sees the media clock jump by the
+leap-second offset. Change the watchdog's expected value if the fleet needs a
+different one.
+
+CI activation retries a PF that reports no hardware RX timestamps or PHC once,
+after every PF has probed and before VFs are created, because a PF probed ahead
+of its shared-clock owner comes up without one. A PF still without one is
+reported and not failed: only the sniff PF's timestamps reach a verdict, and the
+acceptance suite gates that interface itself — a capture clock that will not
+synchronise blocks the test. PTP tests and hosts using `capture_cfg.phc_sync:
+false` need their configured clock arrangement verified rather than an additional
+competing `phc2sys` process.
+
 ### Proving the chain without a working transmitter
 
 `task ci:ebu-list -- verify` proves the analyser answers, not that a capture off
