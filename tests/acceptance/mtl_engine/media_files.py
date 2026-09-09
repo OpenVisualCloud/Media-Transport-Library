@@ -34,6 +34,29 @@ def parse_fps_to_pformat(fps_field: Union[str, int]) -> str:
     return f"p{fps_val}"
 
 
+# The four rates whose pXX label truncates, by the NTSC convention above: p23 is
+# 23.98, p29 is 29.97, p59 is 59.94, p119 is 119.88. Every other label is exact.
+_TRUNCATED_FPS_LABELS = frozenset({23, 29, 59, 119})
+
+
+def pformat_to_exact_fps(fps_field: Union[str, int]) -> str:
+    """Inverse of :func:`parse_fps_to_pformat`: the rate a pXX label stands for.
+
+    Returned as an FFmpeg rational ('30000/1001'), exact rather than rounded.
+
+    A label is not a rate. MTL resolves a rate to whichever ST 2110 rate's
+    tolerance window it falls in and paces at *that*, so anything setting a real
+    FFmpeg rate -- ``-framerate`` on a demuxer, the ``fps`` filter -- has to be
+    given the rate. Handing it the label instead leaves a producer running ~1
+    frame/s slower than MTL paces, which starves the pacer into dropping one
+    frame every second (``TX_VIDEO_SESSION ... epoch drop``).
+    """
+    fps_val = int(str(fps_field).lstrip("pi"))
+    if fps_val in _TRUNCATED_FPS_LABELS:
+        return f"{(fps_val + 1) * 1000}/1001"
+    return str(fps_val)
+
+
 yuv_files = dict(
     i720p23={
         "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
