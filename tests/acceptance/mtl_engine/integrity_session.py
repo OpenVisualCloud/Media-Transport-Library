@@ -30,6 +30,7 @@ from common.integrity.integrity_runner import (
     FileAudioIntegrityRunner,
     FileVideoIntegrityRunner,
 )
+from common.integrity.video_integrity import calculate_yuv_frame_size
 
 from .execute import log_fail
 from .integrity import get_channel_number, get_sample_number, get_sample_size
@@ -56,6 +57,8 @@ class IntegrityIntent:
     width: Optional[int] = None
     height: Optional[int] = None
     file_format: Optional[str] = None
+    min_frames: int = 1
+    max_file_size: int = 0
     # audio-only
     audio_format: Optional[str] = None
     audio_channels: Optional[list] = None
@@ -168,6 +171,20 @@ class IntegritySession:
                 out_path=out_path,
                 delete_file=False,
             )
+        min_frames = intent.min_frames
+        if intent.max_file_size:
+            # The cap stops the write on a frame boundary and the session keeps
+            # receiving, so the recording is a complete prefix.
+            try:
+                frame_size = calculate_yuv_frame_size(
+                    intent.width, intent.height, intent.file_format
+                )
+            except ValueError:
+                # A format the integritor cannot size fails in the runner with its
+                # own message; sizing it here must not pre-empt that with an error.
+                pass
+            else:
+                min_frames = min(min_frames, max(1, intent.max_file_size // frame_size))
         return FileVideoIntegrityRunner(
             host=intent.host,
             test_repo_path=intent.test_repo_path,
@@ -177,6 +194,7 @@ class IntegritySession:
             file_format=intent.file_format,
             out_path=out_path,
             delete_file=False,
+            min_frames=min_frames,
         )
 
     def close(self, enforce_dispatch: bool = True) -> None:

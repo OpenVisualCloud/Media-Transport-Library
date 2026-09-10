@@ -100,7 +100,11 @@ UNIVERSAL_PARAMS = {
     "runtime_session": False,  # Start instance before creating sessions
     "rx_timing_parser": False,  # Enable timing check for video RX streams
     "auto_stop": False,  # Auto stop after input file ends
-    "rx_max_file_size": 0,  # Maximum RX file size in bytes (0 = no limit)
+    # Uncapped, one RX recording grows until it fills the ramdisk (4K p119 writes
+    # 2.5 GB/s). RxTxApp stops on a frame boundary here and keeps receiving, so the
+    # file stays a complete, verifiable prefix. configs/gen_config.py sizes the
+    # media ramdisk for this.
+    "rx_max_file_size": 8 * 1024**3,  # Maximum RX file size in bytes (0 = no limit)
     "pcapng_dump": None,  # Dump n packets to pcapng files
     "rx_video_file_frames": None,  # Dump received video frames to yuv file
     "promiscuous": False,  # Enable RX promiscuous mode

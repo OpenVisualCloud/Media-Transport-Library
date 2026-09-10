@@ -7,6 +7,19 @@ from math import floor
 
 from .execute import log_fail
 
+# Fraction of the nominal frame count a recording must reach to count as complete.
+MIN_RECORDED_FRAME_RATIO = 0.5
+
+
+def min_expected_frames(fps: float, test_time: float) -> int:
+    """Frames a *test_time*-second recording at *fps* must hold to be complete.
+
+    RX opens before TX and both are killed on a timer, and pacing training eats
+    the first seconds, so healthy recordings land well short of nominal. Never 0
+    -- an empty recording must never pass.
+    """
+    return max(1, int(fps * test_time * MIN_RECORDED_FRAME_RATIO))
+
 
 def check_st20p_integrity(
     src_url: str, out_url: str, frame_size: int, skip_frames: int = 1

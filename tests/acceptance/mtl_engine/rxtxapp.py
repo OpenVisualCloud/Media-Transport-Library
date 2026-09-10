@@ -1279,6 +1279,16 @@ class RxTxApp(Application):
             for session in group.get("st20p") or []
         )
 
+    def rx_recording_cap(self) -> int:
+        """Return the byte limit RxTxApp stops this recording at, 0 if unbounded.
+
+        ``--rx_max_file_size`` is honoured by the st20p receiver alone
+        (``tests/tools/RxTxApp/src/rx_st20p_app.c``), so only st20p reports a cap.
+        """
+        if self.params.get("session_type") != "st20p":
+            return 0
+        return int(self.params.get("rx_max_file_size") or 0)
+
     def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
         """Return the destination IPs for netsniff capture, possibly empty.
 
