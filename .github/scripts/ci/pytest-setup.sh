@@ -115,6 +115,36 @@ resolve_nic() {
 	fi
 }
 
+# The ceiling on what a socket may ask to buffer, which the kernel socket
+# datapath needs raised.
+#
+# rx_socket_init_fd() sizes every RX socket itself, asking for 4 MiB. It asks
+# with SO_RCVBUFFORCE first, which ignores this ceiling -- but that needs
+# CAP_NET_ADMIN, and the suite's apps reach the host over SSH as an ordinary
+# user, so the ask falls back to SO_RCVBUF and the ceiling caps it. The symptom
+# and the numbers: see doc/kernel_socket.md.
+#
+# The kernel clamps the ask against this ceiling before doubling it, so the
+# ceiling has to be the size of the ask rather than twice it. A ceiling is not an
+# allocation: a socket that does not ask still gets net.core.rmem_default, so
+# this costs nothing on a leg that never opens one. Raised, never lowered, so a
+# host already tuned higher keeps its value.
+#
+# Not conditional on the leg's datapath: tests/single/kernel_socket runs
+# kernel:<ifname> on every host, whatever its own card resolved to.
+RMEM_MAX_MIN=$((4 * 1024 * 1024))
+
+ensure_socket_rcvbuf_ceiling() {
+	local current
+	current=$(sysctl -n net.core.rmem_max)
+	if ((current >= RMEM_MAX_MIN)); then
+		echo "net.core.rmem_max is ${current}, enough for the kernel socket datapath"
+		return 0
+	fi
+	sudo sysctl -q -w "net.core.rmem_max=${RMEM_MAX_MIN}"
+	echo "net.core.rmem_max: raised ${current} -> ${RMEM_MAX_MIN} for the kernel socket datapath"
+}
+
 # Raw video is enormous, and the suite records it into the workspace: an FFmpeg
 # RX case writes what it receives to tests/<case>_<stamp>_out_<n>.yuv for as long
 # as the case runs -- 1080p yuv422p10le is 8.3 MB a frame, so about 250 MB/s --
@@ -369,6 +399,7 @@ nic-labels)
 	;;
 pci)
 	read -r pci_device interface_type < <(resolve_nic "${NIC:?NIC is required}")
+	ensure_socket_rcvbuf_ceiling
 	{
 		printf 'PCI_DEVICE=%s\n' "$pci_device"
 		printf 'INTERFACE_TYPE=%s\n' "$interface_type"
