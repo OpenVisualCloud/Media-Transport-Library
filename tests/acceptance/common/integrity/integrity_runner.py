@@ -81,6 +81,7 @@ class FileVideoIntegrityRunner(VideoIntegrityRunner):
         delete_file: bool = True,
         python_path=None,
         integrity_path=None,
+        min_frames: int = 1,
     ):
         super().__init__(
             host,
@@ -94,6 +95,7 @@ class FileVideoIntegrityRunner(VideoIntegrityRunner):
             python_path,
             integrity_path,
         )
+        self.min_frames = min_frames
 
     def run(self):
         cmd = " ".join(
@@ -108,6 +110,8 @@ class FileVideoIntegrityRunner(VideoIntegrityRunner):
                 "--output_path",
                 self.out_path,
                 "--delete_file" if self.delete_file else "--no_delete_file",
+                "--min_frames",
+                str(self.min_frames),
             ]
         )
         logger.debug(

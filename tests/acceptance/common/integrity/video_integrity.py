@@ -356,11 +356,13 @@ class VideoFileIntegritor(VideoIntegritor):
         file_format: str = "yuv422p10le",
         out_path: str = "/mnt/ramdisk",
         delete_file: bool = True,
+        min_frames: int = 1,
     ):
         super().__init__(
             logger, src_url, out_name, resolution, file_format, out_path, delete_file
         )
         self.logger = logging.getLogger(__name__)
+        self.min_frames = min_frames
 
     def get_out_file(self):
         try:
@@ -374,6 +376,14 @@ class VideoFileIntegritor(VideoIntegritor):
 
     def check_st20p_integrity(self) -> bool:
         output_file = self.get_out_file()
+        frames = output_file.stat().st_size // self.frame_size
+        if frames < self.min_frames:
+            self.logger.error(
+                f"{output_file} holds {frames} whole frames, {self.min_frames} "
+                f"expected -- the recording was cut short, so the frames it does "
+                f"hold cannot vouch for the ones it does not."
+            )
+            return False
         self.shift_src_chunk_by_first_frame_no(output_file)
         result = self.check_integrity_file(output_file)
         return result
@@ -479,6 +489,12 @@ It performs frame-by-frame integrity checking using MD5 checksums."""
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     add_common_arguments(file_parser)
+    file_parser.add_argument(
+        "--min_frames",
+        type=int,
+        default=1,
+        help="Whole frames the recording must hold to count as complete (default: 1)",
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -505,6 +521,7 @@ It performs frame-by-frame integrity checking using MD5 checksums."""
             args.fmt,
             args.output_path,
             args.delete_file,
+            args.min_frames,
         )
     else:
         parser.print_help()

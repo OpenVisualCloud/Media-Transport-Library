@@ -75,6 +75,7 @@ class FFmpeg(Application):
         self._tx_commands: list[str] = []
         self._build: str | None = None
         self._rx_output: str | None = None
+        self._rx_frame_spec: tuple[str, str, int] | None = None
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -283,6 +284,9 @@ class FFmpeg(Application):
             pix_fmt = ffmpeg_pix_fmt(self.params["pixel_format"])
         else:
             pix_fmt = "yuv422p10le"
+
+        # Geometry and rate the command was actually built with, for validate_results().
+        self._rx_frame_spec = (video_size, pix_fmt, fps)
 
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
 
@@ -732,14 +736,22 @@ class FFmpeg(Application):
         try:
             if mode == _MODE_YUV_H264:
                 output_format = self._ff_params.get("output_format", "yuv")
-                video_format = self.params["video_format"]
-                video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
+                    video_size, pix_fmt, fps = self._rx_frame_spec
                     passed = ffmpeg_app.check_output_video_yuv(
-                        self._output_files[0], host, build, video_url
+                        self._output_files[0],
+                        host,
+                        build,
+                        video_url,
+                        video_size,
+                        pix_fmt,
+                        fps,
+                        self.params.get("test_time") or 30,
                     )
                 else:
+                    video_format = self.params["video_format"]
+                    video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                     passed = ffmpeg_app.check_output_video_h264(
                         self._output_files[0], video_size, host, build, video_url
                     )
