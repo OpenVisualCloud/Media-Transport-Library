@@ -90,6 +90,14 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 #define ST30_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st30_rx_ops.
+ * Only for ST30_TYPE_FRAME_LEVEL.
+ * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
+ * User can check st30_rx_frame_meta data for the frame integrity. The packets
+ * that never arrived read as zero(silence).
+ */
+#define ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(4))
+/**
+ * Flag bit in flags of struct st30_rx_ops.
  * Enable the timing analyze in the stat dump
  */
 #define ST30_RX_FLAG_TIMING_PARSER_STAT (MTL_BIT32(16))
@@ -573,6 +581,7 @@ struct st30_rx_user_stats {
   uint64_t stat_pkts_dropped;
   uint64_t stat_pkts_len_mismatch_dropped;
   uint64_t stat_slot_get_frame_fail;
+  uint64_t stat_frames_incomplete;
 };
 
 /**

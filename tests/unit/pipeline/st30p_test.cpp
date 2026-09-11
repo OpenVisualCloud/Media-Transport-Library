@@ -152,6 +152,8 @@ TEST_F(St30PipelineRxTest, CorruptedDeliveredAndCounted) {
   for (int i = 0; i < 3; i++) {
     struct st30_frame* f = get_frame();
     ASSERT_NE(f, nullptr) << "frame " << i;
+    EXPECT_EQ(f->data_size, f->buffer_size)
+        << "frame " << i << " spans the whole buffer; a gap reads as silence";
     EXPECT_EQ(put_frame(f), 0);
   }
 

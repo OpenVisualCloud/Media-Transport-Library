@@ -899,7 +899,8 @@ TEST(St30p, redundant_stats) {
 /*
  * Verify ST30p RX reports per-frame corruption when post-redundancy packet
  * loss occurs. ST30P_RX_FLAG_SIMULATE_PKT_LOSS drops packets on the RX side
- * so frames close short of full coverage; those frames must be delivered to
+ * so frames close short of full coverage; with
+ * ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME those frames must be delivered to
  * the app with status ST_FRAME_STATUS_CORRUPTED and counted in
  * common.stat_frames_corrupted.
  */
@@ -971,7 +972,8 @@ TEST(St30p, rx_simulate_pkt_loss) {
   ops_rx.framebuff_size = st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
   ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
-  ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET | ST30P_RX_FLAG_SIMULATE_PKT_LOSS;
+  ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET | ST30P_RX_FLAG_SIMULATE_PKT_LOSS |
+                  ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
 
   test_ctx_rx->frame_size = ops_rx.framebuff_size;
   test_ctx_rx->audio_fmt = ops_rx.fmt;

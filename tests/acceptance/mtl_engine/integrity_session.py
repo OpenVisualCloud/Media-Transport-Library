@@ -24,7 +24,7 @@ Runners), on whichever host produced the file -- this module only owns
 import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, NoReturn, Optional, Protocol
 
 from common.integrity.integrity_runner import (
     FileAudioIntegrityRunner,
@@ -33,7 +33,12 @@ from common.integrity.integrity_runner import (
 from common.integrity.video_integrity import calculate_yuv_frame_size
 
 from .execute import log_fail
-from .integrity import get_channel_number, get_sample_number, get_sample_size
+from .integrity import (
+    get_channel_number,
+    get_frame_sample_number,
+    get_min_frame_number,
+    get_sample_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,8 @@ class IntegrityIntent:
     audio_channels: Optional[list] = None
     audio_sampling: Optional[str] = None
     audio_ptime: Optional[str] = None
+    # How long the run lasted, which bounds how much the RX must have captured.
+    test_time: int = 0
 
 
 class IntegrityCheck(Protocol):
@@ -140,8 +147,16 @@ class IntegritySession:
                     "content integrity for this test.",
                     fail_on_error,
                 )
-            runner = self._build_runner(intent)
-            if not runner.run():
+            try:
+                passed = self._build_runner(intent).run()
+            except Exception as exc:
+                # Must surface as AssertionError: _finalize_run() narrows to it,
+                # and anything else would skip validate_results().
+                self._fail(
+                    f"Integrity check did not complete for {intent.out_url}: {exc}",
+                    fail_on_error,
+                )
+            if not passed:
                 self._fail(
                     f"Integrity check failed content comparison for "
                     f"{intent.out_url} against {intent.src_url}.",
@@ -166,10 +181,15 @@ class IntegritySession:
                 src_url=intent.src_url,
                 out_name=out_name,
                 sample_size=get_sample_size(intent.audio_format),
-                sample_num=get_sample_number(intent.audio_sampling, intent.audio_ptime),
+                sample_num=get_frame_sample_number(
+                    intent.audio_sampling, intent.audio_ptime
+                ),
                 channel_num=get_channel_number(channel),
                 out_path=out_path,
                 delete_file=False,
+                min_frames=get_min_frame_number(
+                    intent.audio_sampling, intent.audio_ptime, intent.test_time
+                ),
             )
         min_frames = intent.min_frames
         if intent.max_file_size:
@@ -217,7 +237,7 @@ class IntegritySession:
                 "or media_integrity.skip(...)."
             )
 
-    def _fail(self, msg: str, fail_on_error: bool) -> None:
+    def _fail(self, msg: str, fail_on_error: bool) -> NoReturn:
         if fail_on_error:
             log_fail(msg)
         else:

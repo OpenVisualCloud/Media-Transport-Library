@@ -7,7 +7,18 @@ import logging
 import sys
 from pathlib import Path
 
-from video_integrity import calculate_chunk_hashes
+# The RX joins a running stream, so MTL drops its first short frames: at worst
+# two whole frames inside the first five on this suite.
+JOIN_FRAMES = 5
+MAX_JOIN_GAP_FRAMES = 2
+
+# Per-frame error lines a failing check may emit; an unbounded report fills the
+# SSH channel window and hangs the run (see integrity_runner.py).
+MAX_BAD_FRAME_REPORTS = 20
+
+# Places the capture first frame may match in the source loop. Silence or a flat
+# pattern matches nearly everywhere: that is a vacuous pass, not a check.
+MAX_START_POSITIONS = 64
 
 
 def get_pcm_frame_size(sample_size: int, sample_num: int, channel_num: int) -> int:
@@ -15,6 +26,13 @@ def get_pcm_frame_size(sample_size: int, sample_num: int, channel_num: int) -> i
 
 
 class AudioIntegritor:
+    """Compares a capture against the loop of the source file the TX sends.
+
+    A correct capture is a window onto that loop starting wherever the RX joined,
+    not a copy from byte 0. RxTxApp loops whole frames, ffmpeg the whole file, so
+    both periods are tried.
+    """
+
     def __init__(
         self,
         logger: logging.Logger,
@@ -25,6 +43,7 @@ class AudioIntegritor:
         channel_num: int = 2,
         out_path: str = "/mnt/ramdisk",
         delete_file: bool = True,
+        min_frames: int = 0,
     ):
         self.logger = logger
         self.src_url = src_url
@@ -35,79 +54,192 @@ class AudioIntegritor:
         self.frame_size = get_pcm_frame_size(sample_size, sample_num, channel_num)
         self.out_path = out_path
         self.delete_file = delete_file
-        self.src_chunk_sums = calculate_chunk_hashes(src_url, self.frame_size)
-
-
-class AudioFileIntegritor(AudioIntegritor):
-    def check_integrity_file(self, out_url) -> bool:
-        self.logger.info(
-            f"Checking integrity for src {self.src_url} and out {out_url} "
-            f"with frame size {self.frame_size}"
-        )
-        src_chunk_sums = self.src_chunk_sums
-        out_chunk_sums = calculate_chunk_hashes(out_url, self.frame_size)
-
-        src_frames = len(src_chunk_sums)
-        out_frames = len(out_chunk_sums)
-
-        # In some pipelines the input is looped and transmitted multiple times.
-        # In that case the output may contain multiple repetitions of the source.
-        # We only validate the first `src_frames` frames and ignore any trailing frames.
-        if out_frames > src_frames:
-            self.logger.info(
-                f"Output contains {out_frames} frames; source contains {src_frames} frames. "
-                f"Ignoring {out_frames - src_frames} trailing frames (looped output)."
+        self.min_frames = min_frames
+        with open(src_url, "rb") as src_file:
+            self.src = src_file.read()
+        if len(self.src) < self.frame_size:
+            raise ValueError(
+                f"{src_url} holds {len(self.src)} bytes, less than one "
+                f"{self.frame_size}-byte frame"
             )
+        group = sample_size * channel_num
+        whole_frames_end = len(self.src) // self.frame_size * self.frame_size
+        whole_groups_end = len(self.src) // group * group
+        self.periods = sorted({whole_frames_end, whole_groups_end})
+        self._repeats = {}
 
-        frames_to_check = min(src_frames, out_frames)
-        bad_frames = 0
-        for idx in range(frames_to_check):
-            if out_chunk_sums[idx] != src_chunk_sums[idx]:
-                self.logger.error(f"Bad audio frame at index {idx} in {out_url}")
+    def _repeated(self, period: int) -> bytes:
+        """The first *period* bytes plus one frame of wrap, so a loop-straddling
+        window is a slice. One frame is all either consumer reads past a start
+        position, and a start position is always below *period*."""
+        if period not in self._repeats:
+            self._repeats[period] = self.src[:period] + self.src[: self.frame_size]
+        return self._repeats[period]
+
+    def _start_positions(self, out: bytes, period: int):
+        """Byte positions in the source loop where *out* can begin, or None if it
+        could begin in too many to tell. Each candidate is then compared in full."""
+        repeated = self._repeated(period)
+        probe = out[: self.frame_size]
+        positions, at = [], 0
+        while True:
+            at = repeated.find(probe, at)
+            if at < 0 or at >= period:
+                return positions
+            positions.append(at)
+            if len(positions) > MAX_START_POSITIONS:
+                return None
+            at += 1
+
+    def _compare(
+        self,
+        out: bytes,
+        period: int,
+        position: int,
+        report: bool = False,
+        joining_window: int = JOIN_FRAMES,
+    ) -> tuple:
+        """Compare *out* against the loop of *period* bytes starting at *position*.
+
+        Returns (first differing frame index or None, differing frames, frames
+        missing at the join). With *report* off it returns at the first difference,
+        so a wrong start position costs one comparison. Within the first
+        *joining_window* frames a frame may instead match up to MAX_JOIN_GAP_FRAMES
+        frames on -- audio sent before the RX joined; the source position only moves
+        forward, so no written or unsent audio is absorbed.
+        """
+        size, repeated = self.frame_size, self._repeated(period)
+        first_bad, bad_frames = None, 0
+        missing, src_at = 0, position
+        for index in range(-(-len(out) // size)):
+            chunk = out[index * size : (index + 1) * size]
+            joining = index < joining_window
+            for gap in range(MAX_JOIN_GAP_FRAMES - missing + 1 if joining else 1):
+                at = (src_at + gap * size) % period
+                if chunk == repeated[at : at + len(chunk)]:
+                    missing += gap
+                    src_at = (at + size) % period
+                    break
+            else:
                 bad_frames += 1
-        if bad_frames:
+                if first_bad is None:
+                    first_bad = index
+                if not report:
+                    return first_bad, bad_frames, missing
+                if bad_frames <= MAX_BAD_FRAME_REPORTS:
+                    self.logger.error(
+                        f"Bad audio frame at output index {index} "
+                        f"(source byte {src_at})"
+                    )
+                elif bad_frames == MAX_BAD_FRAME_REPORTS + 1:
+                    self.logger.error(
+                        f"Suppressing further per-frame errors after "
+                        f"{MAX_BAD_FRAME_REPORTS}; see the totals below."
+                    )
+                src_at = (src_at + size) % period
+        return first_bad, bad_frames, missing
+
+    def check_integrity_file(
+        self, out_url, joining_window: int = JOIN_FRAMES, out: bytes | None = None
+    ) -> bool:
+        if out is None:  # given *out*, *out_url* only names the capture in reports
+            with open(out_url, "rb") as out_file:
+                out = out_file.read()
+        size = self.frame_size
+        out_frames = len(out) // size
+        # A short final frame is compared too, so it counts as one.
+        out_chunks = -(-len(out) // size)
+        self.logger.info(
+            f"Checking integrity for src {self.src_url} ({len(self.src)} bytes) "
+            f"and out {out_url} ({len(out)} bytes, {out_frames} frames) "
+            f"with frame size {size}"
+        )
+
+        if not out_frames:
+            self.logger.error(f"{out_url} holds no full {size}-byte frame to check")
+            return False
+
+        if out_frames < self.min_frames:
             self.logger.error(
-                f"Received {bad_frames} bad frames out of {frames_to_check} checked."
+                f"{out_url} holds {out_frames} frames, fewer than the "
+                f"{self.min_frames} a complete run captures."
             )
             return False
 
-        self.logger.info(
-            f"All {frames_to_check} checked frames in {out_url} are correct."
+        best = None  # (first bad frame, period, position)
+        for period in self.periods:
+            positions = self._start_positions(out, period)
+            if positions is None:
+                self.logger.error(
+                    f"{out_url} starts in over {MAX_START_POSITIONS} places at period "
+                    f"{period} in {self.src_url}: join point cannot be told (silence?)"
+                )
+                return False
+            for position in positions:
+                first_bad, _, missing = self._compare(
+                    out, period, position, joining_window=joining_window
+                )
+                if first_bad is None:
+                    if missing:
+                        self.logger.warning(
+                            f"{out_url} is missing {missing} frame(s) of audio "
+                            f"within its first {joining_window} while joining."
+                        )
+                    self.logger.info(
+                        f"All {out_chunks} frames of {out_url} are correct "
+                        f"(source byte {position}, loop period {period})."
+                    )
+                    return True
+                if best is None or first_bad > best[0]:
+                    best = (first_bad, period, position)
+
+        if best is None:
+            self.logger.error(
+                f"No position in {self.src_url} explains the leading frames of "
+                f"{out_url}, at either loop period {self.periods}."
+            )
+            return False
+
+        first_bad, period, position = best
+        _, bad_frames, _ = self._compare(
+            out, period, position, report=True, joining_window=joining_window
         )
-        return True
+        self.logger.error(
+            f"{out_url} follows {self.src_url} from source byte {position} "
+            f"(loop period {period}) but {bad_frames} of its {out_chunks} "
+            f"frames differ, the first at index {first_bad}."
+        )
+        return False
 
 
 class AudioStreamIntegritor(AudioIntegritor):
     def get_out_files(self):
-        return sorted(Path(self.out_path).glob(f"{self.out_name}*"))
+        """Segments in capture order. Plain sorting misorders them as soon as the
+        counter grows a digit, so shorter names -- lower numbers -- come first."""
+        files = Path(self.out_path).glob(f"{self.out_name}*")
+        return sorted(files, key=lambda path: (len(path.name), path.name))
 
     def check_stream_integrity(self) -> bool:
-        bad_frames_total = 0
         out_files = self.get_out_files()
         if not out_files:
             self.logger.error(
                 f"No output files found for stream in {self.out_path} with prefix {self.out_name}"
             )
             return False
-        for out_file in out_files:
-            self.logger.info(f"Checking integrity for segment file: {out_file}")
-            out_chunk_sums = calculate_chunk_hashes(str(out_file), self.frame_size)
-            for idx, chunk_sum in enumerate(out_chunk_sums):
-                if (
-                    idx >= len(self.src_chunk_sums)
-                    or chunk_sum != self.src_chunk_sums[idx]
-                ):
-                    self.logger.error(f"Bad audio frame at index {idx} in {out_file}")
-                    bad_frames_total += 1
-            if self.delete_file:
+        # The segments are consecutive cuts of one capture, so check them joined.
+        # Checked one by one, a segment re-anchors on the source wherever it can,
+        # which hides audio lost across a boundary; joined, only the head of the
+        # stream carries the join allowance, which is where the RX joined.
+        joined = b"".join(out_file.read_bytes() for out_file in out_files)
+        ok = self.check_integrity_file(
+            f"{len(out_files)} stream segments "
+            f"{out_files[0].name}..{out_files[-1].name}",
+            out=joined,
+        )
+        if self.delete_file:
+            for out_file in out_files:
                 out_file.unlink()
-        if bad_frames_total:
-            self.logger.error(
-                f"Received {bad_frames_total} bad frames in stream segments."
-            )
-            return False
-        self.logger.info("All frames in stream segments are correct.")
-        return True
+        return ok
 
 
 def main():
@@ -193,7 +325,8 @@ Example: ffmpeg -i input.wav -f segment -segment_time 3 out_name_%03d.pcm"""
     file_help = """Check integrity for single audio file.
 
 This mode compares a single output audio file against a source reference file.
-It performs frame-by-frame integrity checking using MD5 checksums."""
+The transmitter loops the source, so the capture is compared frame by frame
+against that loop starting wherever the receiver joined it."""
     file_parser = subparsers.add_parser(
         "file",
         help="Check integrity for single audio file",
@@ -201,6 +334,12 @@ It performs frame-by-frame integrity checking using MD5 checksums."""
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     add_common_arguments(file_parser)
+    file_parser.add_argument(
+        "--min_frames",
+        type=int,
+        default=0,
+        help="Fail if the capture holds fewer frames than this (default: 0)",
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -221,7 +360,7 @@ It performs frame-by-frame integrity checking using MD5 checksums."""
     elif args.mode == "file":
         # For file mode, construct the full output file path
         out_file = Path(args.output_path) / args.out
-        integrator = AudioFileIntegritor(
+        integrator = AudioIntegritor(
             logger,
             args.src,
             args.out,
@@ -230,6 +369,7 @@ It performs frame-by-frame integrity checking using MD5 checksums."""
             args.channel_num,
             args.output_path,
             args.delete_file,
+            args.min_frames,
         )
         result = integrator.check_integrity_file(str(out_file))
     else:

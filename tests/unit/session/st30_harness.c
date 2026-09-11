@@ -45,6 +45,7 @@ struct ut30_test_ctx {
   /* ordered log of delivered frames for timeline assertions */
   uint64_t rec_ts[64];
   int rec_status[64];
+  const void* rec_addr[64];
   int rec_n;
 };
 
@@ -74,6 +75,7 @@ static int ut30_notify_frame_ready(void* priv, void* frame,
     if (ctx->rec_n < (int)(sizeof(ctx->rec_ts) / sizeof(ctx->rec_ts[0]))) {
       ctx->rec_ts[ctx->rec_n] = meta->timestamp;
       ctx->rec_status[ctx->rec_n] = meta->status;
+      ctx->rec_addr[ctx->rec_n] = frame;
       ctx->rec_n++;
     }
   }
@@ -222,11 +224,7 @@ static struct rte_mbuf* make_audio_mbuf(uint16_t seq, uint32_t ts) {
 
 int ut30_feed_pkt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
                   enum mtl_session_port port) {
-  struct rte_mbuf* m = make_audio_mbuf(seq, ts);
-  if (!m) return -1;
-  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
-  rte_pktmbuf_free(m);
-  return rc;
+  return ut30_feed_pkt_fill(ctx, seq, ts, port, 0);
 }
 
 void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t ts,
@@ -235,6 +233,17 @@ void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t
   for (int i = 0; i < count; i++) {
     ut30_feed_pkt(ctx, seq_start + i, ts + (uint32_t)i * spp, port);
   }
+}
+
+int ut30_feed_pkt_fill(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                       enum mtl_session_port port, uint8_t fill) {
+  struct rte_mbuf* m = make_audio_mbuf(seq, ts);
+  if (!m) return -1;
+  memset(rte_pktmbuf_mtod(m, uint8_t*) + sizeof(struct st_rfc3550_audio_hdr), fill,
+         UT30_PKT_PAYLOAD);
+  int rc = rx_audio_session_handle_frame_pkt(&ctx->impl, &ctx->session, m, port);
+  rte_pktmbuf_free(m);
+  return rc;
 }
 
 int ut30_feed_pkt_pt(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
@@ -285,6 +294,10 @@ void ut30_ctx_set_ssrc(ut30_test_ctx* ctx, uint32_t ssrc) {
   ctx->session.ops.ssrc = ssrc;
 }
 
+void ut30_ctx_set_flags(ut30_test_ctx* ctx, uint32_t flags) {
+  ctx->session.ops.flags = flags;
+}
+
 /* ── stat accessors ───────────────────────────────────────────────────── */
 
 uint64_t ut30_stat_unrecovered(const ut30_test_ctx* ctx) {
@@ -331,6 +344,10 @@ int ut30_pkts_per_frame(const ut30_test_ctx* ctx) {
   return ctx->session.st30_total_pkts;
 }
 
+uint32_t ut30_pkt_len(const ut30_test_ctx* ctx) {
+  return ctx->session.pkt_len;
+}
+
 uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx) {
   return ctx->session.samples_per_pkt;
 }
@@ -347,6 +364,11 @@ uint64_t ut30_frame_log_ts(const ut30_test_ctx* ctx, int i) {
 int ut30_frame_log_status(const ut30_test_ctx* ctx, int i) {
   if (i < 0 || i >= ctx->rec_n) return -1;
   return ctx->rec_status[i];
+}
+
+const void* ut30_frame_log_addr(const ut30_test_ctx* ctx, int i) {
+  if (i < 0 || i >= ctx->rec_n) return NULL;
+  return ctx->rec_addr[i];
 }
 
 uint64_t ut30_stat_port_pkts(const ut30_test_ctx* ctx, enum mtl_session_port port) {
@@ -376,6 +398,10 @@ uint64_t ut30_stat_port_duplicates(const ut30_test_ctx* ctx, enum mtl_session_po
 uint64_t ut30_stat_port_err_packets(const ut30_test_ctx* ctx,
                                     enum mtl_session_port port) {
   return ctx->session.port_user_stats.common.port[port].err_packets;
+}
+
+uint64_t ut30_stat_frames_incomplete(const ut30_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_frames_incomplete;
 }
 
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx) {
