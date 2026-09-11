@@ -11,13 +11,13 @@ The hard part of testing MTL is **picking the right tier** and **asserting the r
 
 | Tier | Binary | Hardware | Can observe |
 |---|---|---|---|
-| **Unit gtest** — `tests/unit/` | `UnitTest` (built with `-Denable_unit_tests=true`; via `./build.sh unit`) | None — runs as regular user under ASan | RX-side session logic fed synthetic mbufs at the RFC 4175 / RTP payload layer: frame assembly, bitmap dedup, redundancy merge, stat counters, pipeline accounting |
+| **Unit gtest** — `tests/unit/` | `UnitTest` (built with `-Denable_unit_tests=true`; via `./build.sh unit`) | None — runs as a regular user; no NIC, no root | RX-side session logic fed synthetic mbufs at the RFC 4175 / RTP payload layer: frame assembly, bitmap dedup, redundancy merge, stat counters, pipeline accounting |
 | **Integration gtest** — `tests/integration_tests/` | `KahawaiTest` | Real VFs (≥2; ≥4 for redundant cases) | Full session lifecycle, TX+RX through the NIC, every pacing mode, multi-session, callbacks at real timing, SHA digests, DMA, RSS, kernel-socket, AF_XDP, virtio-user |
 | **NoCtx gtest** — `tests/integration_tests/noctx/` | `KahawaiTest --no_ctx` | Real VFs (per-case; redundant cases require ≥4) | Same as integration plus behaviors that depend on `mtl_init()` flags/callbacks the shared test context cannot supply. **One case per process** (DPDK EAL cannot re-init) — runner script enforces this |
 | **pytest single-host** — `tests/acceptance/tests/single/` | RxTxApp / FFmpeg / GStreamer driven through pytest | Full host: VFs, MtlManager, NFS media, plugins, venv, SSH-to-localhost | End-to-end app behavior on one host: CLI flags, config files, real media bytes, PTP convergence |
 | **pytest dual-host** — `tests/acceptance/tests/dual/` | same apps, two hosts | Two hosts wired together | Real two-machine traffic: cross-host pacing, real switch behavior, no loopback shortcuts |
 
-Per-tier docs you must read before authoring: [tests/unit/README.md](tests/unit/README.md), [tests/integration_tests/noctx/noctx.md](tests/integration_tests/noctx/noctx.md), [tests/acceptance/README.md](tests/acceptance/README.md).
+Per-tier docs you must read before authoring: [tests/unit/README.md](../../../tests/unit/README.md), [tests/integration_tests/noctx/noctx.md](../../../tests/integration_tests/noctx/noctx.md), [tests/acceptance/README.md](../../../tests/acceptance/README.md).
 
 ## 2. Picking the tier — disjoint rules, stop at the first **yes**
 
@@ -43,10 +43,10 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 ## 4. Tier-specific rules
 
 ### Unit
-- AddressSanitizer is preloaded on every run (`LD_PRELOAD=libasan.so.<major>` — current major in [tests/unit/README.md](tests/unit/README.md)). Any leak fails the suite.
+- AddressSanitizer is **opt-in and off by default** — plain `./build.sh unit` passes `-Denable_asan=false`, so no `-fsanitize=address` and no preload, and it catches no leak. Ask for it with `./build.sh debug unit` or `MTL_BUILD_ENABLE_ASAN=true ./build.sh unit`; `build.sh` then preloads the ASan runtime and a leak fails the suite. See [tests/unit/README.md](../../../tests/unit/README.md).
 - Drain shared state in `TearDown()` — the harness exposes a process-global ring; entries left in it cause "passes alone, fails in suite".
 - Synthetic packets only. If you need a real capture, you are in the wrong tier.
-- EAL init is idempotent but global: first `ut*_init()` configures DPDK with `--no-huge --no-pci --vdev=net_null0`; later calls cannot reconfigure it.
+- EAL init is global and one-shot: the first `ut*_init()` fixes the DPDK config (`--no-huge --no-shconf -c1 -n1 --no-pci`) and later calls cannot change it. There is no `--vdev`, so the process has **no ethdev at all** — a code path that reaches a real `rte_eth_*` call must be mocked in the harness (`#define` the symbol before the `#include` of the `.c` under test).
 
 ### Integration & NoCtx
 - **Gate every case on the hardware it needs** (`num_ports`, DMA availability, NIC family, pacing mode). Integration idiom: `if (…) { info(...); return; }`. NoCtx pre-checks: `throw std::runtime_error(...)`. `GTEST_SKIP` is reserved for runtime non-determinism inside a test body (e.g. an RX frame that did not arrive), not for pre-checks.
@@ -64,16 +64,16 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 
 ## 5. The authoring loop
 
-1. **Pick a neighbour test in the same directory** — closest to your behavior first, else the most recently modified file. Avoid `DISABLED_` cases and any file noticeably older than its siblings. **Copy its conventions, including its marker set** — markers gate CI selection ([tests/acceptance/pytest.ini](tests/acceptance/pytest.ini)) and an unmarked or wrongly-marked pytest runs in no job.
+1. **Pick a neighbour test in the same directory** — closest to your behavior first, else the most recently modified file. Avoid `DISABLED_` cases and any file noticeably older than its siblings. **Copy its conventions, including its marker set** — markers gate CI selection ([tests/acceptance/pytest.ini](../../../tests/acceptance/pytest.ini)) and an unmarked or wrongly-marked pytest runs in no job.
 2. **Modify assertions only** until the test encodes your one requirement.
 3. **Register in the build** for gtest tiers (add to the relevant `*_sources` list in the nearest `meson.build`). pytest needs no registration.
-4. **Build:** `./build.sh` for integration binaries; `./build.sh unit` for the unit suite (builds `build_unit/` and runs `UnitTest`). See [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
+4. **Build:** `./build.sh` for integration binaries; `./build.sh unit` for the unit suite (builds `build_unit/` and runs `UnitTest`). See [`/mtl-build`](../../../.github/skills/mtl-build/SKILL.md).
 5. **Run** with the binary / pytest invocation from the tier's auto-loaded instructions.
 6. **Confirm** the test fails before the fix (regression) or passes deterministically across 3+ consecutive runs (new coverage).
 
 ## Related
 
-- Run an existing test → [.github/instructions/mtl-gtest.instructions.md](.github/instructions/mtl-gtest.instructions.md) (gtest) or [.github/instructions/mtl-acceptance-tests.instructions.md](.github/instructions/mtl-acceptance-tests.instructions.md) (pytest).
-- Build / format → [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
+- Run an existing test → [.github/instructions/mtl-gtest.instructions.md](../../../.github/instructions/mtl-gtest.instructions.md) (gtest) or [.github/instructions/mtl-acceptance-tests.instructions.md](../../../.github/instructions/mtl-acceptance-tests.instructions.md) (pytest).
+- Build / format → [`/mtl-build`](../../../.github/skills/mtl-build/SKILL.md).
 - Host setup → MTL System Admin agent (gtest) or `.github/scripts/acceptance_setup.sh`/`mtl-acceptance-setup` MCP tools directly (pytest, no dedicated agent).
 - TDD discipline + implementation → MTL Developer (TDD) agent (this skill is loaded by Gate 2 of its six-gate loop). Adversarial review → MTL Reviewer agent.

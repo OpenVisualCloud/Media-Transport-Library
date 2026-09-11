@@ -119,8 +119,9 @@ your reply with:
 
 > "Gates 0–4 complete. Awaiting Reviewer verdict (Gate 5). Invoke `mtl-reviewer` with: *Review the diff I just produced. Intent: `<one-line goal>`. Scope: `<staged | branch range>`. Working tree is saved.* If BLOCKERs appear, re-invoke me with them."
 
-The user owns whether to commit. If Reviewer raises BLOCKERs they re-invoke you and you walk
-Gates 2–4 again for the fix. If and when the user asks you to commit, use the `mtl-commit`
+The user owns whether to commit. Your invoker fires Gate 5 — `mtl-orchestrator` when it drives
+the task, the user otherwise. If Reviewer raises BLOCKERs your invoker re-invokes you and you
+walk Gates 2–4 again for the fix. If and when the user asks you to commit, use the `mtl-commit`
 skill — never commit on your own initiative.
 
 ### Gate 6 — Integration (handoff, when applicable)

@@ -20,6 +20,8 @@ re-deriving things from source:
 
 | Doc | Use when |
 |---|---|
+| `tasks.md` | The active work list at the repository root. Read it first for any multi-step request. `mtl-orchestrator` owns it. |
+| `upstreaming.md` | Source record for `tasks.md`: the DPDK patch set MTL carries, what upstream 26.07 covers, and why each remaining patch stays. Every task names the section it needs. |
 | `.github/copilot-docs/mtl-knowledge-base.md` | Architecture reference (§1 design, §2 scheduler, §3 memory, §4 locking, §5 pacing, §6 session lifecycle, §7 DPDK patterns, §8 testing). Read the relevant § before any non-trivial library change. |
 | `.github/instructions/mtl-c-coding.instructions.md` | Mandatory C rules — naming, memory, locking, tasklet constraints, error handling. |
 | `.github/instructions/mtl-gtest.instructions.md` | Running/debugging `KahawaiTest`, suite map, pacing modes, failure signatures. |
@@ -36,8 +38,7 @@ The Copilot workflow above has been ported to Claude Code equivalents, so the sa
 skills, and MCP servers are usable directly.
 
 Everything lives in `.github/claude/`, next to the Copilot originals it mirrors. Claude Code
-only discovers config at fixed paths, so three tracked symlinks bridge the two — the same idiom
-`.clang-format -> .github/linters/.clang-format` already uses:
+only discovers config at fixed paths, so three tracked symlinks bridge the two:
 
 | Discovery path | Real file |
 |---|---|
@@ -52,6 +53,7 @@ Edit the file under `.github/claude/`, never the symlink. Personal, machine-loca
 
 | Agent | Use for |
 |---|---|
+| `mtl-orchestrator` | First point of contact for multi-step work. Holds the work list in `tasks.md`, picks the next task, groups what can run in parallel, delegates, verifies the result, and fires Gates 5 and 6 that `mtl-developer` can only name. Does not write code. |
 | `mtl-developer` | Any code change to `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/`. Owns Gates 0–4 of the TDD loop (knowledge → failing test → implement → green build) in one context window. Also owns building and unit gtest. |
 | `mtl-reviewer` | Adversarial read-only review of a saved diff. Gate 5 — no exemption. Refuses if `git diff` is empty. Give it scope + one-line intent; do not paste the diff. |
 | `mtl-system-admin` | Host setup (hugepages, VFs, ICE, MtlManager) and running `KahawaiTest` on real VFs. MCP-only, never shell. Gate 6 for data-plane changes. |
@@ -60,7 +62,8 @@ Edit the file under `.github/claude/`, never the symlink. Personal, machine-loca
 Built-in `Explore` covers read-only Q&A and code archaeology; use it for fan-out reads instead of
 burning the specialist agents' context.
 
-**Skills** (`.github/claude/skills/`) — `mtl-build`, `mtl-write-test`, `mtl-commit`. Each is
+**Skills** (`.github/claude/skills/`) — `mtl-build`, `mtl-write-test`, `mtl-commit`,
+`mtl-ste-writing`. Each is
 itself a symlink to `.github/skills/<name>/`, whose `SKILL.md` frontmatter is already valid for
 both Copilot and Claude Code. So there is exactly one copy of every skill and it cannot drift,
 and relative links inside a skill body resolve against `.github/skills/<name>/`.
@@ -75,10 +78,16 @@ create and populate `.github/mcp/.venv` on first launch.
 `.github/instructions/*.md`. That reproduces the Copilot `applyTo:` auto-attach, so the C rules
 or the gtest/pytest instructions load when you actually work in those trees.
 
-One difference from the Copilot version worth knowing: `mtl-system-admin`'s "MCP tools only, never
-a shell" rule is enforced by its prompt rather than by withholding the Bash tool, because MCP
-wildcards in a subagent's `tools:` list aren't reliably supported. If you see it reach for Bash,
-that's a bug in the agent's behavior, not permission to allow it.
+Two differences from the Copilot version are worth knowing:
+
+* `mtl-system-admin`'s "MCP tools only, never a shell" rule is enforced by its prompt rather than
+  by withholding the Bash tool, because MCP wildcards in a subagent's `tools:` list aren't
+  reliably supported. If you see it reach for Bash, that's a bug in the agent's behavior, not
+  permission to allow it.
+* `mtl-orchestrator` has no Copilot counterpart in `.github/agents/`. The Copilot workflow leaves
+  gate-firing and the work list to the user; here one agent owns both. Everything else it uses —
+  the routing matrix, the six gates, the exemption rules — is the shared version in
+  `.github/copilot-instructions.md`, so the two sides cannot disagree on process.
 
 ## Build
 
@@ -107,12 +116,32 @@ versions live in `versions.env` (DPDK, ICE, JPEG-XS, FFmpeg, xdp-tools, libbpf).
 ## Format and lint
 
 ```bash
-./format-coding.sh          # clang-format-14 (C/C++), isort+black (Python), shfmt (shell)
+./checkpatch.sh             # verify everything — what CI and the git hooks run
+./checkpatch.sh --staged    # verify staged files only
+./checkpatch.sh --files a.c # verify specific files
+./format-coding.sh          # apply every autofix
+./format-coding.sh --staged # apply the autofixes to staged files only
+./format-coding.sh --files a.c # apply the autofixes to specific files
+./format-coding.sh --check  # preview the blast radius, then restore the tree
 ```
 
-`clang-format-14` specifically — CI rejects output from other versions. Run before every
-commit. `.clang-format` symlinks to `.github/linters/.clang-format`. Markdown is checked
-with `.markdown-lint.yml`, YAML/shell/actions via super-linter (see README §6.2.3).
+`.pre-commit-config.yaml` is the **single source of truth** for which tool, which version,
+which arguments and which files; rule content lives in `.github/linters/` (plus
+`.clang-format` at the root, which must stay a real file — clang-format searches upward, and
+a symlink materializes as a text file on Windows). `checkpatch.sh`, the git hooks and
+`.github/workflows/linter.yml` all run that one hook list and define no rule of their own.
+Adding a linter or changing a rule means editing that config and nowhere else.
+
+`pre-commit` installs the pinned clang-format 22.1.8, shfmt, shellcheck, markdownlint,
+textlint, yamllint, actionlint and gitleaks itself — plus its own Node — so none of them
+need to be on `PATH`; do not `apt install clang-format-22`. Bootstrap with `./checkpatch.sh --bootstrap`, install
+the hooks with `./checkpatch.sh --install-hooks`. On a PEP 668 host (Fedora, Arch,
+Debian 12+) `--bootstrap` cannot use pip and prints the distribution package instead.
+
+Four CI checks are not yet reproduced locally (`BASH_EXEC`, dotenv-linter, ESLint over
+`*.ts`, rustfmt/clippy) and run in the `residual-linters` job. See
+[doc/coding_standard.md](../../doc/coding_standard.md) for the parity table and the rationale
+behind every pin and omission.
 
 ## Tests
 
@@ -167,8 +196,11 @@ sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_ice_driver.sh` builds the patched ICE module required for hardware rate-limit
-pacing. A SEGFAULT in `iavf_tm_node_add` means the stock ICE driver is loaded.
+`script/build_drivers.sh --driver ice` builds the patched ICE module required for hardware
+rate-limit pacing. It downloads `ice-${ICE_VER}` from the Intel download mirror and applies
+`patches/ice_drv/${ICE_VER}/*.patch` — the public release carries none of those changes, so an
+unpatched driver is always the wrong driver. A SEGFAULT in `iavf_tm_node_add` means the stock
+ICE driver is loaded.
 
 ## Architecture essentials
 
@@ -233,3 +265,6 @@ simpler media types.
 Minimal diffs; no speculative helpers, no commented-out code, no reformatting lines you
 aren't functionally changing. `./format-coding.sh` then `./build.sh` before proposing a
 change; add or extend a test at the cheapest tier that can catch the bug.
+
+A new lint or formatting rule goes in `.pre-commit-config.yaml` and nowhere else — not in a
+workflow, not in a script, not in a document. Anything else is drift by construction.

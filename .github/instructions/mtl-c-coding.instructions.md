@@ -93,5 +93,9 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 
 ## Formatting
 
-- `clang-format-14` enforced by CI
-- Run `./format-coding.sh` before committing
+- clang-format 22 with `ColumnLimit: 90`, pinned in `.pre-commit-config.yaml`;
+  `pre-commit` installs it, so it does not need to be on `PATH`
+- A `/* clang-format off */` region is legitimate for hand-laid-out data tables
+  (see the permute tables in `st_avx512_vbmi.c`) and for nothing else
+- Run `./format-coding.sh` to fix, `./checkpatch.sh` to verify. CI runs the same
+  hooks — see [doc/coding_standard.md](../../doc/coding_standard.md)
