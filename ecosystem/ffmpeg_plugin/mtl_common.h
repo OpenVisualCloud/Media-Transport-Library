@@ -427,3 +427,7 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port);
 int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value);
+
+void mtl_interlaced_field_to_frame(struct st_frame* field, uint8_t* frame);
+void mtl_interlaced_frame_to_field(const uint8_t* frame, struct st_frame* field);
+bool mtl_interlaced_fmt_supported(enum st_frame_fmt fmt);
