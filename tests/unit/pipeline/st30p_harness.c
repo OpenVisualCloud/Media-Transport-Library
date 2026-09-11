@@ -87,8 +87,11 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt) {
   for (int i = 0; i < framebuff_cnt; i++) {
     ctx->framebuffs[i].stat = ST30P_RX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
-    /* mirrors production init: put_frame() recovers framebuf via frame->priv */
+    /* mirrors production init: put_frame() recovers framebuf via frame->priv,
+     * and both sizes start at framebuff_size */
     ctx->framebuffs[i].frame.priv = &ctx->framebuffs[i];
+    ctx->framebuffs[i].frame.buffer_size = ctx->framebuffs[i].frame.data_size =
+        UT30P_FRAMEBUFF_SIZE;
   }
 
   struct st30p_rx_ctx* p = &ctx->pipeline;
@@ -98,6 +101,7 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt) {
   p->type = MT_ST30_HANDLE_PIPELINE_RX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;
+  p->ops.framebuff_size = UT30P_FRAMEBUFF_SIZE;
   p->ready = true;
   p->transport = (st30_rx_handle)(uintptr_t)0x1;
 

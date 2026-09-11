@@ -241,7 +241,7 @@ Default mempool ops: `"stack"` (LIFO) — better cache reuse than FIFO ring ops.
 ### RX Frame Buffers
 - Allocated via `mt_rte_zmalloc_socket()` (`rte_zmalloc_socket` wrapper) — zero-initialized
 - `framebuff_cnt` typically 3: one assembling, one for app, one spare
-- Zero-init rationale: partial frames (packet loss) have zeroed gaps instead of garbage
+- Zero-init covers a buffer's **first use only** — buffers are recycled, so a gap left as-is reads as the frame the buffer carried before
 
 ### DMA Copy Engine (RX)
 
@@ -566,7 +566,7 @@ mt_bitmap_test_and_set(bitmap, pkt_idx) → atomic, skip if already set
 2. `dma_nb == 0` (all DMA copies finished)
 3. No pending mbuf borrows
 
-Complete → `rv_slot_full_frame()` → `ST_FRAME_STATUS_COMPLETE`. Incomplete/evicted → `ST_FRAME_STATUS_CORRUPTED`.
+Complete → `rv_slot_full_frame()` → `ST_FRAME_STATUS_COMPLETE`. Incomplete/evicted → `ST_FRAME_STATUS_CORRUPTED`, recycled rather than delivered unless the app set `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` (`rv_frame_notify()`).
 
 ### Inflight Pattern (Cooperative Non-Blocking Retry)
 - **Builder inflight**: ring full → save packets to `s->inflight[port][]` → return → retry next iteration
@@ -616,6 +616,7 @@ Same lifecycle pattern as video, simplified:
 - Low scheduler quota
 - Shared queue friendly
 - ST2110-41: payload type 115, header 58 bytes, API in `st41_api.h`
+- ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`
 
 ### Manager Pattern
 Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session type per scheduler:

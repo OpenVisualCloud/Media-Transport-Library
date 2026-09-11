@@ -54,7 +54,7 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 
 - DPDK allocations: `mt_rte_zmalloc()` / `mt_rte_free()` — always specify `socket_id` via `mt_socket_id(impl, port)`
 - Frame buffers: `rte_zmalloc_socket()`, not from mempool
-- RX frame buffers must be **zero-initialized** (partial frames have zeroed gaps, not garbage)
+- RX frame buffers must be **zero-initialized**; that covers a buffer's first use only, so a recycled buffer's un-arrived gaps must be re-zeroed before it is delivered
 - NUMA socket mismatch causes 2× DMA latency
 - DMA copies must not cross hugepage boundaries
 - Mempool names must include `recovery_idx` suffix for uniqueness across recovery cycles

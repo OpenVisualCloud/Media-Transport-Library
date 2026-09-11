@@ -109,7 +109,8 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
 
   struct st30_frame* frame = &framebuff->frame;
   frame->addr = addr;
-  frame->data_size = meta->frame_recv_size;
+  /* whole frame, like st20p: an incomplete frame's gaps read as silence */
+  frame->data_size = ctx->ops.framebuff_size;
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
   frame->receive_timestamp = meta->timestamp_first_pkt;
@@ -164,6 +165,8 @@ static int rx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_rx
   }
   if (ops->flags & ST30P_RX_FLAG_SIMULATE_PKT_LOSS)
     ops_rx.flags |= ST30_RX_FLAG_SIMULATE_PKT_LOSS;
+  if (ops->flags & ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
+    ops_rx.flags |= ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
 
   transport = st30_rx_create(impl, &ops_rx);
   if (!transport) {

@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "session/st30/st30_rx_test_base.h"
+#include "st_api.h"
 
 class St30RxTimestampTest : public St30RxBaseTest {};
 
@@ -34,6 +35,76 @@ TEST_F(St30RxTimestampTest, AudioFrameBoundary) {
   EXPECT_EQ(received(), (uint64_t)total_pkts);
   EXPECT_EQ(frames_done(), 1);
   EXPECT_EQ(unrecovered(), 0u);
+}
+
+/* A loss burst ending mid-frame must not move the frame grid. Re-anchoring on
+ * the arriving timestamp instead shifts every later frame by a fraction of a
+ * frame, so the audio written out is no longer a frame-aligned window of what
+ * was sent. */
+TEST_F(St30RxTimestampTest, FrameGridSurvivesGapEndingMidFrame) {
+  const int total_pkts = ppf();
+  const uint32_t ticks = (uint32_t)total_pkts * spp();
+  const uint32_t first = 1000;
+
+  uint16_t seq = 0;
+  for (int i = 0; i < total_pkts; i++)
+    feed(seq++, first + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 1);
+  ASSERT_EQ(ut30_frame_log_ts(ctx_, 0), first);
+
+  /* lose all of frame 1 and the leading 3 packets of frame 2 */
+  const int lost_head = 3;
+  for (int i = lost_head; i < total_pkts; i++)
+    feed(seq++, first + 2 * ticks + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+  /* frame 3 arrives whole */
+  for (int i = 0; i < total_pkts; i++)
+    feed(seq++, first + 3 * ticks + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 2) << "the partial frame 2 must not be handed up";
+  EXPECT_EQ(ut30_frame_log_status(ctx_, 1), ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(ut30_frame_log_ts(ctx_, 1), first + 3 * ticks)
+      << "frame after the gap must stay on the grid, not re-anchor to the first"
+         " packet that got through";
+}
+
+/* A long burst from behind the floor makes the redundancy filter give up and
+ * accept one (ST_SESSION_REDUNDANT_ERROR_THRESHOLD), opening a frame from a
+ * timestamp the stream moved past. It must land a whole number of frames back
+ * on the same grid, or every later frame is spliced mid-frame. */
+TEST_F(St30RxTimestampTest, FrameGridSurvivesPacketAcceptedFromBehindTheFloor) {
+  ut30_ctx_destroy(ctx_);
+  ctx_ = ut30_ctx_create(1);
+  ASSERT_NE(ctx_, nullptr);
+
+  const int total_pkts = ppf();
+  const uint32_t ticks = (uint32_t)total_pkts * spp();
+  const uint32_t first = 1000;
+
+  uint16_t seq = 0;
+  for (int f = 0; f < 2; f++)
+    for (int i = 0; i < total_pkts; i++)
+      feed(seq++, first + (uint32_t)f * ticks + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 2);
+
+  /* the second frame arrives all over again, long after the stream moved on */
+  uint64_t recv_before = received();
+  for (int i = 0; i < total_pkts; i++)
+    feed(seq++, first + ticks + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+  ASSERT_GT(received(), recv_before)
+      << "the filter must give up on a burst this long, or this case never opens"
+         " a frame from behind the floor";
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 2)
+      << "the re-opened frame is partial and must not be handed up";
+
+  /* the stream continues where it left off */
+  for (int i = 0; i < total_pkts; i++)
+    feed(seq++, first + 3 * ticks + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
+
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 3);
+  EXPECT_EQ(ut30_frame_log_status(ctx_, 2), ST_FRAME_STATUS_COMPLETE);
+  EXPECT_EQ(ut30_frame_log_ts(ctx_, 2), first + 3 * ticks)
+      << "a frame opened from behind the floor must snap to a whole frame back,"
+         " leaving the grid the stream joined on unchanged";
 }
 
 /* 32-bit timestamp wraparound from near UINT32_MAX past zero. Positional

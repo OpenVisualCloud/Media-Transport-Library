@@ -9,9 +9,7 @@
  *   - stat_frames_dropped bumps in rx_st30p_frame_ready() when no free
  *     framebuffer is available (back-pressure; transport-side buffer is
  *     released by the pipeline returning -EBUSY).
- *
- * ST30p has no stat_frames_corrupted — audio frames are never delivered
- * with status CORRUPTED at this layer.
+ *   - stat_frames_corrupted bumps in st30p_rx_get_frame().
  */
 
 #ifndef _ST30P_PIPELINE_HARNESS_H_
@@ -28,6 +26,9 @@ extern "C" {
 #endif
 
 typedef struct ut30p_ctx ut30p_ctx;
+
+/** 1 ms of 48 kHz stereo PCM16, i.e. one packet payload. */
+#define UT30P_FRAMEBUFF_SIZE (192)
 
 int ut30p_init(void);
 

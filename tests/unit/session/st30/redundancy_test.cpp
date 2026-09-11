@@ -155,7 +155,8 @@ TEST_F(St30RxRedundancyTest, InterleavedPortsIncreasingTs) {
  * `port[i].frames`. Redundant packets filtered by the timestamp check do
  * not even reach the credit branch.
  *
- * Invariant per session: port[P].frames + port[R].frames == frames_received
+ * Invariant per session, while every frame arrives whole: port[P].frames +
+ * port[R].frames == frames_received.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* P delivers all frames; R is silent. P is credited once per frame. */
