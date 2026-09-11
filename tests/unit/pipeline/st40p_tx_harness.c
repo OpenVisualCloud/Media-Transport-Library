@@ -25,6 +25,7 @@ struct ut40p_tx_ctx {
   struct st40p_tx_frame* framebuffs;
   struct st40_frame* anc_frames; /* put_frame writes anc_frame->meta_num/data_size */
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st40p_tx_harness.h"
@@ -76,9 +77,31 @@ ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt) {
 
 void ut40p_tx_ctx_destroy(ut40p_tx_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->anc_frames);
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut40p_tx_ctx_enable_blocking(ut40p_tx_ctx* ctx, uint64_t timeout_ns) {
+  struct st40p_tx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->wake_on_destroy = (void (*)(void*))tx_st40p_block_wake;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut40p_tx_wake_block(ut40p_tx_ctx* ctx) {
+  st40p_tx_wake_block(&ctx->pipeline);
+}
+
+void ut40p_tx_force_destroying(ut40p_tx_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
 int ut40p_tx_framebuff_cnt(const ut40p_tx_ctx* ctx) {
@@ -91,6 +114,10 @@ struct st40_frame_info* ut40p_tx_get_frame(ut40p_tx_ctx* ctx) {
 
 int ut40p_tx_put_frame(ut40p_tx_ctx* ctx, struct st40_frame_info* frame) {
   return st40p_tx_put_frame(&ctx->pipeline, frame);
+}
+
+int ut40p_tx_put_frame_abort(ut40p_tx_ctx* ctx, struct st40_frame_info* frame) {
+  return st40p_tx_put_frame_abort(&ctx->pipeline, frame);
 }
 
 int ut40p_tx_next_frame(ut40p_tx_ctx* ctx, uint16_t* idx) {
