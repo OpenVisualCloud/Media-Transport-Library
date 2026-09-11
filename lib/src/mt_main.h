@@ -1293,6 +1293,8 @@ uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port);
 int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                   struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms);
 
+int mt_bind_process_numa(int socket_id);
+
 static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
   return mt_get_user_params(impl)->pmd[port];

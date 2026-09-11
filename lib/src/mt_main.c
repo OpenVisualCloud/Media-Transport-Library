@@ -35,6 +35,60 @@ enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   return MTL_PORT_MAX;
 }
 
+#ifndef WINDOWSENV
+/* Bind the calling thread to a port's numa node: memory to that node, cpu affinity
+ * to the node's cpus this thread may already use.
+ *
+ * Not numa_bind(): it takes the node's whole hardware cpumap, so it replaces the
+ * caller's mask instead of narrowing it -- handing back cpus the caller was kept
+ * off, which on an isolcpus host strands it and every thread it creates later. */
+int mt_bind_process_numa(int socket_id) {
+  if (socket_id < 0 || socket_id > numa_max_node()) {
+    err("%s, invalid numa node %d\n", __func__, socket_id);
+    return -EINVAL;
+  }
+
+  struct bitmask* nodes = numa_allocate_nodemask();
+  struct bitmask* cpus = numa_allocate_cpumask();
+  struct bitmask* allowed = numa_allocate_cpumask();
+  int ret = 0;
+
+  if (numa_node_to_cpus(socket_id, cpus) < 0) {
+    err("%s, no cpu list for numa node %d\n", __func__, socket_id);
+    ret = -EINVAL;
+    goto out;
+  }
+  if (numa_sched_getaffinity(0, allowed) < 0) {
+    err("%s, get cpu affinity fail\n", __func__);
+    ret = -EIO;
+    goto out;
+  }
+  /* drop the node cpus this thread is already kept off */
+  for (unsigned int cpu = 0; cpu < cpus->size; cpu++) {
+    if (!numa_bitmask_isbitset(allowed, cpu)) numa_bitmask_clearbit(cpus, cpu);
+  }
+
+  if (!numa_bitmask_weight(cpus)) {
+    warn("%s, no usable cpu on numa node %d, binding its memory only\n", __func__,
+         socket_id);
+  } else if (numa_sched_setaffinity(0, cpus) < 0) {
+    /* all or nothing: do not bind memory to a node this thread cannot run on */
+    err("%s, set cpu affinity to numa node %d fail\n", __func__, socket_id);
+    ret = -EIO;
+    goto out;
+  }
+
+  numa_bitmask_setbit(nodes, socket_id);
+  numa_set_membind(nodes);
+
+out:
+  numa_bitmask_free(allowed);
+  numa_bitmask_free(cpus);
+  numa_bitmask_free(nodes);
+  return ret;
+}
+#endif
+
 int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                   struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
@@ -451,14 +505,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int numa_nodes = 0;
   if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
   if (!(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA) && (numa_nodes > 1)) {
-    /* bind current thread and its children to socket node */
-    struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
-
+    /* bind current thread and its children to socket node, best effort */
     info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
          numa_nodes);
-    numa_bitmask_setbit(mask, socket[MTL_PORT_P]);
-    numa_bind(mask);
-    numa_bitmask_free(mask);
+    mt_bind_process_numa(socket[MTL_PORT_P]);
   }
 #endif
 

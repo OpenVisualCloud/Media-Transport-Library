@@ -199,6 +199,16 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 | Socket TX/RX (×4 each) | Kernel socket backend | Only with `kernel:` backend |
 | SRSS (×1) | Shared RSS polling | Only for NICs without flow director |
 
+### Init-Time NUMA Binding (`mt_bind_process_numa()`)
+- `mtl_init()` narrows the **calling thread's** affinity to `node cpus ∩ current affinity` and `numa_set_membind()`s the primary port's node. Threads created afterwards inherit it; pre-existing threads do not. Skipped on a single-node host or with `MTL_FLAG_NOT_BIND_PROCESS_NUMA`.
+- It must never *widen*. `numa_bind()` did: its `numa_run_on_node_mask()` builds the cpu set from the node's hardware cpumap and replaces the caller's mask.
+- **isolcpus trap**: `isolcpus=managed_irq,domain,60-70` makes the kernel hand every process `Cpus_allowed_list: 0-59,71-…`. Widening 60-70 back in strands the caller and its children on one isolated cpu — no scheduling domain, so the balancer never migrates off it and `wake_up_new_task` leaves children on the parent's cpu.
+  Signature: an app-side TX thread starved to ~20 of 25 fps; `St20_rx.digest_ooo_slice_4320p` `incomplete_frame_cnt` 128-144 vs a limit of 16, on the isolcpus host only. A cross-node DMA channel gives the same case the same count (`doc/ci_runner_setup.md`) — the app-side starvation and the one affected host are what tell them apart.
+- Empty intersection (caller deliberately placed on another socket) is not an error: memory is bound, affinity untouched.
+- The **lcore** data plane does not depend on this mask once EAL is up: DPDK takes its lcore set from the affinity inherited at `rte_eal_init()` (MTL passes `--remap-lcore-ids` on DPDK ≥ 25.11 builds, so a sparse set gets contiguous lcore ids) and then pins each lcore thread explicitly, so no later mask change moves one.
+  `mt_dev.c` calls `rte_eal_init()` on a throwaway pthread so the caller's own mask survives it.
+- The threads started **after** the bind with a plain `pthread_create` and no affinity call of their own *do* run under this mask — tasklet-thread mode schedulers (`mt_sch.c`), kernel-socket TX/RX (`mt_dp_socket.c`), SRSS poll (`mt_shared_rss.c`). Do not reason about `MTL_FLAG_TASKLET_THREAD` placement as if EAL had pinned it.
+
 ---
 
 ## §3 Memory Management
@@ -626,7 +636,7 @@ Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session t
 Per-scheduler (not global) → no filtering needed in tasklet hot path.
 
 ### Global Init Ordering
-`mtl_init()`: DMA → queues → ARP/mcast → CNI → admin → plugins → DHCP → PTP → TSC calibration thread
+`mtl_init()`: EAL/dev init → per-port NUMA resolve → process NUMA bind (§2) → DMA → queues → ARP/mcast → CNI → admin → plugins → DHCP → PTP → TSC calibration thread
 
 `mtl_start()` blocks on TSC calibration via `mt_wait_tsc_stable()` before starting ports.
 

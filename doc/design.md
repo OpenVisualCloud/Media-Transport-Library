@@ -117,6 +117,14 @@ For user convenience, the built-in RxTxApp also offers a command-line option `--
 > This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix,
 > upgrading your kernel, or working with taskset.
 >
+### 2.8. Process NUMA binding
+
+On a multi-socket host, `mtl_init()` binds the calling thread — and so every thread it creates afterwards — to the NUMA node of the primary port: its memory to that node, and its CPU affinity to the node's CPUs that the thread is *already* allowed to run on.
+Any restriction already in place is therefore kept: a `taskset`, a cgroup `cpuset`, or the housekeeping-only affinity the kernel gives every process on a host booted with `isolcpus`.
+If the node offers no CPU the caller may use, only the memory is bound.
+
+Pass `MTL_FLAG_NOT_BIND_PROCESS_NUMA` to skip the binding entirely.
+
 ## 3. Memory management
 
 ### 3.1. Huge Page

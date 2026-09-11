@@ -40,6 +40,8 @@ endif
 
 unit_sources = [
   'common/ut_common.c',
+  'core/mt_numa_harness.c',
+  'core/numa_bind_test.cpp',
   'ffmpeg/mtl_common_harness.c',
   'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',
@@ -129,6 +131,6 @@ executable('UnitTest', unit_sources,
   link_args : unit_link_args,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
-  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
-                  usdt_provider_header_dep] + unit_extra_deps,
+  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, libnuma_dep, gtest_dep, gmock_dep,
+                  libpthread_dep, usdt_provider_header_dep] + unit_extra_deps,
   install : false)
