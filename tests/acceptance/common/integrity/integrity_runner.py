@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 # given, so this is the only place the directory name needs to be correct.
 _INTEGRITY_DIR = ("tests", "acceptance", "common", "integrity")
 
+# Hard bound on a remote check: without it, a checker that outfills the SSH
+# channel window blocks forever (mfd_connect drains stdout only after exit).
+_INTEGRITY_TIMEOUT = 600
+
 
 def _default_integrity_path(host, test_repo_path, module_name):
     """Path to *module_name* under the acceptance repo's integrity dir."""
@@ -118,7 +122,11 @@ class FileVideoIntegrityRunner(VideoIntegrityRunner):
             f"Running integrity check on {self.host.name} for {self.out_name} with command: {cmd}"
         )
         result = self.host.connection.execute_command(
-            cmd, shell=True, stderr_to_stdout=True, expected_return_codes=(0, 1)
+            cmd,
+            shell=True,
+            stderr_to_stdout=True,
+            expected_return_codes=(0, 1),
+            timeout=_INTEGRITY_TIMEOUT,
         )
         if result.return_code > 0:
             logger.error(f"Integrity check failed on {self.host.name}: {self.out_name}")
@@ -270,6 +278,7 @@ class FileAudioIntegrityRunner(AudioIntegrityRunner):
         python_path=None,
         integrity_path=None,
         delete_file: bool = True,
+        min_frames: int = 0,
     ):
         super().__init__(
             host,
@@ -284,6 +293,7 @@ class FileAudioIntegrityRunner(AudioIntegrityRunner):
             integrity_path,
             delete_file,
         )
+        self.min_frames = min_frames
 
     def run(self):
         cmd = " ".join(
@@ -299,6 +309,8 @@ class FileAudioIntegrityRunner(AudioIntegrityRunner):
                 str(self.sample_num),
                 "--channel_num",
                 str(self.channel_num),
+                "--min_frames",
+                str(self.min_frames),
                 "--output_path",
                 self.out_path,
                 "--delete_file" if self.delete_file else "--no_delete_file",
@@ -308,7 +320,11 @@ class FileAudioIntegrityRunner(AudioIntegrityRunner):
             f"Running audio integrity check on {self.host.name} for {self.out_name} with command: {cmd}"
         )
         result = self.host.connection.execute_command(
-            cmd, shell=True, stderr_to_stdout=True, expected_return_codes=(0, 1)
+            cmd,
+            shell=True,
+            stderr_to_stdout=True,
+            expected_return_codes=(0, 1),
+            timeout=_INTEGRITY_TIMEOUT,
         )
         if result.return_code > 0:
             logger.error(

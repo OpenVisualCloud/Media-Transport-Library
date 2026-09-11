@@ -87,6 +87,8 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `No module named pytest` / `pytest_mfd_config` | You used `sudo python3`. Re-run with `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Run from `tests/acceptance/` (local `conftest.py` registers the plugin). |
 | Test hung > test_time + ~30 s | Stale process. `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0` and retry. |
+| Test hung for hours, no output, idle `audio_integrity.py`, pytest in `futex_wait_queue` | The checker printed past the ~2 MiB paramiko channel window, which `mfd_connect` drains only at command exit. `audio_integrity.py` caps per-frame reports (`MAX_BAD_FRAME_REPORTS`); `video_integrity.py` reports per frame, far under. `integrity_runner.py` bounds file-mode checks at `_INTEGRITY_TIMEOUT`. |
+| `is missing N frame(s) of audio within its first 5` (st30p, still PASSED) | Expected: the RX joins a stream in flight, so MTL suppresses its first short frames (`JOIN_FRAMES`/`MAX_JOIN_GAP_FRAMES` in `audio_integrity.py`). A wider gap, or one in a later segment, fails. |
 | `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `--ebu-ip=`/`--ebu-user=`/`--ebu-password=`/`--capture-pci-device=` (ask the user first) so `ebu_server`/`capture_cfg` get populated in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |

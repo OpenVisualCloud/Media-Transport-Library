@@ -109,6 +109,7 @@ def get_sample_size(format: str) -> int:
 
 
 def get_sample_number(sampling: str, ptime: str) -> int:
+    """Samples per channel in one RTP packet of *ptime* at *sampling*."""
     match sampling:
         case "48kHz":
             match ptime:
@@ -134,7 +135,37 @@ def get_sample_number(sampling: str, ptime: str) -> int:
                     return 32
                 case "4":
                     return 384
+    log_fail(f"Unknown audio sampling/ptime combination: {sampling}/{ptime}")
     return 0
+
+
+# Samples per second per channel, keyed by the sampling string tests pass.
+_SAMPLING_HZ = {"48kHz": 48000, "96kHz": 96000}
+
+# An st30p frame holds as many whole ptime packets as fit in 10 ms
+# (st30_calculate_framebuff_size, lib/src/st2110/st_fmt.c).
+_FRAME_TIME_MS = 10
+
+
+def get_frame_sample_number(sampling: str, ptime: str) -> int:
+    """Samples per channel in one st30p *frame*, not one packet -- the unit the
+    checker compares and RxTxApp's TX wraps its source file by."""
+    packet_samples = get_sample_number(sampling, ptime)
+    if not packet_samples:
+        # get_sample_number already reported the unknown combination.
+        return 0
+
+    frame_samples = _SAMPLING_HZ[sampling] * _FRAME_TIME_MS // 1000
+    return frame_samples // packet_samples * packet_samples
+
+
+def get_min_frame_number(sampling: str, ptime: str, test_time: int) -> int:
+    """Frames a healthy RX must capture in *test_time* seconds -- a truncated
+    capture is bit-exact, so only length catches it."""
+    frame_samples = get_frame_sample_number(sampling, ptime)
+    if not frame_samples:
+        return 0
+    return min_expected_frames(_SAMPLING_HZ[sampling] / frame_samples, test_time)
 
 
 def get_channel_number(channel: str) -> int:
@@ -156,6 +187,7 @@ def get_channel_number(channel: str) -> int:
 
             if match:
                 return int(match.group(1))
+    log_fail(f"Unknown audio channel: {channel}")
     return 0
 
 
