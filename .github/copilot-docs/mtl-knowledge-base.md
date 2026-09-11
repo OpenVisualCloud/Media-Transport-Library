@@ -137,7 +137,7 @@ Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
 ### Pthread-Mode Tasklets Are Unregistered Non-EAL Threads
 - `MTL_FLAG_TASKLET_THREAD` schedulers come from a bare `pthread_create()` (`mt_sch.c`); `lib/` contains zero `rte_thread_register()` calls
-- So `rte_lcore_id()` returns `LCORE_ID_ANY` and any DPDK per-lcore-variable API degrades to the single shared "unregistered" instance
+- So `rte_lcore_id()` returns `LCORE_ID_ANY`, and each DPDK per-lcore mechanism reacts differently: `RTE_LCORE_VAR` pointers are invalid, `rte_random` falls back to one shared "unregistered" state, while `RTE_PER_LCORE` (`__thread`, e.g. `rte_errno`) still gives every thread its own copy
 - For `rte_rand()` / `rte_rand_max()` / `rte_drand()` that instance is documented MT-unsafe when multiple unregistered non-EAL threads call in parallel (`rte_random.h`)
 - `rte_thread_register()` is not the fix — `rte_lcore.h` warns it breaks the multi-process feature
 
