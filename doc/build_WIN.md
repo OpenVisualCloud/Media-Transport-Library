@@ -44,6 +44,30 @@
 
 ## Build DPDK
 
+### Native MSVC (standalone script, no MSYS2 shared-DLL path)
+
+Use this path when you want a clean native MSVC build that installs static DPDK artifacts
+for MTL (`dependency('libdpdk', static: true)`).
+
+Run in **Developer PowerShell for VS** (or Developer Command Prompt):
+
+```powershell
+cd C:\path\to\Media-Transport-Library
+.\script\build_dpdk_windows.ps1
+```
+
+The script reads `DPDK_VER` from `versions.env`, applies the MTL DPDK patches (generic first,
+then `windows/`), and installs into:
+
+- source: `.\dpdk-<version>-msvc`
+- build: `.\build\dpdk-<version>-msvc`
+- install: `.\.local_install\dpdk-<version>-msvc`
+
+For a later native Windows MTL Meson configure, set `PKG_CONFIG_PATH` to the generated
+`libdpdk.pc` directory printed by the script.
+
+### MSYS2/UCRT64
+
 1. Clone the MTL repository
 
     ```bash
