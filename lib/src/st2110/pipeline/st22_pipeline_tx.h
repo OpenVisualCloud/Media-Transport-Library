@@ -61,6 +61,7 @@ struct st22p_tx_ctx {
   pthread_cond_t encode_block_wake_cond;
   pthread_mutex_t encode_block_wake_mutex;
   uint64_t encode_block_timeout_ns;
+  bool encode_block_wake_pending;
 
   bool ready;
   bool derive; /* input_fmt == transport_fmt */
