@@ -392,6 +392,8 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
     ops_rx.socket_id = ops->socket_id;
     ops_rx.flags |= ST22_RX_FLAG_FORCE_NUMA;
   }
+  if (ops->flags & ST22P_RX_FLAG_DISABLE_BOXES)
+    ops_rx.flags |= ST22_RX_FLAG_DISABLE_BOXES;
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
