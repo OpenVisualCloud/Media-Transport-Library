@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 
-from mtl_engine import ffmpeg_app, ip_pools
+from mtl_engine import ffmpeg_app, ip_pools, media_files
 from mtl_engine.application_base import (
     MTL_ENCODER_PLUGIN_MAP,
     Application,
@@ -75,6 +75,7 @@ class FFmpeg(Application):
         self._tx_commands: list[str] = []
         self._build: str | None = None
         self._rx_output: str | None = None
+        self._rx_frame_spec: tuple[str, str, int] | None = None
 
     # ------------------------------------------------------------------ ABCs
     def get_app_name(self) -> str:
@@ -159,12 +160,24 @@ class FFmpeg(Application):
 
         Used by every mode: yuv|h264 (raw 422p10le), rgb24 (yuv422p10be →
         rgb24 filter, single stream), rgb24_multiple (same, two streams).
-        ``framerate`` only emitted for the rgb24 family — yuv_h264 omits
-        ``-framerate`` because the source already carries the canonical fps.
-        ``filter_v`` is the full ``-filter:v <chain>`` token (empty by default).
-        ``ptp_enable`` is independent from ``pacing_way``.
+        ``framerate`` is a pXX label (or its bare integer); it is converted to
+        the exact rate before being handed to FFmpeg — see the ``-re`` note
+        below. ``filter_v`` is the full ``-filter:v <chain>`` token (empty by
+        default). ``ptp_enable`` is independent from ``pacing_way``.
         """
-        framerate_token = f"-framerate {framerate} " if framerate is not None else ""
+        # ``-framerate`` on the rawvideo demuxer is a real rate, not a SMPTE
+        # label, and combined with ``-re`` below it becomes a hard cap on the
+        # producer. Passing the label verbatim caps it at 29 fps while the
+        # mtl_st20p muxer scans the ST 2110 rates for the first whose tolerance
+        # window holds 29 -- ST_FPS_P29_97, window [28.97, 29.99] -- and paces
+        # at 30000/1001, so the pacer starves by ~1 frame/s and drops it
+        # (``TX_VIDEO_SESSION ... epoch drop``, ``busy as no ready frame from
+        # user``).
+        framerate_token = (
+            f"-framerate {media_files.pformat_to_exact_fps(framerate)} "
+            if framerate is not None
+            else ""
+        )
         filter_token = f"{filter_v} " if filter_v else ""
         ptp_token = ""
         if ptp_enable:
@@ -271,6 +284,9 @@ class FFmpeg(Application):
             pix_fmt = ffmpeg_pix_fmt(self.params["pixel_format"])
         else:
             pix_fmt = "yuv422p10le"
+
+        # Geometry and rate the command was actually built with, for validate_results().
+        self._rx_frame_spec = (video_size, pix_fmt, fps)
 
         rx_f_flag = "-f rawvideo" if output_format == "yuv" else "-c:v libopenh264"
 
@@ -404,6 +420,9 @@ class FFmpeg(Application):
         framerate = self.params.get("framerate", "p60")
         # Convert "pXX" string to numeric fps for FFmpeg -framerate flag.
         fps_num = framerate.lstrip("p") if isinstance(framerate, str) else framerate
+        # The fps filter sets a real rate, so it takes the exact one; MTL's own
+        # -fps option below resolves the label's digits itself.
+        filter_fps = media_files.pformat_to_exact_fps(framerate)
         pix_fmt = self._ff_params.get("pix_fmt", "yuv422p10le")
         st22_codec = self._ff_params.get("st22_codec", "jpegxs")
         bpp = self._ff_params.get("bpp", 3.0)
@@ -420,7 +439,7 @@ class FFmpeg(Application):
             f"{FFMPEG_EXE} -stream_loop -1 "
             f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
             f"-i {input_file} "
-            f"-filter:v fps={fps_num} "
+            f"-filter:v fps={filter_fps} "
             f"-p_port {nic_port_list[1]} -p_sip {ip_pools.tx[0]} "
             f"-p_tx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port {udp_port} -payload_type 112 "
@@ -717,14 +736,22 @@ class FFmpeg(Application):
         try:
             if mode == _MODE_YUV_H264:
                 output_format = self._ff_params.get("output_format", "yuv")
-                video_format = self.params["video_format"]
-                video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
+                    video_size, pix_fmt, fps = self._rx_frame_spec
                     passed = ffmpeg_app.check_output_video_yuv(
-                        self._output_files[0], host, build, video_url
+                        self._output_files[0],
+                        host,
+                        build,
+                        video_url,
+                        video_size,
+                        pix_fmt,
+                        fps,
+                        self.params.get("test_time") or 30,
                     )
                 else:
+                    video_format = self.params["video_format"]
+                    video_size, _ = ffmpeg_app.decode_video_format_16_9(video_format)
                     passed = ffmpeg_app.check_output_video_h264(
                         self._output_files[0], video_size, host, build, video_url
                     )

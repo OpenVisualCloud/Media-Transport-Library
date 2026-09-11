@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
+from .integrity import min_expected_frames
 from .integrity_session import NO_INTEGRITY, IntegrityIntent
 from .pcap_compliance import CAPTURE_SETTLE_TIME, NO_COMPLIANCE, CaptureIntent
 
@@ -293,6 +294,14 @@ class Application(ABC):
             return int(self.params.get("replicas", 1))
         return 0
 
+    def rx_recording_cap(self) -> int:
+        """Bytes at which this app stops writing an RX recording, 0 if unbounded.
+
+        ``rx_max_file_size`` is a universal parameter, but only the adapters that
+        actually hand it to a receiver that enforces it override this.
+        """
+        return 0
+
     def integrity_intent(self, test_repo_path: str, host) -> IntegrityIntent:
         """Build the :class:`IntegrityIntent` an ``IntegritySession`` needs to evaluate.
 
@@ -315,6 +324,11 @@ class Application(ABC):
             width=self.params.get("width"),
             height=self.params.get("height"),
             file_format=self.params.get("pixel_format"),
+            min_frames=min_expected_frames(
+                self.extract_framerate(self.params.get("framerate")),
+                self.params.get("test_time") or 30,
+            ),
+            max_file_size=self.rx_recording_cap(),
             audio_format=self.params.get("audio_format"),
             audio_channels=self.params.get("audio_channels"),
             audio_sampling=self.params.get("audio_sampling"),

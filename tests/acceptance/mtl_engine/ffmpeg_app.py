@@ -9,10 +9,12 @@ import re
 import threading
 import time
 
+from common.integrity.video_integrity import calculate_yuv_frame_size
 from mfd_connect import SSHConnection
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
 from mtl_engine.const import FFMPEG_EXE, FFPROBE_EXE, RXTXAPP_EXE
+from mtl_engine.integrity import min_expected_frames
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -380,7 +382,16 @@ def execute_test(
     passed = False
     match output_format:
         case "yuv":
-            passed = check_output_video_yuv(output_files[0], host, build, video_url)
+            passed = check_output_video_yuv(
+                output_files[0],
+                host,
+                build,
+                video_url,
+                video_size,
+                pix_fmt,
+                fps,
+                test_time,
+            )
         case "h264":
             passed = check_output_video_h264(
                 output_files[0], video_size, host, build, video_url
@@ -640,7 +651,21 @@ def execute_test_rgb24_multiple(
     return True
 
 
-def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
+def check_output_video_yuv(
+    output_file: str,
+    host,
+    build: str,
+    input_file: str,
+    video_size: str,
+    pix_fmt: str,
+    fps: int,
+    test_time: int,
+):
+    """Check an RX raw-video recording holds the frames the run should carry.
+
+    A nonzero byte count proves nothing, so whole frames are counted instead. The
+    partial tail a timer-killed FFmpeg leaves is normal, and is not counted.
+    """
     # Log input file size
     try:
         input_stat_proc = run(f"stat -c '%s' {input_file}", host=host)
@@ -655,15 +680,36 @@ def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
     # Use run() to check output file size
     stat_proc = run(f"stat -c '%s' {output_file}", host=host)
 
-    if stat_proc.return_code == 0:
-        output_file_size = int(stat_proc.stdout_text.strip())
-        logger.info(f"Output file size: {output_file_size} bytes for {output_file}")
-        result = output_file_size > 0
-        logger.info(f"YUV check result: {result}")
-        return result
-    else:
+    if stat_proc.return_code != 0:
         logger.info(f"Could not get output file size for {output_file}")
         return False
+
+    output_file_size = int(stat_proc.stdout_text.strip())
+    logger.info(f"Output file size: {output_file_size} bytes for {output_file}")
+
+    width, height = (int(dim) for dim in video_size.split("x"))
+    try:
+        frame_size = calculate_yuv_frame_size(width, height, pix_fmt)
+    except ValueError:
+        # Counting frames needs a frame size; without one, fall back to the
+        # non-empty check rather than erroring out of validation.
+        logger.warning(f"Cannot size {pix_fmt} frames, checking only for non-empty")
+        return output_file_size > 0
+    frames = output_file_size // frame_size
+    min_frames = min_expected_frames(fps, test_time)
+
+    if frames < min_frames:
+        # Not log_fail(): every caller records it, and one may be fail_on_error=False.
+        logger.error(
+            f"{output_file} holds {frames} whole frames of {frame_size} bytes, at "
+            f"least {min_frames} expected from {fps} fps over {test_time}s -- the "
+            f"recording is short, so check for a full filesystem where it was "
+            f"written and for RX errors in the app log"
+        )
+        return False
+
+    logger.info(f"YUV check result: True ({frames} frames of {frame_size} bytes)")
+    return True
 
 
 def check_output_video_h264(
@@ -1155,7 +1201,16 @@ def execute_dual_test(
     passed = False
     match output_format:
         case "yuv":
-            passed = check_output_video_yuv(output_files[0], rx_host, build, video_url)
+            passed = check_output_video_yuv(
+                output_files[0],
+                rx_host,
+                build,
+                video_url,
+                video_size,
+                "yuv422p10le",
+                fps,
+                test_time,
+            )
         case "h264":
             passed = check_output_video_h264(
                 output_files[0], video_size, rx_host, build, video_url

@@ -13,6 +13,9 @@
 #define MT_RX_DP_SOCKET_PREFIX "SR_"
 #define MT_TX_DP_SOCKET_PREFIX "SR_"
 
+/* largest receive buffer rx_socket_init_fd asks the kernel for */
+#define MT_RX_DP_SOCKET_RCVBUF_MAX (4 * 1024 * 1024)
+
 #ifndef UDP_SEGMENT
 /* fix for centos build */
 #define UDP_SEGMENT 103 /* Set GSO segmentation size */
@@ -470,6 +473,34 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, fd, if_name, ret);
     return ret;
+  }
+
+  /* net.core.rmem_default is only ~100 mtu datagrams, under 1ms of a 1080p stream, so a
+   * scheduler hiccup overflows the queue and the kernel drops the packets. Ask for one rx
+   * ring of them, capped because nb_rx_desc is a public tunable and the kernel both
+   * doubles what it is asked for and, under SO_RCVBUFFORCE, ignores net.core.rmem_max.
+   * The force variant comes first because that cap silently truncates SO_RCVBUF. */
+  int rcvbuf_sz = RTE_MIN(mt_if_nb_rx_desc(impl, port) * entry->pool_element_sz,
+                          MT_RX_DP_SOCKET_RCVBUF_MAX);
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &rcvbuf_sz, sizeof(rcvbuf_sz)) < 0 &&
+      setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf_sz, sizeof(rcvbuf_sz)) < 0) {
+    warn("%s(%d,%d), set rcvbuf %d fail %s\n", __func__, port, fd, rcvbuf_sz,
+         strerror(errno));
+  }
+  int rcvbuf_got = 0;
+  socklen_t rcvbuf_got_len = sizeof(rcvbuf_got);
+  if (!getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf_got, &rcvbuf_got_len)) {
+    /* the kernel clamps the ask to net.core.rmem_max and then doubles it, so anything
+     * short of twice the ask means the ceiling truncated it and this session drops
+     * packets whenever the reader is late. Say so here: the only other trace of it is a
+     * receiver that reports lost packets under load, and nstat UdpRcvbufErrors counting
+     * them. */
+    if (rcvbuf_got < rcvbuf_sz * 2)
+      warn("%s(%d,%d), rcvbuf %d in force but %d asked, raise net.core.rmem_max to %d\n",
+           __func__, port, fd, rcvbuf_got, rcvbuf_sz, rcvbuf_sz);
+    else
+      info("%s(%d,%d), rcvbuf %d in force, %d asked and the kernel doubles the ask\n",
+           __func__, port, fd, rcvbuf_got, rcvbuf_sz);
   }
 
   /* bind to port */

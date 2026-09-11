@@ -44,3 +44,29 @@ If you want to select kernel socket data path from the API level, please follow 
   snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", "kernel:enp24s0f0");
   ...
 ```
+
+## 4. Receive Buffer
+
+The default `net.core.rmem_default` (212992 bytes, about 100 datagrams) is far too small for
+a video stream, so the library sizes every RX socket itself, asking for up to 4 MiB. The
+kernel charges buffered packets against twice the ask, so that is 33 ms of a 1080p29 stream.
+It asks with `SO_RCVBUFFORCE`, which needs `CAP_NET_ADMIN`; a process with `CAP_NET_RAW` but
+not `CAP_NET_ADMIN` falls back to `SO_RCVBUF`, which `net.core.rmem_max` caps — before the
+doubling, so the ceiling has to be the size of the ask rather than twice it. Raise it
+wherever the datapath runs unprivileged — see
+[net.core.rmem_max](experimental/performance_optimizations.md):
+
+```bash
+sudo sysctl -w net.core.rmem_max=4194304
+```
+
+Without it a 1080p29 session buffers under 3 ms, and any hiccup in the receiver drops
+packets. That reaches an application as a handful of incomplete frames rather than as
+anything about buffers, so the library says which one the session got at create:
+
+```text
+rx_socket_init_fd(0,524), rcvbuf 8388608 in force, 4194304 asked ...   # the ask was honoured
+rx_socket_init_fd(0,524), rcvbuf 425984 in force but 4194304 asked ... # capped, expect losses
+```
+
+`nstat UdpRcvbufErrors` counts the packets lost this way.
