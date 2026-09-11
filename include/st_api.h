@@ -451,8 +451,8 @@ struct st_rx_user_stats {
   /**
    * Total frames delivered with status ST_FRAME_STATUS_CORRUPTED, i.e.
    * frames whose constituent packets had unrecoverable gaps after
-   * redundancy. The frame is still handed to the application; the
-   * application should consult frame->status to decide what to do.
+   * redundancy. ST40p hands such a frame up unconditionally; ST20p and ST30p
+   * only when the app set that media type's RECEIVE_INCOMPLETE_FRAME flag.
    * Populated by RX session types that classify per-frame integrity
    * (ST20p, ST30p, ST40p). Always 0 for types with no per-frame
    * corruption concept (ST41).

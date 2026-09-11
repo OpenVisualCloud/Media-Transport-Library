@@ -7,7 +7,8 @@ This directory contains tools for validating the integrity of video and audio da
 The integrity tools provide functionality to:
 
 - Validate video frames using MD5 checksums and text recognition
-- Validate audio frames using MD5 checksums of PCM data
+- Validate audio frames byte-for-byte against the looped source the transmitter
+  sends, starting wherever the receiver joined that loop
 - Support both file-based and stream-based (segmented files) testing
 
 ## Prerequisites
@@ -29,8 +30,13 @@ Compares a single audio file against a reference source file:
 ```bash
 python audio_integrity.py file <source_file> <output_file> \
     --sample_size 2 --sample_num 480 --channel_num 2 \
-    --output_path /path/to/output/dir
+    --output_path /path/to/output/dir \
+    --min_frames 2500
 ```
+
+`--sample_num` is the samples per *frame buffer*, not per packet. `--min_frames`
+fails a capture holding fewer frames than a healthy run of that length records;
+it defaults to 0, which applies no floor.
 
 #### Audio Stream Mode
 
@@ -87,6 +93,7 @@ runner = FileAudioIntegrityRunner(
     sample_num=480,
     channel_num=2,
     out_path="/mnt/ramdisk",
+    min_frames=2500,
 )
 
 # Run the integrity check

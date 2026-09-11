@@ -252,6 +252,14 @@ enum st30p_rx_flag {
    */
   ST30P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(3)),
 
+  /**
+   * Flag bit in flags of struct st30p_rx_ops.
+   * If set, lib will pass the incomplete frame to app also. User can check
+   * st30_frame status for the frame integrity. The packets that never arrived
+   * read as zero(silence).
+   */
+  ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME = (MTL_BIT32(4)),
+
   /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_rx_set_block_timeout to customize) */
   ST30P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),

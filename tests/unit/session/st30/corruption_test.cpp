@@ -4,7 +4,10 @@
  * Per-frame corruption status: a post-redundancy session_seq_id gap charged
  * to the frame under assembly must close that frame as
  * ST_FRAME_STATUS_CORRUPTED, while clean / reordered / redundancy-recovered
- * streams must stay ST_FRAME_STATUS_COMPLETE (no false positive).
+ * streams must stay ST_FRAME_STATUS_COMPLETE (no false positive). Plus the
+ * delivery policy for such a frame: suppressed unless the app opts in with
+ * ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME, and once delivered its missing slots
+ * read as silence rather than as the recycled buffer's previous audio.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St30RxCorruptionTest.*'
@@ -13,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "session/st30/st30_rx_test_base.h"
+#include "st30_api.h"
 #include "st_api.h"
 
 class St30RxCorruptionTest : public St30RxBaseTest {
@@ -21,6 +25,18 @@ class St30RxCorruptionTest : public St30RxBaseTest {
     ut30_ctx_destroy(ctx_);
     ctx_ = ut30_ctx_create(1);
     ASSERT_NE(ctx_, nullptr);
+    /* a partial frame only reaches the app when this flag is set */
+    ut30_ctx_set_flags(ctx_, ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME);
+  }
+
+  /* Feed one frame's worth of packets, every payload byte set to `fill`. A
+   * `skip_slot` of -1 feeds the whole frame. */
+  void feed_frame(uint16_t* seq, uint32_t base, uint8_t fill, int skip_slot) {
+    for (int i = 0; i < ppf(); i++) {
+      if (i == skip_slot) continue;
+      ut30_feed_pkt_fill(ctx_, (*seq)++, base + (uint32_t)i * spp(), MTL_SESSION_PORT_P,
+                         fill);
+    }
   }
 
   uint64_t complete() {
@@ -31,6 +47,18 @@ class St30RxCorruptionTest : public St30RxBaseTest {
   }
   int last_status() {
     return ut30_last_frame_status(ctx_);
+  }
+
+  ::testing::AssertionResult SlotIs(int i, int slot, uint8_t expect) {
+    const uint8_t* p =
+        (const uint8_t*)ut30_frame_log_addr(ctx_, i) + (size_t)slot * ut30_pkt_len(ctx_);
+    for (uint32_t b = 0; b < ut30_pkt_len(ctx_); b++) {
+      if (p[b] != expect)
+        return ::testing::AssertionFailure()
+               << "slot " << slot << " byte " << b << " is " << (unsigned)p[b] << " want "
+               << (unsigned)expect;
+    }
+    return ::testing::AssertionSuccess();
   }
 };
 
@@ -198,6 +226,7 @@ TEST_F(St30RxCorruptionTest, RedundancyCoveredLossComplete) {
 /* (g) Redundancy: loss on both ports leaves a missing slot, so the frame
  * closes CORRUPTED on the forward jump. */
 TEST_F(St30RxCorruptionTest, RedundancyBothPortsLostCorrupted) {
+  ut30_ctx_set_flags(ctx_, ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME);
   int n = ppf();
   uint32_t s = spp();
   uint32_t base = 1000;
@@ -323,8 +352,8 @@ TEST_F(St30RxCorruptionTest, LeadingPacketLossCorrupts) {
 }
 
 /* Leading-loss followed by a whole-frame skip: the partial frame closes
- * CORRUPTED, the wholly-missing frame emits nothing, and the large forward
- * jump resyncs onto the arriving (still grid-aligned) timestamp. */
+ * CORRUPTED, the wholly-missing frame emits nothing, and the large forward jump
+ * is floored onto the grid, which the arriving timestamp already sits on. */
 TEST_F(St30RxCorruptionTest, LeadingLossThenWholeFrameSkip) {
   use_single_port();
   int n = ppf();
@@ -351,4 +380,52 @@ TEST_F(St30RxCorruptionTest, LeadingLossThenWholeFrameSkip) {
   EXPECT_EQ(ut30_frame_log_status(ctx_, 1), ST_FRAME_STATUS_CORRUPTED);
   EXPECT_EQ(ut30_frame_log_ts(ctx_, 2), base4);
   EXPECT_EQ(ut30_frame_log_status(ctx_, 2), ST_FRAME_STATUS_COMPLETE);
+}
+
+/* ── delivery policy for an incomplete frame ────────────────────────────── */
+
+/* Default policy: a frame missing a packet is never handed to the app, is
+ * accounted as wire loss only, and its buffer goes back to the pool. More
+ * partial frames than framebuffers, so a buffer that leaked would show up. */
+TEST_F(St30RxCorruptionTest, IncompleteFramesSuppressedRecycledCountedAsWireLoss) {
+  use_single_port();
+  ut30_ctx_set_flags(ctx_, 0);
+  uint16_t seq = 0;
+  uint32_t base = 1000;
+
+  for (int f = 0; f < 5; f++) {
+    feed_frame(&seq, base, 0x11, 5);
+    base += (uint32_t)ppf() * spp();
+  }
+  /* close the last partial frame */
+  ut30_feed_pkt_fill(ctx_, seq++, base, MTL_SESSION_PORT_P, 0x11);
+
+  EXPECT_EQ(ut30_frame_log_count(ctx_), 0)
+      << "flags=0 (no ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME): app must see no frame";
+  EXPECT_EQ(ut30_stat_frames_incomplete(ctx_), 5u);
+  EXPECT_EQ(frames_done(), 0) << "a frame never handed up is not a frame received";
+}
+
+/* Opt-in: the partial frame is delivered, flagged CORRUPTED, and the slot that
+ * never arrived reads as silence rather than as the audio the previous frame left
+ * one frame earlier in the same recycled buffer. */
+TEST_F(St30RxCorruptionTest, OptInGapOfReusedBufferReadsAsSilence) {
+  use_single_port();
+  uint16_t seq = 0;
+  uint32_t base = 1000;
+  uint32_t base2 = base + (uint32_t)ppf() * spp();
+
+  feed_frame(&seq, base, 0xa5, -1);
+  feed_frame(&seq, base2, 0x5a, 5);
+  feed(seq++, base2 + (uint32_t)ppf() * spp(), MTL_SESSION_PORT_P);
+
+  ASSERT_EQ(ut30_frame_log_count(ctx_), 2);
+  ASSERT_EQ(ut30_frame_log_status(ctx_, 1), ST_FRAME_STATUS_CORRUPTED);
+  ASSERT_EQ(ut30_frame_log_addr(ctx_, 1), ut30_frame_log_addr(ctx_, 0))
+      << "the two frames must share a framebuffer for this to be the reuse case";
+  EXPECT_EQ(ut30_stat_frames_incomplete(ctx_), 1u);
+  EXPECT_EQ(frames_done(), 1) << "a delivered CORRUPTED frame is not a frame received";
+
+  EXPECT_TRUE(SlotIs(1, 4, 0x5a)) << "received slots keep this frame's audio";
+  EXPECT_TRUE(SlotIs(1, 5, 0x00)) << "missing slot must be silence, not stale 0xa5";
 }

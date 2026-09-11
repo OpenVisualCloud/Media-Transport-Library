@@ -333,6 +333,7 @@ class Application(ABC):
             audio_channels=self.params.get("audio_channels"),
             audio_sampling=self.params.get("audio_sampling"),
             audio_ptime=self.params.get("audio_ptime"),
+            test_time=self.params.get("test_time") or 30,
         )
 
     def set_params(self, **kwargs):

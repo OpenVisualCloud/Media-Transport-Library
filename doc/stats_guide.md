@@ -103,13 +103,13 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  │         charged at frame recycle, not at completion, so late                │
  │         redundant twins are counted first (stats appear one frame later)    │
  │                                                                             │
- │     ST20 / ST22 (transport): intra-frame loss detected                       │
+ │     ST20 / ST22 / ST30 (transport): intra-frame loss detected               │
  │                                    ──► stat_frames_incomplete++             │
  │                                                                             │
- │     ST20p / ST30p / ST40p: frame delivered with unrecovered loss     │
+ │     ST20p / ST30p / ST40p: frame has unrecovered loss                       │
  │                                    ──► stat_frames_corrupted++              │
- │                                        (frame still delivered with          │
- │                                         ST_FRAME_STATUS_CORRUPTED)          │
+ │                                        (ST_FRAME_STATUS_CORRUPTED; see      │
+ │                                         Frame-level counters)               │
  │                                                                             │
  │     Pipeline (ST20p / ST30p / ST40p):                                       │
  │       no free user framebuff       ──► stat_frames_dropped++                │
@@ -168,7 +168,7 @@ frames did the app receive / drop / send".
 |---|---|---|
 | `stat_frames_received`  | RX | Frames delivered to the app via the get-frame / notify path |
 | `stat_frames_dropped`   | RX | Frames the pipeline could not deliver (no free user slot) |
-| `stat_frames_corrupted` | RX | Frames delivered with `ST_FRAME_STATUS_CORRUPTED` (unrecovered intra-frame loss); the frame is still handed to the app |
+| `stat_frames_corrupted` | RX | Frames delivered with `ST_FRAME_STATUS_CORRUPTED` (unrecovered intra-frame loss). ST40p hands such a frame up unconditionally; ST20p and ST30p only when `RECEIVE_INCOMPLETE_FRAME` is set |
 | `stat_frames_sent`      | TX | Frames whose final packet was committed to the wire (`notify_frame_done(COMPLETE)`) |
 | `stat_frames_dropped`   | TX | Frames the pipeline dropped because the app handed them too late (`notify_frame_done(DROPPED)`); also bumped on `put_frame_abort` |
 
@@ -177,8 +177,9 @@ RX and TX). For transport-only paths and types with no per-frame
 integrity concept (`stat_frames_corrupted` on `ST41` RX),
 the relevant counters stay 0.
 
-> **ST20 / ST22 only:** the transport-layer field `stat_frames_incomplete`
-> (in `st20_rx_user_stats`) is **not** the same as `stat_frames_corrupted`.
+> **ST20 / ST22 / ST30 only:** the transport-layer field `stat_frames_incomplete`
+> (in `st20_rx_user_stats` / `st30_rx_user_stats`) is **not** the same as
+> `stat_frames_corrupted`.
 > `stat_frames_incomplete` fires whenever the transport detects intra-frame
 > loss, including when the frame is then silently discarded because
 > `RECEIVE_INCOMPLETE_FRAME` is not set; `stat_frames_corrupted` only
@@ -327,12 +328,14 @@ Cross-frame reorders are not tracked. Watch
 
 **Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
 `stat_pkts_unrecovered` is **exact**. ST30 adds `stat_pkts_dropped`,
-`stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`. ST40/41 add
+`stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`,
+`stat_frames_incomplete`. ST40/41 add
 `stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`. ST20p,
 ST30p and ST40p RX mark frames whose constituent packets had unrecovered
 (post-redundancy) gaps as `ST_FRAME_STATUS_CORRUPTED` and count them in
-`stat_frames_corrupted`; the frame is still delivered to the app (the app
-should consult `frame->status`). For count-based assembly (ST30 audio /
+`stat_frames_corrupted` (the app should consult `frame->status`; for whether
+such a frame is delivered at all see [Frame-level
+counters](#frame-level-counters)). For count-based assembly (ST30 audio /
 ST40 anc) a fully-lost frame is absorbed — the delivered frame count drops
 rather than emitting an extra incomplete frame — so under heavy contiguous
 loss `stat_frames_corrupted` is a lower bound on frame-integrity impact.

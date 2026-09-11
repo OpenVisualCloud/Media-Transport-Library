@@ -67,6 +67,9 @@ int ut30_feed_pkt_len(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
 void ut30_ctx_set_pt(ut30_test_ctx* ctx, uint8_t pt);
 void ut30_ctx_set_ssrc(ut30_test_ctx* ctx, uint32_t ssrc);
 
+/* Replace st30_rx_ops::flags; call before feeding any packet. */
+void ut30_ctx_set_flags(ut30_test_ctx* ctx, uint32_t flags);
+
 /* Wrapper feeder — drives the production `_handle_mbuf` wrapper instead of
  * the per-packet handler. Use this whenever the test asserts on per-port
  * `err_packets` or per-port `packets`. All RTP fields are explicit so a
@@ -127,14 +130,23 @@ void ut30_reset(ut30_test_ctx* ctx);
  * synthetic configuration. Tests use it to derive expected counts. */
 int ut30_pkts_per_frame(const ut30_test_ctx* ctx);
 
+/* Payload bytes carried by one packet, i.e. the stride of a positional slot
+ * inside the frame buffer. */
+uint32_t ut30_pkt_len(const ut30_test_ctx* ctx);
+
 /* Sample-clock ticks carried by one packet (RTP timestamp advance per packet). */
 uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx);
 
 /* Ordered log of delivered frames, captured by the frame-ready stub. `count` is
- * the number logged; `ts`/`status` index into it. */
+ * the number logged; `ts`/`status`/`addr` index into it. Two entries sharing an
+ * `addr` were carried by the same recycled framebuffer. */
 int ut30_frame_log_count(const ut30_test_ctx* ctx);
 uint64_t ut30_frame_log_ts(const ut30_test_ctx* ctx, int i);
 int ut30_frame_log_status(const ut30_test_ctx* ctx, int i);
+const void* ut30_frame_log_addr(const ut30_test_ctx* ctx, int i);
+
+/* Frames not fully assembled from the wire, delivered or not. */
+uint64_t ut30_stat_frames_incomplete(const ut30_test_ctx* ctx);
 
 /* Per-reason drop counters. */
 uint64_t ut30_stat_wrong_pt(const ut30_test_ctx* ctx);
@@ -152,6 +164,10 @@ void ut30_set_hold_frames(ut30_test_ctx* ctx, bool hold);
  * in its own positional slot. */
 void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_start,
                           enum mtl_session_port port);
+
+/* Feed one packet whose payload bytes are all `fill`. */
+int ut30_feed_pkt_fill(ut30_test_ctx* ctx, uint16_t seq, uint32_t ts,
+                       enum mtl_session_port port, uint8_t fill);
 
 /* Drive the mt_stat-thread stat callback synchronously for assertions on
  * the rate-limited stat lines. */
