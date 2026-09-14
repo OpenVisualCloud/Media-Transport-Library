@@ -57,6 +57,7 @@ struct st20p_tx_ctx {
   bool derive; /* input_fmt == transport_fmt */
 
   size_t src_size;
+  uint64_t frame_period_ns; /* derived from ops.fps at create, non-zero */
 
   bool second_field;
 

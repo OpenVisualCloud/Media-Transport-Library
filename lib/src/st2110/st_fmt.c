@@ -730,6 +730,23 @@ int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
   return -EINVAL;
 }
 
+int st_frame_period_ns(enum st_fps fps, uint64_t* period_ns) {
+  struct st_fps_timing fps_tm;
+  int ret;
+
+  ret = st_get_fps_timing(fps, &fps_tm);
+  if (ret < 0)
+    return ret;
+  else if (fps_tm.mul <= 0 || fps_tm.den <= 0)
+    return -EINVAL;
+
+  /* NS_PER_S is an int macro, so cast before multiplying: NS_PER_S * den
+   * overflows int for the four 1001-denominator rates. Multiply before
+   * dividing, or den / mul truncates to zero. */
+  *period_ns = (uint64_t)NS_PER_S * fps_tm.den / fps_tm.mul;
+  return 0;
+}
+
 double st_frame_rate(enum st_fps fps) {
   int i;
 
