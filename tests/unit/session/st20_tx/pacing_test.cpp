@@ -414,6 +414,38 @@ TEST_F(St20TxSyncPacingTest,
               (double)kFramePeriodNs);
 }
 
+// tv_media_clk_to_tai() must round-trip exactly for every tick, including at
+// a rounding-tie boundary: anchor=10,050,000ns @ 90kHz is exactly tick 904.5
+// (a tie, so st10_tai_to_media_clk() rounds it down to 904), and media_ts=909
+// is only 5 ticks away. Rounding the anchor and the tick delta as two
+// independent steps can push the result across a tick boundary (904.5 + 5 ==
+// 909.5, which rounds up to 910) even though the un-rounded math lands
+// exactly on tick 909 -- so the only correct check is the exact round-trip,
+// not proximity to the anchor.
+TEST_F(St20TxSyncPacingTest, UpdateRtpTimeStampMediaClkRoundTripsAtRoundingTie) {
+  constexpr uint64_t kTieAnchorTai = 10050000; /* exactly tick 904.5 @ 90kHz */
+  constexpr uint32_t kMediaClockTimestamp = 909;
+  ut_txv_set_user_timestamp(ctx_, true);
+  ut_txv_set_ptp_time_cursor(ctx_, kTieAnchorTai);
+
+  ut_txv_update_rtp_time_stamp(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, kMediaClockTimestamp);
+
+  EXPECT_EQ(ut_txv_rtp_time_stamp(ctx_), kMediaClockTimestamp);
+}
+
+// tv_media_clk_to_tai()'s sampling_rate==0 guard must not divide by zero in
+// this tasklet-context path; it should degrade the same way the downstream
+// st10_tai_to_media_clk() guard already does regardless (returns 0).
+TEST_F(St20TxSyncPacingTest, UpdateRtpTimeStampMediaClkZeroSamplingRateDoesNotCrash) {
+  ut_txv_set_user_timestamp(ctx_, true);
+  ut_txv_set_sampling_clock_rate(ctx_, 0);
+  ut_txv_set_ptp_time_cursor(ctx_, kCurrentTai);
+
+  ut_txv_update_rtp_time_stamp(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, 909);
+
+  EXPECT_EQ(ut_txv_rtp_time_stamp(ctx_), 0u);
+}
+
 // tv_tasklet_st22() (compressed video) has its own, separate call site that
 // assigns frame->tx_st22_meta.timestamp from tv_update_rtp_time_stamp()'s
 // return value -- same shared function as tv_tasklet_frame(), but a distinct

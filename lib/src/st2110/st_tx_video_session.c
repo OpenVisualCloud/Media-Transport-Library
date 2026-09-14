@@ -13,6 +13,7 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #include "st_err.h"
+#include "st_fmt.h"
 #include "st_video_transmitter.h"
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
@@ -747,16 +748,24 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   return tv_sync_pacing(impl, s, required_tai);
 }
 
-/* Unwraps a raw 32-bit media-clock tick count to a TAI instant. anchor_tai_ns
- * must be within roughly one 2^31-tick half-cycle of the real instant. */
+/* Unwraps a raw 32-bit media-clock tick count to the TAI instant nearest
+ * anchor_tai_ns, exactly invertible via st10_tai_to_media_clk() -- a single
+ * rounding step, unlike rounding the anchor and the delta independently. */
 static uint64_t tv_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts,
                                     uint32_t sampling_rate) {
-  uint32_t anchor_ticks = st10_tai_to_media_clk(anchor_tai_ns, sampling_rate);
-  int64_t diff_ticks = (int32_t)(media_ts - anchor_ticks);
-  uint32_t abs_ticks = (uint32_t)(diff_ticks < 0 ? -diff_ticks : diff_ticks);
-  int64_t diff_ns = (int64_t)st10_media_clk_to_ns(abs_ticks, sampling_rate);
-  if (diff_ticks < 0) diff_ns = -diff_ns;
-  return (uint64_t)((int64_t)anchor_tai_ns + diff_ns);
+  if (!sampling_rate) {
+    err("%s, invalid sampling rate\n", __func__);
+    return anchor_tai_ns;
+  }
+
+  const int64_t ticks_per_cycle = (int64_t)1 << 32;
+  long double anchor_ticks = (long double)anchor_tai_ns * sampling_rate / NS_PER_S;
+  /* Cycle count, not a tick value -- llroundl()'s away-from-zero ties don't
+   * need to match st_muldiv_u64_round_closest()'s round-down ties below. */
+  int64_t cycle = llroundl((anchor_ticks - (long double)media_ts) / ticks_per_cycle);
+  uint64_t unwrapped_ticks = (uint64_t)((int64_t)media_ts + cycle * ticks_per_cycle);
+
+  return st_muldiv_u64_round_closest(unwrapped_ticks, NS_PER_S, sampling_rate);
 }
 
 /* Returns the TAI instant frame->rtp_timestamp was derived from, for the caller
