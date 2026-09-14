@@ -75,6 +75,8 @@ ut22p_tx_ctx* ut22p_tx_ctx_create(int framebuff_cnt) {
   p->transport = (st22_tx_handle)(uintptr_t)0x1;
   p->block_get = false;
   p->encode_block_get = false;
+  /* ops.fps 0 is ST_FPS_P59_94, so cache the period create would cache for it */
+  ut22p_tx_set_fps(ctx, ST_FPS_P59_94);
   /* ops.flags left 0: no DROP_WHEN_LATE / USER_PACING, so tx_st22p_if_frame_late
    * returns immediately and next_frame never touches the (absent) transport. */
 
@@ -101,6 +103,18 @@ void ut22p_tx_set_flags(ut22p_tx_ctx* ctx, uint32_t flags) {
 
 void ut22p_tx_set_fps(ut22p_tx_ctx* ctx, enum st_fps fps) {
   ctx->pipeline.ops.fps = fps;
+  /* mirror the period st22p_tx_create() caches for ops.fps. Zero it on an
+   * out-of-table fps rather than leaving the previous value: a future caller
+   * that passes one then fails the window assertions instead of passing on a
+   * stale period. */
+  if (st_frame_period_ns(fps, &ctx->pipeline.frame_period_ns) < 0)
+    ctx->pipeline.frame_period_ns = 0;
+}
+
+void ut22p_tx_set_fps_mismatch(ut22p_tx_ctx* ctx, enum st_fps cached_fps,
+                               enum st_fps ops_fps) {
+  ut22p_tx_set_fps(ctx, cached_fps);
+  ctx->pipeline.ops.fps = ops_fps;
 }
 
 void ut22p_tx_set_notify_frame_done(ut22p_tx_ctx* ctx,

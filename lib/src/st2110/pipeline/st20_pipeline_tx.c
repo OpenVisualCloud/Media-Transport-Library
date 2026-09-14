@@ -135,7 +135,7 @@ static bool tx_st20p_if_frame_late(struct st20p_tx_ctx* ctx,
   /* one frame period as grace window: the pipeline has inherent processing latency
    * (conversion + scheduling) between put_frame and get_next_frame. A frame is only
    * truly "late" if it missed its TX window by more than one full frame period. */
-  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(ctx->ops.fps));
+  uint64_t frame_period_ns = ctx->frame_period_ns;
 
   if (cur_tai < frame_tai + frame_period_ns)
     return false; /* within acceptable TX window */
@@ -1084,6 +1084,13 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
+  uint64_t frame_period_ns;
+  ret = st_frame_period_ns(ops->fps, &frame_period_ns);
+  if (ret < 0) {
+    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
+    return NULL;
+  }
+
   enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
   if (port >= MTL_PORT_MAX) return NULL;
   int socket = mt_socket_id(impl, port);
@@ -1107,6 +1114,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   ctx->type = MT_ST20_HANDLE_PIPELINE_TX;
   ctx->wake_on_destroy = (void (*)(void*))tx_st20p_block_wake;
   ctx->src_size = src_size;
+  ctx->frame_period_ns = frame_period_ns;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
 
