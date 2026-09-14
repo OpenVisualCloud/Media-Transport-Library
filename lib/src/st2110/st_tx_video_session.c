@@ -747,18 +747,33 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   return tv_sync_pacing(impl, s, required_tai);
 }
 
-static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
-                                     enum st10_timestamp_fmt tfmt, uint64_t timestamp) {
+/* Returns the TAI instant frame->rtp_timestamp was derived from, for the caller
+ * to report as frame->timestamp -- see the per-branch comments below for why. */
+static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
+                                         enum st10_timestamp_fmt tfmt,
+                                         uint64_t timestamp) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t delta_ns = (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
+  uint64_t tai_for_rtp_ts;
 
   if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
-    enum st10_timestamp_fmt tfmt_for_clk = tfmt;
-    timestamp = timestamp + delta_ns;
+    /* Contract of ST20_TX_FLAG_USER_TIMESTAMP (st20_api.h): the RTP timestamp
+     * is assigned verbatim from the app-supplied timestamp, independent of
+     * how tv_sync_pacing() scheduled the frame (ptp_time_cursor may be
+     * epoch-rounded and tr_offset/vrx adjusted). tai_for_rtp_ts is recovered
+     * from that same app-supplied timestamp so both fields describe the same
+     * instant. */
+    timestamp += delta_ns;
     pacing->rtp_time_stamp =
-        st10_get_media_clk(tfmt_for_clk, timestamp, s->fps_tm.sampling_clock_rate);
+        st10_get_media_clk(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
+    /* st10_get_tai() is the counterpart TAI-side helper: TAI input passes
+     * through unchanged, MEDIA_CLK input converts back to TAI ns. */
+    tai_for_rtp_ts = st10_get_tai(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
   } else {
-    uint64_t tai_for_rtp_ts;
+    /* Not user-controlled: the RTP timestamp is the pacing-derived instant --
+     * either the bare epoch (RTP_TIMESTAMP_EPOCH, omitting tr_offset) or the
+     * scheduled TX cursor. rtp_timestamp_delta_us shifts only this value,
+     * never the real TX schedule. */
     if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
       tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
     } else {
@@ -769,6 +784,7 @@ static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
         st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
   }
   dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, pacing->rtp_time_stamp);
+  return tai_for_rtp_ts;
 }
 
 static int tv_init_next_meta(struct st_tx_video_session_impl* s,
@@ -1943,9 +1959,12 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         s->second_field = !frame->tv_meta.second_field;
       }
       tv_sync_pacing(impl, s, required_tai);
-      tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-      frame->tv_meta.timestamp = pacing->ptp_time_cursor;
+      /* Report the same TAI instant frame->rtp_timestamp (set next) was
+       * derived from, not tv_sync_pacing()'s scheduled ptp_time_cursor --
+       * they can legitimately differ (USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH,
+       * rtp_timestamp_delta_us). See tv_update_rtp_time_stamp() above. */
+      frame->tv_meta.timestamp = tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;
       /* init to next field */
@@ -2442,9 +2461,11 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->second_field = !frame->tx_st22_meta.second_field;
       }
       tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts);
-      tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-      frame->tx_st22_meta.timestamp = pacing->ptp_time_cursor;
+      /* Same reasoning as tv_tasklet_frame()'s frame->tv_meta.timestamp above:
+       * report the instant frame->rtp_timestamp actually came from. */
+      frame->tx_st22_meta.timestamp =
+          tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tx_st22_meta.epoch = pacing->cur_epochs;
       frame->tx_st22_meta.rtp_timestamp = pacing->rtp_time_stamp;
       MT_USDT_ST22_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
