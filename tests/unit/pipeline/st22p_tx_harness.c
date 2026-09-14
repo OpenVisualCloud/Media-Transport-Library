@@ -103,8 +103,18 @@ void ut22p_tx_set_flags(ut22p_tx_ctx* ctx, uint32_t flags) {
 
 void ut22p_tx_set_fps(ut22p_tx_ctx* ctx, enum st_fps fps) {
   ctx->pipeline.ops.fps = fps;
-  /* mirror the period st22p_tx_create() caches for ops.fps */
-  st_frame_period_ns(fps, &ctx->pipeline.frame_period_ns);
+  /* mirror the period st22p_tx_create() caches for ops.fps. Zero it on an
+   * out-of-table fps rather than leaving the previous value: a future caller
+   * that passes one then fails the window assertions instead of passing on a
+   * stale period. */
+  if (st_frame_period_ns(fps, &ctx->pipeline.frame_period_ns) < 0)
+    ctx->pipeline.frame_period_ns = 0;
+}
+
+void ut22p_tx_set_fps_mismatch(ut22p_tx_ctx* ctx, enum st_fps cached_fps,
+                               enum st_fps ops_fps) {
+  ut22p_tx_set_fps(ctx, cached_fps);
+  ctx->pipeline.ops.fps = ops_fps;
 }
 
 void ut22p_tx_set_notify_frame_done(ut22p_tx_ctx* ctx,
