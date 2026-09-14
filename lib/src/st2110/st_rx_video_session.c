@@ -5,6 +5,7 @@
 #include "st_rx_video_session.h"
 
 #include <math.h>
+#include <rte_random.h>
 
 #include "../datapath/mt_queue.h"
 #include "../mt_handle_guard.h"
@@ -2838,9 +2839,9 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
 static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl* s) {
   if (s->burst_loss_cnt == 0) {
     /* create a burst of pkt loss at fixed rate */
-    if (((float)rand() / (float)RAND_MAX) < s->sim_loss_rate) {
+    if (rte_drand() < s->sim_loss_rate) {
       /* burst_loss_cnt at least 1 to prevent underflow */
-      s->burst_loss_cnt = rand() % s->burst_loss_max + 1;
+      s->burst_loss_cnt = (uint16_t)(rte_rand_max(s->burst_loss_max) + 1);
     } else {
       return false;
     }
