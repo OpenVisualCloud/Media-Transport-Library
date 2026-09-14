@@ -747,6 +747,18 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   return tv_sync_pacing(impl, s, required_tai);
 }
 
+/* Unwraps a raw 32-bit media-clock tick count to a TAI instant. anchor_tai_ns
+ * must be within roughly one 2^31-tick half-cycle of the real instant. */
+static uint64_t tv_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts,
+                                    uint32_t sampling_rate) {
+  uint32_t anchor_ticks = st10_tai_to_media_clk(anchor_tai_ns, sampling_rate);
+  int64_t diff_ticks = (int32_t)(media_ts - anchor_ticks);
+  uint32_t abs_ticks = (uint32_t)(diff_ticks < 0 ? -diff_ticks : diff_ticks);
+  int64_t diff_ns = (int64_t)st10_media_clk_to_ns(abs_ticks, sampling_rate);
+  if (diff_ticks < 0) diff_ns = -diff_ns;
+  return (uint64_t)((int64_t)anchor_tai_ns + diff_ns);
+}
+
 /* Returns the TAI instant frame->rtp_timestamp was derived from, for the caller
  * to report as frame->timestamp -- see the per-branch comments below for why. */
 static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
@@ -760,15 +772,18 @@ static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
     /* Contract of ST20_TX_FLAG_USER_TIMESTAMP (st20_api.h): the RTP timestamp
      * is assigned verbatim from the app-supplied timestamp, independent of
      * how tv_sync_pacing() scheduled the frame (ptp_time_cursor may be
-     * epoch-rounded and tr_offset/vrx adjusted). tai_for_rtp_ts is recovered
-     * from that same app-supplied timestamp so both fields describe the same
-     * instant. */
-    timestamp += delta_ns;
+     * epoch-rounded and tr_offset/vrx adjusted). A MEDIA_CLK timestamp is
+     * unwrapped against pacing->ptp_time_cursor first so it resolves to a
+     * real TAI instant rather than one expanded from a zero-based clock;
+     * delta_ns is then applied in the TAI/ns domain regardless of tfmt. */
+    uint64_t tai_base =
+        (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
+            ? tv_media_clk_to_tai((uint64_t)pacing->ptp_time_cursor, (uint32_t)timestamp,
+                                  s->fps_tm.sampling_clock_rate)
+            : timestamp;
+    tai_for_rtp_ts = tai_base + delta_ns;
     pacing->rtp_time_stamp =
-        st10_get_media_clk(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
-    /* st10_get_tai() is the counterpart TAI-side helper: TAI input passes
-     * through unchanged, MEDIA_CLK input converts back to TAI ns. */
-    tai_for_rtp_ts = st10_get_tai(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
+        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
   } else {
     /* Not user-controlled: the RTP timestamp is the pacing-derived instant --
      * either the bare epoch (RTP_TIMESTAMP_EPOCH, omitting tr_offset) or the

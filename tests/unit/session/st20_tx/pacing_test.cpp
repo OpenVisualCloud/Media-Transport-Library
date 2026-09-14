@@ -280,15 +280,14 @@ TEST_F(St20TxSyncPacingTest, FrameTaskletRtpTimestampDeltaReportsRtpConsistentTa
 
 // In the USER_TIMESTAMP branch, when the app's timestamp arrives as
 // ST10_TIMESTAMP_FMT_MEDIA_CLK (a documented valid input, see
-// include/st20_api.h), st10_get_media_clk() returns it verbatim -- it has no
-// notion of ptp_time_cursor at all. The correct way to recover a reportable
-// TAI instant from it is st10_get_tai(), which turns the MEDIA_CLK value back
-// into TAI ns; falling back to pacing->ptp_time_cursor for this format would
-// reintroduce the same mismatch as the non-MEDIA_CLK case above.
+// include/st20_api.h), the raw 32-bit tick count is unwrapped against
+// pacing->ptp_time_cursor (the anchor tv_sync_pacing() just computed) rather
+// than expanded from zero, so the reported TAI instant lands near the
+// session's real clock instead of near the MEDIA_CLK epoch.
 // kMediaClockTimestamp=990 ticks is exactly 11ms -- deliberately the *next*
 // epoch's boundary (kAlignedTargetTai), not the one default (non-USER_PACING)
-// pacing schedules for this frame (kCurrentTai, 10ms) -- so a wrong
-// ptp_time_cursor fallback is distinguishable from the correct answer.
+// pacing schedules for this frame (kCurrentTai, 10ms) -- so an unanchored
+// fallback would be distinguishable from the correct answer.
 TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkReportsRtpConsistentTai) {
   constexpr uint32_t kMediaClockTimestamp = 990;
   ut_txv_set_user_timestamp(ctx_, true);
@@ -306,8 +305,6 @@ TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkReportsRtpConsiste
   // RTP derivation, not the TX schedule -- packet_ptp keeps advancing on the
   // default (non-user) epoch, unrelated to kMediaClockTimestamp.
   EXPECT_EQ(packet_ptp, kCurrentTai);
-  // Reported frame->timestamp must be the TAI instant st10_get_tai() derived
-  // from kMediaClockTimestamp, not the unrelated TX schedule above.
   EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), kAlignedTargetTai);
   EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_), kMediaClockTimestamp);
   EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_),
@@ -315,21 +312,12 @@ TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkReportsRtpConsiste
                                   ST10_VIDEO_SAMPLING_RATE_90K));
 }
 
-// Documents existing, unfixed behavior: tv_update_rtp_time_stamp()'s
-// USER_TIMESTAMP branch does `timestamp += delta_ns`, unconditionally
-// treating rtp_timestamp_delta_us as nanoseconds. When tfmt is
-// ST10_TIMESTAMP_FMT_TAI that's correct, but when tfmt is
-// ST10_TIMESTAMP_FMT_MEDIA_CLK, `timestamp` is in media-clock ticks, not
-// nanoseconds -- so the "nanosecond" delta is silently added as extra ticks.
-// This test does not assert that combination is correct; it pins the current
-// arithmetic exactly (mirroring the same unit-mismatched addition) so a
-// future change to this code path is a deliberate, reviewed decision, not an
-// accidental behavior change. It also verifies that frame->rtp_timestamp and
-// frame->timestamp are both derived from the same (corrupted) intermediate
-// value, so one still reconstructs the other -- only the absolute values are
-// questionable, not the reported pair's internal consistency.
-TEST_F(St20TxSyncPacingTest,
-       FrameTaskletUserTimestampMediaClkWithDeltaPinsKnownUnitMismatch) {
+// rtp_timestamp_delta_us must be applied in the TAI/ns domain even when the
+// app's timestamp arrives as ST10_TIMESTAMP_FMT_MEDIA_CLK: the raw ticks are
+// first unwrapped to a TAI instant anchored on pacing->ptp_time_cursor, then
+// the delta (converted to ns) is added, then the result is re-derived back to
+// media-clock ticks -- never added directly onto the raw tick count.
+TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkAppliesDeltaInTaiDomain) {
   constexpr uint32_t kMediaClockTimestamp = 990;
   constexpr int32_t kDeltaUs = 500;
   ut_txv_set_user_timestamp(ctx_, true);
@@ -344,19 +332,86 @@ TEST_F(St20TxSyncPacingTest,
                                      kMediaClockTimestamp, &packet_tsc, &packet_ptp),
             0);
 
-  // Mirrors the production `timestamp += delta_ns` unit mismatch: delta_us
-  // converted to "nanoseconds" gets added directly onto media-clock ticks.
-  const uint64_t corrupted_ticks = kMediaClockTimestamp + (uint64_t)kDeltaUs * 1000;
-  const uint32_t expected_rtp_timestamp = (uint32_t)corrupted_ticks;
-  const uint64_t expected_timestamp =
-      st10_media_clk_to_ns(expected_rtp_timestamp, ST10_VIDEO_SAMPLING_RATE_90K);
+  // kMediaClockTimestamp unwraps to kAlignedTargetTai (see the test above);
+  // the 500us delta is then added on top of that TAI instant, in ns.
+  const uint64_t expected_timestamp = kAlignedTargetTai + (uint64_t)kDeltaUs * 1000;
+  const uint32_t expected_rtp_timestamp =
+      st10_tai_to_media_clk(expected_timestamp, ST10_VIDEO_SAMPLING_RATE_90K);
 
   EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), expected_timestamp);
   EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_), expected_rtp_timestamp);
-  // Even under this known-bad input, the pair stays self-consistent.
   EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_),
             st10_tai_to_media_clk(ut_txv_notify_frame_done_timestamp(ctx_),
                                   ST10_VIDEO_SAMPLING_RATE_90K));
+  // Plausibility, not just round-trip self-consistency: within one frame
+  // period of the session's real clock (kCurrentTai), not near zero.
+  EXPECT_NEAR((double)ut_txv_notify_frame_done_timestamp(ctx_), (double)kCurrentTai,
+              2.0 * (double)kFramePeriodNs);
+}
+
+// Same MEDIA_CLK unwrap, but anchored on a large, realistic TAI epoch instead
+// of a small round number near zero -- proving the reconstructed
+// frame->timestamp tracks the session's actual clock and not
+// st10_media_clk_to_ns()'s zero-based expansion of the raw ticks (which would
+// land tens of seconds after the TAI epoch, not near kRealisticTai).
+TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkAnchorsToRealisticEpoch) {
+  constexpr uint64_t kRealisticTaiMs = 1755000000000ULL; /* ~2025, in ms */
+  constexpr uint64_t kRealisticTai = kRealisticTaiMs * kNanosecondsPerMillisecond;
+  const uint32_t anchor_ticks =
+      st10_tai_to_media_clk(kRealisticTai, ST10_VIDEO_SAMPLING_RATE_90K);
+  const uint32_t kMediaClockTimestamp = anchor_ticks + 90; /* +1ms, wraps mod 2^32 */
+  ut_txv_set_user_timestamp(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kRealisticTaiMs - 1);
+  ut_txv_set_mock_ptp_time(ctx_, kRealisticTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+  uint64_t packet_tsc = 0;
+  uint64_t packet_ptp = 0;
+
+  ASSERT_EQ(ut_txv_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                     kMediaClockTimestamp, &packet_tsc, &packet_ptp),
+            0);
+
+  const uint64_t expected_timestamp = kRealisticTai + kFramePeriodNs;
+  EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), expected_timestamp);
+  EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_), kMediaClockTimestamp);
+  EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_),
+            st10_tai_to_media_clk(ut_txv_notify_frame_done_timestamp(ctx_),
+                                  ST10_VIDEO_SAMPLING_RATE_90K));
+  EXPECT_NEAR((double)ut_txv_notify_frame_done_timestamp(ctx_), (double)kRealisticTai,
+              (double)kFramePeriodNs);
+}
+
+// Same anchored unwrap as above, but with the app's timestamp slightly
+// *behind* the anchor tick (media_ts = anchor_ticks - N) rather than ahead of
+// it, so tv_media_clk_to_tai()'s negative-diff_ticks path actually runs. A
+// wrong wrap direction here would land roughly half a 32-bit tick cycle away
+// from kRealisticTai (many hours), not one frame period behind it.
+TEST_F(St20TxSyncPacingTest,
+       FrameTaskletUserTimestampMediaClkUnwrapsTimestampBehindAnchor) {
+  constexpr uint64_t kRealisticTaiMs = 1755000000000ULL; /* ~2025, in ms */
+  constexpr uint64_t kRealisticTai = kRealisticTaiMs * kNanosecondsPerMillisecond;
+  const uint32_t anchor_ticks =
+      st10_tai_to_media_clk(kRealisticTai, ST10_VIDEO_SAMPLING_RATE_90K);
+  const uint32_t kMediaClockTimestamp = anchor_ticks - 90; /* -1ms, wraps mod 2^32 */
+  ut_txv_set_user_timestamp(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kRealisticTaiMs - 1);
+  ut_txv_set_mock_ptp_time(ctx_, kRealisticTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+  uint64_t packet_tsc = 0;
+  uint64_t packet_ptp = 0;
+
+  ASSERT_EQ(ut_txv_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                     kMediaClockTimestamp, &packet_tsc, &packet_ptp),
+            0);
+
+  const uint64_t expected_timestamp = kRealisticTai - kFramePeriodNs;
+  EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), expected_timestamp);
+  EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_), kMediaClockTimestamp);
+  EXPECT_EQ(ut_txv_notify_frame_done_rtp_timestamp(ctx_),
+            st10_tai_to_media_clk(ut_txv_notify_frame_done_timestamp(ctx_),
+                                  ST10_VIDEO_SAMPLING_RATE_90K));
+  EXPECT_NEAR((double)ut_txv_notify_frame_done_timestamp(ctx_), (double)kRealisticTai,
+              (double)kFramePeriodNs);
 }
 
 // tv_tasklet_st22() (compressed video) has its own, separate call site that
