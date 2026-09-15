@@ -534,6 +534,10 @@ enum st22p_rx_flag {
   ST22P_RX_FLAG_EXT_FRAME = (MTL_BIT32(4)),
   /** Force the numa of the created session, both CPU and memory */
   ST22P_RX_FLAG_FORCE_NUMA = MTL_BIT32(5),
+  /**
+   * Disable ST22 boxes
+   */
+  ST22P_RX_FLAG_DISABLE_BOXES = MTL_BIT32(6),
 
   /** Enable the st22p_rx_get_frame block behavior to wait until a frame becomes
      available or timeout(default: 1s, use st22p_rx_set_block_timeout to customize) */
