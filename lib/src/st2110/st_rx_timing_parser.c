@@ -26,6 +26,12 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
     double first_pkt_time = (double)pkt_time - (trs * pkt_idx);
     slot->first_pkt_time = first_pkt_time;
     slot->meta.fpt = first_pkt_time - epoch_tmstamp;
+    /* Only pkt_idx 0 makes fpt a measurement. Otherwise it is back-extrapolated
+     * over packets that were never parsed, at a spacing those packets are known
+     * not to have kept: rv_tp_pkt_handle() withholds a whole rx burst as
+     * untrusted, so the packet anchoring the frame here is one that arrived
+     * compressed against its predecessors. */
+    slot->fpt_valid = (pkt_idx == 0);
 
     uint64_t tmstamp64 = epochs * s->frame_time_sampling;
     uint32_t tmstamp32 = tmstamp64;
@@ -33,10 +39,12 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
     double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
     slot->meta.latency = slot->meta.fpt - diff_rtp_ts_ns;
     slot->meta.rtp_offset = diff_rtp_ts;
-    if (tp->pre_rtp_tmstamp[s_port]) {
+    if (tp->pre_rtp_tmstamp_valid[s_port]) {
       slot->meta.rtp_ts_delta = rtp_tmstamp - tp->pre_rtp_tmstamp[s_port];
+      slot->rtp_ts_delta_valid = true;
     }
     tp->pre_rtp_tmstamp[s_port] = rtp_tmstamp;
+    tp->pre_rtp_tmstamp_valid[s_port] = true;
   }
 
   epoch_tmstamp = (uint64_t)(slot->cur_epochs * s->frame_time);
@@ -75,17 +83,17 @@ static void rv_tp_compliant_set_cause(struct st20_rx_tp_meta* meta, char* cause)
 
 static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
                                                struct st_rv_tp_slot* slot) {
-  /* fpt check */
-  if (slot->meta.fpt > tp->pass.tr_offset) {
+  /* fpt check, skipped while fpt is extrapolated rather than measured */
+  if (slot->fpt_valid && slot->meta.fpt > tp->pass.tr_offset) {
     rv_tp_compliant_set_cause(&slot->meta, "fpt exceed tr_offset");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
-  /* rtp ts delta check */
-  if (slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
+  /* rtp ts delta check, skipped while there is no previous frame to measure against */
+  if (slot->rtp_ts_delta_valid && slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
     rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed min");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
-  if (slot->meta.rtp_ts_delta > tp->pass.rtp_ts_delta_max) {
+  if (slot->rtp_ts_delta_valid && slot->meta.rtp_ts_delta > tp->pass.rtp_ts_delta_max) {
     rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed max");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
@@ -98,12 +106,12 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
     rv_tp_compliant_set_cause(&slot->meta, "rtp_offset exceed max");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
-  /* latency check */
-  if (slot->meta.latency < tp->pass.latency_min) {
+  /* latency check, derived from fpt so measured on the same condition */
+  if (slot->fpt_valid && slot->meta.latency < tp->pass.latency_min) {
     rv_tp_compliant_set_cause(&slot->meta, "latency exceed min");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
-  if (slot->meta.latency > tp->pass.latency_max) {
+  if (slot->fpt_valid && slot->meta.latency > tp->pass.latency_max) {
     rv_tp_compliant_set_cause(&slot->meta, "latency exceed max");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
