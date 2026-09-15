@@ -1146,12 +1146,12 @@ static int st_json_parse_rx_st40p(int idx, json_object* st40p_obj,
   /* The RX pipeline does not need a frame rate to receive, but the app uses it as the
    * expected rate when validating the measured fps, so an absent key must not silently
    * leave the zero-initialized ST_FPS_P59_94. */
-  ret = parse_st40p_fps(st40p_obj, st40p);
-  if (ret == -ST_JSON_PARSE_FAIL) {
-    err("%s, no fps, use default p59\n", __func__);
+  if (st_json_object_object_get(st40p_obj, "fps")) {
+    ret = parse_st40p_fps(st40p_obj, st40p);
+    if (ret < 0) return ret;
+  } else {
+    warn("%s, no fps, use default p59\n", __func__);
     st40p->info.fps = ST_FPS_P59_94;
-  } else if (ret < 0) {
-    return ret;
   }
 
   json_object* interlaced = st_json_object_object_get(st40p_obj, "interlaced");
