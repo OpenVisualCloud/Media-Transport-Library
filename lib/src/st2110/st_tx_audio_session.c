@@ -365,6 +365,36 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
+/* Returns the TAI instant frame->rtp_timestamp was derived from, for the
+ * caller to report as frame->ta_meta.timestamp -- mirrors
+ * tv_update_rtp_time_stamp() in st_tx_video_session.c. required_tai is the
+ * value tx_audio_session_sync_pacing() was just called with: when nonzero,
+ * that call advanced pacing->ptp_time_cursor to required_tai + trs to seed
+ * the next packet, so required_tai (not the now-advanced cursor) is the
+ * basis that actually matches pacing->rtp_time_stamp. */
+static uint64_t tx_audio_pacing_update_rtp_time_stamp(struct st_tx_audio_session_impl* s,
+                                                      enum st10_timestamp_fmt tfmt,
+                                                      uint64_t timestamp,
+                                                      uint64_t required_tai) {
+  struct st_tx_audio_session_pacing* pacing = &s->pacing;
+  uint32_t sampling_rate = (uint32_t)st30_get_sample_rate(s->ops.sampling);
+  uint64_t delta_ns = (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
+  uint64_t tai_base;
+
+  if (s->ops.flags & ST30_TX_FLAG_USER_TIMESTAMP) {
+    tai_base = (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
+                   ? st10_media_clk_to_tai((uint64_t)pacing->ptp_time_cursor,
+                                           (uint32_t)timestamp, sampling_rate)
+                   : timestamp;
+  } else {
+    tai_base = required_tai ? required_tai : (uint64_t)pacing->ptp_time_cursor;
+  }
+
+  uint64_t tai_for_rtp_ts = tai_base + delta_ns;
+  pacing->rtp_time_stamp = st10_tai_to_media_clk(tai_for_rtp_ts, sampling_rate);
+  return tai_for_rtp_ts;
+}
+
 static int tx_audio_session_init_next_meta(struct st_tx_audio_session_impl* s,
                                            struct st30_tx_frame_meta* meta) {
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
@@ -767,16 +797,24 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   if (s->calculate_time_cursor) {
     struct st_frame_trans* frame = &s->st30_frames[s->st30_frame_idx];
-    /* user timestamp control if any */
-    uint64_t required_tai =
-        tx_audio_pacing_required_tai(s, frame->ta_meta.tfmt, frame->ta_meta.timestamp);
-    tx_audio_session_sync_pacing(impl, s, false, required_tai);
-    if (ops->flags & ST30_TX_FLAG_USER_TIMESTAMP &&
-        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
-      pacing->rtp_time_stamp = (uint32_t)frame->ta_meta.timestamp;
+    enum st10_timestamp_fmt tfmt = frame->ta_meta.tfmt;
+    uint64_t timestamp = frame->ta_meta.timestamp;
+    if (s->st30_pkt_idx != 0) {
+      /* Not the frame's first packet: continue from the cursor
+       * tx_audio_session_sync_pacing() already advanced for this packet,
+       * instead of replaying the previous packet's reported timestamp. */
+      tfmt = ST10_TIMESTAMP_FMT_TAI;
+      timestamp = (uint64_t)pacing->ptp_time_cursor;
     }
+    uint64_t required_tai = tx_audio_pacing_required_tai(s, tfmt, timestamp);
+    tx_audio_session_sync_pacing(impl, s, false, required_tai);
     frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->ta_meta.timestamp = pacing->ptp_time_cursor;
+    /* Report the same TAI instant frame->rtp_timestamp (set next) was
+     * derived from, not tx_audio_session_sync_pacing()'s scheduled
+     * ptp_time_cursor -- they can legitimately differ under
+     * ST30_TX_FLAG_USER_TIMESTAMP. */
+    frame->ta_meta.timestamp =
+        tx_audio_pacing_update_rtp_time_stamp(s, tfmt, timestamp, required_tai);
     frame->ta_meta.rtp_timestamp = pacing->rtp_time_stamp;
     s->calculate_time_cursor = false; /* clear */
   }

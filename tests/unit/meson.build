@@ -74,6 +74,8 @@ unit_sources = [
   'session/st30/reorder_test.cpp',
   'session/st30/err_packets_test.cpp',
   'session/st30/corruption_test.cpp',
+  'session/st30_tx_harness.c',
+  'session/st30_tx/pacing_test.cpp',
   'session/st20_harness.c',
   'session/st20/slot_test.cpp',
   'session/st20/redundancy_test.cpp',
