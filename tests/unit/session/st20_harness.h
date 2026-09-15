@@ -99,6 +99,21 @@ void ut20_ctx_enable_rtp(ut20_test_ctx* ctx);
 int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
                       enum mtl_session_port port);
 
+/* Attach the harness's 1024-byte user-meta buffer to every frame, i.e. what an
+ * app that uses the MTL user-meta extension provides. Without this the frames
+ * carry no buffer at all and every user-meta packet is refused for lack of room,
+ * which would make a length test pass for the wrong reason. */
+void ut20_ctx_enable_user_meta(ut20_test_ctx* ctx);
+
+/* Feed one MTL user-meta packet (ST20_LEN_USER_META set in row_length).
+ * `meta_len` is the length declared on the wire and `data_len` is what the
+ * mbuf actually carries, so a test can declare more meta than the packet holds
+ * — or a datagram shorter than the header, as the kernel socket path can
+ * deliver. Requires a prior ut20_ctx_enable_user_meta(). */
+int ut20_feed_user_meta_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                            uint16_t meta_len, uint16_t data_len,
+                            enum mtl_session_port port);
+
 /* Feed one packet with an overridden RTP payload type (`pt`) — for negative
  * tests that assert PT validation. All other fields as ut20_feed_pkt(). */
 int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
@@ -211,6 +226,8 @@ uint64_t ut20_stat_wrong_ssrc(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_wrong_interlace(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_offset_dropped(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_wrong_len(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_user_meta(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_user_meta_err(const ut20_test_ctx* ctx);
 /* Bumped when a pkt cannot be placed in the frame: no seq base yet, or an
  * ST 2110-22 box parse failure. */
 uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx);

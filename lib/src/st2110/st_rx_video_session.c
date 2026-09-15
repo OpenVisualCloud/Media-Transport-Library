@@ -1651,7 +1651,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   if (line1_length & ST20_LEN_USER_META) {
     line1_length &= ~ST20_LEN_USER_META;
     dbg("%s(%d,%d): ST20_LEN_USER_META %u\n", __func__, s->idx, s_port, line1_length);
-    if (line1_length <= slot->frame->user_meta_buffer_size) {
+    /* row_length is wire data, so the copy must also fit the bytes this pkt carries */
+    size_t pkt_hdr_len = (uint8_t*)payload - rte_pktmbuf_mtod(mbuf, uint8_t*);
+    if ((line1_length <= slot->frame->user_meta_buffer_size) &&
+        (pkt_hdr_len + line1_length <= mbuf->data_len)) {
       rte_memcpy(slot->frame->user_meta, payload, line1_length);
       slot->frame->user_meta_data_size = line1_length;
     } else {
@@ -1693,7 +1696,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   /* check if valid pkt len */
   size_t pkt_payload_len = mbuf->pkt_len - sizeof(struct st_rfc4175_video_hdr);
   if (extra_rtp) pkt_payload_len -= sizeof(*extra_rtp);
-  if (pkt_payload_len != payload_length) {
+  /* a zero payload_length passes as 0 == 0 and is the divisor of the first pkt_idx */
+  if (!payload_length || (pkt_payload_len != payload_length)) {
     dbg("%s, invalid pkt_payload_len %" PRIu64 " payload_length %" PRIu64
         " retransmit %d\n",
         __func__, pkt_payload_len, payload_length,
@@ -1743,6 +1747,12 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
             s->idx, s_port, pkts_in_line, pixel_in_pkt, pkt_idx);
       } else {
         pkt_idx = offset / payload_length;
+      }
+      if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+        dbg("%s(%d,%d), drop as invalid first pkt_idx %d\n", __func__, s->idx, s_port,
+            pkt_idx);
+        s->port_user_stats.stat_pkts_idx_oo_bitmap++;
+        return -EIO;
       }
       slot->seq_id_base_u32 = seq_id_u32 - pkt_idx;
       slot->seq_id_got = true;
@@ -2163,6 +2173,12 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       }
     }
     pkt_idx = pkt_counter;
+    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+      dbg("%s(%d,%d), drop as invalid first pkt_idx %d\n", __func__, s->idx, s_port,
+          pkt_idx);
+      s->port_user_stats.stat_pkts_idx_oo_bitmap++;
+      return -EIO;
+    }
     slot->seq_id_base = seq_id - pkt_idx;
     slot->st22_payload_length = payload_length;
     slot->seq_id_got = true;
@@ -2176,7 +2192,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   if (pkt_idx > slot->last_pkt_idx[s_port]) slot->last_pkt_idx[s_port] = pkt_idx;
 
   /* copy payload */
-  uint32_t offset;
+  uint64_t offset;
   if (!pkt_counter) { /* first pkt */
     /* box hdr length was measured against the pkt that declared it; a later
      * pkt with pkt_counter 0 may be shorter and underflow payload_length */
@@ -2188,11 +2204,18 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     payload += slot->st22_box_hdr_length;
     payload_length -= slot->st22_box_hdr_length;
   } else {
-    offset = pkt_counter * slot->st22_payload_length - slot->st22_box_hdr_length;
+    /* the slot keeps both lengths across a recycle, so a fresh short payload
+     * length can pair with the previous frame's box hdr length and underflow */
+    if (slot->st22_payload_length < slot->st22_box_hdr_length) {
+      s->port_user_stats.stat_pkts_wrong_len_dropped++;
+      return -EIO;
+    }
+    offset =
+        (uint64_t)pkt_counter * slot->st22_payload_length - slot->st22_box_hdr_length;
   }
   if ((offset + payload_length) > s->st20_frame_size) {
-    dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
-        offset, s->st20_frame_size);
+    dbg("%s(%d,%d): invalid offset %" PRIu64 " frame size %" PRIu64 "\n", __func__,
+        s->idx, s_port, offset, s->st20_frame_size);
     s->port_user_stats.stat_pkts_offset_dropped++;
     return -EIO;
   }
