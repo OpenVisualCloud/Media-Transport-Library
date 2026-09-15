@@ -181,7 +181,7 @@ class Nicctl:
         self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
         try:
             self.connection.execute_command(
-                f"{self.nicctl} disable_vf {pci_id}",
+                f"sudo {self.nicctl} disable_vf {pci_id}",
                 shell=True,
                 timeout=_NICCTL_TIMEOUT,
             )
@@ -209,7 +209,7 @@ class Nicctl:
         if self.vfio_list(pci_id):
             self.disable_vf(pci_id)
         self.connection.execute_command(
-            self.nicctl + " bind_pmd " + pci_id,
+            f"sudo {self.nicctl} bind_pmd {pci_id}",
             shell=True,
             timeout=_NICCTL_TIMEOUT,
         )
@@ -219,7 +219,7 @@ class Nicctl:
         self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
         try:
             self.connection.execute_command(
-                self.nicctl + " bind_kernel " + pci_id,
+                f"sudo {self.nicctl} bind_kernel {pci_id}",
                 shell=True,
                 timeout=_NICCTL_TIMEOUT,
             )

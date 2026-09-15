@@ -18,7 +18,7 @@ the same surface.
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Callable, Optional, Protocol
 
 from compliance.compliance_client import PcapComplianceClient, no_verdict_reason
 from mfd_connect.exceptions import ConnectionCalledProcessError
@@ -43,6 +43,13 @@ CAPTURE_SETTLE_TIME = 12
 # every dropped ingest seen so far -- so retry that before failing the test.
 _ANALYSIS_ATTEMPTS = 3
 
+# Slice of :meth:`ComplianceSession.arm`'s minute-plus wait between checks that
+# the process under test is still alive.
+_LIVENESS_POLL_INTERVAL = 2
+
+# Returns the process under test's return code, None while it is still running.
+_ExitCode = Optional[Callable[[], Optional[int]]]
+
 
 def _video_streams(report: dict) -> list[dict]:
     """Return every ``media_type == "video"`` stream in an EBU LIST report."""
@@ -65,6 +72,22 @@ def _wide_video_streams(report: dict) -> list[dict]:
         for s in _video_streams(report)
         if s.get("global_video_analysis", {}).get("compliance") == "wide"
     ]
+
+
+def _capture_loss(report: dict) -> Optional[tuple[int, int]]:
+    """``(missing, present)`` packet counts EBU LIST reports, None if lossless.
+
+    ``statistics.dropped_packet_count`` is derived from RTP sequence gaps in the
+    uploaded pcap, over every stream it found -- a report it could not classify
+    as video carries the counts but no timing verdict at all.
+    """
+    missing = 0
+    present = 0
+    for stream in report.get("streams") or []:
+        statistics = stream.get("statistics") or {}
+        missing += statistics.get("dropped_packet_count") or 0
+        present += statistics.get("packet_count") or 0
+    return (missing, present) if missing else None
 
 
 # EBU LIST's own packing_mode enum (pi-list cpp/libs/st2110/lib/include/ebu/
@@ -285,7 +308,7 @@ class ComplianceCheck(Protocol):
 
     def skip(self, reason: str) -> None: ...
 
-    def arm(self, intent: CaptureIntent) -> None: ...
+    def arm(self, intent: CaptureIntent, *, exit_code: _ExitCode = None) -> None: ...
 
     def evaluate(self, intent: CaptureIntent, fail_on_error: bool = True) -> bool: ...
 
@@ -326,7 +349,9 @@ class ComplianceSession:
     def skip(self, reason: str) -> None:
         """Opt out of compliance checking for this test at runtime.
 
-        Must be called before ``execute_test()``. Stops any capture in
+        Must be called before the verdict runs: a test opting out calls it
+        before ``execute_test()``, :meth:`arm` mid-run when the process under
+        test dies before the capture window. Stops any capture in
         progress and satisfies the evaluated-exactly-once invariant, since a
         skipped test has nothing left to evaluate. Raises ``RuntimeError`` if
         called after the verdict already ran -- a silent no-op there would
@@ -342,8 +367,13 @@ class ComplianceSession:
         self._recorder.stop()
         logger.info("Compliance capture skipped: %s", reason)
 
-    def arm(self, intent: CaptureIntent) -> None:
-        """Wait for steady state, then start the capture. No-op when skipped."""
+    def arm(self, intent: CaptureIntent, *, exit_code: _ExitCode = None) -> None:
+        """Wait for steady state, then start the capture. No-op when skipped.
+
+        *exit_code* is ``Application._safe_return_code``: a process that died
+        during init transmits nothing, so do not wait it out. Left None, the
+        whole budget is waited out as before.
+        """
         if not self.enabled:
             return
         try:
@@ -352,7 +382,8 @@ class ComplianceSession:
                     "Waiting %ds for PTP sync before netsniff capture",
                     intent.ptp_wait,
                 )
-                time.sleep(intent.ptp_wait)
+                if not self._sleep_while_alive(intent.ptp_wait, exit_code):
+                    return
             # ST 2110-21 is a steady-state conformance measurement. The first
             # frames of a session carry startup transients (MTL session/
             # framebuffer init, first-touch page faults on the source file,
@@ -363,7 +394,8 @@ class ComplianceSession:
                     "Waiting %ds for stream to settle before capture",
                     intent.settle_time,
                 )
-                time.sleep(intent.settle_time)
+                if not self._sleep_while_alive(intent.settle_time, exit_code):
+                    return
             if not intent.dst_ips:
                 logger.warning("No destination IP available for netsniff capture")
                 return
@@ -455,8 +487,38 @@ class ComplianceSession:
                 "or pcap_capture.skip(...)."
             )
 
-    def _fail(self, msg: str, fail_on_error: bool) -> None:
-        update_compliance_result(self.node_id, "Fail")
+    def _sleep_while_alive(self, seconds: int, exit_code: _ExitCode) -> bool:
+        """Sleep *seconds* in slices while the process under test is running.
+
+        True when the whole budget elapsed (or *exit_code* is None), False when
+        the process is gone -- the capture is then already skipped and the
+        caller must not capture.
+        """
+        if exit_code is None:
+            time.sleep(seconds)
+            return True
+        deadline = time.monotonic() + seconds
+        while True:
+            code = exit_code()
+            if code is not None:
+                self.skip(
+                    f"the process under test exited with return code {code} "
+                    "before the capture window opened, so it transmitted "
+                    "nothing to analyse"
+                )
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(_LIVENESS_POLL_INTERVAL, remaining))
+
+    def _fail(self, msg: str, fail_on_error: bool, *, result: str = "Fail") -> None:
+        """Record a compliance failure and raise it.
+
+        *result* is the CSV report cell for this test; a caller overrides the
+        bare ``"Fail"`` when that alone would misattribute the failure.
+        """
+        update_compliance_result(self.node_id, result)
         if fail_on_error:
             log_fail(msg)
         else:
@@ -475,10 +537,9 @@ class ComplianceSession:
         disagrees with the configured MTL values (all always checked, no
         opt-out marker, since a mismatch means the stream isn't actually
         using the requested wire format). Narrow (or narrow linear) is the
-        expected default for MTL; a "wide" verdict most often means the
-        capture PF and the primary/TX PF are not properly PTP-synchronized
-        (sync the system clock to the capturing NIC's PHC via phc2sys before
-        capture).
+        expected default for MTL. Raises ahead of any of that when the capture
+        itself lost packets: the analysed capture has to be the same stream
+        that was transmitted (see :meth:`_fetch_report`).
 
         When ``fail_on_error`` is True, also records a hard pytest failure
         via ``log_fail``; when False, only logs at INFO so soft-fail callers
@@ -498,8 +559,9 @@ class ComplianceSession:
         pass: a non-compliance verdict, and a report carrying no verdict at
         all because the capture held no streams (see
         :func:`no_verdict_reason`) -- the latter only after re-analysing the
-        capture, see :data:`_ANALYSIS_ATTEMPTS`. Removes the pcap file
-        afterward regardless of outcome.
+        capture, see :data:`_ANALYSIS_ATTEMPTS`. Raises too, ahead of either
+        verdict, when the capture lost packets of its own. Removes the pcap
+        file afterward regardless of outcome.
         """
         capturer = self._recorder
         ebu_ip = self.ebu_server.get("ebu_ip", None)
@@ -565,6 +627,23 @@ class ComplianceSession:
                     fail_on_error,
                 )
             result, report = uploader.check_compliance(report)
+            # Ahead of the verdict and whatever it was: a capture with RTP
+            # sequence gaps is not the stream that was transmitted, so a
+            # "narrow" read off it is no more trustworthy than a "not
+            # compliant" one.
+            loss = _capture_loss(report)
+            if loss:
+                missing, present = loss
+                percent = 100.0 * missing / (missing + present)
+                self._fail(
+                    "PCAP compliance check failed: the capture is not a "
+                    "faithful copy of the transmitted stream, so no ST "
+                    "2110-21 verdict can be drawn from it. EBU LIST counted "
+                    f"{missing} packet(s) missing against {present} present, "
+                    f"{percent:.1f}% of the sequence span.",
+                    fail_on_error,
+                    result=f"Fail (capture lost {percent:.1f}% of packets)",
+                )
             if not result:
                 logger.info(f"Compliance report: {report}")
                 self._fail(
@@ -617,12 +696,9 @@ class ComplianceSession:
             msg = (
                 f"PCAP compliance check failed: {len(wide_streams)} video "
                 "stream(s) are only ST 2110-21 'wide' compliant (not "
-                "narrow/narrow_linear). This usually means the capture PF "
-                "and the primary/TX PF are not properly PTP-synchronized -- "
-                "sync the system clock to the capturing NIC's PHC (phc2sys) "
-                'before capture. If pacing="wide" wasn\'t configured for '
-                "this test but wide compliance is still expected/acceptable, "
-                "mark it with @pytest.mark.allow_wide_compliance."
+                'narrow/narrow_linear). If pacing="wide" wasn\'t configured '
+                "for this test but wide compliance is still expected/"
+                "acceptable, mark it with @pytest.mark.allow_wide_compliance."
             )
             self._fail(msg, fail_on_error)
 
@@ -703,7 +779,7 @@ class _NullComplianceSession:
     def skip(self, reason: str) -> None:
         pass
 
-    def arm(self, intent: CaptureIntent) -> None:
+    def arm(self, intent: CaptureIntent, *, exit_code: _ExitCode = None) -> None:
         pass
 
     def evaluate(self, intent: CaptureIntent, fail_on_error: bool = True) -> bool:

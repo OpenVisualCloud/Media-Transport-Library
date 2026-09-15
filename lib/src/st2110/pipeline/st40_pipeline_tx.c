@@ -493,6 +493,7 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
    * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
    * even while other FREE frames remain (spurious failure under contention). */
   framebuff = tx_st40p_claim_available(ctx, ST40P_TX_FRAME_FREE, ST40P_TX_FRAME_IN_USER);
+  if (framebuff && ctx->block_get) ST_BLOCK_WAKE_CONSUME(ctx);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&

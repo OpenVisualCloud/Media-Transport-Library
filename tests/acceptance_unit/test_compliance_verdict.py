@@ -1,13 +1,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 
-"""How a capture EBU LIST dropped is told apart from one that held no streams.
+"""Which captures may yield an ST 2110-21 verdict, and what a failure blames.
+
+Three states have to stay distinct: a capture EBU LIST dropped on ingest, one
+it analysed but found no streams in, and one it analysed that is missing
+packets of the stream it claims to describe.
 
 The acceptance tree imports five packages only its venv installs. Stand them
 in, since none is reached by the code under test, and import the real modules:
 a stub of the code itself would not notice a rename or a changed signature.
 """
 
+import ast
 import logging
 import sys
 import types
@@ -16,6 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+ROOT = Path(__file__).resolve().parents[2]
+CONFTEST = ROOT / "tests/acceptance/conftest.py"
 sys.path.append(str(Path(__file__).resolve().parents[1] / "acceptance"))
 for _name in (
     "mfd_common_libs",
@@ -41,6 +48,7 @@ from compliance.compliance_client import (  # noqa: E402
 from mtl_engine import pcap_compliance  # noqa: E402
 from mtl_engine.pcap_compliance import (  # noqa: E402
     _ANALYSIS_ATTEMPTS,
+    CaptureIntent,
     ComplianceSession,
 )
 
@@ -62,6 +70,31 @@ COMPLIANT_REPORT = {
     "analyzed": True,
     "not_compliant_streams": 0,
     "streams": [{"media_type": "video"}],
+}
+
+# Both verbatim from the nightly under analysis: a 2160p119 capture EBU LIST
+# could not classify at all -- no timing analysis, only the dropped-packet
+# counts -- and one it did reach a "narrow" verdict on with 435 packets of the
+# stream missing from the file it read them off.
+LOSSY_UNCLASSIFIED_REPORT = {
+    "analyzed": True,
+    "not_compliant_streams": 1,
+    "streams": [
+        {
+            "media_type": "unknown",
+            "statistics": {"dropped_packet_count": 47801, "packet_count": 65832},
+        }
+    ],
+}
+LOSSY_NARROW_REPORT = {
+    "analyzed": True,
+    "not_compliant_streams": 0,
+    "streams": [
+        {
+            "media_type": "video",
+            "statistics": {"dropped_packet_count": 435, "packet_count": 65832},
+        }
+    ],
 }
 
 
@@ -168,12 +201,20 @@ class _Analyser:
         return self.download_report()
 
 
-class FetchReportTests(unittest.TestCase):
+class _FetchHarness:
+    """Drives ``ComplianceSession._fetch_report`` against queued reports.
+
+    Not a TestCase itself, so the cases below inherit the harness without
+    unittest collecting -- and re-running -- each other's tests.
+    """
+
     def setUp(self):
         # _fail() reports through pytest_check and the CSV report; pytest_check
         # would turn every failure these cases expect into a real one.
         patch.object(pcap_compliance, "log_fail", Mock()).start()
-        patch.object(pcap_compliance, "update_compliance_result", Mock()).start()
+        self.recorded = patch.object(
+            pcap_compliance, "update_compliance_result", Mock()
+        ).start()
         self.addCleanup(patch.stopall)
         self.connection = Mock()
         self.connection.execute_command.return_value = SimpleNamespace(
@@ -200,6 +241,8 @@ class FetchReportTests(unittest.TestCase):
     def commands(self):
         return [call.args[0] for call in self.connection.execute_command.call_args_list]
 
+
+class FetchReportTests(_FetchHarness, unittest.TestCase):
     def test_a_dropped_ingest_is_recovered_by_re_analysing_it(self):
         # The empty first report was the analyser losing the capture, not the
         # capture being empty, so the file it already holds analyses fine.
@@ -240,6 +283,151 @@ class FetchReportTests(unittest.TestCase):
         upload = self.connection.execute_command.call_args_list[0]
         self.assertIn("--password-stdin", upload.args[0])
         self.assertEqual(upload.kwargs["input_data"], f"{PASSWORD}\n")
+
+
+def _conftest_compliance_failed(recorded):
+    """Run conftest's own ``compliance_failed`` against a recorded cell value.
+
+    It is a closure inside the ``log_case`` fixture and conftest imports pytest,
+    so exec just that function with its two free names supplied. Reproducing the
+    predicate here instead would test this file against itself.
+    """
+    node = next(
+        n
+        for n in ast.walk(ast.parse(CONFTEST.read_text()))
+        if isinstance(n, ast.FunctionDef) and n.name == "compliance_failed"
+    )
+    scope = {"case_id": "node_id", "get_compliance_result": lambda _case: recorded}
+    exec(
+        compile(ast.Module(body=[node], type_ignores=[]), str(CONFTEST), "exec"), scope
+    )
+    return scope["compliance_failed"]()
+
+
+class LossyCaptureTests(_FetchHarness, unittest.TestCase):
+    """A capture missing packets of its own fails, as the capture's failure.
+
+    VRX and Cinst are computed from the intervals between the packets in the
+    pcap, so a file missing some of them measures a stream that was never sent.
+    Six 2160p119 cases in one nightly were failed on captures missing 42-50% of
+    their packets while MTL's own RX counters and frame integrity were clean,
+    and reporting that as a stream defect sent three rounds of diagnosis after
+    a transmitter that was working.
+    """
+
+    def message(self, *reports):
+        with self.assertRaises(AssertionError) as raised:
+            self.fetch(*reports)
+        return str(raised.exception)
+
+    def cell(self):
+        """The Compliance cell this verdict wrote to the CSV report."""
+        return self.recorded.call_args.args[1]
+
+    def test_a_lossy_capture_fails_and_the_row_names_the_capture(self):
+        # "Fail" alone reads as a stream defect, which is the misattribution
+        # this gate exists to prevent; the percentage redirects to the pcap.
+        self.assertIn("42.1%", self.message(LOSSY_UNCLASSIFIED_REPORT))
+        self.assertEqual(self.cell(), "Fail (capture lost 42.1% of packets)")
+
+    def test_a_lossy_capture_fails_even_when_ebu_reached_a_verdict(self):
+        # "narrow" is not evidence the loss was harmless: it is a measurement
+        # of a capture missing part of the stream it claims to describe, so it
+        # is no more trustworthy than "not compliant" would be.
+        self.message(LOSSY_NARROW_REPORT)
+        self.assertEqual(self.cell(), "Fail (capture lost 0.7% of packets)")
+
+    def test_a_lossless_non_compliance_still_fails_as_itself(self):
+        # The loss gate must not swallow the verdict it precedes, or a real
+        # pacing regression on a clean capture stops failing.
+        self.message({**COMPLIANT_REPORT, "not_compliant_streams": 1})
+        self.assertEqual(self.cell(), "Fail")
+
+    def test_conftest_reads_the_recorded_row_back_as_a_failure(self):
+        # The cell is not just display: conftest reads it back to choose the
+        # failure wording, and on a soft fail -- where the call phase itself
+        # passed -- to decide whether the case is reported failed at all. That
+        # test was ``== "Fail"``, so naming the capture in the cell reported a
+        # soft capture-loss failure as a pass. The prefix match must not widen
+        # into "anything non-empty fails" either: the rest mean the opposite.
+        for recorded, failed in (
+            ("Fail", True),
+            ("Fail (capture lost 42.1% of packets)", True),
+            ("Pass", False),
+            ("Pass (wide)", False),
+            (None, False),
+        ):
+            with self.subTest(recorded=recorded):
+                self.assertIs(_conftest_compliance_failed(recorded), failed)
+
+
+class _Clock:
+    """``time`` with no wall clock: only the sleeps under test move it."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class ArmLivenessTests(unittest.TestCase):
+    """arm() must not sniff a transmitter that is already gone.
+
+    ``--pacing_way tsn`` fails mtl_init on the RX VF, so RxTxApp was gone at
+    t+24s with return code 244; arming regardless spent 2m52s per case and then
+    reported the empty capture as the headline instead of the return code.
+    """
+
+    def setUp(self):
+        self.clock = _Clock()
+        patch.object(pcap_compliance, "time", self.clock).start()
+        self.addCleanup(patch.stopall)
+        self.recorder = Mock(packets_capture=None)
+        self.session = object.__new__(ComplianceSession)
+        self.session.__dict__.update(
+            _recorder=self.recorder, _skip_reason=None, _evaluated=False
+        )
+        # The production budget: ptp_wait 50s + settle 12s before 70s of capture.
+        self.intent = CaptureIntent(
+            dst_ips=("239.168.85.20",), capture_time=70, ptp_wait=50
+        )
+
+    def test_a_dead_process_is_not_captured(self):
+        self.session.arm(self.intent, exit_code=lambda: 244)
+        self.recorder.capture.assert_not_called()
+        self.assertFalse(self.session.enabled)
+        self.assertIn("244", self.session._skip_reason)
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_a_process_that_dies_mid_wait_ends_the_wait(self):
+        codes = [None, None, 244]
+        self.session.arm(self.intent, exit_code=lambda: codes.pop(0))
+        self.recorder.capture.assert_not_called()
+        self.assertLessEqual(
+            sum(self.clock.sleeps), 2 * pcap_compliance._LIVENESS_POLL_INTERVAL
+        )
+
+    def test_a_live_process_still_gets_its_whole_budget(self):
+        # No return code means "still running": a process slow to reach steady
+        # state must not be mistaken for a dead one.
+        self.session.arm(self.intent, exit_code=lambda: None)
+        self.recorder.capture.assert_called_once_with(capture_time=70)
+        self.assertEqual(sum(self.clock.sleeps), 62)
+        self.assertLessEqual(
+            max(self.clock.sleeps), pcap_compliance._LIVENESS_POLL_INTERVAL
+        )
+
+    def test_a_caller_without_a_handle_is_unaffected(self):
+        # ffmpeg.py and gstreamer.py arm from after_last_start with no handle.
+        self.session.arm(self.intent)
+        self.recorder.capture.assert_called_once_with(capture_time=70)
+        self.assertEqual(self.clock.sleeps, [50, 12])
 
 
 if __name__ == "__main__":

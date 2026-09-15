@@ -667,7 +667,9 @@ class Application(ABC):
                 build=build,
                 test_time=effective_test_time,
                 proc_wait_timeout=wait_timeout,
-                after_first_start=lambda _proc: compliance.arm(intent),
+                after_first_start=lambda proc: compliance.arm(
+                    intent, exit_code=lambda: self._safe_return_code(proc)
+                ),
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)
