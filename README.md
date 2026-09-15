@@ -3,12 +3,17 @@
 > [!TIP]
 > [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
 
+[![License](https://img.shields.io/badge/license-BSD_3_Clause-stable.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/LICENSE)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://securityscorecards.dev/viewer/?uri=github.com/OpenVisualCloud/Media-Transport-Library)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/7351/badge)](https://www.bestpractices.dev/projects/7351)
+
 [![Base build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml)
-[![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
-[![OpenSSF
-Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
-[![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
+[![Gtest](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/nightly-gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/nightly-gtest.yml)
+[![Pytest](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/nightly-pytest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/nightly-pytest.yml)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/30596/badge.svg)](https://scan.coverity.com/projects/media-transport-library)
+[![Linter Scan Status](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/linter.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/linter.yml)
+[![Trivy Scan Status](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/trivy.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/trivy.yml)
+[![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
 
 > [!IMPORTANT]  
 > All Source code and features on the main branch are for the purpose of testing or evaluation and not production ready. Evaluated code is tagged with the corresponding release version.
