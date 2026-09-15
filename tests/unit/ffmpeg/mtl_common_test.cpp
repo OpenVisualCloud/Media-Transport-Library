@@ -608,6 +608,27 @@ TEST_F(FfmpegMtlCommonTest, SharedHandleRejectsDifferentSipConfiguration) {
   EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
 }
 
+TEST_F(FfmpegMtlCommonTest, SharedHandleAcceptsOmittedSipOnSecondSession) {
+  /* The documented multi-session command line states -p_sip once, on the first
+   * input; later inputs must inherit it rather than be rejected. */
+  StDevArgs first = {};
+  first.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  first.sip[MTL_PORT_P] = const_cast<char*>("192.0.2.1");
+  StDevArgs second = first;
+  second.sip[MTL_PORT_P] = nullptr;
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&first, &idx);
+  ASSERT_NE(handle, nullptr);
+
+  mtl_handle shared = ut_ffmpeg_get(&second, &idx);
+  EXPECT_EQ(shared, handle);
+  if (shared) {
+    EXPECT_EQ(ut_ffmpeg_put(shared), 0);
+  }
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+  EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
+}
+
 TEST_F(FfmpegMtlCommonTest, SharedHandleRejectsDifferentQueueConfiguration) {
   StDevArgs first = {};
   first.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
