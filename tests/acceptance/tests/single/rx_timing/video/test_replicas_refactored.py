@@ -2,7 +2,7 @@
 # Copyright(c) 2026 Intel Corporation
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 
 @pytest.mark.nightly
@@ -45,7 +45,7 @@ def test_rx_timing_video_replicas_refactored(
         test_mode="multicast",
         width=video_file["width"],
         height=video_file["height"],
-        framerate=f"p{video_file['fps']}",
+        framerate=parse_fps_to_pformat(video_file["fps"]),
         pixel_format=video_file["file_format"],
         transport_format=video_file["format"],
         input_file=video_path,
