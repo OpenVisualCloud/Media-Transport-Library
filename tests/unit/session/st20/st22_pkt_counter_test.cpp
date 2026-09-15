@@ -50,7 +50,41 @@ class St22RxBitmapEdgeTest : public St22RxPktCounterTest {
   }
 };
 
+/* Frame 32 * 40 = 1280 bytes, the widest the harness geometry allows. The
+ * reported pair's wrapped 32 bit sum is 964, so it lands INSIDE a 1280 byte
+ * frame: the guard is genuinely bypassed rather than incidentally refused. */
+class St22RxReportedPairTest : public St22RxPktCounterTest {
+ protected:
+  int pkts_per_frame() const override {
+    return 32;
+  }
+};
+
 /* ── the defects ───────────────────────────────────────────────────────── */
+
+/* The externally reported pair, byte for byte: p_counter 819 and sep_counter 1638
+ * recombine to 3355443, and 3355443 * 1280 is 0xFFFFFF00, so in 32 bit arithmetic
+ * the box-shifted offset 0xFFFFFEC4 plus 1280 wraps to 964 -- inside the frame,
+ * guard satisfied, 1280 bytes written ~4 GiB past frame->addr. */
+TEST_F(St22RxReportedPairTest, ReportedCounterPairRejected) {
+  const uint32_t counter = 819 + 1638 * 2048; /* 3355443 */
+  uint8_t payload[1280] = {0};
+
+  /* pkt 1 declares the boxes and publishes the 1280 byte payload length */
+  ASSERT_LE(ut20_st22_build_boxes(payload, 42, 18), sizeof(payload));
+  ASSERT_EQ(ut20_feed_st22_pkt(ctx_, 100, 0x11223344, 0, false, payload, sizeof(payload),
+                               MTL_SESSION_PORT_P),
+            0);
+  /* boxes accepted, so the 60 byte shift in the offset below is the real one */
+  ASSERT_EQ(ut20_stat_st22_boxes(ctx_), 1u);
+  ASSERT_EQ(received(), 1u);
+
+  EXPECT_LT(ut20_feed_st22_pkt(ctx_, 101, 0x11223344, counter, false, payload,
+                               sizeof(payload), MTL_SESSION_PORT_P),
+            0);
+  EXPECT_EQ(offset_dropped(), 1u);
+  EXPECT_EQ(received(), 1u);
+}
 
 /* Pkt 1 publishes st22_payload_length 1024; pkt 2 multiplies it by the max wire
  * counter, wrapping the product to 0xFFFFFC00 and the 32 bit guard sum to 0, so
