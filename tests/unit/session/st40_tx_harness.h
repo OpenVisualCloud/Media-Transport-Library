@@ -23,6 +23,7 @@ void ut_txa_set_cur_epochs(ut_txa_ctx* ctx, uint64_t cur_epochs);
 void ut_txa_set_frame_time(ut_txa_ctx* ctx, long double frame_time_ns);
 void ut_txa_set_user_pacing(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_exact_user_pacing(ut_txa_ctx* ctx, bool enable);
+void ut_txa_set_user_timestamp(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_mock_ptp_time(ut_txa_ctx* ctx, uint64_t ptp_ns);
 void ut_txa_set_mock_tsc_time(ut_txa_ctx* ctx, uint64_t tsc_ns);
 uint64_t ut_txa_calc_epoch(ut_txa_ctx* ctx, uint64_t cur_tai, uint64_t required_tai);

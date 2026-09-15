@@ -47,8 +47,13 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 #define ST40_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st40_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * st40_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ * If enabled, lib assigns the rtp timestamp from st40_tx_frame_meta.timestamp,
+ * interpreted per st40_tx_frame_meta.tfmt. ST10_TIMESTAMP_FMT_TAI is used directly.
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK is unwrapped against the TAI instant the session's
+ * pacing has scheduled for the current frame, to the nearest matching TAI instant,
+ * so the supplied ticks must represent a time within about half a 32-bit tick
+ * cycle (~6.6 hours at 90kHz) of that instant, or the unwrap resolves to the wrong
+ * cycle.
  */
 #define ST40_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**

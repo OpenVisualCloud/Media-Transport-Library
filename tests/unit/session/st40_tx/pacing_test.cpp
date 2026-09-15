@@ -610,3 +610,62 @@ TEST_F(St40TxPacingTest, ExactZeroTimestampIsFlaggedAndFallsBackToEpochPacing) {
   EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kCurrentTai);
   EXPECT_EQ(ut_txa_tsc_time_cursor(ctx_), kCurrentTsc);
 }
+
+// USER_TIMESTAMP (without USER_PACING) reports frame->rtp_timestamp derived
+// from the app's raw TAI value, but the default epoch pacing schedules the
+// actual TX instant independently (kCurrentTai here, unrelated to
+// kTargetTai). frame->tc_meta.timestamp must track the same TAI instant the
+// RTP timestamp came from (kTargetTai), not the unrelated pacing cursor --
+// otherwise converting the reported timestamp back to media-clock ticks would
+// not reproduce the reported rtp_timestamp.
+TEST_F(St40TxPacingTest, FrameTaskletUserTimestampReportsRtpConsistentTai) {
+  ut_txa_set_user_timestamp(ctx_, true);
+  ut_txa_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txa_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
+  uint64_t packet_tsc = 0;
+
+  ASSERT_EQ(
+      ut_txa_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_TAI, kTargetTai, &packet_tsc), 0);
+
+  EXPECT_EQ(ut_txa_ptp_time_cursor(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txa_notify_frame_done_timestamp(ctx_), kTargetTai);
+  EXPECT_EQ(ut_txa_notify_frame_done_rtp_timestamp(ctx_),
+            st10_tai_to_media_clk(kTargetTai, kMediaClockRate));
+  EXPECT_EQ(
+      ut_txa_notify_frame_done_rtp_timestamp(ctx_),
+      st10_tai_to_media_clk(ut_txa_notify_frame_done_timestamp(ctx_), kMediaClockRate))
+      << "rtp_timestamp must derive from the same TAI instant reported in "
+         "frame->tc_meta.timestamp";
+}
+
+// Same USER_TIMESTAMP contract, but with the app's timestamp arriving as
+// ST10_TIMESTAMP_FMT_MEDIA_CLK, anchored on a large realistic TAI epoch
+// rather than a small round number near zero -- st10_media_clk_to_ns()'s
+// zero-based expansion of the raw ticks would land far from kRealisticTai,
+// so an unanchored fallback is clearly distinguishable from the correct
+// answer.
+TEST_F(St40TxPacingTest, FrameTaskletUserTimestampMediaClkAnchorsToRealisticEpoch) {
+  constexpr uint64_t kRealisticTaiMs = 1755000000000ULL; /* ~2025, in ms */
+  constexpr uint64_t kRealisticTai = kRealisticTaiMs * kNanosecondsPerMillisecond;
+  const uint32_t anchor_ticks = st10_tai_to_media_clk(kRealisticTai, kMediaClockRate);
+  const uint32_t kMediaClockTimestamp = anchor_ticks + 90; /* +1ms, wraps mod 2^32 */
+  ut_txa_set_user_timestamp(ctx_, true);
+  ut_txa_set_cur_epochs(ctx_, kRealisticTaiMs - 1);
+  ut_txa_set_mock_ptp_time(ctx_, kRealisticTai);
+  ut_txa_set_mock_tsc_time(ctx_, kCurrentTsc);
+  uint64_t packet_tsc = 0;
+
+  ASSERT_EQ(ut_txa_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                     kMediaClockTimestamp, &packet_tsc),
+            0);
+
+  const uint64_t expected_timestamp = kRealisticTai + kFramePeriodNs;
+  EXPECT_EQ(ut_txa_notify_frame_done_timestamp(ctx_), expected_timestamp);
+  EXPECT_EQ(ut_txa_notify_frame_done_rtp_timestamp(ctx_), kMediaClockTimestamp);
+  EXPECT_EQ(
+      ut_txa_notify_frame_done_rtp_timestamp(ctx_),
+      st10_tai_to_media_clk(ut_txa_notify_frame_done_timestamp(ctx_), kMediaClockRate));
+  EXPECT_NEAR((double)ut_txa_notify_frame_done_timestamp(ctx_), (double)kRealisticTai,
+              2.0 * (double)kFramePeriodNs);
+}

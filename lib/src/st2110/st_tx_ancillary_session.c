@@ -444,18 +444,26 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
-static void tx_ancillary_update_rtp_time_stamp(struct st_tx_ancillary_session_impl* s,
-                                               enum st10_timestamp_fmt tfmt,
-                                               uint64_t timestamp) {
+/* Returns the TAI instant frame->rtp_timestamp was derived from, for the
+ * caller to report as frame->tc_meta.timestamp. */
+static uint64_t tx_ancillary_update_rtp_time_stamp(struct st_tx_ancillary_session_impl* s,
+                                                   enum st10_timestamp_fmt tfmt,
+                                                   uint64_t timestamp) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
+  uint64_t tai_for_rtp_ts;
 
   if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
-    pacing->rtp_time_stamp =
-        st10_get_media_clk(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
+    tai_for_rtp_ts =
+        (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
+            ? st10_media_clk_to_tai((uint64_t)pacing->ptp_time_cursor,
+                                    (uint32_t)timestamp, s->fps_tm.sampling_clock_rate)
+            : timestamp;
   } else {
-    pacing->rtp_time_stamp =
-        st10_tai_to_media_clk(pacing->ptp_time_cursor, s->fps_tm.sampling_clock_rate);
+    tai_for_rtp_ts = pacing->ptp_time_cursor;
   }
+  pacing->rtp_time_stamp =
+      st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
+  return tai_for_rtp_ts;
 }
 
 static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_impl* s,
@@ -992,9 +1000,10 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       }
     }
     tx_ancillary_session_sync_pacing(impl, s, required_tai);
-    tx_ancillary_update_rtp_time_stamp(s, frame->tc_meta.tfmt, frame->tc_meta.timestamp);
+    uint64_t rtp_ts_tai = tx_ancillary_update_rtp_time_stamp(s, frame->tc_meta.tfmt,
+                                                             frame->tc_meta.timestamp);
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->tc_meta.timestamp = pacing->ptp_time_cursor;
+    frame->tc_meta.timestamp = rtp_ts_tai;
     frame->tc_meta.rtp_timestamp = pacing->rtp_time_stamp;
     frame->tc_meta.epoch = pacing->cur_epochs;
     /* init to next field */

@@ -127,6 +127,13 @@ void ut_txa_set_exact_user_pacing(ut_txa_ctx* ctx, bool enable) {
     ctx->session.ops.flags &= ~ST40_TX_FLAG_EXACT_USER_PACING;
 }
 
+void ut_txa_set_user_timestamp(ut_txa_ctx* ctx, bool enable) {
+  if (enable)
+    ctx->session.ops.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+  else
+    ctx->session.ops.flags &= ~ST40_TX_FLAG_USER_TIMESTAMP;
+}
+
 void ut_txa_set_mock_ptp_time(ut_txa_ctx* ctx, uint64_t ptp_ns) {
   ctx->mock_ptp_ns = ptp_ns;
 }
