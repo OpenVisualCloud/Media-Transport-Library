@@ -105,6 +105,52 @@ TEST(St22PipelineTxDropWhenLate, OnTimeFrameIsTransmittedNotDropped) {
   ut22p_tx_ctx_destroy(ctx);
 }
 
+/* The grace window must survive an ops.fps the timing table does not contain:
+ * both boundaries are driven with such an fps, so only an intact one-period
+ * (40ms at p25) window passes. */
+TEST(St22PipelineTxDropWhenLate, WindowSurvivesOpsFpsOutsideTimingTable) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_set_flags(ctx, ST22P_TX_FLAG_DROP_WHEN_LATE | ST22P_TX_FLAG_USER_PACING);
+  /* window cached from P25; ops.fps left at a rate absent from st_fps_timings[] */
+  ut22p_tx_set_fps_mismatch(ctx, ST_FPS_P25, ST_FPS_MAX);
+
+  CallbackCtx cb_ctx;
+  ut22p_tx_set_notify_frame_done(ctx, OnFrameDone, &cb_ctx);
+  ut22p_tx_set_notify_frame_late(ctx, OnFrameLate, &cb_ctx);
+
+  /* last ns inside the window: must still be transmitted */
+  struct st_frame* frame = ut22p_tx_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  frame->timestamp = kBaseTaiNs;
+  ASSERT_EQ(ut22p_tx_put_frame(ctx, frame), 0);
+  int idx0 = ut22p_tx_frame_idx(frame);
+  ut22p_tx_set_ptp_ns(ctx, kBaseTaiNs + kFramePeriodNs25Fps - 1);
+
+  uint16_t idx;
+  ASSERT_EQ(ut22p_tx_next_frame(ctx, &idx), 0) << "on-time frame must not be dropped";
+  EXPECT_EQ(idx, idx0);
+  EXPECT_EQ(cb_ctx.late_calls, 0);
+  ASSERT_EQ(ut22p_tx_frame_done(ctx, idx), 0);
+
+  /* one full period past the timestamp: must be dropped */
+  frame = ut22p_tx_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  frame->timestamp = kBaseTaiNs;
+  ASSERT_EQ(ut22p_tx_put_frame(ctx, frame), 0);
+  ut22p_tx_set_ptp_ns(ctx, kBaseTaiNs + kFramePeriodNs25Fps);
+
+  EXPECT_EQ(ut22p_tx_next_frame(ctx, &idx), -EBUSY) << "late frame must be dropped";
+  EXPECT_EQ(cb_ctx.late_calls, 1);
+  EXPECT_EQ(ut22p_tx_frame_stat(ctx, idx0), 0 /* FREE */);
+
+  ut22p_tx_ctx_destroy(ctx);
+}
+
 TEST(St22PipelineTxDropWhenLate, MissingUserPacingFlagDoesNotDrop) {
   ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
 

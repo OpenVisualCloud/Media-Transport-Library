@@ -44,8 +44,13 @@ void ut22p_tx_set_ptp_ns(ut22p_tx_ctx* ctx, uint64_t ns);
 /** OR the given bits into ops.flags (e.g. ST22P_TX_FLAG_DROP_WHEN_LATE). */
 void ut22p_tx_set_flags(ut22p_tx_ctx* ctx, uint32_t flags);
 
-/** Set ops.fps, used by tx_st22p_if_frame_late() to derive the frame period. */
+/** Set ops.fps and the cached frame period tx_st22p_if_frame_late() reads. */
 void ut22p_tx_set_fps(ut22p_tx_ctx* ctx, enum st_fps fps);
+
+/** Cache the period of cached_fps as create() does, then point ops.fps at
+ * ops_fps. One call, so the two writes cannot be ordered the other way. */
+void ut22p_tx_set_fps_mismatch(ut22p_tx_ctx* ctx, enum st_fps cached_fps,
+                               enum st_fps ops_fps);
 
 /** Register ops.notify_frame_done. */
 void ut22p_tx_set_notify_frame_done(ut22p_tx_ctx* ctx,

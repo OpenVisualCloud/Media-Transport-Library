@@ -38,6 +38,9 @@
 #define UT20_MAX_FRAME_SIZE (UT20_LINESIZE * UT20_MAX_HEIGHT)
 #define UT20_MAX_BITMAP_SIZE ((UT20_MAX_HEIGHT + 7) / 8)
 
+/* Per-frame user-meta buffer, attached by ut20_ctx_enable_user_meta(). */
+#define UT20_USER_META_SIZE 1024
+
 #define UT20_FRAME_COUNT 2
 
 /* ── opaque context ───────────────────────────────────────────────────── */
@@ -50,6 +53,7 @@ struct ut20_test_ctx {
   struct st_frame_trans frames[UT20_FRAME_COUNT];
   uint8_t frame_storage[UT20_FRAME_COUNT][UT20_MAX_FRAME_SIZE];
   uint8_t bitmaps[ST_VIDEO_RX_REC_NUM_OFO][UT20_MAX_BITMAP_SIZE];
+  uint8_t user_meta_storage[UT20_FRAME_COUNT][UT20_USER_META_SIZE];
 
   bool hold_frames;
   struct mt_ptp_impl ptp_storage;
@@ -312,6 +316,32 @@ int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_n
                   enum mtl_session_port port) {
   struct rte_mbuf* m = make_video_mbuf(seq, ts, line_num, line_offset, line_length);
   if (!m) return -1;
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+void ut20_ctx_enable_user_meta(ut20_test_ctx* ctx) {
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->frames[i].user_meta = ctx->user_meta_storage[i];
+    ctx->frames[i].user_meta_buffer_size = UT20_USER_META_SIZE;
+    ctx->frames[i].user_meta_data_size = 0;
+  }
+}
+
+int ut20_feed_user_meta_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                            uint16_t meta_len, uint16_t data_len,
+                            enum mtl_session_port port) {
+  struct rte_mbuf* m = make_video_mbuf(seq, ts, 0, 0, 0);
+  if (!m) return -1;
+  /* declare the meta length on the wire, independently of what the mbuf carries */
+  size_t hdr_offset =
+      sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
+  struct st20_rfc4175_rtp_hdr* rtp =
+      rte_pktmbuf_mtod_offset(m, struct st20_rfc4175_rtp_hdr*, hdr_offset);
+  rtp->row_length = htons(meta_len | ST20_LEN_USER_META);
+  m->data_len = data_len;
+  m->pkt_len = data_len;
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
@@ -686,6 +716,14 @@ uint64_t ut20_stat_offset_dropped(const ut20_test_ctx* ctx) {
 
 uint64_t ut20_stat_wrong_len(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_pkts_wrong_len_dropped;
+}
+
+uint64_t ut20_stat_user_meta(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_user_meta;
+}
+
+uint64_t ut20_stat_user_meta_err(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_user_meta_err;
 }
 
 uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx) {

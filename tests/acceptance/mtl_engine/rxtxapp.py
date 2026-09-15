@@ -1015,11 +1015,13 @@ class RxTxApp(Application):
                 # mirrors add_st40p_sessions() in legacy RxTxApp.py.
                 session = {
                     **_hdr(port_default=40000, pt_default=113),
+                    # RX needs the fps too: it is the expected rate the C-side
+                    # ST_APP_EXPECT_NEAR gate validates the measured fps against.
+                    "fps": self.params.get("fps", p("framerate")),
                     "interlaced": p("interlaced"),
                     "enable_rtcp": p("enable_rtcp"),
                 }
                 if is_tx:
-                    session["fps"] = self.params.get("fps", p("framerate"))
                     session["st40p_url"] = self.params.get("st40p_url", p("input_file"))
                 return session
 

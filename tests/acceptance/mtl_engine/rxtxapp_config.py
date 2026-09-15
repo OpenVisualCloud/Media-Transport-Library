@@ -330,6 +330,7 @@ config_rx_st40p_session = {
     "replicas": 1,
     "start_port": 40000,
     "payload_type": 113,
+    "fps": "p59",
     "interlaced": False,
     "enable_rtcp": False,
 }
