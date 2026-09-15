@@ -29,7 +29,6 @@ static inline struct st_frame* tx_st20p_user_frame(struct st20p_tx_ctx* ctx,
 static void tx_st20p_block_wake(struct st20p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  ctx->block_wake_pending = true;
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
@@ -774,18 +773,30 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   framebuff = tx_st20p_claim_available(ctx, ST20P_TX_FRAME_FREE, ST20P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    while (!ctx->block_wake_pending &&
-           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
-      int _ret = mt_pthread_cond_timedwait_ns(
-          &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
-      if (_ret) break;
+    struct timespec deadline;
+    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
+    timespec_add_ns(&deadline, ctx->block_timeout_ns);
+    /* Re-attempt the real claim on every wake/timeout; there's nothing to
+     * desync since this never relies on a separate notify flag. */
+    while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+      framebuff =
+          tx_st20p_claim_available(ctx, ST20P_TX_FRAME_FREE, ST20P_TX_FRAME_IN_USER);
+      if (framebuff) break;
+      int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                           &deadline);
+      if (_ret) break; /* real timeout against the fixed deadline, or error */
     }
-    ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-    /* get again */
-    framebuff =
-        tx_st20p_claim_available(ctx, ST20P_TX_FRAME_FREE, ST20P_TX_FRAME_IN_USER);
+    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+      if (framebuff) {
+        /* Destroying flipped true after the claim made inside this wait loop;
+         * release it instead of handing out a frame mid-teardown. */
+        atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_FREE,
+                              memory_order_release);
+        framebuff = NULL;
+      }
+      goto out;
+    }
   }
   /* not any free frame */
   if (!framebuff) {

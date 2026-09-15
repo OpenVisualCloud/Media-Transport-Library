@@ -101,6 +101,10 @@ void ut20p_tx_wake_block(ut20p_tx_ctx* ctx) {
   st20p_tx_wake_block(&ctx->pipeline);
 }
 
+void ut20p_tx_force_destroying(ut20p_tx_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
 int ut20p_tx_framebuff_cnt(const ut20p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
 }
