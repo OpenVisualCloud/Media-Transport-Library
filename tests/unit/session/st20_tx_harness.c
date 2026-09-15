@@ -240,6 +240,10 @@ int ut_txv_sync_pacing(ut_txv_ctx* ctx, uint64_t required_tai) {
   return tv_sync_pacing(&ctx->impl, &ctx->session, required_tai);
 }
 
+uint64_t ut_txv_retrain_bps(uint64_t rl_bps, double measured_bps) {
+  return tv_retrain_bps(rl_bps, measured_bps);
+}
+
 uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp) {
   return tv_pacing_required_tai(&ctx->session, tfmt, timestamp);
