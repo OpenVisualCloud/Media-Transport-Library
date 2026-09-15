@@ -34,7 +34,9 @@ multi-process scenarios are out of scope — see
 
 If a test fails it's a real defect, unless a case with a wall-clock budget ran
 over it under load — an overrun that reproduces on an idle box is a defect. Only the
-eight `*Concurrency*` suites, `St20PipelineTxBlocking`, and `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
+eight `*Concurrency*` suites, `St20PipelineTxBlocking`, the three
+`*WakePostedBeforeWaitIsNotLost` cases of `St22PipelineRxBlocking` /
+`St22PipelineTxEncodeBlocking`, and `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
 ## Quick start
