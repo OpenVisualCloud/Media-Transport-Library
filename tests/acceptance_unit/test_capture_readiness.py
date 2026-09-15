@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
+"""What has to hold before a compliance capture may be armed.
+
+conftest owns all of it and imports pytest and mfd_connect, neither of which
+this tier has, so each function is read out of the source rather than imported.
+"""
 
 import ast
 import logging
+import re
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,11 +19,7 @@ CONFTEST = ROOT / "tests/acceptance/conftest.py"
 
 
 def _load(name, scope):
-    """Exec one conftest function into *scope*, without importing conftest.
-
-    conftest pulls in pytest and mfd_connect, neither of which the unit tier
-    has, so take the definition straight from the source.
-    """
+    """Exec one conftest function into *scope*, without importing conftest."""
     node = next(
         n
         for n in ast.parse(CONFTEST.read_text()).body
@@ -107,6 +109,75 @@ class HostOffsetReadTests(unittest.TestCase):
         for stdout in ("", "  \n", None):
             with self.assertRaisesRegex(RuntimeError, "capture"):
                 self.reads(stdout)
+
+
+class _Clock:
+    """``time`` with no wall clock: only the polling loop's sleeps move it."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.polls = 0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+        self.polls += 1
+
+
+def _phc2sys_line(offset, servo_state):
+    """A phc2sys ``-m`` line as it is really printed, verbatim from the run."""
+    return (
+        f"phc2sys[1165377.102]: ice1 sys offset {offset} "
+        f"s{servo_state} freq -7560 delay 0\n"
+    )
+
+
+class PhcSyncGateTests(unittest.TestCase):
+    """Only ``s2`` is a locked servo; the offset printed beside ``s0`` is luck.
+
+    Every capture in the st20p E835 nightly of 2026-09-14 was armed off an
+    ``s0`` line, so its PHC was still free-running at its own crystal error --
+    and ST 2110-21 VRX/Cinst are computed from packet timestamps.
+    """
+
+    def setUp(self):
+        self.clock = _Clock()
+        self.converged = _load(
+            "_wait_phc_sync_converged",
+            {
+                "re": re,
+                "time": self.clock,
+                "logger": logging.getLogger(__name__),
+                "_PHC_SYNC_THRESHOLD_NS": 2000,
+                "_PHC_SYNC_TIMEOUT_SEC": 30,
+            },
+        )
+
+    def poll(self, *lines):
+        """Converge against a host whose log tail yields *lines*, then repeats."""
+        lines = list(lines)
+
+        def tail(*args, **kwargs):
+            return SimpleNamespace(stdout=lines[0] if len(lines) == 1 else lines.pop(0))
+
+        host = SimpleNamespace(connection=SimpleNamespace(execute_command=tail))
+        return self.converged(host, "/tmp/phc.log")
+
+    def test_an_unlocked_servo_is_not_sync(self):
+        # The exact line that armed the nightly's captures: in tolerance, s0.
+        self.assertFalse(self.poll(_phc2sys_line(71, 0)))
+
+    def test_a_locked_servo_in_tolerance_is_sync(self):
+        self.assertTrue(self.poll(_phc2sys_line(83, 2)))
+
+    def test_it_waits_out_the_unlocked_lines_and_takes_the_later_lock(self):
+        # Locking takes a few seconds and waiting for it is the whole job:
+        # anything that gives up on the s0 lines fails every capture instead.
+        lines = [_phc2sys_line(o, s) for o, s in ((71, 0), (-88, 0), (-12, 1), (19, 2))]
+        self.assertTrue(self.poll(*lines))
+        self.assertEqual(self.clock.polls, len(lines))
 
 
 if __name__ == "__main__":

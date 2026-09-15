@@ -495,13 +495,15 @@ def _start_capture_phc_sync(host, iface: str):
 
 
 def _wait_phc_sync_converged(host, log_path: str) -> bool:
-    """Poll the phc2sys ``-m`` log until the reported offset is in tolerance.
+    """Poll the phc2sys ``-m`` log until it holds the clock in tolerance.
 
-    phc2sys prints lines like ``... sys offset 83 s2 freq -12618 delay 572``;
-    we read the most recent offset and return ``True`` once it is within
-    :data:`_PHC_SYNC_THRESHOLD_NS`, or ``False`` on timeout.
+    phc2sys prints lines like ``... sys offset 83 s2 freq -12618 delay 572``,
+    whose ``sN`` is the servo state. Only ``s2`` is locked; at ``s0``/``s1`` the
+    offset beside it is a one-shot read of a clock still free-running at its own
+    crystal error, small by luck and no evidence of sync. Returns ``True`` once
+    a locked line is within :data:`_PHC_SYNC_THRESHOLD_NS`, ``False`` on timeout.
     """
-    pattern = re.compile(r"offset\s+(-?\d+)")
+    pattern = re.compile(r"offset\s+(-?\d+)\s+s(\d)")
     deadline = time.monotonic() + _PHC_SYNC_TIMEOUT_SEC
     while time.monotonic() < deadline:
         time.sleep(1)
@@ -513,8 +515,14 @@ def _wait_phc_sync_converged(host, log_path: str) -> bool:
             logger.debug("reading phc2sys log %s failed: %s", log_path, e)
             continue
         match = pattern.search(out or "")
-        if match and abs(int(match.group(1))) < _PHC_SYNC_THRESHOLD_NS:
-            logger.info("phc2sys converged: offset=%sns", match.group(1))
+        if not match:
+            continue
+        offset, servo_state = match.group(1), match.group(2)
+        if servo_state != "2":
+            logger.debug("phc2sys not locked yet: offset=%sns s%s", offset, servo_state)
+            continue
+        if abs(int(offset)) < _PHC_SYNC_THRESHOLD_NS:
+            logger.info("phc2sys converged: offset=%sns s%s", offset, servo_state)
             return True
     return False
 
@@ -1340,15 +1348,20 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
         os.chmod(logfile, 0o4755)
         return "Fail"
 
+    def compliance_failed():
+        """Did the compliance gate record a failure for this case?
+
+        Prefix match: the Compliance cell is free text and a lost capture
+        records "Fail (capture lost N% of packets)".
+        """
+        return (get_compliance_result(case_id) or "").startswith("Fail")
+
     if report["setup"].failed:
         result = fail_test("Setup")
     elif ("call" not in report) or report["call"].failed:
-        compliance = get_compliance_result(case_id)
-        stage = "Compliance" if compliance == "Fail" else "Test"
-        result = fail_test(stage)
+        result = fail_test("Compliance" if compliance_failed() else "Test")
     elif report["call"].passed:
-        compliance = get_compliance_result(case_id)
-        if compliance == "Fail":
+        if compliance_failed():
             result = fail_test("Compliance")
         else:
             logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
