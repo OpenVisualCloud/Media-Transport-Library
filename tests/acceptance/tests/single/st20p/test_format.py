@@ -2,17 +2,19 @@
 # Copyright(c) 2026 Intel Corporation
 
 import pytest
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 
+# This test only ever runs FFmpeg (RxTxApp is skipped below), which reads the asset
+# with `-f rawvideo -pix_fmt <file_format>`, so file_format must name a real
+# AVPixelFormat -- ruling out the RFC 4175 tables. No FFmpeg-ingestible table has
+# an asset above 1080p, so the former 2160p rows are dropped until one exists.
 FORMAT_CASES = [
-    ("i1080p25", "p25", yuv_files_422rfc10["Penguin_1080p"]),
-    ("i1080p30", "p30", yuv_files_422rfc10["Penguin_1080p"]),
-    ("i1080p60", "p60", yuv_files_422rfc10["Crosswalk_1080p"]),
-    ("i2160p30", "p30", yuv_files_422rfc10["Crosswalk_4K"]),
-    ("i2160p60", "p60", yuv_files_422rfc10["Crosswalk_4K"]),
+    ("i1080p25", "p25", yuv_files_422p10le["Penguin_1080p"]),
+    ("i1080p30", "p30", yuv_files_422p10le["Penguin_1080p"]),
+    ("i1080p60", "p60", yuv_files_422p10le["Penguin_1080p"]),
 ]
 
 
