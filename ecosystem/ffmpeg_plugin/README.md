@@ -144,6 +144,16 @@ formats. The same `-pix_fmt` must be used on TX and RX.
 | `gbrp12le`    | RGB 4:4:4 12-bit RFC 4175 PG2BE12 | yes (Table 1)              |
 | `yuv420p`     | Planar I420 passthrough (`ST_FRAME_FMT_YUV420CUSTOM8`) | **no** — MTL-to-MTL only, not interoperable with third-party receivers |
 
+### 2.4. Interlaced video
+
+Add `-interlaced 1` to either the `mtl_st20p` demuxer or muxer to transport interlaced video. Each ST 2110-20 "frame" then carries a single field, while FFmpeg keeps working on full-height frames whose lines alternate between the first and second field. `-video_size` and `-fps` always describe the full frame, so the wire field rate is twice the configured `-fps`.
+
+RX:
+
+```bash
+ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 25 -interlaced 1 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
+```
+
 ## 3. ST22 compressed video run guide
 
 A typical workflow for processing an MTL ST22 compressed stream with FFmpeg is outlined in the following steps: Initially, FFmpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the MTL ST22 plugin.
