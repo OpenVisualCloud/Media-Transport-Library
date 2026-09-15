@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+ From nobody Mon Sep 17 00:00:00 2001
 From: MTL Contributor <noreply@example.com>
 Date: Fri, 3 Jul 2026 00:00:00 +0000
 Subject: [PATCH] net/ice: init PHC owner when enabling timesync on a
@@ -33,10 +33,10 @@ Signed-off-by: MTL Contributor <noreply@example.com>
  1 file changed, 91 insertions(+)
 
 diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
-index 746b1aba..cc1ee7be 100644
+index d823735d33..95bfc9b504 100644
 --- a/drivers/net/intel/ice/ice_ethdev.c
 +++ b/drivers/net/intel/ice/ice_ethdev.c
-@@ -7051,6 +7051,53 @@ static int ice_ptp_write_init(struct ice_hw *hw)
+@@ -7157,6 +7157,53 @@ static int ice_ptp_write_init(struct ice_hw *hw)
  	return ice_ptp_init_time(hw, ns, true);
  }
  
@@ -90,7 +90,7 @@ index 746b1aba..cc1ee7be 100644
  static int
  ice_timesync_enable(struct rte_eth_dev *dev)
  {
-@@ -7081,6 +7128,50 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+@@ -7187,6 +7234,50 @@ ice_timesync_enable(struct rte_eth_dev *dev)
  				"Failed to write PHC increment time value");
  			return -1;
  		}

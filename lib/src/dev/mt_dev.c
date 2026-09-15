@@ -1462,6 +1462,16 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
     ret = dev_rl_init_nonleaf_nodes(inf);
     if (ret < 0) {
+      /* Same fallback as a failing queue rate limit below: rl was this port's
+       * own choice, not the user's, and a driver that will not build the tm
+       * hierarchy has no rl to offer -- so tsc, with a line saying what was
+       * given up, rather than refusing to initialize at all.
+       */
+      if (auto_detect) {
+        warn("%s(%d), fallback to tsc as rl root init fail %d\n", __func__, port, ret);
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+        return 0;
+      }
       err("%s(%d), root init error %d\n", __func__, port, ret);
       return ret;
     }
