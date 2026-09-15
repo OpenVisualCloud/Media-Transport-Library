@@ -54,6 +54,10 @@ struct ut_txv_ctx {
   unsigned int burst_packets_count;
   struct rte_mbuf* held_hdr_mbuf;
   char hdr_pool_name[RTE_MEMPOOL_NAMESIZE];
+  /* Owned by the ctx (not heap-allocated, unlike production's mt_rte_zmalloc())
+   * so ut_txv_run_st22_next_frame_step() can point s->st22_info at it and
+   * reclaim it for free when the ctx itself is destroyed. */
+  struct st22_tx_video_info st22_info;
 };
 
 #include "session/st20_tx_harness.h"
@@ -94,6 +98,18 @@ static int ut_txv_notify_frame_done(void* priv, uint16_t frame_idx,
   ctx->notify_frame_done_calls++;
   ctx->notify_frame_done_idx = frame_idx;
   ctx->notify_frame_done_meta = *meta;
+  return 0;
+}
+
+/* ST22 (compressed video) counterpart of ut_txv_get_next_frame() above: same
+ * app-supplied tfmt/timestamp, but through st22_tx_video_info's own callback
+ * signature so ut_txv_run_st22_next_frame_step() can drive tv_tasklet_st22(). */
+static int ut_txv_st22_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                      struct st22_tx_frame_meta* meta) {
+  struct ut_txv_ctx* ctx = priv;
+  *next_frame_idx = 0;
+  meta->tfmt = ctx->app_tfmt;
+  meta->timestamp = ctx->app_timestamp;
   return 0;
 }
 
@@ -221,6 +237,24 @@ void ut_txv_set_user_pacing(ut_txv_ctx* ctx, bool enable) {
     ctx->session.ops.flags &= ~ST20_TX_FLAG_USER_PACING;
 }
 
+void ut_txv_set_user_timestamp(ut_txv_ctx* ctx, bool enable) {
+  if (enable)
+    ctx->session.ops.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
+  else
+    ctx->session.ops.flags &= ~ST20_TX_FLAG_USER_TIMESTAMP;
+}
+
+void ut_txv_set_rtp_timestamp_epoch(ut_txv_ctx* ctx, bool enable) {
+  if (enable)
+    ctx->session.ops.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
+  else
+    ctx->session.ops.flags &= ~ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
+}
+
+void ut_txv_set_rtp_timestamp_delta_us(ut_txv_ctx* ctx, int32_t delta_us) {
+  ctx->session.ops.rtp_timestamp_delta_us = delta_us;
+}
+
 void ut_txv_set_mock_ptp_time(ut_txv_ctx* ctx, uint64_t ptp_ns) {
   ctx->mock_ptp_ns = ptp_ns;
 }
@@ -307,6 +341,58 @@ out:
   rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
   s->ring[MTL_SESSION_PORT_P] = NULL;
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->st20_frames = NULL;
+  return ret;
+}
+
+/* Drives exactly as much of tv_tasklet_st22() as the frame->tx_st22_meta.timestamp
+ * / .rtp_timestamp assignment needs: tvs_tasklet_handler() dispatches to
+ * tv_tasklet_st22() purely because s->st22_info is non-NULL (no ops.type check),
+ * and that function returns MTL_TASKLET_HAS_PENDING right after the metadata
+ * assignment, before touching any mempool or building a packet -- so the only
+ * prerequisite here is a non-full ring for its rte_ring_full() guard. */
+int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                    uint64_t timestamp, uint64_t* frame_timestamp,
+                                    uint32_t* frame_rtp_timestamp) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  char ring_name[RTE_RING_NAMESIZE];
+  int ret = -1;
+
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_st22_ring_%u", test_idx++);
+  s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
+  if (!s->ring[MTL_SESSION_PORT_P]) goto out;
+
+  frame.idx = 0;
+  frame.priv = s;
+  s->st20_frames = &frame;
+  s->st20_frames_cnt = 1;
+  /* codestream_size == pkt_len makes tv_tasklet_st22() compute exactly one
+   * total packet; its "not > allowed" / "not zero" size checks both pass. */
+  s->st20_pkt_len = 4;
+  s->st22_codestream_size = 4;
+  /* Required for tv_tasklet_st22() to enter its "start a new frame" branch at
+   * all -- ut_txv_ctx is calloc'd, and ST21_TX_STAT_WAIT_FRAME is not the
+   * zero value of enum st21_tx_frame_status (ST21_TX_STAT_UNKNOWN is). */
+  s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
+  s->ops.num_port = 1;
+  memset(&ctx->st22_info, 0, sizeof(ctx->st22_info));
+  ctx->st22_info.get_next_frame = ut_txv_st22_get_next_frame;
+  s->st22_info = &ctx->st22_info;
+  ctx->app_tfmt = tfmt;
+  ctx->app_timestamp = timestamp;
+
+  tvs_tasklet_handler(&ctx->mgr);
+  *frame_timestamp = frame.tx_st22_meta.timestamp;
+  *frame_rtp_timestamp = frame.tx_st22_meta.rtp_timestamp;
+  ret = 0;
+
+out:
+  s->st22_info = NULL;
+  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = NULL;
   s->st20_frames = NULL;
   return ret;
 }
@@ -489,6 +575,10 @@ uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx) {
   return ctx->notify_frame_done_meta.epoch;
+}
+
+uint32_t ut_txv_notify_frame_done_rtp_timestamp(const ut_txv_ctx* ctx) {
+  return ctx->notify_frame_done_meta.rtp_timestamp;
 }
 
 bool ut_txv_frame_is_waiting(const ut_txv_ctx* ctx) {

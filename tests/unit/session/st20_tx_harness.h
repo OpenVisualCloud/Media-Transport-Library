@@ -52,6 +52,22 @@ void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts);
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable);
 /* Toggle ST20_TX_FLAG_USER_PACING on the session's ops.flags. */
 void ut_txv_set_user_pacing(ut_txv_ctx* ctx, bool enable);
+/* Toggle ST20_TX_FLAG_USER_TIMESTAMP on the session's ops.flags: the RTP
+ * timestamp is taken verbatim from the app-supplied timestamp instead of the
+ * pacing-scheduled instant. Selects the branch of tv_update_rtp_time_stamp()
+ * whose returned "reporting" TAI instant must match the RTP timestamp it
+ * derived. */
+void ut_txv_set_user_timestamp(ut_txv_ctx* ctx, bool enable);
+/* Toggle ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH on the session's ops.flags: the RTP
+ * timestamp is derived from the bare epoch, omitting tr_offset. Added to pin
+ * that this basis (not pacing->ptp_time_cursor) is also what gets reported
+ * back as frame->timestamp. */
+void ut_txv_set_rtp_timestamp_epoch(ut_txv_ctx* ctx, bool enable);
+/* Set ops.rtp_timestamp_delta_us, added to the RTP-timestamp source instant
+ * (never to the actual TX schedule). Added to pin that the reported
+ * frame->timestamp includes this delta too, so it still reconstructs
+ * frame->rtp_timestamp. */
+void ut_txv_set_rtp_timestamp_delta_us(ut_txv_ctx* ctx, int32_t delta_us);
 /* Media (RTP) sampling clock rate, e.g. 90000 for video. */
 void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate);
 /* Real TAI wall-clock cursor used as the source time for the non-user-
@@ -74,6 +90,18 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);
+/* Drives tv_tasklet_st22()'s frame->tx_st22_meta assignment -- the compressed-
+ * video (ST22) mirror of tv_tasklet_frame()'s frame->tv_meta assignment above,
+ * so both production call sites are held to the same timestamp/rtp_timestamp
+ * contract, not just the uncompressed-video one. tv_tasklet_st22() returns
+ * before building any packet, so this needs only a ring (for its
+ * rte_ring_full() guard), no mempool or packet payload setup. Outputs the
+ * frame's timestamp/rtp_timestamp directly rather than routing through a
+ * notify_frame_done callback, since st22_tx_video_info has no equivalent mock
+ * plumbing in this harness yet. */
+int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                    uint64_t timestamp, uint64_t* frame_timestamp,
+                                    uint32_t* frame_rtp_timestamp);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
@@ -116,6 +144,10 @@ int ut_txv_notify_frame_done_calls(const ut_txv_ctx* ctx);
 uint16_t ut_txv_notify_frame_done_idx(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx);
+/* The frame->rtp_timestamp the app would see in notify_frame_done(); paired
+ * with ut_txv_notify_frame_done_timestamp() above to check that one
+ * reconstructs the other via st10_tai_to_media_clk(). */
+uint32_t ut_txv_notify_frame_done_rtp_timestamp(const ut_txv_ctx* ctx);
 bool ut_txv_frame_is_waiting(const ut_txv_ctx* ctx);
 int ut_txv_frame_refcnt(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_port_build(const ut_txv_ctx* ctx);

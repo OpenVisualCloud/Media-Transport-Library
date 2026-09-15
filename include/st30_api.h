@@ -44,12 +44,27 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * lib will wait until timestamp is reached for each frame.
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
  * supported for pacing and falls back to the default epoch-based pacing.
+ * Distinct from ST30_TX_FLAG_USER_TIMESTAMP, which honors both formats for
+ * the reported rtp timestamp regardless of whether this flag is also set.
  */
 #define ST30_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st30_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * st30_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ * If enabled, lib assigns the rtp timestamp from st30_tx_frame_meta.timestamp,
+ * interpreted per st30_tx_frame_meta.tfmt. ST10_TIMESTAMP_FMT_TAI is used
+ * directly. ST10_TIMESTAMP_FMT_MEDIA_CLK is unwrapped against the TAI instant
+ * the session's pacing has scheduled for the current packet, to the nearest
+ * matching TAI instant, so the supplied ticks must represent a time within
+ * about half a 32-bit tick cycle (~12.4 hours at 48kHz) of that instant, or
+ * the unwrap resolves to the wrong cycle. Only the frame's first packet
+ * honors the app-supplied timestamp; later packets of a multi-packet frame
+ * advance from it by one packet time each when ST30_TX_FLAG_USER_PACING is
+ * also set. Without ST30_TX_FLAG_USER_PACING, only the first packet's
+ * timestamp is honored -- later packets fall back to the default
+ * natural-cadence instant instead of continuing to advance from it.
+ * rtp_timestamp_delta_us is then applied in the TAI/ns domain the same way for
+ * either format, so its effect is an identical microsecond-scale shift
+ * regardless of tfmt.
  */
 #define ST30_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
@@ -431,6 +446,9 @@ struct st30_tx_ops {
   /**
    * Optional. The rtp timestamp delta(us) to the start time of frame.
    * Zero means the rtp timestamp at the start of the frame.
+   * Applied in the TAI/ns domain, so with ST30_TX_FLAG_USER_TIMESTAMP the
+   * shift is the same microsecond amount whether the app's timestamp was
+   * ST10_TIMESTAMP_FMT_TAI or ST10_TIMESTAMP_FMT_MEDIA_CLK.
    */
   int32_t rtp_timestamp_delta_us;
 
