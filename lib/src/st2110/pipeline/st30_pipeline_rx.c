@@ -322,6 +322,7 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
    * even while other READY frames remain (spurious failure under contention). */
   framebuff = rx_st30p_claim_available(ctx, ctx->framebuff_consumer_idx,
                                        ST30P_RX_FRAME_READY, ST30P_RX_FRAME_IN_USER);
+  if (framebuff && ctx->block_get) ST_BLOCK_WAKE_CONSUME(ctx);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
     while (!ctx->block_wake_pending &&

@@ -71,3 +71,40 @@ TEST(St20PipelineTxBlocking, WakePostedBeforeWaitIsNotLost) {
     ASSERT_EQ(ut20p_tx_put_frame_abort(ctx, held[i]), 0);
   ut20p_tx_ctx_destroy(ctx);
 }
+
+TEST(St20PipelineTxBlocking, StaleWakeDoesNotSkipTheNextWait) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 2;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  /* Hand every slot to the transport, leaving no FREE slot behind. */
+  for (int i = 0; i < kFrameCnt; i++) {
+    struct st_frame* frame = ut20p_tx_get_frame(ctx);
+    ASSERT_NE(frame, nullptr) << "initial claim of FREE slot " << i << " failed";
+    ASSERT_EQ(ut20p_tx_put_frame(ctx, frame), 0);
+  }
+
+  /* Transmit one slot: frame_done frees it and posts a wake nobody waits on,
+   * then the fast path claims it -- so that wake must be spent, not banked. */
+  uint16_t sent_idx = 0;
+  ASSERT_EQ(ut20p_tx_next_frame(ctx, &sent_idx), 0);
+  ASSERT_EQ(ut20p_tx_frame_done(ctx, sent_idx), 0);
+  struct st_frame* held = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr) << "the freed slot must be claimable without blocking";
+
+  const auto t0 = std::chrono::steady_clock::now();
+  struct st_frame* frame = ut20p_tx_get_frame(ctx); /* no FREE slot -> wait path */
+  const auto elapsed = std::chrono::steady_clock::now() - t0;
+
+  EXPECT_EQ(frame, nullptr) << "no slot was freed; get_frame must return NULL";
+  EXPECT_GE(elapsed, std::chrono::nanoseconds(kBlockTimeoutNs) * 3 / 4)
+      << "blocking get_frame returned early: it consumed a stale wake";
+
+  ASSERT_EQ(ut20p_tx_put_frame_abort(ctx, held), 0);
+  ut20p_tx_ctx_destroy(ctx);
+}
