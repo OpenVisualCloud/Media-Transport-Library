@@ -390,6 +390,25 @@ Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period �
 - Late frame → advance to next epoch → `stat_frame_late` increments
 - Fix is in the application, not MTL
 
+### MEDIA_CLK User-Timestamp Anchoring (`st10_media_clk_to_tai`)
+`ST10_TIMESTAMP_FMT_MEDIA_CLK` carries only a raw 32-bit tick count — not a full TAI
+instant — so a USER_TIMESTAMP flag path must unwrap it before use:
+- `uint64_t st10_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts, uint32_t sampling_rate)`
+  in `include/st_api.h`, implemented in `lib/src/st2110/st_fmt.c`. Public API — apps that
+  track their own RTP timestamps can estimate the real TAI instant directly, alongside
+  `st10_get_tai()`/`st10_get_media_clk()`.
+- Anchors on the caller's current pacing instant (video: `pacing->ptp_time_cursor`) —
+  picks the 32-bit tick cycle nearest the anchor, then converts to ns in one
+  `st_muldiv_u64_round_closest()` step. Rounding the anchor and the tick delta as two
+  independent steps can push the result across a tick boundary at a rounding tie —
+  this compounding-rounding bug is what dc8df092 fixed for st20.
+- Disambiguation window: the app's MEDIA_CLK timestamp must represent a time within
+  about half a 32-bit tick cycle of the session's actual current time — ~6.6 hours at
+  90kHz (video/ancillary), ~12.4 hours at 48kHz (audio) — or the unwrap resolves to the
+  wrong cycle.
+- Shared by st20 (video), st30 (audio), and st40 (ancillary) TX, each anchoring on their
+  own pacing cursor rather than reimplementing the tick-unwrap math.
+
 ### VRX (Virtual Receiver Buffer) Conformance
 RX diagnostic stats:
 - `vrx_min` / `vrx_max` — buffer excursion bounds

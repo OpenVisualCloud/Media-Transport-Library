@@ -383,7 +383,7 @@ TEST_F(St20TxSyncPacingTest, FrameTaskletUserTimestampMediaClkAnchorsToRealistic
 
 // Same anchored unwrap as above, but with the app's timestamp slightly
 // *behind* the anchor tick (media_ts = anchor_ticks - N) rather than ahead of
-// it, so tv_media_clk_to_tai()'s negative-diff_ticks path actually runs. A
+// it, so st10_media_clk_to_tai()'s negative-diff_ticks path actually runs. A
 // wrong wrap direction here would land roughly half a 32-bit tick cycle away
 // from kRealisticTai (many hours), not one frame period behind it.
 TEST_F(St20TxSyncPacingTest,
@@ -414,7 +414,7 @@ TEST_F(St20TxSyncPacingTest,
               (double)kFramePeriodNs);
 }
 
-// tv_media_clk_to_tai() must round-trip exactly for every tick, including at
+// st10_media_clk_to_tai() must round-trip exactly for every tick, including at
 // a rounding-tie boundary: anchor=10,050,000ns @ 90kHz is exactly tick 904.5
 // (a tie, so st10_tai_to_media_clk() rounds it down to 904), and media_ts=909
 // is only 5 ticks away. Rounding the anchor and the tick delta as two
@@ -433,7 +433,7 @@ TEST_F(St20TxSyncPacingTest, UpdateRtpTimeStampMediaClkRoundTripsAtRoundingTie) 
   EXPECT_EQ(ut_txv_rtp_time_stamp(ctx_), kMediaClockTimestamp);
 }
 
-// tv_media_clk_to_tai()'s sampling_rate==0 guard must not divide by zero in
+// st10_media_clk_to_tai()'s sampling_rate==0 guard must not divide by zero in
 // this tasklet-context path; it should degrade the same way the downstream
 // st10_tai_to_media_clk() guard already does regardless (returns 0).
 TEST_F(St20TxSyncPacingTest, UpdateRtpTimeStampMediaClkZeroSamplingRateDoesNotCrash) {

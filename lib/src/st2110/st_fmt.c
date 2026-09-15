@@ -4,6 +4,8 @@
 
 #include "st_fmt.h"
 
+#include <math.h>
+
 #include "../mt_log.h"
 #include "st_main.h"
 
@@ -947,6 +949,23 @@ uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
   uint64_t tick = st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
   if ((__uint128_t)tick * NS_PER_S / sampling_rate >= UINT64_MAX) return UINT64_MAX;
   return st_muldiv_u64_round_closest(tick, NS_PER_S, sampling_rate);
+}
+
+uint64_t st10_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts,
+                               uint32_t sampling_rate) {
+  if (!sampling_rate) {
+    err("%s, invalid sampling rate\n", __func__);
+    return anchor_tai_ns;
+  }
+
+  const int64_t ticks_per_cycle = (int64_t)1 << 32;
+  long double anchor_ticks = (long double)anchor_tai_ns * sampling_rate / NS_PER_S;
+  /* Cycle count, not a tick value -- llroundl()'s away-from-zero ties don't
+   * need to match st_muldiv_u64_round_closest()'s round-down ties below. */
+  int64_t cycle = llroundl((anchor_ticks - (long double)media_ts) / ticks_per_cycle);
+  uint64_t unwrapped_ticks = (uint64_t)((int64_t)media_ts + cycle * ticks_per_cycle);
+
+  return st_muldiv_u64_round_closest(unwrapped_ticks, NS_PER_S, sampling_rate);
 }
 
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {

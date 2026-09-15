@@ -553,6 +553,36 @@ uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
 uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate);
 
 /**
+ * Helper function to unwrap a raw ST2110-10 media clock tick count into the TAI
+ * instant nearest a known anchor, exactly invertible back to media_ts via
+ * st10_tai_to_media_clk().
+ *
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK carries only a 32-bit tick count, not a full TAI
+ * instant, so reconstructing the real time requires picking the 32-bit tick wrap
+ * cycle nearest anchor_tai_ns. That means media_ts must represent a time within
+ * about half a wrap cycle of anchor_tai_ns -- ~6.6 hours at 90kHz (video and
+ * ancillary), ~12.4 hours at 48kHz (audio) -- or the unwrap resolves to the wrong
+ * cycle.
+ *
+ * See also ST20_TX_FLAG_USER_TIMESTAMP / ST30_TX_FLAG_USER_TIMESTAMP /
+ * ST40_TX_FLAG_USER_TIMESTAMP, which apply this same anchor/unwrap contract when
+ * the library derives the RTP timestamp on the caller's behalf.
+ *
+ * @param anchor_tai_ns
+ *   a TAI instant, in nanoseconds since the TAI epoch, known to be within about
+ *   half a wrap cycle of the true instant media_ts represents.
+ * @param media_ts
+ *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
+ * @param sampling_rate
+ *   sampling rate(90k for video, 48K/96K for audio). Must be nonzero; 0 returns
+ *   anchor_tai_ns unchanged.
+ * @return
+ *   time in nanoseconds since the TAI epoch.
+ */
+uint64_t st10_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts,
+                               uint32_t sampling_rate);
+
+/**
  * Helper function to get tai for both ST10_TIMESTAMP_FMT_TAI and
  * ST10_TIMESTAMP_FMT_MEDIA_CLK.
  *

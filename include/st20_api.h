@@ -49,14 +49,23 @@ extern "C" {
  * st20_tx_frame_meta.timestamp, lib will wait until timestamp is reached for each frame.
  * The time of sending is aligned with virtual receiver read schedule.
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
- * supported for pacing and falls back to the default epoch-based pacing.
+ * supported for pacing and falls back to the default epoch-based pacing. Distinct
+ * from ST20_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
+ * timestamp.
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value of
- * t20_tx_frame_meta.timestamp (if needed the value will be converted to
- * ST10_TIMESTAMP_FMT_MEDIA_CLK)
+ * If enabled, lib assigns the rtp timestamp from st20_tx_frame_meta.timestamp,
+ * interpreted per st20_tx_frame_meta.tfmt. ST10_TIMESTAMP_FMT_TAI is used directly.
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK is unwrapped against the TAI instant the session's
+ * pacing has scheduled for the current frame, to the nearest matching TAI instant,
+ * so the supplied ticks must represent a time within about half a 32-bit tick
+ * cycle (~6.6 hours at 90kHz) of that instant, or the unwrap resolves to the wrong
+ * cycle.
+ * rtp_timestamp_delta_us is then applied in the TAI/ns domain the same way for
+ * either format, so its effect is an identical microsecond-scale shift regardless
+ * of tfmt.
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
@@ -121,13 +130,20 @@ extern "C" {
  * User control the frame pacing by pass a timestamp in st22_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
- * supported for pacing and falls back to the default epoch-based pacing.
+ * supported for pacing and falls back to the default epoch-based pacing. Distinct
+ * from ST22_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
+ * timestamp.
  */
 #define ST22_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ * If enabled, lib assigns the rtp timestamp from st22_tx_frame_meta.timestamp,
+ * interpreted per st22_tx_frame_meta.tfmt. ST10_TIMESTAMP_FMT_TAI is used directly.
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK is unwrapped against the TAI instant the session's
+ * pacing has scheduled for the current frame, to the nearest matching TAI instant,
+ * so the supplied ticks must represent a time within about half a 32-bit tick
+ * cycle (~6.6 hours at 90kHz) of that instant, or the unwrap resolves to the wrong
+ * cycle.
  */
 #define ST22_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
@@ -1219,6 +1235,9 @@ struct st20_tx_ops {
   /**
    * Optional. The rtp timestamp delta(us) to the start time of frame.
    * Zero means the rtp timestamp at the start of the frame.
+   * Applied in the TAI/ns domain, so with ST20_TX_FLAG_USER_TIMESTAMP the shift is
+   * the same microsecond amount whether the app's timestamp was
+   * ST10_TIMESTAMP_FMT_TAI or ST10_TIMESTAMP_FMT_MEDIA_CLK.
    */
   int32_t rtp_timestamp_delta_us;
   /**
