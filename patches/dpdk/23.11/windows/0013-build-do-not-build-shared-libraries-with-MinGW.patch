@@ -1,0 +1,87 @@
+From 6d121449a135428239db7bf41808e4c85760a8eb Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Wed, 16 Sep 2026 13:40:28 +0000
+Subject: build: do not build shared libraries with MinGW
+
+MinGW GCC 15 and later use native Windows thread-local storage in place
+of emulated TLS. A native TLS read compiles to a SECREL relocation,
+which the linker resolves only inside the same module. So a shared
+library cannot read a thread-local variable of another shared library,
+and the link of librte_ring stops with:
+
+  undefined reference to `per_lcore__rte_errno'
+  relocation truncated to fit: IMAGE_REL_AMD64_SECREL
+      against undefined symbol `per_lcore__rte_errno'
+
+buildtools/map_to_win.py still exports the emulated name
+__emutls_v.per_lcore*, which native TLS never makes. No compiler option
+asks for emulated TLS: -mtls-dialect offers only gnu and gnu2.
+
+Build the static libraries alone in that case. Each one holds its
+thread-local variables in the same module. A Windows build of DPDK is
+static in any case: meson.build sets default_library=static, and the
+MinGW job of .github/workflows/build.yml builds static alone.
+
+Seen with MSYS2 mingw-w64 GCC 16.2.0 and DPDK 23.11.
+---
+ config/meson.build  | 14 ++++++++++++++
+ drivers/meson.build |  3 ++-
+ lib/meson.build     |  3 ++-
+ 3 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/config/meson.build b/config/meson.build
+index a9ccd56..04b2975 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -27,6 +27,20 @@ dpdk_conf.set('RTE_EXEC_ENV_' + exec_env.to_upper(), 1)
+ is_ms_compiler = is_windows and (cc.get_id() == 'msvc')
+ is_ms_linker = is_windows and (cc.get_id() == 'clang' or is_ms_compiler)
+ 
++# MinGW GCC 15 and later use native Windows thread-local storage in place of
++# emulated TLS. A native TLS read compiles to a SECREL relocation, which the
++# linker resolves only inside the same module, and buildtools/map_to_win.py
++# still exports the emulated name __emutls_v.per_lcore*. So a shared library
++# cannot read rte_errno or an lcore identifier of another shared library, and
++# the link of librte_ring stops with
++# "undefined reference to `per_lcore__rte_errno'". No compiler option asks for
++# emulated TLS: -mtls-dialect offers only gnu and gnu2. So the shared libraries
++# are not built with MinGW. Each static library holds its thread-local
++# variables in the same module, and a Windows build of DPDK is static in any
++# case: meson.build sets default_library=static, and the MinGW job of
++# .github/workflows/build.yml builds static alone.
++build_shared_libs = not (is_windows and cc.get_id() == 'gcc')
++
+ if is_ms_compiler
+     # force the use of intrinsics the MSVC compiler (except x86)
+     # does not support inline assembly
+diff --git a/drivers/meson.build b/drivers/meson.build
+index 5ba5340..241bd80 100644
+--- a/drivers/meson.build
++++ b/drivers/meson.build
+@@ -304,7 +304,8 @@ foreach subpath:subdirs
+                 link_depends: lk_deps,
+                 version: abi_version,
+                 soversion: so_version,
+-                install: true,
++                build_by_default: build_shared_libs,
++                install: build_shared_libs,
+                 install_dir: driver_install_path)
+ 
+         # create a dependency object and add it to the global dictionary so
+diff --git a/lib/meson.build b/lib/meson.build
+index 6c143ce..938c516 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -338,7 +338,8 @@ foreach l:libraries
+             link_depends: lk_deps,
+             version: abi_version,
+             soversion: so_version,
+-            install: true)
++            build_by_default: build_shared_libs,
++            install: build_shared_libs)
+     shared_dep = declare_dependency(link_with: shared_lib,
+             include_directories: includes,
+             dependencies: shared_deps)
+-- 
+2.43.0
+
