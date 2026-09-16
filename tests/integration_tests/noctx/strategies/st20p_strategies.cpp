@@ -40,16 +40,27 @@ void St20pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
   uint64_t framebuffTime =
       st10_tai_to_media_clk(st20pParent->nsFrameTime, VIDEO_CLOCK_HZ);
 
-  EXPECT_NEAR(f->timestamp, framebuffTime * (idx_rx + 1), framebuffTime / 20)
+  if (idx_rx == 0) {
+    firstTimestamp = f->timestamp;
+  }
+
+  /* f->timestamp is real-wall-clock-anchored (arbitrary 32-bit phase), not
+   * zero-based at test start; compare ticks elapsed since frame 0 instead. */
+  uint32_t elapsedTicks =
+      static_cast<uint32_t>(f->timestamp) - static_cast<uint32_t>(firstTimestamp);
+  EXPECT_NEAR(elapsedTicks, framebuffTime * idx_rx, framebuffTime / 20)
       << " idx_rx: " << idx_rx;
 
   if (lastTimestamp != 0) {
-    uint64_t diff = f->timestamp - lastTimestamp;
+    /* f->timestamp only ever holds a 32-bit media-clock tick; subtract in that
+     * width so a real wraparound between frames still yields the correct delta. */
+    uint32_t diff =
+        static_cast<uint32_t>(f->timestamp) - static_cast<uint32_t>(lastTimestamp);
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
   }
 
-  const uint64_t rtp_timestamp_ns =
-      st10_media_clk_to_ns(static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
+  const uint64_t rtp_timestamp_ns = st10_media_clk_to_tai(
+      f->receive_timestamp, static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
   const int64_t rl_latency_ns =
       static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_timestamp_ns);
   expectNoCtxTimingWithinRegressionWindow(
@@ -172,7 +183,10 @@ void St20pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   uint64_t expected_step_input = static_cast<uint64_t>(expected_step_ns);
   const uint64_t expected_step =
       st10_tai_to_media_clk(expected_step_input, VIDEO_CLOCK_HZ);
-  const uint64_t diff = current_timestamp - lastTimestamp;
+  /* current_timestamp/lastTimestamp only ever hold a 32-bit media-clock tick;
+   * subtract in that width so a real wraparound still yields the correct delta. */
+  const uint32_t diff =
+      static_cast<uint32_t>(current_timestamp) - static_cast<uint32_t>(lastTimestamp);
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
