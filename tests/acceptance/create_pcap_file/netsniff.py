@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
 import datetime
+import ipaddress
 import logging
 import math
 import os
@@ -82,6 +83,65 @@ def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
     return packets
 
 
+_SNAPLEN_FULL = 65535  # pcap's "the whole packet, whatever its length"
+
+# What EBU LIST needs of an ST 2110-20 packet: Ethernet (14) + IPv4 (20) + UDP
+# (8) + RTP (12) + the -20 payload header (a 2-octet extended sequence number
+# and 6 octets per sample row datagram) -- 74 octets for the 3-row maximum. It
+# never decodes pixels for a compliance report, so copying the rest out of the
+# NIC ring buys nothing and costs the capture its headroom: 2160p119.88 offers
+# 1.97 Mpps on one RSS queue, where a full 1442-octet copy per packet makes the
+# receive softirq fall behind and the pcap comes back with sequence gaps.
+_ST2110_20_SNAPLEN = 128
+
+
+def _bpf_program(dst_ips, snaplen: int) -> str:
+    """Return a netsniff-ng filter file accepting *snaplen* octets of UDP to *dst_ips*.
+
+    The value a BPF filter returns is the snaplen the kernel applies:
+    ``tpacket_rcv()`` clamps ``tp_snaplen`` to it and leaves ``tp_len`` at the
+    true wire length, so the pcap still records the original length beside a
+    truncated copy. netsniff-ng has no snaplen option of its own and libpcap
+    compiles every filter expression with a 65535 return, so handing over a
+    compiled program is the only way to ask for one -- which is why this exists
+    instead of the ``dst <ip>`` expression it replaces.
+
+    ``netsniff-ng -f`` reads this format -- one ``{ code, jt, jf, k },`` record
+    per line, parsed by ``bpf_parse_rules()`` -- and it is byte-identical to what
+    ``bpfc -f netsniff-ng`` emits for a single address.
+
+    Also narrower than ``dst <ip>``: this requires IPv4/UDP, so ARP or ICMP to a
+    stream's address stays out of the pcap.
+
+    *dst_ips* must not be empty: with nothing to compare, the program would
+    accept every IPv4/UDP packet on the interface.
+    """
+    if not dst_ips:
+        raise ValueError("a capture filter needs at least one destination IP")
+    count = len(dst_ips)
+    program = [
+        (0x28, 0, 0, 12),  # ldh [12]           ethertype
+        (0x15, 0, count + 4, 0x0800),  # jne #ETH_P_IP      -> drop
+        (0x30, 0, 0, 23),  # ldb [23]           IPv4 protocol
+        (0x15, 0, count + 2, 17),  # jne #IPPROTO_UDP   -> drop
+        (0x20, 0, 0, 30),  # ld  [30]           IPv4 destination
+    ]
+    # Every address jumps forward to the accept; only the last needs a false
+    # branch, since a miss on any earlier one falls through to the next compare.
+    for index, dst_ip in enumerate(dst_ips):
+        program.append(
+            (
+                0x15,
+                count - 1 - index,
+                1 if index == count - 1 else 0,
+                int(ipaddress.IPv4Address(dst_ip)),
+            )
+        )
+    program.append((0x06, 0, 0, snaplen))  # ret #snaplen       accept
+    program.append((0x06, 0, 0, 0))  # ret #0             drop
+    return "".join("{ 0x%x, %u, %u, 0x%08x },\n" % insn for insn in program)
+
+
 class NetsniffRecorder:
     """
     Class to handle the recording of network traffic using netsniff-ng.
@@ -96,7 +156,6 @@ class NetsniffRecorder:
         interface: Network interface to capture traffic on.
         interface_index (int): Index of the network interface if not specified by interface.
         silent (bool): Whether to run netsniff-ng in silent mode (no stdout) (default: True).
-        capture_filter (str): Optional filter to apply to the capture. (default: None)
     """
 
     def __init__(
@@ -107,7 +166,6 @@ class NetsniffRecorder:
         interface=None,
         interface_index: int = 0,
         silent: bool = True,
-        capture_filter: str | None = None,
         packets_capture: int | None = None,
         capture_time: int = 0,
     ):
@@ -121,7 +179,8 @@ class NetsniffRecorder:
             self.interface = self.host.network_interfaces[interface_index].name
         self.netsniff_process = None
         self.silent = silent
-        self.capture_filter = capture_filter
+        # netsniff-ng filter file text, "" until update_filter() names a stream.
+        self._filter_program = ""
         self.packets_capture = packets_capture
         self.capture_time = capture_time
         self._promisc_was_off = False
@@ -182,7 +241,6 @@ class NetsniffRecorder:
                 # for a realtime I/O priority, which needs CAP_SYS_ADMIN, and
                 # granting that to a binary is no better than running it as root.
                 cmd = [
-                    "sudo",
                     "netsniff-ng",
                     "--silent" if self.silent else "",
                     "--in",
@@ -201,11 +259,27 @@ class NetsniffRecorder:
                         if self.packets_capture is not None
                         else ""
                     ),
-                    f'-f "{self.capture_filter}"' if self.capture_filter else "",
+                    "-f -" if self._filter_program else "",
                 ]
-                logger.info(f"Running command: {' '.join(cmd)}")
+                if self._filter_program:
+                    # "-f -" reads the compiled filter from stdin, so the program
+                    # never has to exist as a file on the capture host -- nothing
+                    # to create, clean up, or leave behind when a capture is
+                    # killed. Record separators travel as printf escapes because
+                    # the whole thing is one SSH command line.
+                    escaped = self._filter_program.replace("\n", "\\n")
+                    cmd.insert(0, f"printf '%b' '{escaped}' |")
+                # One "sh -c" so the SSH command has exactly one child whatever
+                # the filter is: mfd_connect resolves the PID by listing the
+                # wrapper shell's children and raises SSHPIDException when there
+                # is more than one, which a top-level pipeline briefly shows.
+                # That escapes start_process uncaught -- it is a sibling of
+                # RemoteProcessInvalidState, not a subclass.
+                inner = " ".join(cmd)
+                command = f'sudo sh -c "{inner}"'
+                logger.info(f"Running command: {command}")
                 self.netsniff_process = connection.start_process(
-                    " ".join(cmd), stderr_to_stdout=True
+                    command, stderr_to_stdout=True
                 )
                 logger.info(f"PCAP file will be saved at: {self.pcap_file}")
 
@@ -296,11 +370,11 @@ class NetsniffRecorder:
     def _reap(self):
         """Make sure no root ``netsniff-ng`` survives the process handle.
 
-        ``start_process("sudo netsniff-ng ...")`` runs under ``bash -c``, so the
-        handle above signals the bash wrapper and sudo does not pass the signal
-        on to its child. The capture therefore keeps running as root, reparented
-        to PID 1: it grows the pcap while it is being uploaded and holds the
-        interface open for the next test. This is the same reason
+        ``start_process('sudo sh -c "netsniff-ng ..."')`` runs under ``bash -c``,
+        so the handle above signals the bash wrapper and sudo does not pass the
+        signal on to its child. The capture therefore keeps running as root,
+        reparented to PID 1: it grows the pcap while it is being uploaded and
+        holds the interface open for the next test. This is the same reason
         ``conftest._reap_ptp_daemons`` reaps ptp4l/phc2sys by argv, and the fix
         is the same -- ``pkill`` on the argv rather than on the handle.
 
@@ -376,22 +450,24 @@ class NetsniffRecorder:
         finally:
             self._promisc_was_off = False
 
-    def update_filter(self, src_ip=None, dst_ip=None):
+    def update_filter(self, dst_ip=None, st2110_20_only: bool = False):
         """
-        Updates the capture filter with new source and/or destination IP addresses.
-        :param src_ip: New source IP address to filter (optional).
+        Restricts the capture to UDP addressed to one or more destination IPs.
         :param dst_ip: Destination IP to filter, or several (an ST 2022-7
             session's two copies go into one pcap so EBU judges both).
+        :param st2110_20_only: True only when the capture will hold nothing but
+            ST 2110-20 video, which is then truncated to ``_ST2110_20_SNAPLEN``.
+            EBU LIST silently skips ST 2110-40 payload analysis on a truncated
+            pcap, so truncating a capture that also carries ancillary data would
+            report an unanalysed stream as compliant.
         """
-        filters = []
-        if src_ip:
-            filters.append(f"src {src_ip}")
-        if dst_ip:
-            dst_ips = [dst_ip] if isinstance(dst_ip, str) else list(dst_ip)
-            clause = " or ".join(f"dst {ip}" for ip in dst_ips)
-            filters.append(f"({clause})" if len(dst_ips) > 1 else clause)
-        if len(filters) > 1:
-            self.capture_filter = " and ".join(filters)
-        elif len(filters) == 1:
-            self.capture_filter = filters[0]
-        logger.info(f"Updated capture filter to: {self.capture_filter}")
+        if not dst_ip:
+            return
+        dst_ips = (dst_ip,) if isinstance(dst_ip, str) else tuple(dst_ip)
+        snaplen = _ST2110_20_SNAPLEN if st2110_20_only else _SNAPLEN_FULL
+        self._filter_program = _bpf_program(dst_ips, snaplen)
+        logger.info(
+            "Capture filter: UDP to %s, %d octets per packet",
+            " or ".join(dst_ips),
+            snaplen,
+        )

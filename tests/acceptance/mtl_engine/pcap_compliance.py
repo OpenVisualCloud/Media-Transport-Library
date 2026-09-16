@@ -482,6 +482,7 @@ class CaptureIntent:
     transport_format: Optional[str] = None
     framerate: Optional[str] = None
     expected_video_streams: int = 1
+    st2110_20_only: bool = False
 
 
 class ComplianceCheck(Protocol):
@@ -590,7 +591,9 @@ class ComplianceSession:
             # one stream's frame count -- has to cover all replicas too.
             if self._recorder.packets_capture is not None:
                 self._recorder.packets_capture *= max(1, intent.expected_video_streams)
-            self._recorder.update_filter(dst_ip=intent.dst_ips)
+            self._recorder.update_filter(
+                dst_ip=intent.dst_ips, st2110_20_only=intent.st2110_20_only
+            )
             self._recorder.capture(capture_time=intent.capture_time)
             logger.info(
                 "Started netsniff-ng capture for destination IP %s",
