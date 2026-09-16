@@ -34,6 +34,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/ut_concurrency.h"
 #include "pipeline/st20p_harness.h"    /* RX role: ut20p_* */
 #include "pipeline/st20p_tx_harness.h" /* TX role: ut20p_tx_* */
 
@@ -43,32 +44,6 @@ namespace {
  * correct lock-free design finishes in well under a second; only a genuine
  * livelock/deadlock approaches this. */
 constexpr auto kRunBudget = std::chrono::seconds(45);
-
-/* Brief on-CPU dwell that widens the ownership window so a concurrent
- * violation has time to be observed by a second actor. */
-inline void dwell() {
-  for (volatile int i = 0; i < 64; i++) {
-  }
-}
-
-/* Pin a worker to its own core so the lock-free ring is exercised, not the
- * scheduler. An unpinned busy-spin loop on a multi-socket NUMA host is migrated
- * and co-located by the scheduler, collapsing throughput by ~600x and tripping
- * the deadlock budget on a design that is in fact lock-free.
- *
- * Core 0 is skipped on purpose: ut_eal_init() starts DPDK with "-c1", which
- * pins the calling (main) thread to core 0 -- so the process affinity mask is
- * {0} after init and must NOT be used as the candidate set. We spread workers
- * across cores [1, nproc) by slot instead. Best-effort: failure leaves the
- * thread unpinned. */
-inline void pin_worker(std::thread& t, int slot) {
-  long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-  if (nproc <= 1) return;
-  cpu_set_t one;
-  CPU_ZERO(&one);
-  CPU_SET(1 + (slot % (int)(nproc - 1)), &one);
-  pthread_setaffinity_np(t.native_handle(), sizeof(one), &one);
-}
 
 }  // namespace
 
@@ -104,7 +79,7 @@ TEST(St20PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
       }
       int idx = ut20p_tx_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut20p_tx_put_frame(ctx, f) != 0) api_error.store(true);
       produced.fetch_add(1, std::memory_order_relaxed);
@@ -117,7 +92,7 @@ TEST(St20PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
       uint16_t idx = 0;
       if (ut20p_tx_next_frame(ctx, &idx) != 0) continue; /* nothing CONVERTED yet */
       if (holder[idx].exchange(-1) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != -1) ownership_violation.store(true);
       if (ut20p_tx_frame_done(ctx, idx) != 0) api_error.store(true);
       consumed.fetch_add(1, std::memory_order_relaxed);
@@ -127,7 +102,7 @@ TEST(St20PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
   std::vector<std::thread> threads;
   threads.emplace_back(consumer);
   for (int p = 1; p <= kProducers; p++) threads.emplace_back(producer, p);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;
@@ -200,7 +175,7 @@ TEST(St20PipelineConcurrency, RxSingleProducerMultiConsumerNoDeadlock) {
       if (!f) continue; /* nothing READY yet */
       int idx = ut20p_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut20p_put_frame(ctx, f) != 0) api_error.store(true);
       consumed.fetch_add(1, std::memory_order_relaxed);
@@ -210,7 +185,7 @@ TEST(St20PipelineConcurrency, RxSingleProducerMultiConsumerNoDeadlock) {
   std::vector<std::thread> threads;
   threads.emplace_back(producer);
   for (int c = 1; c <= kConsumers; c++) threads.emplace_back(consumer, c);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;
@@ -292,7 +267,7 @@ TEST(St20PipelineConcurrency, RxConcurrentConvertersNoDoubleClaim) {
       /* Atomically mark ownership; if another thread already owns this
        * slot the exchange returns non-zero -> ownership violation. */
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       /* Return the frame with result=-1 (convert-failed path) so the pipeline
        * releases it directly back to FREE, keeping the ring draining without
@@ -306,7 +281,7 @@ TEST(St20PipelineConcurrency, RxConcurrentConvertersNoDoubleClaim) {
   std::vector<std::thread> threads;
   threads.emplace_back(refiller);
   for (int c = 1; c <= kConverters; c++) threads.emplace_back(converter, c);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;
@@ -376,7 +351,7 @@ TEST(St20PipelineConcurrency, TxConcurrentConvertersNoDoubleClaim) {
       if (!meta) continue;
       int idx = ut20p_tx_convert_frame_idx(meta);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut20p_tx_convert_put_frame(ctx, meta, 0) != 0) api_error.store(true);
       claimed.fetch_add(1, std::memory_order_relaxed);
@@ -386,7 +361,7 @@ TEST(St20PipelineConcurrency, TxConcurrentConvertersNoDoubleClaim) {
   std::vector<std::thread> threads;
   threads.emplace_back(refiller);
   for (int c = 1; c <= kConverters; c++) threads.emplace_back(converter, c);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;
@@ -472,7 +447,7 @@ TEST(St20PipelineConcurrency, TxManualReleaseLifecycleNoDoubleClaim) {
       }
       int idx = ut20p_tx_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut20p_tx_put_frame(ctx, f) != 0) api_error.store(true);
       produced.fetch_add(1, std::memory_order_relaxed);
@@ -485,7 +460,7 @@ TEST(St20PipelineConcurrency, TxManualReleaseLifecycleNoDoubleClaim) {
       uint16_t idx = 0;
       if (ut20p_tx_next_frame(ctx, &idx) != 0) continue; /* nothing CONVERTED */
       if (holder[idx].exchange(-1) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       /* frame_done parks the slot in IN_USER (manual-release flag set). */
       if (ut20p_tx_frame_done(ctx, idx) != 0) api_error.store(true);
       if (holder[idx].exchange(-2) != -1) ownership_violation.store(true);
@@ -515,7 +490,7 @@ TEST(St20PipelineConcurrency, TxManualReleaseLifecycleNoDoubleClaim) {
   threads.emplace_back(consumer);
   threads.emplace_back(releaser);
   for (int p = 1; p <= kProducers; p++) threads.emplace_back(producer, p);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;

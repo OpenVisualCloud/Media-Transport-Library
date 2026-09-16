@@ -32,25 +32,8 @@
 #include <thread>
 #include <vector>
 
+#include "common/ut_concurrency.h"
 #include "pipeline/st20p_tx_harness.h"
-
-namespace {
-
-/* Pin a worker to its own core so all producers are genuinely running in
- * parallel when they hit the barrier release, instead of the scheduler
- * serializing them onto one core. Core 0 is skipped on purpose: ut_eal_init()
- * starts DPDK with "-c1", which pins the calling (main) thread to core 0.
- * Best-effort: failure leaves the thread unpinned. */
-inline void pin_worker(std::thread& t, int slot) {
-  long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-  if (nproc <= 1) return;
-  cpu_set_t one;
-  CPU_ZERO(&one);
-  CPU_SET(1 + (slot % (int)(nproc - 1)), &one);
-  pthread_setaffinity_np(t.native_handle(), sizeof(one), &one);
-}
-
-}  // namespace
 
 TEST(St20PipelineTxConcurrency, MultiProducerNoSpuriousClaimFailure) {
   ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
@@ -84,7 +67,7 @@ TEST(St20PipelineTxConcurrency, MultiProducerNoSpuriousClaimFailure) {
         /* single-shot: exactly one get_frame() call per thread, no retry. */
         results[t] = ut20p_tx_get_frame(ctx);
       });
-      pin_worker(threads[t], t);
+      ut_pin_worker(threads[t], t);
     }
     while (ready.load(std::memory_order_relaxed) < kThreads) {
     }
