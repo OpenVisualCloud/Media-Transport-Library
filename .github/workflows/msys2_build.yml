@@ -3,6 +3,18 @@ name: Windows MSYS2 build
 on:
   # allow manually trigger
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 env:
   # FIXME: For some reason enabling jit debugging "fixes" random python crashes
@@ -35,7 +47,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.changed == 'true') }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -43,7 +55,10 @@ jobs:
         sys:
           - mingw64
           - ucrt64
-        dpdk: [25.03, 23.11]
+        # 23.11 alone: a Windows leg needs patches/dpdk/<version>/windows/, and
+        # 25.03 has no such directory, so that leg stopped in the apply-patches
+        # step. Add the version here again when the directory is there.
+        dpdk: [23.11]
     defaults:
       run:
         shell: msys2 {0}
@@ -62,6 +77,7 @@ jobs:
             git
             base-devel
             unzip
+            wget
           pacboy: >-
             pkgconf:p
             openssl:p
@@ -143,3 +159,6 @@ jobs:
 
       - name: Build with TAP
         run: task ci:msys2 -- build-tap
+
+      - name: Build and run the unit suite
+        run: task ci:msys2 -- unit

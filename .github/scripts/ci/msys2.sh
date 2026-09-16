@@ -62,8 +62,26 @@ build-tap)
 	meson setup tap_build -Denable_tap=true
 	meson install -C tap_build
 	;;
+unit)
+	# The unit tier needs no NIC, no hugepage and no administrator right, so
+	# Windows can run it.
+	#
+	# libmtl.dll imports wpcap.dll, because the pcap PMD and pcapng of DPDK are
+	# inside it and DPDK links -lwpcap on Windows. wpcap.dll is the runtime
+	# library of npcap and the npcap step above installs the SDK alone, which is
+	# enough to link but not to run. The installer of the free edition of npcap
+	# needs a window, so a runner cannot install it. The libpcap.dll of MSYS2
+	# holds every pcap_ function of the import table, so a copy of it under the
+	# name of the npcap library answers the loader. No unit case calls pcap: the
+	# tier has no NIC and no pcap file.
+	prefix="${MSYSTEM_PREFIX:?MSYSTEM_PREFIX is required}"
+	if [[ ! -f /c/Windows/System32/wpcap.dll && ! -f ${prefix}/bin/wpcap.dll ]]; then
+		cp "${prefix}/bin/libpcap.dll" "${prefix}/bin/wpcap.dll"
+	fi
+	(cd "$root_dir" && ./build.sh unit)
+	;;
 *)
-	echo "Usage: $0 {npcap|mman|convert-patches|hash-patches|apply-patches|build-dpdk|install-dpdk|build|build-debug|build-tap}" >&2
+	echo "Usage: $0 {npcap|mman|convert-patches|hash-patches|apply-patches|build-dpdk|install-dpdk|build|build-debug|build-tap|unit}" >&2
 	exit 2
 	;;
 esac
