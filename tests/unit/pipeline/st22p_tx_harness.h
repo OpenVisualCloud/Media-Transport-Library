@@ -38,6 +38,21 @@ void ut22p_tx_ctx_destroy(ut22p_tx_ctx* ctx);
 
 int ut22p_tx_framebuff_cnt(const ut22p_tx_ctx* ctx);
 
+/**
+ * Turn on ST22_ENCODER_RESP_FLAG_BLOCK_GET behaviour for the encoder-plugin
+ * side: init the encode block cond/mutex and set its wait timeout. Call before
+ * any ut22p_tx_encode_get_frame().
+ */
+void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
+
+/** Wake a blocking encode_get_frame sleeper, via the callback the encoder
+ * device is registered with (wraps tx_st22p_encode_wake_block). */
+void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx);
+
+/* encoder-plugin side: claim READY->IN_ENCODING. Returns 0 when a frame was
+ * handed back, -EBUSY when none was. */
+int ut22p_tx_encode_get_frame(ut22p_tx_ctx* ctx);
+
 /** Set the mock PTP wall-clock time returned by mt_get_ptp_time(). */
 void ut22p_tx_set_ptp_ns(ut22p_tx_ctx* ctx, uint64_t ns);
 

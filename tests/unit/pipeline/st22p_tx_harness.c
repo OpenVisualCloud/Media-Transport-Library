@@ -8,6 +8,7 @@
  * encoder plugin are bypassed.
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +27,7 @@ struct ut22p_tx_ctx {
   struct st22p_tx_frame* framebuffs;
   int framebuff_cnt;
   uint64_t mock_ptp_ns;
+  bool encode_blocking;
 };
 
 #include "pipeline/st22p_tx_harness.h"
@@ -85,8 +87,29 @@ ut22p_tx_ctx* ut22p_tx_ctx_create(int framebuff_cnt) {
 
 void ut22p_tx_ctx_destroy(ut22p_tx_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->encode_blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.encode_block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.encode_block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns) {
+  struct st22p_tx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->encode_block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->encode_block_wake_cond);
+  p->encode_block_timeout_ns = timeout_ns;
+  p->encode_block_get = true;
+  ctx->encode_blocking = true;
+}
+
+void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx) {
+  tx_st22p_encode_wake_block(&ctx->pipeline);
+}
+
+int ut22p_tx_encode_get_frame(ut22p_tx_ctx* ctx) {
+  return tx_st22p_encode_get_frame(&ctx->pipeline) ? 0 : -EBUSY;
 }
 
 int ut22p_tx_framebuff_cnt(const ut22p_tx_ctx* ctx) {
