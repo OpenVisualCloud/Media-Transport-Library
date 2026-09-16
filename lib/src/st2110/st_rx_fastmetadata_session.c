@@ -162,7 +162,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     }
     warn(
         "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
-        "%d), timestamp %u (old timestamp %ld)\n",
+        "%d), timestamp %u (old timestamp %" PRId64 ")\n",
         __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
   }
   s->redundant_error_cnt[s_port] = 0;

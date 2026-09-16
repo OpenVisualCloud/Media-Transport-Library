@@ -622,8 +622,8 @@ void rv_slot_dump(struct st_rx_video_session_impl* s) {
 
   for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
     slot = &s->slots[i];
-    info("%s(%d), tmstamp %ld recv_size %" PRIu64 " pkts_received %u\n", __func__, i,
-         slot->tmstamp, rv_slot_get_frame_size(slot), slot->pkts_received);
+    info("%s(%d), tmstamp %" PRId64 " recv_size %" PRIu64 " pkts_received %u\n", __func__,
+         i, slot->tmstamp, rv_slot_get_frame_size(slot), slot->pkts_received);
   }
 }
 
