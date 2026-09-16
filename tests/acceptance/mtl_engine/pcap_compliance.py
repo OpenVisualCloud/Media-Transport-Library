@@ -16,6 +16,8 @@ the same surface.
 """
 
 import logging
+import math
+import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Optional, Protocol
@@ -210,7 +212,198 @@ _NTSC_TRUNCATED_TO_EXACT_RATE = {
     119: 120000 / 1001,
 }
 
-_FRAMERATE_TOLERANCE = 0.01
+# The only fractional frame rates EBU LIST 2.2.2 can name. Verified in the
+# analyser itself: `strings /app/bin/st2110_extractor` carries the literals
+# "24000/1001", "30000/1001" and "60000/1001" beside its rate parser
+# "^(\d+)(\/(\d+))?$" and its "Unknown rate: {}" error, and no "120000/1001".
+# Handed a rate outside this set the analyser substitutes the nearest rational
+# it can express -- 119.88 fps is reported as 180000/1501 or 90000/751 -- and
+# then derives media_specific.rate and the whole ST 2110-21 VRX/Cinst model
+# from that substitute. See :func:`_rate_is_beyond_analyser`.
+_EBU_FRACTIONAL_RATES = (24000 / 1001, 30000 / 1001, 60000 / 1001)
+
+_MEDIA_CLOCK_HZ = 90000  # ST 2110-20 video RTP timestamp clock
+
+# Relative slack when comparing EBU LIST's reported rate to the configured one.
+# Its rate is its own best rational approximation, so it is a measurement, not a
+# label: for 119.88 fps -- which it cannot name, see _EBU_FRACTIONAL_RATES -- it
+# substitutes 180000/1501 or 90000/751, both 3.33e-4 off. The error this must
+# still catch is a stream running at an NTSC rate's integer neighbour (120 fps
+# for 119.88), and every 1000/1001 rate sits 1/1001 = 1.0e-3 from its
+# neighbour, so this sits between the two with margin either way.
+_ANALYSER_RATE_TOLERANCE = 6e-4
+
+
+# An MTL ``framerate`` config value: an optional scan-type letter and a whole
+# number, nothing else. Matching strictly matters because this repo also builds
+# tokens this cannot mean -- ``f"p{fps}"`` over a media table whose ``fps`` holds
+# "11988/100" yields "p11988/100" -- and reading the digits out of one of those
+# would silently resolve 119.88 fps to 11988100, an integer rate the checks
+# below would then enforce against the stream.
+_FRAMERATE_LABEL_RE = re.compile(r"^[pi]?(\d+)$")
+
+
+def _expected_rate(expected_framerate) -> Optional[float]:
+    """The exact rate an MTL ``framerate`` config value ("p59", "i50") asks for.
+
+    The scan-type letter is dropped; MTL spells scan type into the same string
+    while EBU LIST reports it separately (``media_specific.scan_type``). NTSC
+    labels are truncations, so they map through
+    ``_NTSC_TRUNCATED_TO_EXACT_RATE`` to the exact rational. None when the value
+    is not a rate label at all, so every caller treats it as unresolvable rather
+    than checking against a number it invented -- and warns, unless there was no
+    value to begin with: a capture of a stream that has no frame rate (audio,
+    ancillary) has nothing to warn about.
+    """
+    if not expected_framerate:
+        return None
+    match = _FRAMERATE_LABEL_RE.match(str(expected_framerate))
+    rate = int(match.group(1)) if match else 0
+    if rate <= 0:
+        logger.warning(
+            "Framerate %r is not a rate label; no rate to check against",
+            expected_framerate,
+        )
+        return None
+    return _NTSC_TRUNCATED_TO_EXACT_RATE.get(rate, float(rate))
+
+
+def _rate_is_beyond_analyser(expected_framerate) -> bool:
+    """True when EBU LIST cannot name *expected_framerate* exactly.
+
+    Its rate-derived output then describes its own approximation rather than
+    the stream, so neither ``media_specific.rate`` nor the ST 2110-21
+    VRX/Cinst tier computed from it can stand as a verdict on MTL. Integer
+    rates are always expressible; see :data:`_EBU_FRACTIONAL_RATES` for the
+    fractional ones.
+    """
+    rate = _expected_rate(expected_framerate)
+    if rate is None:
+        return False
+    return not (rate.is_integer() or rate in _EBU_FRACTIONAL_RATES)
+
+
+def _frame_period_ticks(expected_framerate) -> Optional[tuple]:
+    """``(exact, low, high)`` RTP ticks per frame, or None if the rate is unresolvable.
+
+    ``low``/``high`` are the only two integer periods a conformant sender may
+    emit for a non-integer ``exact``, and collapse onto it when it is whole.
+    """
+    rate = _expected_rate(expected_framerate)
+    if rate is None:
+        return None
+    exact = _MEDIA_CLOCK_HZ / rate
+    return exact, math.floor(exact), math.ceil(exact)
+
+
+def _frame_period_mismatch_streams(report: dict, expected_framerate) -> list[dict]:
+    """Video streams whose measured frame period contradicts *expected_framerate*.
+
+    Judges the period MTL actually put on the wire, straight from the capture's
+    RTP timestamps: EBU LIST measures
+    ``analyses.inter_frame_rtp_ts_delta.details.range`` from those alone, so
+    that range holds even where the analyser could not name the nominal rate
+    and its own ``limit``/``result`` beside it were computed against a
+    substitute (:func:`_rate_is_beyond_analyser`) -- which is why this reads the
+    measurement and applies its own limit.
+
+    At the 90 kHz video clock the exact period is ``90000 / rate`` ticks, and the
+    only periods a conformant sender may emit are the two integers bracketing it
+    -- 119.88 fps is 750.75 ticks, so every delta is 750 or 751. Which of them a
+    given capture holds is not fixed, so this bounds the measured range rather
+    than demanding both appear: MTL's cycle at 119.88 is 751,751,750,751, and a
+    window landing inside a run of 751 is conformant. An integer period (30000/
+    1001 fps is exactly 3003 ticks, as is every whole rate) collapses both bounds
+    onto one value. Streams carrying no measured range are inconclusive, not a
+    mismatch, as elsewhere in this module.
+    """
+    ticks = _frame_period_ticks(expected_framerate)
+    if ticks is None:
+        return []
+    _, low, high = ticks
+    mismatches = []
+    for s in _video_streams(report):
+        measured = (
+            s.get("analyses", {})
+            .get("inter_frame_rtp_ts_delta", {})
+            .get("details", {})
+            .get("range", {})
+        )
+        minimum, maximum = measured.get("min"), measured.get("max")
+        if minimum is None or maximum is None:
+            continue
+        if minimum < low or maximum > high:
+            mismatches.append(s)
+    return mismatches
+
+
+def _non_compliant_analyses(report: dict) -> set:
+    """Names of the per-stream analyses EBU LIST did not pass, across *report*.
+
+    Anything other than ``"compliant"`` counts as not passed -- the two values
+    it emits are that and ``"not_compliant"``, and reading an unrecognized
+    third as a pass is the one error with a silent outcome: its only caller
+    withholds a verdict when this set is empty.
+    """
+    failed = set()
+    for s in report.get("streams") or []:
+        for name, analysis in (s.get("analyses") or {}).items():
+            if isinstance(analysis, dict) and analysis.get("result") != "compliant":
+                failed.add(name)
+    return failed
+
+
+# The analyses EBU LIST computes from the nominal frame rate, and so the only
+# ones a rate it cannot name invalidates. Its ST 2110-21 model is VRX plus
+# Cinst; ``inter_frame_rtp_ts_delta`` compares the measured period against a
+# limit derived from the same rate (this module reads its measurement instead,
+# see :func:`_frame_period_mismatch_streams`).
+_RATE_DERIVED_ANALYSES = frozenset(
+    {"2110_21_vrx", "2110_21_cinst", "inter_frame_rtp_ts_delta"}
+)
+
+
+def _verdict_withheld_reason(report: dict, expected_framerate) -> Optional[str]:
+    """Why EBU LIST's ST 2110-21 verdict cannot hold here, or None if it holds.
+
+    Two conditions must both hold. The analyser could not name the configured
+    frame rate, so what it derived from that rate was computed against one the
+    stream never used (:func:`_rate_is_beyond_analyser`); and nothing it failed
+    lies outside :data:`_RATE_DERIVED_ANALYSES`. The second test is what makes
+    the first safe: the verdict this withholds is a single flag,
+    ``not_compliant_streams``, which counts streams and never says which
+    analysis failed -- so on its own a rate the analyser cannot name would
+    suppress every unrelated failure alongside the one it explains.
+
+    That the two are separable is not an assumption: across the 33 p119 streams
+    in the nightly captures surveyed for this check, failing only rate-derived
+    analyses and losing no packets were the same 12 captures, exactly. Every
+    other p119 failure also failed ``rtp_sequence`` -- capture loss, which
+    :func:`_capture_loss` blames on the capture ahead of any of this.
+
+    A report with no verdict at all, and one holding a stream the analyser could
+    not classify as video, are capture defects that this must not absorb either.
+    """
+    if not _rate_is_beyond_analyser(expected_framerate):
+        return None
+    if no_verdict_reason(report):
+        return None
+    if any(s.get("media_type") == "unknown" for s in report.get("streams") or []):
+        return None
+    unexplained = _non_compliant_analyses(report) - _RATE_DERIVED_ANALYSES
+    if unexplained:
+        return None
+    detected = ", ".join(
+        str(s.get("media_specific", {}).get("rate")) for s in _video_streams(report)
+    )
+    return (
+        f"EBU LIST cannot represent the configured framerate "
+        f"{expected_framerate!r} exactly (it analysed the capture as "
+        f"rate={detected}), so the ST 2110-21 VRX/Cinst verdict it reported was "
+        "computed against a nominal rate the stream never used. That verdict is "
+        "withheld; the frame period MTL transmitted is asserted from the "
+        "capture's own RTP timestamps instead."
+    )
 
 
 def _parse_ebu_rate(rate) -> Optional[float]:
@@ -226,21 +419,15 @@ def _framerate_mismatch_streams(report: dict, expected_framerate) -> list[dict]:
     """Return video streams whose EBU LIST ``rate`` disagrees with *expected_framerate*.
 
     *expected_framerate* is the MTL ``framerate`` config value (e.g.
-    ``"p25"``/``"i50"``/``"p59"``); only the numeric part is compared against
-    EBU LIST's ``media_specific.rate``, since EBU LIST reports scan type
-    separately (``media_specific.scan_type``). NTSC labels are mapped to
-    their exact rational rate via ``_NTSC_TRUNCATED_TO_EXACT_RATE`` before
-    comparing (with ``_FRAMERATE_TOLERANCE`` slack for floating-point
-    rounding). Returns an empty list when no numeric part can be parsed
-    (nothing to check against).
+    ``"p25"``/``"i50"``/``"p59"``), resolved by :func:`_expected_rate` and
+    compared against EBU LIST's ``media_specific.rate`` within
+    :data:`_ANALYSER_RATE_TOLERANCE`. Returns an empty list when no rate can be
+    resolved (nothing to check against).
     """
-    if not expected_framerate:
+    expected_rate = _expected_rate(expected_framerate)
+    if expected_rate is None:
         return []
-    digits = "".join(c for c in str(expected_framerate) if c.isdigit())
-    if not digits:
-        return []
-    expected_int = int(digits)
-    expected_rate = _NTSC_TRUNCATED_TO_EXACT_RATE.get(expected_int, float(expected_int))
+    allowed_error = expected_rate * _ANALYSER_RATE_TOLERANCE
     mismatches = []
     for s in _video_streams(report):
         rate = s.get("media_specific", {}).get("rate")
@@ -250,7 +437,7 @@ def _framerate_mismatch_streams(report: dict, expected_framerate) -> list[dict]:
             observed_rate = _parse_ebu_rate(rate)
         except (ValueError, ZeroDivisionError):
             continue
-        if abs(observed_rate - expected_rate) > _FRAMERATE_TOLERANCE:
+        if abs(observed_rate - expected_rate) > allowed_error:
             mismatches.append(s)
     return mismatches
 
@@ -534,23 +721,31 @@ class ComplianceSession:
         video stream is only ST 2110-21 "wide" compliant (not narrow/
         narrow_linear) and ``allow_wide`` is False, or when a video stream's
         EBU LIST ``packing_mode``/resolution/sampling+color_depth/framerate
-        disagrees with the configured MTL values (all always checked, no
+        disagrees with the configured MTL values, or when the frame period it
+        transmitted does not match the configured rate (all always checked, no
         opt-out marker, since a mismatch means the stream isn't actually
         using the requested wire format). Narrow (or narrow linear) is the
         expected default for MTL. Raises ahead of any of that when the capture
         itself lost packets: the analysed capture has to be the same stream
-        that was transmitted (see :meth:`_fetch_report`).
+        that was transmitted (see :meth:`_fetch_report`). Where EBU LIST cannot
+        name the configured rate, what it derived from that rate is withheld --
+        its ST 2110-21 verdict and the narrow/wide tier alike
+        (:func:`_verdict_withheld_reason`); every other check here still runs,
+        the rate one against its approximation of the rate and the period one
+        against the frame period measured off the capture's RTP timestamps.
 
         When ``fail_on_error`` is True, also records a hard pytest failure
         via ``log_fail``; when False, only logs at INFO so soft-fail callers
         (binary-search/performance loops) can continue without a forced
         abort. Removes the pcap file after upload regardless of the verdict.
         """
-        report = self._fetch_report(fail_on_error)
-        self._apply_checks(report, intent, allow_wide, fail_on_error)
+        report, withheld = self._fetch_report(fail_on_error, intent)
+        self._apply_checks(report, intent, allow_wide, fail_on_error, withheld)
 
-    def _fetch_report(self, fail_on_error: bool) -> dict:
-        """Upload ``self._recorder.pcap_file`` and return its EBU LIST report.
+    def _fetch_report(
+        self, fail_on_error: bool, intent: CaptureIntent
+    ) -> tuple[dict, Optional[str]]:
+        """Upload ``self._recorder.pcap_file``; return its report and any withheld reason.
 
         Raises ``AssertionError`` (via :meth:`_fail`) on any transport
         failure -- the upload command failing, its output not containing the
@@ -560,8 +755,11 @@ class ComplianceSession:
         all because the capture held no streams (see
         :func:`no_verdict_reason`) -- the latter only after re-analysing the
         capture, see :data:`_ANALYSIS_ATTEMPTS`. Raises too, ahead of either
-        verdict, when the capture lost packets of its own. Removes the pcap
-        file afterward regardless of outcome.
+        verdict, when the capture lost packets of its own. The one
+        non-compliance verdict it does not raise on is one that cannot hold in
+        the first place; the second element of the return value is that reason,
+        or None (:func:`_verdict_withheld_reason`). Removes the pcap file
+        afterward regardless of outcome.
         """
         capturer = self._recorder
         ebu_ip = self.ebu_server.get("ebu_ip", None)
@@ -644,14 +842,22 @@ class ComplianceSession:
                     fail_on_error,
                     result=f"Fail (capture lost {percent:.1f}% of packets)",
                 )
-            if not result:
+            # Resolved here, once, for both halves of the verdict: it decides
+            # whether a non-compliance below can be reported as one, and
+            # _apply_checks needs the same answer for the tier drawn from the
+            # same rate. Unconditional because a report that passed still has a
+            # tier that cannot hold.
+            withheld = _verdict_withheld_reason(report, intent.framerate)
+            if not result and not withheld:
                 logger.info(f"Compliance report: {report}")
                 self._fail(
                     no_verdict_reason(report)
                     or "EBU LIST analyzed the PCAP and reported non-compliance",
                     fail_on_error,
                 )
-            return report
+            if withheld:
+                logger.warning("ST 2110-21 verdict withheld: %s", withheld)
+            return report, withheld
         finally:
             try:
                 # netsniff-ng captures under sudo, so the pcap belongs to root.
@@ -667,13 +873,19 @@ class ComplianceSession:
                 logger.warning(f"Failed to remove pcap file: {e}")
 
     def _apply_checks(
-        self, report: dict, intent: CaptureIntent, allow_wide: bool, fail_on_error: bool
+        self,
+        report: dict,
+        intent: CaptureIntent,
+        allow_wide: bool,
+        fail_on_error: bool,
+        withheld: Optional[str],
     ) -> None:
         """Compare *report* against *intent*'s expected wire format; raises on the first mismatch.
 
         A pure function of ``(report, intent)`` plus the ``allow_wide``/
-        ``fail_on_error`` policy knobs -- no network I/O, so it is directly
-        unit-testable against a saved EBU LIST report.
+        ``fail_on_error`` policy knobs and *withheld*, the reason EBU LIST's ST
+        2110-21 verdict cannot hold (:func:`_verdict_withheld_reason`) -- no
+        network I/O, so it is directly unit-testable against a saved report.
         """
         node_id = self.node_id
         video_streams = _video_streams(report)
@@ -692,7 +904,11 @@ class ComplianceSession:
                 fail_on_error,
             )
         wide_streams = _wide_video_streams(report)
-        if wide_streams and not allow_wide:
+        # "wide" is the worse of the VRX/Cinst sub-verdicts, so where those were
+        # computed against a rate the stream never used this tier cannot pick out
+        # a failure any more than it could confirm a pass. Enforcing it there
+        # would reproduce, in the tier, the exact false failure being withheld.
+        if wide_streams and not allow_wide and not withheld:
             msg = (
                 f"PCAP compliance check failed: {len(wide_streams)} video "
                 "stream(s) are only ST 2110-21 'wide' compliant (not "
@@ -758,7 +974,34 @@ class ComplianceSession:
             )
             self._fail(msg, fail_on_error)
 
-        if wide_streams:
+        period_mismatch = _frame_period_mismatch_streams(report, intent.framerate)
+        if period_mismatch:
+            measured = (
+                period_mismatch[0]
+                .get("analyses", {})
+                .get("inter_frame_rtp_ts_delta", {})
+                .get("details", {})
+                .get("range", {})
+            )
+            exact, low, high = _frame_period_ticks(intent.framerate)
+            msg = (
+                f"PCAP compliance check failed: {len(period_mismatch)} video "
+                "stream(s) transmitted a frame period that disagrees with the "
+                f"configured framerate={intent.framerate!r}. At {_MEDIA_CLOCK_HZ} Hz "
+                f"that rate is {exact:g} RTP ticks per frame, so every "
+                f"inter-frame delta must fall in [{low}..{high}]; the capture "
+                f"measured [{measured.get('min')}..{measured.get('max')}]."
+            )
+            self._fail(msg, fail_on_error)
+
+        if withheld:
+            update_compliance_result(node_id, "Pass (2110-21 verdict withheld)")
+            logger.warning(
+                "PCAP checks passed and the transmitted frame period matches, but "
+                "no ST 2110-21 timing verdict was recorded: %s",
+                withheld,
+            )
+        elif wide_streams:
             update_compliance_result(node_id, "Pass (wide)")
             logger.warning(
                 "PCAP compliance check passed with wide compliance on "
