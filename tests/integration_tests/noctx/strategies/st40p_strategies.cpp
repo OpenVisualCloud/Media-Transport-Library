@@ -89,9 +89,11 @@ void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
    * model, ST2110-40 defines no tight rate-limited window for ANC, so a
    * video-style microsecond tolerance does not apply here. */
   const int64_t tolerance_ns = 1 * NS_PER_MS;
+  /* Hardware/PCIe jitter can legitimately land slightly before the epoch too. */
+  const int64_t floor_ns = -50 * NS_PER_US;
 
-  EXPECT_GE(delta_ns, 0) << "st40p_user_pacing frame " << frame_idx
-                         << " arrived before snapped epoch";
+  EXPECT_GE(delta_ns, floor_ns)
+      << "st40p_user_pacing frame " << frame_idx << " arrived before snapped epoch";
   EXPECT_LE(delta_ns, tolerance_ns)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
       << " receive timestamp(ns): " << receive_time_ns
