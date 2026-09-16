@@ -73,6 +73,11 @@ jobs:
         with:
           msystem: ${{ matrix.sys }}
           update: true
+          # The msys2 shell keeps a minimal Windows PATH by default, and the
+          # task program of the setup-task step below is not in it, so each
+          # step stopped with "task: command not found". inherit puts the
+          # Windows PATH after the MSYS2 paths, so an MSYS2 tool still wins.
+          path-type: inherit
           install: >-
             git
             base-devel
