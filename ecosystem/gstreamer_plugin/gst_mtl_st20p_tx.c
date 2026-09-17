@@ -342,6 +342,11 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   }
 
   info = gst_video_info_new_from_caps(caps);
+  if (!info) {
+    GST_ERROR("Failed to get video info from caps");
+    return FALSE;
+  }
+
   ops_tx.name = "st20sink";
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.width = info->width;
@@ -359,12 +364,12 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     ops_tx.interlaced = true;
   } else if (info->interlace_mode) {
     GST_ERROR("Unsupported interlace mode");
-    return FALSE;
+    goto error;
   }
 
   if (!gst_mtl_common_parse_input_finfo(info->finfo, &ops_tx.input_fmt)) {
     GST_ERROR("Failed to parse input format");
-    return FALSE;
+    goto error;
   }
 
   sink->zero_copy = (ops_tx.transport_fmt != st_frame_fmt_to_transport(ops_tx.input_fmt));
@@ -381,11 +386,11 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
     if (ops_tx.fps == ST_FPS_MAX) {
       GST_ERROR("Unsupported framerate from caps: %d/%d", info->fps_n, info->fps_d);
-      return FALSE;
+      goto error;
     }
   } else {
     GST_ERROR("Invalid framerate, denominator is 0");
-    return FALSE;
+    goto error;
   }
 
   gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
@@ -394,7 +399,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
       gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
-    return FALSE;
+    goto error;
   }
 
   if (sink->use_pts_for_pacing) {
@@ -419,6 +424,10 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
 
   sink->frame_size = st20p_tx_frame_size(sink->tx_handle);
   return TRUE;
+
+error:
+  gst_video_info_free(info);
+  return FALSE;
 }
 
 static void* gst_mtl_st20p_tx_session_create_thread(void* data) {

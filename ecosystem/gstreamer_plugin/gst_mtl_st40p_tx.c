@@ -298,7 +298,13 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
     return FALSE;
   }
 
-  gst_mtl_st40p_tx_session_create(sink);
+  /* Only the first start creates the session: nothing frees tx_handle before finalize,
+   * so a second READY -> PAUSED has to keep the session the first one made instead of
+   * failing the element. */
+  if (!sink->tx_handle && !gst_mtl_st40p_tx_session_create(sink)) {
+    GST_ERROR("Failed to create TX session");
+    return FALSE;
+  }
 
   gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
 

@@ -134,6 +134,47 @@ unit_sources = [
   'main.cpp',
 ]
 
+# The GStreamer plugin sources compile in place like the FFmpeg one, but they need the
+# GStreamer development files, which the FFmpeg harness does not, so these cases join
+# the binary only on a host that has them. They are the only sources here that do.
+gst_ut_dep = dependency('gstreamer-1.0', version : '>=1.19', required : false)
+gst_ut_base_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : false)
+gst_ut_video_dep = dependency('gstreamer-video-1.0', required : false)
+gst_ut_audio_dep = dependency('gstreamer-audio-1.0', required : false)
+
+if gst_ut_dep.found() and gst_ut_base_dep.found() and gst_ut_video_dep.found() \
+   and gst_ut_audio_dep.found()
+  gst_ut_deps = [gst_ut_dep, gst_ut_base_dep, gst_ut_video_dep, gst_ut_audio_dep,
+                 mtl_internal_dep, dpdk_dep]
+
+  # A static library, not more unit_sources, so the warning set the plugin's own
+  # meson.build needs stays on the plugin sources instead of relaxing every harness.
+  # G_DISABLE_CAST_CHECKS: the harnesses drive a sink struct of their own, not a GObject
+  # the type system made, so GST_MTL_ST40P_TX() has to stay a plain cast.
+  gst_ut_harness = static_library('ut_gst_harness',
+    ['gstreamer/gst_mtl_st20p_tx_harness.c',
+     'gstreamer/gst_mtl_st40p_tx_harness.c',
+     '../../ecosystem/gstreamer_plugin/gst_mtl_common.c'],
+    c_args : unit_c_args + ['-DG_DISABLE_CAST_CHECKS',
+                            '-Wno-discarded-qualifiers',
+                            '-Wno-stringop-truncation'],
+    include_directories : unit_include_dirs + [
+      include_directories('../../ecosystem/gstreamer_plugin')],
+    dependencies : gst_ut_deps,
+    install : false)
+
+  unit_sources += ['gstreamer/gst_mtl_st20p_tx_test.cpp',
+                   'gstreamer/gst_mtl_st40p_tx_test.cpp']
+  unit_extra_deps += declare_dependency(link_with : gst_ut_harness,
+                                        dependencies : gst_ut_deps)
+else
+  # warning(), not message(): dropping these cases drops the only coverage of the plugin
+  # sources, so it has to be visible in the configure summary rather than buried in the
+  # log. CI installs the packages (.github/scripts/ci/unit-test-dependencies.sh), so a
+  # CI run that prints this is a broken CI dependency list, not an expected outcome.
+  warning('GStreamer development files not found, dropping the gstreamer/ unit cases')
+endif
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,

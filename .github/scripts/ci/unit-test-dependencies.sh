@@ -13,3 +13,8 @@ bash "${root_dir}/.github/scripts/setup_environment.sh"
 # tests/unit/meson.build asks for dependency('gmock'); setup_environment.sh
 # installs libgtest-dev only, and gmock.pc is in a separate Ubuntu package.
 sudo apt-get install -y --no-install-recommends libgmock-dev
+# tests/unit/gstreamer/ compiles the GStreamer plugin sources in place and its cases are
+# dropped from UnitTest when these are missing. setup_environment.sh installs them only
+# for ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1, which the unit tier does not set.
+sudo apt-get install -y --no-install-recommends libgstreamer1.0-dev \
+	libgstreamer-plugins-base1.0-dev

@@ -48,6 +48,14 @@ the exception reaches no other case. There are no flaky network-timing tests in 
 This configures `build_unit/` with `-Denable_unit_tests=true`, builds it, and
 runs `tests/unit/UnitTest`.
 
+The `gstreamer/` cases are the only part of the suite that needs a dependency beyond DPDK and
+gtest. They compile the plugin sources in place, so `meson.build` looks for the GStreamer 1.19+
+development files (`libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`) and, when they are
+missing, emits a configure `warning()` and leaves those two test files out of the binary — 635
+cases instead of 644. CI installs both packages in
+[`unit-test-dependencies.sh`](../../.github/scripts/ci/unit-test-dependencies.sh), so a CI run
+that prints that warning has lost the plugin coverage and the dependency list needs fixing.
+
 AddressSanitizer covers this tier only in part. `./build.sh debug unit` and
 `MTL_BUILD_ENABLE_ASAN=true ./build.sh unit` set `-Denable_asan=true`, which `lib/meson.build`
 adds to the `libmtl.so` compile arguments only. Both commands configure and build cleanly, but
@@ -60,13 +68,16 @@ the other 511 of the 513 cases and all pass. The crash needs `enable_asan` — t
 passes 3/3 without it. Before filing a defect against `lib/`, read the allocator paragraph
 below; no causal link between the two is established. Tracked as T-61.
 
-Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the 19 production `.c`
-files this suite `#include`s into harness `.c` files are unchecked. The 251 shadowed symbols
-therefore resolve to uninstrumented code — 248 from the 18 `lib/` copies plus 3 harness stubs.
-`ecosystem/ffmpeg_plugin/mtl_common.c` is the one file of the 19 that contributes none of the
-248. Shadowing needs a `libmtl.so` symbol, and nothing `mtl_common.c` itself defines is in
-`libmtl.so`. `ffmpeg/mtl_common_harness.c` defines all 3 stubs — `mtl_init`, `mtl_uninit`,
-`mtl_pmd_by_port_name`. The two in `pipeline/st30p_tx_harness.c` land in the 248 instead, because
+Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the 21 production `.c`
+files this suite `#include`s into harness `.c` files are unchecked. Two of the 21 — the GStreamer
+plugin sources — compile into the `ut_gst_harness` static library rather than a `UnitTest.p`
+object, so the `nm` recipe below never sees them; they shadow no `libmtl.so` symbol either. The
+251 shadowed symbols therefore resolve to uninstrumented code — 248 from the 18 `lib/` copies
+plus 3 harness stubs. `ecosystem/ffmpeg_plugin/mtl_common.c` is the one of the remaining 19 that
+contributes none of the 248. Shadowing needs a `libmtl.so` symbol, and nothing `mtl_common.c`
+itself defines is in `libmtl.so`. `ffmpeg/mtl_common_harness.c` defines all 3 stubs — `mtl_init`,
+`mtl_uninit`, `mtl_pmd_by_port_name`. The two in `pipeline/st30p_tx_harness.c` land in the 248
+instead, because
 `st2110/pipeline/st30_pipeline_tx.c` is itself an included copy and defines them as well.
 
 `libmtl.so` *is* instrumented, so the 165 symbols `UnitTest` resolves from it are checked —
