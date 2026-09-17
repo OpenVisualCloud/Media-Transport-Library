@@ -118,8 +118,8 @@ void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   verifyMediaClock(frame_idx, f->timestamp, expected_media_clk);
   verifyTimestampStep(frame_idx, f->timestamp);
 
-  const uint64_t rtp_timestamp_ns =
-      st10_media_clk_to_ns(static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
+  const uint64_t rtp_timestamp_ns = st10_media_clk_to_tai(
+      f->receive_timestamp, static_cast<uint32_t>(f->timestamp), VIDEO_CLOCK_HZ);
   const int64_t rl_latency_ns =
       static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_timestamp_ns);
   expectNoCtxTimingWithinRegressionWindow(frame_idx,
