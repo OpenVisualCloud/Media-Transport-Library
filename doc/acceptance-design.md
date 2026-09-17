@@ -152,8 +152,10 @@ Key policies encoded in fixtures, not in tests:
   VFIO group.
 * **Per-test allocation.** `setup_interfaces` yields an `InterfaceSetup`;
   tests request `"VF"`, `"PF"`, `"VFxPF"`, mixed TX/RX types, or a
-  PMD+kernel-socket pair. Its `cleanup()` releases only what that test
-  created and rebinds PFs to the kernel driver.
+  PMD+kernel-socket pair. Its `cleanup()` removes only the IPs the test put on
+  kernel interfaces: driver bindings are session state, PFs included, because
+  each rebind re-probes the out-of-tree ice driver and repeated probes fault
+  it. `restore_kernel_pfs()` returns them at session end.
 * **Autouse hygiene.** Stray `ptp4l`/`phc2sys` daemons are reaped, stale
   DPDK processes holding `/dev/vfio/*` are killed, hugepage mappings are
   wiped, and libraries are `ldconfig`-registered — all before the first
@@ -298,8 +300,9 @@ otherwise the first host; auto-selection prefers a kernel PF with no active
 VFs.
 
 **VF mode** (the default) uses the session pool described in [§4.2](#42-fixture-layers). **PF
-mode** binds the physical port to `vfio-pci`, removing existing VFs first,
-and rebinds to the kernel driver during cleanup.
+mode** binds the physical port to `vfio-pci`, removing existing VFs first, and
+holds it there for the session — `restore_kernel_pfs()` rebinds it to the
+kernel driver at session end, not during per-test cleanup.
 
 **PF mode plus capture requires separate IOMMU groups.** The capture port
 must stay kernel-owned, so a DPDK-bound PF may not share its IOMMU group.

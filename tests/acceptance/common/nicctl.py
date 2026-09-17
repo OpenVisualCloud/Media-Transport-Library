@@ -320,6 +320,52 @@ class Nicctl:
         return self.host.vfs
 
 
+def _pmd_bound_pfs(host) -> set:
+    """PFs this session parked on vfio-pci and owes back to the kernel.
+
+    Kept on *host* because it must outlive the function-scoped
+    ``setup_interfaces``, as ``host.vfs`` already is.
+    """
+    if not hasattr(host, "pmd_bound_pfs"):
+        host.pmd_bound_pfs = set()
+    return host.pmd_bound_pfs
+
+
+def restore_kernel_pfs(host, nicctl, pci_addrs=None) -> None:
+    """Hand PFs this session parked on vfio-pci back to the kernel driver.
+
+    This is the call that re-probes the out-of-tree ice driver -- which faults
+    when repeated, see the PF lifecycle section of
+    ``.github/instructions/mtl-acceptance-harness.instructions.md`` -- so it
+    runs at session end, and on demand only for the PFs whose netdev a caller
+    actually needs. *pci_addrs* limits it to those; ``None`` means every PF
+    still owed.
+    """
+    parked = _pmd_bound_pfs(host)
+    owed = parked if pci_addrs is None else parked & {str(a) for a in pci_addrs}
+    for pci_addr in sorted(owed):
+        nicctl.bind_kernel(pci_addr)
+    parked -= owed
+
+
+def _kernel_netdev(iface) -> str:
+    """Name of *iface*'s kernel netdev, failing the test if it has none.
+
+    ``host.network_interfaces`` is snapshotted once per session, so a PF that
+    was already on vfio-pci when the session started keeps an unusable name
+    for the whole run even after ``restore_kernel_pfs`` gives the driver back
+    (``ensure_pf_up`` treats the same "*"/None as "no kernel interface").
+    Passing that on as ``kernel:None`` only fails much further downstream.
+    """
+    if not iface.name or iface.name == "*":
+        pytest.fail(
+            f"{iface.pci_address.lspci} has no kernel netdev, so it cannot "
+            "carry a kernel socket. It was bound to vfio-pci when the session "
+            "started: rebind it with 'nicctl.sh bind_kernel' and re-run."
+        )
+    return iface.name
+
+
 class InterfaceSetup:
     def __init__(
         self,
@@ -339,8 +385,19 @@ class InterfaceSetup:
             for host in hosts.values()
         }
         self.customs = []
-        self.cleanups = []
         self.ip_cleanups = []  # Track (connection, interface, ip) for cleanup
+
+    def _bind_pf_for_session(self, host, pci_addr) -> str:
+        """Put a PF on the PMD and hold it there until the session ends.
+
+        Binding is unconditional and must stay that way -- the ledger records a
+        debt, not driver state. Only the rebind is per-session; see
+        ``restore_kernel_pfs``.
+        """
+        pci_addr = str(pci_addr)
+        self.nicctl_objs[host.name].bind_pmd(pci_addr)
+        _pmd_bound_pfs(host).add(pci_addr)
+        return pci_addr
 
     def _check_pf_not_capture_group(self, host, index: int) -> None:
         """Fail the test if the PF at *index* shares an IOMMU group with the
@@ -424,11 +481,6 @@ class InterfaceSetup:
                         pf_pci = pfs[i].pci_address.lspci
                         vfs = self.nicctl_objs[host.name].create_vfs(pf_pci, vfs_count)
                         selected_interfaces[host.name].extend(vfs[:vfs_count])
-                        self.register_cleanup(
-                            self.nicctl_objs[host.name],
-                            pf_pci,
-                            interface_type,
-                        )
                 elif interface_type.lower() == "pf":
                     if len(host.network_interfaces) < count:
                         raise Exception(
@@ -438,10 +490,8 @@ class InterfaceSetup:
                     for i in range(count):
                         self._check_pf_not_capture_group(host, i)
                         pci_addr = host.network_interfaces[i].pci_address.lspci
-                        self.nicctl_objs[host.name].bind_pmd(pci_addr)
-                        selected_interfaces[host.name].append(str(pci_addr))
-                        self.register_cleanup(
-                            self.nicctl_objs[host.name], pci_addr, interface_type
+                        selected_interfaces[host.name].append(
+                            self._bind_pf_for_session(host, pci_addr)
                         )
                 elif interface_type.lower() == "kernel":
                     # MTL's kernel-socket datapath. The interface stays with
@@ -456,8 +506,16 @@ class InterfaceSetup:
                         raise Exception(
                             f"No interfaces for test on host {host.name} in topology config."
                         )
+                    used = [ifaces[i % len(ifaces)] for i in range(count)]
+                    # These names are netdevs, so any of them a PF test parked
+                    # on vfio-pci has to come back to the kernel first.
+                    restore_kernel_pfs(
+                        host,
+                        self.nicctl_objs[host.name],
+                        [iface.pci_address.lspci for iface in used],
+                    )
                     selected_interfaces[host.name] = [
-                        f"kernel:{ifaces[i % len(ifaces)].name}" for i in range(count)
+                        f"kernel:{_kernel_netdev(iface)}" for iface in used
                     ]
                 elif "vfxpf" in interface_type.lower():
                     vfs_count = interface_type.lower().split("vfxpf")[0]
@@ -468,11 +526,6 @@ class InterfaceSetup:
                                 host.network_interfaces[i].pci_address.lspci, vfs_count
                             )
                             selected_interfaces[host.name].extend(vfs)
-                            self.register_cleanup(
-                                self.nicctl_objs[host.name],
-                                host.network_interfaces[i].pci_address.lspci,
-                                "VF",
-                            )
                         except IndexError:
                             raise Exception(
                                 f"Not enough interfaces for test on host {host.name} in topology config. "
@@ -548,9 +601,7 @@ class InterfaceSetup:
 
         if interface_type == "pf":
             self._check_pf_not_capture_group(host, index)
-            nicctl.bind_pmd(pci_addr)
-            self.register_cleanup(nicctl, pci_addr, "PF")
-            return str(pci_addr)
+            return self._bind_pf_for_session(host, pci_addr)
 
         if interface_type == "vf":
             vfs = nicctl.create_vfs(pci_addr, 1)
@@ -558,7 +609,6 @@ class InterfaceSetup:
                 raise Exception(
                     f"Failed to create VF on PF {pci_addr} for host {host.name}"
                 )
-            self.register_cleanup(nicctl, pci_addr, "VF")
             return vfs[0]
 
         raise Exception(f"Unknown interface type {interface_type}")
@@ -585,14 +635,25 @@ class InterfaceSetup:
         # Get one interface for DPDK mode (creates VF/PF on first interface)
         dpdk_interfaces = self.get_interfaces_list_single(interface_type, count=1)
 
-        # Use second interface from topology for kernel socket mode
-        kernel_interface = host.network_interfaces[1].name
+        # Use second interface from topology for kernel socket mode. Only this
+        # one needs a netdev; restoring every parked PF would hand back the one
+        # just bound above, and with interface_type="PF" that is a rebind per
+        # test -- the very thing being removed.
+        restore_kernel_pfs(
+            host,
+            self.nicctl_objs[host.name],
+            [host.network_interfaces[1].pci_address.lspci],
+        )
+        kernel_interface = _kernel_netdev(host.network_interfaces[1])
 
         return [dpdk_interfaces[0], f"kernel:{kernel_interface}"]
 
     def get_native_af_xdp_interfaces(self, count: int = 2) -> list:
         """Return configured kernel interfaces suitable for native AF_XDP."""
         host = list(self.hosts.values())[0]
+        # A PF another test parked on vfio-pci has no netdev, so it would drop
+        # out of the scan below and skip this test for want of an interface.
+        restore_kernel_pfs(host, self.nicctl_objs[host.name])
         usable = []
         for interface in host.network_interfaces:
             result = host.connection.execute_command(
@@ -609,9 +670,6 @@ class InterfaceSetup:
             )
         return usable[:count]
 
-    def register_cleanup(self, nicctl, interface, if_type):
-        self.cleanups.append((nicctl, interface, if_type))
-
     def register_ip_cleanup(self, connection, interface_name: str, ip_address: str):
         """Register kernel interface IP for cleanup after test."""
         self.ip_cleanups.append((connection, interface_name, ip_address))
@@ -627,22 +685,9 @@ class InterfaceSetup:
                 pass
 
     def cleanup(self):
+        # Kernel IPs are the only per-test interface state; driver bindings are
+        # session state for both VFs and PFs.
         self.cleanup_kernel_ips()
-        # Per-test interface cleanup intentionally does NOT call disable_vf:
-        # VFs created at session start by the ``nic_port_list`` fixture are
-        # reused across all tests (see Nicctl.create_vfs idempotency), which
-        # eliminates the kernel ``vfio_unregister_group_dev`` hang window
-        # entirely. We still rebind PFs back to the kernel driver because PF
-        # driver state is not session-scoped — different tests need PF in
-        # different drivers (ice vs vfio-pci). Each rebind is wrapped so a
-        # single stuck device cannot cascade into the rest of the teardown.
-        for nicctl, interface, if_type in self.cleanups:
-            if if_type.lower() != "pf":
-                continue
-            try:
-                nicctl.bind_kernel(interface)
-            except Exception as e:
-                logger.warning("PF rebind of %s failed: %s — continuing", interface, e)
 
 
 def _cleanup_hugepages(host, host_name: str) -> None:
