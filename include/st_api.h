@@ -497,7 +497,11 @@ static inline bool st_is_frame_complete(enum st_frame_status status) {
 double st_frame_rate(enum st_fps fps);
 
 /**
- * Helper function returning enum st_fps from frame rate
+ * Helper function returning enum st_fps from frame rate.
+ * Matching is tolerant: a rate outside the ST 2110 set may be snapped to a listed rate
+ * whose match window it falls in, in which case the transport paces at the snapped rate
+ * rather than the requested one and a warning is logged. The windows are per-rate and
+ * asymmetric. Rates outside every window return ST_FPS_MAX.
  *
  * @param framerate
  *   frame rate number

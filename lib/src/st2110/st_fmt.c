@@ -762,6 +762,12 @@ double st_frame_rate(enum st_fps fps) {
   return 0;
 }
 
+/* st_fps_timings windows are up to a full fps wide, so a match can be a snap to a
+ * neighbouring rate rather than a hit. Past this gap from the exact mul/den ratio it is a
+ * snap, not a decimal rounding of it. Callers naming the rate by the rounded name in the
+ * table are caught by the equality test, so this only has to bound the rounding. */
+#define ST_FPS_SNAP_TOLERANCE (1e-3)
+
 enum st_fps st_frame_rate_to_st_fps(double framerate) {
   int i;
 
@@ -769,6 +775,15 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
     if (framerate == st_fps_timings[i].framerate ||
         ((framerate >= st_fps_timings[i].framerate - st_fps_timings[i].lower_limit) &&
          (framerate <= st_fps_timings[i].framerate + st_fps_timings[i].upper_limit))) {
+      double exact = (double)st_fps_timings[i].mul / st_fps_timings[i].den;
+
+      if (framerate != st_fps_timings[i].framerate &&
+          fabs(framerate - exact) > ST_FPS_SNAP_TOLERANCE) {
+        warn(
+            "%s, %f fps is not a ST 2110 rate, snapping to %s (%f fps), the transport "
+            "will pace at the snapped rate\n",
+            __func__, framerate, st_fps_timings[i].name, exact);
+      }
       return st_fps_timings[i].fps;
     }
   }
