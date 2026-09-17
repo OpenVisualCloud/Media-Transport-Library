@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-  - cron: '0 20 * * 1-5' # Monday to Friday at 8 PM UTC
+  - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 permissions:
   contents: read
   checks: read
