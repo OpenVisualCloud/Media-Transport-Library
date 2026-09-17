@@ -227,6 +227,10 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx) {
   return ctx->session.port_user_stats.stat_trans_recalculate_warmup;
 }
 
+uint64_t ut_trs_stat_target_invalid(const ut_trs_ctx* ctx) {
+  return ctx->session.stat_trans_target_invalid;
+}
+
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail) {
   ctx->burst_force_fail = fail;
 }
@@ -447,6 +451,20 @@ int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   return ret;
 }
 
+int ut_trs_call_tsc_tasklet(ut_trs_ctx* ctx) {
+  ut_trs_active_ctx = ctx;
+  int ret = video_trs_tsc_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  ut_trs_active_ctx = NULL;
+  return ret;
+}
+
+int ut_trs_call_ptp_tasklet(ut_trs_ctx* ctx) {
+  ut_trs_active_ctx = ctx;
+  int ret = video_trs_ptp_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  ut_trs_active_ctx = NULL;
+  return ret;
+}
+
 void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx) {
   void* obj = ctx->inflight_mbuf;
   rte_ring_sp_enqueue_bulk(ctx->session.ring[MTL_SESSION_PORT_P], &obj, 1, NULL);
@@ -455,6 +473,12 @@ void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx) {
 void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc) {
   st_tx_mbuf_set_idx(ctx->inflight_mbuf, 0);
   st_tx_mbuf_set_tsc(ctx->inflight_mbuf, target_tsc);
+  ut_trs_enqueue_ring_pkt(ctx);
+}
+
+void ut_trs_enqueue_ptp_pkt(ut_trs_ctx* ctx, uint64_t target_ptp) {
+  st_tx_mbuf_set_idx(ctx->inflight_mbuf, 1);
+  st_tx_mbuf_set_ptp(ctx->inflight_mbuf, target_ptp);
   ut_trs_enqueue_ring_pkt(ctx);
 }
 

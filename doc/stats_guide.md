@@ -401,5 +401,10 @@ RX_<TYPE>_SESSION(idx): unrecovered pkts <U>                  (single-port form,
 | `stat_pkts_redundant ≈ stat_pkts_received` on 2-port session | — | Normal — each packet arrives on both ports, one copy filtered |
 | Video `stat_frames_dropped` increasing | `stat_pkts_unrecovered`, `stat_pkts_no_slot` | Incomplete frames due to packet loss or frame buffers exhausted |
 | TX `stat_epoch_drop` increasing | `stat_epoch_onward` | Application providing frames too late; callback blocking |
+| TX log: `transmitter invalid pacing target <N>` | `stat_epoch_drop`, PTP lock state | Pacing target unusable (zero, or >1 s from the pacing clock, e.g. after a large backwards PTP step); packets are still transmitted but unpaced |
 | `stat_slot_get_frame_fail` / `stat_pkts_enqueue_fail` increasing | — | Receiver too slow: return frame buffers faster or increase ring size |
 | RX log: `back-pressure: ... dropped N ... [(sustained Kx)]` | video: `stat_pkts_pool_empty`; audio: `stat_slot_get_frame_fail`; anc: `stat_pkts_enqueue_fail` | Back-pressure summary. Raise `framebuff_cnt` or drain via `st{20,30}_rx_put_framebuff`; for anc raise `rtp_ring_size`. `(sustained Kx)` after 3+ starved intervals |
+
+In RL (`ST21_TX_PACING_WAY_RL`) mode `transmitter invalid pacing target` counts scheduler
+polls, not frames, because the invalid target stays latched — read the magnitude as how long
+the condition persisted.

@@ -383,6 +383,8 @@ struct st_tx_video_session_impl {
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
+  /* transmitter rejected a pacing target as zero or over NS_PER_S from the clock */
+  uint64_t stat_trans_target_invalid;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;

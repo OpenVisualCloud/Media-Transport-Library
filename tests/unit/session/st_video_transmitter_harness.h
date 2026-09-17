@@ -32,6 +32,7 @@ uint64_t ut_trs_last_tsc(const ut_trs_ctx* ctx);
 uint64_t ut_trs_get_mock_tsc(ut_trs_ctx* ctx);
 uint64_t ut_trs_stat_troffset_mismatch(const ut_trs_ctx* ctx);
 uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx);
+uint64_t ut_trs_stat_target_invalid(const ut_trs_ctx* ctx);
 
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail);
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx);
@@ -73,9 +74,12 @@ int ut_trs_get_stat_pkts_burst(const ut_trs_ctx* ctx);
 
 uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx);
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
+int ut_trs_call_tsc_tasklet(ut_trs_ctx* ctx);
+int ut_trs_call_ptp_tasklet(ut_trs_ctx* ctx);
 
 void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx);
 void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc);
+void ut_trs_enqueue_ptp_pkt(ut_trs_ctx* ctx, uint64_t target_ptp);
 void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc);
 
 #ifdef __cplusplus

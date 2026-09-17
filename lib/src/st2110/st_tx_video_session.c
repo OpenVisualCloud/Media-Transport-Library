@@ -3555,6 +3555,11 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %" PRIu64 "\n", m_idx,
            idx, d);
   }
+  if (s->stat_trans_target_invalid > 0) {
+    warn("TX_VIDEO_SESSION(%d,%d): transmitter invalid pacing target %" PRIu64 "\n",
+         m_idx, idx, s->stat_trans_target_invalid);
+    s->stat_trans_target_invalid = 0;
+  }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): epoch drop %" PRIu64 "\n", m_idx, idx, d);
