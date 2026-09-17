@@ -89,8 +89,10 @@ void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
    * model, ST2110-40 defines no tight rate-limited window for ANC, so a
    * video-style microsecond tolerance does not apply here. */
   const int64_t tolerance_ns = 1 * NS_PER_MS;
-  /* Hardware/PCIe jitter can legitimately land slightly before the epoch too. */
-  const int64_t floor_ns = -50 * NS_PER_US;
+  /* Non-exact tx_ancillary_session_sync_pacing() rounds to the nearest tick
+   * (<=0.5 tick early); the rest is margin for ordinary scheduler/hardware jitter. */
+  constexpr int64_t kTickNs = NS_PER_S / VIDEO_CLOCK_HZ;
+  const int64_t floor_ns = -(10 * NS_PER_US + kTickNs / 2);
 
   EXPECT_GE(delta_ns, floor_ns)
       << "st40p_user_pacing frame " << frame_idx << " arrived before snapped epoch";
@@ -119,7 +121,10 @@ void St40pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   const uint64_t expected_step = st10_tai_to_media_clk(current_target, VIDEO_CLOCK_HZ) -
                                  st10_tai_to_media_clk(previous_target, VIDEO_CLOCK_HZ);
 
-  const uint64_t diff = current_timestamp - lastTimestamp;
+  /* current_timestamp/lastTimestamp only ever hold a 32-bit media-clock tick;
+   * subtract in that width so a real wraparound still yields the correct delta. */
+  const uint32_t diff =
+      static_cast<uint32_t>(current_timestamp) - static_cast<uint32_t>(lastTimestamp);
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 

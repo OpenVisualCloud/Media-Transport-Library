@@ -12,7 +12,7 @@
 #include "tests.hpp"
 
 St30pDefaultTimestamp::St30pDefaultTimestamp(St30pHandler* parentHandler)
-    : FrameTestStrategy(parentHandler, false, true), lastTimestamp(0) {
+    : FrameTestStrategy(parentHandler, false, true), lastTimestamp(0), firstTimestamp(0) {
   idx_tx = 0;
   idx_rx = 0;
 }
@@ -23,12 +23,22 @@ void St30pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
   uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
 
-  EXPECT_NEAR(f->timestamp,
-              st10_tai_to_media_clk(idx_rx * st30pParent->nsPacketTime, sampling),
-              framebuffTime)
-      << " idx_rx: " << idx_rx;
+  if (idx_rx == 0) {
+    firstTimestamp = f->timestamp;
+  }
+
+  /* f->timestamp is real-wall-clock-anchored, not zero-based at test start;
+   * compare ticks elapsed since frame 0 instead. */
+  uint32_t elapsedTicks =
+      static_cast<uint32_t>(f->timestamp) - static_cast<uint32_t>(firstTimestamp);
+  uint32_t expectedElapsedTicks = static_cast<uint32_t>(framebuffTime * idx_rx);
+  EXPECT_NEAR(elapsedTicks, expectedElapsedTicks, framebuffTime) << " idx_rx: " << idx_rx;
+
   if (lastTimestamp != 0) {
-    uint64_t diff = f->timestamp - lastTimestamp;
+    /* f->timestamp only ever holds a 32-bit media-clock tick; subtract in that
+     * width so a real wraparound between frames still yields the correct delta. */
+    uint32_t diff =
+        static_cast<uint32_t>(f->timestamp) - static_cast<uint32_t>(lastTimestamp);
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
   }
 
@@ -112,7 +122,8 @@ void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_timestamp_ns) const {
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
-  /* NoCtx shared-scheduler round-robin (build+xmit hops), not a pacing regression. */
+  /* Conservative bound borrowed from video's hardware-tested ceiling;
+   * audio's shorter single-tasklet pipeline has no evidence of its own yet. */
   const int64_t expected_delta_ns = 300 * NS_PER_US;
 
   EXPECT_LE(delta_ns, expected_delta_ns)
@@ -145,7 +156,10 @@ void St30pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
 
   uint64_t expected_step_input = static_cast<uint64_t>(expected_step_ns);
   const uint64_t expected_step = st10_tai_to_media_clk(expected_step_input, sampling_hz);
-  const uint64_t diff = current_timestamp - lastTimestamp;
+  /* current_timestamp/lastTimestamp only ever hold a 32-bit media-clock tick;
+   * subtract in that width so a real wraparound still yields the correct delta. */
+  const uint32_t diff =
+      static_cast<uint32_t>(current_timestamp) - static_cast<uint32_t>(lastTimestamp);
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
