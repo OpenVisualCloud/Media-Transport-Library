@@ -86,6 +86,7 @@ int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
                         struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->slice) {
@@ -136,6 +137,7 @@ int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
                             struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
@@ -164,6 +166,7 @@ int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
                             struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
@@ -269,6 +272,7 @@ int tx_next_video_field(void* priv, uint16_t* next_frame_idx,
                         struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
   if (!ctx->handle) return -EIO; /* not ready */
 
   *next_frame_idx = ctx->fb_idx;
@@ -678,6 +682,7 @@ void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const cha
 
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
   if (!ctx) return;
+  std::unique_lock<std::mutex> lck(ctx->mtx);
   auto handle = (st20_rx_handle)ctx->handle;
   while (!ctx->buf_q.empty()) {
     void* frame = ctx->buf_q.front();
@@ -766,6 +771,7 @@ St20DeinitGuard::St20DeinitGuard(mtl_handle handle, std::vector<tests_context*>&
     : m_handle_(handle),
       started_(false),
       stopped_(false),
+      sessions_released_(false),
       cleaned_(false),
       ext_buf_(false),
       tx_ctx_(tx_ctx),
@@ -821,19 +827,11 @@ void St20DeinitGuard::stop() {
   stopped_ = true;
 }
 
-void St20DeinitGuard::cleanup() {
-  if (cleaned_) return;
-
+void St20DeinitGuard::release_sessions() {
+  if (sessions_released_) return;
   stop();
 
-  /* Some tests queue in-flight framebuffers that must be returned while session handles
-   * are still valid (e.g. via st20_rx_put_framebuff). Run cleanup hooks before freeing
-   * session handles.
-   */
-  for (auto* c : rx_ctx_) {
-    if (!c) continue;
-    if (rx_ctx_cleanup_) rx_ctx_cleanup_(c);
-  }
+  /* Stop TX before draining RX so no new frame can enter the RX queues. */
   for (auto* c : tx_ctx_) {
     if (!c) continue;
     if (tx_ctx_cleanup_) tx_ctx_cleanup_(c);
@@ -846,12 +844,26 @@ void St20DeinitGuard::cleanup() {
     }
   }
 
+  /* Return queued framebuffers while the RX handles are still valid. */
+  for (auto* c : rx_ctx_) {
+    if (!c) continue;
+    if (rx_ctx_cleanup_) rx_ctx_cleanup_(c);
+  }
+
   for (auto& h : rx_handle_) {
     if (h) {
       st20_rx_free(h);
       h = NULL;
     }
   }
+
+  sessions_released_ = true;
+}
+
+void St20DeinitGuard::cleanup() {
+  if (cleaned_) return;
+
+  release_sessions();
 
   for (auto*& c : rx_ctx_) {
     if (!c) continue;
@@ -1052,69 +1064,66 @@ int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_met
 
 void st20_digest_rx_frame_check(void* args) {
   auto ctx = (tests_context*)args;
-  std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   unsigned char result[SHA256_DIGEST_LENGTH];
-  while (!ctx->stop) {
-    if (ctx->buf_q.empty()) {
-      lck.lock();
-      if (!ctx->stop) ctx->cv.wait(lck);
-      lck.unlock();
-      continue;
-    } else {
-      void* frame = ctx->buf_q.front();
+  while (true) {
+    void* frame;
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
+      if (ctx->stop) return;
+      frame = ctx->buf_q.front();
       ctx->buf_q.pop();
-      dbg("%s, frame %p\n", __func__, frame);
-      int i;
-      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
-             result);
-      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-        unsigned char* target_sha = ctx->shas[i];
-        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
-      }
-      if (i >= TEST_SHA_HIST_NUM) {
-        test_sha_dump("st20_rx_error_sha", result);
-        ctx->sha_fail_cnt++;
-      }
-      ctx->check_sha_frame_cnt++;
-      st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     }
+    dbg("%s, frame %p\n", __func__, frame);
+    int i;
+    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
+           result);
+    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+      unsigned char* target_sha = ctx->shas[i];
+      if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
+    }
+    if (i >= TEST_SHA_HIST_NUM) {
+      test_sha_dump("st20_rx_error_sha", result);
+      ctx->sha_fail_cnt++;
+    }
+    ctx->check_sha_frame_cnt++;
+    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
   }
 }
 
 void st20_digest_rx_field_check(void* args) {
   auto ctx = (tests_context*)args;
-  std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   unsigned char result[SHA256_DIGEST_LENGTH];
-  while (!ctx->stop) {
-    if (ctx->buf_q.empty()) {
-      lck.lock();
-      if (!ctx->stop) ctx->cv.wait(lck);
-      lck.unlock();
-      continue;
-    } else {
-      void* frame = ctx->buf_q.front();
-      bool second_field = ctx->second_field_q.front();
+  while (true) {
+    void* frame;
+    bool second_field;
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
+      if (ctx->stop) return;
+      frame = ctx->buf_q.front();
+      second_field = ctx->second_field_q.front();
       ctx->buf_q.pop();
       ctx->second_field_q.pop();
-      dbg("%s, frame %p\n", __func__, frame);
-      int i;
-      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
-             result);
-      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-        unsigned char* target_sha = ctx->shas[i];
-        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
-      }
-      if (i >= TEST_SHA_HIST_NUM) {
-        test_sha_dump("st20_rx_error_sha", result);
-        ctx->sha_fail_cnt++;
-      }
-      bool expect_second_field = i % 2 ? true : false;
-      if (expect_second_field != second_field) {
-        test_sha_dump("field split error", result);
-        ctx->rx_field_fail_cnt++;
-      }
-      ctx->check_sha_frame_cnt++;
-      st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     }
+    dbg("%s, frame %p\n", __func__, frame);
+    int i;
+    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
+           result);
+    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+      unsigned char* target_sha = ctx->shas[i];
+      if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
+    }
+    if (i >= TEST_SHA_HIST_NUM) {
+      test_sha_dump("st20_rx_error_sha", result);
+      ctx->sha_fail_cnt++;
+    }
+    bool expect_second_field = i % 2 ? true : false;
+    if (expect_second_field != second_field) {
+      test_sha_dump("field split error", result);
+      ctx->rx_field_fail_cnt++;
+    }
+    ctx->check_sha_frame_cnt++;
+    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
   }
 }
