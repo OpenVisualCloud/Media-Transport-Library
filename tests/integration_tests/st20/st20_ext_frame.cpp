@@ -64,6 +64,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   std::vector<st20_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
   std::vector<double> framerate;
+  std::vector<uint64_t> tx_created_ns;
   std::vector<std::thread> rtp_thread_tx;
   std::vector<std::thread> rtp_thread_rx;
 
@@ -73,6 +74,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   rx_handle.resize(sessions);
   expect_framerate.resize(sessions);
   framerate.resize(sessions);
+  tx_created_ns.resize(sessions);
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
 
@@ -86,6 +88,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    test_ctx_tx[i]->ready.store(false, std::memory_order_relaxed);
     test_ctx_tx[i]->stop = false;
 
     init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_ext_frame_digest_test",
@@ -104,6 +107,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
         interlaced[i] ? tx_next_ext_video_field : tx_next_ext_video_frame;
     ops_tx.notify_frame_done = tx_notify_ext_frame_done;
 
+    tx_created_ns[i] = st_test_get_monotonic_time();
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
@@ -151,8 +155,6 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i]; /* all ready now */
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -233,21 +235,36 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_GE(ret, 0);
   }
 
+  /* Auto-start can run tasklets during setup. Publish TX only after every RX is ready. */
+  uint64_t tx_release_ns = st_test_get_monotonic_time();
+  for (int i = 0; i < sessions; i++) {
+    info("%s, session %d TX gated for %.3f ms until RX ready\n", __func__, i,
+         (double)(tx_release_ns - tx_created_ns[i]) / NS_PER_MS);
+    test_ctx_tx[i]->handle = tx_handle[i];
+    test_ctx_tx[i]->ready.store(true, std::memory_order_release);
+  }
+
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
 
+  /* Auto-start makes mtl_stop() a no-op. Release sessions to freeze the counters. */
+  for (int i = 0; i < sessions; i++)
+    test_ctx_tx[i]->ready.store(false, std::memory_order_release);
+  guard.release_sessions();
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-  }
-
-  /* freeze counters before assertions */
-  guard.stop();
-  for (int i = 0; i < sessions; i++) {
+    int64_t start_delta_ns =
+        (int64_t)test_ctx_rx[i]->start_time - (int64_t)test_ctx_tx[i]->start_time;
+    info(
+        "%s, session %d first RX minus first TX %.3f ms, sent %d received %d "
+        "incomplete %d\n",
+        __func__, i, (double)start_delta_ns / NS_PER_MS, test_ctx_tx[i]->fb_send,
+        test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
