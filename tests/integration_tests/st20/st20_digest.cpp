@@ -4,18 +4,6 @@
 
 #include "st20_common.h"
 
-static void st20_rx_digest_bufq_cleanup(tests_context* ctx) {
-  auto handle = (st20_rx_handle)ctx->handle;
-  while (!ctx->buf_q.empty()) {
-    void* frame = ctx->buf_q.front();
-    ctx->buf_q.pop();
-    if (!ctx->second_field_q.empty()) ctx->second_field_q.pop();
-    if (handle) {
-      st20_rx_put_framebuff(handle, frame);
-    }
-  }
-}
-
 static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type[],
                                 enum st20_packing packing[], enum st_fps fps[],
                                 int width[], int height[], bool interlaced[],
@@ -48,6 +36,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   std::vector<st20_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
   std::vector<double> framerate;
+  std::vector<uint64_t> tx_created_ns;
   std::vector<std::thread> rtp_thread_tx;
   std::vector<std::thread> rtp_thread_rx;
   std::vector<std::thread> sha_check;
@@ -59,6 +48,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   rx_handle.resize(sessions);
   expect_framerate.resize(sessions);
   framerate.resize(sessions);
+  tx_created_ns.resize(sessions);
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
   sha_check.resize(sessions);
@@ -66,13 +56,14 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
   guard.add_thread_group(sha_check);
-  guard.set_rx_ctx_cleanup(st20_rx_digest_bufq_cleanup);
+  guard.set_rx_ctx_cleanup(st20_rx_drain_bufq_put_framebuff);
 
   for (int i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    test_ctx_tx[i]->ready.store(false, std::memory_order_relaxed);
     test_ctx_tx[i]->stop = false;
 
     init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_digest_test",
@@ -105,6 +96,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     }
     test_ctx_tx[i]->out_of_order_pkt = out_of_order;
 
+    tx_created_ns[i] = st_test_get_monotonic_time();
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
@@ -135,10 +127,6 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
-    }
-    test_ctx_tx[i]->handle = tx_handle[i];
-    if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
   }
 
@@ -225,21 +213,38 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     EXPECT_GE(ret, 0);
   }
 
+  /* Auto-start can run tasklets during setup. Publish TX only after every RX is ready. */
+  uint64_t tx_release_ns = st_test_get_monotonic_time();
+  for (int i = 0; i < sessions; i++) {
+    info("%s, session %d TX gated for %.3f ms until RX ready\n", __func__, i,
+         (double)(tx_release_ns - tx_created_ns[i]) / NS_PER_MS);
+    test_ctx_tx[i]->handle = tx_handle[i];
+    test_ctx_tx[i]->ready.store(true, std::memory_order_release);
+    if (tx_type[i] == ST20_TYPE_RTP_LEVEL)
+      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
+  }
+
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
 
+  /* Auto-start makes mtl_stop() a no-op. Release sessions to freeze the counters. */
+  for (int i = 0; i < sessions; i++)
+    test_ctx_tx[i]->ready.store(false, std::memory_order_release);
+  guard.release_sessions();
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-  }
-
-  /* freeze counters and stop background work before assertions */
-  guard.stop();
-  for (int i = 0; i < sessions; i++) {
+    int64_t start_delta_ns =
+        (int64_t)test_ctx_rx[i]->start_time - (int64_t)test_ctx_tx[i]->start_time;
+    info(
+        "%s, session %d first RX minus first TX %.3f ms, sent %d received %d "
+        "incomplete %d\n",
+        __func__, i, (double)start_delta_ns / NS_PER_MS, test_ctx_tx[i]->fb_send,
+        test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)

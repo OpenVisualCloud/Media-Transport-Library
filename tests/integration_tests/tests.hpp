@@ -13,6 +13,8 @@
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include <atomic>
+
 #include "test_util.h"
 
 #define TEST_LCORE_LIST_MAX_LEN (128)
@@ -180,8 +182,9 @@ class tests_context {
   int packet_rec = 0;
   uint64_t start_time = 0;
   void* handle = NULL;
+  std::atomic<bool> ready = true;
   void* priv = NULL; /* private data for the test */
-  bool stop = false;
+  std::atomic<bool> stop = false;
   std::mutex mtx = {};
   std::condition_variable cv = {};
   struct st20_pgroup st20_pg = {};

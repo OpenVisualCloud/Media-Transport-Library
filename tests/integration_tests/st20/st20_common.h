@@ -103,6 +103,8 @@ class St20DeinitGuard {
    * Safe to call multiple times.
    */
   void stop();
+  /* Stop background work and free session handles, but retain test contexts. */
+  void release_sessions();
 
  private:
   void cleanup();
@@ -110,6 +112,7 @@ class St20DeinitGuard {
   mtl_handle m_handle_;
   bool started_;
   bool stopped_;
+  bool sessions_released_;
   bool cleaned_;
   bool ext_buf_;
 
