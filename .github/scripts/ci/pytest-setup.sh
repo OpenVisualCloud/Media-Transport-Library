@@ -44,7 +44,57 @@ nic_device_ids() {
 }
 
 count_pci_functions() {
-	lspci -Dn -d "8086:${1}" 2>/dev/null | wc -l
+	lspci -Dn -d "${1}" 2>/dev/null | wc -l
+}
+
+# The same list resolve_nic prints, for a host that names its card instead of
+# carrying a NIC label -- given a BDF or a vendor:device.
+#
+# The lab file names one PF, because that is all a non-redundant test needs. But
+# the ST2022-7 cases need a second interface to put their second leg on, and
+# gen_config.py numbers interface_index within a vendor:device group, so a single
+# entry means a single interface: conftest.py then has no port to build
+# host.vfs_r on and every redundant case skips with "Redundant requires VFs on TX
+# port 1". Ask the card how many ports it has rather than asking the lab file to
+# name each one, so the fleet's existing lab files keep working.
+perf_card_ports() {
+	local declared=$1 vendor_device ports
+	# Already a list: whoever wrote it meant it.
+	if [[ ${declared} == *,* ]]; then
+		printf '%s\n' "${declared}"
+		return 0
+	fi
+	# resolve_nic can carry on without lspci because a label already names the
+	# card. Here the card is what we are trying to learn, so there is nothing to
+	# fall back to -- and guessing would only move the failure into gen_config.py,
+	# which resolves the same BDF with the same tool.
+	if ! command -v lspci >/dev/null 2>&1; then
+		echo "lspci is needed to resolve the perf card (${declared}); install pciutils." >&2
+		return 1
+	fi
+	if [[ ${declared} == *.* ]]; then
+		vendor_device=$(lspci -Dn -s "${declared}" 2>/dev/null | awk 'NR==1 {print $3}')
+	else
+		vendor_device=${declared}
+	fi
+	# An unresolved BDF leaves this empty, and `lspci -d ""` matches every device.
+	# The stand-in has to be a filter lspci accepts and nothing matches: a word
+	# without a colon is a syntax error, which under `pipefail` would make this
+	# assignment fail rather than count zero.
+	ports=$(count_pci_functions "${vendor_device:-ffff:ffff}")
+	if [[ ${ports} -lt 1 ]]; then
+		echo "No port of the declared perf card (${declared}) is on this host:" >&2
+		lspci -Dnn -d '::0200' >&2 || true
+		return 1
+	fi
+	# Capped at two for the reason resolve_nic caps it, and because ST2022-7 has
+	# two legs: a third entry would only make VFs on a port nothing binds.
+	echo "Resolved perf card ${vendor_device} (${ports} ports)" >&2
+	if [[ ${ports} -ge 2 ]]; then
+		printf '%s,%s\n' "${vendor_device}" "${vendor_device}"
+	else
+		printf '%s\n' "${vendor_device}"
+	fi
 }
 
 # How the tests attach to a card, given how many of its ports this host has.
@@ -84,7 +134,7 @@ resolve_nic() {
 	fi
 
 	for candidate in ${candidates}; do
-		ports=$(count_pci_functions "${candidate}")
+		ports=$(count_pci_functions "8086:${candidate}")
 		if [[ ${ports} -gt 0 ]]; then
 			found=${candidate}
 			break
@@ -407,10 +457,14 @@ pci)
 	;;
 pci-env)
 	# For runners that carry no NIC label (the perf SUT pair): the host states
-	# which ports the perf rig owns, and an E830 pair is the default.
+	# which card the perf rig owns, an E830 is the default, and perf_card_ports
+	# expands it to the ports the card actually has.
 	load_runner_env
-	printf 'PCI_DEVICE=%s\n' "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2,8086:12d2}}" \
-		>>"${GITHUB_ENV:?GITHUB_ENV is required}"
+	# Assigned rather than substituted straight into printf: set -e only aborts
+	# on a failing command substitution when it is the whole assignment, and a
+	# card the host does not have has to stop the job, not export an empty list.
+	pci_device=$(perf_card_ports "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2}}")
+	printf 'PCI_DEVICE=%s\n' "$pci_device" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 config-single)
 	load_runner_env
