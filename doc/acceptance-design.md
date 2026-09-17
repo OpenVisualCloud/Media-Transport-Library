@@ -83,9 +83,8 @@ model and are procedural (module-level functions, no `Application`
 subclass). Migration is **unfinished**, so they are far from dead:
 
 * `RxTxApp.py` — still the backend for all of `tests/dual/st20p|st30p|st40/`
-  and `tests/single/performance/` (28 importing test files). Note the
-  capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is the modern
-  adapter.
+  (16 importing test files). Note the capitalisation trap: `RxTxApp.py` is
+  legacy, `rxtxapp.py` is the modern adapter.
 * `ffmpeg_app.py` — command builders still called by the modern `ffmpeg.py`;
   its validation logic is not reused.
 * `GstreamerApp.py` — the only GStreamer path; no GStreamer adapter yet.
