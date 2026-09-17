@@ -509,6 +509,8 @@ struct st_rv_tp_slot {
 
   struct st20_rx_tp_meta meta;
 
+  /* false on the first frame of a session: no predecessor to measure against */
+  bool rtp_ts_delta_valid;
   uint32_t rtp_tmstamp;
   uint64_t first_pkt_time; /* ns */
   uint64_t prev_pkt_time;  /* ns */
@@ -524,6 +526,7 @@ struct st_rv_tp_stat {
   /* for the status */
   struct st_rv_tp_slot slot;
   uint32_t stat_frame_cnt;
+  uint32_t stat_rtp_ts_delta_cnt;
 
   int32_t stat_fpt_min;
   int32_t stat_fpt_max;
