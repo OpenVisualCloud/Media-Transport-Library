@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * ST 2110-21 RX timing parser: which frames may be charged an rtp_ts_delta
- * violation and which have no delta to measure at all. Frames are fed through
- * the production RX path, so every frame runs the real per-frame slot reset
- * (rv_slot_by_tmstamp -> rv_tp_slot_init) and is judged by the meta the session
- * reports to the application.
+ * ST 2110-21 RX timing parser: which frames the compliance ladder may charge a
+ * violation. Two criteria are pinned here: the rtp_ts_delta a session's first
+ * frame has no predecessor to measure against, and the tick quantum an integer
+ * RTP timestamp lends the latency. Frames are fed through the production RX
+ * path, so every frame runs the real per-frame slot reset (rv_slot_by_tmstamp
+ * -> rv_tp_slot_init) and is judged by the meta the session reports to the
+ * application.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20RxTimingParserTest.*'
@@ -23,6 +25,13 @@ constexpr uint64_t kEpoch = 1000;
  * rv_tp_on_packet reads cur_epochs == 0 as "first packet" and re-enters its
  * first-packet block on every packet of that frame. */
 constexpr uint64_t kZeroTmstampEpoch = 1ull << 32;
+/* Arrival of a frame's first packet after its epoch, well inside the geometry's
+ * tr_offset and latency_max so a paced frame is NARROW. */
+constexpr uint64_t kNarrowFptNs = 500000;
+/* How far ahead of its epoch a latency case puts the frame's RTP timestamp. It
+ * caps the deficit feed_latency can ask for, as fpt must stay non-negative;
+ * three ticks leaves room for the 1.1 ticks the cases below use. */
+constexpr int32_t kRtpOffsetTicks = 3;
 }  // namespace
 
 class St20RxTimingParserTest : public St20RxBaseTest {
@@ -45,18 +54,31 @@ class St20RxTimingParserTest : public St20RxBaseTest {
     return ut20_tp_epoch_tmstamp(ctx_, epoch);
   }
 
+  uint64_t tick_ns() {
+    return ut20_tp_tick_ns(ctx_);
+  }
+
   /* Feed one full frame and return the verdict the session reported for it.
    * ut20_tp_last_meta() hands back the copy taken at frame notify, so the frame
    * must have been delivered for the verdict to be this frame's, and every
    * packet must have reached the parser -- no case can pass by measuring
    * nothing. */
-  const struct st20_rx_tp_meta* feed_tp(uint64_t epoch, uint32_t ts) {
+  const struct st20_rx_tp_meta* feed_tp(uint64_t epoch, uint32_t ts,
+                                        uint64_t fpt_ns = kNarrowFptNs) {
     const int delivered = frames_received();
-    ut20_feed_tp_frame(ctx_, epoch, ts);
+    ut20_feed_tp_frame(ctx_, epoch, ts, fpt_ns);
     EXPECT_EQ(frames_received(), delivered + 1) << "frame was not delivered";
     const struct st20_rx_tp_meta* tp = ut20_tp_last_meta(ctx_);
     EXPECT_EQ(tp->pkts_cnt, (uint32_t)pkts_per_frame()) << "frame was not measured";
     return tp;
+  }
+
+  /* Feed a frame whose first packet lands `latency_ns` short of where its RTP
+   * timestamp claims, i.e. one the parser measures that latency for. */
+  const struct st20_rx_tp_meta* feed_latency(uint64_t epoch, int64_t latency_ns) {
+    const int64_t fpt_ns = kRtpOffsetTicks * (int64_t)tick_ns() + latency_ns;
+    EXPECT_GE(fpt_ns, 0) << "deficit exceeds kRtpOffsetTicks";
+    return feed_tp(epoch, tmstamp_of(epoch) + kRtpOffsetTicks, (uint64_t)fpt_ns);
   }
 
   /* Feed a frame that meets every pass criterion, i.e. one whose RTP timestamp
@@ -125,4 +147,28 @@ TEST_F(St20RxTimingParserTest, ZeroTimestampStillMeasuresNextDelta) {
       feed_tp(kZeroTmstampEpoch + 1, tmstamp_of(kZeroTmstampEpoch + 1) + 2);
   EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_FAILED);
   EXPECT_STREQ(tp->failed_cause, "rtp_ts_delta exceed max");
+}
+
+/* An RTP timestamp names an instant on a 90 kHz grid, so a frame arriving
+ * exactly on time still measures a latency anywhere within one tick below zero.
+ * Such a frame is compliant. */
+TEST_F(St20RxTimingParserTest, LatencyInsideOneRtpTickStaysNarrow) {
+  const int32_t tick = (int32_t)tick_ns();
+
+  const struct st20_rx_tp_meta* tp = feed_latency(kEpoch, -tick + tick / 10);
+  EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_NARROW) << tp->failed_cause;
+  EXPECT_LT(tp->latency, 0) << "case no longer measures a negative latency";
+  EXPECT_GE(tp->latency, -tick);
+}
+
+/* A tenth of a tick past the quantum the deficit is no longer quantisation, so
+ * the criterion must still charge it. Together with the case above this pins
+ * the floor to within a tenth of one tick, and only the floor moved --
+ * latency_max is unchanged. */
+TEST_F(St20RxTimingParserTest, LatencyBeyondOneRtpTickFails) {
+  const int32_t tick = (int32_t)tick_ns();
+
+  const struct st20_rx_tp_meta* tp = feed_latency(kEpoch, -tick - tick / 10);
+  EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_FAILED);
+  EXPECT_STREQ(tp->failed_cause, "latency exceed min");
 }

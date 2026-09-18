@@ -151,14 +151,18 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx);
 
 /* Feed every packet of one full, perfectly paced frame on port P carrying RTP
- * timestamp `ts`: the first packet arrives a fixed offset into `epoch` (well
- * inside the geometry's tr_offset) and the rest one trs apart, each stamped as
- * its HW arrival time. Requires a prior ut20_ctx_enable_timing_parser(). */
-void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts);
+ * timestamp `ts`: the first packet arrives `fpt_ns` into `epoch` and the rest
+ * one trs apart, each stamped as its HW arrival time. `fpt_ns` is what the
+ * parser measures as fpt, so together with `ts` it fixes the measured latency.
+ * Requires a prior ut20_ctx_enable_timing_parser(). */
+void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts, uint64_t fpt_ns);
 
 /* The RTP timestamp a frame at `epoch` is expected to carry, derived exactly as
  * the parser derives it. */
 uint32_t ut20_tp_epoch_tmstamp(const ut20_test_ctx* ctx, uint64_t epoch);
+
+/* One RTP timestamp tick in ns, as the parser converts it. */
+uint64_t ut20_tp_tick_ns(const ut20_test_ctx* ctx);
 
 /* Timing parser meta of the most recent delivered frame on port P, as the
  * session reported it in st20_rx_frame_meta::tp. */
