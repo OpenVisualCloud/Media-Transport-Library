@@ -330,6 +330,17 @@ static int uint64_t_cmp(const void* a, const void* b) {
   return 0;
 }
 
+/* Slightly increase the target bitrate to compensate for measurement inaccuracies,
+ * rounding errors, and system overhead. This helps ensure the actual transmission bitrate
+ * meets or exceeds the required rate
+ */
+#define INCREASE_BPS_FACTOR 1.005
+
+static uint64_t tv_retrain_bps(uint64_t rl_bps, double measured_bps) {
+  /* square in double: uint64 rl_bps * rl_bps wraps above 2^32 B/s (34.36 Gbps) */
+  return INCREASE_BPS_FACTOR * (double)rl_bps * (double)rl_bps / measured_bps;
+}
+
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -477,12 +488,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     return -EINVAL;
   }
 
-/* Slightly increase the target bitrate to compensate for measurement inaccuracies,
- * rounding errors, and system overhead. This helps ensure the actual transmission bitrate
- * meets or exceeds the required rate
- */
-#define INCREASE_BPS_FACTOR 1.005
-  bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
+  bps_to_set = tv_retrain_bps(rl_bps, measured_bps);
   info("%s(%d), Retrain pacing with bps changed to %" PRIu64 "\n", __func__, idx,
        bps_to_set);
   mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);

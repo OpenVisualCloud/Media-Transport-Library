@@ -173,6 +173,16 @@ static bool mtl_dev_params_compatible(const struct mtl_init_params* requested,
   if ((requested_ptp & MTL_FLAG_PTP_ENABLE) && (requested_ptp != active_ptp))
     return false;
 
+  /* -pN_sip is optional: the documented multi-session command line states it
+   * once, on the first input, and mtl_dev_build_params() leaves an omitted
+   * address all-zero. Inherit the active one; a differing one still conflicts. */
+  static const uint8_t unset_ip[MTL_IP_ADDR_LEN] = {0};
+  for (int port = 0; port < requested_resources.num_ports; port++) {
+    if (!memcmp(requested_resources.sip_addr[port], unset_ip, MTL_IP_ADDR_LEN))
+      memcpy(requested_resources.sip_addr[port], active_resources.sip_addr[port],
+             MTL_IP_ADDR_LEN);
+  }
+
   requested_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
   active_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
   requested_resources.ptp_get_time_fn = NULL;

@@ -870,6 +870,16 @@ INSTANTIATE_TEST_SUITE_P(AllSoftwareWaitPaths, St20TxTransmitterBoundaryTest,
                          ::testing::Values(UT_TXV_PACING_TSC, UT_TXV_PACING_PTP,
                                            UT_TXV_PACING_RL));
 
+TEST(St20TxRetrainBpsTest, LargeRlBpsSquaresWithoutWrappingUint64) {
+  /* 8K p30 YUV444-12bit: rl_bps squared is 21999065680757145600, which wraps
+   * modulo 2^64 to a retrain target 6.2x too low (710530360 B/s). */
+  constexpr uint64_t kRlBytesPerSec = 4690316160ULL; /* 37.52 Gbps */
+  constexpr double kMeasuredBytesPerSec = 5024532956.0;
+
+  EXPECT_EQ(ut_txv_retrain_bps(kRlBytesPerSec, kMeasuredBytesPerSec),
+            4400222110ULL /* 35.20 Gbps */);
+}
+
 TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuild) {
   uint64_t packet_tsc = 0;
   uint64_t packet_ptp = 0;

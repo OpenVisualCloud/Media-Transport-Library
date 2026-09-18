@@ -279,7 +279,21 @@ class Application(ABC):
             transport_format=self.params.get("transport_format"),
             framerate=self.params.get("framerate"),
             expected_video_streams=self._expected_video_streams(),
+            st2110_20_only=self._st2110_20_only(),
         )
+
+    def _st2110_20_only(self) -> bool:
+        """True when the capture will hold nothing but ST 2110-20 video.
+
+        One pcap holds every stream a test runs, so this has to answer for all
+        of them -- see ``NetsniffRecorder.update_filter`` for what truncating a
+        mixed capture would hide. False here, so an app opts in only by
+        overriding with something that knows every stream it starts; reading
+        ``params["session_type"]`` would not, since ``UNIVERSAL_PARAMS`` defaults
+        it to ``st20p`` and an app that resolves its media type from some other
+        key would inherit a truncated capture it never asked for.
+        """
+        return False
 
     def _expected_video_streams(self) -> int:
         """Return the number of configured ST20 video streams."""
@@ -667,7 +681,9 @@ class Application(ABC):
                 build=build,
                 test_time=effective_test_time,
                 proc_wait_timeout=wait_timeout,
-                after_first_start=lambda _proc: compliance.arm(intent),
+                after_first_start=lambda proc: compliance.arm(
+                    intent, exit_code=lambda: self._safe_return_code(proc)
+                ),
             )
             self.last_output = specs[0].captured_output
             self.last_return_code = self._safe_return_code(specs[0].proc)

@@ -1262,6 +1262,16 @@ class RxTxApp(Application):
                     types.append(stype)
         return types
 
+    def _st2110_20_only(self) -> bool:
+        """True when the generated TX config holds ST20 video and nothing else.
+
+        The config is the only place the full set of session types survives:
+        ``create_command`` pops ``sessions=`` and never stores it, so ``params``
+        keeps just the first one's type -- ``st20p`` even for a mixed
+        video/audio/ancillary run.
+        """
+        return self._get_all_session_types_from_config(self.config or {}) == ["st20p"]
+
     def _expected_video_streams(self) -> int:
         """Return ST20 wire-stream count from the generated TX config."""
         config = self.config or {}

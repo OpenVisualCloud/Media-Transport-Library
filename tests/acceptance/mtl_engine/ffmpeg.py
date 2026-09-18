@@ -152,7 +152,7 @@ class FFmpeg(Application):
         mcast: str,
         framerate=None,
         filter_v: str = "",
-        udp_port: int = 20000,
+        udp_ports: tuple[int, ...] = (20000,),
         ptp_enable: bool = False,
         pacing_way=None,
     ) -> str:
@@ -164,6 +164,7 @@ class FFmpeg(Application):
         the exact rate before being handed to FFmpeg — see the ``-re`` note
         below. ``filter_v`` is the full ``-filter:v <chain>`` token (empty by
         default). ``ptp_enable`` is independent from ``pacing_way``.
+        ``udp_ports`` gets one mtl_st20p output per entry, all from one input.
         """
         # ``-framerate`` on the rawvideo demuxer is a real rate, not a SMPTE
         # label, and combined with ``-re`` below it becomes a hard cap on the
@@ -190,12 +191,19 @@ class FFmpeg(Application):
         # of the ST 2110-21 epoch (observed: 38.3 ms frame gaps instead of 40 ms,
         # drifting ~1.7 ms earlier per frame) and VRX goes deeply negative.
         # RxTxApp gets the same rate limiting implicitly from MTL back-pressure.
+        #
+        # A multi-stream TX has to be several outputs of ONE process: the
+        # topology gives TX a single VF and a second DPDK process cannot claim
+        # it. The muxer is AVFMT_NOFILE, so every output takes ``-`` as its URL.
+        outputs = " ".join(
+            f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
+            f"-udp_port {udp_port} -payload_type 112 {ptp_token}-f mtl_st20p -"
+            for udp_port in udp_ports
+        )
         return (
             f"{FFMPEG_EXE} -stream_loop -1 -re {framerate_token}"
             f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
-            f"-i {video_url} {filter_token}"
-            f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
-            f"-udp_port {udp_port} -payload_type 112 {ptp_token}-f mtl_st20p -"
+            f"-i {video_url} {filter_token}{outputs}"
         )
 
     def _create_command_and_config(self) -> tuple:
@@ -342,6 +350,9 @@ class FFmpeg(Application):
                     sip=ip_pools.tx[0],
                     mcast=ip_pools.rx_multicast[0],
                     framerate=fps,
+                    # One output per RX input built above; without the second
+                    # one nothing ever reaches RX input 1.
+                    udp_ports=(20000, 20002) if multiple else (20000,),
                     ptp_enable=self.params.get("enable_ptp", False),
                     pacing_way=self.params.get("pacing_way"),
                 )
@@ -739,15 +750,24 @@ class FFmpeg(Application):
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
                     video_size, pix_fmt, fps = self._rx_frame_spec
-                    passed = ffmpeg_app.check_output_video_yuv(
-                        self._output_files[0],
-                        host,
-                        build,
-                        video_url,
-                        video_size,
-                        pix_fmt,
-                        fps,
-                        self.params.get("test_time") or 30,
+                    # Every recording, not just the first: checking only
+                    # stream 0 would pass a run where stream 1 received
+                    # nothing. A list, not a generator, so every stream is
+                    # checked and logged even after one fails.
+                    passed = all(
+                        [
+                            ffmpeg_app.check_output_video_yuv(
+                                out_file,
+                                host,
+                                build,
+                                video_url,
+                                video_size,
+                                pix_fmt,
+                                fps,
+                                self.params.get("test_time") or 30,
+                            )
+                            for out_file in self._output_files
+                        ]
                     )
                 else:
                     video_format = self.params["video_format"]

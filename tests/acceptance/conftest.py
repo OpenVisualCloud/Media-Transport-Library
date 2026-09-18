@@ -376,6 +376,38 @@ def _select_capture_host(hosts: dict):
 _REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for ptp daemons
 _PHC_SYNC_THRESHOLD_NS = 2000  # Capture PHC must track TAI this tightly
 _PHC_SYNC_TIMEOUT_SEC = 30  # Max wait for phc2sys to converge before capturing
+# Bounding an ``execute_command`` on this path takes both kwargs below, and
+# neither works alone. Without ``timeout`` it waits forever (no
+# ``default_timeout`` is configured, so None propagates), and a single
+# unanswered command then outlives any deadline its caller keeps. But
+# ``timeout`` alone is not a cap either: ``SSHConnection.execute_command``
+# catches the watchdog's exception and calls ``handle_execution_reconnect``,
+# whose ``_reconnect`` re-probes the remote OS name and type with no timeout of
+# their own. So a host that still completes auth but answers no command -- the
+# wedged-``ice``-PHC case (see :func:`_reap_ptp_daemons`) -- hangs one frame
+# deeper than before. ``reconnect_attempts=0`` skips that loop, raising at once.
+_PHC_CMD_TIMEOUT_SEC = 5
+_PHC_CMD_NO_RECONNECT = 0
+
+
+def _tail_log(host, log_path: str, lines: int = 1) -> str:
+    """Return the last ``lines`` of a remote log, or ``""`` if unreadable.
+
+    Being bounded is the point of this helper: an unbounded read of a phc2sys
+    log turned a 30 s convergence budget into a run that hung until the CI job
+    timed out. See :data:`_PHC_CMD_TIMEOUT_SEC` for what bounding it takes.
+    """
+    try:
+        res = host.connection.execute_command(
+            f"tail -n {lines} '{log_path}'",
+            expected_return_codes=None,
+            timeout=_PHC_CMD_TIMEOUT_SEC,
+            reconnect_attempts=_PHC_CMD_NO_RECONNECT,
+        )
+        return (res.stdout or "").strip()
+    except Exception as e:
+        logger.debug("reading %s failed: %s", log_path, e)
+        return ""
 
 
 def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
@@ -392,7 +424,10 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
     for name in patterns:
         try:
             host.connection.execute_command(
-                f"sudo pkill -TERM -x {name} || true", expected_return_codes=None
+                f"sudo pkill -TERM -x {name} || true",
+                expected_return_codes=None,
+                timeout=_PHC_CMD_TIMEOUT_SEC,
+                reconnect_attempts=_PHC_CMD_NO_RECONNECT,
             )
         except Exception as e:
             logger.debug("pkill -TERM %s: %s", name, e)
@@ -400,7 +435,10 @@ def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
     for name in patterns:
         try:
             host.connection.execute_command(
-                f"sudo pkill -KILL -x {name} || true", expected_return_codes=None
+                f"sudo pkill -KILL -x {name} || true",
+                expected_return_codes=None,
+                timeout=_PHC_CMD_TIMEOUT_SEC,
+                reconnect_attempts=_PHC_CMD_NO_RECONNECT,
             )
         except Exception as e:
             logger.debug("pkill -KILL %s: %s", name, e)
@@ -427,7 +465,12 @@ def _host_tai_utc_offset(host) -> int:
         "print(round(time.clock_gettime(time.CLOCK_TAI)"
         "-time.clock_gettime(time.CLOCK_REALTIME)))'"
     )
-    out = host.connection.execute_command(cmd, expected_return_codes={0}).stdout
+    out = host.connection.execute_command(
+        cmd,
+        expected_return_codes={0},
+        timeout=_PHC_CMD_TIMEOUT_SEC,
+        reconnect_attempts=_PHC_CMD_NO_RECONNECT,
+    ).stdout
     text = (out or "").strip()
     if not text:
         # Never fall back to 0: it is a legitimate offset, so a silent default
@@ -479,42 +522,49 @@ def _start_capture_phc_sync(host, iface: str):
         raise RuntimeError(f"Failed to start phc2sys on {iface}: {e}") from e
     time.sleep(0.2)  # fail fast (e.g. iface has no PHC)
     if not proc.running:
+        reason = _tail_log(host, log_path, lines=5) or "(no output)"
         _reap_ptp_daemons(host, patterns=("phc2sys",))
-        raise RuntimeError(f"phc2sys exited on {iface}; inspect {log_path}")
+        # Report what phc2sys said, not just where to look for it: the usual
+        # cause is "interface <x> does not have a PHC", which names the real
+        # problem (the shared PHC belongs to a PF now bound to vfio-pci) and
+        # is otherwise lost with the log when the runner is reclaimed.
+        raise RuntimeError(f"phc2sys exited on {iface}: {reason}")
     # Wait for the PHC to actually converge. Capturing before convergence leaves
     # a large fixed PHC<->TAI offset (a free-running PHC can be tens of ms off
     # the media clock); that offset fails ST 2110-21 VRX even with perfect
     # on-wire pacing.
     if not _wait_phc_sync_converged(host, log_path) or not proc.running:
+        reason = _tail_log(host, log_path, lines=5) or "(no output)"
         _reap_ptp_daemons(host, patterns=("phc2sys",))
         raise RuntimeError(
             f"phc2sys did not hold sync on {iface} (no in-tolerance offset "
-            f"within {_PHC_SYNC_TIMEOUT_SEC}s, or it exited); inspect {log_path}"
+            f"within {_PHC_SYNC_TIMEOUT_SEC}s, or it exited): {reason}"
         )
     return proc
 
 
 def _wait_phc_sync_converged(host, log_path: str) -> bool:
-    """Poll the phc2sys ``-m`` log until the reported offset is in tolerance.
+    """Poll the phc2sys ``-m`` log until it holds the clock in tolerance.
 
-    phc2sys prints lines like ``... sys offset 83 s2 freq -12618 delay 572``;
-    we read the most recent offset and return ``True`` once it is within
-    :data:`_PHC_SYNC_THRESHOLD_NS`, or ``False`` on timeout.
+    phc2sys prints lines like ``... sys offset 83 s2 freq -12618 delay 572``,
+    whose ``sN`` is the servo state. Only ``s2`` is locked; at ``s0``/``s1`` the
+    offset beside it is a one-shot read of a clock still free-running at its own
+    crystal error, small by luck and no evidence of sync. Returns ``True`` once
+    a locked line is within :data:`_PHC_SYNC_THRESHOLD_NS`, ``False`` on timeout.
     """
-    pattern = re.compile(r"offset\s+(-?\d+)")
+    pattern = re.compile(r"offset\s+(-?\d+)\s+s(\d)")
     deadline = time.monotonic() + _PHC_SYNC_TIMEOUT_SEC
     while time.monotonic() < deadline:
         time.sleep(1)
-        try:
-            out = host.connection.execute_command(
-                f"tail -n 1 '{log_path}'", expected_return_codes=None
-            ).stdout
-        except Exception as e:
-            logger.debug("reading phc2sys log %s failed: %s", log_path, e)
+        match = pattern.search(_tail_log(host, log_path))
+        if not match:
             continue
-        match = pattern.search(out or "")
-        if match and abs(int(match.group(1))) < _PHC_SYNC_THRESHOLD_NS:
-            logger.info("phc2sys converged: offset=%sns", match.group(1))
+        offset, servo_state = match.group(1), match.group(2)
+        if servo_state != "2":
+            logger.debug("phc2sys not locked yet: offset=%sns s%s", offset, servo_state)
+            continue
+        if abs(int(offset)) < _PHC_SYNC_THRESHOLD_NS:
+            logger.info("phc2sys converged: offset=%sns s%s", offset, servo_state)
             return True
     return False
 
@@ -1340,15 +1390,20 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
         os.chmod(logfile, 0o4755)
         return "Fail"
 
+    def compliance_failed():
+        """Did the compliance gate record a failure for this case?
+
+        Prefix match: the Compliance cell is free text and a lost capture
+        records "Fail (capture lost N% of packets)".
+        """
+        return (get_compliance_result(case_id) or "").startswith("Fail")
+
     if report["setup"].failed:
         result = fail_test("Setup")
     elif ("call" not in report) or report["call"].failed:
-        compliance = get_compliance_result(case_id)
-        stage = "Compliance" if compliance == "Fail" else "Test"
-        result = fail_test(stage)
+        result = fail_test("Compliance" if compliance_failed() else "Test")
     elif report["call"].passed:
-        compliance = get_compliance_result(case_id)
-        if compliance == "Fail":
+        if compliance_failed():
             result = fail_test("Compliance")
         else:
             logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")

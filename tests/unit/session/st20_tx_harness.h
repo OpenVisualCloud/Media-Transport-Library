@@ -85,6 +85,8 @@ uint64_t ut_txv_calc_frame_count_since_epoch(ut_txv_ctx* ctx, uint64_t cur_tai,
 /* Drives the mocked ptp/tsc values set above; required_tai as in the
  * production st20_tx_ops (0 = no user-supplied timestamp). */
 int ut_txv_sync_pacing(ut_txv_ctx* ctx, uint64_t required_tai);
+/* Drives tv_retrain_bps(); rl_bps and measured_bps in bytes/s. Session-free. */
+uint64_t ut_txv_retrain_bps(uint64_t rl_bps, double measured_bps);
 uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp);
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,

@@ -7,7 +7,7 @@ import logging
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
-from mtl_engine.media_files import yuv_files
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def test_rss_mode_video_performance_refactored(
         test_mode="unicast",
         width=media_file_info["width"],
         height=media_file_info["height"],
-        framerate=f"p{media_file_info['fps']}",
+        framerate=parse_fps_to_pformat(media_file_info["fps"]),
         pixel_format=media_file_info["file_format"],
         transport_format=media_file_info["format"],
         input_file=media_file_path,
