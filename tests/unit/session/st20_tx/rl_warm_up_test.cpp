@@ -84,7 +84,7 @@ TEST_F(St20TxRlWarmUpTest, RealisticJitterNeverUndershootsTarget) {
   EXPECT_GE(ut_trs_last_tsc(ctx_), 248740u);
 }
 
-TEST_F(St20TxRlWarmUpTest, NominalPlanDoesNotQueueRealPacketBeforeTarget) {
+TEST_F(St20TxRlWarmUpTest, NominalPlanHandsRealPacketOverBehindThePads) {
   constexpr uint64_t kWarmupEntryTsc = 1000;
   constexpr uint64_t kTargetTsc = 11000;
   uint64_t warmup_script[32];
@@ -95,21 +95,22 @@ TEST_F(St20TxRlWarmUpTest, NominalPlanDoesNotQueueRealPacketBeforeTarget) {
   ut_trs_set_mock_tsc_script(ctx_, warmup_script, 32);
   ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
 
-  ut_trs_call_rl_tasklet(ctx_);
+  /* The first pass only stashes the frame; the warm-up window opens on the next one. */
   ut_trs_call_rl_tasklet(ctx_);
 
   EXPECT_EQ(kTargetTsc, ut_trs_target_tsc(ctx_));
-  EXPECT_EQ(10u, ut_trs_burst_call_count(ctx_));
-  EXPECT_EQ(0u, ut_trs_real_send_count(ctx_));
+  EXPECT_EQ(0u, ut_trs_burst_call_count(ctx_));
 
-  const uint64_t target_script[] = {kTargetTsc, kTargetTsc};
-  ut_trs_set_mock_tsc_script(ctx_, target_script, 2);
   ut_trs_call_rl_tasklet(ctx_);
 
+  /* The 10 pads cover kWarmupEntryTsc -> kTargetTsc, so the real packet must reach the
+   * NIC on this pass, behind them: the rate limiter is what launches it at kTargetTsc. */
+  EXPECT_EQ(10u, ut_trs_pad_send_count(ctx_));
   EXPECT_EQ(11u, ut_trs_burst_call_count(ctx_));
   EXPECT_EQ(1u, ut_trs_real_send_count(ctx_));
-  EXPECT_GE(ut_trs_last_real_send_tsc(ctx_), kTargetTsc);
+  EXPECT_EQ(kWarmupEntryTsc, ut_trs_last_real_send_tsc(ctx_));
   EXPECT_EQ(0u, ut_trs_target_tsc(ctx_));
+  EXPECT_EQ(0, ut_trs_rl_state(ctx_));
 }
 
 TEST_F(St20TxRlWarmUpTest, AlreadyLateTargetQueuesRealPacketImmediately) {
@@ -186,7 +187,8 @@ TEST_F(St20TxRlWarmUpTest, StateResetsForNextFrame) {
   EXPECT_EQ(2u, ut_trs_pad_send_count(ctx_));
   EXPECT_EQ(4u, ut_trs_burst_call_count(ctx_));
   EXPECT_EQ(2u, ut_trs_real_send_count(ctx_));
-  EXPECT_GE(ut_trs_last_real_send_tsc(ctx_), kSecondTargetTsc);
+  /* Each frame's real packet goes out behind its own pad, on the warm-up pass. */
+  EXPECT_EQ(kSecondWarmupTsc, ut_trs_last_real_send_tsc(ctx_));
   EXPECT_EQ(0u, ut_trs_target_tsc(ctx_));
   EXPECT_EQ(0, ut_trs_rl_state(ctx_));
 }
@@ -232,8 +234,8 @@ TEST_F(St20TxRlWarmUpTest, FailedPadsRetryBeforeTargetWhileRealPacketWaits) {
   ut_trs_set_mock_tsc_script(ctx_, target_script, 2);
   ut_trs_call_rl_tasklet(ctx_);
 
+  /* Released only once the deferred pads have drained. */
   EXPECT_EQ(1u, ut_trs_real_send_count(ctx_));
-  EXPECT_GE(ut_trs_last_real_send_tsc(ctx_), kTargetTsc);
 }
 
 TEST_F(St20TxRlWarmUpTest, EmptyClockScriptAdvancesMonotonically) {

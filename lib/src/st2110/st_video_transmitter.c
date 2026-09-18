@@ -223,15 +223,18 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  uint64_t target_tsc = s->trs_target_tsc[s_port];
   if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_WARMUP) {
+    uint64_t target_tsc = s->trs_target_tsc[s_port];
     uint64_t warmup_ns = s->pacing.warm_pkts * s->pacing.trs;
     uint64_t warmup_tsc = target_tsc > warmup_ns ? target_tsc - warmup_ns : 0;
     int tasklet_ret;
     if (!video_trs_rl_target_reached(impl, s, warmup_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
+    /* Queue the real packet behind the pads on this same pass: the rate limiter is
+     * still draining them, so it launches at target_tsc with no further tasklet run. */
     video_trs_rl_warm_up(impl, s, s_port);
-    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
+    s->trs_target_tsc[s_port] = 0;
   }
 
   /* check if any padding inflight pkts in transmitter */
@@ -247,14 +250,6 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       *ret_status = -STI_RLTRS_BURST_PAD_INFLIGHT_FAIL;
       return MTL_TASKLET_ALL_DONE;
     }
-  }
-
-  if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_TARGET) {
-    int tasklet_ret;
-    if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
-      return tasklet_ret;
-    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-    s->trs_target_tsc[s_port] = 0;
   }
 
   /* check if any inflight pkts in transmitter */

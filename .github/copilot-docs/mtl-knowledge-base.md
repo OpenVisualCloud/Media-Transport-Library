@@ -377,7 +377,14 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
 
 ### Warm-Up Padding
-Hardware RL has ramp-up delay. MTL sends padding packets (RTP padding bit set) before first frame. Default: 80% of `pkts_in_tr_offset`, capped at 128.
+Hardware RL is a byte-rate shaper: a queue it has drained empty stays idle until software queues again. `video_trs_rl_warm_up()` uses that to take the frame's launch instant out of software's hands.
+
+- It queues `ceil((target_tsc - now) / trs)` pads, and the frame's first real packet is queued behind them **on the same tasklet pass**. The shaper is still draining pads at `target_tsc`, so it releases that packet there with no further tasklet run needed. It lands slightly *early*, not exactly on target — see the vrx bullet.
+- **Never hold that packet waiting for `target_tsc`.** By then the pads have drained; a tasklet that runs late leaves the shaper idle for the whole delay, pushing `first_pkt_time` past `tr_offset` and failing RX narrow compliance.
+- A pad is `mt_build_pad()`: an all-zero L2 frame to `01:80:C2:00:00:01`, ether_type from the caller (IPv4 for video), **no RTP header** — so no RTP padding bit — sized exactly like a real packet of the same type, so N pads occupy N shaper intervals. The warm-up only ever sends the `ST20_PKT_TYPE_NORMAL` pad.
+- `pacing->warm_pkts` (`tv_init_pacing()`): `0` unless `pacing_way == RL`; then 80% of `pkts_in_tr_offset` capped at 128; `8` if `height <= 576`; `0` for ST22; `0` for `ST21_PACING_WIDE` — but that last one is the `else if` arm of `if (ops.start_vrx)`, so a WIDE session with a user-supplied `start_vrx` still warms up.
+- `rl_state[]` is `WAIT_WARMUP` only between the frame boundary and the pass that queues the pads, which also clears `trs_target_tsc[]`. The TSC and PTP pacing tasklets reuse `trs_target_tsc[]` as their own "launch pending" flag — and the PTP one stores a **PTP** time in it, not a TSC.
+- Hardware releases the train early by the 2048-byte RL burst credit plus any shaper overspeed (`pad_interval`). `tv_init_pacing()` reserves vrx headroom for RL (`vrx -= 2` "compensate to rl burst", `vrx -= 2` "space for deviation"); the `height <= 576` branch discards both, restoring the pristine `st21_vrx_narrow`.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
