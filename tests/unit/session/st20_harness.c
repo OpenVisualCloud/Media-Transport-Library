@@ -623,10 +623,6 @@ void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
 
 /* ── RX timing parser ─────────────────────────────────────────────────── */
 
-/* Arrival of a frame's first packet after its epoch, well inside the geometry's
- * tr_offset and latency_max so a paced frame is NARROW. */
-#define UT20_TP_FPT_NS (500000)
-
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx) {
   struct st_rx_video_session_impl* s = &ctx->session;
   s->enable_timing_parser = true;
@@ -635,14 +631,20 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx) {
   return rv_tp_init(&ctx->impl, s);
 }
 
-void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts) {
+void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,
+                        uint64_t fpt_ns) {
   struct st_rx_video_session_impl* s = &ctx->session;
   uint64_t epoch_ns = (double)epoch * s->frame_time;
   const int n = (int)s->ops.height;
   for (int i = 0; i < n; i++) {
-    uint64_t pkt_ns = epoch_ns + UT20_TP_FPT_NS + (uint64_t)(s->tp->trs * i);
+    uint64_t pkt_ns = epoch_ns + fpt_ns + (uint64_t)(s->tp->trs * i);
     ut20_feed_frame_pkt_hw_ts(ctx, i, ts, MTL_SESSION_PORT_P, pkt_ns);
   }
+}
+
+uint64_t ut20_tp_tick_ns(const ut20_test_ctx* ctx) {
+  const struct st_rx_video_session_impl* s = &ctx->session;
+  return (uint64_t)(s->frame_time / s->frame_time_sampling);
 }
 
 uint32_t ut20_tp_epoch_tmstamp(const ut20_test_ctx* ctx, uint64_t epoch) {

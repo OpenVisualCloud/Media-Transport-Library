@@ -337,7 +337,9 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   tp->pass.vrx_max_wide = RTE_MAX(720, st20_total_pkts / (300 * frame_time_s));
   tp->pass.vrx_min = 0;
   tp->pass.latency_max = 1000 * 1000; /* 1000 us */
-  tp->pass.latency_min = 0;
+  /* latency subtracts a whole number of RTP ticks from fpt, so it carries that
+   * quantum -- the one rtp_offset_min and rtp_ts_delta_max below also allow. */
+  tp->pass.latency_min = -(int32_t)(s->frame_time / s->frame_time_sampling);
   tp->pass.rtp_offset_max =
       ceil((double)tp->pass.tr_offset * fps_tm.sampling_clock_rate / NS_PER_S) + 1;
   tp->pass.rtp_offset_min = -1;
