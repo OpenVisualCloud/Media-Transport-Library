@@ -7,13 +7,15 @@
  *     time_to_tx_ns clamp.
  *  2. `tv_update_rtp_time_stamp()`'s contract that the TAI instant it returns
  *     (reported to the app as frame->timestamp / frame->tx_st22_meta.timestamp)
- *     always reconstructs frame->rtp_timestamp via st10_tai_to_media_clk(),
- *     across USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH, rtp_timestamp_delta_us, and
- *     the ST10_TIMESTAMP_FMT_MEDIA_CLK input format -- both at the shared
+ *     reconstructs frame->rtp_timestamp via st10_tai_to_media_clk(), across
+ *     USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH, rtp_timestamp_delta_us, and the
+ *     ST10_TIMESTAMP_FMT_MEDIA_CLK input format -- both at the shared
  *     tv_tasklet_frame() call site and the tv_tasklet_st22() one. The returned
  *     instant must track whichever basis actually produced
  *     frame->rtp_timestamp, not unconditionally `pacing->ptp_time_cursor`, or
- *     the two fields would silently disagree.
+ *     the two fields would silently disagree. Every case here leaves
+ *     pacing->warm_pkts at zero; with a warm-up pad train the two deliberately
+ *     differ by tv_rl_rtp_shift_ticks(), which rl_rtp_shift_test.cpp pins.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxSyncPacingTest.*'
