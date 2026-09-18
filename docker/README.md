@@ -11,8 +11,10 @@ Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfi
 ## 2. Build Docker image
 
 ```bash
-docker build -t mtl:latest -f ubuntu.dockerfile ../
+docker build -t mtl:latest -f ubuntu22.dockerfile ../
 ```
+
+Each image build compiles MTL and runs the no-NIC unit test suite.
 
 Refer to below build command if you are in a proxy env.
 
@@ -21,6 +23,7 @@ http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
 sudo docker build -t mtl_ubuntu22:latest -f ubuntu22.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 sudo docker build -t mtl_ubuntu24:latest -f ubuntu24.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+sudo docker build -t mtl_ubuntu26:latest -f ubuntu26.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 sudo docker build -t mtl_rocky9:latest -f rocky9.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 
 ```
