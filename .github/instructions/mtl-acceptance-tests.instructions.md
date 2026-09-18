@@ -40,7 +40,9 @@ Some failure rows below assume `gdb` is installed (`sudo apt install -y gdb`).
 
 - Invoke as `sudo -E ./venv/bin/python3 -m pytest …` from `tests/acceptance/`. System python lacks `pytest_mfd_config` etc.
 - Always pass `--topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml`.
-- Tests run as **root over SSH-to-localhost** even on a single host.
+- Tests run **over SSH-to-localhost** even on a single host, as whatever user the topology
+  names — `root` under `acceptance_setup.sh`, an unprivileged account on the CI runners. Any
+  harness command that administers a device must carry its own `sudo`, as `common/nicctl.py` does.
 - Never edit `conftest.py`, `common/`, or `mtl_engine/` to "fix" a test — fix the env/config.
 
 ## Selectors

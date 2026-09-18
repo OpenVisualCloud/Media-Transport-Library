@@ -1,5 +1,5 @@
 ---
-description: "Use when editing the acceptance_tests harness — tests/acceptance/conftest.py fixtures, configs/ YAML schema and gen_config.py, common/ host control (nicctl, host_setup, integrity runners, platform info), create_pcap_file/ capture, and compliance/ EBU client. Covers fixture scoping rules, VF pool lifecycle, the mfd remote-execution contract, and cleanup discipline."
+description: "Use when editing the acceptance_tests harness — tests/acceptance/conftest.py fixtures, configs/ YAML schema and gen_config.py, common/ host control (nicctl, host_setup, integrity runners, platform info), create_pcap_file/ capture, and compliance/ EBU client. Covers fixture scoping rules, PF and VF pool lifecycle, the mfd remote-execution contract, and cleanup discipline."
 name: "MTL Acceptance Tests — Harness & Host Control"
 applyTo: "tests/acceptance/conftest.py,tests/acceptance/configs/**,tests/acceptance/common/**,tests/acceptance/create_pcap_file/**,tests/acceptance/compliance/**"
 ---
@@ -39,8 +39,9 @@ over letting mfd raise, whenever a non-zero exit is a legitimate outcome.
   widen a function-scoped fixture to session to "speed things up" — that is
   how cross-test contamination gets introduced.
 - **Every fixture that creates state removes it** in its own teardown, and
-  removes *only what it created*. `InterfaceSetup.cleanup()` is the model:
-  it releases per-test VFs and rebinds PFs but leaves the session pool alone.
+  removes *only what it created*. `InterfaceSetup.cleanup()` is the model: it
+  removes the IPs it put on kernel interfaces and nothing else, because NIC
+  driver bindings are session state (see PF and VF lifecycle below).
 - **Teardown must not assert.** Assertions in teardown surface as ERROR, not
   FAILED, and mask the real result. The one deliberate exception is the
   compliance "never dispatched" safety net, which checks that a requested
@@ -48,7 +49,7 @@ over letting mfd raise, whenever a non-zero exit is a legitimate outcome.
 - **Autouse fixtures are host hygiene only** (reaping stray daemons, killing
   stale VFIO holders, wiping hugepages, registering libs). No test policy.
 
-## VF pool lifecycle
+## PF and VF pool lifecycle
 
 The session pool (`nic_port_list` → `host.vfs`, `host.vfs_r`) is created
 once and reused, because repeated SR-IOV teardown is slow and can hang on a
@@ -58,6 +59,30 @@ return the existing VFs when the requested count is already satisfied.
 Per-test allocation goes through `InterfaceSetup`. When adding a new
 interface flavour, add a method there rather than teaching tests to call
 `Nicctl` directly.
+
+A PF is likewise **held on `vfio-pci` for the session**. `setup_interfaces` is
+function-scoped, so rebinding a PF in per-test teardown means an `ice_probe`
+per test, and the out-of-tree ice driver faults in `ice_add_prof` after a few
+of them, taking the whole runner down. **Never rebind a PF to the kernel from
+per-test teardown.** `restore_kernel_pfs()` owns that: at session end from the
+`_restore_kernel_pfs` fixture, and on demand — for the specific PFs it needs —
+from each getter that hands out a netdev name.
+
+`bind_pmd` is safe to repeat and is called unconditionally: `dpdk-devbind.py`
+skips a device already on the target driver, and `nicctl.sh bind_pmd` returns
+before the branch that rebinds to the kernel. Only `bind_kernel` costs a probe.
+So `host.pmd_bound_pfs` is a ledger of PFs owed back, **not** a cache of driver
+state — `nicctl.sh` rebinds a PF to the kernel as a side effect of its VF
+subcommands, so the ledger can say "parked" about a PF the kernel already owns.
+Never gate a bind on it.
+
+Giving the driver back does not give the *name* back. `host.network_interfaces`
+is snapshotted once, when the `hosts` fixture calls
+`refresh_network_interfaces()`, so a PF that was already on `vfio-pci` at
+session start keeps an unusable `name` (`None` or `*`) for the whole run.
+`_kernel_netdev()` fails such a request instead of passing `kernel:None` on to
+MTL; do not paper over it by re-refreshing mid-session, which rebuilds the list
+every index into `host.network_interfaces` depends on.
 
 **PF mode + capture requires distinct IOMMU groups.**
 `InterfaceSetup._check_pf_not_capture_group()` compares the requested PF's

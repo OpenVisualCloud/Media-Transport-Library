@@ -15,7 +15,7 @@ import pytest
 from common.collect_platform_info import collect_platform_info
 from common.host_setup import ensure_hugepage_access, ensure_pf_up
 from common.mtl_manager.mtlManager import MtlManager
-from common.nicctl import InterfaceSetup, Nicctl
+from common.nicctl import InterfaceSetup, Nicctl, restore_kernel_pfs
 from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
@@ -786,6 +786,23 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
                 logger.warning(
                     f"Host {host.name}: could not setup redundant port VFs: {e}"
                 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _restore_kernel_pfs(hosts, mtl_path):
+    """Give back any PF a test parked on vfio-pci, once, at session end.
+
+    Session-scoped, and after the yield, because this is the rebind that
+    re-probes the ice driver -- see ``restore_kernel_pfs``.
+    """
+    yield
+    for host in hosts.values():
+        try:
+            restore_kernel_pfs(
+                host, Nicctl(get_host_mtl_path(host, default=mtl_path), host)
+            )
+        except Exception as e:
+            logger.warning(f"PF restore on {host.name}: {e}")
 
 
 @pytest.fixture(scope="function")
