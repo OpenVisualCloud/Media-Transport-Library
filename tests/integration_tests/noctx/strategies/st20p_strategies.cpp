@@ -20,13 +20,18 @@ namespace {
 constexpr int64_t kNoCtxTimingRegressionMaxNs = 300 * NS_PER_US;
 
 constexpr int64_t kNoCtxRtpTickNs = NS_PER_S / VIDEO_CLOCK_HZ;
-/* Encode and decode each round to the nearest tick (<=0.5 tick error), so the
- * round trip bounds earliness at 1 tick; 50% margin on top. */
-constexpr int64_t kNoCtxRtpQuantizationFloorNs = -(3 * kNoCtxRtpTickNs / 2);
+/* Only the TX-side st10_tai_to_media_clk() encode rounds to the nearest tick
+ * (<=0.5 tick error); st10_media_clk_to_tai()'s decode rounds to the nearest
+ * ns, not tick. Exact bound (+1 for that sub-ns rounding), no added margin. */
+constexpr int64_t kNoCtxRtpQuantizationFloorNs = -(kNoCtxRtpTickNs / 2 + 1);
 /* Non-exact tv_sync_pacing() rounds the epoch to the nearest tick (<=0.5 tick
- * early); the rest is margin for ordinary scheduler/hardware jitter. */
+ * early); the rest is kNoCtxEvidencedFirstPacketJitterNs, not a rounded-up guess. */
 constexpr int64_t kNoCtxFirstPacketJitterFloorNs =
-    -(10 * NS_PER_US + kNoCtxRtpTickNs / 2);
+    -(kNoCtxEvidencedFirstPacketJitterNs + kNoCtxRtpTickNs / 2);
+/* Exact mode has no epoch-rounding step (tv_sync_pacing() uses required_tai
+ * verbatim), so only its own recorded first-packet jitter applies here --
+ * n=2, both frame 0, e810 only; revise if evidence does. */
+constexpr int64_t kNoCtxExactFirstPacketJitterFloorNs = -1800;
 
 void expectNoCtxTimingWithinRegressionWindow(uint64_t frame_idx, const char* metric_name,
                                              int64_t value_ns, int64_t min_ns) {
@@ -256,9 +261,9 @@ void St20pExactUserPacing::verifyReceiveTiming(uint64_t frame_idx,
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
   /* Exact mode ignores tr_offset/vrx and needs no pacing-model slack, but
-   * still shares the floor for ordinary first-packet hardware/PCIe jitter. */
+   * still needs its own floor for ordinary first-packet hardware/PCIe jitter. */
   expectNoCtxTimingWithinRegressionWindow(frame_idx, "exact expected first-packet delta",
-                                          delta_ns, kNoCtxFirstPacketJitterFloorNs);
+                                          delta_ns, kNoCtxExactFirstPacketJitterFloorNs);
 }
 
 void St20pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/,

@@ -90,9 +90,11 @@ void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
    * video-style microsecond tolerance does not apply here. */
   const int64_t tolerance_ns = 1 * NS_PER_MS;
   /* Non-exact tx_ancillary_session_sync_pacing() rounds to the nearest tick
-   * (<=0.5 tick early); the rest is margin for ordinary scheduler/hardware jitter. */
+   * (<=0.5 tick early); the rest borrows kNoCtxEvidencedFirstPacketJitterNs
+   * (same NIC/host class, no st40p-specific failure to derive from -- revise
+   * if st40p ever produces its own). */
   constexpr int64_t kTickNs = NS_PER_S / VIDEO_CLOCK_HZ;
-  const int64_t floor_ns = -(10 * NS_PER_US + kTickNs / 2);
+  const int64_t floor_ns = -(kNoCtxEvidencedFirstPacketJitterNs + kTickNs / 2);
 
   EXPECT_GE(delta_ns, floor_ns)
       << "st40p_user_pacing frame " << frame_idx << " arrived before snapped epoch";
