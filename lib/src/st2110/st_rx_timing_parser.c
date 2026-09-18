@@ -33,10 +33,12 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
     double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
     slot->meta.latency = slot->meta.fpt - diff_rtp_ts_ns;
     slot->meta.rtp_offset = diff_rtp_ts;
-    if (tp->pre_rtp_tmstamp[s_port]) {
+    if (tp->pre_rtp_tmstamp_valid[s_port]) {
       slot->meta.rtp_ts_delta = rtp_tmstamp - tp->pre_rtp_tmstamp[s_port];
+      slot->rtp_ts_delta_valid = true;
     }
     tp->pre_rtp_tmstamp[s_port] = rtp_tmstamp;
+    tp->pre_rtp_tmstamp_valid[s_port] = true;
   }
 
   epoch_tmstamp = (uint64_t)(slot->cur_epochs * s->frame_time);
@@ -81,13 +83,15 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
     return ST_RX_TP_COMPLIANT_FAILED;
   }
   /* rtp ts delta check */
-  if (slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
-    rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed min");
-    return ST_RX_TP_COMPLIANT_FAILED;
-  }
-  if (slot->meta.rtp_ts_delta > tp->pass.rtp_ts_delta_max) {
-    rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed max");
-    return ST_RX_TP_COMPLIANT_FAILED;
+  if (slot->rtp_ts_delta_valid) {
+    if (slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
+      rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed min");
+      return ST_RX_TP_COMPLIANT_FAILED;
+    }
+    if (slot->meta.rtp_ts_delta > tp->pass.rtp_ts_delta_max) {
+      rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed max");
+      return ST_RX_TP_COMPLIANT_FAILED;
+    }
   }
   /* rtp offset check */
   if (slot->meta.rtp_offset < tp->pass.rtp_offset_min) {

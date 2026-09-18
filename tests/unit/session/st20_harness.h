@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 #include "mtl_api.h"
+#include "st20_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -141,6 +142,27 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP so mt_mbuf_time_stamp() reads the
  * mbuf dynfield instead of falling back to the software PTP clock. */
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
+
+/* Enable the ST 2110-21 RX timing parser and its per-frame meta report, letting
+ * the production rv_tp_init() derive every pass criterion from the harness
+ * geometry. Requires a prior ut20_ctx_enable_hw_timestamp() so the parser reads
+ * the arrival time each packet is fed with. Returns 0 on success, < 0 on
+ * failure. */
+int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx);
+
+/* Feed every packet of one full, perfectly paced frame on port P carrying RTP
+ * timestamp `ts`: the first packet arrives a fixed offset into `epoch` (well
+ * inside the geometry's tr_offset) and the rest one trs apart, each stamped as
+ * its HW arrival time. Requires a prior ut20_ctx_enable_timing_parser(). */
+void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts);
+
+/* The RTP timestamp a frame at `epoch` is expected to carry, derived exactly as
+ * the parser derives it. */
+uint32_t ut20_tp_epoch_tmstamp(const ut20_test_ctx* ctx, uint64_t epoch);
+
+/* Timing parser meta of the most recent delivered frame on port P, as the
+ * session reported it in st20_rx_frame_meta::tp. */
+const struct st20_rx_tp_meta* ut20_tp_last_meta(const ut20_test_ctx* ctx);
 
 /* Park a software PTP correction in the port's no_timesync_delta accumulator --
  * what a real no-timesync port (any VF) holds once PTP has synced. It must never
