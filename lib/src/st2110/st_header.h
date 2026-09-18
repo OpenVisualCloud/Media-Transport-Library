@@ -510,6 +510,11 @@ struct st_rv_tp_slot {
   struct st20_rx_tp_meta meta;
 
   uint32_t rtp_tmstamp;
+  /* false until a previous frame supplied the reference for meta.rtp_ts_delta */
+  bool rtp_ts_delta_valid;
+  /* false when the frame's first packet was not the first one parsed, so
+   * meta.fpt is extrapolated from a later packet rather than measured */
+  bool fpt_valid;
   uint64_t first_pkt_time; /* ns */
   uint64_t prev_pkt_time;  /* ns */
   /* Cinst, packet level check */
@@ -549,6 +554,8 @@ struct st_rx_video_tp {
   /* timing info for each slot */
   struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO][MTL_SESSION_PORT_MAX];
   uint32_t pre_rtp_tmstamp[MTL_SESSION_PORT_MAX];
+  /* pre_rtp_tmstamp is only a reference once a frame has been seen, it may be 0 */
+  bool pre_rtp_tmstamp_valid[MTL_SESSION_PORT_MAX];
 
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
