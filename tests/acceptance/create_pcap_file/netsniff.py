@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 STARTUP_WAIT = 2  # Default wait time after starting the process
 _REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for the capture
 
+_PCAP_HEADER_BYTES = 24  # written when netsniff-ng opens the file, before any packet
+
 # pgroup size (octets) and coverage (pixels) per sampling system and bit depth,
 # from SMPTE ST 2110-20:2022 tables 1 (4:4:4), 2 (4:2:2) and 3 (4:2:0). Keyed by
 # the MTL transport-format name used in mtl_engine.media_files ("format").
@@ -126,6 +128,25 @@ class NetsniffRecorder:
         self.capture_time = capture_time
         self._promisc_was_off = False
 
+    def _captured_any_packet(self, connection) -> bool:
+        """True if the capture file already holds at least one packet.
+
+        A ``--num`` capture can be over before ``start()`` gets to check whether
+        the process is alive: the 65832 packets of a 4-frame 4K/119.88 capture
+        arrive in 33 ms, well inside the round trip that polls it. So "not
+        running" means "already finished" as often as it means "failed to start",
+        and the two differ only by whether a pcap exists -- netsniff-ng writes
+        the file header on open, so a capture that ran is strictly larger.
+        """
+        res = connection.execute_command(
+            f"stat -c %s '{self.pcap_file}' 2>/dev/null || echo 0",
+            expected_return_codes=None,
+        )
+        try:
+            return int((res.stdout or "0").strip()) > _PCAP_HEADER_BYTES
+        except ValueError:
+            return False
+
     @staticmethod
     def _sanitize_filename_component(value: str, *, max_len: int = 64) -> str:
         cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", (value or "").strip())
@@ -210,6 +231,9 @@ class NetsniffRecorder:
                 logger.info(f"PCAP file will be saved at: {self.pcap_file}")
 
                 if not self.netsniff_process.running:
+                    if self._captured_any_packet(connection):
+                        logger.info("netsniff-ng already finished the capture.")
+                        return True
                     err = self.netsniff_process.stdout_text
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
                     # No pcap was written; clear so teardown skips upload.
@@ -250,7 +274,8 @@ class NetsniffRecorder:
                     # Use effective_capture_time as timeout to allow full test duration for packet capture
                     timeout = (effective_capture_time or 0) + 10
 
-                    self.netsniff_process.wait(timeout=timeout)
+                    if self.netsniff_process.running:
+                        self.netsniff_process.wait(timeout=timeout)
                     logger.info("Capture complete.")
                     logger.debug(self.netsniff_process.stdout_text)
                 except RemoteProcessTimeoutExpired:

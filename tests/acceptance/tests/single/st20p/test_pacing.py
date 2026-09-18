@@ -5,7 +5,7 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 pytestmark = pytest.mark.verified
 
@@ -63,7 +63,7 @@ def test_st20p_pacing(
         "port": 20000,
         "width": media_file_info["width"],
         "height": media_file_info["height"],
-        "framerate": f"p{media_file_info['fps']}",
+        "framerate": parse_fps_to_pformat(media_file_info["fps"]),
         "pixel_format": media_file_info["file_format"],
         "transport_format": media_file_info["format"],
         "input_file": media_file_path,
@@ -78,6 +78,19 @@ def test_st20p_pacing(
         actual_test_time = max(test_time, 12)
     else:
         actual_test_time = max(test_time, 8)
+
+    # EBU LIST 2.2.2 cannot name 119.88 fps: its detector takes two inter-frame
+    # RTP timestamp deltas and returns Rate(180000, d1 + d2), so it can only
+    # express a rate whose 180000/fps is a whole number of ticks. 119.88 needs
+    # 1501.5 and comes out as 90000/751, and every measure anchored to the frame
+    # grid is then judged against that -- the inter-frame delta limit collapses
+    # to {751, 751} against a correct 750/751 alternation, and the VRX/TRO grid
+    # drifts 2.78us per frame. Cinst, which does not use the grid, reads narrow
+    # on the same capture, so the pacing itself is what the test asked for.
+    # Upstream rate_calculator.cpp hard-codes this escape for 23.976 fps, whose
+    # arithmetic fails the same way, but not for 119.88.
+    if parse_fps_to_pformat(media_file_info["fps"]) == "p119":
+        pcap_capture.skip("EBU LIST 2.2.2 mis-detects 119.88 fps as 90000/751")
 
     app = app_factory(application)
     app.create_command(**config_params)
