@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 # Default FPS monitoring configuration
 FPS_WARMUP_SECONDS = 45  # Skip first N seconds (PTP sync + session ramp-up)
-FPS_COOLDOWN_SECONDS = 15  # Discard last N seconds to ignore teardown artifacts
 FPS_TOLERANCE_PCT = 0.99  # 99% of requested FPS required for pass
+# MTL dumps stats every 10 s and the first/last dumps are discarded as partial,
+# so 4 samples needs a run of roughly 70 s or more.
+FPS_MIN_STEADY_SAMPLES = 4  # Refuse to judge a run on fewer stat dumps than this
 
 # Shared timestamp regex (compiled once)
 _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
@@ -24,17 +26,66 @@ _TS_FMT = "%Y-%m-%d %H:%M:%S"
 # ── FPS Monitoring ──────────────────────────────────────────────────────
 
 
+def _steady_window(dumps, num_sessions):
+    """Pick the stat dumps that cover steady-state traffic → (list, reason).
+
+    MTL emits one stat line per session per dump, so a dump is a census of
+    the sessions alive at that moment and the FPS it reports is the average
+    over the period since the previous dump.  Two kinds of dump therefore
+    cannot be compared against the target rate:
+
+    * **Partial-period dumps.**  Session create and session free happen
+      *inside* a dump period, so the first dump naming every session covers
+      the last session's ramp-up and the last one covers the first free.  A
+      1 s slice of a 10 s period reads as 6 fps at full rate.
+    * **Pre-traffic dumps.**  RX sessions exist and report 0 fps from
+      creation until the sender starts, which on the RX side is a separate
+      process on another host.
+
+    So: bound the window by the first and last dump naming every session,
+    take what lies strictly between them, and start after the first dump in
+    which every session is live.  Everything from there on is retained
+    *including* zeros — a mid-run collapse is the failure this metric exists
+    to catch, not an artifact.
+
+    Dumps inside the bounds that name only some sessions are kept: no
+    session can be created or freed there, so a short census is a stat line
+    lost in transport, and the sessions it does name still reported a whole
+    period.
+    """
+    stamps = list(dumps)
+    full = [i for i, ts in enumerate(stamps) if len(dumps[ts]) == num_sessions]
+    if len(full) < 2 or full[-1] - full[0] < 2:
+        return [], f"no run of dumps naming all {num_sessions} sessions"
+    window = stamps[full[0] + 1 : full[-1]]
+    live = next(
+        (
+            i
+            for i, ts in enumerate(window)
+            if len(dumps[ts]) == num_sessions and all(v > 0 for v in dumps[ts].values())
+        ),
+        None,
+    )
+    if live is None:
+        return [], "no dump had every session live"
+    return window[live + 1 :], ""
+
+
 def _monitor_fps_generic(
     log_lines,
     expected_fps,
     num_sessions,
     session_pattern,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
-    warmup_seconds=FPS_WARMUP_SECONDS,
-    cooldown_seconds=FPS_COOLDOWN_SECONDS,
     max_drop_pct=0.0,
+    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
-    """Parse log lines, filter by warmup/cooldown, return (all_ok, count, details).
+    """Parse log lines, judge the steady window, return (all_ok, count, details).
+
+    The window comes from :func:`_steady_window`; a run whose window holds
+    fewer than *min_samples* dumps is reported as a failure rather than
+    judged on what little is left, since too few samples is exactly the
+    state in which one partial dump decides the verdict.
 
     When *max_drop_pct* > 0, a **trimmed mean** is used: the worst
     ``max_drop_pct`` fraction of per-session FPS samples are discarded
@@ -43,34 +94,26 @@ def _monitor_fps_generic(
     to zero without indicating a real capacity problem.
     """
     fps_re = re.compile(session_pattern)
-    start_ts = last_ts = None
     min_required = expected_fps * fps_tolerance_pct
-    raw_samples = []  # (session_id, fps, elapsed_s)
+    dumps = {}  # {timestamp: {session_id: fps}}, in log order
 
     for line in log_lines:
         ts_m = _TS_RE.search(line)
-        if ts_m and start_ts is None:
-            start_ts = datetime.strptime(ts_m.group(1), _TS_FMT)
+        if not ts_m:
+            continue
         m = fps_re.search(line)
-        if m and ts_m and start_ts:
-            cur = datetime.strptime(ts_m.group(1), _TS_FMT)
-            last_ts = cur
-            raw_samples.append(
-                (int(m.group(2)), float(m.group(3)), (cur - start_ts).total_seconds())
-            )
+        if m:
+            dumps.setdefault(ts_m.group(1), {})[int(m.group(2))] = float(m.group(3))
 
-    end_elapsed = (
-        (last_ts - start_ts).total_seconds() if last_ts and start_ts else float("inf")
-    )
-    cutoff = end_elapsed - cooldown_seconds
+    window, reason = _steady_window(dumps, num_sessions)
+    if not reason and len(window) < min_samples:
+        reason = f"steady window is only {len(window)} dump(s)"
+        window = []
 
     session_fps = {}
-    for sid, fps_val, elapsed in raw_samples:
-        if elapsed < warmup_seconds:
-            continue
-        if cooldown_seconds > 0 and elapsed > cutoff:
-            continue
-        session_fps.setdefault(sid, []).append(fps_val)
+    for ts in window:
+        for sid, fps_val in dumps[ts].items():
+            session_fps.setdefault(sid, []).append(fps_val)
 
     def _trimmed_mean(hist):
         """Compute mean of *hist*, dropping the worst max_drop_pct fraction."""
@@ -92,6 +135,8 @@ def _monitor_fps_generic(
         "successful_sessions": sorted(ok_sessions),
         "session_fps_history": session_fps,
         "min_required_fps": min_required,
+        "window": window,
+        "window_reject_reason": reason,
     }
     return len(ok_sessions) == num_sessions, len(ok_sessions), details
 
@@ -105,9 +150,8 @@ def monitor_tx_fps(
     expected_fps,
     num_sessions,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
-    warmup_seconds=FPS_WARMUP_SECONDS,
-    cooldown_seconds=FPS_COOLDOWN_SECONDS,
     max_drop_pct=0.0,
+    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
     """Monitor TX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -116,9 +160,8 @@ def monitor_tx_fps(
         num_sessions,
         _TX_FPS_RE,
         fps_tolerance_pct,
-        warmup_seconds,
-        cooldown_seconds,
         max_drop_pct,
+        min_samples,
     )
 
 
@@ -127,9 +170,8 @@ def monitor_rx_fps(
     expected_fps,
     num_sessions,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
-    warmup_seconds=FPS_WARMUP_SECONDS,
-    cooldown_seconds=FPS_COOLDOWN_SECONDS,
     max_drop_pct=0.0,
+    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
     """Monitor RX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -138,9 +180,8 @@ def monitor_rx_fps(
         num_sessions,
         _RX_FPS_RE,
         fps_tolerance_pct,
-        warmup_seconds,
-        cooldown_seconds,
         max_drop_pct,
+        min_samples,
     )
 
 
@@ -251,7 +292,6 @@ def display_session_results(
     fps_details,
     tx_frame_counts,
     rx_frame_counts,
-    fps_warmup_seconds=FPS_WARMUP_SECONDS,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     throughput_details=None,
     dev_rate=None,
@@ -261,12 +301,22 @@ def display_session_results(
     """Display FPS, frame count, and throughput results for all sessions."""
     ok_ids = fps_details.get("successful_sessions", [])
     min_req = fps_details.get("min_required_fps", fps * fps_tolerance_pct)
+    window = fps_details.get("window") or []
 
     logger.info("=" * 80)
     logger.info(
         f"{direction} Results{dma_label}: {len(ok_ids)}/{num_sessions} sessions "
-        f"at {fps} fps (min: {min_req:.1f}, warmup: {fps_warmup_seconds}s)"
+        f"at {fps} fps (min: {min_req:.1f})"
     )
+    if window:
+        logger.info(
+            f"  Steady window: {len(window)} stat dumps, " f"{window[0]} … {window[-1]}"
+        )
+    else:
+        logger.info(
+            "  Steady window: none — "
+            f"{fps_details.get('window_reject_reason', 'no FPS data')}"
+        )
     logger.info("=" * 80)
 
     for sid in range(num_sessions):
@@ -318,21 +368,6 @@ def _log_throughput(label, direction, tp_details, dev_rate, num_sessions):
                     f"    S{sid} ({direction}): avg={sum(vals)/len(vals):.2f} "
                     f"min={min(vals):.2f} max={max(vals):.2f} Mb/s"
                 )
-
-
-def get_companion_log_summary(host, log_path, max_lines=30):
-    """Retrieve and display tail of companion log from remote host."""
-    try:
-        result = host.connection.execute_command(
-            f"tail -n {max_lines} {log_path} 2>/dev/null || echo 'Log file not found'",
-            shell=True,
-        )
-        if result.stdout and "Log file not found" not in result.stdout:
-            for line in result.stdout.splitlines():
-                if line.strip():
-                    logger.debug(f"  companion: {line}")
-    except Exception as e:
-        logger.warning(f"Could not retrieve companion log from {log_path}: {e}")
 
 
 # ── CPU Core Usage Monitor ──────────────────────────────────────────────

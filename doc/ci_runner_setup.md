@@ -165,6 +165,33 @@ verdict. Neither is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 
+#### The ST 2022-7 leg needs both ports cabled too
+
+The performance rig carries no NIC label, so `perf-pytest.yml` resolves its card
+from `PERF_PCI_DEVICE` in the lab file (`task ci:pytest-setup -- pci-env`) rather
+than from a label. One entry there is enough: the step asks `lspci` how many
+ports the named card has and declares two of them, because a redundant session
+needs a second interface to put its second leg on and `gen_config.py` numbers
+`interface_index` within a `vendor:device` group. Two is also the ceiling — index
+0 becomes `host.vfs` and index 1 `host.vfs_r`, and nothing reads a third, so a
+card with more ports still declares two. Naming a single port instead
+leaves `conftest.py` no port to build `host.vfs_r` on, and every `*_redundant`
+case skips with `Redundant requires VFs on TX port 1` inside a run that reports
+success.
+
+So port 1 of the perf pair has to be cabled port to port, like the capture leg
+above — but the consequence of leaving it dark is different. There is no sniffer
+here; the redundant leg is live traffic. MTL resolves the second leg's destination
+MAC by ARP (`mt_dst_ip_mac`, since nothing passes `--r_tx_dst_mac`), and
+`arp_get_result` blocks for `arp_timeout_ms`, 60 s by default. Every session of
+the run pays that wait again: the sessions share one destination IP
+(`ip_pools.rx_r[0]`) and so one entry in the port's ARP table, but a lookup that
+timed out returns `-EIO` without marking the entry failed, so the next session
+starts the same wait over. A dead port 1 therefore shows up as a run that hangs
+past its timeout, not as a link error. A single-port card is handled: it yields
+one entry and the redundant cases keep skipping, honestly, instead of failing
+against a port the host does not have.
+
 ### The i225 leg of the smoke suite
 
 2.5 Gbps of link means only the `low_bandwidth` subset fits: ST 2110-22, ST
