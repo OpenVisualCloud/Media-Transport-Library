@@ -6,6 +6,7 @@ import re
 import time
 
 import pytest
+from mfd_connect.exceptions import RemoteProcessTimeoutExpired
 from mfd_network_adapter import NetworkInterface
 
 logger = logging.getLogger(__name__)
@@ -176,17 +177,25 @@ class Nicctl:
              kernel's documented escape hatch that does not wait on
              refcounts.
 
+        Only a timeout takes the escape hatch. A non-zero exit — the script
+        rejecting the BDF, a missing dpdk-devbind.py — means the PF
+        answered, so a PCI remove/rescan would be gratuitously
+        destructive: it re-probes the whole device, which invalidates the
+        VFs of every PF on that card and so breaks the *sibling* ports this
+        run is still using. Those failures propagate instead, because a PF
+        whose VFs could not be destroyed must not go on to be bound to
+        vfio-pci for exactly the reason ``bind_pmd`` documents.
+
         :param pci_id: pci_id of the nic adapter
         """
         self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
         try:
             self.connection.execute_command(
-                f"{self.nicctl} disable_vf {pci_id}",
+                f"sudo {self.nicctl} disable_vf {pci_id}",
                 shell=True,
                 timeout=_NICCTL_TIMEOUT,
             )
-            return
-        except Exception as e:
+        except RemoteProcessTimeoutExpired as e:
             logger.warning(
                 "disable_vf %s timed out (%s); attempting PCI remove/rescan",
                 pci_id,
@@ -209,21 +218,25 @@ class Nicctl:
         if self.vfio_list(pci_id):
             self.disable_vf(pci_id)
         self.connection.execute_command(
-            self.nicctl + " bind_pmd " + pci_id,
+            f"sudo {self.nicctl} bind_pmd {pci_id}",
             shell=True,
             timeout=_NICCTL_TIMEOUT,
         )
 
     def bind_kernel(self, pci_id: str) -> None:
-        """Bind VF to kernel driver."""
+        """Bind VF to kernel driver.
+
+        As in :meth:`disable_vf`, only a timeout warrants the destructive
+        PCI remove/rescan.
+        """
         self._wait_vfio_idle(pci_id, timeout_s=_VFIO_IDLE_TIMEOUT)
         try:
             self.connection.execute_command(
-                self.nicctl + " bind_kernel " + pci_id,
+                f"sudo {self.nicctl} bind_kernel {pci_id}",
                 shell=True,
                 timeout=_NICCTL_TIMEOUT,
             )
-        except Exception as e:
+        except RemoteProcessTimeoutExpired as e:
             logger.warning(
                 "bind_kernel %s timed out (%s); attempting PCI remove/rescan",
                 pci_id,
