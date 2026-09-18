@@ -71,11 +71,6 @@ enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
   return MTL_PMD_DPDK_USER;
 }
 
-enum st_fps st_frame_rate_to_st_fps(double fps) {
-  (void)fps;
-  return ST_FPS_MAX;
-}
-
 void ut_ffmpeg_reset(void) {
   g_mtl_shared_handle = NULL;
   g_mtl_ref_cnt = 0;

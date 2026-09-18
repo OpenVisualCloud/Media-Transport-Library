@@ -60,15 +60,16 @@ the other 511 of the 513 cases and all pass. The crash needs `enable_asan` — t
 passes 3/3 without it. Before filing a defect against `lib/`, read the allocator paragraph
 below; no causal link between the two is established. Tracked as T-61.
 
-Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the 17 production `.c`
-files this suite `#include`s into harness `.c` files are unchecked. The 237 shadowed symbols
-therefore resolve to uninstrumented code — 231 from the 16 `lib/` copies plus 6 harness stubs.
-`ecosystem/ffmpeg_plugin/mtl_common.c` is the one file of the 17 that contributes none of the
-231. Shadowing needs a `libmtl.so` symbol, and nothing `mtl_common.c` itself defines is in
-`libmtl.so`. `ffmpeg/mtl_common_harness.c` still shadows and defines 4 of the 6 stubs.
-`pipeline/st30p_tx_harness.c` defines the other 2.
+Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the 19 production `.c`
+files this suite `#include`s into harness `.c` files are unchecked. The 251 shadowed symbols
+therefore resolve to uninstrumented code — 248 from the 18 `lib/` copies plus 3 harness stubs.
+`ecosystem/ffmpeg_plugin/mtl_common.c` is the one file of the 19 that contributes none of the
+248. Shadowing needs a `libmtl.so` symbol, and nothing `mtl_common.c` itself defines is in
+`libmtl.so`. `ffmpeg/mtl_common_harness.c` defines all 3 stubs — `mtl_init`, `mtl_uninit`,
+`mtl_pmd_by_port_name`. The two in `pipeline/st30p_tx_harness.c` land in the 248 instead, because
+`st2110/pipeline/st30_pipeline_tx.c` is itself an included copy and defines them as well.
 
-`libmtl.so` *is* instrumented, so the 153 symbols `UnitTest` resolves from it are checked —
+`libmtl.so` *is* instrumented, so the 165 symbols `UnitTest` resolves from it are checked —
 that covers any file no harness includes, such as `st2110/st_ancillary.c`. `build.sh` preloads
 the ASan runtime so the instrumented `libmtl.so` does not fault on an init-order interposition.
 
@@ -83,13 +84,13 @@ grep -rhoP '^#include "\K[^"]+\.c(?=")' ../tests/unit | grep -v '^\.\.' |
   sed 's|/|_|g; s|^|lib/libmtl.so.p/src_|; s|$|.o|' | sort -u | xargs nm --defined-only |
   grep -oP '^\S+ [A-Z] \K\S+' | sort -u > copies
 comm -12 own dso > shadowed
-wc -l < shadowed                             # 237 shadowed
-comm -12 shadowed copies | wc -l             # 231 from the 16 lib/ copies
-comm -23 shadowed copies | wc -l             # 6 harness stubs; drop wc -l to name them
-comm -12 undef dso | comm -23 - own | wc -l  # 153 resolved from the DSO
+wc -l < shadowed                             # 251 shadowed
+comm -12 shadowed copies | wc -l             # 248 from the 18 lib/ copies
+comm -23 shadowed copies | wc -l             # 3 harness stubs; drop wc -l to name them
+comm -12 undef dso | comm -23 - own | wc -l  # 165 resolved from the DSO
 ```
 
-Dropping the `comm -23 - own` step gives 195, counting symbols a harness copy already defines.
+Dropping the `comm -23 - own` step gives 216, counting symbols a harness copy already defines.
 
 The same option also forks an allocator API. `-DMTL_HAS_ASAN` rides in `mtl_c_args` next to the
 sanitizer flag, and `lib/src/mt_mem.h` keys on it to switch `mt_rte_zmalloc_socket()` and its
