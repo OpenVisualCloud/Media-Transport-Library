@@ -78,6 +78,29 @@ However, please note that our daily development and validation is primarily cond
 
 An important point to note is that narrow pacing of TX is only supported for the Intel E810 and E830 series together with DPDK PMD due to the rate limit feature. All other type of usage have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
 
+### 1.4. Platform support matrix
+
+This matrix shows the tests that continuous integration runs for each operating system.
+It does not limit MTL to these operating systems.
+MTL should build and run on other Linux systems that provide the required compiler, DPDK, and library dependencies.
+A system without hardware validation is not known to be incompatible.
+
+| Operating system | Container build | Unit tests | Bare-metal integration tests | Acceptance tests | Validation kernel |
+| --- | --- | --- | --- | --- | --- |
+| Ubuntu 22.04 LTS | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
+| Ubuntu 24.04 LTS | Yes | Yes | Yes, E810/E830/E835 | Yes, smoke and nightly suites | `6.8.0-137-generic` |
+| Ubuntu 26.04 LTS | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
+| Rocky Linux 9 | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
+| Other Linux systems | Expected | Not run in CI | Not run in CI | Not run in CI | Not applicable |
+
+The container build includes DPDK, MTL, sample applications, plugins, and the selected data path backends.
+The unit tests run without a NIC or root access.
+The bare-metal integration tests run the C++ gtest suite with physical NICs.
+The hardware validation runs the end-to-end pytest suites with media traffic.
+
+The Ubuntu 24.04 validation kernel value records the fleet state on September 18, 2026.
+Kernel updates can change this value without changing the supported operating system.
+
 ## 2. Build
 
 Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [doc/fuzzing.md](doc/fuzzing.md).

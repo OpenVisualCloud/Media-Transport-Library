@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-# Copyright (c) 2025 Intel Corporation.
+# Copyright (c) 2026 Intel Corporation.
 # SPDX-License-Identifier: BSD-3-Clause
 
-# Ubuntu 24.04 with eBPF/XDP support
+# Ubuntu 26.04 with eBPF/XDP support
 ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS builder
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04" AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -14,6 +14,8 @@ ARG PREFIX_PATH=/opt/intel
 ARG MTL_REPO=${PREFIX_PATH}/mtl
 ENV DEBIAN_FRONTEND="noninteractive"
 ENV TZ="Europe/Warsaw"
+ENV CC="gcc-14"
+ENV CXX="g++-14"
 
 SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 
@@ -24,7 +26,7 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
         ca-certificates sudo curl unzip wget \
         python3-dev python3-pip python3-pyelftools \
-        git build-essential pkg-config \
+        git build-essential gcc-14 g++-14 pkg-config \
         libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
         m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
@@ -37,7 +39,7 @@ COPY . "${MTL_REPO}"
 
 # Build eBPF/XDP using the project build script
 WORKDIR "${MTL_REPO}/script"
-RUN ./build_ebpf_xdp.sh
+RUN CFLAGS="-std=gnu17" ./build_ebpf_xdp.sh
 
 # Build DPDK using the project build script
 WORKDIR "${MTL_REPO}/script"
@@ -45,20 +47,21 @@ RUN ./build_dpdk.sh -f
 
 # Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"
-RUN ./build.sh unit && \
+RUN export CFLAGS="-Wno-error=format-truncation" && \
+    ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
-# Ubuntu 24.04, runtime/final stage
+# Ubuntu 26.04, runtime/final stage
 ARG MTL_REPO
 ARG IMAGE_CACHE_REGISTRY
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS final
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
-LABEL org.opencontainers.image.title="Intel® Media Transport Library (Ubuntu 24.04 + eBPF/XDP)"
+LABEL org.opencontainers.image.title="Intel® Media Transport Library (Ubuntu 26.04 + eBPF/XDP)"
 LABEL org.opencontainers.image.description="Intel® Media Transport Library (MTL), DPDK + AF_XDP real-time media transport for ST 2110"
 LABEL org.opencontainers.image.documentation="https://openvisualcloud.github.io/Media-Transport-Library/README.html"
 LABEL org.opencontainers.image.version="1.26.0"
@@ -76,7 +79,7 @@ WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
-    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils && \
+    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -85,13 +88,10 @@ RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     useradd -m -G vfio,root,sudo -u 20001 imtl
 
 # Copy libraries and binaries
-COPY --from=builder /usr/local/lib/x86_64-linux-gnu/* /usr/local/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/local/bin/* /usr/local/bin/
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder "${MTL_REPO}/build" "/home/imtl"
 COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/build/RxTxApp" "/home/imtl/RxTxApp"
 COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/script" "/home/imtl/scripts"
-COPY --chown=imtl --from=builder "${MTL_REPO}/script" "/home/imtl/script"
 
 RUN ldconfig
 SHELL ["/bin/bash", "-c"]

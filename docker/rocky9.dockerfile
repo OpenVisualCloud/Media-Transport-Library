@@ -32,7 +32,7 @@ RUN dnf install -y epel-release && \
         ca-certificates sudo curl unzip wget patch \
         python3-devel python3-pip python3-pyelftools \
         git gcc gcc-c++ make pkg-config ninja-build \
-        numactl-devel json-c-devel libpcap-devel gtest-devel \
+        numactl-devel json-c-devel libpcap-devel gtest-devel gmock-devel \
         SDL2-devel SDL2_ttf-devel openssl-devel systemtap-sdt-devel \
         m4 clang llvm zlib-devel elfutils-libelf-devel libcap-ng-devel libcap-ng-utils \
         glibc-devel.i686 && \
@@ -49,9 +49,10 @@ RUN ./build_ebpf_xdp.sh
 WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
-# Build MTL
+# Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"
-RUN ./build.sh && \
+RUN ./build.sh unit && \
+    ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
