@@ -2,17 +2,23 @@
 # Copyright(c) 2026 Intel Corporation
 
 import pytest
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422p10le_4k
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 
+# FFmpeg is the only backend here (rxtxapp is skipped below), and both ends of
+# its pipeline name a frame buffer with an AVPixelFormat: -pix_fmt on the
+# rawvideo reader and on the mtl_st20p muxer. RFC4175 is an ST 2110-20 wire
+# packing, so no AVPixelFormat can name it -- the sources must be planar. The
+# framerate is the parametrized one, not the file's: FFmpeg loops the input
+# (-stream_loop -1) and -re throttles it to the rate asked for.
 FORMAT_CASES = [
-    ("i1080p25", "p25", yuv_files_422rfc10["Penguin_1080p"]),
-    ("i1080p30", "p30", yuv_files_422rfc10["Penguin_1080p"]),
-    ("i1080p60", "p60", yuv_files_422rfc10["Crosswalk_1080p"]),
-    ("i2160p30", "p30", yuv_files_422rfc10["Crosswalk_4K"]),
-    ("i2160p60", "p60", yuv_files_422rfc10["Crosswalk_4K"]),
+    ("i1080p25", "p25", yuv_files_422p10le["Penguin_1080p"]),
+    ("i1080p30", "p30", yuv_files_422p10le["Penguin_1080p"]),
+    ("i1080p60", "p60", yuv_files_422p10le["Penguin_1080p"]),
+    ("i2160p30", "p30", yuv_files_422p10le_4k["Penguin_4K"]),
+    ("i2160p60", "p60", yuv_files_422p10le_4k["Penguin_4K"]),
 ]
 
 
