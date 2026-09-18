@@ -687,6 +687,15 @@ int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
   return rc;
 }
 
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+                        size_t n) {
+  bool has_pkt_lcore = ctx->session.has_pkt_lcore;
+  ctx->session.has_pkt_lcore = pkt_lcore;
+  void* ret = rv_frame_memcpy(&ctx->session, dst, src, n);
+  ctx->session.has_pkt_lcore = has_pkt_lcore;
+  return ret;
+}
+
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port) {
   uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;

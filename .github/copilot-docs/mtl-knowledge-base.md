@@ -222,7 +222,9 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
-Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path (the reason the removed `rv_frame_memcpy()` wrapper existed). `mtl_memcpy()` is the public API over the same call.
+Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
+The one exception is that RX frame write path: `rv_frame_memcpy()` (`st_rx_video_session.c`) streams whole cache lines with non-temporal stores, and copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+A session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
