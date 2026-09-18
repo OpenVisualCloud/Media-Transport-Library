@@ -11,7 +11,7 @@ on:
       - main
       - 'maint-**'
 
-# Same reason as the other build workflows: four images per run, and only the
+# Same reason as the other build workflows: five images per run, and only the
 # newest commit's are of any use.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -63,6 +63,9 @@ jobs:
           - name: ubuntu24
             dockerfile: docker/ubuntu24.dockerfile
             image_suffix: "-ubuntu24"
+          - name: ubuntu26
+            dockerfile: docker/ubuntu26.dockerfile
+            image_suffix: "-ubuntu26"
           - name: rocky9
             dockerfile: docker/rocky9.dockerfile
             image_suffix: "-rocky9"
