@@ -18,6 +18,10 @@
 namespace {
 /* Hardware-tested NoCtx regression ceiling, not ST 2110-21 certification. */
 constexpr int64_t kNoCtxTimingRegressionMaxNs = 300 * NS_PER_US;
+/* RL_RTP_SHIFT_PKTS in st_tx_video_session.c, from which only a ceiling is derived
+ * below: a library constant that shrank would still pass out here, and is the unit
+ * suite's business rather than this one's. */
+constexpr uint32_t kRlRtpShiftPkts = 5;
 
 void expectNoCtxTimingWithinRegressionWindow(uint64_t frame_idx, const char* metric_name,
                                              int64_t value_ns) {
@@ -149,9 +153,24 @@ void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
 void St20pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
                                           uint64_t timestamp_media_clk,
                                           uint64_t expected_media_clk) const {
-  EXPECT_EQ(timestamp_media_clk, expected_media_clk)
-      << " idx_rx: " << frame_idx << "expected media clk: " << expected_media_clk
-      << " received timestamp: " << timestamp_media_clk;
+  /* Under RL the transmitter moves the wire timestamp back off the launch instant by
+   * up to kRlRtpShiftPkts packet intervals plus its floor's tick, covering a warm-up
+   * pad train the shaper releases early. What it spends of that depends on an epoch
+   * lead st20p_tx_get_pacing_params() does not report, so only the ceiling belongs
+   * here. AUTO keeps that ceiling: a fallback to software pacing is invisible from
+   * out here, where only the requested way can be read. */
+  const enum st21_tx_pacing_way pacing_way =
+      static_cast<St20pHandler*>(parent)->ctx->para.pacing;
+  const int32_t max_shift =
+      (pacing_way == ST21_TX_PACING_WAY_AUTO || pacing_way == ST21_TX_PACING_WAY_RL)
+          ? static_cast<int32_t>(st10_tai_to_media_clk(
+                static_cast<uint64_t>(kRlRtpShiftPkts * pacing_trs_ns), VIDEO_CLOCK_HZ)) +
+                1
+          : 0;
+  const int32_t shift = static_cast<int32_t>(static_cast<uint32_t>(expected_media_clk) -
+                                             static_cast<uint32_t>(timestamp_media_clk));
+  EXPECT_GE(shift, 0) << " idx_rx: " << frame_idx;
+  EXPECT_LE(shift, max_shift) << " idx_rx: " << frame_idx;
 }
 
 void St20pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,

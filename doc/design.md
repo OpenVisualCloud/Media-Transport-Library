@@ -648,10 +648,11 @@ This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance 
 
 ### 8.2. RTP timestamps and latency compensation in rate-limit pacing
 
-When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: packets rtp_timestamps are increased to account for NIC queue and processing delay.
-Without this workaround, packets appear on the wire marginally earlier than the theoretical transmission schedule.
+When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: a frame's RTP timestamp is moved back off its scheduled launch instant, because the frame's first real packet is queued behind a warm-up pad train that the shaper's burst credit releases early.
+The compensation moves only the timestamp, never the wire timing: without it a receiver measures a frame's first packet arriving before the RTP timestamp that same packet carries, on every frame.
 
 Because the RTP timestamp embedded in frame packets reflects the actual wire time (the moment the first packet leaves the NIC), the compensation shift is subtracted from the RTP timestamp so that receivers see timestamps consistent with the true on-wire timing.
+The shift is capped at the lead the timestamp holds over its own epoch, so a frame launched close to its epoch is shifted less, or not at all, rather than being timestamped earlier than that epoch.
 
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.

@@ -756,8 +756,38 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   return tv_sync_pacing(impl, s, required_tai);
 }
 
-/* Returns the TAI instant frame->rtp_timestamp was derived from, for the caller
- * to report as frame->timestamp -- see the per-branch comments below for why. */
+/* Packet intervals of RL warm-up compensation: enough for the shaper's burst credit,
+ * which biases the train up to 1.99 intervals early across the rx_timing formats. */
+#define RL_RTP_SHIFT_PKTS 5
+
+/* Media-clock ticks to move the next RTP timestamp back off its launch instant, so
+ * that a frame queued behind a warm-up pad train the rate limiter releases early
+ * is not timestamped later than the packet carrying it. */
+static uint32_t tv_rl_rtp_shift_ticks(struct st_tx_video_session_impl* s,
+                                      uint64_t tai_for_rtp_ts) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  uint32_t rate = s->fps_tm.sampling_clock_rate;
+  int32_t lead;
+
+  if (!pacing->warm_pkts || (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) return 0;
+
+  /* The shift is spent out of the receiver's rtp_offset, so the lead over the epoch
+   * caps it -- as tick counts, and measured on the instant being converted, not on
+   * pacing->ptp_time_cursor, which rtp_timestamp_delta_us has moved away from it. */
+  lead = (int32_t)(st10_tai_to_media_clk(tai_for_rtp_ts, rate) -
+                   st10_tai_to_media_clk(tai_from_frame_count(pacing, pacing->cur_epochs),
+                                         rate));
+  if (lead <= 0) return 0;
+
+  return RTE_MIN((uint32_t)lead,
+                 RTE_MAX(1u, st10_tai_to_media_clk(
+                                 (uint64_t)(RL_RTP_SHIFT_PKTS * pacing->trs), rate)));
+}
+
+/* Returns the TAI instant to report as frame->timestamp. frame->rtp_timestamp is
+ * derived from it, but stops being that instant's st10_tai_to_media_clk() image
+ * once tv_rl_rtp_shift_ticks() compensates a pad train: that correction belongs to
+ * the wire protocol, not to the schedule the library resolved. */
 static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
                                          enum st10_timestamp_fmt tfmt,
                                          uint64_t timestamp) {
@@ -793,7 +823,8 @@ static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
     }
     tai_for_rtp_ts += delta_ns;
     pacing->rtp_time_stamp =
-        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
+        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
+        tv_rl_rtp_shift_ticks(s, tai_for_rtp_ts);
   }
   dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, pacing->rtp_time_stamp);
   return tai_for_rtp_ts;
@@ -1416,7 +1447,8 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
-          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
+          tv_rl_rtp_shift_ticks(s, tai_for_rtp_ts);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1488,7 +1520,8 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
       }
       tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
-          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate) -
+          tv_rl_rtp_shift_ticks(s, tai_for_rtp_ts);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1974,10 +2007,11 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       }
       tv_sync_pacing(impl, s, required_tai);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-      /* Report the same TAI instant frame->rtp_timestamp (set next) was
-       * derived from, not tv_sync_pacing()'s scheduled ptp_time_cursor --
-       * they can legitimately differ (USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH,
-       * rtp_timestamp_delta_us). See tv_update_rtp_time_stamp() above. */
+      /* Report the TAI instant frame->rtp_timestamp (set next) is derived from,
+       * not tv_sync_pacing()'s scheduled ptp_time_cursor -- they can
+       * legitimately differ (USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH,
+       * rtp_timestamp_delta_us, and under RL the pad-train compensation). See
+       * tv_update_rtp_time_stamp() above. */
       frame->tv_meta.timestamp = tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp);
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;

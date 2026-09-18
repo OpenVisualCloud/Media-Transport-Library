@@ -151,7 +151,9 @@ uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx);
 /* The frame->rtp_timestamp the app would see in notify_frame_done(); paired
  * with ut_txv_notify_frame_done_timestamp() above to check that one
- * reconstructs the other via st10_tai_to_media_clk(). */
+ * reconstructs the other via st10_tai_to_media_clk() -- or, once
+ * ut_txv_set_warm_pkts() puts a pad train in front of the frame, that the two
+ * differ by exactly tv_rl_rtp_shift_ticks(). */
 uint32_t ut_txv_notify_frame_done_rtp_timestamp(const ut_txv_ctx* ctx);
 bool ut_txv_frame_is_waiting(const ut_txv_ctx* ctx);
 int ut_txv_frame_refcnt(const ut_txv_ctx* ctx);
