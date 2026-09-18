@@ -367,7 +367,7 @@ bool ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx) {
   rte_mbuf_refcnt_update(ctx->pad_mbuf, 2);
   s->trs_pad_inflight_num[MTL_SESSION_PORT_P] = 2;
   s->trs_target_tsc[MTL_SESSION_PORT_P] = 10000;
-  s->rl_state[MTL_SESSION_PORT_P] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  s->rl_state[MTL_SESSION_PORT_P] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
   return true;
 }
 
@@ -378,7 +378,7 @@ bool ut_trs_prepare_redundant_cleanup_state(ut_trs_ctx* ctx) {
   s->trs_inflight[MTL_SESSION_PORT_R][0] = ctx->redundant_inflight_mbuf;
   s->trs_inflight_num[MTL_SESSION_PORT_R] = 1;
   s->trs_inflight_idx[MTL_SESSION_PORT_R] = 0;
-  s->rl_state[MTL_SESSION_PORT_R] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  s->rl_state[MTL_SESSION_PORT_R] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
   s->tx_queue_recovery_pending[MTL_SESSION_PORT_R] = true;
   return true;
 }

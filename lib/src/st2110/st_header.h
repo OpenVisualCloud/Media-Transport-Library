@@ -188,7 +188,6 @@ struct st_tx_video_pacing {
 enum st_tx_video_rl_state {
   ST_TX_VIDEO_RL_STATE_IDLE = 0,
   ST_TX_VIDEO_RL_STATE_WAIT_WARMUP,
-  ST_TX_VIDEO_RL_STATE_WAIT_TARGET,
 };
 
 enum st20_packet_type {
