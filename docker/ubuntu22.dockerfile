@@ -40,9 +40,10 @@ COPY . "${MTL_REPO}"
 WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
-# Build MTL
+# Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"
-RUN ./build.sh && \
+RUN ./build.sh unit && \
+    ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
