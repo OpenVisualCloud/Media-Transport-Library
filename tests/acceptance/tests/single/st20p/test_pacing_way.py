@@ -32,6 +32,20 @@ VF_PACING_WAYS = [
 ]
 
 
+def _skip_p119_compliance(pcap_capture, media_info):
+    """119.88 fps is not a rate EBU LIST 2.2.2 can name.
+
+    Its detector takes two inter-frame RTP timestamp deltas and returns
+    Rate(180000, d1 + d2), so it can only express a rate whose 180000/fps is a
+    whole number of ticks. 119.88 needs 1501.5 and comes out as 90000/751, which
+    then makes every measure anchored to the frame grid wrong. test_pacing.py
+    carries the full analysis. Only the verdict is skipped -- the run, the
+    pacing-way assertion and the integrity check still cover these cases.
+    """
+    if parse_fps_to_pformat(media_info["fps"]) == "p119":
+        pcap_capture.skip("EBU LIST 2.2.2 mis-detects 119.88 fps as 90000/751")
+
+
 @pytest.mark.parametrize(
     "application",
     [
@@ -63,6 +77,7 @@ def test_st20p_pacing_way_load(
 ):
     """Each pacing way across the load surface its arithmetic depends on."""
     media_info, media_path = media_file
+    _skip_p119_compliance(pcap_capture, media_info)
     host = list(hosts.values())[0]
     config_params = dict(
         session_type="st20p",
@@ -109,6 +124,7 @@ def test_st20p_pacing_way_auto(
 ):
     """The default must resolve to RL rather than silently fall back to TSC."""
     media_info, media_path = media_file
+    _skip_p119_compliance(pcap_capture, media_info)
     host = list(hosts.values())[0]
     config_params = dict(
         session_type="st20p",
@@ -163,6 +179,7 @@ def test_st20p_pacing_way_phc(
 ):
     """PHC-paced ways, which require a PF."""
     media_info, media_path = media_file
+    _skip_p119_compliance(pcap_capture, media_info)
     host = list(hosts.values())[0]
     config_params = dict(
         session_type="st20p",
