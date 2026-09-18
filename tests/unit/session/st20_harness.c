@@ -58,6 +58,7 @@ struct ut20_test_ctx {
   bool hold_frames;
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
+  struct st20_rx_tp_meta last_tp;
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
@@ -91,6 +92,7 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
+  if (meta->tp[MTL_SESSION_PORT_P]) ctx->last_tp = *meta->tp[MTL_SESSION_PORT_P];
   if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
   return 0;
 }
@@ -201,6 +203,7 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
 
 void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
+  rv_tp_uinit(&ctx->session);
   /* Drain any held refcnts so destroy-while-holding is safe. */
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
     rte_atomic32_set(&ctx->frames[i].refcnt, 0);
@@ -616,6 +619,39 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
 
 void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
   ctx->ptp_storage.no_timesync_delta = delta;
+}
+
+/* ── RX timing parser ─────────────────────────────────────────────────── */
+
+/* Arrival of a frame's first packet after its epoch, well inside the geometry's
+ * tr_offset and latency_max so a paced frame is NARROW. */
+#define UT20_TP_FPT_NS (500000)
+
+int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  s->enable_timing_parser = true;
+  s->enable_timing_parser_meta = true;
+  s->detector.pkt_per_frame = (int)s->ops.height;
+  return rv_tp_init(&ctx->impl, s);
+}
+
+void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  uint64_t epoch_ns = (double)epoch * s->frame_time;
+  const int n = (int)s->ops.height;
+  for (int i = 0; i < n; i++) {
+    uint64_t pkt_ns = epoch_ns + UT20_TP_FPT_NS + (uint64_t)(s->tp->trs * i);
+    ut20_feed_frame_pkt_hw_ts(ctx, i, ts, MTL_SESSION_PORT_P, pkt_ns);
+  }
+}
+
+uint32_t ut20_tp_epoch_tmstamp(const ut20_test_ctx* ctx, uint64_t epoch) {
+  uint64_t tmstamp = (double)epoch * ctx->session.frame_time_sampling;
+  return (uint32_t)tmstamp;
+}
+
+const struct st20_rx_tp_meta* ut20_tp_last_meta(const ut20_test_ctx* ctx) {
+  return &ctx->last_tp;
 }
 
 uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx) {

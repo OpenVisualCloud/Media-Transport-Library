@@ -509,6 +509,8 @@ struct st_rv_tp_slot {
 
   struct st20_rx_tp_meta meta;
 
+  /* true once meta.rtp_ts_delta was measured against a predecessor timestamp */
+  bool rtp_ts_delta_valid;
   uint32_t rtp_tmstamp;
   uint64_t first_pkt_time; /* ns */
   uint64_t prev_pkt_time;  /* ns */
@@ -549,6 +551,7 @@ struct st_rx_video_tp {
   /* timing info for each slot */
   struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO][MTL_SESSION_PORT_MAX];
   uint32_t pre_rtp_tmstamp[MTL_SESSION_PORT_MAX];
+  bool pre_rtp_tmstamp_valid[MTL_SESSION_PORT_MAX];
 
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
