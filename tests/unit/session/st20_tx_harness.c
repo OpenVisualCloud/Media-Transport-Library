@@ -549,6 +549,14 @@ uint64_t ut_txv_stat_epoch_mismatch(const ut_txv_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_epoch_mismatch;
 }
 
+uint64_t ut_txv_stat_pacing_slip(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_pacing_slip;
+}
+
+uint64_t ut_txv_stat_pacing_slip_max_ns(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_pacing_slip_max_ns;
+}
+
 int ut_txv_notify_late_calls(const ut_txv_ctx* ctx) {
   return ctx->notify_late_calls;
 }
