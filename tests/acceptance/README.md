@@ -56,8 +56,8 @@ Suite markers: `smoke`, `nightly`, `performance`, `base_performance`, `dual`,
 [doc/acceptance_quickstart.md § Markers](../../doc/acceptance_quickstart.md#markers)
 and `pytest.ini` for the authoritative list.
 
-The two performance markers select no `tests/single/` test. Select the
-`tests/single/performance/` modules by path.
+The two performance markers select no `tests/single/` test; the
+`tests/single/performance/` modules are commented out, pending removal.
 
 ## Further reading
 

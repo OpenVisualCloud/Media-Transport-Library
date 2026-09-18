@@ -194,8 +194,8 @@ Suite markers:
 | `dual` | Requires two hosts |
 | `ptp` | Uses MTL's internal PTP (`phc2sys` suppressed) |
 
-Neither performance marker selects a `tests/single/` test. Select the
-`tests/single/performance/` modules by path.
+Neither performance marker selects a `tests/single/` test; the
+`tests/single/performance/` modules are commented out, pending removal.
 
 Descriptive markers: `verified` (see below),
 `refactored` (uses the Application-based harness),

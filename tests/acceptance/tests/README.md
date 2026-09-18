@@ -28,10 +28,7 @@ Tests for single-flow scenarios, where a single source transmits to a single des
   - Packet transmission and reception
   - Performance and reliability
 
-- **performance/**: Performance benchmarking tests
-  - Throughput measurements
-  - Latency tests
-  - CPU and memory usage analysis
+- **performance/**: commented out, pending removal
 
 - **ptp/**: Precision Time Protocol tests
   - Clock synchronization
