@@ -86,8 +86,12 @@ RUN dnf install -y epel-release && \
     groupadd -g 2110 vfio && \
     useradd -m -G vfio,root -u 20001 imtl
 
-# Copy libraries and binaries
-COPY --from=builder /usr/local/lib/x86_64-linux-gnu/* /usr/local/lib/x86_64-linux-gnu/
+# Copy libraries and binaries.
+#
+# Meson uses the libdir of the distribution, so DPDK and MTL install to
+# /usr/local/lib64 on Rocky Linux and to /usr/local/lib/x86_64-linux-gnu on
+# the Debian images. A COPY of the Debian path fails the Rocky build.
+COPY --from=builder /usr/local/lib64/* /usr/local/lib64/
 COPY --from=builder /usr/local/bin/* /usr/local/bin/
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder "${MTL_REPO}/build" "/home/imtl"
@@ -95,7 +99,11 @@ COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/build/RxTxApp"
 COPY --chown=imtl --from=builder "${MTL_REPO}/tests/tools/RxTxApp/script" "/home/imtl/scripts"
 COPY --chown=imtl --from=builder "${MTL_REPO}/script" "/home/imtl/script"
 
-RUN ldconfig
+# ldconfig on Rocky Linux reads /lib and /lib64 only, so it does not see
+# /usr/local/lib64. Name the directory before ldconfig runs, or RxTxApp and the
+# manager do not find libmtl.so and librte_*.so.
+RUN echo "/usr/local/lib64" >/etc/ld.so.conf.d/mtl-usr-local-lib64.conf && \
+    ldconfig
 SHELL ["/bin/bash", "-c"]
 
 USER imtl
