@@ -113,6 +113,7 @@ unit_sources = [
   'session/st20/dma_test.cpp',
   'session/st20/ext_frame_test.cpp',
   'session/st20/dma_offload_test.cpp',
+  'session/st20/frame_memcpy_test.cpp',
   'session/st20_tx_harness.c',
   'session/st20_tx/epoch_test.cpp',
   'session/st20_tx/interlaced_field_epoch_test.cpp',
