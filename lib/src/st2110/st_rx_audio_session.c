@@ -453,7 +453,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     /* threshold exceeded on all ports — accept the packet and undo the redundant count
      * so the packet is only counted as received, not both */
     s->port_user_stats.common.stat_pkts_redundant--;
-    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
+    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %" PRId64
+         "\n",
          __func__, s->idx, tmstamp, s->tmstamp);
   }
   s->redundant_error_cnt[s_port] = 0;
@@ -593,7 +594,8 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     /* threshold exceeded on all ports — accept the packet and undo the redundant count
      * so the packet is only counted as received, not both */
     s->port_user_stats.common.stat_pkts_redundant--;
-    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
+    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %" PRId64
+         "\n",
          __func__, s->idx, tmstamp, s->tmstamp);
   }
   s->redundant_error_cnt[s_port] = 0;

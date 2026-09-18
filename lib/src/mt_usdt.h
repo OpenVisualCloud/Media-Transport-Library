@@ -27,30 +27,64 @@
   DTRACE_PROBE7(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, parm7)
 #else
 
+/* The probes are not built, but each macro must still name every argument. A
+ * variable that a probe alone reads is an unused variable to the compiler, and
+ * -Werror then stops the build. sizeof does not evaluate its operand, so the
+ * argument keeps its cost of nothing. */
+#define MT_DTRACE_UNUSED(x) ((void)sizeof(x))
+
 #define MT_DTRACE_PROBE(provider, probe) \
   do {                                   \
   } while (0)
 #define MT_DTRACE_PROBE1(provider, probe, parm1) \
   do {                                           \
+    MT_DTRACE_UNUSED(parm1);                     \
   } while (0)
 #define MT_DTRACE_PROBE2(provider, probe, parm1, parm2) \
   do {                                                  \
+    MT_DTRACE_UNUSED(parm1);                            \
+    MT_DTRACE_UNUSED(parm2);                            \
   } while (0)
 #define MT_DTRACE_PROBE3(provider, probe, parm1, parm2, parm3) \
   do {                                                         \
+    MT_DTRACE_UNUSED(parm1);                                   \
+    MT_DTRACE_UNUSED(parm2);                                   \
+    MT_DTRACE_UNUSED(parm3);                                   \
   } while (0)
 #define MT_DTRACE_PROBE4(provider, probe, parm1, parm2, parm3, parm4) \
   do {                                                                \
+    MT_DTRACE_UNUSED(parm1);                                          \
+    MT_DTRACE_UNUSED(parm2);                                          \
+    MT_DTRACE_UNUSED(parm3);                                          \
+    MT_DTRACE_UNUSED(parm4);                                          \
   } while (0)
 #define MT_DTRACE_PROBE5(provider, probe, parm1, parm2, parm3, parm4, parm5) \
   do {                                                                       \
+    MT_DTRACE_UNUSED(parm1);                                                 \
+    MT_DTRACE_UNUSED(parm2);                                                 \
+    MT_DTRACE_UNUSED(parm3);                                                 \
+    MT_DTRACE_UNUSED(parm4);                                                 \
+    MT_DTRACE_UNUSED(parm5);                                                 \
   } while (0)
 #define MT_DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6) \
   do {                                                                              \
+    MT_DTRACE_UNUSED(parm1);                                                        \
+    MT_DTRACE_UNUSED(parm2);                                                        \
+    MT_DTRACE_UNUSED(parm3);                                                        \
+    MT_DTRACE_UNUSED(parm4);                                                        \
+    MT_DTRACE_UNUSED(parm5);                                                        \
+    MT_DTRACE_UNUSED(parm6);                                                        \
   } while (0)
 #define MT_DTRACE_PROB76(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, \
                          parm7)                                                     \
   do {                                                                              \
+    MT_DTRACE_UNUSED(parm1);                                                        \
+    MT_DTRACE_UNUSED(parm2);                                                        \
+    MT_DTRACE_UNUSED(parm3);                                                        \
+    MT_DTRACE_UNUSED(parm4);                                                        \
+    MT_DTRACE_UNUSED(parm5);                                                        \
+    MT_DTRACE_UNUSED(parm6);                                                        \
+    MT_DTRACE_UNUSED(parm7);                                                        \
   } while (0)
 
 #define SYS_LOG_MSG_ENABLED() (0)

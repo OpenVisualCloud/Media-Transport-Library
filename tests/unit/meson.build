@@ -8,19 +8,69 @@ unit_c_args = ['-Wall', '-Werror']
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
 
-# rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
-# libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
-# its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
-# against: --disable-new-dtags turns Meson's rpath into DT_RPATH, the only rpath ld.so searches
-# when resolving a dlopened driver's own dependencies.
-unit_link_args += '-Wl,--disable-new-dtags'
-unit_build_rpath = dpdk_dep.get_variable(pkgconfig : 'libdir')
+unit_build_rpath = ''
+if not is_windows
+  # rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
+  # libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
+  # its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
+  # against: --disable-new-dtags turns Meson's rpath into DT_RPATH, the only rpath ld.so searches
+  # when resolving a dlopened driver's own dependencies.
+  # Both are for an ELF host alone: Windows has no rpath, and the ld of mingw-w64 stops with
+  # "unrecognized option '--disable-new-dtags'".
+  unit_link_args += '-Wl,--disable-new-dtags'
+  unit_build_rpath = dpdk_dep.get_variable(pkgconfig : 'libdir')
+endif
 
 unit_include_dirs = [
   include_directories('../../include'),
   include_directories('../../lib/src'),
   include_directories('.'),
 ]
+
+unit_mtl_dep = mtl_internal_dep
+unit_dpdk_dep = dpdk_dep
+unit_platform_deps = []
+
+if is_windows
+  # The C harnesses and the C++ tests cannot share one include path on Windows.
+  # A harness compiles a production source in place, so it needs the include
+  # path of the library: the project root, lib/windows, and the Windows EAL
+  # directory of DPDK. The C++ tests must have none of the three:
+  #
+  #  * The project root holds a file that is named VERSION. A Windows file
+  #    system is not case sensitive, so the #include <version> of libstdc++
+  #    reads that file, and the compiler stops with "too many decimal points
+  #    in number".
+  #  * pthread.h of the Windows EAL directory of DPDK is a shim for MSVC. It
+  #    hides the real header of mingw-w64, which libstdc++ needs for <mutex>
+  #    and <thread>, so every C++ unit fails in gthr-default.h.
+  #
+  # Meson has one include path per target and not one per language, so the
+  # three directories go to the C compiler alone, as -I in c_args, and the
+  # target takes the library without its include path.
+  unit_c_args += ['-DWINDOWSENV',
+                  '-I' + meson.project_source_root(),
+                  '-I' + meson.project_build_root(),
+                  '-I' + meson.project_source_root() + '''\lib\windows''',
+                  '-I' + meson.project_source_root() + '''\lib\''' +
+                  get_option('dpdk_root_dir') + '''\lib\eal\windows\include''']
+  unit_mtl_dep = declare_dependency(link_with : mtl_lib)
+  # libmtl.dll holds a static DPDK, and the linker of mingw-w64 exports every
+  # symbol of a DLL that has no explicit export list, so the import library
+  # libmtl.dll.a holds rte_eal_init and the whole of DPDK as well. A link
+  # against the DPDK static libraries too gives "multiple definition" for each
+  # of about 100 names, and for each harness stub of a rte_ function. So the
+  # binary takes the headers of DPDK and not its libraries: every rte_ symbol
+  # comes from libmtl.dll, which also keeps one EAL in the process.
+  unit_dpdk_dep = dpdk_dep.partial_dependency(compile_args : true, includes : true)
+  # htons, ntohl and inet_pton of the harnesses. libmtl.dll links ws2_32 for
+  # itself, and each of these comes by name from ws2_32 and not from the DLL.
+  unit_platform_deps += ws2_32_dep
+  # mtl_api.h asks for mtl_build_config.h, which the root of the build tree
+  # holds. A copy of that header here answers it, because this directory is an
+  # include directory of UnitTest, so the C++ path needs no project root.
+  configure_file(output : 'mtl_build_config.h', configuration : mtl_conf)
+endif
 
 # Answers the <mtl/*.h> of the ecosystem sources the harnesses compile in place.
 # It writes into the build side of include_directories('.') above, so it must run
@@ -40,8 +90,6 @@ endif
 
 unit_sources = [
   'common/ut_common.c',
-  'ffmpeg/mtl_common_harness.c',
-  'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
@@ -135,12 +183,19 @@ unit_sources = [
   'main.cpp',
 ]
 
+if not is_windows
+  # The harness of the FFmpeg plugin compiles ecosystem/ffmpeg_plugin/mtl_common.c
+  # in place, and mtl_common.h of the plugin asks for <arpa/inet.h>, which
+  # mingw-w64 does not have. The plugin itself does not build on Windows either.
+  unit_sources += ['ffmpeg/mtl_common_harness.c', 'ffmpeg/mtl_common_test.cpp']
+endif
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
   link_args : unit_link_args,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
-  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
-                  usdt_provider_header_dep] + unit_extra_deps,
+  dependencies : [unit_mtl_dep, unit_dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
+                  usdt_provider_header_dep] + unit_platform_deps + unit_extra_deps,
   install : false)

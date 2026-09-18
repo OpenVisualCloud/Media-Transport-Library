@@ -6,9 +6,26 @@
 
 #include "ut_common.h"
 
+#include <rte_lcore.h>
 #include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef WINDOWSENV
+/* rte_lcore_id() reads a thread-local variable of the EAL, and on Windows the
+ * EAL is inside libmtl.dll: DPDK builds no shared library there, so MTL holds
+ * the only copy. mingw-w64 GCC gives a __thread variable native Windows
+ * thread-local storage, and the relocation of such a variable holds an offset
+ * inside one module, so no binary can read the copy of a DLL. This binary keeps
+ * a copy of its own.
+ *
+ * The value is 0, which is the lcore of the main thread: ut_eal_init() starts
+ * the EAL with "-c1". It is safe for a worker thread as well, because every
+ * mempool here has a cache of 0, so rte_mempool_get() and rte_mempool_put()
+ * hold no per lcore cache, and two threads cannot take the same cache. A pool
+ * with a cache would need the real lcore id of each thread. */
+RTE_DEFINE_PER_LCORE(unsigned, _lcore_id) = 0;
+#endif
 
 /* ── globals ──────────────────────────────────────────────────────────── */
 

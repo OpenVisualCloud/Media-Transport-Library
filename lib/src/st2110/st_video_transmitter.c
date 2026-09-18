@@ -112,6 +112,7 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   int64_t pkts_needed;
   unsigned int tx;
   int sent = 0;
+  MTL_MAY_UNUSED(sent); /* the dbg() below is the only reader */
 
   if (!target_tsc) {
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
