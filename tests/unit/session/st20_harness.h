@@ -195,6 +195,10 @@ int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts
  * with more than one packet in the array. The array is sized to exactly `nb`. */
 int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, int nb,
                                       uint32_t ts, enum mtl_session_port port);
+/* rv_frame_memcpy() of the ctx session; `pkt_lcore` makes it a session whose
+ * frames a pkt lcore and the tasklet both write. */
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+                        size_t n);
 
 /* Per-port counter accessors (live inside `port_user_stats.common.port[]`). */
 uint64_t ut20_stat_port_err_packets(const ut20_test_ctx* ctx, enum mtl_session_port port);
