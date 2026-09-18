@@ -23,7 +23,6 @@ from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
     display_session_results,
-    get_companion_log_summary,
     log_cpu_core_results,
     monitor_dev_rate,
     monitor_rx_fps,
@@ -37,8 +36,7 @@ from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
-WARMUP_SECONDS = 60  # Warmup passed to FPS monitor
-COOLDOWN_SECONDS = 10  # Cooldown passed to FPS monitor
+WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
 
@@ -286,6 +284,10 @@ def _run_iteration(
     companion_extra_kwargs: dict = {}
     companion_extra_kwargs["sch_session_quota"] = SCH_SESSION_QUOTA_MULTI_CORE
     companion_extra_kwargs["dedicated_sys_lcore"] = True
+    # Same reason as the measured side: a migrating companion changes its own
+    # core count mid-run, so the far end of the link is not the same load in
+    # every iteration of the sweep.
+    companion_extra_kwargs["disable_migrate"] = True
 
     companion_isolcpus = _get_isolcpus(companion_host)
     if companion_isolcpus:
@@ -468,30 +470,38 @@ def _run_iteration(
 
         cores_info = cpu_monitor.stop()
 
-        # ── Log relevant output lines ──
+        # ── Log the measured app's output ──
+        # Unfiltered on purpose: the port drop counters, DEV rate lines and
+        # queue/mempool diagnostics are what attribute a capacity ceiling to a
+        # cause, and a keyword filter dropped exactly those while keeping the
+        # fps dumps, leaving a ceiling visible but unexplainable.
         if result.stdout_text:
-            keywords = ("fps", "session", "error", "fail", "warn", "frame", "dma")
             for line in result.stdout_text.splitlines():
-                if any(kw in line.lower() for kw in keywords):
-                    logger.info(f"{direction.upper()}: {line}")
-        get_companion_log_summary(companion_host, companion_log, max_lines=50)
-
-        if result.return_code != 0:
-            return False, 0, f"exit code {result.return_code}", None, 0
+                logger.info(f"{direction.upper()}: {line}")
 
         # ── Analyze FPS ──
         stdout_lines = result.stdout_text.splitlines() if result.stdout_text else []
 
+        # A non-zero exit does not invalidate what the app already reported: it
+        # exits non-zero on a late teardown error too.  Keep the measurement and
+        # let the exit code be classified below; discarding it here cost three
+        # probes of run 35233378303 their data.
+        if result.return_code != 0:
+            logger.warning(f"Measured app exited with code {result.return_code}")
+
         time.sleep(5)
         companion_lines = read_remote_log(companion_host, companion_log)
+        # The companion's log lives on the other host, which no artifact
+        # collects.  Deciding whether a receive ceiling is the receiver or the
+        # sender needs the sender's own rate line, so mirror it into this log.
+        for line in companion_lines:
+            logger.info(f"companion {companion_dir.upper()}: {line}")
 
         monitor_fps_fn = monitor_tx_fps if is_tx else monitor_rx_fps
         success, count, fps_details = monitor_fps_fn(
             stdout_lines,
             fps,
             num_sessions,
-            warmup_seconds=WARMUP_SECONDS,
-            cooldown_seconds=COOLDOWN_SECONDS,
             max_drop_pct=MAX_DROP_PCT,
         )
 
@@ -531,7 +541,6 @@ def _run_iteration(
             fps_details,
             tx_frames,
             rx_frames,
-            fps_warmup_seconds=WARMUP_SECONDS,
             throughput_details=m_throughput,
             dev_rate=m_dev_rate,
             companion_throughput_details=c_throughput,
@@ -539,6 +548,10 @@ def _run_iteration(
         )
 
         detail = f"{count}/{num_sessions} sessions at {fps} fps"
+        if result.return_code != 0:
+            # Keep the code in the detail so _is_crash still schedules a VF FLR
+            # before the next iteration.
+            detail += f", exit code {result.return_code}"
         app_config = measured_app.config if hasattr(measured_app, "config") else None
         cores_used = cores_info.get("cores_used", 0) if cores_info else 0
         return success, count, detail, app_config, cores_used
@@ -654,8 +667,7 @@ def _run_session_sweep(
         f"  {sweep_desc}: {mode_tag}{direction.upper()} "
         f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
         f"{'sessions=' + str(num_sessions) if fixed_mode else 'range=[1, ' + str(max_sess) + ']'} "
-        f"test_time={test_time}s "
-        f"warmup={WARMUP_SECONDS}s cooldown={COOLDOWN_SECONDS}s\n"
+        f"test_time={test_time}s rate_warmup={WARMUP_SECONDS}s\n"
         f"{'═' * 70}"
     )
 
