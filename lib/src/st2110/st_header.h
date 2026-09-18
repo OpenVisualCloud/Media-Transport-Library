@@ -383,6 +383,12 @@ struct st_tx_video_session_impl {
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
+  /* Frames whose post-snap launch instant had already passed when pacing was
+   * synced, and the worst such slip. Sub-epoch lateness has no counter of its
+   * own otherwise; whole epochs are stat_epoch_drop. An unmeetable user instant
+   * raises stat_error_user_timestamp as well as this, not instead of it. */
+  uint64_t stat_pacing_slip;
+  uint64_t stat_pacing_slip_max_ns;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;

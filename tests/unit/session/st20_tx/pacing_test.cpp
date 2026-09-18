@@ -42,6 +42,12 @@ constexpr uint32_t kVirtualReceiverBufferPackets = 2;
 constexpr uint64_t kReceiverScheduleOffsetNs =
     kTrOffsetNs - kVirtualReceiverBufferPackets * kPacketIntervalNs;
 constexpr uint64_t kInvalidMediaClockTimestamp = 10 * ST10_VIDEO_SAMPLING_RATE_90K;
+/* How far past its epoch's launch instant the slip cases put the PTP clock. The
+ * instant snaps to the epoch boundary itself under the geometry above (see
+ * NormalCursorDerivation), so each value is also the slip itself. Both stay
+ * inside one frame period, so no epoch is dropped and none is skipped. */
+constexpr uint64_t kPacingSlipNs = 900;
+constexpr uint64_t kSmallerPacingSlipNs = 500;
 }  // namespace
 
 class St20TxSyncPacingTest : public ::testing::Test {
@@ -61,6 +67,7 @@ class St20TxSyncPacingTest : public ::testing::Test {
     EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
     EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 0u);
     EXPECT_EQ(ut_txv_stat_epoch_mismatch(ctx_), 0u);
+    EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 0u);
     EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
   }
   ut_txv_ctx* ctx_ = nullptr;
@@ -83,6 +90,76 @@ TEST_F(St20TxSyncPacingTest, NormalCursorDerivation) {
   EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txv_tsc_time_frame_start(ctx_), kCurrentTsc);
   ExpectNoPacingStats();
+}
+
+/* A frame whose launch instant has already passed is still sent, and still
+ * carries the RTP timestamp of the instant it missed -- a receiver charges the
+ * difference to both its fpt and its latency. Nothing else in the stats records
+ * it: the epoch is neither dropped nor advanced and no user timestamp is
+ * involved, so before this counter the event left no trace at all. */
+TEST_F(St20TxSyncPacingTest, LaunchInstantAlreadyPastCountsPacingSlip) {
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txv_set_tr_offset(ctx_, kTrOffsetNs);
+  ut_txv_set_vrx(ctx_, kVirtualReceiverBufferPackets);
+  ut_txv_set_trs(ctx_, kPacketIntervalNs);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai + kPacingSlipNs);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), kPacingSlipNs);
+  /* the missed instant is what still gets stamped, while the frame leaves now */
+  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
+  /* and none of the existing counters saw anything */
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
+  EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 0u);
+}
+
+/* One nanosecond past is a slip: the criterion is the launch instant itself, not
+ * a tolerance around it. NormalCursorDerivation pins the other side, where a
+ * frame reaching sync exactly on its instant counts nothing. */
+TEST_F(St20TxSyncPacingTest, OneNanosecondPastLaunchInstantCountsPacingSlip) {
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txv_set_tr_offset(ctx_, kTrOffsetNs);
+  ut_txv_set_vrx(ctx_, kVirtualReceiverBufferPackets);
+  ut_txv_set_trs(ctx_, kPacketIntervalNs);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai + 1);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), 1u);
+}
+
+/* The magnitude reported for a period is its worst slip, not its most recent
+ * one, so a single badly late frame stays visible behind later mild ones. */
+TEST_F(St20TxSyncPacingTest, PacingSlipKeepsWorstMagnitude) {
+  /* Epoch 11's launch instant snaps to exactly 11 frame periods, as epoch 10's
+   * does to kCurrentTai, so the second frame slips by kSmallerPacingSlipNs. */
+  constexpr uint64_t kNextEpochTai = kCurrentTai + kFramePeriodNs;
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txv_set_tr_offset(ctx_, kTrOffsetNs);
+  ut_txv_set_vrx(ctx_, kVirtualReceiverBufferPackets);
+  ut_txv_set_trs(ctx_, kPacketIntervalNs);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai + kPacingSlipNs);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+  /* the first sync left cur_epochs at 10, so the next frame slips on its own */
+  ut_txv_set_mock_ptp_time(ctx_, kNextEpochTai + kSmallerPacingSlipNs);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 2u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), kPacingSlipNs);
+  /* both frames took the steady-state branch, so neither is a drop or onward */
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch + 1);
+  EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
 }
 
 TEST_F(St20TxSyncPacingTest, ExactUserPacingBypassesTransmissionStartTime) {
@@ -579,6 +656,9 @@ TEST_F(St20TxSyncPacingTest, ExactPastHalfFrameTimestampCountsOneError) {
 
   EXPECT_EQ(ut_txv_stat_epoch_mismatch(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+  /* an unmeetable user instant is also a slip, and by the whole distance back */
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), kCurrentTai - kPastTai);
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
@@ -594,6 +674,8 @@ TEST_F(St20TxSyncPacingTest, ExactTimestampOneNanosecondPastCountsOneError) {
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, kCurrentTai - 1), 0);
 
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), 1u);
   EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
@@ -813,8 +895,12 @@ TEST_F(St20TxSyncPacingTest, RtpLevelExactUserPacingWithZeroRequiredTaiNeverFlag
   EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
 }
 
+/* A vrx budget wider than tr_offset puts the launch instant before its own
+ * epoch, so the clamp fires on geometry alone rather than on a late clock. The
+ * slip is then exactly how far back the vrx reached. */
 TEST_F(St20TxSyncPacingTest, NegativeTimeToTxClampsToZero) {
   constexpr uint32_t large_vrx_packets = 2 * 1000;
+  constexpr uint64_t expected_slip_ns = large_vrx_packets * kPacketIntervalNs;
   ut_txv_set_cur_epochs(ctx_, kInitialEpoch); /* steady state -> frame_count becomes 10 */
   ut_txv_set_tr_offset(ctx_, 0.0L);
   ut_txv_set_vrx(ctx_, large_vrx_packets);
@@ -826,7 +912,13 @@ TEST_F(St20TxSyncPacingTest, NegativeTimeToTxClampsToZero) {
 
   EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txv_tsc_time_frame_start(ctx_), kCurrentTsc);
-  ExpectNoPacingStats();
+  EXPECT_EQ(ut_txv_stat_pacing_slip(ctx_), 1u);
+  EXPECT_EQ(ut_txv_stat_pacing_slip_max_ns(ctx_), expected_slip_ns);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 0u);
+  EXPECT_EQ(ut_txv_stat_epoch_mismatch(ctx_), 0u);
+  EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
 }
 
 class St20TxTransmitterBoundaryTest

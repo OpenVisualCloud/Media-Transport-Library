@@ -137,6 +137,11 @@ uint64_t ut_txv_stat_epoch_onward(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_drop(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_error_user_timestamp(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_epoch_mismatch(const ut_txv_ctx* ctx);
+/* Frames tv_sync_pacing() found already past their launch instant, and the
+ * worst such slip in ns. Internal-only counters, so read off the session
+ * rather than out of port_user_stats. */
+uint64_t ut_txv_stat_pacing_slip(const ut_txv_ctx* ctx);
+uint64_t ut_txv_stat_pacing_slip_max_ns(const ut_txv_ctx* ctx);
 int ut_txv_notify_late_calls(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_late_last_delta(const ut_txv_ctx* ctx);
 int ut_txv_get_next_frame_calls(const ut_txv_ctx* ctx);

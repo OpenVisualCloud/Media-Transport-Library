@@ -720,6 +720,14 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
         st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
   }
   if (start_time_tai < cur_tai) {
+    /* start_time_tai is the post-snap instant, so a frame exactly on schedule
+     * can still show up to half a media tick of slip. On the default timestamp
+     * path the frame then goes out now yet keeps the RTP timestamp of the
+     * instant it missed, which a receiver reads as both fpt and latency; the
+     * flags excluded from the snap above decouple those two already. */
+    uint64_t slip_ns = cur_tai - start_time_tai;
+    s->stat_pacing_slip++;
+    if (slip_ns > s->stat_pacing_slip_max_ns) s->stat_pacing_slip_max_ns = slip_ns;
     time_to_tx_ns = 0;
   } else {
     time_to_tx_ns = start_time_tai - cur_tai;
@@ -3556,6 +3564,12 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %" PRIu64 "\n", m_idx,
            idx, d);
+  }
+  if (s->stat_pacing_slip) {
+    notice("TX_VIDEO_SESSION(%d,%d): pacing slip %" PRIu64 ", max %" PRIu64 " ns\n",
+           m_idx, idx, s->stat_pacing_slip, s->stat_pacing_slip_max_ns);
+    s->stat_pacing_slip = 0;
+    s->stat_pacing_slip_max_ns = 0;
   }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {
