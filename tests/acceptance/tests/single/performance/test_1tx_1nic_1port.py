@@ -8,7 +8,7 @@ import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
-from mtl_engine.media_files import yuv_files
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def test_perf_1tx_1nic_1port(
         dip="239.168.48.9",
         width=video_file["width"],
         height=video_file["height"],
-        fps=f"p{video_file['fps']}",
+        fps=parse_fps_to_pformat(video_file["fps"]),
         input_format=video_file["file_format"],
         transport_format=video_file["format"],
         st20p_url=os.path.join(media, video_file["filename"]),
