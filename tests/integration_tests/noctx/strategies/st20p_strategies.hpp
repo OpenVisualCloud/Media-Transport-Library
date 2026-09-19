@@ -14,6 +14,7 @@ class St20pHandler;
 class St20pDefaultTimestamp : public FrameTestStrategy {
  protected:
   uint64_t lastTimestamp = 0;
+  uint64_t firstTimestamp = 0;
 
  public:
   explicit St20pDefaultTimestamp(St20pHandler* parentHandler = nullptr);

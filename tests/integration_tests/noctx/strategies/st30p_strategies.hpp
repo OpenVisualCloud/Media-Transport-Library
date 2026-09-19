@@ -17,6 +17,7 @@ class St30pDefaultTimestamp : public FrameTestStrategy {
 
  protected:
   uint64_t lastTimestamp;
+  uint64_t firstTimestamp;
 };
 
 class St30pUserTimestamp : public St30pDefaultTimestamp {
