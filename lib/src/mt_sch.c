@@ -85,9 +85,11 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
   } else {
     rte_eal_alarm_set(sleep_us, sch_sleep_alarm_handler, sch);
     mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
-    /* timeout 1s */
-    mt_pthread_cond_timedwait_ns(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, NS_PER_S);
+    /* timeout 1s, safety net in case the alarm above missed */
+    const int _ret = mt_pthread_cond_timedwait_ns(&sch->sleep_wake_cond,
+                                                  &sch->sleep_wake_mutex, NS_PER_S);
     mt_pthread_mutex_unlock(&sch->sleep_wake_mutex);
+    if (_ret) dbg("%s(%d), cond timedwait ret %d\n", __func__, sch->idx, _ret);
   }
   uint64_t end = mt_get_tsc(impl);
   uint64_t delta = end - start;
