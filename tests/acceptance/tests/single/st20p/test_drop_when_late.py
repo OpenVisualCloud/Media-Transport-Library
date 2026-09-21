@@ -8,11 +8,17 @@ from mtl_engine.media_files import yuv_files_422rfc10
 
 pytestmark = pytest.mark.verified
 
-# Start the user-pacing clock one second in the past. With user pacing enabled
-# this makes roughly one second's worth of frames (~fps) already late when the
+# Start the user-pacing clock two seconds in the past. With user pacing enabled
+# this makes roughly two seconds' worth of frames (~2x fps) already late when the
 # session starts transmitting; ST20P_TX_FLAG_DROP_WHEN_LATE must drop that
 # backlog before the schedule catches up to real time and frames flow normally.
-LATE_OFFSET_NS = -1_000_000_000
+#
+# The offset was one second, which supplied exactly what the assertion below
+# demands and nothing more: the frame scheduled at t = -1s sits on the epoch
+# boundary, so it is late or not depending on a > vs >= comparison inside MTL,
+# and p25/p30 reported fps-1 and failed while MTL was correctly dropping every
+# frame that really was late. Deepen the stimulus rather than relax the bound.
+LATE_OFFSET_NS = -2_000_000_000
 
 # fps label -> nominal frames per second, used for the "around fps" bound.
 _FPS_VALUE = {
@@ -49,10 +55,11 @@ def test_st20p_drop_when_late(
 ):
     """Test that ST20P drop-when-late drops late frames.
 
-    With the user-pacing clock started a second in the past every frame is
-    late, so the TX pipeline must drop frames. Assert at least one frame-rate's
-    worth (>= fps) was dropped. The drop count is read via the app-agnostic
-    ``count_tx_dropped_frames`` helper so the test stays framework-neutral.
+    With the user-pacing clock started two seconds in the past every frame in
+    that window is late, so the TX pipeline must drop frames. Assert at least one
+    frame-rate's worth (>= fps) was dropped. The drop count is read via the
+    app-agnostic ``count_tx_dropped_frames`` helper so the test stays
+    framework-neutral.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -92,8 +99,9 @@ def test_st20p_drop_when_late(
     dropped = app.count_tx_dropped_frames()
     assert dropped >= 0, "no TX pipeline stats line found in application output"
 
-    # With the pacing clock a full second behind, at least one frame-rate's
-    # worth of late frames must have been dropped.
+    # The backlog is ~2x fps, so requiring one frame-rate's worth leaves the
+    # bound half the stimulus as margin and keeps it insensitive to which side of
+    # the epoch boundary the first frame lands on.
     expected = _FPS_VALUE[fps]
     assert dropped >= expected, (
         f"dropped only {dropped} frames, expected at least fps={expected} "
