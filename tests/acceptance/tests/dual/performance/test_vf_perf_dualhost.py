@@ -43,12 +43,25 @@ MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW eve
 # ── Scheduler session quotas ──
 # Controls how many sessions the library places on each scheduler (lcore).
 # Higher quota = fewer cores (denser packing), but risks overloading a core.
-# Values are derived from single-core capacity tests with a safety margin.
-SCH_SESSION_QUOTA_SINGLE_CORE = 60
+# The unit is one 1080p59 stream's bandwidth (args.c ST_ARG_SCH_SESSION_QUOTA),
+# and a *redundant* session charges one unit per port -- st_rx_video_session.c
+# does `quota_mbs *= ops->num_port` outside the user-quota guard -- so a
+# redundant session costs 2.  The library silently ignores a quota >= 100.
+#
+# Single core: must exceed the whole run's charge, or the library opens a second
+# scheduler and the result is no longer a single-core measurement.  At 60 a
+# redundant sweep split in two above 30 sessions; 99 covers 49 of them, and
+# _single_core_violation() fails the iteration if a split happens anyway.
+SCH_SESSION_QUOTA_SINGLE_CORE = 99
 
-# Phase 1 binary search (multi-core): None = fall through to per-mode quota.
+# Phase 1 binary search (multi-core) must find the session ceiling of the *NIC*,
+# so it packs thinly enough that no core is the limit -- 12 units, the library's
+# own ST_QUOTA_TX1080P_PER_SCH.  Leaving this to the per-mode quota below let
+# packing density cap the sweep: at quota 18 the +DMA sweep put 36 sessions on
+# 2 schedulers, failed, and settled at 33, while no-DMA spread the same 36 over
+# 3 schedulers at quota 16 and passed.  Phase 2 then re-packs for fewer cores.
 # CLI --sch_quota overrides both phases.
-SCH_SESSION_QUOTA_PHASE1_MC = None
+SCH_SESSION_QUOTA_PHASE1_MC = 12
 
 # Multi-core no-DMA: RX ~21/core max, TX ~28/core max (TX has no memcpy).
 SCH_SESSION_QUOTA_MULTI_CORE = 16  # RX no-DMA (~76% of SC max)
@@ -164,6 +177,54 @@ def _select_mc_quota(
     if is_tx:
         return SCH_SESSION_QUOTA_MULTI_CORE_TX
     return SCH_SESSION_QUOTA_MULTI_CORE
+
+
+def _single_core_violation(single_core: bool, cores_used: int) -> str | None:
+    """Return a reason if a single-core iteration did not stay on one core.
+
+    A single-core row only means something if the library really placed every
+    session on one scheduler.  When it does not, the sessions had more CPU than
+    the mode claims, so the count is not a single-core capacity result.
+
+    Args:
+        single_core: Whether this iteration ran in single-core mode.
+        cores_used: Busy cores measured on the SUT, 0 when unmeasured.
+
+    Returns:
+        The failure reason, or None if the iteration is a valid data point.
+    """
+    if single_core and cores_used > 1:
+        return f"single-core run spread over {cores_used} cores"
+
+    return None
+
+
+def _fewest_cores_result(
+    iteration_results: list[dict], num_sessions: int
+) -> dict | None:
+    """Return the passing iteration at *num_sessions* that used the fewest cores.
+
+    Multi-core sweeps run the winning session count more than once -- thinly
+    packed in phase 1, then densely in phase 2 -- and the goal is the NIC's
+    session ceiling first, the smallest core count that sustains it second.  So
+    report the cheapest passing placement, not the last one attempted.
+
+    Args:
+        iteration_results: Every iteration the sweep ran.
+        num_sessions: The session count to report, normally max_passing.
+
+    Returns:
+        The winning iteration dict, or None if none passed with a core count.
+    """
+    candidates = [
+        it
+        for it in iteration_results
+        if it["num_sessions"] == num_sessions and it["passed"] and it["cores_used"]
+    ]
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda it: it["cores_used"])
 
 
 def _log_iteration_table(
@@ -800,6 +861,11 @@ def _run_session_sweep(
             nonlocal last_config
             last_config = iter_config
 
+        violation = _single_core_violation(single_core, cores_used)
+        if passed and violation:
+            passed = False
+            detail = f"{detail}; {violation}"
+
         iteration_results.append(
             {
                 "num_sessions": n,
@@ -926,11 +992,10 @@ def _run_session_sweep(
         # ── Compute best (minimum) cores from sweep ──
         best_cores = 0
         best_quota_val = phase1_quota
-        for it in reversed(iteration_results):
-            if it["num_sessions"] == max_passing and it["passed"]:
-                best_cores = it.get("cores_used", 0)
-                best_quota_val = it.get("quota")
-                break
+        best = _fewest_cores_result(iteration_results, max_passing)
+        if best:
+            best_cores = best["cores_used"]
+            best_quota_val = best["quota"]
 
         # ── Summary ──
         cores_line = ""
