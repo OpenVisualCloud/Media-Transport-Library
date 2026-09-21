@@ -2950,8 +2950,23 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   }
   if (!nb) return 0;
 
+  /* only a handler which copies the payload on the cpu out of this mbuf gains
+   * from warming up the line behind the header. a header split copies out of
+   * mbuf->next instead, and a dma session takes the payload on the device for
+   * every packet large enough to matter - it still copies the small, cross page
+   * and dma full ones on the cpu, but they are not worth a per packet test */
+  bool warm_payload = !s->dma_dev && ((s->pkt_handler == rv_handle_frame_pkt) ||
+                                      (s->pkt_handler == rv_handle_st22_pkt));
+
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
+    if (i + 1 < nb) {
+      /* the handlers read the rtp header first, so warm up the line holding it,
+       * and the one behind it which holds the payload start on a 64 byte line */
+      const uint8_t* next_pkt = rte_pktmbuf_mtod(mbuf[i + 1], const uint8_t*);
+      rte_prefetch0(next_pkt);
+      if (warm_payload) rte_prefetch0(next_pkt + RTE_CACHE_LINE_SIZE);
+    }
     if ((s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) && rv_simulate_pkt_loss(s))
       continue;
     if (s->rtcp_rx[s_port]) {
