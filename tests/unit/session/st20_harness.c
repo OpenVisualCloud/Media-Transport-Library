@@ -627,8 +627,23 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx) {
   struct st_rx_video_session_impl* s = &ctx->session;
   s->enable_timing_parser = true;
   s->enable_timing_parser_meta = true;
+  s->enable_timing_parser_stat = true;
   s->detector.pkt_per_frame = (int)s->ops.height;
   return rv_tp_init(&ctx->impl, s);
+}
+
+void ut20_ctx_set_continuous_burst(ut20_test_ctx* ctx, enum mtl_session_port port,
+                                   bool in_burst) {
+  ctx->session.in_continuous_burst[port] = in_burst;
+}
+
+uint32_t ut20_tp_stat_compliant_cnt(const ut20_test_ctx* ctx, enum mtl_session_port port,
+                                    enum st_rx_tp_compliant compliant) {
+  return ctx->session.tp->stat[port].stat_compliant_result[compliant];
+}
+
+int32_t ut20_tp_stat_fpt_min(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].stat_fpt_min;
 }
 
 void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,

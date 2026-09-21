@@ -143,12 +143,24 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * mbuf dynfield instead of falling back to the software PTP clock. */
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
-/* Enable the ST 2110-21 RX timing parser and its per-frame meta report, letting
- * the production rv_tp_init() derive every pass criterion from the harness
- * geometry. Requires a prior ut20_ctx_enable_hw_timestamp() so the parser reads
- * the arrival time each packet is fed with. Returns 0 on success, < 0 on
- * failure. */
+/* Enable the ST 2110-21 RX timing parser with both its per-frame meta report and
+ * its window stat, letting the production rv_tp_init() derive every pass
+ * criterion from the harness geometry. Requires a prior
+ * ut20_ctx_enable_hw_timestamp() so the parser reads the arrival time each packet
+ * is fed with. Returns 0 on success, < 0 on failure. */
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx);
+
+/* Latch `port` inside a receive burst, as rv_pkt_rx_tasklet does on a burst filling half
+ * the burst size. It stays latched across frames until a burst returns nothing, and the
+ * timing parser declines every packet received while it is set. */
+void ut20_ctx_set_continuous_burst(ut20_test_ctx* ctx, enum mtl_session_port port,
+                                   bool in_burst);
+
+/* Window stat the parser accumulates per finished frame and rv_tp_stat() reports
+ * once per stat period. */
+uint32_t ut20_tp_stat_compliant_cnt(const ut20_test_ctx* ctx, enum mtl_session_port port,
+                                    enum st_rx_tp_compliant compliant);
+int32_t ut20_tp_stat_fpt_min(const ut20_test_ctx* ctx, enum mtl_session_port port);
 
 /* Feed every packet of one full, perfectly paced frame on port P carrying RTP
  * timestamp `ts`: the first packet arrives `fpt_ns` into `epoch` and the rest

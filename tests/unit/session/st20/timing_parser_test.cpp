@@ -2,12 +2,12 @@
  * Copyright(c) 2026 Intel Corporation
  *
  * ST 2110-21 RX timing parser: which frames the compliance ladder may charge a
- * violation. Two criteria are pinned here: the rtp_ts_delta a session's first
- * frame has no predecessor to measure against, and the tick quantum an integer
- * RTP timestamp lends the latency. Frames are fed through the production RX
- * path, so every frame runs the real per-frame slot reset (rv_slot_by_tmstamp
- * -> rv_tp_slot_init) and is judged by the meta the session reports to the
- * application.
+ * violation. Three subjects are pinned here: the rtp_ts_delta a session's first
+ * frame has no predecessor to measure against, the tick quantum an integer RTP
+ * timestamp lends the latency, and the frame the parser measured no packet of at
+ * all. Frames are fed through the production RX path, so every frame runs the
+ * real per-frame slot reset (rv_slot_by_tmstamp -> rv_tp_slot_init) and is judged
+ * by the meta the session reports to the application.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20RxTimingParserTest.*'
@@ -87,6 +87,28 @@ class St20RxTimingParserTest : public St20RxBaseTest {
     const struct st20_rx_tp_meta* tp = feed_tp(epoch, tmstamp_of(epoch));
     EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_NARROW) << tp->failed_cause;
     return tp;
+  }
+
+  /* Feed a full frame received inside a burst, i.e. one whose every packet the
+   * untrusted-pkt filter declines to measure, so its slot reaches
+   * rv_tp_slot_parse_result holding nothing but rv_tp_slot_init sentinels. */
+  const struct st20_rx_tp_meta* feed_unmeasured(uint64_t epoch) {
+    const int delivered = frames_received();
+    ut20_ctx_set_continuous_burst(ctx_, MTL_SESSION_PORT_P, true);
+    ut20_feed_tp_frame(ctx_, epoch, tmstamp_of(epoch), kNarrowFptNs);
+    ut20_ctx_set_continuous_burst(ctx_, MTL_SESSION_PORT_P, false);
+    EXPECT_EQ(frames_received(), delivered + 1) << "frame was not delivered";
+    const struct st20_rx_tp_meta* tp = ut20_tp_last_meta(ctx_);
+    EXPECT_EQ(tp->pkts_cnt, 0u) << "parser measured a packet";
+    return tp;
+  }
+
+  uint32_t window_cnt(enum st_rx_tp_compliant compliant) {
+    return ut20_tp_stat_compliant_cnt(ctx_, MTL_SESSION_PORT_P, compliant);
+  }
+
+  int32_t window_fpt_min() {
+    return ut20_tp_stat_fpt_min(ctx_, MTL_SESSION_PORT_P);
   }
 };
 
@@ -171,4 +193,50 @@ TEST_F(St20RxTimingParserTest, LatencyBeyondOneRtpTickFails) {
   const struct st20_rx_tp_meta* tp = feed_latency(kEpoch, -tick - tick / 10);
   EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_FAILED);
   EXPECT_STREQ(tp->failed_cause, "latency exceed min");
+}
+
+/* A frame the parser measured no packet of carries no observation of the sender,
+ * so the window may not count it against any verdict. */
+TEST_F(St20RxTimingParserTest, UnmeasuredFrameNotCountedInWindow) {
+  feed_narrow(kEpoch);
+  ASSERT_EQ(window_cnt(ST_RX_TP_COMPLIANT_NARROW), 1u);
+
+  feed_unmeasured(kEpoch + 1);
+  EXPECT_EQ(window_cnt(ST_RX_TP_COMPLIANT_FAILED), 0u);
+  EXPECT_EQ(window_cnt(ST_RX_TP_COMPLIANT_WIDE), 0u);
+  EXPECT_EQ(window_cnt(ST_RX_TP_COMPLIANT_NARROW), 1u);
+}
+
+/* Nor may its fpt: 0 is what memset left, not an arrival the parser timed, and
+ * the window takes its FPT MIN with RTE_MIN. */
+TEST_F(St20RxTimingParserTest, UnmeasuredFrameLeavesWindowFptMin) {
+  feed_narrow(kEpoch);
+  const int32_t fpt_min = window_fpt_min();
+  ASSERT_EQ(fpt_min, (int32_t)kNarrowFptNs);
+
+  feed_unmeasured(kEpoch + 1);
+  EXPECT_EQ(window_fpt_min(), fpt_min);
+}
+
+/* The frame is still reported to the application, so its verdict must name what
+ * happened instead of a criterion only the sentinels tripped. */
+TEST_F(St20RxTimingParserTest, UnmeasuredFrameReportsNoMeasurement) {
+  const struct st20_rx_tp_meta* tp = feed_unmeasured(kEpoch);
+
+  EXPECT_EQ(tp->compliant, ST_RX_TP_COMPLIANT_FAILED);
+  EXPECT_STREQ(tp->failed_cause, "no packet measured");
+}
+
+/* An unmeasured frame observed no timestamp to become the next frame's
+ * predecessor, so the frame measured after such a run has no delta to measure.
+ * Charging it the run's worth of frame periods would fail a sender that paced
+ * every frame correctly. */
+TEST_F(St20RxTimingParserTest, MeasuredFrameAfterUnmeasuredRunStaysNarrow) {
+  feed_narrow(kEpoch);
+  feed_unmeasured(kEpoch + 1);
+  feed_unmeasured(kEpoch + 2);
+
+  const struct st20_rx_tp_meta* tp = feed_narrow(kEpoch + 3);
+  EXPECT_EQ(tp->rtp_ts_delta, 0) << "no delta was measurable";
+  EXPECT_EQ(window_cnt(ST_RX_TP_COMPLIANT_FAILED), 0u);
 }

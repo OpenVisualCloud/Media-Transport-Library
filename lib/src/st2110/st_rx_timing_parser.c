@@ -158,6 +158,15 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
   dbg("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, s->idx,
       ipt_avg, slot->meta.ipt_max, slot->meta.ipt_min);
 
+  if (!slot->meta.pkts_cnt) {
+    /* only rv_tp_slot_init sentinels here, which no criterion and no stat may read */
+    slot->meta.compliant = ST_RX_TP_COMPLIANT_FAILED;
+    rv_tp_compliant_set_cause(&slot->meta, "no packet measured");
+    /* no timestamp observed, so the next frame has no predecessor to measure against */
+    tp->pre_rtp_tmstamp_valid[s_port] = false;
+    return;
+  }
+
   /* parse tp compliant for current frame */
   enum st_rx_tp_compliant compliant = rv_tp_compliant(tp, slot);
   slot->meta.compliant = compliant;
