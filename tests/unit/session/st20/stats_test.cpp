@@ -39,6 +39,20 @@ TEST_F(St20RxStatsTest, RedundantStillCountsPerPort) {
   EXPECT_EQ(port_pkts(MTL_SESSION_PORT_R), 2u);
 }
 
+/* A burst of more than one packet is the only way to reach the wrapper's
+ * look-ahead prefetch of mbuf[i + 1]; every packet of the burst must still be
+ * dispatched exactly once. */
+TEST_F(St20RxStatsTest, BurstCountsEveryPacket) {
+  const int pkt_idx[2] = {0, 1};
+
+  ASSERT_GE(ut20_feed_frame_burst_via_wrapper(ctx_, pkt_idx, 2, 1000, MTL_SESSION_PORT_P),
+            0);
+
+  EXPECT_EQ(port_pkts(MTL_SESSION_PORT_P), 2u);
+  EXPECT_EQ(received(), 2u);
+  EXPECT_EQ(frames_received(), 1);
+}
+
 /* Each accepted packet is counted as EITHER received OR redundant — never
  * both. Holds across redundancy, reorder, and frame-gone paths. */
 TEST_F(St20RxStatsTest, ReceivedPlusRedundantInvariant) {
