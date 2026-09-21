@@ -153,6 +153,7 @@ class FFmpeg(Application):
         framerate=None,
         filter_v: str = "",
         udp_port: int = 20000,
+        extra_udp_ports: tuple = (),
         ptp_enable: bool = False,
         pacing_way=None,
     ) -> str:
@@ -190,12 +191,20 @@ class FFmpeg(Application):
         # of the ST 2110-21 epoch (observed: 38.3 ms frame gaps instead of 40 ms,
         # drifting ~1.7 ms earlier per frame) and VRX goes deeply negative.
         # RxTxApp gets the same rate limiting implicitly from MTL back-pressure.
+        # ``extra_udp_ports`` adds further mtl_st20p outputs to this one process
+        # rather than starting another. The plugin refcounts a single mtl_init
+        # per process (mtl_common.c g_mtl_shared_handle), so sessions sharing a
+        # port must share a process; the muxer is AVFMT_NOFILE, so every output
+        # can keep the same ``-`` placeholder.
+        outputs = " ".join(
+            f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
+            f"-udp_port {p} -payload_type 112 {ptp_token}-f mtl_st20p -"
+            for p in (udp_port, *extra_udp_ports)
+        )
         return (
             f"{FFMPEG_EXE} -stream_loop -1 -re {framerate_token}"
             f"-video_size {video_size} -f rawvideo -pix_fmt {pix_fmt} "
-            f"-i {video_url} {filter_token}"
-            f"-p_port {port} -p_sip {sip} -p_tx_ip {mcast} "
-            f"-udp_port {udp_port} -payload_type 112 {ptp_token}-f mtl_st20p -"
+            f"-i {video_url} {filter_token}{outputs}"
         )
 
     def _create_command_and_config(self) -> tuple:
@@ -308,6 +317,12 @@ class FFmpeg(Application):
                 f"{rx_f_flag} {{out0}} -y"
             )
         else:
+            # Every input repeats the full device args, -p_sip included:
+            # mtl_dev_get() memcmps the requested mtl_init_params against the
+            # live shared handle, so an input that omits one asks for a
+            # different device (sip 0.0.0.0) and is refused with "shared handle
+            # configuration mismatch" -- reported by ffmpeg as "Error opening
+            # input file 2."
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
                 f"-p_port {nic_port_list[1]} "
@@ -315,6 +330,7 @@ class FFmpeg(Application):
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 1 "
+                f"-p_sip {ip_pools.rx[0]} "
                 f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
@@ -333,6 +349,10 @@ class FFmpeg(Application):
             # RxTxApp's convention: the pcap_capture fixture sniffs the second
             # NIC's PF, so TX must egress a different NIC or netsniff-ng only
             # sees switch-batched packets, making VRX measurement meaningless.
+            #
+            # The multiple_sessions RX above consumes udp 20000 and 20002, so TX
+            # must feed both -- otherwise input 1 has no sender, exhausts its
+            # -init_retry and takes the whole run down with EIO.
             self._tx_commands = [
                 self._ffmpeg_st20p_tx_cmd(
                     video_size=video_size,
@@ -342,6 +362,7 @@ class FFmpeg(Application):
                     sip=ip_pools.tx[0],
                     mcast=ip_pools.rx_multicast[0],
                     framerate=fps,
+                    extra_udp_ports=(20002,) if multiple else (),
                     ptp_enable=self.params.get("enable_ptp", False),
                     pacing_way=self.params.get("pacing_way"),
                 )
