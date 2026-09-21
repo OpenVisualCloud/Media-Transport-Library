@@ -46,6 +46,18 @@ def test_format(
     if application == "rxtxapp":
         pytest.skip("RxTxApp does not support output_format parameter")
     media_file_info, media_file_path = media_file
+    # A raw 4:2:2 10-bit 4K frame is 33 MB, so a 60s recording asks the runner's
+    # root volume for 50 GB at 1.0 GB/s (p30) or 100 GB at 2.0 GB/s (p60). Both
+    # observed outcomes are the disk, not MTL: at p60 the write blocks, MTL's
+    # 3-frame pool empties, the next frame's packets fall outside the OFO window,
+    # st20p_rx_get_frame times out and the demuxer turns that into a fatal EIO
+    # ~16s in; at p30 one host sustained 847 MB/s and wrote all 50 GB while
+    # another managed 326 MB/s and produced a short recording. Shortening the run
+    # cannot help -- the rate is what the assertion scales with. The h264 leg
+    # still covers 4K RX and yuv still runs at 1080p, so only the raw write loses
+    # coverage, and it is not worth a 50 GB temporary file per nightly.
+    if output_format == "yuv" and media_file_info["height"] >= 2160:
+        pytest.skip("raw 4K recording exceeds runner disk bandwidth and capacity")
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
