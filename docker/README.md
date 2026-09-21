@@ -1,134 +1,160 @@
 # Docker Guide
 
-Docker guide for Media Transport Library.
+Use these images to build and test Media Transport Library (MTL).
 
-Please note that the Dockerfile provided is intended for development use only. It has been tested for functionality, but not for security. Users are advised to review and modify it as necessary before using it in a production environment.
+These images are for development. Review their packages and permissions before production use.
 
-## 1. DPDK NIC PMD and env setup on host
+## Supported Images
 
-Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio(2110) user group and vfio driver mode for VFs.
+| `MTL_VARIANT` | Base system | DPDK | AF_XDP |
+| --- | --- | --- | --- |
+| `ubuntu22` | Ubuntu 22.04 | Yes | No |
+| `ubuntu24` | Ubuntu 24.04 | Yes | Yes |
+| `ubuntu26` | Ubuntu 26.04 | Yes | Yes |
+| `rocky9` | Rocky Linux 9 | Yes | Yes |
 
-## 2. Build Docker image
+The default variant is `ubuntu22`.
 
-```bash
-docker build -t mtl:latest -f ubuntu22.dockerfile ../
-```
+Each Dockerfile has two stages:
 
-Each image build compiles MTL and runs the no-NIC unit test suite.
+- The `builder` stage installs build tools, builds dependencies, and runs unit tests.
+- The `final` stage contains the runtime packages, MTL files, and test tools.
 
-Refer to below build command if you are in a proxy env.
+## Prepare the Host
 
-```bash
-http_proxy=http://proxy.xxx.com:xxx
-https_proxy=https://proxy.xxx.com:xxx
-sudo docker build -t mtl_ubuntu22:latest -f ubuntu22.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
-sudo docker build -t mtl_ubuntu24:latest -f ubuntu24.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
-sudo docker build -t mtl_ubuntu26:latest -f ubuntu26.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
-sudo docker build -t mtl_rocky9:latest -f rocky9.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+Follow the [run guide](../doc/run.md) before you start a container.
 
-```
+The host must provide these resources:
 
-## 3. Run and login into the docker container
+- Hugepages
+- A configured data-plane interface
+- VFIO access for DPDK
+- The MTL Manager socket, when you use MTL Manager
 
-### 3.1. Run MTL Manager
+Start MTL Manager as described in the [MTL Manager guide](../manager/README.md).
 
-Before running any MTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
+## Build an Image
 
-For legacy way of running multiple containers without MTL Manager, please add the following arguments to the docker run commands in below sections:
+Run commands from the `docker` directory.
 
-```bash
-  -v /tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock \
-  -v /dev/null:/dev/null \
-  --ipc=host \
-```
-
-### 3.2. Run the docker container
-
-#### 3.2.1. Run with docker command
-
-For DPDK PMD backend, pass the VFIO devices:
+Build the default Ubuntu 22.04 image:
 
 ```bash
-docker run -it \
-  --device /dev/vfio \
-  --cap-add SYS_NICE \
-  --cap-add IPC_LOCK \
-  -v /var/run/imtl:/var/run/imtl \
-  --ulimit memlock=-1 \
-  mtl:latest
+docker compose build imtl
 ```
 
-For AF_XDP backend, pass the host network interfaces:
+Build a different image:
 
 ```bash
-docker run -it \
-  --net host \
-  --device /dev/vfio \
-  --cap-add SYS_NICE \
-  --cap-add NET_RAW \
-  --cap-add CAP_BPF \
-  -v /var/run/imtl:/var/run/imtl \
-  --ulimit memlock=-1 \
-  mtl:latest
+MTL_VARIANT=ubuntu24 docker compose build imtl
+MTL_VARIANT=ubuntu26 docker compose build imtl
+MTL_VARIANT=rocky9 docker compose build imtl
 ```
 
-Explanation of `docker run` arguments:
+Each command builds one image. The image name is `mtl:<variant>`.
 
-| Argument | Description |
+Compose reads `HTTP_PROXY` and `HTTPS_PROXY` from the host environment.
+
+```bash
+export HTTP_PROXY=http://proxy.example.com:8080
+export HTTPS_PROXY=http://proxy.example.com:8080
+docker compose build imtl
+```
+
+## Run with DPDK
+
+Start an interactive container for the default image:
+
+```bash
+docker compose run --rm imtl
+```
+
+Select a different image with the same variable that you used during the build:
+
+```bash
+MTL_VARIANT=ubuntu24 docker compose run --rm imtl
+```
+
+The base Compose file provides these settings:
+
+| Setting | Purpose |
 | --- | --- |
-| `--net host` | For AF_XDP backend to access NICs |
-| `-v /var/run/imtl:/var/run/imtl` | For connection with MTL Manager |
-| `--device /dev/vfio` | For DPDK eal to access the VFIO devices |
-| `--ulimit memlock=-1` | For DPDK PMD to do DMA remapping or AF_XDP backend to create UMEM |
-| `--cap-add SYS_NICE` | For DPDK eal to set NUMA memory policy |
-| `--cap-add IPC_LOCK` | For DPDK PMD to do DMA mapping |
-| `--cap-add NET_RAW` | For AF_XDP backend to create socket |
-| `--cap-add CAP_BPF` | For AF_XDP backend to update xsks_map |
-| `--cap-add SYS_TIME` | For systime adjustment if `--phc2sys` enabled |
+| `/dev/vfio` | Gives DPDK access to VFIO devices |
+| `/var/run/imtl` | Connects applications to MTL Manager |
+| Unlimited `memlock` | Lets DPDK lock memory for DMA |
+| `SYS_NICE` | Lets DPDK set the NUMA memory policy |
+| `IPC_LOCK` | Lets DPDK lock memory |
 
-#### 3.2.2. Specify VFIO devices for container
+The container runs as the `imtl` user.
 
-If you only need to pass specific PFs/VFs to the container, you can use the following command to list the IOMMU group:
+## Run with AF_XDP
 
-```bash
-../script/nicctl.sh list all
-```
-```text
-ID      PCI BDF         Driver          NUMA    IOMMU   IF Name
-0       0000:4b:01.0    vfio-pci        0       311     *
-1       0000:4b:01.1    vfio-pci        0       312     *
-```
+Ubuntu 22.04 does not support this configuration.
 
-Then, you can specify the IOMMU group IDs to the `--device` argument:
+Use Ubuntu 24.04, Ubuntu 26.04, or Rocky Linux 9. Apply the AF_XDP override file:
 
 ```bash
-docker run -it \
-  --device /dev/vfio/vfio \
-  --device /dev/vfio/311 \
-  --device /dev/vfio/312 \
-  --cap-add SYS_NICE \
-  --cap-add IPC_LOCK \
-  -v /var/run/imtl:/var/run/imtl \
-  --ulimit memlock=-1 \
-  mtl_ubuntu22:latest
+MTL_VARIANT=ubuntu24 docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.xdp.yml \
+  run --rm imtl
 ```
 
-#### 3.2.3. Run with docker-compose
+The override adds host networking, `NET_RAW`, and `CAP_BPF`.
 
-Edit the `docker-compose.yml` file to specify the configuration.
+Host networking gives the container direct access to the host interfaces. Review this access before use.
 
-Run the service:
+## Run RxTxApp
 
-```bash
-docker-compose run imtl
-# docker compose run imtl
-```
-
-## 4. Run RxTXApp
+Create or select an input file. Then run RxTxApp inside the container:
 
 ```bash
-# Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
-# dd if=/dev/urandom of=test.yuv count=2160 bs=4800
-# Edit and Run the loop JSON file.
 ./RxTxApp --config_file scripts/loop_json/1080p60_1v.json
 ```
+
+For example, create a test YUV file with this command:
+
+```bash
+dd if=/dev/urandom of=test.yuv count=2160 bs=4800
+```
+
+## Run without MTL Manager
+
+MTL Manager is the default and recommended configuration.
+
+For the legacy configuration, add these options to the service in a local Compose override:
+
+```yaml
+services:
+  imtl:
+    ipc: host
+    volumes:
+      - /tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock
+      - /dev/null:/dev/null
+```
+
+Do not commit host-specific overrides.
+
+## Build without Compose
+
+Use a direct Docker command when you only need an image build:
+
+```bash
+docker build -t mtl:ubuntu22 -f ubuntu22.dockerfile ..
+docker build -t mtl:ubuntu24 -f ubuntu24.dockerfile ..
+docker build -t mtl:ubuntu26 -f ubuntu26.dockerfile ..
+docker build -t mtl:rocky9 -f rocky9.dockerfile ..
+```
+
+The repository root is the build context. The root `.dockerignore` removes generated and local files from that context.
+
+## File Responsibilities
+
+| File | Responsibility |
+| --- | --- |
+| `docker-compose.yml` | Common DPDK runtime settings and image selection |
+| `docker-compose.xdp.yml` | AF_XDP network and capability settings |
+| `*.dockerfile` | Distribution packages and image build steps |
+| `../.dockerignore` | Build context exclusions |
+
+Use Compose for local runtime configuration. Use the CI image matrix to build all supported images.

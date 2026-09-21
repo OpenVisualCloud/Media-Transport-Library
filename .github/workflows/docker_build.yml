@@ -35,6 +35,7 @@ jobs:
     outputs:
       ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
       manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
+      docker_compose: ${{ steps.filter.outputs.docker_compose == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -48,6 +49,7 @@ jobs:
 
   ubuntu-docker-build:
     needs: changes
+    if: needs.changes.outputs.ubuntu_build == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
@@ -71,16 +73,13 @@ jobs:
             image_suffix: "-rocky9"
     steps:
       - name: Harden Runner
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: Checkout repository
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Docker Buildx
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           buildkitd-flags: "--debug --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host"
@@ -89,7 +88,7 @@ jobs:
 
       - name: Login to Docker Container Registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' && env.DOCKER_REGISTRY_LOGIN == 'true' }}
+        if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
         id: dockerLoginStep
         continue-on-error: true
         with:
@@ -98,7 +97,6 @@ jobs:
           password: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Build image (${{ matrix.name }})
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
@@ -110,6 +108,7 @@ jobs:
 
   manager-docker-build:
     needs: changes
+    if: needs.changes.outputs.manager_build == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
@@ -149,7 +148,6 @@ jobs:
           password: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Build manager image
-        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
@@ -159,3 +157,17 @@ jobs:
           cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
           cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
           build-args: VERSION=${{ steps.version.outputs.VERSION }}
+
+  compose-validate:
+    needs: changes
+    if: needs.changes.outputs.docker_compose == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Validate default Compose configuration
+        run: docker compose -f docker/docker-compose.yml config --quiet
+      - name: Validate AF_XDP Compose configuration
+        env:
+          MTL_VARIANT: ubuntu24
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.xdp.yml config --quiet
