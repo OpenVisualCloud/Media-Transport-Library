@@ -7,6 +7,8 @@ netsniff-ng packet capture all derive their timestamps from one reference.
 Status: **proposal**. Nothing described here is deployed. It is written up because
 the arrangement it replaces is correct today only by coincidence, and that
 coincidence is not recorded anywhere a person configuring a new runner would look.
+One prerequisite measurement has been taken on an idle E810 runner and is reported
+in §4; it adjusted no clock and changed the recommended port.
 
 Scope note: this describes a lab topology, not a library change. The only code it
 touches is `tests/acceptance/conftest.py`, and it touches it by **deleting**
@@ -244,13 +246,10 @@ restart it in teardown. Two things make that acceptable:
   strictly worse — a leaked root daemon on a shared PHC has caused an `ice`-driver
   use-after-free in `ptp_clock_index()`.
 
-Port choice: prefer the **capture port** for `ptp4l`. With hardware timestamping the
-kernel-path congestion that would favour the quiet TX port no longer matters —
-hardware stamps are taken at the MAC regardless of how backed up the kernel is — and
-putting PTP on the capture port keeps its few packets per second off the port whose
-paced stream the tests measure. Confirm in step 0 that `ptp4l`'s RX filter mode
-coexists with netsniff-ng on that port (`ethtool -T` offers only `none` and `all`,
-so both should end up on `all`).
+Port choice: put `ptp4l` on the **TX port**, not the capture port. Because both ports
+share one PHC this makes no difference to what gets disciplined — `ptp4l` on either
+port steers the clock the capture reads — but `ptp4l` and netsniff-ng **cannot share a
+port**. See the measurement below.
 
 **Option B — fabric `ice` port, software timestamping. Fallback if the handover is rejected.**
 
@@ -300,7 +299,9 @@ kernel path, so they degrade under load: prefer the **TX port**, whose kernel RX
 queue is quiet, over the capture port, which is saturated by netsniff-ng during a
 2160p119 test. The servo's time constant is long relative to a test, so a few tens
 of seconds of noisy samples should not move the system clock meaningfully — but this
-is the one thing to measure before committing (§7).
+is the one thing to measure before committing (§7). The port-sharing measurement
+below points the same way for an independent reason, so under every option `ptp4l`
+belongs on the TX port.
 
 Note also that in software mode ptp4l uses the **UTC** time scale rather than
 announcing PTP time scale, which lines up with a grandmaster already on UTC (§6.2).
@@ -329,14 +330,76 @@ that is hardware end to end and the only one that simplifies the harness; its pr
 is the per-test handover. B and C avoid the handover at the cost of an extra
 conversion stage between the grandmaster and the capture.
 
+### Measured: ptp4l and netsniff-ng cannot share a port
+
+Measured on an idle E810 runner with `ptp4l 4.0`, using `free_running 1` so no clock
+was adjusted — the daemon only reports the offset it measures:
+
+```text
+[global]
+clientOnly 1
+free_running 1
+time_stamping hardware
+```
+
+**The fabric itself is healthy.** The grandmaster was discovered and selected from
+both `ice` ports, and path delay was 470–605 ns with no visible asymmetry — a single
+clean switch hop. PTP over the media fabric is viable; nothing here argues for
+option C.
+
+**But hardware PTP and the capture cannot share a port.** With `ptp4l` on the capture
+port, starting netsniff-ng on that same port knocked it out within ~100 ms, twice, in
+separate runs:
+
+```text
+ptp4l[...]: timed out while polling for tx timestamp
+ptp4l[...]: increasing tx_timestamp_timeout may correct this issue, but it is
+            likely caused by a driver bug
+ptp4l[...]: port 1 (ice1): send delay request failed
+ptp4l[...]: UNCALIBRATED to FAULTY on FAULT_DETECTED (FT_UNSPECIFIED)
+```
+
+Recovery took 16 s (`fault_reset_interval`), during which the PHC is undisciplined.
+With `ptp4l` on the **TX port** and netsniff-ng on the capture port, zero faults, and
+the capture was unaffected — so the fix is simply to separate them, which costs
+nothing because both ports share the PHC being disciplined.
+
+Note what broke: not the RX filter, which was the risk anticipated here.
+`ethtool -T` offers only `none` and `all`, both parties want `all`, and the filter
+stayed at `all` throughout. What broke was `ptp4l`'s **TX** timestamp retrieval for
+its own Delay_Req. The earlier reasoning that "hardware stamps are taken at the MAC
+regardless of kernel congestion" is true but was beside the point: retrieving a TX
+timestamp is a driver and socket operation, and netsniff-ng's exclusive claim on the
+port's timestamping resources defeats it.
+
+**An incidental finding that supports the whole proposal.** The runner's capture PHC,
+with nothing disciplining it, sat **2.1–2.9 ms away from the grandmaster** — outside
+the [0, 1 ms] compliance window on its own. That is the state a capture inherits
+whenever no daemon has run, and it is what today's per-test `phc2sys` is quietly
+papering over.
+
+Relative frequency was not stable across the session: about −79 ppb early, then
++2.4 to +2.9 ppm decaying over the following minutes. A decaying frequency offset is
+the signature of a servo converging *somewhere*, and since nothing was adjusting the
+runner's clock, the likely explanation is the grandmaster PHC itself being slewed by
+its own `phc2sys` chasing a slewing `CLOCK_REALTIME`. Measurements taken only at the
+runner cannot separate runner drift from grandmaster slew, so this needs a
+simultaneous reading at the grandmaster before any drift figure is quoted.
+
+Still outstanding: the same measurement **under load**. It requires a 2160p119 case
+running, which means a CI dispatch or a built tree outside the runner's `_work`
+directory. The coexistence result above is the prerequisite for doing it safely — it
+is now known that a measuring `ptp4l` on the TX port will not disturb a live job's
+capture.
+
 ### Clock ownership under the proposal
 
 | Clock | Single writer | Source |
 |---|---|---|
 | grandmaster host `CLOCK_REALTIME` | ntpsec | upstream NTP |
 | grandmaster host fabric PHC | `phc2sys -s CLOCK_REALTIME -c <fabric iface>` | grandmaster host `CLOCK_REALTIME` |
-| runner E810 shared PHC | `ptp4l -s -i <capture iface>` (hardware) — **or** MTL, during a regime-B test | grandmaster, over the media fabric |
-| runner `CLOCK_REALTIME` | `phc2sys -s <capture iface> -c CLOCK_REALTIME` (reads the PHC, never writes it) | runner E810 PHC |
+| runner E810 shared PHC | `ptp4l -s -i <tx iface>` (hardware) — **or** MTL, during a regime-B test | grandmaster, over the media fabric |
+| runner `CLOCK_REALTIME` | `phc2sys -s <tx iface> -c CLOCK_REALTIME` (reads the PHC, never writes it) | runner E810 PHC |
 
 Under the option B fallback the last two rows become
 `runner CLOCK_REALTIME ← ptp4l -S -s -i <tx iface>` with no PHC in the loop, and the
@@ -354,7 +417,7 @@ clock is derived *from* it. No per-test phc2sys, no TAI-offset arithmetic:
   grandmaster host CLOCK_REALTIME  (the one reference)
        |
        v
-   grandmaster  --PTP, hardware ts, media fabric-->  ptp4l -s on capture port
+   grandmaster  --PTP, hardware ts, media fabric-->  ptp4l -s on TX port
                                                           |
                                                  E810 shared PHC
                                                      /        \
@@ -426,8 +489,8 @@ the daemons but the *harness's* ownership of them:
 
 | Per runner | Today | Under option A |
 |---|---|---|
-| `ptp4l` | started by `ptp_sync` per `@pytest.mark.ptp` test, on the shared PHC | `ptp4l-slave.service`, persistent, `-s -i <capture iface>` |
-| `phc2sys` | started by `_start_capture_phc_sync()` per capturing test, `sudo pkill`ed after | `phc2sys-slave.service`, persistent, `-s <capture iface> -c CLOCK_REALTIME` |
+| `ptp4l` | started by `ptp_sync` per `@pytest.mark.ptp` test, on the shared PHC | `ptp4l-slave.service`, persistent, `-s -i <tx iface>` |
+| `phc2sys` | started by `_start_capture_phc_sync()` per capturing test, `sudo pkill`ed after | `phc2sys-slave.service`, persistent, `-s <tx iface> -c CLOCK_REALTIME` |
 | `ntpd` | steers `CLOCK_REALTIME` | runs with `noselect` — measures, does not steer |
 | harness-started clock daemons | 1–2 per test, plus leaks | **none**, except the regime-B handover |
 
@@ -544,22 +607,21 @@ currently lands 37 s off UTC while reporting itself locked.
 
 Each step is independently testable and independently revertible.
 
-0. **Measure before committing.** On one idle runner, run
-   `ptp4l -s -i <capture iface> -m` with `free_running 1` so it measures without
-   adjusting any clock, and record the offset and jitter against the grandmaster.
-   Repeat while a 2160p119 case is running, and check two things: that the servo
-   stays well inside the 1 ms window under load, and that `ptp4l`'s RX filter mode
-   coexists with netsniff-ng on that port. That MTL's internal PTP already locks to
-   144 ns over this fabric is independent evidence that the grandmaster is reachable
-   and healthy from the runners' `ice` ports. If hardware PTP on the capture port
-   disturbs the capture, retry on the TX port; if the fabric itself proves unusable,
-   fall back to option B or C.
+0. **Measure before committing** — `ptp4l -m` with `free_running 1`, which adjusts no
+   clock. **Done idle on one E810 runner; see §4.** Outcome: the fabric is healthy
+   (path delay 470–605 ns, grandmaster selected from both ports), and `ptp4l` must run
+   on the TX port because it cannot share a port with netsniff-ng. Still to do: the
+   same measurement while a 2160p119 case runs, confirming the servo stays well inside
+   the 1 ms window under load. That needs a CI dispatch or a built tree outside the
+   runner's `_work` directory — never a pytest run inside `_work`, which would kill a
+   subsequent job's `RxTxApp`. If the fabric itself proves unusable under load, fall
+   back to option B or C.
 1. **Grandmaster host only, additive:** fix the unit ordering so its PHC is
    disciplined before it announces (§6). Nothing slaves to it yet, so no runner
    behaviour changes. Option C additionally needs a second `ptp4l` (`serverOnly`, on
    the management port) and a phc2sys for that PHC; options A and B do not.
-2. **One runner:** slave a single runner — `ptp4l -s -i <capture iface>` on the
-   fabric plus `phc2sys -s <capture iface> -c CLOCK_REALTIME`, both as systemd units
+2. **One runner:** slave a single runner — `ptp4l -s -i <tx iface>` on the
+   fabric plus `phc2sys -s <tx iface> -c CLOCK_REALTIME`, both as systemd units
    so the handover can stop and restart them, and ntpsec to `noselect`. Add the
    `ptp_sync` handover and drop `_start_capture_phc_sync` on a branch only. Confirm
    `CLOCK_REALTIME` tracks the grandmaster and that `|CLOCK_REALTIME − ntpsec|`
