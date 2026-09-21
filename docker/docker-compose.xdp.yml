@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Intel Corporation.
+# SPDX-License-Identifier: BSD-3-Clause
+
+services:
+  imtl:
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - CAP_BPF

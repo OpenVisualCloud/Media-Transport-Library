@@ -23,11 +23,25 @@ build: &build
   - "script/**"
   - .github/scripts/setup_environment.sh
 
-docker: &docker
-  - docker/**
-  - manager/Dockerfile
-  - manager/.dockerignore
+docker_images: &docker_images
+  - 'docker/*.dockerfile'
   - '.dockerignore'
+
+docker_compose:
+  - docker/docker-compose.yml
+  - docker/docker-compose.xdp.yml
+  - .github/path_filters.yml
+  - .github/workflows/docker_build.yml
+
+manager_build:
+  - 'manager/**'
+  - VERSION
+  - .github/path_filters.yml
+  - .github/workflows/docker_build.yml
+
+docker_workflow: &docker_workflow
+  - .github/path_filters.yml
+  - .github/workflows/docker_build.yml
 
 ecosystem: &ecosystem
   - 'app/**'
@@ -52,7 +66,8 @@ ubuntu_build: &ubuntu_build
   - .github/workflows/base_build.yml
   - *src
   - *build
-  - *docker
+  - *docker_images
+  - *docker_workflow
   - *ecosystem
 
 linux_tests: &linux_tests
