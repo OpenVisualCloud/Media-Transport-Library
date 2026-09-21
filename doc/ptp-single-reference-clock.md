@@ -361,16 +361,42 @@ ptp4l[...]: UNCALIBRATED to FAULTY on FAULT_DETECTED (FT_UNSPECIFIED)
 
 Recovery took 16 s (`fault_reset_interval`), during which the PHC is undisciplined.
 With `ptp4l` on the **TX port** and netsniff-ng on the capture port, zero faults, and
-the capture was unaffected — so the fix is simply to separate them, which costs
-nothing because both ports share the PHC being disciplined.
+the capture was unaffected — so the fix is to separate them, which costs nothing
+because both ports share the PHC being disciplined.
 
-Note what broke: not the RX filter, which was the risk anticipated here.
+**The cause is not a driver bug, despite what the message guesses.** Sampling the
+interface's timestamp configuration across the transition shows netsniff-ng switching
+TX timestamping off underneath ptp4l:
+
+```text
+t=10  ptp4l alone        : tx_type 1  rx_filter 1
+t=11  netsniff-ng starts : tx_type 0  rx_filter 1   <- clobbered
+      ptp4l FAULTY ~100 ms later
+t=40  both gone          : tx_type 1  rx_filter 1   <- ptp4l re-set it on recovery
+```
+
+`SIOCSHWTSTAMP` configures timestamping per **interface**, not per socket. netsniff-ng
+needs only RX stamps, so it sets `tx_type = HWTSTAMP_TX_OFF` and turns off exactly
+what `ptp4l` needs for its own Delay_Req. Last writer wins. `ptp4l` is then polling
+for a timestamp the NIC will never produce, which is why the remedy the message
+suggests does not work: `tx_timestamp_timeout` at 1 ms, 10 ms and 100 ms all fault
+identically, with one timeout each. A longer timeout cannot help when the answer is
+never coming.
+
+Two consequences worth recording. First, no driver or firmware update will fix this —
+it is shared per-netdev state, so **any** process that configures hardware
+timestamping on the capture port will do the same thing to `ptp4l`. Second, this is
+why today's arrangement has never hit it: `phc2sys` disciplines a PHC through
+`clock_adjtime` on `/dev/ptp*` and never calls `SIOCSHWTSTAMP` at all, so the
+existing per-test capture `phc2sys` coexists with netsniff-ng without contest. The
+constraint is specific to daemons that use *socket* timestamping, which means
+`ptp4l`.
+
+Note also what did *not* break: the RX filter, which was the risk anticipated here.
 `ethtool -T` offers only `none` and `all`, both parties want `all`, and the filter
-stayed at `all` throughout. What broke was `ptp4l`'s **TX** timestamp retrieval for
-its own Delay_Req. The earlier reasoning that "hardware stamps are taken at the MAC
-regardless of kernel congestion" is true but was beside the point: retrieving a TX
-timestamp is a driver and socket operation, and netsniff-ng's exclusive claim on the
-port's timestamping resources defeats it.
+stayed at `all` throughout. The earlier reasoning that "hardware stamps are taken at
+the MAC regardless of kernel congestion" is true but was beside the point — the
+failure is in configuration ownership, not in timestamp accuracy under load.
 
 **An incidental finding that supports the whole proposal.** The runner's capture PHC,
 with nothing disciplining it, sat **2.1–2.9 ms away from the grandmaster** — outside
@@ -581,6 +607,12 @@ configured to step would step onto the wrong value. Two mitigations:
   from NTP should not advertise `clockClass 248` (free-running). linuxptp slaves do
   not gate on `clockClass`, so this is documentation rather than protection — but it
   currently misdescribes the fabric.
+* Assert that **`ptp4l` is not bound to the capture interface.** This is the one
+  configuration mistake in this design that produces a silent, intermittent fault
+  rather than an error: `ptp4l` runs fine until a capture starts, then drops into
+  FAULTY for 16 s, and the PHC is undisciplined for exactly the window the test is
+  measuring. A one-line check comparing `ptp4l`'s `-i` argument against the resolved
+  sniff interface catches it at setup time. See the measurement in §4.
 
 ### 6.1 PTP multicast on a shared management LAN
 
