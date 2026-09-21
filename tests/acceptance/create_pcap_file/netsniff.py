@@ -235,30 +235,33 @@ class NetsniffRecorder:
         effective_capture_time = capture_time if capture_time else self.capture_time
         started = self.start()
         if started:
-            if self.packets_capture is None:
-                logger.info(
-                    f"Capturing traffic for {effective_capture_time} seconds..."
-                )
-                sleep(effective_capture_time or 0)
-                self.stop()
-                logger.info("Capture complete.")
-            else:
-                try:
+            try:
+                if self.packets_capture is None:
                     logger.info(
-                        f"Capturing traffic for {self.packets_capture} packets..."
+                        f"Capturing traffic for {effective_capture_time} seconds..."
                     )
-                    # Use effective_capture_time as timeout to allow full test duration for packet capture
-                    timeout = (effective_capture_time or 0) + 10
+                    sleep(effective_capture_time or 0)
+                else:
+                    try:
+                        logger.info(
+                            f"Capturing traffic for {self.packets_capture} packets..."
+                        )
+                        # Use effective_capture_time as timeout to allow full test duration for packet capture
+                        timeout = (effective_capture_time or 0) + 10
 
-                    self.netsniff_process.wait(timeout=timeout)
-                    logger.info("Capture complete.")
-                    logger.debug(self.netsniff_process.stdout_text)
-                except RemoteProcessTimeoutExpired:
-                    logger.warning(
-                        "Capture timed out. Probably not enough packets were sent. "
-                        "Please adjust packets_capture or capture_time to the test case."
-                    )
-                    self.stop()
+                        self.netsniff_process.wait(timeout=timeout)
+                        logger.debug(self.netsniff_process.stdout_text)
+                    except RemoteProcessTimeoutExpired:
+                        logger.warning(
+                            "Capture timed out. Probably not enough packets were sent. "
+                            "Please adjust packets_capture or capture_time to the test case."
+                        )
+            finally:
+                # Only stop() puts the capture interface back, and a packet-count
+                # capture returns here a fraction of a second into a test that
+                # keeps running for another minute or more.
+                self.stop()
+            logger.info("Capture complete.")
         else:
             logger.error("netsniff-ng did not start; skipping capture.")
 
@@ -273,8 +276,7 @@ class NetsniffRecorder:
         # Check if process is still running before trying to stop
         if not self.netsniff_process.running:
             logger.debug("netsniff-ng process has already finished.")
-            self._reap()
-            self._restore_promisc()
+            self._release()
             return
 
         try:
@@ -290,8 +292,18 @@ class NetsniffRecorder:
         else:
             logger.debug("netsniff-ng process stopped gracefully.")
         finally:
-            self._reap()
-            self._restore_promisc()
+            self._release()
+
+    def _release(self):
+        """Reap the capture and put the interface back, once per capture.
+
+        ``_reap`` ends in a host-global ``pkill``, so the handle is dropped here
+        too: the fixture calls ``stop()`` again at teardown, and that second call
+        must not signal a capture some later test has since started.
+        """
+        self._reap()
+        self._restore_promisc()
+        self.netsniff_process = None
 
     def _reap(self):
         """Make sure no root ``netsniff-ng`` survives the process handle.
