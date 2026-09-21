@@ -282,10 +282,14 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   int valid_bulk = bulk;
+  /* Read the tsc here, at the break site where i < bulk is still known, rather
+   * than re-indexing pkts[valid_bulk] */
+  uint64_t first_pkt_tsc = 0;
   for (int i = 0; i < bulk; i++) {
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if ((pkt_idx == 0) || (pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
       valid_bulk = i;
+      first_pkt_tsc = st_tx_mbuf_get_tsc(pkts[i]);
       break; /* break if it's the first pkt of frame or it's the start of dummy */
     }
   }
@@ -308,7 +312,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     if (valid_bulk != 0) {
       video_burst_packet(impl, s, s_port, pkts, valid_bulk, true);
     }
-    uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
+    uint64_t target_tsc = first_pkt_tsc;
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
