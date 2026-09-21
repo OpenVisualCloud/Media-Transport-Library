@@ -544,6 +544,8 @@ struct st_rv_tp_stat {
   int32_t stat_rtp_ts_delta_min;
   int32_t stat_rtp_ts_delta_max;
   float stat_rtp_ts_delta_sum;
+  /* a frame with no predecessor has no delta, so this is below stat_frame_cnt */
+  uint32_t stat_rtp_ts_delta_cnt;
   uint32_t stat_compliant_result[ST_RX_TP_COMPLIANT_MAX];
 };
 

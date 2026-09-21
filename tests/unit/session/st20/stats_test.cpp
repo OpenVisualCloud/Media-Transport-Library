@@ -88,6 +88,21 @@ TEST_F(St20RxStatsTest, LostPacketsInvariant) {
   ut20_ctx_destroy(wide);
 }
 
+/* stat_burst_pkts_max is a running maximum over the session's life, not a
+ * counter, so the stat line may not report it as a delta against the previous
+ * interval's snapshot: once the largest burst has been seen every later interval
+ * reports 0, claiming a session that is bursting received nothing in a burst. */
+TEST_F(St20RxStatsTest, BurstMaxReportedForTheSession) {
+  ut20_record_rx_burst(ctx_, 64);
+  const std::string s1 = ut_session::capture_stderr([&] { ut20_invoke_rv_stat(ctx_); });
+  EXPECT_NE(s1.find("succ burst max 64"), std::string::npos) << s1;
+
+  /* a quieter interval: the largest burst the session saw is still the first */
+  ut20_record_rx_burst(ctx_, 8);
+  const std::string s2 = ut_session::capture_stderr([&] { ut20_invoke_rv_stat(ctx_); });
+  EXPECT_NE(s2.find("succ burst max 64"), std::string::npos) << s2;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
  * Wide-frame stat invariants.
  *

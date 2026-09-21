@@ -161,6 +161,8 @@ void ut20_ctx_set_continuous_burst(ut20_test_ctx* ctx, enum mtl_session_port por
 uint32_t ut20_tp_stat_compliant_cnt(const ut20_test_ctx* ctx, enum mtl_session_port port,
                                     enum st_rx_tp_compliant compliant);
 int32_t ut20_tp_stat_fpt_min(const ut20_test_ctx* ctx, enum mtl_session_port port);
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
 
 /* Feed every packet of one full, perfectly paced frame on port P carrying RTP
  * timestamp `ts`: the first packet arrives `fpt_ns` into `epoch` and the rest
@@ -168,6 +170,15 @@ int32_t ut20_tp_stat_fpt_min(const ut20_test_ctx* ctx, enum mtl_session_port por
  * parser measures as fpt, so together with `ts` it fixes the measured latency.
  * Requires a prior ut20_ctx_enable_timing_parser(). */
 void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts, uint64_t fpt_ns);
+
+/* Same, except packet `late_pkt_idx` arrives `late_ns` after its paced instant,
+ * which widens the inter-packet time measured before it. Pass a negative index
+ * for a perfectly paced frame. Lets a test give two frames different measured
+ * inter-packet maxima, which a uniformly paced frame cannot. Keep `late_ns`
+ * below one trs, or the packet overtakes its successor and arrives out of
+ * time order. */
+void ut20_feed_tp_frame_late_pkt(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,
+                                 uint64_t fpt_ns, int late_pkt_idx, uint64_t late_ns);
 
 /* The RTP timestamp a frame at `epoch` is expected to carry, derived exactly as
  * the parser derives it. */
@@ -242,6 +253,13 @@ void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold);
  * drop, DMA-busy drop) so tests can prove the warn line's pkts number
  * is driven by stat_pkts_pool_empty alone, not the wider no_slot total. */
 void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n);
+
+/* Record one successful RX burst of `pkts` packets in the session's user stats,
+ * as rv_pkt_rx_tasklet does after a non-empty mt_rxq_burst(). Only the three
+ * stat writes are replicated, not the untrusted-pkt filter state the same
+ * tasklet keeps. The unit tier never runs that tasklet, so a test asserting on
+ * what the burst stat line reports plants the bursts here. */
+void ut20_record_rx_burst(ut20_test_ctx* ctx, uint64_t pkts);
 
 /* Live value of the segregated pool-empty packet counter that drives the
  * back-pressure warn line's pkts number. */

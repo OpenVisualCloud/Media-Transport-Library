@@ -646,15 +646,29 @@ int32_t ut20_tp_stat_fpt_min(const ut20_test_ctx* ctx, enum mtl_session_port por
   return ctx->session.tp->stat[port].stat_fpt_min;
 }
 
-void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,
-                        uint64_t fpt_ns) {
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.vrx_max;
+}
+
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.ipt_max;
+}
+
+void ut20_feed_tp_frame_late_pkt(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,
+                                 uint64_t fpt_ns, int late_pkt_idx, uint64_t late_ns) {
   struct st_rx_video_session_impl* s = &ctx->session;
   uint64_t epoch_ns = (double)epoch * s->frame_time;
   const int n = (int)s->ops.height;
   for (int i = 0; i < n; i++) {
     uint64_t pkt_ns = epoch_ns + fpt_ns + (uint64_t)(s->tp->trs * i);
+    if (i == late_pkt_idx) pkt_ns += late_ns;
     ut20_feed_frame_pkt_hw_ts(ctx, i, ts, MTL_SESSION_PORT_P, pkt_ns);
   }
+}
+
+void ut20_feed_tp_frame(ut20_test_ctx* ctx, uint64_t epoch, uint32_t ts,
+                        uint64_t fpt_ns) {
+  ut20_feed_tp_frame_late_pkt(ctx, epoch, ts, fpt_ns, -1, 0);
 }
 
 uint64_t ut20_tp_tick_ns(const ut20_test_ctx* ctx) {
@@ -717,6 +731,13 @@ void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
 
 void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n) {
   ctx->session.port_user_stats.stat_pkts_no_slot += n;
+}
+
+void ut20_record_rx_burst(ut20_test_ctx* ctx, uint64_t pkts) {
+  struct st20_rx_user_stats* us = &ctx->session.port_user_stats;
+  us->stat_burst_succ_cnt++;
+  us->stat_burst_pkts_sum += pkts;
+  if (pkts > us->stat_burst_pkts_max) us->stat_burst_pkts_max = pkts;
 }
 
 uint64_t ut20_stat_pkts_pool_empty(const ut20_test_ctx* ctx) {

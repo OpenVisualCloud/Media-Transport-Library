@@ -2,12 +2,15 @@
  * Copyright(c) 2026 Intel Corporation
  *
  * ST 2110-21 RX timing parser: which frames the compliance ladder may charge a
- * violation. Three subjects are pinned here: the rtp_ts_delta a session's first
- * frame has no predecessor to measure against, the tick quantum an integer RTP
- * timestamp lends the latency, and the frame the parser measured no packet of at
- * all. Frames are fed through the production RX path, so every frame runs the
- * real per-frame slot reset (rv_slot_by_tmstamp -> rv_tp_slot_init) and is judged
- * by the meta the session reports to the application.
+ * violation, and what the window stat reports for the frames it folded. Four
+ * subjects are pinned here: the rtp_ts_delta a session's first frame has no
+ * predecessor to measure against, the tick quantum an integer RTP timestamp
+ * lends the latency, the frame the parser measured no packet of at all, and the
+ * maxima and averages rv_tp_stat() reports over a window of frames that did not
+ * all measure the same thing. Frames are fed through the production RX path, so
+ * every frame runs the real per-frame slot reset (rv_slot_by_tmstamp ->
+ * rv_tp_slot_init) and is judged by the meta the session reports to the
+ * application.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20RxTimingParserTest.*'
@@ -15,7 +18,10 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "session/st20/st20_rx_test_base.h"
+#include "session/stderr_capture.h"
 
 namespace {
 /* Any epoch whose expected RTP timestamp is non-zero. */
@@ -32,6 +38,14 @@ constexpr uint64_t kNarrowFptNs = 500000;
  * caps the deficit feed_latency can ask for, as fpt must stay non-negative;
  * three ticks leaves room for the 1.1 ticks the cases below use. */
 constexpr int32_t kRtpOffsetTicks = 3;
+/* Arrival past the geometry's tr_offset (frame_time * 28/750, ~1.24 ms here),
+ * which is what lowers a frame's measured vrx. No arrival can raise it instead:
+ * one trs is 4 ms here, wider than the whole tr_offset, so every fpt the pass
+ * window allows measures the same vrx. */
+constexpr uint64_t kLateFptNs = 1500000;
+/* How late the one skewed packet of a frame arrives -- half a trs, so the gap
+ * before it is half again as wide as a paced frame's widest. */
+constexpr uint64_t kLatePktNs = 2000000;
 }  // namespace
 
 class St20RxTimingParserTest : public St20RxBaseTest {
@@ -64,9 +78,10 @@ class St20RxTimingParserTest : public St20RxBaseTest {
    * packet must have reached the parser -- no case can pass by measuring
    * nothing. */
   const struct st20_rx_tp_meta* feed_tp(uint64_t epoch, uint32_t ts,
-                                        uint64_t fpt_ns = kNarrowFptNs) {
+                                        uint64_t fpt_ns = kNarrowFptNs,
+                                        int late_pkt_idx = -1, uint64_t late_ns = 0) {
     const int delivered = frames_received();
-    ut20_feed_tp_frame(ctx_, epoch, ts, fpt_ns);
+    ut20_feed_tp_frame_late_pkt(ctx_, epoch, ts, fpt_ns, late_pkt_idx, late_ns);
     EXPECT_EQ(frames_received(), delivered + 1) << "frame was not delivered";
     const struct st20_rx_tp_meta* tp = ut20_tp_last_meta(ctx_);
     EXPECT_EQ(tp->pkts_cnt, (uint32_t)pkts_per_frame()) << "frame was not measured";
@@ -109,6 +124,14 @@ class St20RxTimingParserTest : public St20RxBaseTest {
 
   int32_t window_fpt_min() {
     return ut20_tp_stat_fpt_min(ctx_, MTL_SESSION_PORT_P);
+  }
+
+  int32_t window_vrx_max() {
+    return ut20_tp_stat_vrx_max(ctx_, MTL_SESSION_PORT_P);
+  }
+
+  int32_t window_ipt_max() {
+    return ut20_tp_stat_ipt_max(ctx_, MTL_SESSION_PORT_P);
   }
 };
 
@@ -239,4 +262,50 @@ TEST_F(St20RxTimingParserTest, MeasuredFrameAfterUnmeasuredRunStaysNarrow) {
   const struct st20_rx_tp_meta* tp = feed_narrow(kEpoch + 3);
   EXPECT_EQ(tp->rtp_ts_delta, 0) << "no delta was measurable";
   EXPECT_EQ(window_cnt(ST_RX_TP_COMPLIANT_FAILED), 0u);
+}
+
+/* The window's VRX MAX is the widest any frame in it measured, so a frame with a
+ * smaller one may not lower it. Only the first frame of a run is otherwise
+ * reported, which hides a sender that sent early once and then settled. */
+TEST_F(St20RxTimingParserTest, WindowVrxMaxSpansEveryFrame) {
+  const int32_t paced_vrx_max = feed_tp(kEpoch, tmstamp_of(kEpoch))->vrx_max;
+
+  /* a first packet arriving past tr_offset leaves less of the frame ahead of its
+   * deadline, so the whole frame measures one vrx less */
+  const struct st20_rx_tp_meta* late =
+      feed_tp(kEpoch + 1, tmstamp_of(kEpoch + 1), kLateFptNs);
+  ASSERT_LT(late->vrx_max, paced_vrx_max) << "case no longer discriminates";
+
+  EXPECT_EQ(window_vrx_max(), paced_vrx_max);
+}
+
+/* Same for the window's inter-packet time MAX. A uniformly paced frame measures
+ * one gap throughout, so only a frame carrying a late packet can tell the two
+ * apart. */
+TEST_F(St20RxTimingParserTest, WindowIptMaxSpansEveryFrame) {
+  const int32_t late_ipt_max =
+      feed_tp(kEpoch, tmstamp_of(kEpoch), kNarrowFptNs, 4, kLatePktNs)->ipt_max;
+
+  const int32_t paced_ipt_max = feed_tp(kEpoch + 1, tmstamp_of(kEpoch + 1))->ipt_max;
+  ASSERT_GT(late_ipt_max, paced_ipt_max) << "case no longer discriminates";
+
+  EXPECT_EQ(window_ipt_max(), late_ipt_max);
+}
+
+/* An average may not fall outside the MIN and MAX it is reported beside. Three
+ * frames yield two measured deltas, since the first has no predecessor, so the
+ * average is over two -- dividing the sum by the frame count reports two thirds
+ * of a frame period as the interval between frames. */
+TEST_F(St20RxTimingParserTest, WindowRtpTsDeltaAvgCountsMeasuredDeltasOnly) {
+  feed_narrow(kEpoch);
+  feed_narrow(kEpoch + 1);
+  feed_narrow(kEpoch + 2);
+
+  const std::string log = ut_session::capture_stderr([&] { ut20_invoke_rv_stat(ctx_); });
+
+  const std::string delta =
+      std::to_string((int32_t)(tmstamp_of(kEpoch + 1) - tmstamp_of(kEpoch)));
+  EXPECT_NE(log.find("RTP TS DELTA AVG " + delta + ".00 MIN " + delta + " MAX " + delta),
+            std::string::npos)
+      << log;
 }

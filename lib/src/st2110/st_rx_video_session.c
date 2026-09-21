@@ -3865,10 +3865,12 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   uint64_t burst_succ = us->stat_burst_succ_cnt - snap->stat_burst_succ_cnt;
   if (burst_succ) {
-    uint64_t burst_max = us->stat_burst_pkts_max - snap->stat_burst_pkts_max;
     uint64_t burst_sum = us->stat_burst_pkts_sum - snap->stat_burst_pkts_sum;
-    notice("RX_VIDEO_SESSION(%d,%d): succ burst max %" PRIu64 ", avg %f\n", m_idx, idx,
-           burst_max, (float)burst_sum / burst_succ);
+    /* stat_burst_pkts_max is a session-lifetime running maximum, so it has no
+     * meaningful interval delta */
+    notice("RX_VIDEO_SESSION(%d,%d): succ burst max %" PRIu64
+           " for the session, avg %f this interval\n",
+           m_idx, idx, us->stat_burst_pkts_max, (float)burst_sum / burst_succ);
   }
 
   memcpy(snap, us, sizeof(*snap));

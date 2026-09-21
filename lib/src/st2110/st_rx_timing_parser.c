@@ -181,13 +181,13 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
 
   stat_slot->vrx_sum += slot->vrx_sum;
   stat_slot->meta.vrx_min = RTE_MIN(stat_slot->meta.vrx_min, slot->meta.vrx_min);
-  stat_slot->meta.vrx_max = RTE_MAX(stat_slot->meta.vrx_min, slot->meta.vrx_max);
+  stat_slot->meta.vrx_max = RTE_MAX(stat_slot->meta.vrx_max, slot->meta.vrx_max);
   stat_slot->cinst_sum += slot->cinst_sum;
   stat_slot->meta.cinst_min = RTE_MIN(stat_slot->meta.cinst_min, slot->meta.cinst_min);
   stat_slot->meta.cinst_max = RTE_MAX(stat_slot->meta.cinst_max, slot->meta.cinst_max);
   stat_slot->ipt_sum += slot->ipt_sum;
   stat_slot->meta.ipt_min = RTE_MIN(stat_slot->meta.ipt_min, slot->meta.ipt_min);
-  stat_slot->meta.ipt_max = RTE_MAX(stat_slot->meta.ipt_min, slot->meta.ipt_max);
+  stat_slot->meta.ipt_max = RTE_MAX(stat_slot->meta.ipt_max, slot->meta.ipt_max);
   stat_slot->meta.pkts_cnt += slot->meta.pkts_cnt;
 
   stat->stat_fpt_min = RTE_MIN(stat->stat_fpt_min, slot->meta.fpt);
@@ -199,12 +199,15 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
   stat->stat_rtp_offset_min = RTE_MIN(stat->stat_rtp_offset_min, slot->meta.rtp_offset);
   stat->stat_rtp_offset_max = RTE_MAX(stat->stat_rtp_offset_max, slot->meta.rtp_offset);
   stat->stat_rtp_offset_sum += slot->meta.rtp_offset;
-  if (slot->meta.rtp_ts_delta) {
+  /* the flag rv_tp_compliant judges the delta by, so the count covers exactly
+   * the deltas that were measured */
+  if (slot->rtp_ts_delta_valid) {
     stat->stat_rtp_ts_delta_min =
         RTE_MIN(stat->stat_rtp_ts_delta_min, slot->meta.rtp_ts_delta);
     stat->stat_rtp_ts_delta_max =
         RTE_MAX(stat->stat_rtp_ts_delta_max, slot->meta.rtp_ts_delta);
     stat->stat_rtp_ts_delta_sum += slot->meta.rtp_ts_delta;
+    stat->stat_rtp_ts_delta_cnt++;
   }
   stat->stat_frame_cnt++;
 }
@@ -261,7 +264,7 @@ void rv_tp_stat(struct st_rx_video_session_impl* s) {
     info("%s(%d), RTP OFFSET AVG %.2f MIN %d MAX %d!\n", __func__, idx, rtp_offset_avg,
          stat->stat_rtp_offset_min, stat->stat_rtp_offset_max);
     float rtp_ts_delta_avg =
-        rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_ts_delta_sum);
+        rv_tp_calculate_avg(stat->stat_rtp_ts_delta_cnt, stat->stat_rtp_ts_delta_sum);
     info("%s(%d), RTP TS DELTA AVG %.2f MIN %d MAX %d!\n", __func__, idx,
          rtp_ts_delta_avg, stat->stat_rtp_ts_delta_min, stat->stat_rtp_ts_delta_max);
   }
