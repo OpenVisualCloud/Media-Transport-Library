@@ -536,7 +536,7 @@ def reap_leaked_phc_daemons(hosts):
 
 @pytest.fixture(scope="function")
 def ptp_sync(request, test_config: dict, hosts):
-    """Start ptp4l only for tests marked ``@pytest.mark.ptp``.
+    """Keep every external PTP daemon off the PHC for ``@pytest.mark.ptp`` tests.
 
     Historical design ran phc2sys for every pcap-capturing test, which
     multiplied the sudo+kill leak (see _reap_ptp_daemons) into 8+ daemons in
@@ -545,9 +545,15 @@ def ptp_sync(request, test_config: dict, hosts):
     corrupt systemd-journald. We now:
 
     * early-return for non-@pytest.mark.ptp tests (no daemon at all);
-    * for @pytest.mark.ptp tests, run ptp4l only -- NOT phc2sys (keep wall
-      clock untouched, pcap uses CLOCK_REALTIME which is fine for ptp4l's
-      own assertions);
+    * for @pytest.mark.ptp tests, run no daemon either -- MTL's internal PTP
+      owns the NIC PHC here: it seeds it in ``dev_start_timesync()`` and then
+      steers it with ``rte_eth_timesync_adjust_time()``. Both ports of an E810
+      share one PHC, so a ptp4l slaving the capture port steers the very clock
+      MTL is steering. Two servos each apply the full grandmaster correction and
+      the capture ends up one whole offset away from the timescale MTL stamps
+      RTP with, which is what ``packet_ts_vs_rtp_ts`` then reports. Leaving the
+      PHC to MTL puts the pcap and the RTP timestamps on one clock by
+      construction -- see also the phc2sys skip in :func:`pcap_capture`;
     * cleanup via ``sudo pkill`` on the argv, never via the process handle.
     """
     if not request.node.get_closest_marker("ptp"):
@@ -565,26 +571,12 @@ def ptp_sync(request, test_config: dict, hosts):
         host, capture_cfg, single_host=is_single_host
     )
 
-    # Belt-and-braces: ensure no leftover daemon from a previous test/session
-    # is holding a stale PHC handle before we start a new one.
+    # A daemon leaked by a previous test/session would steer the PHC against
+    # MTL for the whole run, so clear the field and hand the clock to MTL.
     _reap_ptp_daemons(host)
-
-    logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
-    log_path = f"/tmp/ptp4l-{capture_iface}.log"
-    ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
-    ptp4l_process = host.connection.start_process(
-        ptp4l_cmd,
-        stderr_to_stdout=True,
-        output_file=log_path,
+    logger.info(
+        f"@pytest.mark.ptp: leaving the {capture_iface} PHC to MTL's internal PTP"
     )
-
-    # Give ptp4l a moment to fail fast (e.g., missing interface).
-    time.sleep(0.2)
-    if not ptp4l_process.running:
-        _reap_ptp_daemons(host)
-        raise RuntimeError(
-            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
-        )
 
     try:
         yield
@@ -1261,9 +1253,10 @@ def pcap_capture(
         # clock for the absolute-offset check. Skip when MTL itself paces from
         # the NIC PHC (Remedy B: set capture_cfg.phc_sync=false alongside
         # enable_ptp), because then the PHC is the shared reference, not wall
-        # time.  Also skip for @pytest.mark.ptp tests: ptp_sync already runs
-        # ptp4l on this PHC, so a second daemon (phc2sys) would fight it for the
-        # clock.
+        # time.  Also skip for @pytest.mark.ptp tests, for the same reason: MTL's
+        # internal PTP owns this PHC there, and phc2sys steering it towards the
+        # system clock would leave the pcap on a different timescale from the RTP
+        # timestamps -- see :func:`ptp_sync`.
         ptp_marked = request.node.get_closest_marker("ptp") is not None
         sync_phc = capture_cfg.get("phc_sync", True) and not ptp_marked
     try:

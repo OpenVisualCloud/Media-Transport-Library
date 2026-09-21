@@ -155,7 +155,10 @@ def test_st20p_pacing_way_auto(
     app.assert_pacing_way("rl")
 
 
-# PTP and TSN pacing require the hardware PHC exposed by a PF.
+# PTP and TSN pacing require the hardware PHC exposed by a PF. The ptp mark puts
+# the capture on the same timescale as the RTP timestamps; without it every
+# packet_ts_vs_rtp_ts measure is off by the PTP-to-realtime offset.
+@pytest.mark.ptp
 @pytest.mark.parametrize(
     "pacing_way",
     [
