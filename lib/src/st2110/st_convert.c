@@ -839,11 +839,11 @@ int st_field_merge(const struct st_frame* first, const struct st_frame* second,
       /* first line */
       void* f_addr = frame->addr[plane] + frame->linesize[plane] * line;
       void* src = first->addr[plane] + first->linesize[plane] * field_line;
-      mtl_memcpy(f_addr, src, linesize);
+      mt_memcpy(f_addr, src, linesize);
       /* second line */
       f_addr = frame->addr[plane] + frame->linesize[plane] * (line + 1);
       src = second->addr[plane] + second->linesize[plane] * field_line;
-      mtl_memcpy(f_addr, src, linesize);
+      mt_memcpy(f_addr, src, linesize);
     }
   }
 
@@ -864,11 +864,11 @@ int st_field_split(const struct st_frame* frame, struct st_frame* first,
       /* first line */
       void* f_addr = frame->addr[plane] + frame->linesize[plane] * line;
       void* src = first->addr[plane] + first->linesize[plane] * field_line;
-      mtl_memcpy(src, f_addr, linesize);
+      mt_memcpy(src, f_addr, linesize);
       /* second line */
       f_addr = frame->addr[plane] + frame->linesize[plane] * (line + 1);
       src = second->addr[plane] + second->linesize[plane] * field_line;
-      mtl_memcpy(src, f_addr, linesize);
+      mt_memcpy(src, f_addr, linesize);
     }
   }
 
@@ -942,7 +942,7 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
     uint8_t* src = src_start + src_linesize * line * 2;
     uint8_t* dst = dst_start + dst_linesize * line;
     for (int pg = 0; pg < width / st20_pg.coverage; pg++) {
-      mtl_memcpy(dst, src, st20_pg.size);
+      mt_memcpy(dst, src, st20_pg.size);
       src += 2 * st20_pg.size;
       dst += st20_pg.size;
     }

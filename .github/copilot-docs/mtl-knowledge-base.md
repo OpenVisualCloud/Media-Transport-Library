@@ -213,6 +213,10 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 - **Hugepage** (DPDK): frames, mbufs, mempools, rings — via `rte_malloc` / `rte_zmalloc`
 - **Heap** (libc): control structures, configs, strings — via `mt_rte_zmalloc` wrapper for tracked allocation
 
+### Copy Primitive
+Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
+Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path (the reason the removed `rv_frame_memcpy()` wrapper existed). `mtl_memcpy()` is the public API over the same call.
+
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
 

@@ -1027,7 +1027,7 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
   for (uint32_t col = 0; col < logo->height; col++) {
     void* dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
     void* src = logo->addr[0] + (col * logo->width) / 2 * 5;
-    mtl_memcpy(dst, src, logo_col_size);
+    mt_memcpy(dst, src, logo_col_size);
   }
 
   return 0;

@@ -320,7 +320,7 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   memset(&ipv4_mask, 0, sizeof(ipv4_mask));
 
   memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
-  rte_memcpy(&ipv4_spec.hdr.dst_addr, tap_ctx->ip_addr, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4_spec.hdr.dst_addr, tap_ctx->ip_addr, MTL_IP_ADDR_LEN);
   info("Flow bind to ip address inet %02x %02x %02x %02x \n", tap_ctx->ip_addr[0],
        tap_ctx->ip_addr[1], tap_ctx->ip_addr[2], tap_ctx->ip_addr[3]);
 
@@ -629,7 +629,7 @@ static bool tap_open_device(struct mt_cni_impl* cni,
   memset(mac, 0, sizeof(mac));
   if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPMAC, &mac, sizeof(mac), &mac,
                       sizeof(mac), &len, NULL)) {
-    rte_memcpy(tap_ctx->mac_addr.addr_bytes, mac, 6);
+    mt_memcpy(tap_ctx->mac_addr.addr_bytes, mac, 6);
     info("TAP-Windows Mac address %02x-%02x-%02x-%02x-%02x-%02x\n",
          tap_ctx->mac_addr.addr_bytes[0], tap_ctx->mac_addr.addr_bytes[1],
          tap_ctx->mac_addr.addr_bytes[2], tap_ctx->mac_addr.addr_bytes[3],

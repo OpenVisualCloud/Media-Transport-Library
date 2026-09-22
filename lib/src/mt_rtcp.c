@@ -249,7 +249,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
 
-  rte_memcpy(hdr, &rx->udp_hdr, sizeof(*hdr));
+  mt_memcpy(hdr, &rx->udp_hdr, sizeof(*hdr));
   mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(*hdr);
 
@@ -296,7 +296,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->ptype = MT_RTCP_PTYPE_NACK;
   rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
   rtcp->ssrc = htonl(rx->ssrc);
-  rte_memcpy(rtcp->name, "IMTL", 4);
+  mt_memcpy(rtcp->name, "IMTL", 4);
 
   pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
   pkt->pkt_len = pkt->data_len;
@@ -389,7 +389,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
 
   struct mt_txq_flow flow;
   memset(&flow, 0, sizeof(flow));
-  mtl_memcpy(&flow.dip_addr, &ops->udp_hdr->ipv4.dst_addr, MTL_IP_ADDR_LEN);
+  mt_memcpy(&flow.dip_addr, &ops->udp_hdr->ipv4.dst_addr, MTL_IP_ADDR_LEN);
   flow.dst_port = ntohs(ops->udp_hdr->udp.dst_port) - 1; /* rtp port */
   struct mt_txq_entry* q = mt_txq_get(impl, port, &flow);
   if (!q) {
@@ -409,7 +409,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
 
   tx->ssrc = ops->ssrc;
   snprintf(tx->name, sizeof(tx->name) - 1, "%s", name);
-  rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
+  mt_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
   tx->active = true;
@@ -466,7 +466,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);
   snprintf(rx->name, sizeof(rx->name) - 1, "%s", name);
-  rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
+  mt_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * ops->seq_bitmap_size,
                                               mt_socket_id(impl, port));
