@@ -7,6 +7,15 @@
 
 #include "mt_main.h"
 
+/* The copy of the library. Every copy of lib/ goes through this function, so the
+ * next line is the one place that selects the backend. It is the libc memcpy:
+ * glibc reads the CPU at load time and selects an AVX-512, an AVX2 or an ERMS
+ * path, while rte_memcpy takes the path that DPDK was built for, and rte_memcpy
+ * measured slower on the RX frame write path. The two areas must not overlap. */
+static inline void* mt_memcpy(void* dest, const void* src, size_t n) {
+  return memcpy(dest, src, n);
+}
+
 static inline bool mt_rtp_len_valid(uint16_t len) {
   if (len <= 0 || len > MTL_PKT_MAX_RTP_BYTES)
     return false;

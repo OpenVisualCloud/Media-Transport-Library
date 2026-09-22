@@ -431,7 +431,7 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
   mt_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
   mt_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
   mt_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
-  rte_memcpy(mt_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
+  mt_memcpy(mt_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
 
   return pad;
 }
@@ -441,7 +441,7 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_interface* inf = mt_if(impl, port);
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
-    mtl_memcpy(mac_addr, &inf->k_mac_addr, sizeof(*mac_addr));
+    mt_memcpy(mac_addr, &inf->k_mac_addr, sizeof(*mac_addr));
     return 0;
   }
 

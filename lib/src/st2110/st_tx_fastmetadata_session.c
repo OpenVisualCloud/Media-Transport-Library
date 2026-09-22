@@ -140,10 +140,10 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
 
   /* ether hdr */
   if ((s_port == MTL_SESSION_PORT_P) && (ops->flags & ST41_TX_FLAG_USER_P_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    mt_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_P_TX_MAC\n", __func__);
   } else if ((s_port == MTL_SESSION_PORT_R) && (ops->flags & ST41_TX_FLAG_USER_R_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    mt_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
     ret = mt_dst_ip_mac(impl, dip, d_addr, port, impl->arp_timeout_ms);
@@ -169,8 +169,8 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->packet_id = 0;
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = IPPROTO_UDP;
-  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st41_src_port[s_port]);
@@ -379,7 +379,7 @@ static int tx_fastmetadata_session_update_redundant(
   struct rte_udp_hdr* udp = &hdr->udp;
 
   /* update the hdr: eth, ip, udp */
-  rte_memcpy(hdr, &s->hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
+  mt_memcpy(hdr, &s->hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
   ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
 
@@ -410,16 +410,16 @@ static void tx_fastmetadata_session_build_packet(
   rtp = &hdr->rtp;
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                   sizeof(struct rte_udp_hdr);
 
-  rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
+  mt_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
   /* update rtp */
   rtp->base.seq_number = htons(s->st41_seq_id);
@@ -478,7 +478,7 @@ static void tx_fastmetadata_session_build_rtp_packet(
   struct st41_rtp_hdr* rtp;
 
   rtp = rte_pktmbuf_mtod(pkt, struct st41_rtp_hdr*);
-  rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
+  mt_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
   /* update rtp */
   rtp->base.seq_number = htons(s->st41_seq_id);
@@ -534,9 +534,9 @@ static int tx_fastmetadata_session_rtp_update_packet(
       rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
   if (rtp->tmstamp != s->st41_rtp_time) {
     /* start of a new frame */
@@ -580,9 +580,9 @@ static int tx_fastmetadata_session_build_packet_chain(
   udp = &hdr->udp;
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->hdr[s_port].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->hdr[s_port].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(udp, &s->hdr[s_port].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->hdr[s_port].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->hdr[s_port].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(udp, &s->hdr[s_port].udp, sizeof(hdr->udp));
 
   /* update only for primary */
   if (s_port == MTL_SESSION_PORT_P) {
@@ -1390,7 +1390,7 @@ static int tx_fastmetadata_session_init_queue(struct mtl_main_impl* impl,
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
-    mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
+    mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     flow.gso_sz = ST_PKT_MAX_ETHER_BYTES;
 
@@ -1842,9 +1842,9 @@ static int tx_fastmetadata_ops_prune_down_ports(struct mtl_main_impl* impl,
 
     /* shift all further port-indexed fields one slot down */
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
       ops->udp_src_port[j] = ops->udp_src_port[j + 1];
     }

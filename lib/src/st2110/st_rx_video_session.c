@@ -1561,11 +1561,6 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
   rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
 }
 
-static inline void* rv_frame_memcpy(void* dst, const void* src, size_t n) {
-  /* not use rte_memcpy since it find performance issue on writing frame */
-  return memcpy(dst, src, n);
-}
-
 static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                                enum mtl_session_port s_port, bool ctrl_thread) {
   struct st20_rx_ops* ops = &s->ops;
@@ -1655,7 +1650,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     size_t pkt_hdr_len = (uint8_t*)payload - rte_pktmbuf_mtod(mbuf, uint8_t*);
     if ((line1_length <= slot->frame->user_meta_buffer_size) &&
         (pkt_hdr_len + line1_length <= mbuf->data_len)) {
-      rte_memcpy(slot->frame->user_meta, payload, line1_length);
+      mt_memcpy(slot->frame->user_meta, payload, line1_length);
       slot->frame->user_meta_data_size = line1_length;
     } else {
       s->port_user_stats.stat_pkts_user_meta_err++;
@@ -1800,9 +1795,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     /* copy the payload to target frame by dma or cpu */
     if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
       /* packet crosses line padding, copy two lines data */
-      rv_frame_memcpy(slot->frame->addr + offset, payload, line1_length);
-      rv_frame_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
-                      payload + line1_length, payload_length - line1_length);
+      mt_memcpy(slot->frame->addr + offset, payload, line1_length);
+      mt_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
+                payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
                !mt_dma_full(dma_dev) &&
                !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
@@ -1813,7 +1808,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
                         payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
-        rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
+        mt_memcpy(slot->frame->addr + offset, payload, payload_length);
       } else {
         /* abstract dma dev takes ownership of this mbuf */
         st_rx_mbuf_set_offset(mbuf, offset);
@@ -1825,7 +1820,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         s->port_user_stats.stat_pkts_dma++;
       }
     } else {
-      rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
+      mt_memcpy(slot->frame->addr + offset, payload, payload_length);
     }
   }
 
@@ -2219,7 +2214,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     s->port_user_stats.stat_pkts_offset_dropped++;
     return -EIO;
   }
-  rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
+  mt_memcpy(slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(slot, payload_length);
   s->port_user_stats.common.stat_pkts_received++;
   slot->pkts_received++;
@@ -2416,7 +2411,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   }
 
   if (need_copy) {
-    rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
+    mt_memcpy(slot->frame->addr + offset, payload, payload_length);
   }
 
   rv_slot_add_frame_size(slot, payload_length);
@@ -3032,11 +3027,11 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, ops->interlaced,
                            &bps);
     flow.bytes_per_sec = bps / 8;
-    rte_memcpy(flow.dip_addr, ops->ip_addr[i], MTL_IP_ADDR_LEN);
+    mt_memcpy(flow.dip_addr, ops->ip_addr[i], MTL_IP_ADDR_LEN);
     if (mt_is_multicast_ip(flow.dip_addr))
-      rte_memcpy(flow.sip_addr, ops->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
+      mt_memcpy(flow.sip_addr, ops->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     else
-      rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      mt_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st20_dst_port[i];
     if (rv_is_hdr_split(s)) {
       flow.flags |= MT_RXQ_FLOW_F_HDR_SPLIT;
@@ -3142,8 +3137,8 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   ipv4->type_of_service = 0;
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = IPPROTO_UDP;
-  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st20_dst_port[s_port] + 1);
@@ -4214,9 +4209,9 @@ static int rv_ops_prune_down_ports(struct mtl_main_impl* impl, struct st20_rx_op
 
     /* shift all further port names one slot down */
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
     }
 
@@ -4352,9 +4347,9 @@ static int rv_st22_ops_prune_down_ports(struct mtl_main_impl* impl,
     warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
 
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
     }
 
@@ -4836,7 +4831,7 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
     goto out;
   }
 
-  mtl_memcpy(pass, &s->tp->pass, sizeof(*pass));
+  mt_memcpy(pass, &s->tp->pass, sizeof(*pass));
   ret = 0;
 out:
   MT_HANDLE_RELEASE(s_impl);

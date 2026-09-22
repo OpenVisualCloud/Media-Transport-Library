@@ -1728,7 +1728,7 @@ int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t
     /* handle left pgs */
     int left = new_pg_per_line % new_pg_in_zmm;
     while (left) {
-      mtl_memcpy(dst, src, 5);
+      mt_memcpy(dst, src, 5);
       src += 2 * 5;
       dst += 5;
       left--;

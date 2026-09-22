@@ -857,7 +857,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     }
 
     /* copy user meta to framebuff user_meta */
-    rte_memcpy(framebuff->user_meta, frame->user_meta, frame->user_meta_size);
+    mt_memcpy(framebuff->user_meta, frame->user_meta, frame->user_meta_size);
     framebuff->user_meta_data_size = frame->user_meta_size;
   }
 

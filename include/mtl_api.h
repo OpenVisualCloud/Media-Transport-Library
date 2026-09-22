@@ -1170,14 +1170,15 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore);
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
 
 /**
- * Performance optimized memcpy, e.g. AVX-512.
+ * Copy memory with the copy that the library uses for its own data. Same
+ * contract as the C library memcpy: the two areas must not overlap.
  *
  * @param dest
  *   Pointer to the destination of the data.
  * @param src
  *   Pointer to the source data.
  * @param n
- *   Number of bytes to copy..
+ *   Number of bytes to copy.
  * @return
  *   - Pointer to the destination data.
  */

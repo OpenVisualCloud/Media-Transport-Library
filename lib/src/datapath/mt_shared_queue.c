@@ -187,7 +187,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->idx = idx;
   entry->parent = rsqm;
   entry->mcast_fd = -1;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   if (rsqm->queue_mode == MT_QUEUE_MODE_XDP) {
     rsq_lock(rsq_queue);
@@ -551,7 +551,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->queue_id = q;
   entry->parent = tsqm;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   tsq_lock(tsq_queue);
   if (!tsq_queue->tx_pool) {

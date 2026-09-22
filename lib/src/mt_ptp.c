@@ -871,7 +871,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     struct mt_ipv4_udp* ipv4_hdr =
         rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
     hdr_offset += sizeof(struct mt_ipv4_udp);
-    rte_memcpy(ipv4_hdr, &ptp->dst_udp, sizeof(*ipv4_hdr));
+    mt_memcpy(ipv4_hdr, &ptp->dst_udp, sizeof(*ipv4_hdr));
     ipv4_hdr->udp.src_port = htons(MT_PTP_UDP_EVENT_PORT);
     ipv4_hdr->udp.dst_port = ipv4_hdr->udp.src_port;
     ipv4_hdr->udp.dgram_cksum = 0;
@@ -892,8 +892,8 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   msg->hdr.message_length = htons(sizeof(struct mt_ptp_sync_msg));
   msg->hdr.domain_number = ptp->t1_domain_number;
   msg->hdr.log_message_interval = 0x7f;
-  rte_memcpy(&msg->hdr.source_port_identity, &ptp->our_port_id,
-             sizeof(struct mt_ptp_port_id));
+  mt_memcpy(&msg->hdr.source_port_identity, &ptp->our_port_id,
+            sizeof(struct mt_ptp_port_id));
   ptp->t3_sequence_id++;
   msg->hdr.sequence_id = htons(ptp->t3_sequence_id);
 
@@ -1036,21 +1036,21 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
   if (!ptp->master_initialized) {
     ptp->master_initialized = true;
     ptp->master_utc_offset = ntohs(msg->current_utc_offset);
-    rte_memcpy(&ptp->master_port_id, &msg->hdr.source_port_identity,
-               sizeof(ptp->master_port_id));
-    rte_memcpy(&ptp->master_addr.addr_bytes[0], &ptp->master_port_id.clock_identity.id[0],
-               3);
-    rte_memcpy(&ptp->master_addr.addr_bytes[3], &ptp->master_port_id.clock_identity.id[5],
-               3);
+    mt_memcpy(&ptp->master_port_id, &msg->hdr.source_port_identity,
+              sizeof(ptp->master_port_id));
+    mt_memcpy(&ptp->master_addr.addr_bytes[0], &ptp->master_port_id.clock_identity.id[0],
+              3);
+    mt_memcpy(&ptp->master_addr.addr_bytes[3], &ptp->master_port_id.clock_identity.id[5],
+              3);
     info("%s(%d), master initialized, mode %s utc_offset %d domain_number %d\n", __func__,
          port, ptp_mode_str(mode), ptp->master_utc_offset, msg->hdr.domain_number);
     ptp_print_port_id(port, &ptp->master_port_id);
     if (mode == MT_PTP_L4) {
       struct mt_ipv4_udp* dst_udp = &ptp->dst_udp;
 
-      rte_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
-      rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
-      rte_memcpy(&dst_udp->ip.dst_addr, &ptp->mcast_group_addr[0], MTL_IP_ADDR_LEN);
+      mt_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
+      mt_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
+      mt_memcpy(&dst_udp->ip.dst_addr, &ptp->mcast_group_addr[0], MTL_IP_ADDR_LEN);
       dst_udp->ip.total_length =
           htons(sizeof(struct mt_ipv4_udp) + sizeof(struct mt_ptp_sync_msg));
       dst_udp->ip.hdr_checksum = 0;
@@ -1289,7 +1289,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   our_port_id->port_number = htons(port_id);  // now always
   ptp_print_port_id(port_id, our_port_id);
 
-  rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  mt_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
 
   ptp->impl = impl;
   ptp->port = port;
@@ -1353,8 +1353,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     /* create rx socket queue if no CNI path */
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
-    rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    mt_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
+    mt_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.flags = MT_RXQ_FLOW_F_FORCE_SOCKET;
     flow.dst_port = MT_PTP_UDP_GEN_PORT;
 

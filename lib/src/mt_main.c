@@ -491,12 +491,12 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   mt_instance_init(impl, p);
 
-  rte_memcpy(&impl->user_para, p, sizeof(*p));
+  mt_memcpy(&impl->user_para, p, sizeof(*p));
   impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
   /* use sleep zero if sleep us is smaller than this thresh */
   impl->var_para.sch_zero_sleep_threshold_us = 200;
 
-  rte_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
+  mt_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
   impl->type = MT_HANDLE_MAIN;
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
@@ -514,14 +514,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
         goto err_exit;
       }
       /* update the sip and net mask */
-      rte_memcpy(impl->user_para.sip_addr[i], if_ip, MTL_IP_ADDR_LEN);
-      rte_memcpy(impl->user_para.netmask[i], if_netmask, MTL_IP_ADDR_LEN);
+      mt_memcpy(impl->user_para.sip_addr[i], if_ip, MTL_IP_ADDR_LEN);
+      mt_memcpy(impl->user_para.netmask[i], if_netmask, MTL_IP_ADDR_LEN);
       if (!mt_ip_to_u32(impl->user_para.gateway[i])) {
         /* try to fetch gateway */
         ret = mt_socket_get_if_gateway(if_name, if_gateway);
         if (ret >= 0) {
           info("%s(%d), get gateway succ from if\n", __func__, i);
-          rte_memcpy(impl->user_para.gateway[i], if_gateway, MTL_IP_ADDR_LEN);
+          mt_memcpy(impl->user_para.gateway[i], if_gateway, MTL_IP_ADDR_LEN);
         }
       }
     } else { /* MTL_PMD_DPDK_USER */
@@ -763,7 +763,7 @@ int mtl_abort(mtl_handle mt) {
 }
 
 void* mtl_memcpy(void* dest, const void* src, size_t n) {
-  return rte_memcpy(dest, src, n);
+  return mt_memcpy(dest, src, n);
 }
 
 void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
@@ -1281,9 +1281,9 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
     return -EINVAL;
   }
 
-  if (ip) rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  if (netmask) rte_memcpy(netmask, mt_sip_netmask(impl, port), MTL_IP_ADDR_LEN);
-  if (gateway) rte_memcpy(gateway, mt_sip_gateway(impl, port), MTL_IP_ADDR_LEN);
+  if (ip) mt_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  if (netmask) mt_memcpy(netmask, mt_sip_netmask(impl, port), MTL_IP_ADDR_LEN);
+  if (gateway) mt_memcpy(gateway, mt_sip_gateway(impl, port), MTL_IP_ADDR_LEN);
   return 0;
 }
 

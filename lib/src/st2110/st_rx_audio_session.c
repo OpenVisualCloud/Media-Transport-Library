@@ -504,7 +504,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     return 0;
   }
 
-  rte_memcpy(s->st30_cur_frame->addr + (size_t)idx * s->pkt_len, payload, s->pkt_len);
+  mt_memcpy(s->st30_cur_frame->addr + (size_t)idx * s->pkt_len, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
   s->port_user_stats.common.stat_pkts_received++;
 
@@ -867,11 +867,11 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     s->priv[i].s_port = i;
 
     memset(&flow, 0, sizeof(flow));
-    rte_memcpy(flow.dip_addr, s->ops.ip_addr[i], MTL_IP_ADDR_LEN);
+    mt_memcpy(flow.dip_addr, s->ops.ip_addr[i], MTL_IP_ADDR_LEN);
     if (mt_is_multicast_ip(flow.dip_addr))
-      rte_memcpy(flow.sip_addr, s->ops.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
+      mt_memcpy(flow.sip_addr, s->ops.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     else
-      rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      mt_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st30_dst_port[i];
     if (mt_has_cni_rx(impl, port)) flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
 
@@ -1492,9 +1492,9 @@ static int rx_audio_ops_prune_down_ports(struct mtl_main_impl* impl,
 
     /* shift all further port names one slot down */
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->ip_addr[j], ops->ip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->mcast_sip_addr[j], ops->mcast_sip_addr[j + 1], MTL_IP_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
     }
 
