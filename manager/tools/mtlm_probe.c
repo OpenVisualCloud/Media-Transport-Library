@@ -298,7 +298,7 @@ static int find_free_lcore(mtlm_client* client) {
 static void wire_init(mtl_message_t* msg, uint32_t type, uint32_t body_len) {
   memset(msg, 0, sizeof(*msg));
   msg->header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg->header.type = (mtl_message_type_t)htonl(type);
+  msg->header.type = htonl(type);
   msg->header.body_len = htonl(body_len);
 }
 

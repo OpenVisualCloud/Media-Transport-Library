@@ -67,7 +67,7 @@ static int recv_all(int fd, void* buf, size_t len) {
 static void msg_init(mtl_message_t* msg, mtl_message_type_t type, uint32_t body_len) {
   memset(msg, 0, sizeof(*msg));
   msg->header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg->header.type = (mtl_message_type_t)htonl((uint32_t)type);
+  msg->header.type = htonl((uint32_t)type);
   msg->header.body_len = htonl(body_len);
 }
 
@@ -92,7 +92,7 @@ static int exchange(mtlm_client* client, mtl_message_t* msg, mtl_message_type_t 
   if (ret < 0) return ret;
 
   if (ntohl(msg->header.magic) != MTL_MANAGER_MAGIC) return -EBADMSG;
-  if (ntohl((uint32_t)msg->header.type) != (uint32_t)expect) return -EBADMSG;
+  if (ntohl(msg->header.type) != (uint32_t)expect) return -EBADMSG;
 
   return 0;
 }

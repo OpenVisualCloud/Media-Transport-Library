@@ -98,7 +98,15 @@ typedef enum {
 /* message header */
 typedef struct {
   uint32_t magic;
-  mtl_message_type_t type;
+  /**
+   * One mtl_message_type_t value, in network byte order.
+   *
+   * The field is a uint32_t and not the enum, because the byte order makes the
+   * number on the wire a value the enum does not have. Reading such a number
+   * through an enum lvalue is undefined, and a build with
+   * -fsanitize=undefined stops on it.
+   */
+  uint32_t type;
   uint32_t body_len;
 } mtl_message_header_t;
 

@@ -25,14 +25,14 @@ inline mtl_message_t wire_request(mtl_message_type_t type, uint32_t body_len) {
 
   std::memset(&msg, 0, sizeof(msg));
   msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = static_cast<mtl_message_type_t>(htonl(static_cast<uint32_t>(type)));
+  msg.header.type = htonl(static_cast<uint32_t>(type));
   msg.header.body_len = htonl(body_len);
   return msg;
 }
 
 /** Type of a record the manager sent. */
 inline uint32_t wire_type(const mtl_message_t& msg) {
-  return ntohl(static_cast<uint32_t>(msg.header.type));
+  return ntohl(msg.header.type);
 }
 
 /** Response field of a record the manager sent. */
