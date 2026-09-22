@@ -213,7 +213,19 @@ std::shared_ptr<mtl_interface> mtl_interface_registry::get(unsigned int ifindex,
                                                            bool require_xdp) {
   auto it = interfaces.find(ifindex);
   if (it != interfaces.end()) {
-    if (auto live = it->second.lock()) return live;
+    if (auto live = it->second.lock()) {
+      /* A caller that needs the program must not get an interface without one.
+       * An earlier caller that needed no program takes the interface over even
+       * when the program cannot attach, and handing that one back reports a
+       * success the caller cannot use: every later xsk map and filter call on it
+       * answers -ENOTSUP. */
+      if (require_xdp && !live->has_xdp()) {
+        logger::log(log_level::ERROR, "[Interface " + std::to_string(ifindex) +
+                                          "] In use without an XDP program.");
+        return nullptr;
+      }
+      return live;
+    }
     interfaces.erase(it); /* the last user went away, so build a new one */
   }
 

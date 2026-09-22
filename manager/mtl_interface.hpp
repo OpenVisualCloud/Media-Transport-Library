@@ -143,8 +143,11 @@ class mtl_interface_registry {
   /**
    * Interface for `ifindex`, created when no live one exists.
    *
-   * @param require_xdp Passed to the constructor on creation. It has no effect
-   *                    on an interface that already exists.
+   * @param require_xdp Fail when the XDP program is not on the interface. On
+   *                    creation the constructor makes the program attach. For an
+   *                    interface that already exists the call fails when it has
+   *                    no program, because an earlier caller that needed none
+   *                    takes an interface over without one.
    * @return The interface, or nullptr when it cannot be taken over.
    */
   std::shared_ptr<mtl_interface> get(unsigned int ifindex, bool require_xdp);
