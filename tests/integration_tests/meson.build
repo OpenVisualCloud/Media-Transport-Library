@@ -17,3 +17,7 @@ sources += st20_sources
 subdir('noctx')
 sources += noctx_sources
 test_inc = include_directories('.', 'noctx', 'st20')
+
+# This one sets manager_api_sources for its own binary. It adds nothing to
+# `sources`, because KahawaiTest needs a NIC and this test does not.
+subdir('manager')

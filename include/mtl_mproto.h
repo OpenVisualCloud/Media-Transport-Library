@@ -2,6 +2,22 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+/**
+ * @file mtl_mproto.h
+ *
+ * Wire protocol between an MTL instance (client) and MtlManager (server).
+ *
+ * The transport is a SOCK_STREAM AF_UNIX socket. Every request and every
+ * response is one fixed-size mtl_message_t record, so framing is "read exactly
+ * sizeof(mtl_message_t) bytes". A stream socket may coalesce records or split
+ * one, therefore both peers must buffer until a whole record is present and
+ * must then consume every whole record in the buffer.
+ *
+ * All multi-byte fields travel in network byte order.
+ *
+ * For the callable client API and the socket path rules, see mtlm_api.h.
+ */
+
 #ifndef _MTL_MPROTO_HEAD_H_
 #define _MTL_MPROTO_HEAD_H_
 
@@ -13,9 +29,44 @@
 extern "C" {
 #endif
 
+/**
+ * Socket path of a system-wide MtlManager, used when the manager runs as root.
+ * Do not hard-code it: call mtlm_sock_path() from mtlm_api.h, which also
+ * honours MTL_MANAGER_SOCK_PATH and XDG_RUNTIME_DIR so that a manager and a
+ * client can both run without root.
+ */
 #define MTL_MANAGER_SOCK_PATH "/var/run/imtl/mtl_manager.sock"
 
+/** Directory that holds the system-wide socket. */
+#define MTL_MANAGER_SOCK_DIR "/var/run/imtl"
+
+/** File name of the socket, appended to whichever directory is in use. */
+#define MTL_MANAGER_SOCK_NAME "mtl_manager.sock"
+
+/** Environment variable that overrides the socket path for both peers. */
+#define MTL_MANAGER_SOCK_ENV "MTL_MANAGER_SOCK_PATH"
+
 #define MTL_MANAGER_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
+
+/**
+ * Protocol version. Bump the minor for a backward compatible addition, the
+ * major for a change of an existing record layout. It is reported by the
+ * manager in its startup log and by mtlm_proto_version().
+ */
+#define MTL_MANAGER_PROTO_VERSION_MAJOR (1)
+#define MTL_MANAGER_PROTO_VERSION_MINOR (1)
+
+/** Number of interface indexes a single register message can carry. */
+#define MTL_MANAGER_MAX_IF (8)
+
+/**
+ * Number of lcores the manager accounts for. mtlm_lcore_get() and
+ * mtlm_lcore_put() answer -EINVAL for an id of this value or more.
+ */
+#define MTL_MANAGER_MAX_LCORE (128)
+
+/** Length of the hostname field, including the terminating zero. */
+#define MTL_MANAGER_HOSTNAME_LEN (64)
 
 #pragma pack(push, 1)
 
@@ -41,6 +92,7 @@ typedef enum {
   MTL_MSG_TYPE_RESPONSE,
   MTL_MSG_TYPE_IF_QUEUE_ID,
   MTL_MSG_TYPE_IF_FLOW_ID,
+  MTL_MSG_TYPE_HEARTBEAT_ACK,
 } mtl_message_type_t;
 
 /* message header */
@@ -53,9 +105,9 @@ typedef struct {
 typedef struct {
   pid_t pid;
   uid_t uid;
-  char hostname[64];
+  char hostname[MTL_MANAGER_HOSTNAME_LEN];
   uint16_t num_if;
-  unsigned int ifindex[8];
+  unsigned int ifindex[MTL_MANAGER_MAX_IF];
 } mtl_register_message_t;
 
 typedef struct {
@@ -99,6 +151,9 @@ typedef struct {
 } mtl_message_t;
 
 #pragma pack(pop)
+
+/** Size of one framed record on the wire. */
+#define MTL_MANAGER_MSG_SIZE (sizeof(mtl_message_t))
 
 #if defined(__cplusplus)
 }

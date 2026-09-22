@@ -2,3 +2,8 @@
 # Copyright 2023 Intel Corporation
 
 option('enable_asan', type: 'boolean', value: false, description: 'enable/disable address sanitizer, debug usage only')
+option('enable_tests', type: 'boolean', value: true, description: 'build the manager unit tests when gtest is available')
+option('install_service', type: 'boolean', value: false, description: 'let ninja install put the systemd units in place; off by default because the units go outside the prefix')
+option('systemd_system_unit_dir', type: 'string', value: '/lib/systemd/system', description: 'directory for the system service file')
+option('systemd_user_unit_dir', type: 'string', value: '/lib/systemd/user', description: 'directory for the per user service file')
+option('tmpfiles_dir', type: 'string', value: '/usr/lib/tmpfiles.d', description: 'directory for the tmpfiles rule that makes the socket directory')

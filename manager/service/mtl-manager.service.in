@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+#
+# The system MTL Manager. It serves every user of the host on
+# /run/imtl/mtl_manager.sock.
+#
+# To let only a chosen set of users reach it, make a group, put the users in it,
+# and put this line in /etc/mtl/manager.env:
+#   MTL_MANAGER_ARGS=--socket-group mtl
+# Without that line the socket is open to every local user, which is the same
+# as the manager before the service existed.
+
+[Unit]
+Description=MTL Manager, arbitrates the lcores and the NIC resources of the MTL instances
+Documentation=https://github.com/OpenVisualCloud/Media-Transport-Library
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/mtl/manager.env
+ExecStart=@BINDIR@/MtlManager $MTL_MANAGER_ARGS
+# systemd makes /run/imtl before the manager starts, and takes it away after.
+RuntimeDirectory=imtl
+RuntimeDirectoryMode=0755
+Restart=on-failure
+RestartSec=2s
+# The manager stops on SIGTERM and takes its socket file away.
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+# The service runs as root, because the XDP programs and the ethtool flow rules
+# need CAP_NET_ADMIN and CAP_BPF, and a load needs CAP_SYS_ADMIN on some
+# kernels. A user who needs no such rule can run a private manager instead:
+#   systemctl --user enable --now mtl-manager
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

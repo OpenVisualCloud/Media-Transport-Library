@@ -1252,8 +1252,9 @@ struct mtl_main_impl {
   int arp_timeout_ms;
   bool privileged; /* if app running with root privilege */
 
-  /* connect to mtl manager */
-  int instance_fd;
+  /* Client of the MTL Manager, a mtlm_client*, or NULL in single instance mode.
+   * It is void* so this header needs no manager header. */
+  void* instance_client;
 };
 
 static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* impl) {
@@ -1265,7 +1266,7 @@ static inline bool mt_is_privileged(struct mtl_main_impl* impl) {
 }
 
 static inline bool mt_is_manager_connected(struct mtl_main_impl* impl) {
-  return impl->instance_fd > 0;
+  return impl->instance_client != NULL;
 }
 
 static inline struct mt_interface* mt_if(struct mtl_main_impl* impl, enum mtl_port port) {

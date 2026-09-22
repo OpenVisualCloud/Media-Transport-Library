@@ -6,276 +6,159 @@
 
 #ifndef WINDOWSENV
 
-#include <sys/un.h>
+/*
+ * The library side of the MtlManager IPC.
+ *
+ * Every call goes through the client API of the manager, mtlm_api.h, whose
+ * source the library compiles in. There is one implementation of the record
+ * layout, the byte order and the socket path search, so the library and the
+ * manager cannot disagree about any of them.
+ *
+ * The path comes from mtlm_client_create(NULL), which looks at
+ * $MTL_MANAGER_SOCK_PATH, then the per-user runtime directory, then the system
+ * directory. That is why an instance reaches a manager that runs without root.
+ */
 
-#include "../manager/mtl_mproto.h"
 #include "mt_log.h"
 #include "mt_util.h"
+#include "mtlm_api.h"
 
-static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
-                                             mtl_message_type_t response_type) {
-  ssize_t ret = send(sock, msg, sizeof(*msg), 0);
-  if (ret < 0) {
-    err("%s, send message fail\n", __func__);
-    return ret;
-  }
-
-  memset(msg, 0, sizeof(*msg));
-  ret = recv(sock, msg, sizeof(*msg), 0);
-  if (ret < 0 || ntohl(msg->header.magic) != MTL_MANAGER_MAGIC ||
-      ntohl(msg->header.type) != response_type) {
-    err("%s, recv response fail\n", __func__);
-    return -EIO;
-  }
-
-  return ntohl(msg->body.response_msg.response);
+static inline mtlm_client* instance_client(struct mtl_main_impl* impl) {
+  return (mtlm_client*)impl->instance_client;
 }
 
 int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
-  int sock = impl->instance_fd;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_PUT_LCORE);
-  msg.body.lcore_msg.lcore = htons(lcore_id);
-  msg.header.body_len = sizeof(msg.body.lcore_msg);
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+  return mtlm_lcore_put(instance_client(impl), lcore_id);
 }
 
 int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
-  int sock = impl->instance_fd;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_GET_LCORE);
-  msg.body.lcore_msg.lcore = htons(lcore_id);
-  msg.header.body_len = htonl(sizeof(mtl_lcore_message_t));
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+  return mtlm_lcore_get(instance_client(impl), lcore_id);
 }
 
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
-  int ret;
-  int xsks_map_fd = -1;
-  int sock = impl->instance_fd;
+  int ret = mtlm_xsk_map_fd(instance_client(impl), ifindex);
 
-  mtl_message_t mtl_msg;
-  mtl_msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  mtl_msg.header.type = htonl(MTL_MSG_TYPE_IF_XSK_MAP_FD);
-  mtl_msg.body.if_msg.ifindex = htonl(ifindex);
-  mtl_msg.header.body_len = htonl(sizeof(mtl_if_message_t));
+  if (ret < 0) err("%s(%u), no xsks map fd, %s\n", __func__, ifindex, mtlm_strerror(ret));
 
-  ret = send(sock, &mtl_msg, sizeof(mtl_msg), 0);
-  if (ret < 0) {
-    err("%s(%u), send message fail\n", __func__, ifindex);
-    return ret;
-  }
-
-  char cms[CMSG_SPACE(sizeof(int))];
-  struct cmsghdr* cmsg;
-  struct msghdr msg;
-  struct iovec iov;
-  int value;
-  int len;
-
-  iov.iov_base = &value;
-  iov.iov_len = sizeof(int);
-
-  memset(&msg, 0, sizeof(msg));
-  msg.msg_iov = &iov;
-  msg.msg_iovlen = 1;
-  msg.msg_control = (caddr_t)cms;
-  msg.msg_controllen = sizeof(cms);
-
-  len = recvmsg(sock, &msg, 0);
-  if (len < 0) {
-    err("%s(%u), recv message fail\n", __func__, ifindex);
-    return len;
-  }
-
-  cmsg = CMSG_FIRSTHDR(&msg);
-  if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
-      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
-    err("%s(%u), invalid cmsg for map fd\n", __func__, ifindex);
-    return -EINVAL;
-  }
-
-  xsks_map_fd = *(int*)CMSG_DATA(cmsg);
-  if (xsks_map_fd < 0) {
-    err("%s(%u), get xsks_map_fd fail, %s\n", __func__, ifindex, strerror(errno));
-    return errno;
-  }
-
-  return xsks_map_fd;
+  return ret;
 }
 
 int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
                                      uint16_t dst_port, bool add) {
-  int sock = impl->instance_fd;
+  if (add) return mtlm_udp_dp_filter_add(instance_client(impl), ifindex, dst_port);
 
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type =
-      add ? htonl(MTL_MSG_TYPE_ADD_UDP_DP_FILTER) : htonl(MTL_MSG_TYPE_DEL_UDP_DP_FILTER);
-  msg.body.udp_dp_filter_msg.ifindex = htonl(ifindex);
-  msg.body.udp_dp_filter_msg.port = htons(dst_port);
-  msg.header.body_len = htonl(sizeof(mtl_udp_dp_filter_message_t));
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+  return mtlm_udp_dp_filter_del(instance_client(impl), ifindex, dst_port);
 }
 
 int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
-  int sock = impl->instance_fd;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_IF_GET_QUEUE);
-  msg.body.if_msg.ifindex = htonl(ifindex);
-  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_QUEUE_ID);
+  return mtlm_queue_get(instance_client(impl), ifindex);
 }
 
 int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
                           uint16_t queue_id) {
-  int sock = impl->instance_fd;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_IF_PUT_QUEUE);
-  msg.body.if_msg.ifindex = htonl(ifindex);
-  msg.body.if_msg.queue_id = htons(queue_id);
-  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+  return mtlm_queue_put(instance_client(impl), ifindex, queue_id);
 }
 
 int mt_instance_add_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
                          uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
-  int sock = impl->instance_fd;
+  struct mtlm_flow flow;
 
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_IF_ADD_FLOW);
-  msg.body.if_msg.ifindex = htonl(ifindex);
-  msg.body.if_msg.queue_id = htons(queue_id);
-  msg.body.if_msg.flow_type = htonl(flow_type);
-  msg.body.if_msg.src_ip = htonl(src_ip);
-  msg.body.if_msg.dst_ip = htonl(dst_ip);
-  msg.body.if_msg.src_port = htons(src_port);
-  msg.body.if_msg.dst_port = htons(dst_port);
-  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
+  memset(&flow, 0, sizeof(flow));
+  flow.ifindex = ifindex;
+  flow.queue_id = queue_id;
+  flow.flow_type = flow_type;
+  /* The two addresses stay as they are. The caller reads them out of a
+   * mt_rxq_flow, where they are already network byte order, which is the order
+   * ethtool wants. A swap here and a swap back in the manager was the old way,
+   * and it broke as soon as one of the two changed. */
+  flow.src_ip = src_ip;
+  flow.dst_ip = dst_ip;
+  flow.src_port = src_port;
+  flow.dst_port = dst_port;
 
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_FLOW_ID);
+  return mtlm_flow_add(instance_client(impl), &flow);
 }
 
 int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint32_t flow_id) {
-  int sock = impl->instance_fd;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_IF_DEL_FLOW);
-  msg.body.if_msg.ifindex = htonl(ifindex);
-  msg.body.if_msg.flow_id = htonl(flow_id);
-  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
-
-  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+  return mtlm_flow_del(instance_client(impl), ifindex, flow_id);
 }
 
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
-  impl->instance_fd = -1;
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock < 0) {
-    err("%s, create socket fail %d\n", __func__, sock);
-    return sock;
-  }
-
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
-  int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
-  if (ret < 0) {
-    warn("%s, connect to manager fail, assume single instance mode\n", __func__);
-    close(sock);
-    return ret;
-  }
-
   struct mt_user_info* u_info = &impl->u_info;
-
-  mtl_message_t msg;
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = htonl(MTL_MSG_TYPE_REGISTER);
-  msg.header.body_len = sizeof(mtl_register_message_t);
-
-  mtl_register_message_t* reg_msg = &msg.body.register_msg;
-  reg_msg->pid = htonl(u_info->pid);
-  reg_msg->uid = htonl(getuid());
-  strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname) - 1);
-  reg_msg->hostname[sizeof(reg_msg->hostname) - 1] = '\0';
-
-  /* manager will load xdp program for afxdp interfaces */
+  unsigned int ifindex[MTL_MANAGER_MAX_IF];
+  struct mtlm_register_args args;
+  mtlm_client* client;
   uint16_t num_xdp_if = 0;
-  for (int i = 0; i < p->num_ports; i++) {
-    if (mtl_pmd_is_af_xdp(p->pmd[i])) {
-      const char* if_name;
-      if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
-        if_name = mt_native_afxdp_port2if(p->port[i]);
-      else
-        if_name = mt_dpdk_afxdp_port2if(p->port[i]);
-      reg_msg->ifindex[num_xdp_if] = htonl(if_nametoindex(if_name));
-      num_xdp_if++;
-    }
-  }
-  reg_msg->num_if = htons(num_xdp_if);
+  int ret;
 
-  int response = instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
-  if (response != 0) {
-    err("%s, register fail\n", __func__);
-    close(sock);
+  impl->instance_client = NULL;
+
+  client = mtlm_client_create(NULL);
+  if (client == NULL) {
+    warn("%s, no manager answers, assume single instance mode\n", __func__);
     return -EIO;
   }
 
-  impl->instance_fd = sock;
+  /* The manager loads the XDP program of each AF_XDP interface, so it must know
+   * them before the first queue request. */
+  for (int i = 0; i < p->num_ports; i++) {
+    const char* if_name;
 
-  info("%s, succ\n", __func__);
+    if (!mtl_pmd_is_af_xdp(p->pmd[i])) continue;
+    if (num_xdp_if >= MTL_MANAGER_MAX_IF) {
+      err("%s, more than %d af_xdp ports\n", __func__, MTL_MANAGER_MAX_IF);
+      mtlm_client_destroy(client);
+      return -EINVAL;
+    }
+
+    if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
+      if_name = mt_native_afxdp_port2if(p->port[i]);
+    else
+      if_name = mt_dpdk_afxdp_port2if(p->port[i]);
+    ifindex[num_xdp_if] = if_nametoindex(if_name);
+    num_xdp_if++;
+  }
+
+  memset(&args, 0, sizeof(args));
+  args.pid = u_info->pid;
+  args.uid = (int)getuid();
+  args.hostname = u_info->hostname;
+  args.ifindex = ifindex;
+  args.num_if = num_xdp_if;
+
+  ret = mtlm_register(client, &args);
+  if (ret < 0) {
+    err("%s, register fail, %s\n", __func__, mtlm_strerror(ret));
+    mtlm_client_destroy(client);
+    return ret;
+  }
+
+  impl->instance_client = client;
+  info("%s, connected to the manager on %s\n", __func__, mtlm_client_sock_path(client));
 
   return 0;
 }
 
 int mt_instance_uinit(struct mtl_main_impl* impl) {
-  int sock = impl->instance_fd;
-  if (sock <= 0) return -EIO;
+  mtlm_client* client = instance_client(impl);
 
-  return close(sock);
+  if (client == NULL) return -EIO;
+
+  impl->instance_client = NULL;
+  mtlm_client_destroy(client);
+  return 0;
 }
 
 bool mtl_is_manager_alive(void) {
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock < 0) {
-    err("%s, create socket fail %d\n", __func__, sock);
-    return false;
-  }
-  struct sockaddr_un addr;
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
-  int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
-  if (ret < 0) {
-    err("%s, MTL manager is not alive\n", __func__);
-    close(sock);
-    return false;
-  }
-
-  close(sock);
-  return true;
+  return mtlm_manager_alive(NULL);
 }
 
 #else /* not supported on Windows */
 
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
-  impl->instance_fd = -1;
+  impl->instance_client = NULL;
   MTL_MAY_UNUSED(p);
   return -ENOTSUP;
 }
@@ -300,6 +183,15 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
+  return -ENOTSUP;
+}
+
+int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
+                                     uint16_t dst_port, bool add) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(dst_port);
+  MTL_MAY_UNUSED(add);
   return -ENOTSUP;
 }
 
