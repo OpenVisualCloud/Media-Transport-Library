@@ -15,6 +15,8 @@
  * The test binds a socket of its own and answers by hand. No manager runs.
  */
 
+#include <dirent.h>
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -220,9 +222,13 @@ TEST_F(ClientWireTest, FlowAddSendsAddressesInNetworkOrderAndPortsInHostOrder) {
   EXPECT_EQ(ntohs(sent.body.if_msg.queue_id), 3);
   EXPECT_EQ(ntohl(sent.body.if_msg.flow_type), 0x02u);
   /* The caller hands over an address that is already network byte order, which
-   * is the order ethtool wants, so the client must pass it through untouched. */
-  EXPECT_EQ(sent.body.if_msg.src_ip, 0x0100000au);
-  EXPECT_EQ(sent.body.if_msg.dst_ip, 0x0200000au);
+   * is the order ethtool wants, so the client must pass it through untouched.
+   * Copy each one out first: the record is packed, and EXPECT_EQ binds a
+   * reference to its argument, which a field of a packed struct cannot give. */
+  uint32_t src_ip = sent.body.if_msg.src_ip;
+  uint32_t dst_ip = sent.body.if_msg.dst_ip;
+  EXPECT_EQ(src_ip, 0x0100000au);
+  EXPECT_EQ(dst_ip, 0x0200000au);
   /* A port is a number to the caller, so it travels like every other number. */
   EXPECT_EQ(ntohs(sent.body.if_msg.src_port), 1234);
   EXPECT_EQ(ntohs(sent.body.if_msg.dst_port), 5678);
@@ -342,4 +348,107 @@ TEST_F(ClientWireTest, ARecordSplitByTheManagerIsPutBackTogether) {
 
   worker.join();
   EXPECT_EQ(result, -EBUSY);
+}
+
+/*
+ * The one message whose answer carries a descriptor.
+ *
+ * Nothing above covers it, because it does not use the exchange() helper: the
+ * answer is one data byte plus control data, and not a record. The cases below
+ * answer it by hand, and count the open descriptors of the process, because a
+ * descriptor the client takes and does not give back is a leak no return value
+ * reports. A manager runs for months, and an MTL instance asks for this map on
+ * every port it opens.
+ */
+
+namespace {
+
+/** Number of open descriptors of this process. */
+int open_fd_count() {
+  DIR* dir = opendir("/proc/self/fd");
+  int count = 0;
+
+  if (dir == nullptr) return -errno;
+  while (readdir(dir) != nullptr) count++;
+  closedir(dir);
+  return count;
+}
+
+/** Answer an IF_XSK_MAP_FD request with `count` descriptors in one SCM_RIGHTS. */
+int send_map_fds(int fd, const int* fds, size_t count) {
+  char control[CMSG_SPACE(sizeof(int) * 4)] = {0};
+  struct msghdr hdr = {};
+  struct cmsghdr* cmsg;
+  struct iovec iov;
+  char data[1] = {' '};
+
+  iov.iov_base = data;
+  iov.iov_len = sizeof(data);
+  hdr.msg_iov = &iov;
+  hdr.msg_iovlen = 1;
+  hdr.msg_control = control;
+  hdr.msg_controllen = CMSG_SPACE(sizeof(int) * count);
+
+  cmsg = CMSG_FIRSTHDR(&hdr);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count);
+  std::memcpy(CMSG_DATA(cmsg), fds, sizeof(int) * count);
+
+  return sendmsg(fd, &hdr, 0) == 1 ? 0 : -errno;
+}
+
+} /* namespace */
+
+TEST_F(ClientWireTest, TheXskMapDescriptorArrivesAndCannotOutliveAnExec) {
+  mtl_message_t sent;
+  int result = 0;
+  int passed = dup(STDIN_FILENO);
+  std::thread worker([&]() { result = mtlm_xsk_map_fd(client, 3); });
+
+  ASSERT_GE(passed, 0);
+  ASSERT_EQ(wire_read(conn_fd, sent), 0);
+  EXPECT_EQ(wire_type(sent), static_cast<uint32_t>(MTL_MSG_TYPE_IF_XSK_MAP_FD));
+  EXPECT_EQ(ntohl(sent.body.if_msg.ifindex), 3u);
+  ASSERT_EQ(send_map_fds(conn_fd, &passed, 1), 0);
+
+  worker.join();
+  close(passed);
+  ASSERT_GE(result, 0) << std::strerror(-result);
+
+  /* MTL runs a child process of its own, and the map of an AF_XDP port is not
+   * for it. Without MSG_CMSG_CLOEXEC on the receive, every descriptor the
+   * manager hands over stays open across each exec the caller makes. */
+  int flags = fcntl(result, F_GETFD);
+  EXPECT_GE(flags, 0);
+  EXPECT_TRUE(flags & FD_CLOEXEC) << "the map descriptor survives an exec";
+  close(result);
+}
+
+TEST_F(ClientWireTest, ARefusedAnswerLeavesNoDescriptorBehind) {
+  int before = open_fd_count();
+  mtl_message_t sent;
+  int result = 0;
+  int passed[2] = {dup(STDIN_FILENO), dup(STDIN_FILENO)};
+  std::thread worker([&]() { result = mtlm_xsk_map_fd(client, 3); });
+
+  ASSERT_GT(before, 0);
+  ASSERT_GE(passed[0], 0);
+  ASSERT_GE(passed[1], 0);
+  ASSERT_EQ(wire_read(conn_fd, sent), 0);
+
+  /* Two descriptors in the control data. The client asked for one, so it must
+   * refuse the answer, and it must close what the kernel already put in this
+   * process. A manager of another version, or one with a fault, is enough to
+   * make this happen, and an instance that asks in a loop then runs out of
+   * descriptors. */
+  ASSERT_EQ(send_map_fds(conn_fd, passed, 2), 0);
+
+  worker.join();
+  close(passed[0]);
+  close(passed[1]);
+  EXPECT_LT(result, 0) << "the client took an answer it could not read";
+  if (result >= 0) close(result);
+
+  EXPECT_EQ(open_fd_count(), before) << "a refused answer left a descriptor open";
 }

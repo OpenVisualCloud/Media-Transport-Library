@@ -354,7 +354,7 @@ int mtlm_xsk_map_fd(mtlm_client* client, unsigned int ifindex) {
   mtl_message_t msg;
   struct iovec iov;
   char data[1] = {0};
-  int ret, fd;
+  int ret, fd, taken;
 
   if (client == NULL || client->fd < 0) return -EINVAL;
 
@@ -373,23 +373,52 @@ int mtlm_xsk_map_fd(mtlm_client* client, unsigned int ifindex) {
   hdr.msg_control = control;
   hdr.msg_controllen = sizeof(control);
 
+  /* MSG_CMSG_CLOEXEC: the map of an AF_XDP port is not for a child process, and
+   * the caller runs one. Without it every descriptor the manager hands over
+   * stays open across each exec the caller makes. */
   do {
-    ret = (int)recvmsg(client->fd, &hdr, 0);
+    ret = (int)recvmsg(client->fd, &hdr, MSG_CMSG_CLOEXEC);
   } while (ret < 0 && errno == EINTR);
 
   if (ret < 0) return -errno;
   if (ret == 0) return -ECONNRESET;
 
-  cmsg = CMSG_FIRSTHDR(&hdr);
-  if (cmsg == NULL || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
-      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+  /* The kernel puts every descriptor of the control data in this process before
+   * the call returns, whatever the count. So close each one that is not the
+   * answer, or the reply of a manager of another version leaks a descriptor on
+   * every call, and an instance that opens ports in a loop runs out.
+   *
+   * The answer is one descriptor. Any other count means the peer is not a
+   * manager this version can talk to, so keep none of it. */
+  fd = -1;
+  taken = 0;
+  for (cmsg = CMSG_FIRSTHDR(&hdr); cmsg != NULL; cmsg = CMSG_NXTHDR(&hdr, cmsg)) {
+    size_t i, count;
+
+    if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) continue;
+    if (cmsg->cmsg_len < CMSG_LEN(sizeof(int))) continue;
+
+    count = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+    for (i = 0; i < count; i++) {
+      int got;
+
+      memcpy(&got, (char*)CMSG_DATA(cmsg) + i * sizeof(int), sizeof(got));
+      if (got < 0) continue;
+      taken++;
+      if (fd < 0)
+        fd = got;
+      else
+        close(got);
+    }
+  }
+
+  /* MSG_CTRUNC says the control data did not fit, so more came than arrived. */
+  if (taken != 1 || (hdr.msg_flags & MSG_CTRUNC)) {
+    if (fd >= 0) close(fd);
     /* The manager answers with one byte and no control data when it has no
      * descriptor to pass, because SCM_RIGHTS cannot carry -1. */
     return -ENOTSUP;
   }
-
-  memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
-  if (fd < 0) return -ENOTSUP;
 
   return fd;
 }
