@@ -128,8 +128,8 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
     s->st30p_destination_file = fopen(s->st30p_destination_url, "wb");
 
     if (!s->st30p_destination_file) {
-      err("%s(%d), failed to open destination file %s\n", __func__, idx,
-          s->st30p_destination_url);
+      err("%s(%d), failed to open destination file %s: %s\n", __func__, idx,
+          s->st30p_destination_url, strerror(errno));
       app_rx_st30p_uinit(s);
       return -EIO;
     }
