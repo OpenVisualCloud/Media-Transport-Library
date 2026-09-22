@@ -19,6 +19,7 @@ from mtl_engine import ip_pools
 from mtl_engine.const import RXTXAPP_PATH
 from mtl_engine.dma import setup_host_dma_all
 from mtl_engine.execute import kill_stale_processes, read_remote_log, run
+from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
@@ -89,6 +90,21 @@ MAX_SESSIONS = {
     ("rx", True): 64,
 }
 
+# RxTxApp gives every TX session its own hugepage copy of the source file, and
+# falls back to a plain mmap() of it -- a different memory path -- for whichever
+# sessions no longer fit.  It says so once, via warn(), and runs anyway, so a
+# sweep on a full-length asset silently measures two populations at once.  The
+# perf cases therefore use 24-frame prefixes of the assets the rest of the suite
+# uses; every session then gets a hugepage source.
+#
+# 24 is one number for all three resolutions, not a coincidence: the session
+# ceiling is inversely proportional to frame size, so worst-case demand is
+# frames * line_rate / (8 * lowest_fps_in_the_sweep) = frames * 500 MB,
+# independent of resolution.  Against the ~15 GiB a runner has left for sources
+# after MTL's own arena, 24 frames costs 11.1 GiB.  Revisit if the line rate
+# rises, 25 fps stops being the cheapest case, or hugepages shrink.
+PERF_SOURCE_FRAMES = 24
+
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
 
@@ -113,6 +129,26 @@ def _get_tx_rx_hosts(hosts: dict, direction: str):
         f"TX={tx_host.name}, RX={rx_host.name}"
     )
     return tx_host, rx_host
+
+
+def _check_perf_source_size(tx_host, media_file_path: str, media_config: dict) -> None:
+    """Fail unless the staged source is PERF_SOURCE_FRAMES frames long.
+
+    Staging a full-length asset by mistake does not fail the run -- it puts most
+    sessions on RxTxApp's mmap fallback and publishes a number anyway, so the
+    size is worth checking rather than assuming.
+    """
+    frame_bytes = calculate_yuv_frame_size(
+        media_config["width"], media_config["height"], media_config["file_format"]
+    )
+    result = tx_host.connection.execute_command(f"stat -c %s {media_file_path}")
+    staged = int((result.stdout or "").strip())
+    if staged != PERF_SOURCE_FRAMES * frame_bytes:
+        pytest.fail(
+            f"{media_file_path} holds {staged / frame_bytes:.1f} frames "
+            f"({staged} B); the sweep needs {PERF_SOURCE_FRAMES} "
+            f"({PERF_SOURCE_FRAMES * frame_bytes} B)"
+        )
 
 
 def _apply_side_kwargs(
@@ -666,6 +702,8 @@ def _run_session_sweep(
     # ── Host assignment ──
     tx_host, rx_host = _get_tx_rx_hosts(hosts, direction)
 
+    _check_perf_source_size(tx_host, media_file_path, media_config)
+
     for label, host in [("TX", tx_host), ("RX", rx_host)]:
         if not hasattr(host, "vfs") or len(host.vfs) < 1:
             pytest.skip(f"{label} host ({host.name}) needs at least 1 VF")
@@ -1050,9 +1088,9 @@ _PERF_MARKS = [
     pytest.mark.parametrize(
         "media_file",
         [
-            yuv_files_422rfc10["ParkJoy_1080p"],
-            yuv_files_422rfc10["ParkJoy_4K"],
-            yuv_files_422rfc10["Penguin_8K"],
+            yuv_files_422rfc10["ParkJoy_1080p_24frames"],
+            yuv_files_422rfc10["ParkJoy_4K_24frames"],
+            yuv_files_422rfc10["Penguin_8K_24frames"],
         ],
         indirect=["media_file"],
         ids=["1080p", "2160p", "4320p"],

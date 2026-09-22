@@ -566,6 +566,16 @@ yuv_files_422rfc10 = dict(
         "width": 7680,
         "height": 4320,
     },
+    # 24-frame prefix of Penguin_8K, for the capacity sweep. See PERF_SOURCE_FRAMES
+    # in tests/dual/performance/test_vf_perf_dualhost.py for why the sweep needs it.
+    Penguin_8K_24frames={
+        "filename": "HDR_BBC_v4_008_Penguin1_7680x4320_10bit_25Hz_P422_To_yuv422rfc4175be10_24frames.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "fps": "25",
+        "width": 7680,
+        "height": 4320,
+    },
     Crosswalk_720p={
         "filename": "Netflix_Crosswalk_1280x720_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
@@ -606,8 +616,24 @@ yuv_files_422rfc10 = dict(
         "width": 1920,
         "height": 1080,
     },
+    ParkJoy_1080p_24frames={
+        "filename": "ParkJoy_1920x1080_10bit_50Hz_P422_yuv422p10be_To_yuv422YCBCR10be_24frames.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "fps": "50",
+        "width": 1920,
+        "height": 1080,
+    },
     ParkJoy_4K={
         "filename": "ParkJoy_3840x2160_10bit_50Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "fps": "50",
+        "width": 3840,
+        "height": 2160,
+    },
+    ParkJoy_4K_24frames={
+        "filename": "ParkJoy_3840x2160_10bit_50Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be_24frames.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
         "format": "YUV_422_10bit",
         "fps": "50",

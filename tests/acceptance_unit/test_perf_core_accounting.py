@@ -38,7 +38,14 @@ _STUB_ATTRS = {
     "common.nicctl": ["ensure_vfio_bound", "reset_vfio_bindings"],
     "conftest": ["get_host_mtl_path", "is_host_sut"],
     "mtl_engine.dma": ["setup_host_dma_all"],
-    "mtl_engine.execute": ["kill_stale_processes", "read_remote_log", "run"],
+    # log_fail is not used by the sweep; mtl_engine.integrity imports it, and
+    # that module is loaded for real below.
+    "mtl_engine.execute": [
+        "kill_stale_processes",
+        "log_fail",
+        "read_remote_log",
+        "run",
+    ],
     "mtl_engine.performance_monitoring": [
         "CpuCoreMonitor",
         "display_session_results",
@@ -61,6 +68,7 @@ _STUB_MODULES = [
     "mfd_common_libs.log_levels",
     "mtl_engine",
     "mtl_engine.const",
+    "mtl_engine.integrity",
     "mtl_engine.ip_pools",
     "mtl_engine.media_files",
     *_STUB_ATTRS,
@@ -103,13 +111,24 @@ def _load_sweep_module():
     sys.modules["mtl_engine.const"].RXTXAPP_PATH = "RxTxApp"
     # Only the three keys the parametrize list indexes, and only as markers.
     sys.modules["mtl_engine.media_files"].yuv_files_422rfc10 = {
-        "ParkJoy_1080p": {},
-        "ParkJoy_4K": {},
-        "Penguin_8K": {},
+        "ParkJoy_1080p_24frames": {},
+        "ParkJoy_4K_24frames": {},
+        "Penguin_8K_24frames": {},
     }
     for name, attrs in _STUB_ATTRS.items():
         for attr in attrs:
             setattr(sys.modules[name], attr, object())
+
+    # mtl_engine.integrity is pure arithmetic over stdlib, and the source-size
+    # guard under test compares its result against a real byte count, so load the
+    # real module rather than marking it.  Naming it mtl_engine.integrity is what
+    # lets its own `from .execute import log_fail` find the stub above.
+    integrity_spec = importlib.util.spec_from_file_location(
+        "mtl_engine.integrity", ROOT / "tests/acceptance/mtl_engine/integrity.py"
+    )
+    integrity = importlib.util.module_from_spec(integrity_spec)
+    sys.modules["mtl_engine.integrity"] = integrity
+    integrity_spec.loader.exec_module(integrity)
 
     # Another module of this tier stubs `pytest` for its own import and leaves
     # the stub in place, so the name being present says nothing about `mark`
@@ -338,6 +357,73 @@ class CrashClassificationTests(unittest.TestCase):
 
     def test_a_clean_iteration_does_not_trigger_the_vf_reset(self):
         self.assertFalse(sweep._is_crash("32/32 sessions at 59 fps"))
+
+
+class _Failed(Exception):
+    """Stands in for pytest.fail's Failed, which this tier does not import."""
+
+
+class _FailingPytest:
+    @staticmethod
+    def fail(message):
+        raise _Failed(message)
+
+
+class _SizeReportingHost:
+    """Answers the guard's one `stat -c %s` with *size*."""
+
+    def __init__(self, size):
+        self._size = size
+        self.connection = self
+
+    def execute_command(self, command):
+        assert command.startswith("stat -c %s "), command
+        return types.SimpleNamespace(stdout=f"{self._size}\n")
+
+
+class PerfSourceSizeTests(unittest.TestCase):
+    """The sweep measures one memory path only while its source stays small.
+
+    RxTxApp gives each TX session its own hugepage copy of the source and drops
+    to an mmap() of it for the sessions that no longer fit, saying so once via
+    warn().  Staging a full-length asset therefore does not fail -- it publishes
+    a number measured across two memory paths -- so the size is checked.
+    """
+
+    MEDIA = {"width": 1920, "height": 1080, "file_format": "YUV422RFC4175PG2BE10"}
+    FRAME = 5_184_000  # 1920x1080 at 2.5 bytes/pixel
+    # PERF_SOURCE_FRAMES frames, and the measured size of
+    # ParkJoy_1920x1080..._24frames.yuv on the media store.  Raising the constant
+    # without provisioning assets to match has to fail here.
+    EXPECTED = 124_416_000
+
+    def _check(self, size):
+        saved = sweep.pytest
+        sweep.pytest = _FailingPytest
+        try:
+            sweep._check_perf_source_size(
+                _SizeReportingHost(size), "/mnt/ramdisk/media/src.yuv", self.MEDIA
+            )
+        finally:
+            sweep.pytest = saved
+
+    def test_the_expected_size_is_what_the_constant_asks_for(self):
+        self.assertEqual(self.EXPECTED, sweep.PERF_SOURCE_FRAMES * self.FRAME)
+
+    def test_a_correctly_truncated_source_is_accepted(self):
+        self._check(self.EXPECTED)
+
+    def test_the_full_length_asset_is_rejected(self):
+        # The runner's own ParkJoy_1080p: 288 frames, 11 of which fit as hugepage
+        # copies before the rest fall back.
+        with self.assertRaises(_Failed) as caught:
+            self._check(1_492_992_000)
+        self.assertIn("288.0 frames", str(caught.exception))
+
+    def test_one_frame_too_few_is_rejected(self):
+        # A prefix cut off a frame boundary, or a partial copy to the ramdisk.
+        with self.assertRaises(_Failed):
+            self._check(self.EXPECTED - self.FRAME)
 
 
 if __name__ == "__main__":
