@@ -238,7 +238,6 @@ static uint16_t tap_rx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
                               uint16_t nb_pkts) {
   int len;
   uint16_t num_rx = 0;
-  unsigned long num_rx_bytes = 0;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   if (!nb_pkts) return 0;
   if (io_active(&tap_ctx->reads)) overlapped_result(cni, &tap_ctx->reads);
@@ -281,7 +280,6 @@ static uint16_t tap_rx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
     }
     seg->next = NULL;
     bufs[num_rx++] = mbuf;
-    num_rx_bytes += mbuf->pkt_len;
   }
 end:
   return num_rx;
@@ -366,15 +364,21 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   action[1].type = RTE_FLOW_ACTION_TYPE_END;
   memset(pkt_buf, 0, sizeof(pkt_buf));
   memset(msk_buf, 0, sizeof(msk_buf));
-  snprintf(pkt_buf, 84, "%s",
+  snprintf(pkt_buf, sizeof(pkt_buf), "%s",
            "00000000000100000000000208060001080006040000000000000001010101010000000000020"
            "2020202");
-  snprintf(pkt_buf, 12, "%02x%02x%02x%02x%02x%02x", tap_ctx->mac_addr.addr_bytes[0],
-           tap_ctx->mac_addr.addr_bytes[1], tap_ctx->mac_addr.addr_bytes[2],
-           tap_ctx->mac_addr.addr_bytes[3], tap_ctx->mac_addr.addr_bytes[4],
-           tap_ctx->mac_addr.addr_bytes[5]);
+  /* The first 12 characters of the pattern hold the destination MAC address. A
+   * snprintf of 12 into pkt_buf writes 11 characters and a null, which loses the
+   * last digit and cuts the pattern, so the address is made on its own and
+   * copied in without the null. */
+  char mac_buf[13];
+  snprintf(mac_buf, sizeof(mac_buf), "%02x%02x%02x%02x%02x%02x",
+           tap_ctx->mac_addr.addr_bytes[0], tap_ctx->mac_addr.addr_bytes[1],
+           tap_ctx->mac_addr.addr_bytes[2], tap_ctx->mac_addr.addr_bytes[3],
+           tap_ctx->mac_addr.addr_bytes[4], tap_ctx->mac_addr.addr_bytes[5]);
+  rte_memcpy(pkt_buf, mac_buf, 12);
   info("Flow bind to mac address %12.12s \n", pkt_buf);
-  snprintf(msk_buf, 84, "%s",
+  snprintf(msk_buf, sizeof(msk_buf), "%s",
            "FFFFFFFFFFFF000000000000FFFF0000000000000000000000000000000000000000000000000"
            "0000000");
   memset(pattern, 0, sizeof(pattern));

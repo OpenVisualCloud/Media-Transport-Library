@@ -659,6 +659,8 @@ static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
     info("%s, releasing lcore for dead process pid %d \n", __func__, shm_entry->pid);
   }
 #else
+  MTL_MAY_UNUSED(shm_entry);
+  MTL_MAY_UNUSED(info);
   err("%s, not supported on Windows\n", __func__);
 #endif
 }

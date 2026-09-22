@@ -111,6 +111,7 @@ TEST_F(St40RxRedundancyTest, MultipleSwitchoversReordered) {
     ts += kTsDelta;
   }
 
+  EXPECT_EQ(switchovers, 5) << "The loop feeds one switchover per frame.";
   EXPECT_EQ(unrecovered(), 0u)
       << "Late packets from port 0 should be accepted across all switchovers.";
 }

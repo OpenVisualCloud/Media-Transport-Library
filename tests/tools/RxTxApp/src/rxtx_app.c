@@ -685,7 +685,7 @@ uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t fr
     user_time->base_tai_time +=
         (uint64_t)(frame_time - fmod((double)user_time->base_tai_time, frame_time));
 
-    info("%s, restart base tai time %lu\n", __func__, user_time->base_tai_time);
+    info("%s, restart base tai time %" PRIu64 "\n", __func__, user_time->base_tai_time);
     if (user_time->base_tai_time == 0) {
       err("%s, get tai time fail\n", __func__);
       pthread_mutex_unlock(&user_time->base_tai_time_mutex);

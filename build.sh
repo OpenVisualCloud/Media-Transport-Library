@@ -93,6 +93,12 @@ if [ "$build_unit" == "true" ]; then
 	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
 	ninja -C "${UNIT_BUILD_DIR}"
 
+	# The test binary reads libmtl from the build tree. Windows has no rpath, so
+	# the loader finds libmtl.dll through PATH alone.
+	if [ "${OS:-}" == "Windows_NT" ]; then
+		export PATH="${UNIT_BUILD_DIR}/lib:${PATH}"
+	fi
+
 	if [ "$enable_asan" == "true" ]; then
 		ASAN_LIBRARY=$(cc -print-file-name=libasan.so)
 		LD_PRELOAD="${ASAN_LIBRARY}${LD_PRELOAD:+:${LD_PRELOAD}}" \

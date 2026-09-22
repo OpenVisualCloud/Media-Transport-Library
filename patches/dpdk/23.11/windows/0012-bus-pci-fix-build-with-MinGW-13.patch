@@ -1,0 +1,81 @@
+From 73e0c90c48ea393b2725263b32515f668f8f4839 Mon Sep 17 00:00:00 2001
+From: Thomas Monjalon <thomas@monjalon.net>
+Date: Fri, 25 Jul 2025 20:23:59 +0200
+Subject: bus/pci: fix build with MinGW 13
+
+After an upgrade to MinGW version 13, some compilation errors appear:
+
+drivers/bus/pci/windows/pci.c:362:58:
+	error: 'GUID_DEVCLASS_NETUIO' undeclared
+drivers/bus/pci/windows/pci_netuio.c:57:39:
+	error: 'GUID_DEVINTERFACE_NETUIO' undeclared
+
+The cause is MinGW has set NTDDI_VERSION to the highest version
+without defining the expected NetUIO constants.
+
+The case MinGW64 is added to define NetUIO constants.
+
+Some comments are improved to better track includes requirements.
+
+Fixes: 6605c7f02e24 ("bus/pci: fix build with Windows SDK >= 10.0.20253")
+Cc: stable@dpdk.org
+
+Signed-off-by: Thomas Monjalon <thomas@monjalon.net>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/bus/pci/windows/pci.c        | 11 ++++++-----
+ drivers/bus/pci/windows/pci_netuio.h |  6 +++---
+ 2 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/bus/pci/windows/pci.c b/drivers/bus/pci/windows/pci.c
+index e7e449306e..6f6f368cb7 100644
+--- a/drivers/bus/pci/windows/pci.c
++++ b/drivers/bus/pci/windows/pci.c
+@@ -12,18 +12,19 @@
+ #include <rte_memory.h>
+ #include <rte_bus_pci.h>
+ 
+-#include "private.h"
+-#include "pci_netuio.h"
+-
++/* DEVPKEY_Device_Numa_Node should be defined in devpkey.h */
+ #include <devpkey.h>
+-#include <regstr.h>
+-
+ #if defined RTE_TOOLCHAIN_GCC && (__MINGW64_VERSION_MAJOR < 8)
+ #include <devpropdef.h>
+ DEFINE_DEVPROPKEY(DEVPKEY_Device_Numa_Node, 0x540b947e, 0x8b40, 0x45bc,
+ 	0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2, 3);
+ #endif
+ 
++#include <regstr.h>
++
++#include "private.h"
++#include "pci_netuio.h"
++
+ /*
+  * This code is used to simulate a PCI probe by parsing information in
+  * the registry hive for PCI devices.
+diff --git a/drivers/bus/pci/windows/pci_netuio.h b/drivers/bus/pci/windows/pci_netuio.h
+index 2f6c97ea73..8ac914920f 100644
+--- a/drivers/bus/pci/windows/pci_netuio.h
++++ b/drivers/bus/pci/windows/pci_netuio.h
+@@ -5,12 +5,12 @@
+ #ifndef _PCI_NETUIO_H_
+ #define _PCI_NETUIO_H_
+ 
+-#if !defined(NTDDI_WIN10_FE) || NTDDI_VERSION < NTDDI_WIN10_FE
+-/* GUID definition for device class netUIO */
++#if !defined(NTDDI_WIN10_FE) || NTDDI_VERSION < NTDDI_WIN10_FE ||  defined(__MINGW64__)
++/* GUID_DEVCLASS_NETUIO should be defined in devguid.h */
+ DEFINE_GUID(GUID_DEVCLASS_NETUIO, 0x78912bc1, 0xcb8e, 0x4b28,
+ 	0xa3, 0x29, 0xf3, 0x22, 0xeb, 0xad, 0xbe, 0x0f);
+ 
+-/* GUID definition for the netuio device interface */
++/* GUID_DEVINTERFACE_NETUIO should be defined in ndisguid.h */
+ DEFINE_GUID(GUID_DEVINTERFACE_NETUIO, 0x08336f60, 0x0679, 0x4c6c,
+ 	0x85, 0xd2, 0xae, 0x7c, 0xed, 0x65, 0xff, 0xf7);
+ #endif
+-- 
+2.43.0
+
