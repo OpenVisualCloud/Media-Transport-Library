@@ -40,6 +40,9 @@ WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
 
+# Exit codes that mean the app died rather than finished.
+CRASH_EXIT_CODES = (134, 137, 139, 244, 251)  # SIGABRT, SIGKILL, SIGSEGV, DPDK, DPDK
+
 # ── Scheduler session quotas ──
 # Controls how many sessions the library places on each scheduler (lcore).
 # Higher quota = fewer cores (denser packing), but risks overloading a core.
@@ -179,19 +182,31 @@ def _select_mc_quota(
     return SCH_SESSION_QUOTA_MULTI_CORE
 
 
+def _is_crash_code(return_code: int) -> bool:
+    """Return True if *return_code* means the app died rather than exited.
+
+    A negative code is a signal reported by the process runner; the rest are
+    the ones RxTxApp and DPDK are seen to abort with.
+    """
+    return return_code < 0 or return_code in CRASH_EXIT_CODES
+
+
+def _is_crash(detail: str) -> bool:
+    """Return True if the detail indicates a crash requiring VF FLR."""
+    crash_markers = tuple(f"exit code {code}" for code in CRASH_EXIT_CODES) + (
+        "exit code -",
+        "companion",
+        "exited early",
+    )
+    return any(marker in detail for marker in crash_markers)
+
+
 def _single_core_violation(single_core: bool, cores_used: int) -> str | None:
     """Return a reason if a single-core iteration did not stay on one core.
 
-    A single-core row only means something if the library really placed every
-    session on one scheduler.  When it does not, the sessions had more CPU than
-    the mode claims, so the count is not a single-core capacity result.
-
-    Args:
-        single_core: Whether this iteration ran in single-core mode.
-        cores_used: Busy cores measured on the SUT, 0 when unmeasured.
-
-    Returns:
-        The failure reason, or None if the iteration is a valid data point.
+    The sessions then had more CPU than the mode claims, so the count is not a
+    single-core capacity result.  *cores_used* is 0 when unmeasured, which is a
+    monitoring gap and not a violation.
     """
     if single_core and cores_used > 1:
         return f"single-core run spread over {cores_used} cores"
@@ -204,17 +219,9 @@ def _fewest_cores_result(
 ) -> dict | None:
     """Return the passing iteration at *num_sessions* that used the fewest cores.
 
-    Multi-core sweeps run the winning session count more than once -- thinly
-    packed in phase 1, then densely in phase 2 -- and the goal is the NIC's
-    session ceiling first, the smallest core count that sustains it second.  So
-    report the cheapest passing placement, not the last one attempted.
-
-    Args:
-        iteration_results: Every iteration the sweep ran.
-        num_sessions: The session count to report, normally max_passing.
-
-    Returns:
-        The winning iteration dict, or None if none passed with a core count.
+    Multi-core sweeps run the winning session count twice -- thinly packed in
+    phase 1, then densely in phase 2 -- so report the cheapest placement that
+    actually passed, not the last one attempted.  None if none did.
     """
     candidates = [
         it
@@ -543,10 +550,10 @@ def _run_iteration(
         # ── Analyze FPS ──
         stdout_lines = result.stdout_text.splitlines() if result.stdout_text else []
 
-        # A non-zero exit does not invalidate what the app already reported: it
-        # exits non-zero on a late teardown error too.  Keep the measurement and
-        # let the exit code be classified below; discarding it here cost three
-        # probes of run 35233378303 their data.
+        # Not every non-zero exit invalidates the run: the app also exits
+        # non-zero on a late teardown error, after a whole good measurement.
+        # Keep the data and classify the code below -- a crash is vetoed there.
+        # Discarding it here cost three probes of run 35233378303 their data.
         if result.return_code != 0:
             logger.warning(f"Measured app exited with code {result.return_code}")
 
@@ -613,6 +620,12 @@ def _run_iteration(
             # Keep the code in the detail so _is_crash still schedules a VF FLR
             # before the next iteration.
             detail += f", exit code {result.return_code}"
+            if _is_crash_code(result.return_code):
+                # The dumps stop wherever the process did, so the steady window
+                # closes at the crash and can still read as full rate.  A run
+                # that died is not a capacity result at any session count, and
+                # passing it here would feed the sweep false headroom.
+                success = False
         app_config = measured_app.config if hasattr(measured_app, "config") else None
         cores_used = cores_info.get("cores_used", 0) if cores_info else 0
         return success, count, detail, app_config, cores_used
@@ -642,9 +655,10 @@ def _run_session_sweep(
     instead of performing a binary search.
 
     If *sch_quota* is set (via ``--sch_quota`` CLI option), override the
-    scheduler session quota for all iterations.  Higher quota = fewer
-    cores (sessions packed into fewer schedulers).  Use 60 for minimal
-    cores.
+    scheduler session quota for every multi-core iteration.  Higher quota =
+    fewer cores (sessions packed into fewer schedulers).  Single-core runs
+    ignore it: they always use SCH_SESSION_QUOTA_SINGLE_CORE, which has to
+    stay high enough that the run cannot spill onto a second scheduler.
     """
     media_config, media_file_path = media_file
     resolution = f"{media_config['height']}p"
@@ -756,20 +770,6 @@ def _run_session_sweep(
     if is_tx and single_core:
         isolcpus = _get_isolcpus(measured_host)
         original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
-
-    def _is_crash(detail: str) -> bool:
-        """Return True if the detail indicates a crash requiring VF FLR."""
-        crash_codes = (
-            "exit code -",
-            "exit code 134",  # SIGABRT
-            "exit code 137",  # SIGKILL
-            "exit code 139",  # SIGSEGV
-            "exit code 244",  # DPDK
-            "exit code 251",  # DPDK
-            "companion",
-            "exited early",
-        )
-        return any(code in detail for code in crash_codes)
 
     def _is_infra_failure(detail: str) -> bool:
         """Return True if the failure is infrastructure-related (not capacity).

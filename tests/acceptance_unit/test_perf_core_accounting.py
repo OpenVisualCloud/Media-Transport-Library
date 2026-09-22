@@ -180,12 +180,25 @@ class SingleCoreQuotaTests(unittest.TestCase):
             "single-core measurement",
         )
 
-    def test_quota_stays_inside_the_range_the_library_accepts(self):
-        # args.c ST_ARG_SCH_SESSION_QUOTA: `if (nb > 0 && nb < 100)`, and it
-        # drops an out-of-range value silently, so the run would just use the
-        # library default with no warning anywhere.
-        self.assertGreater(sweep.SCH_SESSION_QUOTA_SINGLE_CORE, 0)
-        self.assertLess(sweep.SCH_SESSION_QUOTA_SINGLE_CORE, 100)
+
+class QuotaRangeTests(unittest.TestCase):
+    """Every quota the sweep sets has to be one the library will accept."""
+
+    def test_every_quota_is_inside_the_range_the_library_accepts(self):
+        # args.c ST_ARG_SCH_SESSION_QUOTA keeps `nb > 0 && nb < 100` and drops
+        # anything else silently, so an out-of-range quota does not fail the
+        # run -- it leaves the library default in place, unlogged.
+        quotas = {
+            name: value
+            for name, value in vars(sweep).items()
+            if name.startswith("SCH_SESSION_QUOTA_")
+        }
+        self.assertTrue(quotas, "no quota constants found; has the prefix moved?")
+        for name, value in quotas.items():
+            with self.subTest(quota=name):
+                self.assertIsInstance(value, int)
+                self.assertGreater(value, 0)
+                self.assertLess(value, 100)
 
 
 class SingleCoreViolationTests(unittest.TestCase):
@@ -271,16 +284,11 @@ class FewestCoresTests(unittest.TestCase):
 class Phase1PacksThinnestTests(unittest.TestCase):
     """Phase 1 hunts the NIC ceiling, so it must not pack denser than phase 2."""
 
-    def test_phase1_quota_is_one_density_for_every_mode(self):
+    def test_phase1_packs_no_denser_than_any_phase2_quota(self):
         # Falling through to the per-mode quota is what let packing density cap
         # the session count, and it made +DMA search at 18 while no-DMA searched
         # at 16 -- so the two columns of the report were not comparable. One
         # scalar for all modes is the property that fixes both.
-        self.assertIsInstance(sweep.SCH_SESSION_QUOTA_PHASE1_MC, int)
-        self.assertGreater(sweep.SCH_SESSION_QUOTA_PHASE1_MC, 0)
-        self.assertLess(sweep.SCH_SESSION_QUOTA_PHASE1_MC, 100)
-
-    def test_phase1_packs_no_denser_than_any_phase2_quota(self):
         for is_tx, use_dma, redundant in MC_MODES:
             with self.subTest(is_tx=is_tx, use_dma=use_dma, redundant=redundant):
                 self.assertLessEqual(
@@ -289,6 +297,47 @@ class Phase1PacksThinnestTests(unittest.TestCase):
                     "phase 1 must spread at least as thinly as phase 2, or the "
                     "session ceiling it reports is a core limit",
                 )
+
+
+class CrashClassificationTests(unittest.TestCase):
+    """A run that died is not a capacity result, whatever it reported first.
+
+    The stat dumps stop wherever the process did, so a crash late in a run
+    leaves a steady window that reads as full rate at the target count.  If
+    that is published as a pass the sweep reads the crash as headroom and
+    searches upward from it, so the crash has to veto the iteration -- and it
+    has to keep scheduling the VF FLR that the next iteration needs.
+    """
+
+    def test_the_signals_rxtxapp_dies_with_veto_the_iteration(self):
+        # 128 + signal, as the runner reports it. A SIGSEGV scored as a pass is
+        # exactly how an inflated ceiling reaches the report.
+        for code in (134, 139):  # SIGABRT, SIGSEGV
+            with self.subTest(code=code):
+                self.assertTrue(sweep._is_crash_code(code))
+
+    def test_a_signal_is_a_crash(self):
+        # The process runner reports a signal as its negation.
+        self.assertTrue(sweep._is_crash_code(-11))
+
+    def test_a_clean_exit_is_not_a_crash(self):
+        self.assertFalse(sweep._is_crash_code(0))
+
+    def test_a_late_teardown_error_is_not_a_crash(self):
+        # The whole point of keeping a non-zero exit: RxTxApp returns 1 after a
+        # complete run whose teardown failed, and that data is good.
+        self.assertFalse(sweep._is_crash_code(1))
+
+    def test_every_crash_code_also_triggers_the_vf_reset(self):
+        # _run_one() re-reads the code out of the detail string to decide on the
+        # FLR, so the two classifiers have to agree on every code.
+        for code in sweep.CRASH_EXIT_CODES:
+            with self.subTest(code=code):
+                detail = f"32/32 sessions at 59 fps, exit code {code}"
+                self.assertTrue(sweep._is_crash(detail))
+
+    def test_a_clean_iteration_does_not_trigger_the_vf_reset(self):
+        self.assertFalse(sweep._is_crash("32/32 sessions at 59 fps"))
 
 
 if __name__ == "__main__":
