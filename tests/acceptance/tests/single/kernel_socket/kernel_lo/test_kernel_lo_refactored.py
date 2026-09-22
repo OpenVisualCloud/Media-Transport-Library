@@ -82,8 +82,9 @@ def test_kernello_mixed_format_refactored(
                 "framerate": parse_fps_to_pformat(media_file_info["fps"]),
                 "pixel_format": media_file_info["file_format"],
                 "transport_format": media_file_info["format"],
+                # No output_file: an RX destination is opened fopen(url, "wb"),
+                # which would truncate the source this TX streams from.
                 "input_file": media_file_path,
-                "output_file": media_file_path,
             },
             {
                 "session_type": "st30p",
