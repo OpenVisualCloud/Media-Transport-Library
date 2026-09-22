@@ -261,10 +261,6 @@ static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
     munmap(s->st20p_source_begin, s->st20p_source_end - s->st20p_source_begin);
     close(s->st20p_source_fd);
     s->st20p_source_fd = -1;
-    /* Clear it here too, or a second uinit -- which an init failure does cause
-     * -- reaches the branch above with a fd of -1 and frees a munmapped
-     * address as if it were a hugepage buffer. */
-    s->st20p_source_begin = NULL;
   }
 
   return 0;
