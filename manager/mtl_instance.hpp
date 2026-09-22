@@ -41,9 +41,11 @@ class mtl_instance {
    * A stream socket may split one record or join several, so the leftover
    * stays here until the rest arrives.
    *
-   * @return The number of records handled, or -EBADMSG when the stream no
-   *         longer starts on a record boundary. The caller must drop the
-   *         connection on -EBADMSG, because a desynced stream cannot recover.
+   * @return The number of records handled, or a negative errno. The caller must
+   *         drop the connection on a negative value. -EBADMSG says the stream no
+   *         longer starts on a record boundary, which cannot recover. Any other
+   *         value comes from the socket: the client went away, or it does not
+   *         read its answers and the socket stays full.
    */
   int feed(const char* buf, size_t len);
 
@@ -101,6 +103,15 @@ class mtl_instance {
   void handle_message_if_del_flow(const mtl_if_message_t* if_msg);
 
   /**
+   * Send one whole record. The one send path of the class.
+   *
+   * @return 0, or a negative errno which it also keeps in send_fault. A record
+   *         that only went out in part counts as a failure, because the rest of
+   *         it would reach the client out of frame.
+   */
+  int send_record(const mtl_message_t& msg);
+
+  /**
    * Send a response record.
    *
    * @param response Value for the response field: 0 or a resource id on
@@ -122,6 +133,9 @@ class mtl_instance {
   const int conn_fd;
   mtl_interface_registry& registry;
   mtl_lcore& lcores;
+  /* First errno a send to this client gave, or 0. feed() reports it, because a
+   * client that takes no answer cannot be served. */
+  int send_fault;
   bool is_registered;
   int pid;
   int uid;

@@ -38,6 +38,17 @@ struct mtlm_server_config {
 
   /** Largest number of instances that may be connected at once. */
   size_t max_clients = 64;
+
+  /**
+   * Longest time one answer may take, in milliseconds. 0 waits forever.
+   *
+   * A client that does not read its answers fills the socket, and the server
+   * writes with a blocking send in a loop that has one thread. The timeout is
+   * what keeps such a client from stopping the server for every other instance.
+   * A healthy client reads the answer as soon as it sends the request, so the
+   * value only has to cover the load of the host.
+   */
+  int send_timeout_ms = 2000;
 };
 
 /**

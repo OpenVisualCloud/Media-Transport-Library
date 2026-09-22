@@ -16,6 +16,7 @@ mtl_instance::mtl_instance(int conn_fd, mtl_interface_registry& registry,
     : conn_fd(conn_fd),
       registry(registry),
       lcores(lcores),
+      send_fault(0),
       is_registered(false),
       pid(-1),
       uid(-1),
@@ -102,13 +103,22 @@ int mtl_instance::feed(const char* buf, size_t len) {
 
     dispatch(&msg);
     handled++;
+
+    /* An answer that cannot go out makes the rest of the buffer pointless: the
+     * client gets no answer to any of it. Report it, so the caller drops the
+     * connection and gives back everything this instance holds. */
+    if (send_fault != 0) {
+      log(log_level::ERROR, "Cannot answer this client, dropping the connection.");
+      rx_buf.clear();
+      return send_fault;
+    }
   }
 
   return handled;
 }
 
 void mtl_instance::dispatch(const mtl_message_t* msg) {
-  switch (ntohl(static_cast<uint32_t>(msg->header.type))) {
+  switch (ntohl(msg->header.type)) {
     case MTL_MSG_TYPE_REGISTER:
       handle_message_register(&msg->body.register_msg);
       break;
@@ -151,19 +161,9 @@ void mtl_instance::dispatch(const mtl_message_t* msg) {
   }
 }
 
-int mtl_instance::send_response(int response, mtl_message_type_t type) {
-  mtl_message_t msg;
-
-  /* Zero the whole record. Sending only the header and the response field
-   * would leak the rest of this stack frame to the client. */
-  std::memset(&msg, 0, sizeof(msg));
-  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = static_cast<mtl_message_type_t>(htonl(static_cast<uint32_t>(type)));
-  msg.header.body_len = htonl(sizeof(mtl_response_message_t));
-  msg.body.response_msg.response =
-      static_cast<int>(htonl(static_cast<uint32_t>(response)));
-
+int mtl_instance::send_record(const mtl_message_t& msg) {
   size_t done = 0;
+
   while (done < sizeof(msg)) {
     ssize_t ret = send(conn_fd, reinterpret_cast<const char*>(&msg) + done,
                        sizeof(msg) - done, MSG_NOSIGNAL);
@@ -172,10 +172,29 @@ int mtl_instance::send_response(int response, mtl_message_type_t type) {
       continue;
     }
     if (ret < 0 && errno == EINTR) continue;
-    return ret < 0 ? -errno : -EPIPE;
+    /* The socket carries no more records: the peer went away, or it is full
+     * because the client does not read. A partial record is as bad as none,
+     * because the rest of it would reach the client out of frame. */
+    send_fault = ret < 0 ? -errno : -EPIPE;
+    return send_fault;
   }
 
   return 0;
+}
+
+int mtl_instance::send_response(int response, mtl_message_type_t type) {
+  mtl_message_t msg;
+
+  /* Zero the whole record. Sending only the header and the response field
+   * would leak the rest of this stack frame to the client. */
+  std::memset(&msg, 0, sizeof(msg));
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(static_cast<uint32_t>(type));
+  msg.header.body_len = htonl(sizeof(mtl_response_message_t));
+  msg.body.response_msg.response =
+      static_cast<int>(htonl(static_cast<uint32_t>(response)));
+
+  return send_record(msg);
 }
 
 bool mtl_instance::require_registered(const char* what,
@@ -253,24 +272,13 @@ void mtl_instance::handle_message_heartbeat(
 
   std::memset(&msg, 0, sizeof(msg));
   msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  msg.header.type = static_cast<mtl_message_type_t>(
-      htonl(static_cast<uint32_t>(MTL_MSG_TYPE_HEARTBEAT_ACK)));
+  msg.header.type = htonl(static_cast<uint32_t>(MTL_MSG_TYPE_HEARTBEAT_ACK));
   msg.header.body_len = htonl(sizeof(mtl_heartbeat_message_t));
   /* Echo the sequence number back exactly as it arrived. */
   msg.body.heartbeat_msg.seq = heartbeat_msg->seq;
 
-  size_t done = 0;
-  while (done < sizeof(msg)) {
-    ssize_t ret = send(conn_fd, reinterpret_cast<const char*>(&msg) + done,
-                       sizeof(msg) - done, MSG_NOSIGNAL);
-    if (ret > 0) {
-      done += static_cast<size_t>(ret);
-      continue;
-    }
-    if (ret < 0 && errno == EINTR) continue;
+  if (send_record(msg) < 0)
     log(log_level::ERROR, "Failed to send the heartbeat acknowledgement");
-    return;
-  }
 }
 
 void mtl_instance::handle_message_get_lcore(const mtl_lcore_message_t* lcore_msg) {
@@ -359,8 +367,10 @@ void mtl_instance::handle_message_if_xsk_map_fd(const mtl_if_message_t* if_msg) 
     log(log_level::WARNING, "No xsks map for interface " + std::to_string(ifindex));
   }
 
-  if (sendmsg(conn_fd, &msg, MSG_NOSIGNAL) < 0)
+  if (sendmsg(conn_fd, &msg, MSG_NOSIGNAL) < 0) {
+    send_fault = -errno;
     log(log_level::ERROR, "Failed to send the xsks map descriptor");
+  }
 }
 
 void mtl_instance::handle_message_udp_dp_filter(

@@ -276,6 +276,23 @@ int mtlm_server::accept_client() {
   int fd = accept4(listen_fd, nullptr, nullptr, SOCK_CLOEXEC);
   if (fd < 0) return -errno;
 
+  /* Bound how long one answer may take. The loop has one thread and writes each
+   * answer with a blocking send, so the answers of a client that does not read
+   * them fill the socket and the send stops in the kernel. Without the timeout
+   * the loop stops with it and no other instance on the host is served, and no
+   * new one can connect. mtl_instance reports the timeout as a dead connection,
+   * and the loop then drops that client. */
+  if (config.send_timeout_ms > 0) {
+    struct timeval tv = {};
+
+    tv.tv_sec = config.send_timeout_ms / 1000;
+    tv.tv_usec = (config.send_timeout_ms % 1000) * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
+      logger::log(log_level::WARNING,
+                  "Failed to set the send timeout of a client socket: " +
+                      std::string(strerror(errno)));
+  }
+
   /* Bound the number of connections. listen() only bounds the backlog, so
    * without this one client could open sockets until the process runs out. */
   if (clients.size() >= config.max_clients) {
