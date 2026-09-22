@@ -83,7 +83,7 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   dhcp->hlen = DHCP_HLEN_ETHERNET;
   dhcp->xid = htonl(dhcp_impl->xid);
   dhcp->magic_cookie = htonl(DHCP_MAGIC_COOKIE);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
+  mt_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;
@@ -171,7 +171,7 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   if (dhcp_impl->status == MT_DHCP_STATUS_RENEWING ||
       dhcp_impl->status == MT_DHCP_STATUS_REBINDING)
     dhcp->ciaddr = htonl(*(uint32_t*)dhcp_impl->ip);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
+  mt_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;
@@ -232,7 +232,7 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
     mt_pthread_mutex_unlock(&dhcp_impl->mutex);
     return -EIO;
   }
-  rte_memcpy(dhcp_impl->ip, &offer->yiaddr, MTL_IP_ADDR_LEN);
+  mt_memcpy(dhcp_impl->ip, &offer->yiaddr, MTL_IP_ADDR_LEN);
   mt_pthread_mutex_unlock(&dhcp_impl->mutex);
   info("%s(%d), received dhcp offer\n", __func__, port);
   info("%s(%d), ip address: %s\n", __func__, dhcp_impl->port,
@@ -251,7 +251,7 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
             inet_ntoa(*(struct in_addr*)(options + 2 + i * 4)));
     }
     if (*options == DHCP_OPTION_SERVER_IDENTIFIER)
-      rte_memcpy(dhcp_impl->server_ip, &options[2], MTL_IP_ADDR_LEN);
+      mt_memcpy(dhcp_impl->server_ip, &options[2], MTL_IP_ADDR_LEN);
     options += options[1] + 2;
   }
 
@@ -299,19 +299,19 @@ static int dhcp_recv_ack(struct mtl_main_impl* impl, struct mt_dhcp_hdr* ack,
   double t = 0.0, t1 = 0.0, t2 = 0.0;
   uint8_t* options = ack->options;
   mt_pthread_mutex_lock(&dhcp_impl->mutex);
-  rte_memcpy(dhcp_impl->ip, &ack->yiaddr, MTL_IP_ADDR_LEN);
+  mt_memcpy(dhcp_impl->ip, &ack->yiaddr, MTL_IP_ADDR_LEN);
   while (*options != DHCP_OPTION_END) {
     if (*options == DHCP_OPTION_SUBNET_MASK)
-      rte_memcpy(dhcp_impl->netmask, &options[2], MTL_IP_ADDR_LEN);
+      mt_memcpy(dhcp_impl->netmask, &options[2], MTL_IP_ADDR_LEN);
     if (*options == DHCP_OPTION_ROUTER)
-      rte_memcpy(dhcp_impl->gateway, &options[2], MTL_IP_ADDR_LEN);
+      mt_memcpy(dhcp_impl->gateway, &options[2], MTL_IP_ADDR_LEN);
     if (*options == DHCP_OPTION_LEASE_TIME) {
       t = ntohl(*(uint32_t*)(options + 2));
       t1 = t * 0.5;
       t2 = t * 0.875;
     }
     if (*options == DHCP_OPTION_SERVER_IDENTIFIER)
-      rte_memcpy(dhcp_impl->server_ip, &options[2], MTL_IP_ADDR_LEN);
+      mt_memcpy(dhcp_impl->server_ip, &options[2], MTL_IP_ADDR_LEN);
     options += options[1] + 2;
   }
   mt_pthread_mutex_unlock(&dhcp_impl->mutex);
@@ -396,7 +396,7 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   dhcp->xid = rand();
   dhcp->magic_cookie = htonl(DHCP_MAGIC_COOKIE);
   dhcp->ciaddr = htonl(*(uint32_t*)dhcp_impl->ip);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
+  mt_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;

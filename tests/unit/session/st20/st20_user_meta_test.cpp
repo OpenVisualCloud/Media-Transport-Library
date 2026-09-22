@@ -5,7 +5,7 @@
  * from the wire row_length field and the copy that consumes it runs before any
  * pkt-length check, bounded only against the application's buffer, so a pkt may
  * declare up to user_meta_buffer_size bytes while carrying almost none;
- * rte_memcpy then hands the application whatever a previous pkt left in the
+ * mt_memcpy then hands the application whatever a previous pkt left in the
  * mbuf's data room (CWE-125).
  *
  * ut20_ctx_enable_user_meta() in SetUp() is what makes this evidence: with the
@@ -39,7 +39,7 @@ class St20RxUserMetaTest : public St20RxBaseTest {
 
 /* Both ways the declared length can exceed the bytes present. First: 1000 bytes
  * of meta declared on a datagram carrying 8 -- unfixed, 1000 <= 1024 passes the
- * only check and rte_memcpy reads ~992 bytes past the datagram, then reports
+ * only check and mt_memcpy reads ~992 bytes past the datagram, then reports
  * success. Second: a datagram shorter than the header itself, as the kernel
  * socket path can deliver, declaring 8 bytes -- well within the app buffer, so
  * only a bound against the bytes actually present rejects it. */

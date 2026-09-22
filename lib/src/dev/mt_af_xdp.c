@@ -581,7 +581,7 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
     struct rte_mbuf* n = m;
     uint16_t nb_segs = m->nb_segs;
     for (uint16_t seg = 0; seg < nb_segs; seg++) {
-      rte_memcpy(pkt, rte_pktmbuf_mtod(n, void*), n->data_len);
+      mt_memcpy(pkt, rte_pktmbuf_mtod(n, void*), n->data_len);
       pkt += n->data_len;
       /* point to next */
       n = n->next;
@@ -827,7 +827,7 @@ struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   }
   entry->parent = impl;
   entry->port = port;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
   struct mt_xdp_queue* xq = NULL;
@@ -934,7 +934,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   entry->parent = impl;
   entry->port = port;
   entry->mcast_fd = -1;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
   struct mt_xdp_queue* xq = NULL;

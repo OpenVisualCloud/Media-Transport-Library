@@ -252,7 +252,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   for (enum mtl_session_port s_port = 0; s_port < ctx->ops.port.num_port; s_port++) {
     if (!meta->tp[s_port]) continue;
-    mtl_memcpy(&framebuff->tp[s_port], meta->tp[s_port], sizeof(framebuff->tp[s_port]));
+    mt_memcpy(&framebuff->tp[s_port], meta->tp[s_port], sizeof(framebuff->tp[s_port]));
     framebuff->src.tp[s_port] = framebuff->dst.tp[s_port] = &framebuff->tp[s_port];
   }
 
@@ -260,7 +260,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->user_meta_data_size = 0;
   if (meta->user_meta) {
     if (meta->user_meta_size <= framebuff->user_meta_buffer_size) {
-      rte_memcpy(framebuff->user_meta, meta->user_meta, meta->user_meta_size);
+      mt_memcpy(framebuff->user_meta, meta->user_meta, meta->user_meta_size);
       framebuff->user_meta_data_size = meta->user_meta_size;
     } else {
       err("%s(%d), wrong user_meta_size\n", __func__, ctx->idx);

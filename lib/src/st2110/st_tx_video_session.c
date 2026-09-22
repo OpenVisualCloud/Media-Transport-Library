@@ -257,7 +257,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
           warn("%s(%d), st22_box_hdr_length %u exceeds bounds, clamping to %zu\n",
                __func__, idx, s->st22_box_hdr_length, max_copy_len);
         }
-        mtl_memcpy(frame, &st22_info->st22_boxes, max_copy_len);
+        mt_memcpy(frame, &st22_info->st22_boxes, max_copy_len);
       }
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
@@ -917,10 +917,10 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
 
   /* ether hdr */
   if ((s_port == MTL_SESSION_PORT_P) && (ops->flags & ST20_TX_FLAG_USER_P_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    mt_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_P_TX_MAC\n", __func__);
   } else if ((s_port == MTL_SESSION_PORT_R) && (ops->flags & ST20_TX_FLAG_USER_R_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    mt_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
     ret = mt_dst_ip_mac(impl, dip, d_addr, port, impl->arp_timeout_ms);
@@ -946,8 +946,8 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   ipv4->packet_id = 0; /* always 0 when DONT_FRAGMENT set */
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = IPPROTO_UDP;
-  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mt_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st20_src_port[s_port]);
@@ -973,7 +973,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   if (s->st22_info) {
     struct st22_rfc9134_rtp_hdr* st22_hdr = &s->st22_info->rtp_hdr[s_port];
     /* copy base */
-    mtl_memcpy(&st22_hdr->base, &rtp->base, sizeof(st22_hdr->base));
+    mt_memcpy(&st22_hdr->base, &rtp->base, sizeof(st22_hdr->base));
     st22_hdr->trans_order = 1; /* packets sent sequentially */
     st22_hdr->kmode = 0;       /* codestream packetization mode */
     st22_hdr->f_counter_hi = 0;
@@ -1020,7 +1020,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     snprintf(name, sizeof(name), ST_TX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     rtcp_ops.name = name;
     struct mt_udp_hdr hdr;
-    mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
+    mt_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
     rtcp_ops.udp_hdr = &hdr;
     if (!ops->rtcp.buffer_size) ops->rtcp.buffer_size = ST_TX_VIDEO_RTCP_RING_SIZE;
@@ -1059,7 +1059,7 @@ static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
   struct rte_udp_hdr* udp = &hdr->udp;
 
   /* update the hdr: eth, ip, udp */
-  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
   mt_mbuf_init_ipv4(pkt_r);
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
@@ -1080,7 +1080,7 @@ static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
   void* pd_base = rte_pktmbuf_mtod_offset(pkt_base, void*, hdr_sz);
   void* pd_r = rte_pktmbuf_mtod_offset(pkt_r, void*, hdr_sz);
   size_t pd_len = pkt_base->pkt_len - hdr_sz;
-  rte_memcpy(pd_r, pd_base, pd_len);
+  mt_memcpy(pd_r, pd_base, pd_len);
 
   return 0;
 }
@@ -1104,7 +1104,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   udp = &hdr->udp;
 
   /* copy the basic hdrs: eth, ip, udp, rtp */
-  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1170,11 +1170,11 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     payload = (void*)((uint8_t*)rtp + sizeof(*rtp));
   if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
     /* cross lines with padding case */
-    mtl_memcpy(payload, frame_info->addr + offset, line1_length);
-    mtl_memcpy(payload + line1_length,
-               frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+    mt_memcpy(payload, frame_info->addr + offset, line1_length);
+    mt_memcpy(payload + line1_length,
+              frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else {
-    mtl_memcpy(payload, frame_info->addr + offset, left_len);
+    mt_memcpy(payload, frame_info->addr + offset, left_len);
   }
   pkt->data_len = sizeof(struct st_rfc4175_video_hdr) + left_len;
   if (e_rtp) pkt->data_len += sizeof(*e_rtp);
@@ -1210,7 +1210,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   udp = &hdr->udp;
 
   /* copy the hdr: eth, ip, udp, rtp */
-  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1283,13 +1283,13 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     }
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
-    mtl_memcpy(payload, frame_info->addr + offset, line1_length);
-    mtl_memcpy(payload + line1_length,
-               frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+    mt_memcpy(payload, frame_info->addr + offset, line1_length);
+    mt_memcpy(payload + line1_length,
+              frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else if (tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
-    mtl_memcpy(payload, frame_info->addr + offset, left_len);
+    mt_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
@@ -1326,7 +1326,7 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   rtp = &hdr->rtp;
 
   /* copy the hdr: eth, ip, udp, rtp */
-  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
@@ -1335,12 +1335,12 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   /* update rtp */
   hdr_base = rte_pktmbuf_mtod(pkt_base, struct st_rfc4175_video_hdr*);
   rtp_base = &hdr_base->rtp;
-  rte_memcpy(rtp, rtp_base, sizeof(*rtp));
+  mt_memcpy(rtp, rtp_base, sizeof(*rtp));
 
   /* copy extra if Continuation */
   uint16_t line1_offset = ntohs(rtp->row_offset);
   if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
-    rte_memcpy(&rtp[1], &rtp_base[1], sizeof(struct st20_rfc4175_extra_rtp_hdr));
+    mt_memcpy(&rtp[1], &rtp_base[1], sizeof(struct st20_rfc4175_extra_rtp_hdr));
   }
 
   /* update mbuf */
@@ -1379,9 +1379,9 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1453,9 +1453,9 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
   rtp = rte_pktmbuf_mtod(pkt_chain, struct st_rfc3550_rtp_hdr*);
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1527,9 +1527,9 @@ static int tv_build_rtp_redundant_chain(struct st_tx_video_session_impl* s,
   ipv4 = &hdr->ipv4;
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_R].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_R].ipv4, sizeof(hdr->ipv4));
-  rte_memcpy(&hdr->udp, &s->s_hdr[MTL_SESSION_PORT_R].udp, sizeof(hdr->udp));
+  mt_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_R].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_R].ipv4, sizeof(hdr->ipv4));
+  mt_memcpy(&hdr->udp, &s->s_hdr[MTL_SESSION_PORT_R].udp, sizeof(hdr->udp));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
@@ -1570,11 +1570,11 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   udp = &hdr->udp;
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(*ipv4));
-  rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(*udp));
+  mt_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(*ipv4));
+  mt_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(*udp));
   /* copy rtp */
-  rte_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
+  mt_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1619,7 +1619,7 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   /* copy payload */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
   void* payload = &rtp[1];
-  mtl_memcpy(payload, frame_info->addr + offset, left_len);
+  mt_memcpy(payload, frame_info->addr + offset, left_len);
 
   pkt->data_len = sizeof(*hdr) + left_len;
   pkt->pkt_len = pkt->data_len;
@@ -1648,11 +1648,11 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   udp = &hdr->udp;
 
   /* copy the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
-  rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(*ipv4));
-  rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(*udp));
+  mt_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  mt_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(*ipv4));
+  mt_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(*udp));
   /* copy rtp */
-  rte_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
+  mt_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
@@ -1701,7 +1701,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   if (tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
-    mtl_memcpy(payload, frame_info->addr + offset, left_len);
+    mt_memcpy(payload, frame_info->addr + offset, left_len);
   } else { /* attach payload */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
                               tv_frame_get_offset_iova(s, frame_info, offset), left_len,
@@ -1738,7 +1738,7 @@ static int tv_build_st22_redundant_chain(struct st_tx_video_session_impl* s,
   rtp = &hdr->rtp;
 
   /* copy the hdr: eth, ip, udp, rtp */
-  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
 #ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
@@ -1747,7 +1747,7 @@ static int tv_build_st22_redundant_chain(struct st_tx_video_session_impl* s,
   /* update rtp */
   hdr_base = rte_pktmbuf_mtod(pkt_base, struct st22_rfc9134_video_hdr*);
   rtp_base = &hdr_base->rtp;
-  rte_memcpy(rtp, rtp_base, sizeof(*rtp));
+  mt_memcpy(rtp, rtp_base, sizeof(*rtp));
 
   /* update mbuf */
   pkt_r->data_len = pkt_base->data_len;
@@ -1954,7 +1954,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         }
         s->port_user_stats.stat_user_meta_cnt++;
         /* copy user meta to frame meta */
-        rte_memcpy(frame->user_meta, meta.user_meta, meta.user_meta_size);
+        mt_memcpy(frame->user_meta, meta.user_meta, meta.user_meta_size);
         frame->user_meta_data_size = meta.user_meta_size;
       }
 
@@ -2738,7 +2738,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     memset(&flow, 0, sizeof(flow));
     flow.bytes_per_sec = tv_rl_bps(s);
     mt_pacing_train_bps_result_search(impl, i, flow.bytes_per_sec, &flow.bytes_per_sec);
-    mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
+    mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
       flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
@@ -3948,9 +3948,9 @@ static int tv_ops_prune_down_ports(struct mtl_main_impl* impl, struct st20_tx_op
 
     /* shift all further port names one slot down */
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
       ops->udp_src_port[j] = ops->udp_src_port[j + 1];
     }
@@ -4064,9 +4064,9 @@ static int tv_st22_ops_prune_down_ports(struct mtl_main_impl* impl,
     warn("%s(%d), port %s is down, it will not be used\n", __func__, i, ops->port[i]);
 
     for (int j = i; j < num_ports - 1; j++) {
-      rte_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
-      rte_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
-      rte_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
+      mt_memcpy(ops->port[j], ops->port[j + 1], MTL_PORT_MAX_LEN);
+      mt_memcpy(ops->dip_addr[j], ops->dip_addr[j + 1], MTL_IP_ADDR_LEN);
+      mt_memcpy(ops->tx_dst_mac[j], ops->tx_dst_mac[j + 1], MTL_MAC_ADDR_LEN);
       ops->udp_port[j] = ops->udp_port[j + 1];
       ops->udp_src_port[j] = ops->udp_src_port[j + 1];
     }
@@ -4197,7 +4197,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   memset(&flow, 0, sizeof(flow));
   flow.bytes_per_sec = tv_rl_bps(s);
   mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec, &flow.bytes_per_sec);
-  mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
+  mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
   flow.dst_port = s->ops.udp_port[s_port];
   s->queue[s_port] = mt_txq_get(impl, port, &flow);
   if (!s->queue[s_port]) {
@@ -4290,7 +4290,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   udp = &hdr->udp;
 
   /* copy the basic hdrs: eth, ip, udp, rtp */
-  rte_memcpy(hdr, &s->s_hdr[s_port], sizeof(*hdr));
+  mt_memcpy(hdr, &s->s_hdr[s_port], sizeof(*hdr));
 
   /* set timestamp */
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
@@ -4302,7 +4302,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
 
   /* copy user meta */
   void* payload = (uint8_t*)rtp + sizeof(struct st20_rfc4175_rtp_hdr);
-  mtl_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
+  mt_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
 
   pkt->data_len = sizeof(struct st_rfc4175_video_hdr) + frame->user_meta_data_size;
   pkt->pkt_len = pkt->data_len;

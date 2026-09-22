@@ -75,7 +75,7 @@ static int cni_udp_detect_analyses(struct mt_cni_entry* cni, struct mt_udp_hdr* 
     return -EINVAL;
   }
 
-  rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
+  mt_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
 
   /* search if it's a known udp stream */
   MT_TAILQ_FOREACH(entry, list, next) {
@@ -90,7 +90,7 @@ static int cni_udp_detect_analyses(struct mt_cni_entry* cni, struct mt_udp_hdr* 
     err("%s(%d), entry malloc fail\n", __func__, port);
     return -ENOMEM;
   }
-  rte_memcpy(entry->tuple, tuple, sizeof(tuple));
+  mt_memcpy(entry->tuple, tuple, sizeof(tuple));
   /* add to list */
   MT_TAILQ_INSERT_TAIL(list, entry, next);
   info("%s(%d), new udp stream:\n", __func__, port);
@@ -719,7 +719,7 @@ struct mt_csq_entry* mt_csq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->idx = idx;
   entry->parent = cni;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   /* ring create */
   char ring_name[32];

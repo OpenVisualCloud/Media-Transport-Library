@@ -334,7 +334,7 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
   /* 5g bit per second */
   entry->rate_limit_per_thread = (uint64_t)6 * 1000 * 1000 * 1000;
   entry->gso_sz = flow->gso_sz;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
     struct mt_tx_socket_thread* t = &entry->threads_data[i];
@@ -684,7 +684,7 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
   entry->parent = impl;
   entry->port = port;
   entry->pool_element_sz = 2048;
-  rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
+  mt_memcpy(&entry->flow, flow, sizeof(entry->flow));
   /* 5g bit per second */
   entry->rate_limit_per_thread = (uint64_t)5 * 1000 * 1000 * 1000;
 
