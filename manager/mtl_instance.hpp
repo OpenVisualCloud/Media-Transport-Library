@@ -74,6 +74,15 @@ class mtl_instance {
   /** Number of flow rules this instance holds on `ifindex`. */
   size_t flow_count(unsigned int ifindex) const;
 
+  /**
+   * Number of UDP filter port adds this instance has not given back on
+   * `ifindex`.
+   *
+   * One port counts once per add, because the interface counts the references to
+   * a port and each add needs its own delete.
+   */
+  size_t filter_count(unsigned int ifindex) const;
+
  private:
   void log(const log_level& level, const std::string& message) const;
 
@@ -122,6 +131,12 @@ class mtl_instance {
   std::unordered_map<unsigned int, std::shared_ptr<mtl_interface>> interfaces;
   std::unordered_map<unsigned int, std::unordered_set<uint16_t>> if_queue_ids;
   std::unordered_map<unsigned int, std::unordered_set<uint32_t>> if_flow_ids;
+  /* Port to the number of adds that have no delete yet, because the interface
+   * counts the references to a port: two adds of one port need two deletes. A
+   * count and not a set of copies, so that a client which adds one port again
+   * and again does not make the manager allocate without bound. */
+  std::unordered_map<unsigned int, std::unordered_map<uint16_t, uint32_t>>
+      if_filter_ports;
 };
 
 #endif

@@ -41,6 +41,18 @@ mtl_instance::~mtl_instance() {
     pair.second.clear();
   }
 
+  /* One delete per add, because the interface counts the references to a port.
+   * Without this the port stays in the udp4_dp_filter map for as long as
+   * another instance keeps the interface alive. */
+  for (auto& pair : if_filter_ports) {
+    auto it = interfaces.find(pair.first);
+    if (it == interfaces.end() || it->second == nullptr) continue;
+    for (const auto& port : pair.second)
+      for (uint32_t i = 0; i < port.second; i++)
+        it->second->update_udp_dp_filter(port.first, false);
+    pair.second.clear();
+  }
+
   if (conn_fd >= 0) close(conn_fd);
 }
 
@@ -57,6 +69,16 @@ size_t mtl_instance::queue_count(unsigned int ifindex) const {
 size_t mtl_instance::flow_count(unsigned int ifindex) const {
   auto it = if_flow_ids.find(ifindex);
   return it == if_flow_ids.end() ? 0 : it->second.size();
+}
+
+size_t mtl_instance::filter_count(unsigned int ifindex) const {
+  auto it = if_filter_ports.find(ifindex);
+  size_t count = 0;
+
+  if (it == if_filter_ports.end()) return 0;
+  for (const auto& port : it->second) count += port.second;
+
+  return count;
 }
 
 int mtl_instance::feed(const char* buf, size_t len) {
@@ -335,9 +357,31 @@ void mtl_instance::handle_message_udp_dp_filter(
 
   unsigned int ifindex = ntohl(udp_dp_filter_msg->ifindex);
   uint16_t port = ntohs(udp_dp_filter_msg->port);
+  auto tracked = if_filter_ports.find(ifindex);
+
+  /* Only give back a port this instance added. The interface counts the
+   * references to a port, so one delete too many takes the port out of the map
+   * and the instance that really uses it stops receiving. */
+  if (!add && (tracked == if_filter_ports.end() ||
+               tracked->second.find(port) == tracked->second.end())) {
+    log(log_level::WARNING, "Asked to delete the udp_dp_filter port " +
+                                std::to_string(port) + ", which it does not hold.");
+    if (send_response(-EINVAL) < 0)
+      log(log_level::ERROR, "Failed to send the response for udp_dp_filter");
+    return;
+  }
 
   auto interface = get_interface(ifindex, true);
   int ret = interface == nullptr ? -ENODEV : interface->update_udp_dp_filter(port, add);
+
+  if (ret == 0) {
+    if (add) {
+      if_filter_ports[ifindex][port]++;
+    } else {
+      auto held = tracked->second.find(port);
+      if (--held->second == 0) tracked->second.erase(held);
+    }
+  }
 
   if (send_response(ret) < 0)
     log(log_level::ERROR, "Failed to send the response for udp_dp_filter");
