@@ -95,15 +95,25 @@ MAX_SESSIONS = {
 # sessions no longer fit.  It says so once, via warn(), and runs anyway, so a
 # sweep on a full-length asset silently measures two populations at once.  The
 # perf cases therefore use 24-frame prefixes of the assets the rest of the suite
-# uses; every session then gets a hugepage source.
+# uses, named "<asset>_24frames.yuv".
 #
-# 24 is one number for all three resolutions, not a coincidence: the session
-# ceiling is inversely proportional to frame size, so worst-case demand is
-# frames * line_rate / (8 * lowest_fps_in_the_sweep) = frames * 500 MB,
-# independent of resolution.  Against the ~15 GiB a runner has left for sources
-# after MTL's own arena, 24 frames costs 11.1 GiB.  Revisit if the line rate
-# rises, 25 fps stops being the cheapest case, or hugepages shrink.
+# 24 is one number for all three resolutions, not a coincidence: at the
+# bandwidth ceiling the session count is inversely proportional to frame size,
+# so worst-case demand is frames * line_rate / (8 * lowest_fps_in_the_sweep) =
+# frames * 500 MB at 100 Gbps, independent of resolution.  Against the ~15 GiB a
+# runner has left for sources after MTL's own arena, that leaves every
+# resolution's memory ceiling above its capacity ceiling -- 132 sessions against
+# the 64 MAX_SESSIONS allows at 1080p, 33 against 24 at 2160p, 8 against 6 at
+# 4320p -- which is what makes a *passing* iteration wholly hugepage-backed.
+# Probes above the ceiling can still exhaust the pool, so the fallback is also
+# checked for directly, in _has_hugepage_source_fallback().  Revisit if the line
+# rate rises above 100 Gbps, 25 fps stops being the cheapest case, or hugepages
+# shrink.
 PERF_SOURCE_FRAMES = 24
+
+# What RxTxApp prints, once, when a session's source no longer fits in
+# hugepages and it reads through mmap() instead (tx_st20p_app.c).
+HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
 
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
@@ -136,19 +146,48 @@ def _check_perf_source_size(tx_host, media_file_path: str, media_config: dict) -
 
     Staging a full-length asset by mistake does not fail the run -- it puts most
     sessions on RxTxApp's mmap fallback and publishes a number anyway, so the
-    size is worth checking rather than assuming.
+    size is worth checking rather than assuming.  The name is checked too: it is
+    what ties PERF_SOURCE_FRAMES to the assets media_files.py asks for, so
+    raising the constant without provisioning new prefixes cannot pass quietly.
     """
+    suffix = f"_{PERF_SOURCE_FRAMES}frames.yuv"
+    if not media_file_path.endswith(suffix):
+        pytest.fail(
+            f"{media_file_path} is not a {PERF_SOURCE_FRAMES}-frame prefix; the "
+            f"perf cases need an asset named *{suffix}"
+        )
+
     frame_bytes = calculate_yuv_frame_size(
         media_config["width"], media_config["height"], media_config["file_format"]
     )
-    result = tx_host.connection.execute_command(f"stat -c %s {media_file_path}")
-    staged = int((result.stdout or "").strip())
+    result = tx_host.connection.execute_command(
+        f"stat -c %s {media_file_path}", expected_return_codes=None
+    )
+    staged = (result.stdout or "").strip()
+    if result.return_code != 0 or not staged.isdigit():
+        pytest.fail(
+            f"cannot size {media_file_path} on {tx_host.name}: stat exited "
+            f"{result.return_code} saying {staged!r}"
+        )
+
+    staged = int(staged)
     if staged != PERF_SOURCE_FRAMES * frame_bytes:
         pytest.fail(
             f"{media_file_path} holds {staged / frame_bytes:.1f} frames "
             f"({staged} B); the sweep needs {PERF_SOURCE_FRAMES} "
             f"({PERF_SOURCE_FRAMES * frame_bytes} B)"
         )
+
+
+def _has_hugepage_source_fallback(tx_lines) -> bool:
+    """True if any TX session read its source through the mmap() fallback.
+
+    PERF_SOURCE_FRAMES keeps the file small enough that this should not happen,
+    but the pool is shared with MTL's own arena, which grows with the session
+    count, and nothing in CI provisions the pool for this leg.  The app's own
+    report is the one signal that covers every cause.
+    """
+    return any(HUGEPAGE_FALLBACK_MARKER in line for line in tx_lines)
 
 
 def _apply_side_kwargs(
@@ -652,6 +691,14 @@ def _run_iteration(
         )
 
         detail = f"{count}/{num_sessions} sessions at {fps} fps"
+        if _has_hugepage_source_fallback(tx_lines):
+            # Part of this iteration's TX read its source through mmap() instead
+            # of hugepages, so the number would average two memory paths.  Veto
+            # rather than fail the case: the pool is shared with MTL's arena, so
+            # a probe above the ceiling can exhaust it while the counts the sweep
+            # will settle on stay clean.
+            detail += ", hugepage source fallback"
+            success = False
         if result.return_code != 0:
             # Keep the code in the detail so _is_crash still schedules a VF FLR
             # before the next iteration.
@@ -716,10 +763,6 @@ def _run_session_sweep(
     if use_dma and is_tx:
         pytest.skip("DMA only benefits RX; TX+DMA is identical to TX no-DMA")
 
-    # After the skips: a host without VFs, or a mode that does not apply, is an
-    # environment fact, while a wrong-sized source is a misconfiguration.
-    _check_perf_source_size(tx_host, media_file_path, media_config)
-
     tx_vf, rx_vf = tx_host.vfs[0], rx_host.vfs[0]
     tx_vf_r = tx_host.vfs_r[0] if redundant else None
     rx_vf_r = rx_host.vfs_r[0] if redundant else None
@@ -735,6 +778,11 @@ def _run_session_sweep(
         if dma_device is None:
             pytest.skip(f"DMA not available on {rx_host.name}")
     dma_label = f" with DMA ({dma_device})" if use_dma else ""
+
+    # Below every skip: a host without VFs or a DSA channel, or a mode that does
+    # not apply, is an environment fact, while a wrong source is a
+    # misconfiguration and has to be reported as one.
+    _check_perf_source_size(tx_host, media_file_path, media_config)
 
     # ── Paths ──
     build_tx = get_host_mtl_path(tx_host, default=mtl_path)

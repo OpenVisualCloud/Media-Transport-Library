@@ -370,15 +370,24 @@ class _FailingPytest:
 
 
 class _SizeReportingHost:
-    """Answers the guard's one `stat -c %s` with *size*."""
+    """Answers the guard's one `stat -c %s` with *size*, or with a failure."""
 
-    def __init__(self, size):
+    _OMITTED = object()
+
+    name = "sut"
+
+    def __init__(self, size, return_code=0):
         self._size = size
+        self._return_code = return_code
         self.connection = self
 
-    def execute_command(self, command):
+    def execute_command(self, command, expected_return_codes=_OMITTED):
         assert command.startswith("stat -c %s "), command
-        return types.SimpleNamespace(stdout=f"{self._size}\n")
+        # mfd_connect raises on an unexpected exit code by default, which would
+        # lose the guard's own message; it has to ask for the code instead.
+        assert expected_return_codes is None, "the guard must handle a failed stat"
+        stdout = "" if self._return_code else f"{self._size}\n"
+        return types.SimpleNamespace(stdout=stdout, return_code=self._return_code)
 
 
 class PerfSourceSizeTests(unittest.TestCase):
@@ -387,7 +396,7 @@ class PerfSourceSizeTests(unittest.TestCase):
     RxTxApp gives each TX session its own hugepage copy of the source and drops
     to an mmap() of it for the sessions that no longer fit, saying so once via
     warn().  Staging a full-length asset therefore does not fail -- it publishes
-    a number measured across two memory paths -- so the size is checked.
+    a number measured across two memory paths -- so the source is checked.
     """
 
     MEDIA = {"width": 1920, "height": 1080, "file_format": "YUV422RFC4175PG2BE10"}
@@ -396,13 +405,25 @@ class PerfSourceSizeTests(unittest.TestCase):
     # ParkJoy_1920x1080..._24frames.yuv on the media store.  Raising the constant
     # without provisioning assets to match has to fail here.
     EXPECTED = 124_416_000
+    PATH = (
+        f"/mnt/ramdisk/media/ParkJoy_1920x1080_10bit_50Hz_P422_yuv422p10be_"
+        f"To_yuv422YCBCR10be_{sweep.PERF_SOURCE_FRAMES}frames.yuv"
+    )
+    # The parent that prefix is cut from, which is what a fixture pointed at the
+    # wrong media_files key would stage.
+    FULL_LENGTH_PATH = (
+        "/mnt/ramdisk/media/ParkJoy_1920x1080_10bit_50Hz_P422_yuv422p10be_"
+        "To_yuv422YCBCR10be.yuv"
+    )
 
-    def _check(self, size):
+    def _check(self, size, path=None, return_code=0):
         saved = sweep.pytest
         sweep.pytest = _FailingPytest
         try:
             sweep._check_perf_source_size(
-                _SizeReportingHost(size), "/mnt/ramdisk/media/src.yuv", self.MEDIA
+                _SizeReportingHost(size, return_code),
+                path or self.PATH,
+                self.MEDIA,
             )
         finally:
             sweep.pytest = saved
@@ -413,9 +434,21 @@ class PerfSourceSizeTests(unittest.TestCase):
     def test_a_correctly_truncated_source_is_accepted(self):
         self._check(self.EXPECTED)
 
-    def test_the_full_length_asset_is_rejected(self):
-        # The runner's own ParkJoy_1080p: 288 frames, 11 of which fit as hugepage
-        # copies before the rest fall back.
+    def test_the_full_length_asset_is_rejected_by_name(self):
+        # Caught before the size, because the name is what ties
+        # PERF_SOURCE_FRAMES to the assets media_files.py asks for.
+        with self.assertRaises(_Failed) as caught:
+            self._check(self.EXPECTED, path=self.FULL_LENGTH_PATH)
+        self.assertIn(f"*_{sweep.PERF_SOURCE_FRAMES}frames.yuv", str(caught.exception))
+
+    def test_a_prefix_of_some_other_length_is_rejected_by_name(self):
+        # Raising the constant without cutting new prefixes lands here.
+        with self.assertRaises(_Failed):
+            self._check(self.EXPECTED, path=self.PATH.replace("24frames", "48frames"))
+
+    def test_a_correctly_named_file_of_the_wrong_size_is_rejected(self):
+        # The runner's own ParkJoy_1080p is 288 frames; 11 of them fit as
+        # hugepage copies before the rest fall back.
         with self.assertRaises(_Failed) as caught:
             self._check(1_492_992_000)
         self.assertIn("288.0 frames", str(caught.exception))
@@ -424,6 +457,48 @@ class PerfSourceSizeTests(unittest.TestCase):
         # A prefix cut off a frame boundary, or a partial copy to the ramdisk.
         with self.assertRaises(_Failed):
             self._check(self.EXPECTED - self.FRAME)
+
+    def test_a_failed_stat_reports_the_path_not_a_parse_error(self):
+        # Staging can leave the file absent; int("") would raise ValueError out
+        # of the guard and bury what went wrong.
+        with self.assertRaises(_Failed) as caught:
+            self._check(self.EXPECTED, return_code=1)
+        self.assertIn("cannot size", str(caught.exception))
+
+
+class HugepageFallbackTests(unittest.TestCase):
+    """An iteration whose TX read through mmap() is not a capacity result.
+
+    The source size is checked before the run, but the hugepage pool is shared
+    with MTL's own arena, which grows with the session count, and nothing in CI
+    provisions it for this leg.  The app's own warning is the one signal that
+    covers every cause, so a passing iteration has to be free of it.
+    """
+
+    def test_the_line_rxtxapp_prints_is_detected(self):
+        lines = [
+            "TX: MTL: st_tx_video_sessions_stat...",
+            "TX: warn: app_tx_st20p_open_source, source malloc on hugepage fail",
+        ]
+        self.assertTrue(sweep._has_hugepage_source_fallback(lines))
+
+    def test_a_clean_log_reports_no_fallback(self):
+        self.assertFalse(
+            sweep._has_hugepage_source_fallback(
+                ["TX: MTL: app_tx_st20p_open_source, source begin 0x1"]
+            )
+        )
+
+    def test_an_empty_log_reports_no_fallback(self):
+        # read_remote_log returns [] when the companion log is unreadable.
+        self.assertFalse(sweep._has_hugepage_source_fallback([]))
+
+    def test_the_marker_is_the_string_rxtxapp_actually_prints(self):
+        # The one thing here that can rot silently: reword the app's warn() and
+        # the check stops matching, with the sweep back to averaging two memory
+        # paths and no test failing.  Pin it against the app's own source.
+        source = (ROOT / "tests/tools/RxTxApp/src/tx_st20p_app.c").read_text()
+        self.assertIn(sweep.HUGEPAGE_FALLBACK_MARKER, source)
 
 
 if __name__ == "__main__":
