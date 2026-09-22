@@ -702,8 +702,6 @@ def _run_session_sweep(
     # ── Host assignment ──
     tx_host, rx_host = _get_tx_rx_hosts(hosts, direction)
 
-    _check_perf_source_size(tx_host, media_file_path, media_config)
-
     for label, host in [("TX", tx_host), ("RX", rx_host)]:
         if not hasattr(host, "vfs") or len(host.vfs) < 1:
             pytest.skip(f"{label} host ({host.name}) needs at least 1 VF")
@@ -717,6 +715,10 @@ def _run_session_sweep(
     # DMA only offloads RX memcpy; TX+DMA is identical to TX no-DMA.
     if use_dma and is_tx:
         pytest.skip("DMA only benefits RX; TX+DMA is identical to TX no-DMA")
+
+    # After the skips: a host without VFs, or a mode that does not apply, is an
+    # environment fact, while a wrong-sized source is a misconfiguration.
+    _check_perf_source_size(tx_host, media_file_path, media_config)
 
     tx_vf, rx_vf = tx_host.vfs[0], rx_host.vfs[0]
     tx_vf_r = tx_host.vfs_r[0] if redundant else None
