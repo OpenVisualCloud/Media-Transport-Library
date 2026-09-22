@@ -39,7 +39,11 @@ from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance
 from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.integrity_session import IntegritySession
-from mtl_engine.pcap_compliance import NO_COMPLIANCE, ComplianceSession
+from mtl_engine.pcap_compliance import (
+    NO_COMPLIANCE,
+    ComplianceSession,
+    unparsable_reason,
+)
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -1187,21 +1191,15 @@ def pcap_capture(
     # opt out at runtime via ``pcap_capture.skip(reason)``.
     capture_disabled = capture_cfg.get("enable") is False
 
-    # EBU pcap compliance analyser does not support 8K resolution
-    is_8k = False
-    if media_file:
-        media_file_info, _ = media_file
-        if media_file_info and (
-            media_file_info.get("height", 0) >= 4320
-            or media_file_info.get("width", 0) >= 7680
-        ):
-            is_8k = True
-            logger.info(
-                "8K resolution detected. Disabling PCAP capture and compliance check as EBU compliance "
-                "analyser does not support 8K."
-            )
+    # Media the EBU LIST analyser cannot judge: there is no verdict to read, so
+    # recording the capture is pointless too. mtl_engine.pcap_compliance is the
+    # single place these exclusions and their reasons live -- tests reach the same
+    # list through skip_unsupported_compliance().
+    unparsable = unparsable_reason(media_file[0] if media_file else None)
+    if unparsable:
+        logger.info("Disabling PCAP capture and compliance check: %s", unparsable)
 
-    skip_capture = capture_disabled or is_8k
+    skip_capture = capture_disabled or bool(unparsable)
     if not skip_capture:
         host = _select_capture_host(hosts)
         is_single_host = len(hosts) == 1

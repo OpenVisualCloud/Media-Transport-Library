@@ -25,6 +25,7 @@ from mfd_connect.exceptions import ConnectionCalledProcessError
 
 from .csv_report import update_compliance_result
 from .execute import log_fail
+from .media_files import parse_fps_to_pformat
 
 logger = logging.getLogger(__name__)
 
@@ -721,3 +722,46 @@ if TYPE_CHECKING:
     _session_check: ComplianceCheck = ComplianceSession(None, {}, None, "")
 
 NO_COMPLIANCE = _NullComplianceSession()
+
+
+# Media EBU LIST 2.2.2 cannot judge. Both cases are limits of the analyser, not
+# of MTL: the stream is transmitted correctly and only the verdict is dropped.
+#
+# 8K it does not parse at all. 119.88 fps it mis-detects, because it derives the
+# rate from two inter-frame RTP timestamp deltas as Rate(180000, d1 + d2), which
+# needs 180000/fps to be a whole number of 90 kHz ticks; 119.88 needs 1501.5, so
+# it reports 90000/751 and judges every frame-grid measure against the wrong
+# grid. Adding 120000/1001 to rate_calculator.cpp upstream retires that entry.
+# 23.976 needs 7507.5 ticks for the same reason but upstream already escapes it,
+# so do not widen this to every fractional rate -- i720p23 would lose a verdict
+# it passes today.
+UNPARSABLE_WIDTH = 7680
+UNPARSABLE_HEIGHT = 4320
+UNPARSABLE_FPS = ("p119",)
+
+
+def unparsable_reason(media_info: Optional[dict]) -> Optional[str]:
+    """Why EBU LIST 2.2.2 cannot judge *media_info*, or None if it can.
+
+    *media_info* is a :mod:`mtl_engine.media_files` entry (the first half of the
+    ``media_file`` fixture's tuple). Media type is part of no case, so st20p,
+    st30p and st40 all use this. An fps it cannot read means "no known
+    limitation" rather than an error -- this decides whether a verdict is taken
+    at all, so an analyser gap must not become a test error.
+    """
+    if not media_info:
+        return None
+
+    width = media_info.get("width", 0)
+    height = media_info.get("height", 0)
+    if width >= UNPARSABLE_WIDTH or height >= UNPARSABLE_HEIGHT:
+        return f"EBU LIST 2.2.2 does not support 8K ({width}x{height})"
+
+    try:
+        fps = parse_fps_to_pformat(media_info.get("fps"))
+    except (ValueError, ZeroDivisionError, TypeError):
+        fps = media_info.get("fps")  # already a pXX label, or unreadable
+    if fps in UNPARSABLE_FPS:
+        return "EBU LIST 2.2.2 mis-detects 119.88 fps as 90000/751"
+
+    return None

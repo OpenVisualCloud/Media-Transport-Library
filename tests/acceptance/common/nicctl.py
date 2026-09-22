@@ -202,6 +202,22 @@ class Nicctl:
                 e,
             )
             self._force_pci_reset(pci_id)
+        except Exception as e:
+            # Name the failure before it propagates -- it otherwise surfaces as
+            # a bare non-zero exit from a sudo command with no hint of which
+            # stage failed or why the escape hatch was not taken.
+            logger.warning(
+                "disable_vf %s failed (%s: %s); NOT attempting PCI "
+                "remove/rescan -- the PF answered, so a rescan would "
+                "re-probe the card and invalidate every sibling port's VFs. "
+                "Check that %s accepts this BDF and that dpdk-devbind.py is "
+                "present.",
+                pci_id,
+                type(e).__name__,
+                e,
+                self.nicctl,
+            )
+            raise
 
     def bind_pmd(self, pci_id: str) -> None:
         """Bind a PF/VF to the DPDK PMD driver (vfio-pci).
@@ -243,6 +259,19 @@ class Nicctl:
                 e,
             )
             self._force_pci_reset(pci_id)
+        except Exception as e:
+            # As in :meth:`disable_vf`: the PF answered, so the escape hatch
+            # stays shut. Say so, and say what to look at.
+            logger.warning(
+                "bind_kernel %s failed (%s: %s); NOT attempting PCI "
+                "remove/rescan -- the PF answered, so a rescan would "
+                "re-probe the card and invalidate every sibling port's VFs. "
+                "Check that the VF is not still held by vfio-pci.",
+                pci_id,
+                type(e).__name__,
+                e,
+            )
+            raise
 
     # ------------------------------------------------------------------
     # Internal helpers
