@@ -15,7 +15,6 @@
  * The test binds a socket of its own and answers by hand. No manager runs.
  */
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/socket.h>
@@ -36,11 +35,13 @@
 
 namespace {
 
+/** A socket file in the test directory that nothing listens on. */
+constexpr const char* kStaleName = "/stale.sock";
+
 class ClientWireTest : public ::testing::Test {
  protected:
   void SetUp() override {
     char pattern[] = "/tmp/mtlm-client-wire-XXXXXX";
-    struct sockaddr_un addr = {};
 
     ASSERT_NE(mkdtemp(pattern), nullptr);
     dir = pattern;
@@ -48,8 +49,7 @@ class ClientWireTest : public ::testing::Test {
 
     listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     ASSERT_GE(listen_fd, 0);
-    addr.sun_family = AF_UNIX;
-    std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+    struct sockaddr_un addr = unix_addr(path);
     ASSERT_EQ(bind(listen_fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)), 0)
         << std::strerror(errno);
     ASSERT_EQ(listen(listen_fd, 1), 0);
@@ -67,6 +67,7 @@ class ClientWireTest : public ::testing::Test {
     if (conn_fd >= 0) close(conn_fd);
     if (listen_fd >= 0) close(listen_fd);
     unlink(path.c_str());
+    unlink((dir + kStaleName).c_str());
     rmdir(dir.c_str());
   }
 
@@ -278,8 +279,8 @@ TEST_F(ClientWireTest, HeartbeatEchoesTheSequenceNumberAndNotAResponseCode) {
 
   /* The ack carries the sequence number in the bytes a response carries its
    * code, so a number with the top bit set must not come back as an error. */
-  std::thread worker(
-      [&]() { EXPECT_EQ(mtlm_heartbeat(client, 0xdeadbeefu, &acked), 0); });
+  wire_worker worker(
+      conn_fd, [&]() { EXPECT_EQ(mtlm_heartbeat(client, 0xdeadbeefu, &acked), 0); });
 
   ASSERT_EQ(wire_read(conn_fd, sent), 0);
   EXPECT_EQ(wire_type(sent), static_cast<uint32_t>(MTL_MSG_TYPE_HEARTBEAT));
@@ -307,7 +308,7 @@ TEST_F(ClientWireTest, AReplyOfTheWrongTypeIsRefused) {
 TEST_F(ClientWireTest, AReplyWithTheWrongMagicIsRefused) {
   mtl_message_t sent;
   int result = 0;
-  std::thread worker([&]() { result = mtlm_lcore_get(client, 1); });
+  wire_worker worker(conn_fd, [&]() { result = mtlm_lcore_get(client, 1); });
 
   ASSERT_EQ(wire_read(conn_fd, sent), 0);
 
@@ -323,7 +324,7 @@ TEST_F(ClientWireTest, AReplyWithTheWrongMagicIsRefused) {
 TEST_F(ClientWireTest, AManagerThatClosesMidRecordIsReported) {
   mtl_message_t sent;
   int result = 0;
-  std::thread worker([&]() { result = mtlm_lcore_get(client, 1); });
+  wire_worker worker(conn_fd, [&]() { result = mtlm_lcore_get(client, 1); });
 
   ASSERT_EQ(wire_read(conn_fd, sent), 0);
 
@@ -342,7 +343,7 @@ TEST_F(ClientWireTest, AManagerThatClosesMidRecordIsReported) {
 TEST_F(ClientWireTest, ARecordSplitByTheManagerIsPutBackTogether) {
   mtl_message_t sent;
   int result = 0;
-  std::thread worker([&]() { result = mtlm_lcore_get(client, 1); });
+  wire_worker worker(conn_fd, [&]() { result = mtlm_lcore_get(client, 1); });
 
   ASSERT_EQ(wire_read(conn_fd, sent), 0);
 
@@ -375,27 +376,18 @@ TEST_F(ClientWireTest, ARecordSplitByTheManagerIsPutBackTogether) {
 
 namespace {
 
-/** Number of open descriptors of this process. */
-int open_fd_count() {
-  DIR* dir = opendir("/proc/self/fd");
-  int count = 0;
+constexpr size_t kMaxPassedFds = 4;
 
-  if (dir == nullptr) return -errno;
-  while (readdir(dir) != nullptr) count++;
-  closedir(dir);
-  return count;
-}
-
-/** Answer an IF_XSK_MAP_FD request with `count` descriptors in one SCM_RIGHTS. */
-int send_map_fds(int fd, const int* fds, size_t count) {
-  char control[CMSG_SPACE(sizeof(int) * 4)] = {0};
+/** Send `len` bytes with `count` descriptors, at most kMaxPassedFds, in one SCM_RIGHTS.
+ */
+int send_with_fds(int fd, const void* data, size_t len, const int* fds, size_t count) {
+  char control[CMSG_SPACE(sizeof(int) * kMaxPassedFds)] = {0};
   struct msghdr hdr = {};
   struct cmsghdr* cmsg;
   struct iovec iov;
-  char data[1] = {' '};
 
-  iov.iov_base = data;
-  iov.iov_len = sizeof(data);
+  iov.iov_base = const_cast<void*>(data);
+  iov.iov_len = len;
   hdr.msg_iov = &iov;
   hdr.msg_iovlen = 1;
   hdr.msg_control = control;
@@ -407,7 +399,14 @@ int send_map_fds(int fd, const int* fds, size_t count) {
   cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count);
   std::memcpy(CMSG_DATA(cmsg), fds, sizeof(int) * count);
 
-  return sendmsg(fd, &hdr, 0) == 1 ? 0 : -errno;
+  return sendmsg(fd, &hdr, 0) == static_cast<ssize_t>(len) ? 0 : -errno;
+}
+
+/** Answer an IF_XSK_MAP_FD request with `count` descriptors. */
+int send_map_fds(int fd, const int* fds, size_t count) {
+  char data[1] = {' '};
+
+  return send_with_fds(fd, data, sizeof(data), fds, count);
 }
 
 } /* namespace */
@@ -415,8 +414,8 @@ int send_map_fds(int fd, const int* fds, size_t count) {
 TEST_F(ClientWireTest, TheXskMapDescriptorArrivesAndCannotOutliveAnExec) {
   mtl_message_t sent;
   int result = 0;
-  int passed = dup(STDIN_FILENO);
-  std::thread worker([&]() { result = mtlm_xsk_map_fd(client, 3); });
+  int passed = null_fd();
+  wire_worker worker(conn_fd, [&]() { result = mtlm_xsk_map_fd(client, 3); });
 
   ASSERT_GE(passed, 0);
   ASSERT_EQ(wire_read(conn_fd, sent), 0);
@@ -441,8 +440,8 @@ TEST_F(ClientWireTest, ARefusedAnswerLeavesNoDescriptorBehind) {
   int before = open_fd_count();
   mtl_message_t sent;
   int result = 0;
-  int passed[2] = {dup(STDIN_FILENO), dup(STDIN_FILENO)};
-  std::thread worker([&]() { result = mtlm_xsk_map_fd(client, 3); });
+  int passed[2] = {null_fd(), null_fd()};
+  wire_worker worker(conn_fd, [&]() { result = mtlm_xsk_map_fd(client, 3); });
 
   ASSERT_GT(before, 0);
   ASSERT_GE(passed[0], 0);
@@ -463,4 +462,169 @@ TEST_F(ClientWireTest, ARefusedAnswerLeavesNoDescriptorBehind) {
   if (result >= 0) close(result);
 
   EXPECT_EQ(open_fd_count(), before) << "a refused answer left a descriptor open";
+}
+
+/*
+ * More descriptors than the control buffer holds.
+ *
+ * The kernel puts in this process as many as fit and sets MSG_CTRUNC. On a
+ * 64-bit host two still fit, so the count check refuses this before the
+ * MSG_CTRUNC check does. Every descriptor that did arrive must close.
+ */
+TEST_F(ClientWireTest, ATruncatedControlMessageLeavesNoDescriptorBehind) {
+  int before = open_fd_count();
+  int passed[kMaxPassedFds];
+  mtl_message_t sent;
+  int result = 0;
+
+  ASSERT_GT(before, 0);
+  for (int& fd : passed) {
+    fd = null_fd();
+    ASSERT_GE(fd, 0);
+  }
+
+  wire_worker worker(conn_fd, [&]() { result = mtlm_xsk_map_fd(client, 3); });
+  ASSERT_EQ(wire_read(conn_fd, sent), 0);
+  ASSERT_EQ(send_map_fds(conn_fd, passed, kMaxPassedFds), 0);
+  worker.join();
+
+  for (int fd : passed) close(fd);
+  EXPECT_EQ(result, -ENOTSUP);
+  if (result >= 0) close(result);
+  EXPECT_EQ(open_fd_count(), before) << "a truncated answer left a descriptor open";
+}
+
+/*
+ * Descriptors on the answer of a call that expects none.
+ *
+ * The kernel drops them today, because recv() gives no control room. The case
+ * guards against a move of exchange() to recvmsg() that keeps them open.
+ */
+TEST_F(ClientWireTest, DescriptorsOnAnOrdinaryAnswerAreNotKept) {
+  int before = open_fd_count();
+  int passed[2] = {null_fd(), null_fd()};
+  mtl_message_t sent;
+  int result = -1;
+
+  ASSERT_GT(before, 0);
+  ASSERT_GE(passed[0], 0);
+  ASSERT_GE(passed[1], 0);
+
+  wire_worker worker(conn_fd, [&]() { result = mtlm_lcore_get(client, 1); });
+  ASSERT_EQ(wire_read(conn_fd, sent), 0);
+  mtl_message_t reply =
+      wire_request(MTL_MSG_TYPE_RESPONSE, sizeof(mtl_response_message_t));
+  ASSERT_EQ(send_with_fds(conn_fd, &reply, sizeof(reply), passed, 2), 0);
+  worker.join();
+
+  close(passed[0]);
+  close(passed[1]);
+  EXPECT_EQ(result, 0);
+  EXPECT_EQ(open_fd_count(), before) << "an ordinary answer left a descriptor open";
+}
+
+/*
+ * Every refusal the client knows, one after the other on one connection.
+ *
+ * One leaked descriptor shows as a count off by one, and a leak checker sees
+ * any heap block the refusals leave. Each round sends 0, 2 or 4 descriptors.
+ */
+TEST_F(ClientWireTest, HostileAnswersInALoopLeaveNothingBehind) {
+  constexpr int kRounds = 3;
+  int before = open_fd_count();
+
+  ASSERT_GT(before, 0);
+
+  for (int round = 0; round < kRounds; round++) {
+    int passed[kMaxPassedFds];
+    mtl_message_t sent;
+    int result = 0;
+    size_t count = static_cast<size_t>(round % 3) * 2; /* 0, 2 or 4 */
+
+    for (size_t i = 0; i < count; i++) {
+      passed[i] = null_fd();
+      ASSERT_GE(passed[i], 0);
+    }
+
+    wire_worker worker(conn_fd, [&]() { result = mtlm_xsk_map_fd(client, 3); });
+    ASSERT_EQ(wire_read(conn_fd, sent), 0) << "round " << round;
+    if (count == 0) {
+      char refusal = 'E';
+      ASSERT_EQ(send(conn_fd, &refusal, 1, 0), 1) << "round " << round;
+    } else {
+      ASSERT_EQ(send_map_fds(conn_fd, passed, count), 0) << "round " << round;
+    }
+    worker.join();
+    for (size_t i = 0; i < count; i++) close(passed[i]);
+    EXPECT_EQ(result, -ENOTSUP) << "round " << round;
+
+    /* A record with the wrong magic, which the client refuses. */
+    result = 0;
+    wire_worker other(conn_fd, [&]() { result = mtlm_lcore_get(client, 1); });
+    ASSERT_EQ(wire_read(conn_fd, sent), 0) << "round " << round;
+    mtl_message_t reply =
+        wire_request(MTL_MSG_TYPE_RESPONSE, sizeof(mtl_response_message_t));
+    reply.header.magic = htonl(0x0badf00d);
+    ASSERT_EQ(send(conn_fd, &reply, sizeof(reply), 0),
+              static_cast<ssize_t>(sizeof(reply)));
+    other.join();
+    EXPECT_EQ(result, -EBADMSG) << "round " << round;
+  }
+
+  EXPECT_EQ(open_fd_count(), before);
+}
+
+/*
+ * A client that never connects.
+ *
+ * A socket file that nothing listens on is what a manager that crashed leaves,
+ * and an instance that starts before the manager retries in a loop. Each failed
+ * create must close the socket it opened.
+ */
+TEST_F(ClientWireTest, AFailedConnectLeavesNoDescriptorBehind) {
+  std::string stale = dir + kStaleName;
+  std::string missing = dir + "/missing.sock";
+  std::string too_long = "/tmp/" + std::string(MTLM_SOCK_PATH_MAX, 'x');
+  struct sockaddr_un addr = unix_addr(stale);
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)), 0);
+  close(fd); /* the file stays, and nothing answers on it */
+
+  int before = open_fd_count();
+  ASSERT_GT(before, 0);
+
+  errno = 0;
+  EXPECT_EQ(mtlm_client_create(stale.c_str()), nullptr);
+  EXPECT_EQ(errno, ECONNREFUSED);
+  EXPECT_EQ(mtlm_client_create(missing.c_str()), nullptr);
+  EXPECT_EQ(errno, ENOENT);
+  EXPECT_EQ(mtlm_client_create(too_long.c_str()), nullptr);
+  EXPECT_EQ(errno, ENAMETOOLONG);
+  EXPECT_FALSE(mtlm_manager_alive(stale.c_str()));
+
+  EXPECT_EQ(open_fd_count(), before) << "a failed connect left a descriptor open";
+}
+
+/* A caller that passes on the NULL of a failed create gets an error, not a crash. */
+TEST_F(ClientWireTest, EveryCallOnANullClientIsRefused) {
+  struct mtlm_register_args args = {};
+  struct mtlm_flow flow = {};
+  uint32_t acked = 0;
+
+  EXPECT_EQ(mtlm_register(nullptr, &args), -EINVAL);
+  EXPECT_EQ(mtlm_heartbeat(nullptr, 1, &acked), -EINVAL);
+  EXPECT_EQ(mtlm_lcore_get(nullptr, 1), -EINVAL);
+  EXPECT_EQ(mtlm_lcore_put(nullptr, 1), -EINVAL);
+  EXPECT_EQ(mtlm_queue_get(nullptr, 1), -EINVAL);
+  EXPECT_EQ(mtlm_queue_put(nullptr, 1, 1), -EINVAL);
+  EXPECT_EQ(mtlm_flow_add(nullptr, &flow), -EINVAL);
+  EXPECT_EQ(mtlm_flow_del(nullptr, 1, 1), -EINVAL);
+  EXPECT_EQ(mtlm_udp_dp_filter_add(nullptr, 1, 1), -EINVAL);
+  EXPECT_EQ(mtlm_udp_dp_filter_del(nullptr, 1, 1), -EINVAL);
+  EXPECT_EQ(mtlm_xsk_map_fd(nullptr, 1), -EINVAL);
+  EXPECT_EQ(mtlm_client_fd(nullptr), -1);
+  EXPECT_EQ(mtlm_client_sock_path(nullptr), nullptr);
+  mtlm_client_destroy(nullptr);
 }

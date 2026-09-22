@@ -11,11 +11,18 @@
 #define _MTLM_TEST_WIRE_HPP_
 
 #include <arpa/inet.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
+#include <string>
+#include <thread>
+#include <utility>
 
 #include "mtl_mproto.h"
 
@@ -27,6 +34,23 @@ inline mtl_message_t wire_request(mtl_message_type_t type, uint32_t body_len) {
   msg.header.magic = htonl(MTL_MANAGER_MAGIC);
   msg.header.type = htonl(static_cast<uint32_t>(type));
   msg.header.body_len = htonl(body_len);
+  return msg;
+}
+
+/** A heartbeat request that carries `seq`. */
+inline mtl_message_t wire_heartbeat(uint32_t seq) {
+  mtl_message_t msg =
+      wire_request(MTL_MSG_TYPE_HEARTBEAT, sizeof(mtl_heartbeat_message_t));
+
+  msg.body.heartbeat_msg.seq = htonl(seq);
+  return msg;
+}
+
+/** A GET_LCORE or PUT_LCORE request for `lcore_id`. */
+inline mtl_message_t wire_lcore(mtl_message_type_t type, uint16_t lcore_id) {
+  mtl_message_t msg = wire_request(type, sizeof(mtl_lcore_message_t));
+
+  msg.body.lcore_msg.lcore = htons(lcore_id);
   return msg;
 }
 
@@ -72,5 +96,63 @@ inline void wire_set_timeout(int fd, int seconds) {
   tv.tv_sec = seconds;
   setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 }
+
+/** Number of open descriptors of this process, or a negative errno. */
+inline int open_fd_count() {
+  DIR* dir = opendir("/proc/self/fd");
+  int count = 0;
+
+  if (dir == nullptr) return -errno;
+  while (readdir(dir) != nullptr) count++;
+  closedir(dir);
+  return count;
+}
+
+/** An AF_UNIX address for `path`, zeroed past its end. */
+inline struct sockaddr_un unix_addr(const std::string& path) {
+  struct sockaddr_un addr = {};
+
+  addr.sun_family = AF_UNIX;
+  std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+  return addr;
+}
+
+/** A descriptor of /dev/null to pass over SCM_RIGHTS, or a negative errno. */
+inline int null_fd() {
+  int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+  return fd < 0 ? -errno : fd;
+}
+
+/**
+ * A thread that runs one blocking client call.
+ *
+ * A failed ASSERT returns before join(), and a joinable std::thread then ends
+ * the whole binary. The destructor instead shuts `peer_fd` down, which makes
+ * the blocked call return, and joins.
+ */
+class wire_worker {
+ public:
+  template <typename Fn>
+  wire_worker(int peer_fd, Fn&& fn) : peer_fd(peer_fd), worker(std::forward<Fn>(fn)) {
+  }
+
+  ~wire_worker() {
+    if (!worker.joinable()) return;
+    shutdown(peer_fd, SHUT_RDWR);
+    worker.join();
+  }
+
+  wire_worker(const wire_worker&) = delete;
+  wire_worker& operator=(const wire_worker&) = delete;
+
+  void join() {
+    worker.join();
+  }
+
+ private:
+  int peer_fd;
+  std::thread worker;
+};
 
 #endif
