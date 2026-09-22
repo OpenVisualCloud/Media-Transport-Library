@@ -19,11 +19,11 @@ from mtl_engine import ip_pools
 from mtl_engine.const import RXTXAPP_PATH
 from mtl_engine.dma import setup_host_dma_all
 from mtl_engine.execute import kill_stale_processes, read_remote_log, run
+from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
     display_session_results,
-    get_companion_log_summary,
     log_cpu_core_results,
     monitor_dev_rate,
     monitor_rx_fps,
@@ -37,20 +37,35 @@ from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
-WARMUP_SECONDS = 60  # Warmup passed to FPS monitor
-COOLDOWN_SECONDS = 10  # Cooldown passed to FPS monitor
+WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
+
+# Exit codes that mean the app died rather than finished.
+CRASH_EXIT_CODES = (134, 137, 139, 244, 251)  # SIGABRT, SIGKILL, SIGSEGV, DPDK, DPDK
 
 # ── Scheduler session quotas ──
 # Controls how many sessions the library places on each scheduler (lcore).
 # Higher quota = fewer cores (denser packing), but risks overloading a core.
-# Values are derived from single-core capacity tests with a safety margin.
-SCH_SESSION_QUOTA_SINGLE_CORE = 60
+# The unit is one 1080p59 stream's bandwidth (args.c ST_ARG_SCH_SESSION_QUOTA),
+# and a *redundant* session charges one unit per port -- st_rx_video_session.c
+# does `quota_mbs *= ops->num_port` outside the user-quota guard -- so a
+# redundant session costs 2.  The library silently ignores a quota >= 100.
+#
+# Single core: must exceed the whole run's charge, or the library opens a second
+# scheduler and the result is no longer a single-core measurement.  At 60 a
+# redundant sweep split in two above 30 sessions; 99 covers 49 of them, and
+# _single_core_violation() fails the iteration if a split happens anyway.
+SCH_SESSION_QUOTA_SINGLE_CORE = 99
 
-# Phase 1 binary search (multi-core): None = fall through to per-mode quota.
+# Phase 1 binary search (multi-core) must find the session ceiling of the *NIC*,
+# so it packs thinly enough that no core is the limit -- 12 units, the library's
+# own ST_QUOTA_TX1080P_PER_SCH.  Leaving this to the per-mode quota below let
+# packing density cap the sweep: at quota 18 the +DMA sweep put 36 sessions on
+# 2 schedulers, failed, and settled at 33, while no-DMA spread the same 36 over
+# 3 schedulers at quota 16 and passed.  Phase 2 then re-packs for fewer cores.
 # CLI --sch_quota overrides both phases.
-SCH_SESSION_QUOTA_PHASE1_MC = None
+SCH_SESSION_QUOTA_PHASE1_MC = 12
 
 # Multi-core no-DMA: RX ~21/core max, TX ~28/core max (TX has no memcpy).
 SCH_SESSION_QUOTA_MULTI_CORE = 16  # RX no-DMA (~76% of SC max)
@@ -74,6 +89,31 @@ MAX_SESSIONS = {
     ("rx", False): 64,
     ("rx", True): 64,
 }
+
+# RxTxApp gives every TX session its own hugepage copy of the source file, and
+# falls back to a plain mmap() of it -- a different memory path -- for whichever
+# sessions no longer fit.  It says so once, via warn(), and runs anyway, so a
+# sweep on a full-length asset silently measures two populations at once.  The
+# perf cases therefore use 24-frame prefixes of the assets the rest of the suite
+# uses, named "<asset>_24frames.yuv".
+#
+# 24 is one number for all three resolutions, not a coincidence: at the
+# bandwidth ceiling the session count is inversely proportional to frame size,
+# so worst-case demand is frames * line_rate / (8 * lowest_fps_in_the_sweep) =
+# frames * 500 MB at 100 Gbps, independent of resolution.  Against the ~15 GiB a
+# runner has left for sources after MTL's own arena, that leaves every
+# resolution's memory ceiling above its capacity ceiling -- 132 sessions against
+# the 64 MAX_SESSIONS allows at 1080p, 33 against 24 at 2160p, 8 against 6 at
+# 4320p -- which is what makes a *passing* iteration wholly hugepage-backed.
+# Probes above the ceiling can still exhaust the pool, so the fallback is also
+# checked for directly, in _has_hugepage_source_fallback().  Revisit if the line
+# rate rises above 100 Gbps, 25 fps stops being the cheapest case, or hugepages
+# shrink.
+PERF_SOURCE_FRAMES = 24
+
+# What RxTxApp prints, once, when a session's source no longer fits in
+# hugepages and it reads through mmap() instead (tx_st20p_app.c).
+HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
 
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
@@ -99,6 +139,55 @@ def _get_tx_rx_hosts(hosts: dict, direction: str):
         f"TX={tx_host.name}, RX={rx_host.name}"
     )
     return tx_host, rx_host
+
+
+def _check_perf_source_size(tx_host, media_file_path: str, media_config: dict) -> None:
+    """Fail unless the staged source is PERF_SOURCE_FRAMES frames long.
+
+    Staging a full-length asset by mistake does not fail the run -- it puts most
+    sessions on RxTxApp's mmap fallback and publishes a number anyway, so the
+    size is worth checking rather than assuming.  The name is checked too: it is
+    what ties PERF_SOURCE_FRAMES to the assets media_files.py asks for, so
+    raising the constant without provisioning new prefixes cannot pass quietly.
+    """
+    suffix = f"_{PERF_SOURCE_FRAMES}frames.yuv"
+    if not media_file_path.endswith(suffix):
+        pytest.fail(
+            f"{media_file_path} is not a {PERF_SOURCE_FRAMES}-frame prefix; the "
+            f"perf cases need an asset named *{suffix}"
+        )
+
+    frame_bytes = calculate_yuv_frame_size(
+        media_config["width"], media_config["height"], media_config["file_format"]
+    )
+    result = tx_host.connection.execute_command(
+        f"stat -c %s {media_file_path}", expected_return_codes=None
+    )
+    staged = (result.stdout or "").strip()
+    if result.return_code != 0 or not staged.isdigit():
+        pytest.fail(
+            f"cannot size {media_file_path} on {tx_host.name}: stat exited "
+            f"{result.return_code} saying {staged!r}"
+        )
+
+    staged = int(staged)
+    if staged != PERF_SOURCE_FRAMES * frame_bytes:
+        pytest.fail(
+            f"{media_file_path} holds {staged / frame_bytes:.1f} frames "
+            f"({staged} B); the sweep needs {PERF_SOURCE_FRAMES} "
+            f"({PERF_SOURCE_FRAMES * frame_bytes} B)"
+        )
+
+
+def _has_hugepage_source_fallback(tx_lines) -> bool:
+    """True if any TX session read its source through the mmap() fallback.
+
+    PERF_SOURCE_FRAMES keeps the file small enough that this should not happen,
+    but the pool is shared with MTL's own arena, which grows with the session
+    count, and nothing in CI provisions the pool for this leg.  The app's own
+    report is the one signal that covers every cause.
+    """
+    return any(HUGEPAGE_FALLBACK_MARKER in line for line in tx_lines)
 
 
 def _apply_side_kwargs(
@@ -166,6 +255,58 @@ def _select_mc_quota(
     if is_tx:
         return SCH_SESSION_QUOTA_MULTI_CORE_TX
     return SCH_SESSION_QUOTA_MULTI_CORE
+
+
+def _is_crash_code(return_code: int) -> bool:
+    """Return True if *return_code* means the app died rather than exited.
+
+    A negative code is a signal reported by the process runner; the rest are
+    the ones RxTxApp and DPDK are seen to abort with.
+    """
+    return return_code < 0 or return_code in CRASH_EXIT_CODES
+
+
+def _is_crash(detail: str) -> bool:
+    """Return True if the detail indicates a crash requiring VF FLR."""
+    crash_markers = tuple(f"exit code {code}" for code in CRASH_EXIT_CODES) + (
+        "exit code -",
+        "companion",
+        "exited early",
+    )
+    return any(marker in detail for marker in crash_markers)
+
+
+def _single_core_violation(single_core: bool, cores_used: int) -> str | None:
+    """Return a reason if a single-core iteration did not stay on one core.
+
+    The sessions then had more CPU than the mode claims, so the count is not a
+    single-core capacity result.  *cores_used* is 0 when unmeasured, which is a
+    monitoring gap and not a violation.
+    """
+    if single_core and cores_used > 1:
+        return f"single-core run spread over {cores_used} cores"
+
+    return None
+
+
+def _fewest_cores_result(
+    iteration_results: list[dict], num_sessions: int
+) -> dict | None:
+    """Return the passing iteration at *num_sessions* that used the fewest cores.
+
+    Multi-core sweeps run the winning session count twice -- thinly packed in
+    phase 1, then densely in phase 2 -- so report the cheapest placement that
+    actually passed, not the last one attempted.  None if none did.
+    """
+    candidates = [
+        it
+        for it in iteration_results
+        if it["num_sessions"] == num_sessions and it["passed"] and it["cores_used"]
+    ]
+    if not candidates:
+        return None
+
+    return min(candidates, key=lambda it: it["cores_used"])
 
 
 def _log_iteration_table(
@@ -286,6 +427,10 @@ def _run_iteration(
     companion_extra_kwargs: dict = {}
     companion_extra_kwargs["sch_session_quota"] = SCH_SESSION_QUOTA_MULTI_CORE
     companion_extra_kwargs["dedicated_sys_lcore"] = True
+    # Same reason as the measured side: a migrating companion changes its own
+    # core count mid-run, so the far end of the link is not the same load in
+    # every iteration of the sweep.
+    companion_extra_kwargs["disable_migrate"] = True
 
     companion_isolcpus = _get_isolcpus(companion_host)
     if companion_isolcpus:
@@ -468,30 +613,38 @@ def _run_iteration(
 
         cores_info = cpu_monitor.stop()
 
-        # ── Log relevant output lines ──
+        # ── Log the measured app's output ──
+        # Unfiltered on purpose: the port drop counters, DEV rate lines and
+        # queue/mempool diagnostics are what attribute a capacity ceiling to a
+        # cause, and a keyword filter dropped exactly those while keeping the
+        # fps dumps, leaving a ceiling visible but unexplainable.
         if result.stdout_text:
-            keywords = ("fps", "session", "error", "fail", "warn", "frame", "dma")
             for line in result.stdout_text.splitlines():
-                if any(kw in line.lower() for kw in keywords):
-                    logger.info(f"{direction.upper()}: {line}")
-        get_companion_log_summary(companion_host, companion_log, max_lines=50)
-
-        if result.return_code != 0:
-            return False, 0, f"exit code {result.return_code}", None, 0
+                logger.info(f"{direction.upper()}: {line}")
 
         # ── Analyze FPS ──
         stdout_lines = result.stdout_text.splitlines() if result.stdout_text else []
 
+        # Not every non-zero exit invalidates the run: the app also exits
+        # non-zero on a late teardown error, after a whole good measurement.
+        # Keep the data and classify the code below -- a crash is vetoed there.
+        # Discarding it here cost three probes of run 35233378303 their data.
+        if result.return_code != 0:
+            logger.warning(f"Measured app exited with code {result.return_code}")
+
         time.sleep(5)
         companion_lines = read_remote_log(companion_host, companion_log)
+        # The companion's log lives on the other host, which no artifact
+        # collects.  Deciding whether a receive ceiling is the receiver or the
+        # sender needs the sender's own rate line, so mirror it into this log.
+        for line in companion_lines:
+            logger.info(f"companion {companion_dir.upper()}: {line}")
 
         monitor_fps_fn = monitor_tx_fps if is_tx else monitor_rx_fps
         success, count, fps_details = monitor_fps_fn(
             stdout_lines,
             fps,
             num_sessions,
-            warmup_seconds=WARMUP_SECONDS,
-            cooldown_seconds=COOLDOWN_SECONDS,
             max_drop_pct=MAX_DROP_PCT,
         )
 
@@ -531,7 +684,6 @@ def _run_iteration(
             fps_details,
             tx_frames,
             rx_frames,
-            fps_warmup_seconds=WARMUP_SECONDS,
             throughput_details=m_throughput,
             dev_rate=m_dev_rate,
             companion_throughput_details=c_throughput,
@@ -539,6 +691,24 @@ def _run_iteration(
         )
 
         detail = f"{count}/{num_sessions} sessions at {fps} fps"
+        if _has_hugepage_source_fallback(tx_lines):
+            # Part of this iteration's TX read its source through mmap() instead
+            # of hugepages, so the number would average two memory paths.  Veto
+            # rather than fail the case: the pool is shared with MTL's arena, so
+            # a probe above the ceiling can exhaust it while the counts the sweep
+            # will settle on stay clean.
+            detail += ", hugepage source fallback"
+            success = False
+        if result.return_code != 0:
+            # Keep the code in the detail so _is_crash still schedules a VF FLR
+            # before the next iteration.
+            detail += f", exit code {result.return_code}"
+            if _is_crash_code(result.return_code):
+                # The dumps stop wherever the process did, so the steady window
+                # closes at the crash and can still read as full rate.  A run
+                # that died is not a capacity result at any session count, and
+                # passing it here would feed the sweep false headroom.
+                success = False
         app_config = measured_app.config if hasattr(measured_app, "config") else None
         cores_used = cores_info.get("cores_used", 0) if cores_info else 0
         return success, count, detail, app_config, cores_used
@@ -568,9 +738,10 @@ def _run_session_sweep(
     instead of performing a binary search.
 
     If *sch_quota* is set (via ``--sch_quota`` CLI option), override the
-    scheduler session quota for all iterations.  Higher quota = fewer
-    cores (sessions packed into fewer schedulers).  Use 60 for minimal
-    cores.
+    scheduler session quota for every multi-core iteration.  Higher quota =
+    fewer cores (sessions packed into fewer schedulers).  Single-core runs
+    ignore it: they always use SCH_SESSION_QUOTA_SINGLE_CORE, which has to
+    stay high enough that the run cannot spill onto a second scheduler.
     """
     media_config, media_file_path = media_file
     resolution = f"{media_config['height']}p"
@@ -607,6 +778,11 @@ def _run_session_sweep(
         if dma_device is None:
             pytest.skip(f"DMA not available on {rx_host.name}")
     dma_label = f" with DMA ({dma_device})" if use_dma else ""
+
+    # Below every skip: a host without VFs or a DSA channel, or a mode that does
+    # not apply, is an environment fact, while a wrong source is a
+    # misconfiguration and has to be reported as one.
+    _check_perf_source_size(tx_host, media_file_path, media_config)
 
     # ── Paths ──
     build_tx = get_host_mtl_path(tx_host, default=mtl_path)
@@ -654,8 +830,7 @@ def _run_session_sweep(
         f"  {sweep_desc}: {mode_tag}{direction.upper()} "
         f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
         f"{'sessions=' + str(num_sessions) if fixed_mode else 'range=[1, ' + str(max_sess) + ']'} "
-        f"test_time={test_time}s "
-        f"warmup={WARMUP_SECONDS}s cooldown={COOLDOWN_SECONDS}s\n"
+        f"test_time={test_time}s rate_warmup={WARMUP_SECONDS}s\n"
         f"{'═' * 70}"
     )
 
@@ -683,20 +858,6 @@ def _run_session_sweep(
     if is_tx and single_core:
         isolcpus = _get_isolcpus(measured_host)
         original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
-
-    def _is_crash(detail: str) -> bool:
-        """Return True if the detail indicates a crash requiring VF FLR."""
-        crash_codes = (
-            "exit code -",
-            "exit code 134",  # SIGABRT
-            "exit code 137",  # SIGKILL
-            "exit code 139",  # SIGSEGV
-            "exit code 244",  # DPDK
-            "exit code 251",  # DPDK
-            "companion",
-            "exited early",
-        )
-        return any(code in detail for code in crash_codes)
 
     def _is_infra_failure(detail: str) -> bool:
         """Return True if the failure is infrastructure-related (not capacity).
@@ -787,6 +948,11 @@ def _run_session_sweep(
         if iter_config is not None:
             nonlocal last_config
             last_config = iter_config
+
+        violation = _single_core_violation(single_core, cores_used)
+        if passed and violation:
+            passed = False
+            detail = f"{detail}; {violation}"
 
         iteration_results.append(
             {
@@ -914,11 +1080,10 @@ def _run_session_sweep(
         # ── Compute best (minimum) cores from sweep ──
         best_cores = 0
         best_quota_val = phase1_quota
-        for it in reversed(iteration_results):
-            if it["num_sessions"] == max_passing and it["passed"]:
-                best_cores = it.get("cores_used", 0)
-                best_quota_val = it.get("quota")
-                break
+        best = _fewest_cores_result(iteration_results, max_passing)
+        if best:
+            best_cores = best["cores_used"]
+            best_quota_val = best["quota"]
 
         # ── Summary ──
         cores_line = ""
@@ -973,9 +1138,9 @@ _PERF_MARKS = [
     pytest.mark.parametrize(
         "media_file",
         [
-            yuv_files_422rfc10["ParkJoy_1080p"],
-            yuv_files_422rfc10["ParkJoy_4K"],
-            yuv_files_422rfc10["Penguin_8K"],
+            yuv_files_422rfc10["ParkJoy_1080p_24frames"],
+            yuv_files_422rfc10["ParkJoy_4K_24frames"],
+            yuv_files_422rfc10["Penguin_8K_24frames"],
         ],
         indirect=["media_file"],
         ids=["1080p", "2160p", "4320p"],

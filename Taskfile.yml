@@ -108,7 +108,7 @@ tasks:
       - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
 
   ci:media-assets:
-    desc: List or generate the smoke-suite test media on a host with no asset share
+    desc: List, verify or generate the test media a suite reads (MEDIA_ASSET_SET)
     cmds:
       - bash {{.CI_SCRIPTS}}/media-assets.sh {{.CLI_ARGS}}
 

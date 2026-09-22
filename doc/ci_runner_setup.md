@@ -165,6 +165,28 @@ verdict. Neither is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 
+#### The ST 2022-7 leg needs both ports cabled too
+
+The performance rig carries no NIC label, so `perf-pytest.yml` resolves its card
+from `PERF_PCI_DEVICE` in the lab file (`task ci:pytest-setup -- pci-env`) rather
+than from a label. One entry there is enough: the step asks `lspci` how many
+ports the named card has and declares two of them, because a redundant session
+needs a second interface to put its second leg on and `gen_config.py` numbers
+`interface_index` within a `vendor:device` group. Two is also the ceiling — index
+0 becomes `host.vfs` and index 1 `host.vfs_r`, and nothing reads a third, so a
+card with more ports still declares two. Naming a single port instead
+leaves `conftest.py` no port to build `host.vfs_r` on, and every `*_redundant`
+case skips with `Redundant requires VFs on TX port 1` inside a run that reports
+success.
+
+So port 1 of the perf pair has to be cabled port to port, like the capture leg
+above — but a dark port 1 here shows up as a run that hangs past its timeout
+rather than as a link error. The redundant leg is live traffic, so MTL resolves
+its destination MAC by ARP and waits `arp_timeout_ms` (60 s) for a reply, and a
+timed-out lookup is not remembered, so every session of the run pays the wait
+again. A single-port card is handled: it yields one entry and the redundant cases
+keep skipping, honestly, instead of failing against a port the host does not have.
+
 ### The i225 leg of the smoke suite
 
 2.5 Gbps of link means only the `low_bandwidth` subset fits: ST 2110-22, ST
@@ -503,6 +525,10 @@ Three prerequisites are easy to miss:
   transmitted nothing — and `task ci:media-assets -- generate` synthesises
   stand-ins of the right geometry and format for a host that has no share,
   enough to exercise the suite and not a substitute for the real content.
+  `MEDIA_ASSET_SET=perf` selects the performance sweep's own sources instead,
+  which are 24-frame prefixes of full-length lab assets rather than synthetic
+  files — `generate` cuts them from the parent on the share, so that set needs
+  the share present and writable. The perf leg verifies it before running.
 
 ## A red gate that means the fleet was busy
 
