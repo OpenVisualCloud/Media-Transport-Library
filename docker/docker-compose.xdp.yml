@@ -4,6 +4,7 @@
 services:
   imtl:
     network_mode: host
+    devices: !reset []
     cap_add:
       - NET_RAW
       - CAP_BPF

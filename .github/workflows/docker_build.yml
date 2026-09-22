@@ -170,4 +170,9 @@ jobs:
       - name: Validate AF_XDP Compose configuration
         env:
           MTL_VARIANT: ubuntu24
-        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.xdp.yml config --quiet
+        run: |
+          config=$(docker compose -f docker/docker-compose.yml -f docker/docker-compose.xdp.yml config)
+          if grep -Fq /dev/vfio <<< "$config"; then
+            echo "AF_XDP Compose configuration must not use VFIO" >&2
+            exit 1
+          fi
