@@ -40,6 +40,8 @@ endif
 
 unit_sources = [
   'common/ut_common.c',
+  'mtl/mtl_harness.c',
+  'mtl/hw_timestamp_active_test.cpp',
   'ffmpeg/mtl_common_harness.c',
   'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',

@@ -875,6 +875,23 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
  */
 int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
 
+/**
+ * Check if HW RX timestamp offload is actually active for a MTL port. Unlike
+ * MTL_FLAG_ENABLE_HW_TIMESTAMP, which only expresses intent, this reflects the
+ * post-negotiation result: false if the NIC/driver/VF did not grant the
+ * capability even though it was requested.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param port
+ *   The port index.
+ * @return
+ *   - 1: HW RX timestamp offload is active.
+ *   - 0: HW RX timestamp offload is not active.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_hw_timestamp_active(mtl_handle mt, enum mtl_port port);
+
 /** Helper to set the port for struct mtl_init_params */
 int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
 /** Helper to set the sip for struct mtl_init_params */

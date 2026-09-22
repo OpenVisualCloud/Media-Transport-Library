@@ -1394,3 +1394,18 @@ int mtl_get_numa_id(mtl_handle mt, enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
   return inf->socket_id;
 }
+
+int mtl_get_hw_timestamp_active(mtl_handle mt, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EIO;
+  }
+
+  return mt_if_has_offload_timestamp(impl, port) ? 1 : 0;
+}
