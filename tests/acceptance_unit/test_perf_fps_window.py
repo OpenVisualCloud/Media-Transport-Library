@@ -58,7 +58,7 @@ def render(rows, num_sessions, direction):
     return lines
 
 
-def judge(rows, num_sessions, direction, **kwargs):
+def judge(rows, num_sessions, direction):
     """Run the production monitor over rendered rows → (ok, count, details)."""
     monitor = (
         performance_monitoring.monitor_tx_fps
@@ -70,7 +70,6 @@ def judge(rows, num_sessions, direction, **kwargs):
         FPS,
         num_sessions,
         max_drop_pct=MAX_DROP_PCT,
-        **kwargs,
     )
 
 
@@ -312,6 +311,25 @@ class RefusesToJudgeTests(unittest.TestCase):
         self.assertEqual((ok, count), (False, 0))
         self.assertEqual(details["window"], [])
         self.assertIn("only 2 dump(s)", details["window_reject_reason"])
+        # The reason has to name the requirement: the lever is test_time, and a
+        # bare sample count does not tell the reader which way to move it.
+        self.assertIn(
+            str(performance_monitoring.FPS_MIN_STEADY_SAMPLES),
+            details["window_reject_reason"],
+        )
+
+    def test_a_run_with_no_interior_between_its_census_dumps_is_refused(self):
+        # Both bounds are discarded as partial, so two *adjacent* full censuses
+        # leave nothing between them. A ~30 s run looks like this.
+        rows = [
+            ("15:00:01", [0, 1, 2], 59.9),
+            ("15:00:11", ALL, 59.9),
+            ("15:00:21", ALL, 59.9),
+            ("15:00:31", [0, 1, 2], 59.9),
+        ]
+        ok, count, details = judge(rows, 4, "rx")
+        self.assertEqual((ok, count), (False, 0))
+        self.assertIn("naming all 4 sessions", details["window_reject_reason"])
 
     def test_a_run_that_never_carried_traffic_is_refused(self):
         rows = [(f"15:0{n}:00", ALL, 0.0) for n in range(8)]

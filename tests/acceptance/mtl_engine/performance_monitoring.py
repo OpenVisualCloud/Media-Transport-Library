@@ -78,14 +78,13 @@ def _monitor_fps_generic(
     session_pattern,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     max_drop_pct=0.0,
-    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
     """Parse log lines, judge the steady window, return (all_ok, count, details).
 
     The window comes from :func:`_steady_window`; a run whose window holds
-    fewer than *min_samples* dumps is reported as a failure rather than
-    judged on what little is left, since too few samples is exactly the
-    state in which one partial dump decides the verdict.
+    fewer than ``FPS_MIN_STEADY_SAMPLES`` dumps is reported as a failure
+    rather than judged on what little is left, since too few samples is
+    exactly the state in which one partial dump decides the verdict.
 
     When *max_drop_pct* > 0, a **trimmed mean** is used: the worst
     ``max_drop_pct`` fraction of per-session FPS samples are discarded
@@ -106,8 +105,11 @@ def _monitor_fps_generic(
             dumps.setdefault(ts_m.group(1), {})[int(m.group(2))] = float(m.group(3))
 
     window, reason = _steady_window(dumps, num_sessions)
-    if not reason and len(window) < min_samples:
-        reason = f"steady window is only {len(window)} dump(s)"
+    if not reason and len(window) < FPS_MIN_STEADY_SAMPLES:
+        reason = (
+            f"steady window is only {len(window)} dump(s), "
+            f"need {FPS_MIN_STEADY_SAMPLES}; raise test_time"
+        )
         window = []
 
     session_fps = {}
@@ -151,7 +153,6 @@ def monitor_tx_fps(
     num_sessions,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     max_drop_pct=0.0,
-    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
     """Monitor TX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -161,7 +162,6 @@ def monitor_tx_fps(
         _TX_FPS_RE,
         fps_tolerance_pct,
         max_drop_pct,
-        min_samples,
     )
 
 
@@ -171,7 +171,6 @@ def monitor_rx_fps(
     num_sessions,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     max_drop_pct=0.0,
-    min_samples=FPS_MIN_STEADY_SAMPLES,
 ):
     """Monitor RX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -181,7 +180,6 @@ def monitor_rx_fps(
         _RX_FPS_RE,
         fps_tolerance_pct,
         max_drop_pct,
-        min_samples,
     )
 
 
