@@ -39,7 +39,11 @@ from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance
 from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
 from mtl_engine.integrity_session import IntegritySession
-from mtl_engine.pcap_compliance import NO_COMPLIANCE, ComplianceSession
+from mtl_engine.pcap_compliance import (
+    NO_COMPLIANCE,
+    ComplianceSession,
+    unparsable_reason,
+)
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
@@ -536,7 +540,7 @@ def reap_leaked_phc_daemons(hosts):
 
 @pytest.fixture(scope="function")
 def ptp_sync(request, test_config: dict, hosts):
-    """Start ptp4l only for tests marked ``@pytest.mark.ptp``.
+    """Keep every external PTP daemon off the PHC for ``@pytest.mark.ptp`` tests.
 
     Historical design ran phc2sys for every pcap-capturing test, which
     multiplied the sudo+kill leak (see _reap_ptp_daemons) into 8+ daemons in
@@ -545,9 +549,15 @@ def ptp_sync(request, test_config: dict, hosts):
     corrupt systemd-journald. We now:
 
     * early-return for non-@pytest.mark.ptp tests (no daemon at all);
-    * for @pytest.mark.ptp tests, run ptp4l only -- NOT phc2sys (keep wall
-      clock untouched, pcap uses CLOCK_REALTIME which is fine for ptp4l's
-      own assertions);
+    * for @pytest.mark.ptp tests, run no daemon either -- MTL's internal PTP
+      owns the NIC PHC here: it seeds it in ``dev_start_timesync()`` and then
+      steers it with ``rte_eth_timesync_adjust_time()``. Both ports of an E810
+      share one PHC, so a ptp4l slaving the capture port steers the very clock
+      MTL is steering. Two servos each apply the full grandmaster correction and
+      the capture ends up one whole offset away from the timescale MTL stamps
+      RTP with, which is what ``packet_ts_vs_rtp_ts`` then reports. Leaving the
+      PHC to MTL puts the pcap and the RTP timestamps on one clock by
+      construction -- see also the phc2sys skip in :func:`pcap_capture`;
     * cleanup via ``sudo pkill`` on the argv, never via the process handle.
     """
     if not request.node.get_closest_marker("ptp"):
@@ -565,26 +575,12 @@ def ptp_sync(request, test_config: dict, hosts):
         host, capture_cfg, single_host=is_single_host
     )
 
-    # Belt-and-braces: ensure no leftover daemon from a previous test/session
-    # is holding a stale PHC handle before we start a new one.
+    # A daemon leaked by a previous test/session would steer the PHC against
+    # MTL for the whole run, so clear the field and hand the clock to MTL.
     _reap_ptp_daemons(host)
-
-    logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
-    log_path = f"/tmp/ptp4l-{capture_iface}.log"
-    ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
-    ptp4l_process = host.connection.start_process(
-        ptp4l_cmd,
-        stderr_to_stdout=True,
-        output_file=log_path,
+    logger.info(
+        f"@pytest.mark.ptp: leaving the {capture_iface} PHC to MTL's internal PTP"
     )
-
-    # Give ptp4l a moment to fail fast (e.g., missing interface).
-    time.sleep(0.2)
-    if not ptp4l_process.running:
-        _reap_ptp_daemons(host)
-        raise RuntimeError(
-            f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
-        )
 
     try:
         yield
@@ -1195,21 +1191,15 @@ def pcap_capture(
     # opt out at runtime via ``pcap_capture.skip(reason)``.
     capture_disabled = capture_cfg.get("enable") is False
 
-    # EBU pcap compliance analyser does not support 8K resolution
-    is_8k = False
-    if media_file:
-        media_file_info, _ = media_file
-        if media_file_info and (
-            media_file_info.get("height", 0) >= 4320
-            or media_file_info.get("width", 0) >= 7680
-        ):
-            is_8k = True
-            logger.info(
-                "8K resolution detected. Disabling PCAP capture and compliance check as EBU compliance "
-                "analyser does not support 8K."
-            )
+    # Media the EBU LIST analyser cannot judge: there is no verdict to read, so
+    # recording the capture is pointless too. mtl_engine.pcap_compliance is the
+    # single place these exclusions and their reasons live -- tests reach the same
+    # list through skip_unsupported_compliance().
+    unparsable = unparsable_reason(media_file[0] if media_file else None)
+    if unparsable:
+        logger.info("Disabling PCAP capture and compliance check: %s", unparsable)
 
-    skip_capture = capture_disabled or is_8k
+    skip_capture = capture_disabled or bool(unparsable)
     if not skip_capture:
         host = _select_capture_host(hosts)
         is_single_host = len(hosts) == 1
@@ -1261,9 +1251,10 @@ def pcap_capture(
         # clock for the absolute-offset check. Skip when MTL itself paces from
         # the NIC PHC (Remedy B: set capture_cfg.phc_sync=false alongside
         # enable_ptp), because then the PHC is the shared reference, not wall
-        # time.  Also skip for @pytest.mark.ptp tests: ptp_sync already runs
-        # ptp4l on this PHC, so a second daemon (phc2sys) would fight it for the
-        # clock.
+        # time.  Also skip for @pytest.mark.ptp tests, for the same reason: MTL's
+        # internal PTP owns this PHC there, and phc2sys steering it towards the
+        # system clock would leave the pcap on a different timescale from the RTP
+        # timestamps -- see :func:`ptp_sync`.
         ptp_marked = request.node.get_closest_marker("ptp") is not None
         sync_phc = capture_cfg.get("phc_sync", True) and not ptp_marked
     try:

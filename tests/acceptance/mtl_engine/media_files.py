@@ -415,6 +415,21 @@ yuv_files_422p10le = dict(
     },
 )
 
+# 4K sibling of the yuv_files_422p10le entries, held apart from that dict on
+# purpose: st20p/test_format_conversion.py and st22p/test_format.py both
+# parametrize over every value in it, and neither sweep is meant to grow a 4K
+# case -- least of all a 4K JPEG-XS one.
+yuv_files_422p10le_4k = dict(
+    Penguin_4K={
+        "filename": "HDR_BBC_v4_008_Penguin1_3840x2160_10bit_25Hz_P422_180frames.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "fps": "25",
+        "width": 3840,
+        "height": 2160,
+    },
+)
+
 # st20p input (source) pixel-format sweep assets, keyed by the FFmpeg
 # AVPixelFormat name.  Every entry is a pre-generated 1080p25 raw file that
 # lives on the media share -- tests must never transcode at runtime.
