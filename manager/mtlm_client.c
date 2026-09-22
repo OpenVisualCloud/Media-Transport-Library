@@ -124,7 +124,7 @@ static int connect_path(const char* path) {
    * connects to a different socket than the caller named. */
   if (path_len == 0 || path_len >= sizeof(addr.sun_path)) return -ENAMETOOLONG;
 
-  fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (fd < 0) return -errno;
 
   memset(&addr, 0, sizeof(addr));

@@ -105,6 +105,18 @@ class ClientWireTest : public ::testing::Test {
 
 } /* namespace */
 
+/*
+ * The manager gives back what an instance holds when its socket closes. A child
+ * that inherits the socket over an exec keeps it open, so the lcores, queues and
+ * flow rules of an instance that died stay taken for as long as the child lives.
+ */
+TEST_F(ClientWireTest, TheManagerSocketCannotOutliveAnExec) {
+  int flags = fcntl(mtlm_client_fd(client), F_GETFD);
+
+  ASSERT_GE(flags, 0) << std::strerror(errno);
+  EXPECT_TRUE(flags & FD_CLOEXEC) << "the manager socket survives an exec";
+}
+
 TEST_F(ClientWireTest, EveryRecordCarriesTheMagicAndTheSize) {
   mtl_message_t sent;
 
