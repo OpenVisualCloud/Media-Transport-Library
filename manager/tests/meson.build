@@ -18,6 +18,7 @@ if not gtest_dep.found() or not gtest_main_dep.found()
 endif
 
 test_sources = files(
+  'test_abuse.cpp',
   'test_client_wire.cpp',
   'test_instance.cpp',
   'test_interface.cpp',

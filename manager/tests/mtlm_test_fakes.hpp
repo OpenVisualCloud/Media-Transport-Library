@@ -10,6 +10,8 @@
 #ifndef _MTLM_TEST_FAKES_HPP_
 #define _MTLM_TEST_FAKES_HPP_
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <memory>
@@ -129,8 +131,30 @@ struct fake_xdp_state {
   int attach_calls = 0;
   int detach_calls = 0;
   bool attached = false;
+  /** Interfaces whose attach fails, whatever attach_ret says. */
+  std::vector<unsigned int> attach_fails_on;
   /** Every set_udp_dp_filter() call, in order. */
   std::vector<std::pair<uint16_t, bool>> filter_calls;
+
+  /**
+   * Make map_fd a descriptor this process really owns.
+   *
+   * A test that lets the instance pass the descriptor over SCM_RIGHTS needs a
+   * real one: sendmsg refuses a number that names nothing, and the client then
+   * waits for a message the manager never sent.
+   */
+  int open_real_map_fd() {
+    if (real_fd < 0) real_fd = ::dup(STDIN_FILENO);
+    if (real_fd >= 0) map_fd = real_fd;
+    return real_fd;
+  }
+
+  ~fake_xdp_state() {
+    if (real_fd >= 0) ::close(real_fd);
+  }
+
+ private:
+  int real_fd = -1;
 };
 
 class fake_xdp : public mtlm_xdp_ops {
@@ -139,20 +163,26 @@ class fake_xdp : public mtlm_xdp_ops {
   }
 
   int attach(unsigned int ifindex) override {
-    (void)ifindex;
     state->attach_calls++;
     if (state->attach_ret < 0) return state->attach_ret;
+    if (std::find(state->attach_fails_on.begin(), state->attach_fails_on.end(),
+                  ifindex) != state->attach_fails_on.end())
+      return -EIO;
+    attached_ = true;
     state->attached = true;
     return 0;
   }
 
   void detach() override {
     state->detach_calls++;
+    attached_ = false;
     state->attached = false;
   }
 
+  /* The flag of this object, not of the shared state, because a case with two
+   * interfaces has two of these over one state. */
   int xsks_map_fd() const override {
-    return state->attached ? state->map_fd : -1;
+    return attached_ ? state->map_fd : -1;
   }
 
   int set_udp_dp_filter(uint16_t dst_port, bool present) override {
@@ -162,6 +192,7 @@ class fake_xdp : public mtlm_xdp_ops {
 
  private:
   std::shared_ptr<fake_xdp_state> state;
+  bool attached_ = false;
 };
 
 /** A maker for mtl_interface_registry that hands out fakes over one state. */
