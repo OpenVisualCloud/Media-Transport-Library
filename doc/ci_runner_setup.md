@@ -180,17 +180,12 @@ case skips with `Redundant requires VFs on TX port 1` inside a run that reports
 success.
 
 So port 1 of the perf pair has to be cabled port to port, like the capture leg
-above — but the consequence of leaving it dark is different. There is no sniffer
-here; the redundant leg is live traffic. MTL resolves the second leg's destination
-MAC by ARP (`mt_dst_ip_mac`, since nothing passes `--r_tx_dst_mac`), and
-`arp_get_result` blocks for `arp_timeout_ms`, 60 s by default. Every session of
-the run pays that wait again: the sessions share one destination IP
-(`ip_pools.rx_r[0]`) and so one entry in the port's ARP table, but a lookup that
-timed out returns `-EIO` without marking the entry failed, so the next session
-starts the same wait over. A dead port 1 therefore shows up as a run that hangs
-past its timeout, not as a link error. A single-port card is handled: it yields
-one entry and the redundant cases keep skipping, honestly, instead of failing
-against a port the host does not have.
+above — but a dark port 1 here shows up as a run that hangs past its timeout
+rather than as a link error. The redundant leg is live traffic, so MTL resolves
+its destination MAC by ARP and waits `arp_timeout_ms` (60 s) for a reply, and a
+timed-out lookup is not remembered, so every session of the run pays the wait
+again. A single-port card is handled: it yields one entry and the redundant cases
+keep skipping, honestly, instead of failing against a port the host does not have.
 
 ### The i225 leg of the smoke suite
 

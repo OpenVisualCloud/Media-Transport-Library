@@ -78,10 +78,11 @@ perf_card_ports() {
 		vendor_device=${declared}
 	fi
 	# An unresolved BDF leaves this empty, and `lspci -d ""` matches every device.
-	# The stand-in has to be a filter lspci accepts and nothing matches: a word
-	# without a colon is a syntax error, which under `pipefail` would make this
-	# assignment fail rather than count zero.
-	ports=$(count_pci_functions "${vendor_device:-ffff:ffff}")
+	if [[ -n ${vendor_device} ]]; then
+		ports=$(count_pci_functions "${vendor_device}")
+	else
+		ports=0
+	fi
 	if [[ ${ports} -lt 1 ]]; then
 		echo "No port of the declared perf card (${declared}) is on this host:" >&2
 		lspci -Dnn -d '::0200' >&2 || true
