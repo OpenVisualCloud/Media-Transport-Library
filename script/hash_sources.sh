@@ -11,7 +11,7 @@
 #   ice       = hash(ice_paths)
 #   ffmpeg    = hash(ffmpeg_paths + jpegxs_checksum)
 #   gstreamer = hash(gstreamer_paths + mtl_checksum)
-#   plugins   = hash(plugins_paths + mtl_checksum)
+#   plugins   = hash(plugins_paths + ffmpeg_checksum)
 
 set -euo pipefail
 
@@ -105,7 +105,7 @@ gstreamer="$(hash_string "${mtl} ${gstreamer_paths_hash}")"
 
 # shellcheck disable=SC2046
 plugins_paths_hash="$(hash_paths $(read_env "${script_folder}/hash_sources_plugins.env"))"
-plugins="$(hash_string "${mtl} ${plugins_paths_hash}")"
+plugins="$(hash_string "${ffmpeg} ${plugins_paths_hash}")"
 
 # ─── Output ─────────────────────────────────────────────────────────────────
 

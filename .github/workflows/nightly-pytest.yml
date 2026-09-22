@@ -15,6 +15,9 @@ jobs:
     permissions:
       contents: read
       checks: read
+      # The changes job of build.yml asks for it, and a called job gets no
+      # permission that its caller does not grant.
+      pull-requests: read
   run-pytest:
     needs: build
     strategy:

@@ -33,9 +33,9 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
-      manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
-      docker_compose: ${{ steps.filter.outputs.docker_compose == 'true' }}
+      docker_build: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docker_build == 'true' }}
+      manager_build: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.manager_build == 'true' }}
+      docker_compose: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docker_compose == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -44,12 +44,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/path_filters.yml
 
   ubuntu-docker-build:
     needs: changes
-    if: needs.changes.outputs.ubuntu_build == 'true'
+    if: needs.changes.outputs.docker_build == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
@@ -176,3 +177,19 @@ jobs:
             echo "AF_XDP Compose configuration must not use VFIO" >&2
             exit 1
           fi
+
+  # The one check to require in branch protection. It always runs, so it
+  # reports even when the path filter skips docker builds, and it fails only if a
+  # job it needs failed or was cancelled.
+  docker-build-result:
+    name: docker-build-result
+    needs: [changes, ubuntu-docker-build, manager-docker-build, compose-validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All docker builds ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some docker builds failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

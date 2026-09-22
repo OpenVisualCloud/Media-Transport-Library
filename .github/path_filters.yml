@@ -1,81 +1,254 @@
 # This is used by the action https://github.com/dorny/paths-filter
+#
+# One filter per job that it gates, named after that job. A filter lists the
+# paths that the job reads, so a change runs only the jobs it can affect. A
+# directory glob is used where a script in it can source a sibling script.
+# dorny ignores a '!' pattern with the default predicate, so do not exclude
+# paths: list the paths to include.
+#
+# .github/scripts/ci/check-path-filters.py (a checkpatch hook) enforces the
+# rules below. Run it after each change to this file.
+#
+#   - hash_<name> holds the paths of script/hash_sources_<name>.env, one to one
+#     (a directory "dir/" becomes 'dir/**'). A change to one of these paths
+#     gives the Build workflow a new artifact.
+#   - Each filter that a workflow reads exists, and each pattern matches a
+#     tracked file.
+#   - build_workflow holds each filter that pr-gate.yml gets, because the tests
+#     wait for the Build workflow. If Build skips, the wait times out.
 
-src: &src
+# ---------------------------------------------------------------- Artifacts
+# script/hash_sources.sh chains the hashes: dpdk -> mtl -> jpegxs -> ffmpeg,
+# and mtl -> gstreamer, mtl -> plugins. ice stands alone.
+
+hash_dpdk: &hash_dpdk
+  - .github/scripts/setup_environment.sh
+  - .github/scripts/ci/build-dependencies.sh
+  - script/hash_sources_dpdk.env
   - 'patches/dpdk/**'
-  - 'include/**'
+  - versions.env
+  - script/build_dpdk.sh
+  - script/common.sh
+
+hash_mtl: &hash_mtl
+  - .github/scripts/setup_environment.sh
+  - build.sh
+  - script/hash_sources_mtl.env
+  - meson.build
+  - meson_options.txt
   - 'lib/**'
+  - 'include/**'
+  - versions.env
+  - plugins/meson.build
+  - plugins/meson_options.txt
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - 'plugins/sample/**'
   - 'ld_preload/**'
-  - 'gpu_direct/**'
-  - 'tests/src/**'
-  - 'tests/tools/**'
+  - 'manager/**'
+  - VERSION
+  - 'tests/tools/RxTxApp/**'
+  - 'app/**'
   - 'tests/integration_tests/**'
   - tests/meson.build
   - tests/meson_options.txt
-  - 'manager/**'
 
-build: &build
+hash_jpegxs: &hash_jpegxs
+  - .github/scripts/ci/build-jpegxs.sh
+  - .github/scripts/ci/jpegxs-source.sh
+  - .github/scripts/ci/validate-jpegxs.sh
+  - .github/scripts/setup_environment.sh
+  - ecosystem/ffmpeg_plugin/build.sh
+  - script/hash_sources_jpegxs.env
+  - versions.env
+
+hash_ice: &hash_ice
+  - .github/scripts/ci/build-dependencies.sh
+  - .github/scripts/ci/validate-ice.sh
+  - .github/scripts/setup_environment.sh
+  - 'patches/ice_drv/**'
+  - script/build_drivers.sh
+  - script/common.sh
+  - script/hash_sources_ice.env
+  - versions.env
+
+hash_ffmpeg: &hash_ffmpeg
+  - .github/scripts/setup_environment.sh
+  - script/hash_sources_ffmpeg.env
+  - 'ecosystem/ffmpeg_plugin/**'
+  - versions.env
+
+hash_gstreamer: &hash_gstreamer
+  - .github/scripts/setup_environment.sh
+  - script/hash_sources_gstreamer.env
+  - 'ecosystem/gstreamer_plugin/**'
+  - 'tests/tools/gstreamer_tools/**'
+
+hash_plugins: &hash_plugins
+  - .github/scripts/setup_environment.sh
+  - script/hash_sources_plugins.env
+  - script/build_st22_avcodec_plugin.sh
+  - 'plugins/st22_avcodec/**'
+  - VERSION
+
+hash_sources: &hash_sources
+  - *hash_dpdk
+  - *hash_mtl
+  - *hash_jpegxs
+  - *hash_ice
+  - *hash_ffmpeg
+  - *hash_gstreamer
+  - *hash_plugins
+
+# ------------------------------------------------------- Shared parts of jobs
+
+# The root meson project: libmtl and its public headers.
+libmtl: &libmtl
   - build.sh
-  - kahawai.json
   - meson.build
   - meson_options.txt
   - VERSION
-  - versions.env
-  - "script/**"
+  - 'include/**'
+  - 'lib/**'
+
+# The unit suite. tests/unit/ffmpeg compiles these two plugin files.
+unit_sources: &unit_sources
+  - 'tests/unit/**'
+  - ecosystem/ffmpeg_plugin/mtl_common.c
+  - ecosystem/ffmpeg_plugin/mtl_common.h
+
+# What a bare-metal test job runs besides the artifacts: the gate, the host
+# setup actions, the ci:* tasks and the scripts that they call. checkout-clean
+# is not here: the workflows use it at a pinned commit, not from this tree.
+# .github/path_filters.yml is not here: check-path-filters.py checks it, and a
+# run on the NIC hosts does not.
+bare_metal_ci: &bare_metal_ci
+  - .github/workflows/pr-gate.yml
+  - .github/workflows/build.yml
+  - .github/workflows/kahawai_template.json
+  - '.github/actions/validate-host/**'
+  - '.github/actions/cleanup/**'
+  - '.github/actions/source-checksums/**'
+  - '.github/actions/wait-for-workflow/**'
+  - '.github/scripts/ci/**'
+  - Taskfile.yml
+  - 'script/**'
+
+# ------------------------------------------------------------ Filters (jobs)
+
+# gtest-bare-metal.yml. KahawaiTest loads the sample, JPEG XS and st22 avcodec
+# plugins through the plugin registry, and the host loads the cached ICE
+# module. It does not use MtlManager, RxTxApp, ld_preload or the GStreamer
+# plugin. The st22 avcodec plugin links the FFmpeg cache, but gtest.sh does not
+# put .local_install/ffmpeg on the library path of KahawaiTest, so a change to
+# FFmpeg does not reach it.
+gtest: &gtest
+  - *hash_dpdk
+  - *libmtl
   - .github/scripts/setup_environment.sh
+  - versions.env
+  - plugins/meson.build
+  - plugins/meson_options.txt
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - 'plugins/sample/**'
+  - tests/meson.build
+  - tests/meson_options.txt
+  - 'tests/integration_tests/**'
+  - *hash_ice
+  - *hash_jpegxs
+  - *hash_plugins
+  - *bare_metal_ci
+  - .github/workflows/gtest-bare-metal.yml
+  - .github/scripts/gtest.sh
 
-docker_images: &docker_images
-  - 'docker/*.dockerfile'
-  - '.dockerignore'
+# smoke-tests.yml. The job restores all artifacts and fails if one is missing.
+# pytest collects all of tests/acceptance, and the markers are in the test
+# files, so the whole tree applies.
+smoke_tests: &smoke_tests
+  - *hash_sources
+  - *bare_metal_ci
+  - .github/workflows/smoke-tests.yml
+  - .github/scripts/lib/mtl_acceptance_venv.sh
+  - 'tests/acceptance/**'
 
-docker_compose:
-  - docker/docker-compose.yml
-  - docker/docker-compose.xdp.yml
+# build.yml: the artifacts, and each filter that waits for them. A test-only
+# change also runs Build: all of its caches hit, and it restores a cache that
+# GitHub evicted, which a skipped build cannot do.
+build_workflow:
+  - *hash_sources
+  - *gtest
+  - *smoke_tests
+
+# unit_tests.yml. It builds DPDK, then runs ./build.sh unit, which builds only
+# the root meson project.
+unit_tests:
+  - .github/path_filters.yml
+  - .github/workflows/unit_tests.yml
+  - .github/scripts/ci/unit-test-dependencies.sh
+  - *hash_dpdk
+  - *libmtl
+  - *unit_sources
+
+# base_build.yml: release, eBPF/XDP, and release with fuzzing (clang).
+# setup_environment.sh builds DPDK, MTL, GPU Direct, the FFmpeg, GStreamer and
+# OBS plugins, the Python and Rust bindings, and the tools. It does not build
+# JPEG XS or st22 avcodec.
+base_build:
+  - .github/path_filters.yml
+  - .github/workflows/base_build.yml
+  - .github/scripts/ci/build-rust-example.sh
+  - *hash_dpdk
+  - *hash_mtl
+  - *hash_ffmpeg
+  - *hash_gstreamer
+  - script/build_ebpf_xdp.sh
+  - 'tests/fuzz/**'
+  - 'gpu_direct/**'
+  - 'ecosystem/obs_mtl/linux-mtl/**'
+  - 'python/swig/**'
+  - 'rust/**'
+  - 'tools/ebpf/**'
+  - 'tools/readpcap/**'
+  - 'tools/sch_smi_emulate/**'
+
+# docker_build.yml, ubuntu-docker-build. The build context is the repository
+# root less .dockerignore, which drops .github/, so the hash_<name> filters do
+# not apply: they hold .github/scripts/setup_environment.sh. Each image builds
+# DPDK, runs build.sh and the unit suite, and copies script/ into the image.
+docker_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
+  - 'docker/*.dockerfile'
+  - .dockerignore
+  - 'script/**'
+  - 'patches/dpdk/**'
+  - versions.env
+  - *libmtl
+  - 'app/**'
+  - plugins/meson.build
+  - plugins/meson_options.txt
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - 'plugins/sample/**'
+  - 'ld_preload/**'
+  - 'manager/**'
+  - tests/meson.build
+  - tests/meson_options.txt
+  - 'tests/integration_tests/**'
+  - 'tests/tools/RxTxApp/**'
+  - *unit_sources
 
+# docker_build.yml, manager-docker-build. The build context is manager/.
 manager_build:
+  - .github/path_filters.yml
+  - .github/workflows/docker_build.yml
   - 'manager/**'
   - VERSION
+
+# docker_build.yml, compose-validate. It parses the compose files only.
+docker_compose:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
-
-docker_workflow: &docker_workflow
-  - .github/path_filters.yml
-  - .github/workflows/docker_build.yml
-
-ecosystem: &ecosystem
-  - 'app/**'
-  - 'tests/tools/**'
-  - 'tools/**'
-  - 'ecosystem/**'
-  - 'rust/**'
-  - 'index.rst'
-  - 'python/**'
-  - 'plugins/**'
-  - 'script/build_app.sh'
-  - 'script/build_python.sh'
-  - 'script/build_ebpf_xdp.sh'
-  - 'script/build_obs_plugin.sh'
-  - 'script/build_st22_avcodec_plugin.sh'
-
-ice_build: &ice_build
-  - 'paths/ice_drv/**'
-  - 'script/build_drivers.sh'
-
-ubuntu_build: &ubuntu_build
-  - .github/workflows/base_build.yml
-  - *src
-  - *build
-  - *docker_images
-  - *docker_workflow
-  - *ecosystem
-
-linux_tests: &linux_tests
-  - .github/scripts/gtest.sh
-  - .github/workflows/gtest-bare-metal.yml
-  - .github/workflows/smoke-tests.yml
-  - '.github/workflows/upl*'
-  - 'tests/unittest/**'
-  - 'tests/acceptance/**'
-  - *ice_build
-  - *ubuntu_build
+  - docker/docker-compose.yml
+  - docker/docker-compose.xdp.yml

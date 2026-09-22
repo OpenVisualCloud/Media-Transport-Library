@@ -95,6 +95,7 @@ reformat waiting to happen.
 | GitHub Actions | actionlint 1.7.12 | no | `.github/linters/actionlint.yaml` |
 | HTML | htmlhint 1.9.2 | no | `.github/linters/.htmlhintrc` |
 | staged diff | gitleaks 8.30.0 | no | -- |
+| CI path filters | `.github/scripts/ci/check-path-filters.py` | no | `.github/path_filters.yml` |
 | commit message | gitlint 0.19.1 | no | `.github/linters/.gitlint` |
 
 The gitlint row is the one hook that does not run over files. It runs at the

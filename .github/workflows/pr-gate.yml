@@ -10,6 +10,10 @@ name: PR Gate
 on:
   workflow_call:
     inputs:
+      filter:
+        description: The filter in .github/path_filters.yml that names the paths the tests cover.
+        type: string
+        required: true
       wait_for_build:
         description: Wait for the Build workflow to publish its artifacts.
         type: boolean
@@ -32,7 +36,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.linux_tests == 'true' || github.event_name == 'workflow_dispatch' }}
+      changed: ${{ steps.filter.outputs[inputs.filter] == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
@@ -43,6 +47,7 @@ jobs:
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         id: filter
         with:
           filters: .github/path_filters.yml

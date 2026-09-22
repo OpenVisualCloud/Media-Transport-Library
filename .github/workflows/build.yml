@@ -65,6 +65,31 @@ permissions:
   checks: read
 
 jobs:
+  # ── Gate: skip the build when no artifact input changed ──
+  # Only a pull request or a push is filtered. A caller (nightly, custom pytest)
+  # always gets a build. build_workflow holds each filter that pr-gate.yml gets,
+  # so a test job never waits for a build that this gate skipped.
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ (github.event_name != 'pull_request' && github.event_name != 'push') || steps.filter.outputs.build_workflow == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        with:
+          filters: .github/path_filters.yml
+
   # ── Gate: wait for every Linter check on this commit ──
   # The names below are the *check run* names produced by linter.yml, which is the
   # matrix job name and the residual job's `name:`. They are a contract between the
@@ -73,7 +98,8 @@ jobs:
   # That is exactly how this broke once -- it still asked for super-linter's old
   # "Lint Code Base" check, which stopped existing when checkpatch replaced it.
   wait-for-linter:
-    if: ${{ !inputs.skip_linter_check && github.ref_name != 'main' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.run == 'true' && !inputs.skip_linter_check && github.ref_name != 'main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -95,6 +121,8 @@ jobs:
 
   # ── Compute source checksums ──
   checksums:
+    needs: changes
+    if: ${{ needs.changes.outputs.run == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     outputs:
@@ -280,3 +308,19 @@ jobs:
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice
+
+  # The one check to require in branch protection. It always runs, so it
+  # reports even when the path filter skips build jobs, and it fails only if a
+  # job it needs failed or was cancelled.
+  build-result:
+    name: build-result
+    needs: [changes, wait-for-linter, checksums, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All build jobs ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some build jobs failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

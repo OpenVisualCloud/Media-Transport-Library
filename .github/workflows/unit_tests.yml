@@ -20,9 +20,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
   # The unit tier needs no NIC and no root, so it is the cheapest gate MTL has.
   # It still needs DPDK headers and libraries to compile.
   unit-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.unit_tests == 'true' }}
     # One entry keeps the runner image label in one place.
     strategy:
       matrix:
@@ -51,3 +74,19 @@ jobs:
 
       - name: Build and run the unit suite
         run: ./build.sh unit
+
+  # The one check to require in branch protection. It always runs, so it
+  # reports even when the path filter skips the unit tests, and it fails only
+  # if a job it needs failed or was cancelled.
+  unit-tests-result:
+    name: unit-tests-result
+    needs: [changes, unit-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All unit tests ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some unit tests failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
