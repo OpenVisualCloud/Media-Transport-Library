@@ -29,10 +29,15 @@ jobs:
       pull-requests: read
       checks: read
       actions: read
+    with:
+      filter: smoke_tests
 
   run-smoke-tests:
     name: run-smoke-tests (${{ matrix.nic }})
     needs: pr-gate
+    # Gate the job, not its steps: a leg with nothing to test must not take a
+    # fleet NIC host. smoke-tests-result below is the check to require.
+    if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     concurrency:
       group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
       cancel-in-progress: true
@@ -86,46 +91,37 @@ jobs:
     continue-on-error: ${{ matrix.optional }}
     steps:
       - name: 'preparation: Harden Runner'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
       - name: 'preparation: Checkout MTL'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ github.ref }}'
       - name: 'preparation: Validate host and download artifacts'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
         with:
           nic: ${{ matrix.nic }}
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
       - name: 'preparation: Ensure the acceptance virtualenv'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: task ci:pytest-setup -- ensure
       # The suite reaches the DUT over SSH even when the DUT is this runner, so a
       # key it cannot log in with fails every case at fixture setup -- and
       # paramiko reports it as the password being refused, which it is not.
       - name: 'preparation: Verify the login the suite makes'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: task ci:pytest-setup -- connection
       - name: Create session ID
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           RUNNER_NAME: ${{ runner.name }}
         run: task ci:pytest-setup -- session
       - name: Set PCI device env variable
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           NIC: ${{ matrix.nic }}
         run: task ci:pytest-setup -- pci
       - name: Generate test framework config files
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
@@ -134,12 +130,10 @@ jobs:
           TEST_TIME: ${{ matrix.test_time }}
         run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           WORKFLOW_TAG: ${{ github.workflow }}:${{ matrix.nic }}
         run: task ci:pytest-setup -- tag
       - name: 'preparation: Make room for the raw video the suite records'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           TEST_TIME: ${{ matrix.test_time }}
         run: task ci:pytest-setup -- workspace
@@ -147,20 +141,18 @@ jobs:
       # its asset share reports a green leg having transmitted nothing. Ask here,
       # where the answer is three lines and names the share.
       - name: 'preparation: Verify the media the suite reads'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: task ci:media-assets -- verify
       # And a capture leg is only a compliance leg while the analyser answers.
       # Without it the fixture fails every case that records a pcap, several
       # minutes in and with the reason buried in a test log.
       - name: 'preparation: Verify the compliance analyser'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' && matrix.no_capture != '1' }}
+        if: ${{ matrix.no_capture != '1' }}
         run: task ci:ebu-list -- verify
       - name: 'execution: Run the ${{ matrix.suite }} suite'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         timeout-minutes: ${{ matrix.run_timeout }}
         run: task ci:pytest-run -- ${{ matrix.suite }}
       - name: "upload report"
-        if: ${{ always() && needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: always()
         id: upload-report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -169,7 +161,7 @@ jobs:
             report.html
             report.json
       - name: "Add report to summary"
-        if: ${{ always() && needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+        if: always()
         env:
           ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
         run: task ci:report -- smoke-summary
@@ -177,3 +169,20 @@ jobs:
       - name: 'cleanup: Kill test processes'
         if: always()
         uses: ./.github/actions/cleanup
+
+  # The one check to require in branch protection. A skipped matrix job
+  # publishes no per-leg check name, so a required "run-smoke-tests (e810)"
+  # stays pending when the path filter skips the legs. This job always runs,
+  # and fails only if the gate or a leg failed or was cancelled.
+  smoke-tests-result:
+    name: smoke-tests-result
+    needs: [pr-gate, run-smoke-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All smoke tests ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some smoke tests failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

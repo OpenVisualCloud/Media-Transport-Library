@@ -35,9 +35,14 @@ jobs:
       pull-requests: read
       checks: read
       actions: read
+    with:
+      filter: gtest
 
   run-gtest-tests:
     needs: pr-gate
+    # Gate the job, not its steps: a leg with nothing to test must not take a
+    # fleet NIC host. gtest-result below is the check to require.
+    if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     strategy:
       matrix:
         nic:
@@ -52,25 +57,21 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Harden Runner
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
       - name: Validate host and download artifacts
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/validate-host
         with:
           nic: ${{ matrix.nic }}
 
       - name: 'cleanup: Kill stale processes before test'
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         uses: ./.github/actions/cleanup
 
       # sudo -E carries the whole environment across, BASH_XTRACEFD included, and
@@ -80,11 +81,9 @@ jobs:
       # descriptor` -- a line that reads like the start of a failure and is not
       # one. Dropping the variable is the whole fix; nothing here traces.
       - name: Bind the test ports
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
 
       - name: Run gtest bare metal
-        if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
         env:
           NIGHTLY: 0
           EXIT_ON_FAILURE: 1
@@ -93,3 +92,20 @@ jobs:
       - name: 'cleanup: Kill test processes'
         if: always()
         uses: ./.github/actions/cleanup
+
+  # The one check to require in branch protection. A skipped matrix job
+  # publishes no per-leg check name, so a required "run-gtest-tests (e810)"
+  # stays pending when the path filter skips the legs. This job always runs,
+  # and fails only if the gate or a leg failed or was cancelled.
+  gtest-result:
+    name: gtest-result
+    needs: [pr-gate, run-gtest-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All gtest legs ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some gtest legs failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
