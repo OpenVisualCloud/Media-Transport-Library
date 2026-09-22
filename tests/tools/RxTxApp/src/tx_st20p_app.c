@@ -109,74 +109,9 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-/* One hugepage copy per source file, shared by every session reading it: safe because
- * app_tx_st20p_build_frame() only reads the buffer, the cursor is per session. */
-struct app_tx_st20p_source {
-  char url[ST_APP_URL_MAX_LEN];
-  uint8_t* begin;
-  size_t size;
-  int refcnt;
-};
-
-/* no lock: st_app_tx_st20p_sessions_init() runs sequentially on the main thread */
-static struct app_tx_st20p_source g_app_tx_st20p_sources[ST_APP_MAX_TX_VIDEO_SESSIONS];
-
-static struct app_tx_st20p_source* app_tx_st20p_source_find(const char* url) {
-  for (int i = 0; i < ST_APP_MAX_TX_VIDEO_SESSIONS; i++) {
-    struct app_tx_st20p_source* src = &g_app_tx_st20p_sources[i];
-    if (src->refcnt && !strcmp(src->url, url)) return src;
-  }
-
-  return NULL;
-}
-
-static void app_tx_st20p_source_add(const char* url, uint8_t* begin, size_t size) {
-  for (int i = 0; i < ST_APP_MAX_TX_VIDEO_SESSIONS; i++) {
-    struct app_tx_st20p_source* src = &g_app_tx_st20p_sources[i];
-    if (src->refcnt) continue;
-    snprintf(src->url, sizeof(src->url), "%s", url);
-    src->begin = begin;
-    src->size = size;
-    src->refcnt = 1;
-    return;
-  }
-  warn("%s, no free cache slot for %s\n", __func__, url);
-}
-
-/* returns false if the buffer is not shared, the caller then owns the free */
-static bool app_tx_st20p_source_put(mtl_handle st, uint8_t* begin) {
-  for (int i = 0; i < ST_APP_MAX_TX_VIDEO_SESSIONS; i++) {
-    struct app_tx_st20p_source* src = &g_app_tx_st20p_sources[i];
-    if (!src->refcnt || src->begin != begin) continue;
-    if (--src->refcnt == 0) {
-      mtl_hp_free(st, src->begin);
-      memset(src, 0, sizeof(*src));
-    }
-    return true;
-  }
-
-  return false;
-}
-
 static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
   int fd;
   struct stat i;
-  struct app_tx_st20p_source* src = app_tx_st20p_source_find(s->st20p_source_url);
-
-  if (src) {
-    if (src->size < (size_t)s->st20p_frame_size) {
-      err("%s, %s file size small then a frame %d\n", __func__, s->st20p_source_url,
-          s->st20p_frame_size);
-      return -EIO;
-    }
-    s->st20p_source_begin = src->begin;
-    s->st20p_frame_cursor = src->begin;
-    s->st20p_source_end = src->begin + src->size;
-    src->refcnt++;
-    info("%s(%d), attached shared hugepage source, refcnt %d\n", __func__, s->idx,
-         src->refcnt);
-    return 0;
-  }
 
   fd = st_open(s->st20p_source_url, O_RDONLY);
   if (fd < 0) {
@@ -215,9 +150,6 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
     mtl_memcpy(s->st20p_source_begin, m, i.st_size);
     s->st20p_source_end = s->st20p_source_begin + i.st_size;
     close(fd);
-    app_tx_st20p_source_add(s->st20p_source_url, s->st20p_source_begin, i.st_size);
-    info("%s(%d), new shared hugepage source %s size %" PRIu64 "\n", __func__, s->idx,
-         s->st20p_source_url, (uint64_t)i.st_size);
   }
 
   return 0;
@@ -253,8 +185,7 @@ static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session* s) {
 
 static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
   if (s->st20p_source_fd < 0 && s->st20p_source_begin) {
-    if (!app_tx_st20p_source_put(s->st, s->st20p_source_begin))
-      mtl_hp_free(s->st, s->st20p_source_begin);
+    mtl_hp_free(s->st, s->st20p_source_begin);
     s->st20p_source_begin = NULL;
   }
   if (s->st20p_source_fd >= 0) {
