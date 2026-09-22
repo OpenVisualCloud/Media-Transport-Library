@@ -14,6 +14,7 @@ set -euo pipefail
 # is all a transport test needs: it moves the bytes and compares them back.
 #
 # Usage: media-assets.sh {list|verify|generate} [dir]  (dir defaults to /mnt/media)
+#        MEDIA_ASSET_SET={smoke|perf} picks which set to act on (default smoke).
 
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 acceptance_dir="${root_dir}/tests/acceptance"
@@ -30,6 +31,25 @@ ASSETS=(
 	audio_files:PCM24                # st30p; PCM8/16/24 share one raw file
 	anc_files:text_p59               # st40p
 )
+
+# The perf sweep reads short prefixes of the full-length assets instead, so that
+# every session's source fits in hugepages. See PERF_SOURCE_FRAMES in
+# tests/acceptance/tests/dual/performance/test_vf_perf_dualhost.py for why.
+# These are the ones its cases open; a host missing them skips the whole leg.
+PERF_ASSETS=(
+	yuv_files_422rfc10:ParkJoy_1080p_24frames # the 1080p sweep
+	yuv_files_422rfc10:ParkJoy_4K_24frames    # the 2160p sweep
+	yuv_files_422rfc10:Penguin_8K_24frames    # the 4320p sweep
+)
+
+case "${MEDIA_ASSET_SET:=smoke}" in
+smoke) SELECTED=("${ASSETS[@]}") ;;
+perf) SELECTED=("${PERF_ASSETS[@]}") ;;
+*)
+	echo "MEDIA_ASSET_SET is ${MEDIA_ASSET_SET}; expected smoke or perf." >&2
+	exit 2
+	;;
+esac
 
 # The reference video asset is 180 frames. The apps loop their input, so this
 # bounds the file size, not the length of a test.
@@ -56,6 +76,36 @@ asset_meta() {
 			    info.get("width", 0),
 			    info.get("height", 0),
 			    info.get("fps", "-"),
+			)
+		PY
+	)
+}
+
+prefix_meta() {
+	# prefix_meta <dict>:<key> -> "<parent filename> <bytes>", for a perf prefix.
+	#
+	# The frame count is read out of the asset's own name and the parent out of
+	# its own key, so this file holds no second copy of either, and the
+	# per-frame arithmetic stays in the module the tests themselves use for it.
+	(
+		cd "${acceptance_dir}" && "${venv_python}" - "$1" <<-'PY'
+			import re
+			import sys
+
+			from mtl_engine import media_files
+			from mtl_engine.integrity import calculate_yuv_frame_size
+
+			group, _, key = sys.argv[1].partition(":")
+			assets = getattr(media_files, group)
+			info = assets[key]
+			frames = int(re.search(r"_(\d+)frames\.yuv$", info["filename"]).group(1))
+			parent = assets[re.sub(rf"_{frames}frames$", "", key)]
+			print(
+			    parent["filename"],
+			    frames
+			    * calculate_yuv_frame_size(
+			        info["width"], info["height"], info["file_format"]
+			    ),
 			)
 		PY
 	)
@@ -110,6 +160,7 @@ generate_yuv() {
 
 generate_asset() {
 	local asset=$1 group=${1%%:*} filename file_format width height fps path
+	local parent bytes
 	read -r filename file_format width height fps < <(asset_meta "${asset}")
 	path="${media_dir}/${filename}"
 	if [[ -s ${path} ]]; then
@@ -117,6 +168,23 @@ generate_asset() {
 		return 0
 	fi
 	case "${group}" in
+	yuv_files_422rfc10)
+		# A perf source is a byte prefix of the full-length asset: the apps
+		# advance the read cursor one frame at a time and wrap at the end, so
+		# any whole number of frames is itself a valid source. Cutting keeps
+		# the real content, and no ffmpeg encoder emits RFC4175 packed pixels
+		# anyway. The parent has to be on the share already -- this derives
+		# from the lab's media, it does not stand in for it.
+		read -r parent bytes < <(prefix_meta "${asset}")
+		if [[ ! -s ${media_dir}/${parent} ]]; then
+			echo "Cannot cut ${filename}: ${media_dir}/${parent} is absent." >&2
+			echo "Mount the lab share at ${media_dir} and retry." >&2
+			return 1
+		fi
+		echo "  cut      ${filename} (${bytes} B of ${parent})"
+		as_root dd "if=${media_dir}/${parent}" "of=${path}" bs=1M \
+			iflag=count_bytes "count=${bytes}" status=none
+		;;
 	yuv_files_422p10le)
 		echo "  generate ${filename} (${width}x${height} ${file_format} x${FRAMES})"
 		generate_yuv "${path}" yuv422p10le "${width}" "${height}" "${fps}"
@@ -149,7 +217,7 @@ list | verify)
 	# with no share comes back green having transmitted nothing -- the one
 	# failure mode a green run cannot tell you about.
 	missing=0
-	for asset in "${ASSETS[@]}"; do
+	for asset in "${SELECTED[@]}"; do
 		read -r filename _ < <(asset_meta "${asset}")
 		if [[ -s ${media_dir}/${filename} ]]; then
 			printf '%-12s %s\n' present "${media_dir}/${filename}"
@@ -167,7 +235,7 @@ list | verify)
 generate)
 	echo "Generating smoke test media in ${media_dir}"
 	as_root mkdir -p "${media_dir}"
-	for asset in "${ASSETS[@]}"; do
+	for asset in "${SELECTED[@]}"; do
 		generate_asset "${asset}"
 	done
 	;;

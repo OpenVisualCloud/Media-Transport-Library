@@ -80,6 +80,13 @@ jobs:
           SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
           TEST_TIME: ${{ inputs.test_time || '120' }}
         run: task ci:pytest-setup -- config-perf
+      - name: Verify the perf media assets
+        # A case whose source is absent skips, so without this a host that lost
+        # the share -- or never got the 24-frame prefixes -- reports a green perf
+        # leg having transmitted nothing.
+        env:
+          MEDIA_ASSET_SET: perf
+        run: task ci:media-assets -- verify
       - name: Export workflow tag for PCAP naming
         run: echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}" >> "$GITHUB_ENV"
       - name: Run performance tests

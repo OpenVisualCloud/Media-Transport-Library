@@ -525,6 +525,10 @@ Three prerequisites are easy to miss:
   transmitted nothing — and `task ci:media-assets -- generate` synthesises
   stand-ins of the right geometry and format for a host that has no share,
   enough to exercise the suite and not a substitute for the real content.
+  `MEDIA_ASSET_SET=perf` selects the performance sweep's own sources instead,
+  which are 24-frame prefixes of full-length lab assets rather than synthetic
+  files — `generate` cuts them from the parent on the share, so that set needs
+  the share present and writable. The perf leg verifies it before running.
 
 ## A red gate that means the fleet was busy
 
