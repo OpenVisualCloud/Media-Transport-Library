@@ -74,7 +74,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-MTL_MANAGER_SOCK_PATH=${sock} "${manager}" >"${log}" 2>&1 &
+# MTLM_PRELOAD names a library to preload in the manager and the probe, and not
+# in this script. An asan build needs its runtime preloaded, and a preload of
+# bash puts bash under LeakSanitizer too, which reports the leaks of bash.
+preload=()
+if [[ -n ${MTLM_PRELOAD:-} ]]; then
+	preload=(env "LD_PRELOAD=${MTLM_PRELOAD}")
+fi
+
+MTL_MANAGER_SOCK_PATH=${sock} "${preload[@]}" "${manager}" >"${log}" 2>&1 &
 manager_pid=$!
 
 for _ in $(seq 1 100); do
@@ -88,7 +96,7 @@ if [[ ! -S ${sock} ]]; then
 	exit 2
 fi
 
-"${probe}" --sock-path "${sock}" "$@"
+"${preload[@]}" "${probe}" --sock-path "${sock}" "$@"
 status=$?
 
 if ((status != 0)); then

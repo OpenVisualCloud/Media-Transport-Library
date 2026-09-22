@@ -38,8 +38,22 @@ mtlm_test = executable('MtlManagerTest', test_sources,
   dependencies: [asan_dep, mtlm_core_dep, gtest_dep, gtest_main_dep, thread_dep],
 )
 
+# An asan build links libasan after the other libraries, and the runtime then
+# refuses to start. Preload it here, as ./build.sh does for tests/unit. The probe
+# test gets the path and not the preload: a preload of the whole script also
+# puts bash under LeakSanitizer, and bash leaks at exit.
+test_env = {}
+probe_env = {'MTLM_BUILD_DIR': meson.current_build_dir() / '..'}
+if get_option('enable_asan') == true
+  asan_lib = run_command(cpp_c.cmd_array()[0], '-print-file-name=libasan.so',
+    check: true).stdout().strip()
+  test_env = {'LD_PRELOAD': asan_lib}
+  probe_env += {'MTLM_PRELOAD': asan_lib}
+endif
+
 test('manager', mtlm_test,
   protocol: 'gtest',
+  env: test_env,
   timeout: 120,
 )
 
@@ -50,6 +64,6 @@ test('manager', mtlm_test,
 #   manager/tools/run_probe.sh --ifname <name>
 test('manager_probe', files('../tools/run_probe.sh'),
   depends: [mtlm_probe, mtlm_manager_exe],
-  env: {'MTLM_BUILD_DIR': meson.current_build_dir() / '..'},
+  env: probe_env,
   timeout: 180,
 )
