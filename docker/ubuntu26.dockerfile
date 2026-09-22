@@ -5,7 +5,7 @@
 
 # Ubuntu 26.04 with eBPF/XDP support
 ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04" AS builder
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78" AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -57,7 +57,7 @@ RUN export CFLAGS="-Wno-error=format-truncation" && \
 # Ubuntu 26.04, runtime/final stage
 ARG MTL_REPO
 ARG IMAGE_CACHE_REGISTRY
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04" AS final
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
@@ -100,4 +100,5 @@ RUN ldconfig
 SHELL ["/bin/bash", "-c"]
 
 USER imtl
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 CMD ["/bin/bash"]

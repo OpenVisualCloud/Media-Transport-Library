@@ -108,4 +108,5 @@ RUN echo "/usr/local/lib64" >/etc/ld.so.conf.d/mtl-usr-local-lib64.conf && \
 SHELL ["/bin/bash", "-c"]
 
 USER imtl
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 CMD ["/bin/bash"]

@@ -97,4 +97,5 @@ RUN ldconfig
 SHELL ["/bin/bash", "-c"]
 
 USER imtl
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 CMD ["/bin/bash"]
