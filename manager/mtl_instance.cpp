@@ -316,8 +316,20 @@ void mtl_instance::handle_message_if_xsk_map_fd(const mtl_if_message_t* if_msg) 
   unsigned int ifindex = ntohl(if_msg->ifindex);
   int fd = -1;
 
-  auto interface = get_interface(ifindex, true);
-  if (interface != nullptr) fd = interface->get_xsks_map_fd();
+  /* Not require_registered(): the client reads the answer to this message with a
+   * one byte iov, so a response record would leave the rest of it in the stream
+   * and desync the next read. The fd < 0 path below is the refusal.
+   *
+   * The check must come before get_interface(): to take an interface the manager
+   * attaches an XDP program to it and deletes every receive flow rule it holds,
+   * the rules of another program included. */
+  if (!is_registered) {
+    log(log_level::WARNING,
+        "Refused if_xsk_map_fd from an instance that never registered.");
+  } else {
+    auto interface = get_interface(ifindex, true);
+    if (interface != nullptr) fd = interface->get_xsks_map_fd();
+  }
 
   struct msghdr msg = {};
   struct iovec iov[1];
