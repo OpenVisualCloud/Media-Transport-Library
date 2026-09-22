@@ -92,16 +92,6 @@ jobs:
       - name: Generate performance report
         if: always()
         run: task ci:report -- performance
-      - name: Pack performance logs
-        if: always()
-        working-directory: ./tests/acceptance
-        run: |
-          # The log directories are named with an ISO timestamp, and
-          # upload-artifact rejects any path containing a colon, so the logs
-          # can only be uploaded packed.
-          if [ -d logs/performance ]; then
-            tar -czf perf-logs.tar.gz logs/performance
-          fi
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -111,7 +101,6 @@ jobs:
             ./tests/acceptance/report.html
             ./tests/acceptance/performance_report.html
             ./tests/acceptance/perf-logs.tar.gz
-          compression-level: 9
       - name: Clean up
         if: always()
         uses: ./.github/actions/cleanup

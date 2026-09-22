@@ -37,6 +37,11 @@ performance)
 		"${venv_python}" "${acceptance_dir}/common/generate_report.py" \
 			"${acceptance_dir}/logs/performance" -o "${acceptance_dir}/performance_report.html" ||
 			echo "::warning::Performance report generation failed"
+		# The log directories are named with an ISO timestamp, and
+		# upload-artifact rejects any path holding a colon, so the logs can
+		# only be collected packed.
+		tar -czf "${acceptance_dir}/perf-logs.tar.gz" -C "${acceptance_dir}" logs/performance ||
+			echo "::warning::Packing the performance logs failed"
 	else
 		echo "::warning::No performance logs found; skipping report generation"
 	fi
