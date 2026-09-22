@@ -33,9 +33,11 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <random>
 #include <string>
@@ -71,6 +73,8 @@ class abuse_client {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) return;
     peer_fd = fds[0];
     wire_set_timeout(peer_fd, 5);
+    struct timeval tv = {5, 0};
+    setsockopt(fds[1], SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     instance.reset(new mtl_instance(fds[1], registry, lcores));
   }
 
@@ -271,12 +275,10 @@ class AbuseServerTest : public ::testing::Test {
 
   /** Connect one client. The fixture closes it. */
   int connect_client() {
-    struct sockaddr_un addr = {};
+    struct sockaddr_un addr = unix_addr(path);
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
     if (fd < 0) return -errno;
-    addr.sun_family = AF_UNIX;
-    std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
     if (connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
       int ret = -errno;
       close(fd);
@@ -286,12 +288,34 @@ class AbuseServerTest : public ::testing::Test {
     return fd;
   }
 
-  static mtl_message_t heartbeat(uint32_t seq) {
-    mtl_message_t msg =
-        wire_request(MTL_MSG_TYPE_HEARTBEAT, sizeof(mtl_heartbeat_message_t));
+  /** Close one client before the fixture does. */
+  void close_client(int fd) {
+    for (int& conn : conns)
+      if (conn == fd) conn = -1;
+    close(fd);
+  }
 
-    msg.body.heartbeat_msg.seq = htonl(seq);
-    return msg;
+  /** Descriptor count once it is `want`, or after 5 s, or a negative errno. */
+  int settled_fd_count(int want) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    mtl_message_t msg = wire_heartbeat(0);
+    int fd = connect_client();
+
+    if (fd < 0) return fd;
+    /* Accept is in order, so this answer proves every earlier client accepted. */
+    wire_set_timeout(fd, 5);
+    send(fd, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL);
+    int ret = wire_read(fd, msg);
+    close_client(fd);
+    if (ret < 0) return ret;
+
+    int now = open_fd_count();
+
+    while (now != want && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      now = open_fd_count();
+    }
+    return now;
   }
 
   std::string dir;
@@ -583,10 +607,7 @@ TEST_F(AbuseTest, ChurnLeavesNothingBehind) {
                 1);
       ASSERT_EQ(client.response(), 0);
 
-      mtl_message_t lcore_get =
-          wire_request(MTL_MSG_TYPE_GET_LCORE, sizeof(mtl_lcore_message_t));
-      lcore_get.body.lcore_msg.lcore = htons(lcore);
-      ASSERT_EQ(client.feed(lcore_get), 1);
+      ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, lcore)), 1);
       ASSERT_EQ(client.response(), 0);
 
       ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, ifindex)), 1);
@@ -622,8 +643,7 @@ TEST_F(AbuseTest, AStreamThatLosesItsBoundaryIsRefusedAndReleasesEverything) {
 
   do_register(client);
 
-  ASSERT_EQ(
-      client.feed(wire_request(MTL_MSG_TYPE_GET_LCORE, sizeof(mtl_lcore_message_t))), 1);
+  ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, 0)), 1);
   ASSERT_EQ(client.response(), 0);
   ASSERT_EQ(lcores.used_count(), 1u);
 
@@ -655,7 +675,7 @@ TEST_F(AbuseServerTest, AClientThatNeverReadsDoesNotStopTheServer) {
    * either done reading or waiting in send() to this socket, and either way
    * there is no point sending more. */
   constexpr int kStuckTries = 20;
-  mtl_message_t msg = heartbeat(1);
+  mtl_message_t msg = wire_heartbeat(1);
   int flood = connect_client();
   int fd = -1;
   int sent = 0;
@@ -685,7 +705,7 @@ TEST_F(AbuseServerTest, AClientThatNeverReadsDoesNotStopTheServer) {
   ASSERT_GE(fd, 0);
   wire_set_timeout(fd, 5);
 
-  mtl_message_t good = heartbeat(77);
+  mtl_message_t good = wire_heartbeat(77);
   ASSERT_EQ(send(fd, &good, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL),
             static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE));
 
@@ -693,4 +713,427 @@ TEST_F(AbuseServerTest, AClientThatNeverReadsDoesNotStopTheServer) {
   ASSERT_EQ(wire_read(fd, reply), 0) << "the server stopped serving every other client";
   EXPECT_EQ(wire_type(reply), static_cast<uint32_t>(MTL_MSG_TYPE_HEARTBEAT_ACK));
   EXPECT_EQ(ntohl(reply.body.heartbeat_msg.seq), 77u);
+}
+
+/* The frame is always one whole record, so body_len must never move the boundary. */
+TEST_F(AbuseTest, ABodyLenThatDisagreesWithTheRecordIsNotFollowed) {
+  abuse_client& client = new_client();
+  const uint32_t lens[] = {0,
+                           1,
+                           sizeof(mtl_heartbeat_message_t),
+                           sizeof(mtl_heartbeat_message_t) + 1,
+                           4 * MTL_MANAGER_MSG_SIZE,
+                           UINT32_MAX};
+  uint32_t seq = 100;
+
+  ASSERT_TRUE(client.ok());
+  for (uint32_t len : lens) {
+    mtl_message_t msg = wire_request(MTL_MSG_TYPE_HEARTBEAT, len);
+    mtl_message_t reply;
+
+    msg.body.heartbeat_msg.seq = htonl(++seq);
+    ASSERT_EQ(client.feed(msg), 1) << "body_len " << len;
+    ASSERT_EQ(wire_read(client.peer_fd, reply), 0) << "body_len " << len;
+    EXPECT_EQ(wire_type(reply), static_cast<uint32_t>(MTL_MSG_TYPE_HEARTBEAT_ACK));
+    EXPECT_EQ(ntohl(reply.body.heartbeat_msg.seq), seq) << "body_len " << len;
+  }
+}
+
+/* A sender that trusts its own body_len puts extra bytes between two records. */
+TEST_F(AbuseTest, ARecordLongerThanTheFrameLosesTheBoundary) {
+  abuse_client& client = new_client();
+  mtl_message_t first = wire_request(MTL_MSG_TYPE_HEARTBEAT, MTL_MANAGER_MSG_SIZE + 64);
+  mtl_message_t second = wire_request(MTL_MSG_TYPE_HEARTBEAT, 0);
+  std::vector<char> stream;
+
+  do_register(client);
+  ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, 0)), 1);
+  ASSERT_EQ(client.response(), 0);
+
+  first.body.heartbeat_msg.seq = htonl(1);
+  stream.insert(stream.end(), reinterpret_cast<char*>(&first),
+                reinterpret_cast<char*>(&first) + MTL_MANAGER_MSG_SIZE);
+  stream.insert(stream.end(), 64, '\xCD');
+  stream.insert(stream.end(), reinterpret_cast<char*>(&second),
+                reinterpret_cast<char*>(&second) + MTL_MANAGER_MSG_SIZE);
+
+  EXPECT_EQ(client.feed(stream.data(), stream.size()), -EBADMSG);
+  EXPECT_EQ(client.response(MTL_MSG_TYPE_HEARTBEAT_ACK), 1);
+
+  client.close_instance();
+  EXPECT_EQ(lcores.used_count(), 0u);
+  EXPECT_EQ(registry->live_count(), 0u);
+}
+
+/* Many records in one call, more answers than the socket holds. */
+TEST_F(AbuseTest, OneFeedOfManyRecords) {
+  constexpr uint32_t kRecords = 2000;
+  abuse_client& client = new_client();
+  std::vector<mtl_message_t> stream(kRecords);
+  uint32_t acked = 0;
+
+  ASSERT_TRUE(client.ok());
+  for (uint32_t i = 0; i < kRecords; i++) {
+    stream[i] = wire_request(MTL_MSG_TYPE_HEARTBEAT, sizeof(mtl_heartbeat_message_t));
+    stream[i].body.heartbeat_msg.seq = htonl(i);
+  }
+
+  std::thread reader([&client, &acked]() {
+    mtl_message_t reply;
+
+    for (uint32_t i = 0; i < kRecords && wire_read(client.peer_fd, reply) == 0; i++)
+      if (ntohl(reply.body.heartbeat_msg.seq) == i) acked++;
+  });
+  int handled = client.feed(stream.data(), stream.size() * MTL_MANAGER_MSG_SIZE);
+  reader.join();
+
+  EXPECT_EQ(handled, static_cast<int>(kRecords));
+  EXPECT_EQ(acked, kRecords);
+}
+
+TEST_F(AbuseTest, AByteAtATimeFeedOfManyRecords) {
+  constexpr uint32_t kRecords = 200;
+  abuse_client& client = new_client();
+  int handled = 0;
+
+  ASSERT_TRUE(client.ok());
+  for (uint32_t i = 0; i < kRecords; i++) {
+    mtl_message_t msg =
+        wire_request(MTL_MSG_TYPE_HEARTBEAT, sizeof(mtl_heartbeat_message_t));
+    const char* at = reinterpret_cast<const char*>(&msg);
+
+    msg.body.heartbeat_msg.seq = htonl(i);
+    for (size_t b = 0; b < MTL_MANAGER_MSG_SIZE; b++) {
+      int ret = client.feed(at + b, 1);
+      ASSERT_EQ(ret, b + 1 == MTL_MANAGER_MSG_SIZE ? 1 : 0)
+          << "record " << i << " byte " << b;
+      handled += ret;
+    }
+  }
+  EXPECT_EQ(handled, static_cast<int>(kRecords));
+
+  for (uint32_t i = 0; i < kRecords; i++) {
+    mtl_message_t reply;
+
+    ASSERT_EQ(wire_read(client.peer_fd, reply), 0) << "record " << i;
+    EXPECT_EQ(ntohl(reply.body.heartbeat_msg.seq), i);
+  }
+}
+
+TEST_F(AbuseTest, LcoreIdsAtAndPastTheTableBound) {
+  abuse_client& client = new_client();
+
+  do_register(client);
+
+  ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, MTL_MANAGER_MAX_LCORE - 1)),
+            1);
+  EXPECT_EQ(client.response(), 0);
+  for (uint16_t id : std::initializer_list<uint16_t>{MTL_MANAGER_MAX_LCORE, UINT16_MAX}) {
+    ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, id)), 1);
+    EXPECT_EQ(client.response(), -EINVAL) << "get " << id;
+    ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_PUT_LCORE, id)), 1);
+    EXPECT_EQ(client.response(), -EINVAL) << "put " << id;
+  }
+  EXPECT_EQ(lcores.used_count(), 1u);
+
+  client.close_instance();
+  EXPECT_EQ(lcores.used_count(), 0u);
+}
+
+/* No request may take or build an interface for an ifindex the device lacks. */
+TEST_F(AbuseTest, IfindexesThatNameNothing) {
+  abuse_client& client = new_client();
+  mtl_message_t reg = register_msg(kIf);
+
+  reg.body.register_msg.num_if = htons(0);
+  ASSERT_TRUE(client.ok());
+  ASSERT_EQ(client.feed(reg), 1);
+  ASSERT_EQ(client.response(), 0);
+
+  for (unsigned int ifindex : {0u, 99u, UINT32_MAX}) {
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, ifindex)), 1);
+    EXPECT_EQ(client.response(MTL_MSG_TYPE_IF_QUEUE_ID), -ENODEV) << ifindex;
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_ADD_FLOW, ifindex)), 1);
+    EXPECT_EQ(client.response(MTL_MSG_TYPE_IF_FLOW_ID), -ENODEV) << ifindex;
+    ASSERT_EQ(client.feed(filter_msg(MTL_MSG_TYPE_ADD_UDP_DP_FILTER, ifindex, 1)), 1);
+    EXPECT_EQ(client.response(), -ENODEV) << ifindex;
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_PUT_QUEUE, ifindex)), 1);
+    EXPECT_EQ(client.response(), -EINVAL) << ifindex;
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_DEL_FLOW, ifindex)), 1);
+    EXPECT_EQ(client.response(), -EINVAL) << ifindex;
+    ASSERT_EQ(client.feed(filter_msg(MTL_MSG_TYPE_DEL_UDP_DP_FILTER, ifindex, 1)), 1);
+    EXPECT_EQ(client.response(), -EINVAL) << ifindex;
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_XSK_MAP_FD, ifindex)), 1);
+    EXPECT_EQ(client.xsk_map_fd(), -ENOTSUP) << ifindex;
+  }
+
+  EXPECT_EQ(registry->live_count(), 0u);
+  EXPECT_EQ(xdp->attach_calls, 0);
+  EXPECT_EQ(netdev->insert_calls, 0);
+}
+
+TEST_F(AbuseTest, UnheldQueueAndFlowIdsReachNoDevice) {
+  abuse_client& client = new_client();
+
+  do_register(client);
+  ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, kIf)), 1);
+  int queue = client.response(MTL_MSG_TYPE_IF_QUEUE_ID);
+  ASSERT_GT(queue, 0);
+
+  mtl_message_t unheld = if_msg(MTL_MSG_TYPE_IF_PUT_QUEUE, kIf);
+  unheld.body.if_msg.queue_id = htons(static_cast<uint16_t>(queue + 1));
+  ASSERT_EQ(client.feed(unheld), 1);
+  EXPECT_EQ(client.response(), -EINVAL);
+
+  mtl_message_t del = if_msg(MTL_MSG_TYPE_IF_DEL_FLOW, kIf);
+  del.body.if_msg.flow_id = htonl(1);
+  ASSERT_EQ(client.feed(del), 1);
+  EXPECT_EQ(client.response(), -EINVAL);
+  EXPECT_EQ(netdev->delete_calls, 1) << "only the foreign rule, at the take-over";
+
+  mtl_message_t put = if_msg(MTL_MSG_TYPE_IF_PUT_QUEUE, kIf);
+  put.body.if_msg.queue_id = htons(static_cast<uint16_t>(queue));
+  ASSERT_EQ(client.feed(put), 1);
+  EXPECT_EQ(client.response(), 0);
+  ASSERT_EQ(client.feed(put), 1);
+  EXPECT_EQ(client.response(), -EINVAL);
+}
+
+/* The hostname field fills all its bytes and has no zero. */
+TEST_F(AbuseTest, ARegisterWithBogusIdentity) {
+  abuse_client& client = new_client();
+  mtl_message_t reg = register_msg(kIf);
+
+  reg.body.register_msg.pid = static_cast<pid_t>(htonl(UINT32_MAX));
+  reg.body.register_msg.uid = static_cast<uid_t>(htonl(0x80000000u));
+  std::memset(reg.body.register_msg.hostname, 'h',
+              sizeof(reg.body.register_msg.hostname));
+
+  ASSERT_TRUE(client.ok());
+  ASSERT_EQ(client.feed(reg), 1);
+  EXPECT_EQ(client.response(), 0);
+  EXPECT_EQ(client.instance->get_hostname(),
+            std::string(sizeof(reg.body.register_msg.hostname), 'h'));
+}
+
+TEST_F(AbuseTest, MessagesAfterAFailedRegisterAreRefused) {
+  abuse_client& client = new_client();
+  mtl_message_t too_many = register_msg(kIf);
+  mtl_message_t lcore_get =
+      wire_request(MTL_MSG_TYPE_GET_LCORE, sizeof(mtl_lcore_message_t));
+
+  too_many.body.register_msg.num_if = htons(MTL_MANAGER_MAX_IF + 1);
+  ASSERT_TRUE(client.ok());
+
+  ASSERT_EQ(client.feed(too_many), 1);
+  EXPECT_EQ(client.response(), -EINVAL);
+  ASSERT_EQ(client.feed(lcore_get), 1);
+  EXPECT_EQ(client.response(), -EPERM);
+
+  ASSERT_EQ(client.feed(register_msg(99)), 1);
+  EXPECT_EQ(client.response(), -ENODEV);
+  ASSERT_EQ(client.feed(lcore_get), 1);
+  EXPECT_EQ(client.response(), -EPERM);
+  EXPECT_EQ(lcores.used_count(), 0u);
+}
+
+/* The first interface of a register that fails on the second must still go back. */
+TEST_F(AbuseTest, AHalfDoneRegisterGivesBackTheInterfaceItTook) {
+  abuse_client& client = new_client();
+  mtl_message_t reg = register_msg(kIf);
+
+  reg.body.register_msg.num_if = htons(2);
+  reg.body.register_msg.ifindex[1] = htonl(99);
+  ASSERT_TRUE(client.ok());
+  ASSERT_EQ(client.feed(reg), 1);
+  EXPECT_EQ(client.response(), -ENODEV);
+
+  client.close_instance();
+  EXPECT_EQ(registry->live_count(), 0u);
+  EXPECT_EQ(xdp->detach_calls, xdp->attach_calls);
+  EXPECT_FALSE(xdp->attached);
+}
+
+/* A second register widens the first; death must release on every interface. */
+TEST_F(AbuseTest, DeathWithResourcesOnSeveralInterfaces) {
+  constexpr unsigned int kIfs = 4;
+  abuse_client& client = new_client();
+  mtl_message_t wide = register_msg(kIf);
+
+  netdev->add_if(3, 4, 8);
+  netdev->add_if(4, 4, 8);
+  wide.body.register_msg.num_if = htons(kIfs);
+  for (unsigned int i = 0; i < kIfs; i++)
+    wide.body.register_msg.ifindex[i] = htonl(i + 1);
+
+  do_register(client);
+  ASSERT_EQ(client.feed(wide), 1);
+  ASSERT_EQ(client.response(), 0);
+
+  for (unsigned int ifindex = 1; ifindex <= kIfs; ifindex++) {
+    ASSERT_EQ(client.feed(if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, ifindex)), 1);
+    int queue = client.response(MTL_MSG_TYPE_IF_QUEUE_ID);
+    ASSERT_GT(queue, 0);
+
+    mtl_message_t flow = if_msg(MTL_MSG_TYPE_IF_ADD_FLOW, ifindex);
+    flow.body.if_msg.queue_id = htons(static_cast<uint16_t>(queue));
+    flow.body.if_msg.flow_type = htonl(0x02);
+    ASSERT_EQ(client.feed(flow), 1);
+    ASSERT_GT(client.response(MTL_MSG_TYPE_IF_FLOW_ID), 0);
+
+    for (uint16_t port : std::initializer_list<uint16_t>{0, UINT16_MAX}) {
+      ASSERT_EQ(client.feed(filter_msg(MTL_MSG_TYPE_ADD_UDP_DP_FILTER, ifindex, port)),
+                1);
+      ASSERT_EQ(client.response(), 0);
+    }
+  }
+  for (uint16_t id : std::initializer_list<uint16_t>{0, MTL_MANAGER_MAX_LCORE - 1}) {
+    ASSERT_EQ(client.feed(wire_lcore(MTL_MSG_TYPE_GET_LCORE, id)), 1);
+    ASSERT_EQ(client.response(), 0);
+  }
+  ASSERT_EQ(registry->live_count(), kIfs);
+
+  client.close_instance();
+
+  EXPECT_EQ(lcores.used_count(), 0u);
+  EXPECT_EQ(registry->live_count(), 0u);
+  EXPECT_EQ(xdp->detach_calls, xdp->attach_calls);
+  EXPECT_EQ(filter_calls(0, false), kIfs);
+  EXPECT_EQ(filter_calls(UINT16_MAX, false), kIfs);
+  for (unsigned int ifindex = 1; ifindex <= kIfs; ifindex++)
+    EXPECT_TRUE(netdev->ifaces[ifindex].rules.empty()) << "if " << ifindex;
+}
+
+/* The registry entry expires between the two halves of a record naming it. */
+TEST_F(AbuseTest, TheLastHolderDiesWhileAnotherIsMidRecord) {
+  abuse_client& holder = new_client();
+  abuse_client& waiter = new_client();
+  mtl_message_t reg = register_msg(kIf);
+  mtl_message_t get = if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, kIf);
+  const char* at = reinterpret_cast<const char*>(&get);
+  const size_t half = MTL_MANAGER_MSG_SIZE / 2;
+
+  do_register(holder);
+  ASSERT_EQ(holder.feed(if_msg(MTL_MSG_TYPE_IF_GET_QUEUE, kIf)), 1);
+  ASSERT_EQ(holder.response(MTL_MSG_TYPE_IF_QUEUE_ID), 1);
+
+  reg.body.register_msg.num_if = htons(0);
+  ASSERT_TRUE(waiter.ok());
+  ASSERT_EQ(waiter.feed(reg), 1);
+  ASSERT_EQ(waiter.response(), 0);
+  ASSERT_EQ(waiter.feed(at, half), 0);
+
+  holder.close_instance();
+  ASSERT_EQ(registry->live_count(), 0u);
+
+  ASSERT_EQ(waiter.feed(at + half, MTL_MANAGER_MSG_SIZE - half), 1);
+  EXPECT_EQ(waiter.response(MTL_MSG_TYPE_IF_QUEUE_ID), 1)
+      << "the queue of the dead holder must be free on the new interface";
+  EXPECT_EQ(registry->live_count(), 1u);
+  EXPECT_EQ(xdp->attach_calls, 2);
+}
+
+TEST_F(AbuseServerTest, AFullServerServesAgainOnceClientsLeave) {
+  const size_t kLimit = mtlm_server_config().max_clients;
+  std::vector<int> full;
+  mtl_message_t reply;
+  int baseline = open_fd_count();
+
+  for (size_t i = 0; i < kLimit; i++) {
+    mtl_message_t msg = wire_heartbeat(static_cast<uint32_t>(i));
+    int fd = connect_client();
+
+    ASSERT_GE(fd, 0) << "client " << i;
+    wire_set_timeout(fd, 5);
+    ASSERT_EQ(send(fd, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL),
+              static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE));
+    ASSERT_EQ(wire_read(fd, reply), 0) << "client " << i;
+    full.push_back(fd);
+  }
+
+  int extra = connect_client();
+  ASSERT_GE(extra, 0);
+  wire_set_timeout(extra, 5);
+  mtl_message_t msg = wire_heartbeat(1);
+  send(extra, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL);
+  EXPECT_EQ(wire_read(extra, reply), -ECONNRESET) << "a client past the limit was served";
+  close_client(extra);
+
+  for (int fd : full) close_client(fd);
+
+  /* The server sees the hang-ups in its own time, so retry until it has. */
+  bool served = false;
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!served && std::chrono::steady_clock::now() < deadline) {
+    int fd = connect_client();
+
+    ASSERT_GE(fd, 0);
+    wire_set_timeout(fd, 1);
+    msg = wire_heartbeat(77);
+    served = send(fd, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL) ==
+                 static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE) &&
+             wire_read(fd, reply) == 0 && ntohl(reply.body.heartbeat_msg.seq) == 77u;
+    close_client(fd);
+    if (!served) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_TRUE(served) << "the server stayed full after every client left";
+  EXPECT_EQ(settled_fd_count(baseline), baseline);
+}
+
+/* Close at once, close mid-record, and close with an answer not read. */
+TEST_F(AbuseServerTest, ConnectAndCloseCyclesLeaveNoDescriptorBehind) {
+  constexpr int kCycles = 600;
+  mtl_message_t msg = wire_heartbeat(5);
+  int baseline = open_fd_count();
+
+  ASSERT_GT(baseline, 0);
+  for (int i = 0; i < kCycles; i++) {
+    int fd = connect_client();
+
+    ASSERT_GE(fd, 0) << "cycle " << i;
+    if (i % 3 == 1) send(fd, &msg, MTL_MANAGER_MSG_SIZE / 2, MSG_NOSIGNAL);
+    if (i % 3 == 2) send(fd, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL);
+    close_client(fd);
+  }
+
+  EXPECT_EQ(settled_fd_count(baseline), baseline);
+
+  int fd = connect_client();
+  mtl_message_t reply;
+  ASSERT_GE(fd, 0);
+  wire_set_timeout(fd, 5);
+  ASSERT_EQ(send(fd, &msg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL),
+            static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE));
+  EXPECT_EQ(wire_read(fd, reply), 0);
+}
+
+/* On the real device an ifindex no host has stops at if_indextoname. */
+TEST_F(AbuseServerTest, IfindexesNoHostHasLeaveNoDescriptorBehind) {
+  constexpr int kRounds = 50;
+  mtl_message_t reg = wire_request(MTL_MSG_TYPE_REGISTER, sizeof(mtl_register_message_t));
+  mtl_message_t reply;
+  int fd = connect_client();
+
+  ASSERT_GE(fd, 0);
+  wire_set_timeout(fd, 5);
+  ASSERT_EQ(send(fd, &reg, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL),
+            static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE));
+  ASSERT_EQ(wire_read(fd, reply), 0);
+  ASSERT_EQ(wire_response(reply), 0);
+
+  int baseline = open_fd_count();
+  for (int round = 0; round < kRounds; round++) {
+    for (unsigned int ifindex : {0u, 0x7FFFFFFFu, UINT32_MAX}) {
+      mtl_message_t get =
+          wire_request(MTL_MSG_TYPE_IF_GET_QUEUE, sizeof(mtl_if_message_t));
+
+      get.body.if_msg.ifindex = htonl(ifindex);
+      ASSERT_EQ(send(fd, &get, MTL_MANAGER_MSG_SIZE, MSG_NOSIGNAL),
+                static_cast<ssize_t>(MTL_MANAGER_MSG_SIZE));
+      ASSERT_EQ(wire_read(fd, reply), 0);
+      ASSERT_EQ(wire_type(reply), static_cast<uint32_t>(MTL_MSG_TYPE_IF_QUEUE_ID));
+      ASSERT_EQ(wire_response(reply), -ENODEV) << "ifindex " << ifindex;
+    }
+  }
+  EXPECT_EQ(open_fd_count(), baseline);
 }
