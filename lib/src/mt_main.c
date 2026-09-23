@@ -741,10 +741,13 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
     return -EINVAL;
   }
 
-  cpu_set_t mask;
-  CPU_ZERO(&mask);
-  CPU_SET(lcore, &mask);
-  pthread_setaffinity_np(thread, sizeof(mask), &mask);
+  /* with --remap-lcore-ids the lcore id is not the cpu id, use the cpuset eal pinned */
+  cpu_set_t mask = rte_lcore_cpuset(lcore);
+  int ret = pthread_setaffinity_np(thread, sizeof(mask), &mask);
+  if (ret) {
+    err("%s, set affinity for lcore %u fail %d\n", __func__, lcore, ret);
+    return -ret;
+  }
 
   return 0;
 }

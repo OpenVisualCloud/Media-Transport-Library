@@ -822,14 +822,14 @@ bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
 
   if (lcore >= RTE_MAX_LCORE) {
     err("%s, invalid lcore %d\n", __func__, lcore);
-    return -EIO;
+    return false;
   }
 
   if (mt_is_manager_connected(impl)) return true;
 
   if (!lcore_shm) {
     err("%s, no lcore shm attached\n", __func__);
-    return -EIO;
+    return false;
   }
 
   return lcore_shm->lcores_info[lcore].active;
