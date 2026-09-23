@@ -25,6 +25,15 @@ void ut_sch_destroy_main(mtl_handle mt);
 /* RTE_MAX_LCORE, the first lcore id mt_sch_lcore_valid() must reject. */
 unsigned int ut_sch_max_lcore(void);
 
+/* MT_MAX_SCH_NUM, the sch[] array size mtl_sch_enable_sleep() must bound its index to. */
+int ut_sch_max_sch_num(void);
+
+/* A main handle whose sch[] neighbourhood is poisoned non-zero, so an out-of-range index
+ * aliases memory that looks like an active scheduler; sch[MT_MAX_SCH_NUM - 1] is a real
+ * zeroed active one. Caller frees with ut_sch_destroy_probe_main. */
+mtl_handle ut_sch_create_probe_main(void);
+void ut_sch_destroy_probe_main(mtl_handle mt);
+
 #ifdef __cplusplus
 }
 #endif

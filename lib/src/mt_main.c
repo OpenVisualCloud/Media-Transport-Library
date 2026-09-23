@@ -1068,7 +1068,7 @@ int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
 int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
   struct mtl_main_impl* impl = mt;
 
-  if (sch_idx > MT_MAX_SCH_NUM) {
+  if (sch_idx < 0 || sch_idx >= MT_MAX_SCH_NUM) {
     err("%s, invalid sch_idx %d\n", __func__, sch_idx);
     return -EIO;
   }
