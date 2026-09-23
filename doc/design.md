@@ -488,6 +488,18 @@ However, keep in mind that the buffer for each field (or frame) will only contai
 For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st20_tx_frame_meta`. Similarly, for reception (RX), applications can determine the field order with the `second_field` flag present in the `struct st20_rx_frame_meta`.
 In the case of pipeline mode, the bool `second_field` within the `struct st_frame` also communicates field information between the application and MTL.
 
+MTL transmits both fields of a frame within a single frame period, as SMPTE ST 2110-21 requires: the first
+field starts on the frame grid and the second half a frame later. Because MTL's transmission grid is one field
+period wide, a first field goes out on an even slot of that grid and a second field on an odd one, and a field
+whose parity does not match the next slot waits for the following one. MTL alternates `second_field` itself, so
+this needs no application action; an application that overrides the flag and pins it, or an RTP-level
+application that never sets `ST20_SECOND_FIELD`, has every field deferred and transmits at half the configured
+rate — a halved `fps` in the session statistics, next to a `second field 0` count, is the symptom.
+
+`ST20_TX_FLAG_USER_PACING` does not change this; the application chooses which field window to transmit in and
+MTL still schedules within it. Only `ST20_TX_FLAG_EXACT_USER_PACING` transmits at the supplied instant
+verbatim. On the receive side, the timing parser reports a field whose parity does not match its slot.
+
 ### 6.7. Get incomplete frame
 
 By default, the RX session will only deliver complete frames, where all packets have been successfully received, to the application. Frames that are incomplete due to missing packets are discarded by MTL. However, in certain scenarios, an application may need to be aware of incomplete frames to apply its own logic for frame processing.

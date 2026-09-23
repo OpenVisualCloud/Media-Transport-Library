@@ -389,6 +389,15 @@ Hardware RL has ramp-up delay. MTL sends padding packets (RTP padding bit set) b
 Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period ≈ 16.683ms.
 - Late frame → advance to next epoch → `stat_frame_late` increments
 - Fix is in the application, not MTL
+- Interlaced TX: `frame_time` is one FIELD period, so the ST 2110-21 frame grid is every
+  SECOND epoch slot (even = first field). Corrected at the `tv_sync_pacing()` call site;
+  `calc_frame_count_since_epoch()` stays parity-blind. Exclusions: EXACT_USER_PACING with a
+  usable timestamp, and ST22 at RTP level (`s_type == MT_ST22_HANDLE_TX_VIDEO &&
+  !s->st22_info`). Do **not** add 6.3.3's `T_LINE/2` — it reaches the RTP timestamp and
+  breaks ST 2110-10 7.6.1.
+- The 20/525, 26/625, 22/1125 TROFFSET numerators are legacy ST 2110-21:2017 fixed values; the
+  2022 Table 1 TRO_DEFAULT equation is defective for the 525/625 rows (dangling `+` in the
+  published PDF). Do not "re-derive" them.
 
 ### MEDIA_CLK User-Timestamp Anchoring (`st10_media_clk_to_tai`)
 `ST10_TIMESTAMP_FMT_MEDIA_CLK` carries only a raw 32-bit tick count — not a full TAI

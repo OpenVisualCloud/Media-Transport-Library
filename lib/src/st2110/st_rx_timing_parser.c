@@ -138,7 +138,8 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
 }
 
 void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
-                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot) {
+                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot,
+                             bool second_field) {
   struct st_rx_video_tp* tp = s->tp;
   float cinst_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->cinst_sum);
   float vrx_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->vrx_sum);
@@ -156,6 +157,12 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
 
   /* parse tp compliant for current frame */
   enum st_rx_tp_compliant compliant = rv_tp_compliant(tp, slot);
+  /* ST 2110-21 6.2 frame grid: even epoch slot = first field. doc/design.md 6.6 */
+  if (s->ops.interlaced && compliant != ST_RX_TP_COMPLIANT_FAILED &&
+      ((slot->cur_epochs & 0x1) != second_field)) {
+    rv_tp_compliant_set_cause(&slot->meta, "field parity off frame grid");
+    compliant = ST_RX_TP_COMPLIANT_FAILED;
+  }
   slot->meta.compliant = compliant;
 
   if (!s->enable_timing_parser_stat) return;

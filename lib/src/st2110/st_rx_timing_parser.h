@@ -17,7 +17,8 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
                      int pkt_idx);
 
 void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
-                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot);
+                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot,
+                             bool second_field);
 
 void rv_tp_stat(struct st_rx_video_session_impl* s);
 

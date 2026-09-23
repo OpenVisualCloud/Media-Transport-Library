@@ -101,6 +101,12 @@ static int ut_txv_notify_frame_done(void* priv, uint16_t frame_idx,
   return 0;
 }
 
+/* tv_tasklet_rtp() calls this unconditionally once it has an app packet. */
+static int ut_txv_notify_rtp_done(void* priv) {
+  (void)priv;
+  return 0;
+}
+
 /* ST22 (compressed video) counterpart of ut_txv_get_next_frame() above: same
  * app-supplied tfmt/timestamp, but through st22_tx_video_info's own callback
  * signature so ut_txv_run_st22_next_frame_step() can drive tv_tasklet_st22(). */
@@ -215,6 +221,18 @@ void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
   ctx->session.pacing.warm_pkts = warm_pkts;
 }
 
+void ut_txv_set_interlaced(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.ops.interlaced = enable;
+}
+
+void ut_txv_set_st22_rtp_level(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.s_type = enable ? MT_ST22_HANDLE_TX_VIDEO : MT_HANDLE_TX_VIDEO;
+}
+
+void ut_txv_set_second_field(ut_txv_ctx* ctx, bool second_field) {
+  ctx->session.second_field = second_field;
+}
+
 void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate) {
   ctx->session.fps_tm.sampling_clock_rate = sampling_rate;
 }
@@ -271,7 +289,7 @@ uint64_t ut_txv_calc_frame_count_since_epoch(ut_txv_ctx* ctx, uint64_t cur_tai,
 }
 
 int ut_txv_sync_pacing(ut_txv_ctx* ctx, uint64_t required_tai) {
-  return tv_sync_pacing(&ctx->impl, &ctx->session, required_tai);
+  return tv_sync_pacing(&ctx->impl, &ctx->session, required_tai, /*second_field=*/false);
 }
 
 uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
@@ -279,25 +297,46 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   return tv_pacing_required_tai(&ctx->session, tfmt, timestamp);
 }
 
-int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                             uint64_t timestamp, uint64_t* packet_tsc,
-                             uint64_t* packet_ptp) {
-  static unsigned int test_idx;
+/* Header mempool and TX ring on port P, as tv_mempool_init()/tv_init_hw() would.
+ * Shared by every driver below that lets the production builders run. */
+static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
+  static unsigned int path_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct st_frame_trans frame = {0};
-  struct rte_mbuf* packet = NULL;
   char pool_name[RTE_MEMPOOL_NAMESIZE];
   char ring_name[RTE_RING_NAMESIZE];
-  uint8_t frame_data[4] = {0};
-  int ret = -1;
 
-  snprintf(pool_name, sizeof(pool_name), "ut_txv_pool_%u", test_idx);
-  snprintf(ring_name, sizeof(ring_name), "ut_txv_ring_%u", test_idx++);
+  snprintf(pool_name, sizeof(pool_name), "ut_txv_pool_%u", path_idx);
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_ring_%u", path_idx++);
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
-  if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) goto out;
+  if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) return -1;
+  return 0;
+}
+
+static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (s->ring[MTL_SESSION_PORT_P]) {
+    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+    s->ring[MTL_SESSION_PORT_P] = NULL;
+  }
+  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+}
+
+int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                             uint64_t timestamp, uint64_t* packet_tsc,
+                             uint64_t* packet_ptp) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  struct rte_mbuf* packet = NULL;
+  uint8_t frame_data[4] = {0};
+  int ret = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
 
   frame.addr = frame_data;
   frame.idx = 0;
@@ -336,12 +375,74 @@ int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
 
 out:
   rte_pktmbuf_free(packet);
-  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
-  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
-  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
-  s->ring[MTL_SESSION_PORT_P] = NULL;
-  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  ut_txv_tx_path_uinit(ctx);
   s->st20_frames = NULL;
+  return ret;
+}
+
+/* Drives the RTP-level builders (tv_build_rtp() when tx_no_chain, otherwise
+ * tv_build_rtp_chain()) with one app packet whose st20_rfc4175_rtp_hdr names the
+ * given field parity, so the F-bit extraction feeding tv_sync_pacing() runs for
+ * real. Reports the epoch slot the session settled on. */
+int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
+                           uint64_t* epoch) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mbuf* app_pkt = NULL;
+  struct rte_mbuf* built_pkt = NULL;
+  char ring_name[RTE_RING_NAMESIZE];
+  int ret = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_app_ring_%u", test_idx++);
+  s->packet_ring = ut_ring_create(ring_name, 32);
+  if (!s->packet_ring) goto out;
+
+  app_pkt = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (!app_pkt) goto out;
+  /* st20_tx_put_mbuf() leaves room for MTL's own mt_udp_hdr in the no-chain case; in
+   * the chain case MTL prepends a header mbuf, so the app packet starts at the RTP
+   * header */
+  size_t hdr_offset = tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
+  size_t app_pkt_len = hdr_offset + sizeof(struct st20_rfc4175_rtp_hdr);
+  uint8_t* app_data = rte_pktmbuf_mtod(app_pkt, uint8_t*);
+  memset(app_data, 0, app_pkt_len);
+  app_pkt->data_len = app_pkt_len;
+  app_pkt->pkt_len = app_pkt_len;
+  struct st20_rfc4175_rtp_hdr* rfc4175 =
+      (struct st20_rfc4175_rtp_hdr*)(app_data + hdr_offset);
+  rfc4175->row_number = htons(second_field ? ST20_SECOND_FIELD : 0);
+  /* the builders only treat a packet as the start of a new frame, and so only read
+   * the parity, when its RTP timestamp differs from the last one sent */
+  rfc4175->base.tmstamp = s->st20_rtp_time + 1;
+  if (rte_ring_sp_enqueue(s->packet_ring, app_pkt) < 0) goto out;
+  app_pkt = NULL;
+
+  s->bulk = 4; /* production's default */
+  s->tx_no_chain = tx_no_chain;
+  s->ops.num_port = 1;
+  s->ops.type = ST20_TYPE_RTP_LEVEL;
+  s->ops.notify_rtp_done = ut_txv_notify_rtp_done;
+  /* a one-packet frame, so tv_tasklet_rtp() consumes the single app packet queued
+   * above and pads the rest of the burst with dummies */
+  s->st20_total_pkts = 1;
+  s->st20_pkt_idx = 0;
+
+  tvs_tasklet_handler(&ctx->mgr);
+  /* a built packet on the TX ring is the proof the builder actually ran */
+  if (rte_ring_sc_dequeue(s->ring[MTL_SESSION_PORT_P], (void**)&built_pkt) < 0) goto out;
+  *epoch = s->pacing.cur_epochs;
+  ret = 0;
+
+out:
+  rte_pktmbuf_free(built_pkt);
+  rte_pktmbuf_free(app_pkt);
+  if (s->packet_ring) {
+    ut_ring_drain(s->packet_ring);
+    rte_ring_free(s->packet_ring);
+    s->packet_ring = NULL;
+  }
+  ut_txv_tx_path_uinit(ctx);
   return ret;
 }
 
@@ -471,6 +572,27 @@ void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
   tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
 }
 
+int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
+                       enum st_fps fps) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (st_get_fps_timing(fps, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.height = height;
+  s->ops.fps = fps;
+  s->ops.interlaced = interlaced;
+  s->ops.num_port = 1;
+  /* TSC pacing skips tv_train_pacing(), so no NIC queue is needed, and
+   * st_video_resolve_pacing_tasklet() is then only a function-pointer switch */
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_TSC;
+  /* only used as a divisor for pacing->trs / pad_interval */
+  s->st20_total_pkts = 1;
+  return tv_init_pacing(&ctx->impl, s);
+}
+
+uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
+  return st_tai_round_to_media_clk_ns(tai_ns, sampling_rate);
+}
+
 int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx) {
   static unsigned int pool_idx;
 
@@ -519,6 +641,10 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.cur_epochs;
+}
+
+long double ut_txv_pacing_tr_offset(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.tr_offset;
 }
 
 long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx) {
@@ -575,6 +701,10 @@ uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx) {
   return ctx->notify_frame_done_meta.epoch;
+}
+
+bool ut_txv_notify_frame_done_second_field(const ut_txv_ctx* ctx) {
+  return ctx->notify_frame_done_meta.second_field;
 }
 
 uint32_t ut_txv_notify_frame_done_rtp_timestamp(const ut_txv_ctx* ctx) {

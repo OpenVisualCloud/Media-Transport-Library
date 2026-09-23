@@ -460,6 +460,59 @@ static void test_st20p_rx_user_meta(tests_context* s, struct st_frame* frame) {
   s->last_user_meta_frame_idx = meta->frame_idx;
 }
 
+/* MTL's own ST 2110-21 verdict on the received stream. Only the field-parity cause is
+ * asserted on -- the narrow/wide thresholds are load- and host-sensitive -- and other
+ * causes are logged. Matching failed_cause by string means a change to that text weakens
+ * this rather than breaking it; the deterministic guard is
+ * tests/unit/session/st20/interlaced_tp_phase_test.cpp. */
+static void test_st20p_rx_check_tp(tests_context* s, struct st_frame* frame) {
+  struct st20_rx_tp_meta* tp = frame->tp[MTL_SESSION_PORT_P];
+
+  if (!tp) {
+    s->incomplete_frame_cnt++;
+    return;
+  }
+  /* no previous frame to measure rtp_ts_delta against, so the parser always FAILs it */
+  if (!s->fb_rec) return;
+  if (tp->compliant != ST_RX_TP_COMPLIANT_FAILED) return;
+  if (strcmp(tp->failed_cause, "field parity off frame grid")) {
+    if (!s->tp_other_fail_logged) {
+      err("%s(%d), timing parser not compliant, cause %s\n", __func__, s->idx,
+          tp->failed_cause);
+      s->tp_other_fail_logged = true;
+    }
+    return;
+  }
+  if (!s->tp_fail_cnt)
+    err("%s(%d), timing parser field parity off frame grid\n", __func__, s->idx);
+  s->tp_fail_cnt++;
+}
+
+/* ST 2110-21 6.2 frame grid: a first field starts on an even field slot, a second on an
+ * odd one, and a conforming FPT cannot tell the difference, so this is the only
+ * wire-level check for it. The basis is the 64-bit TAI first-packet time, NOT
+ * frame->rtp_timestamp: that one wraps, and 2^32 is not a multiple of the frame period in
+ * ticks, so its absolute phase is meaningless. Sound but probabilistic in power, since TX
+ * takes its starting parity from the wall clock -- the deterministic proof stays in
+ * tests/unit/session/st20_tx/interlaced_field_epoch_test.cpp. */
+static void test_st20p_rx_check_field_phase(tests_context* s, struct st_frame* frame) {
+  /* a zero basis would make the check below pass for every frame, so fail instead */
+  if (!frame->receive_timestamp) {
+    if (!s->field_phase_unverified_cnt)
+      err("%s(%d), no receive_timestamp, field phase unverifiable\n", __func__, s->idx);
+    s->field_phase_unverified_cnt++;
+    return;
+  }
+
+  uint64_t slot = (uint64_t)((double)frame->receive_timestamp / s->field_period_ns);
+
+  if (((slot & 0x1) != 0) == frame->second_field) return;
+  if (!s->field_phase_fail_cnt)
+    err("%s(%d), field phase mismatch, slot %" PRIu64 " second_field %d\n", __func__,
+        s->idx, slot, frame->second_field);
+  s->field_phase_fail_cnt++;
+}
+
 static void test_st20p_rx_frame_thread(void* args) {
   tests_context* s = (tests_context*)args;
   auto handle = s->handle;
@@ -495,9 +548,8 @@ static void test_st20p_rx_frame_thread(void* args) {
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
-    if (s->rx_timing_parser) {
-      if (!frame->tp[MTL_SESSION_PORT_P]) s->incomplete_frame_cnt++;
-    }
+    if (s->rx_timing_parser) test_st20p_rx_check_tp(s, frame);
+    if (s->field_period_ns) test_st20p_rx_check_field_phase(s, frame);
 
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
@@ -577,6 +629,9 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
+
+    if (s->rx_timing_parser) test_st20p_rx_check_tp(s, frame);
+    if (s->field_period_ns) test_st20p_rx_check_field_phase(s, frame);
 
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
@@ -1066,6 +1121,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.output_fmt = rx_fmt[i];
     ops_rx.transport_fmt = t_fmt[i];
     ops_rx.interlaced = para->interlace;
+    if (ops_rx.interlaced) {
+      /* must stay a double: rounding 16683333.33ns at 59.94 shifts the slot index */
+      test_ctx_rx[i]->field_period_ns = (double)NS_PER_S / st_frame_rate(fps[i]);
+    }
     ops_rx.transport_linesize = 0;
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
@@ -1208,6 +1267,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
+    EXPECT_EQ(test_ctx_rx[i]->tp_fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->field_phase_fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->field_phase_unverified_cnt, 0);
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
         EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],
@@ -1267,10 +1329,11 @@ TEST(St20p, digest_1080i_s2) {
   para.interlace = true;
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = false;
-  para.interlace = true;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.ssrc = 54321;
   para.block_get = true;
+  /* runs the library's own field-parity verdict against a real interlaced stream */
+  para.rx_timing_parser = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
