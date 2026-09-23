@@ -65,6 +65,10 @@ class SweepTest:
     core_ids: str = ""
     measured_dev_tx: float = 0.0
     measured_dev_rx: float = 0.0
+    # Wire (L1) rate of the measured side only: the companion is a different
+    # host's port, reported for comparison rather than judged against a NIC.
+    measured_wire_tx: float = 0.0
+    measured_wire_rx: float = 0.0
     companion_dev_tx: float = 0.0
     companion_dev_rx: float = 0.0
     steps: list = field(default_factory=list)  # [(sessions, passed, detail)]
@@ -101,8 +105,12 @@ RE_CPU_CORES = re.compile(
 RE_TEST_CMD = re.compile(r"(?:Test command|COMMAND):\s+(.+)")
 RE_MEASURED_HDR = re.compile(r"---\s+Measured\s+\(")
 RE_COMPANION_HDR = re.compile(r"---\s+Companion\s+\(")
-RE_DEV_TX = re.compile(r"DEV TX:\s+([\d.]+)\s+Mb/s")
-RE_DEV_RX = re.compile(r"DEV RX:\s+([\d.]+)\s+Mb/s")
+# The optional `wire` group is the L1 rate: what the link carries once FCS,
+# preamble and inter-frame gap are counted.  Only that is comparable against a
+# port's nominal speed; the first group is the DPDK octet counter, which is
+# 1.7% lower for 1080p59 ST2110-20.
+RE_DEV_TX = re.compile(r"DEV TX:\s+([\d.]+)\s+Mb/s(?:\s+wire\s+([\d.]+)\s+Mb/s)?")
+RE_DEV_RX = re.compile(r"DEV RX:\s+([\d.]+)\s+Mb/s(?:\s+wire\s+([\d.]+)\s+Mb/s)?")
 RE_VFS = re.compile(r"Host (\S+): redundant port VFs: \[(.+?)\]")
 RE_DMA_ENABLED = re.compile(
     r"(?:DSA|DMA) enabled\s*(?:\((\w+)\))?\s*:\s*(\S+)\s*\("
@@ -162,6 +170,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
     tests: list[SweepTest] = []
     host_assign = cmd = cores = core_ids = ""
     m_tx = m_rx = c_tx = c_rx = 0.0
+    m_wire_tx = m_wire_rx = 0.0
     in_m = in_c = collecting_sweep = in_config = False
     steps: list[tuple[int, bool, str]] = []
     config_lines: list[str] = []
@@ -230,6 +239,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                 host_assign = RE_LOG_PREFIX.sub("", line).strip()
                 cmd = cores = core_ids = ""
                 m_tx = m_rx = c_tx = c_rx = 0.0
+                m_wire_tx = m_wire_rx = 0.0
                 in_m = in_c = collecting_sweep = in_config = False
                 steps, config_lines, rxtxapp_config = [], [], {}
                 continue
@@ -281,12 +291,14 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     v = float(t.group(1))
                     if in_m:
                         m_tx = v
+                        m_wire_tx = float(t.group(2)) if t.group(2) else 0.0
                     else:
                         c_tx = v
                 if r:
                     v = float(r.group(1))
                     if in_m:
                         m_rx = v
+                        m_wire_rx = float(r.group(2)) if r.group(2) else 0.0
                     else:
                         c_rx = v
                     in_m = in_c = False
@@ -359,6 +371,8 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     core_ids=core_ids,
                     measured_dev_tx=m_tx,
                     measured_dev_rx=m_rx,
+                    measured_wire_tx=m_wire_tx,
+                    measured_wire_rx=m_wire_rx,
                     companion_dev_tx=c_tx,
                     companion_dev_rx=c_rx,
                     steps=list(steps),
@@ -663,6 +677,11 @@ def _tput(mbps: float) -> str:
     return f"{mbps / 1000:.2f} Gb/s" if mbps >= 1000 else f"{mbps:.1f} Mb/s"
 
 
+def _wire_note(wire: float) -> str:
+    """Parenthetical wire (L1) rate, empty when the log did not report one."""
+    return f" ({_tput(wire)} wire)" if wire > 0 else ""
+
+
 def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     lines = [
         f'<div class="section-title">{title}</div>',
@@ -715,7 +734,7 @@ def _generate_html(tests, per_host, hosts) -> str:
     # ── Workload Description sub-section ──
     p.append(
         _kv_table(
-            "Workload Description",
+            "Workload Description (1080p59.94 cases)",
             [
                 ("Standard", "SMPTE ST 2110-20 (Uncompressed Video)"),
                 ("Transport", "RTP over UDP/IPv4 (unicast)"),
@@ -723,27 +742,30 @@ def _generate_html(tests, per_host, hosts) -> str:
                 ("Resolution", "1920 × 1080 progressive"),
                 ("Frame Rate", "59.94 fps"),
                 ("Packing Mode", "GPM (General Packing Mode)"),
-                (
-                    "RTP Payload / Packet",
-                    "~1,200–1,314 bytes (varies by scan-line packing)",
-                ),
-                ("Packets / Frame", "~3,945 (trained by HW pacer)"),
+                ("RTP Payload / Packet", "1,320 bytes"),
+                ("Packets / Frame", "3,928 (3,927 full + 1 tail of 360 bytes)"),
                 (
                     "Ethernet Frame Size",
-                    "≤ 1,500 bytes (MTU); Eth 14 + IP 20 + UDP 8 + RTP 12 + RFC 4175 SRD 8 + payload",
+                    "1,382 bytes (single SRD) / 1,388 (dual SRD); Eth 14 + IP 20 + UDP 8 "
+                    "+ RTP 12 + RFC 4175 (2 + 6 per SRD) + payload",
                 ),
                 (
                     "Bandwidth / Session",
-                    "~2,589 Mb/s (video payload + protocol overhead)",
+                    "2,605 Mb/s L2 (what the DPDK octet counters report) / 2,651 Mb/s on "
+                    "the wire (adds 24 B per packet: FCS, preamble/SFD, inter-frame gap)",
                 ),
                 ("Frame Size (uncompressed)", "5,184,000 bytes (4.94 MB) per frame"),
                 (
                     "Acceptable Packet Loss",
                     "0 % — ST 2110 requires lossless delivery; any packet loss causes visible artifacts. "
-                    "Pass criteria: every session must sustain average FPS ≥ 99 % of target "
-                    "(≥ 58.41 fps for 59.94 fps target) over the measurement window.",
+                    "Pass criteria: every session must sustain average FPS ≥ 99 % of the paced rate "
+                    "(≥ 59.34 fps for a 59.94 fps target) over the measurement window.",
                 ),
-                ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
+                (
+                    "Measurement Window",
+                    "Steady-state 10 s stat dumps only — bounded by the first and last dump "
+                    "naming every session, so session ramp-up and teardown are excluded",
+                ),
             ],
         )
     )
@@ -927,6 +949,9 @@ def _generate_html(tests, per_host, hosts) -> str:
             for t in fps_group:
                 cl = "p" if t.max_sessions > 0 else "f"
                 meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
+                wire = (
+                    t.measured_wire_rx if t.tested_side == "RX" else t.measured_wire_tx
+                )
                 side = f"{t.tested_side} +DMA" if t.dma else t.tested_side
                 if redundant:
                     nflows = t.max_sessions * 2
@@ -936,7 +961,7 @@ def _generate_html(tests, per_host, hosts) -> str:
                         f'<td class="ms">{t.max_sessions}</td>'
                         f'<td class="n">{nflows}</td>'
                         f'<td class="n">{t.cores_used}</td>'
-                        f"<td>{_tput(meas)}</td>"
+                        f"<td>{_tput(meas)}{_wire_note(wire)}</td>"
                         f"<td><b>{_tput(nic_total)}</b></td>"
                         f"<td>{t.log_dir}</td></tr>"
                     )
@@ -946,7 +971,7 @@ def _generate_html(tests, per_host, hosts) -> str:
                         f'<td class="ms">{t.max_sessions}</td>'
                         f'<td class="n">{t.max_sessions}</td>'
                         f'<td class="n">{t.cores_used}</td>'
-                        f"<td>{_tput(meas)}</td>"
+                        f"<td>{_tput(meas)}{_wire_note(wire)}</td>"
                         f"<td><b>{_tput(meas)}</b></td>"
                         f"<td>{t.log_dir}</td></tr>"
                     )
@@ -960,6 +985,7 @@ def _generate_html(tests, per_host, hosts) -> str:
         key=lambda x: (x.mode, x.redundant, x.resolution, x.fps, x.tested_side, x.dma),
     ):
         meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
+        wire = t.measured_wire_rx if t.tested_side == "RX" else t.measured_wire_tx
         comp_tput = t.companion_dev_tx if t.tested_side == "RX" else t.companion_dev_rx
         other = "TX" if t.tested_side == "RX" else "RX"
 
@@ -999,7 +1025,7 @@ def _generate_html(tests, per_host, hosts) -> str:
             comp_nic_total = comp_tput * 2
             p.append(
                 f"<div><b>Measured ({t.tested_side})</b><br>"
-                f"{_tput(meas)} per port<br>"
+                f"{_tput(meas)} per port{_wire_note(wire)}<br>"
                 f"<b>{_tput(nic_total)} NIC total</b></div>"
             )
             p.append(
@@ -1010,7 +1036,7 @@ def _generate_html(tests, per_host, hosts) -> str:
         else:
             p.append(
                 f"<div><b>Measured ({t.tested_side})</b><br>"
-                f"{_tput(meas)} per port<br>"
+                f"{_tput(meas)} per port{_wire_note(wire)}<br>"
                 f"<b>{_tput(meas)} NIC total</b></div>"
             )
             p.append(
