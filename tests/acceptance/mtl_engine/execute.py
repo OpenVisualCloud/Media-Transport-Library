@@ -3,6 +3,7 @@
 
 import logging
 import os
+import shlex
 import subprocess
 import threading
 import time
@@ -221,6 +222,13 @@ def run(
         logger.log(level=TESTCMD_LVL, msg=f"Test command: {command}")
     else:
         logger.debug(f"Run command: {command}")
+
+    # Apps run over SSH, even on 127.0.0.1, so they never inherit pytest's
+    # environment. Hosts without the job's registry file keep their own.
+    registry = os.environ.get("KAHAWAI_CFG_PATH")
+    if registry:
+        registry = shlex.quote(registry)
+        command = f"[ -f {registry} ] && export KAHAWAI_CFG_PATH={registry}; {command}"
 
     process = host.connection.start_process(
         command,
