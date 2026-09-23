@@ -426,12 +426,16 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
-  char lcores[128];
+  char lcores[MT_EAL_LCORES_MAX_LEN];
   if (p->lcores) {
     argv[argc] = "-l";
     argc++;
     info("%s, lcores: %s\n", __func__, p->lcores);
-    snprintf(lcores, sizeof(lcores), "%u,%s", p->main_lcore, p->lcores);
+    int len = snprintf(lcores, sizeof(lcores), "%u,%s", p->main_lcore, p->lcores);
+    if (len < 0 || len >= (int)sizeof(lcores)) {
+      err("%s, lcores list too long: %s\n", __func__, p->lcores);
+      return -EINVAL;
+    }
     argv[argc] = lcores;
     argc++;
   }

@@ -41,6 +41,30 @@ size_t ut_dev_pci_devarg_size(void);
 void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, size_t len);
 int ut_dev_start_port(ut_dev_ctx* ctx);
 int ut_dev_create_ports(ut_dev_ctx* ctx);
+
+/* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
+ * one-shot guard unlatched, so these may be called repeatedly in one process. */
+
+/** MT_EAL_MAX_ARGS. dev/mt_dev.h includes mt_main.h, which a C++ TU cannot parse
+ * (st2110/st_header.h uses _Atomic), so the macros come through here. */
+int ut_dev_eal_max_args(void);
+/** MT_EAL_LCORES_MAX_LEN, the width of the "-l" argument dev_eal_init() builds. */
+int ut_dev_eal_lcores_max_len(void);
+/** Runs dev_eal_init(); returns its ret, always negative because the stub fails. */
+int ut_dev_eal_init(ut_dev_ctx* ctx);
+int ut_dev_eal_argc(const ut_dev_ctx* ctx);
+const char* ut_dev_eal_argv(const ut_dev_ctx* ctx, int index);
+/** Times rte_eal_init() was reached, telling a rejected argv from a completed one. */
+int ut_dev_eal_init_calls(const ut_dev_ctx* ctx);
+void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports);
+/** Fills the first num dma_dev_port[] entries with synthetic BDFs. */
+void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num);
+/** Copies lcores, so the caller need not keep it alive. */
+void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores);
+void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
+void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
+void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);
+
 int ut_dev_event_count(const ut_dev_ctx* ctx);
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index);
 bool ut_dev_port_started(const ut_dev_ctx* ctx);
