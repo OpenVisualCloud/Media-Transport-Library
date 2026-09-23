@@ -320,7 +320,8 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs) {
+  /* user timestamps are authoritative, a gap between them is not a drop */
+  if (epochs > next_epochs && !required_tai) {
     s->port_user_stats.common.stat_epoch_drop += (epochs - next_epochs);
   }
 
@@ -2199,6 +2200,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     err("%s(%d), tx_audio_session_init_pacing fail %d\n", __func__, idx, ret);
     return ret;
   }
+  tx_audio_session_init_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
     ret = tx_audio_session_init_hdr(impl, mgr, s, i);

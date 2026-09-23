@@ -1743,6 +1743,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
     return ret;
   }
+  tx_ancillary_session_init_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
     ret = tx_ancillary_session_init_hdr(impl, mgr, s, i);
