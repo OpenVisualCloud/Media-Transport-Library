@@ -167,8 +167,9 @@ sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_ice_driver.sh` builds the patched ICE module required for hardware rate-limit
-pacing. A SEGFAULT in `iavf_tm_node_add` means the stock ICE driver is loaded.
+`script/build_drivers.sh` builds the patched ICE module required for hardware rate-limit
+pacing (`--driver ice` for ICE only). A SEGFAULT in `iavf_tm_node_add` means the stock ICE
+driver is loaded.
 
 ## Architecture essentials
 
