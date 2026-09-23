@@ -108,9 +108,20 @@ def _exclude_noctx_tests(gtest_filter: str) -> str:
 
 
 def _test_runtime_env() -> dict[str, str]:
-    """Prefer the MTL and DPDK libraries installed by this checkout."""
+    """Prefer the libraries this checkout just built, then any it installed.
+
+    build/lib comes first deliberately. Every test tool below runs
+    REPO_ROOT/build/tests/KahawaiTest, but `build_mtl` installs to /usr/local and
+    never refreshes .local_install/mtl -- so putting .local_install first made a run
+    silently validate whatever library happened to be there, reporting green for code
+    it never executed. .local_install stays as a fallback for CI checkouts that only
+    populate that tree.
+    """
     install_root = REPO_ROOT / ".local_install"
     library_dirs: list[Path] = []
+    build_lib = REPO_ROOT / "build" / "lib"
+    if build_lib.is_dir():
+        library_dirs.append(build_lib)
     for component in ("mtl", "dpdk"):
         lib_root = install_root / component / "lib"
         multiarch_dirs = sorted(
