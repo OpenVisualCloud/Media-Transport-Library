@@ -12,7 +12,7 @@
 #include "dev/mt_dev_harness.h"
 
 /*
- * Covers the PCI devarg builder only; dev_eal_init()'s argv assembly needs a real EAL.
+ * Covers the PCI devarg builder only; mt_dev_eal_argv_test.cpp covers the argv assembly.
  * The buffer's widest writers are the net_af_xdp and eth_af_packet vdev branches, which
  * MT_EAL_PORT_ARG_MAX_LEN is dimensioned for and no tier covers. No tier proves
  * rl_burst_size reaches the ice driver either: CI passes auto and tsc pacing only.

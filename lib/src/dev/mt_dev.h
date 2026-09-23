@@ -37,7 +37,17 @@
 /** Sleep between polls in relaxed/allow_down_init mode (ms). */
 #define MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED 10
 
-#define MT_EAL_MAX_ARGS (32)
+/**
+ * Upper bound on the EAL argv dev_eal_init() builds: 17 fixed entries plus two per port
+ * and two per DMA device. Bump the 17 when adding a fixed option.
+ */
+#define MT_EAL_MAX_ARGS (17 + 2 * MTL_PORT_MAX + 2 * MTL_DMA_DEV_MAX)
+
+/**
+ * Width of the "-l" corelist dev_eal_init() builds: main_lcore plus every lcore named
+ * individually, at most 10 digits and a separator each, plus the NUL.
+ */
+#define MT_EAL_LCORES_MAX_LEN ((RTE_MAX_LCORE + 1) * 11 + 1)
 
 /**
  * Width of one EAL port argument: a PCI devarg or a vdev string, with its options.
