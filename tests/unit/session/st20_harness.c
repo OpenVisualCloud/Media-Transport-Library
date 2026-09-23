@@ -20,6 +20,12 @@
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
 #include "st2110/st_rx_video_session.c"
+/* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
+ * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
+ * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
+ * takes the plain rte_zmalloc_socket() path instead, and keeps its alloc paired
+ * with rv_tp_uinit()'s free. */
+#include "st2110/st_rx_timing_parser.c"
 
 /* ── geometry constants ───────────────────────────────────────────────── */
 
@@ -58,6 +64,8 @@ struct ut20_test_ctx {
   bool hold_frames;
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
+  enum st_rx_tp_compliant last_tp_compliant;
+  char last_tp_failed_cause[64];
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
@@ -91,6 +99,11 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
+  if (meta->tp[MTL_SESSION_PORT_P]) {
+    ctx->last_tp_compliant = meta->tp[MTL_SESSION_PORT_P]->compliant;
+    snprintf(ctx->last_tp_failed_cause, sizeof(ctx->last_tp_failed_cause), "%s",
+             meta->tp[MTL_SESSION_PORT_P]->failed_cause);
+  }
   if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
   return 0;
 }
@@ -201,6 +214,8 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
 
 void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
+  /* ASan is preloaded in this suite, so the tp allocation must be released. */
+  rv_tp_uinit(&ctx->session);
   /* Drain any held refcnts so destroy-while-holding is safe. */
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
     rte_atomic32_set(&ctx->frames[i].refcnt, 0);
@@ -605,6 +620,20 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
     ctx->impl.inf[phy].status &= ~MT_IF_STAT_PORT_DOWN;
 }
 
+int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+
+  s->ops.interlaced = interlaced;
+  /* rv_tp_init() derives trs and every pass threshold from this; production fills
+   * it from the packet detector, which the direct-feed harness never runs. */
+  s->detector.pkt_per_frame = s->ops.height;
+  s->enable_timing_parser = true;
+  s->enable_timing_parser_meta = true;
+  ctx->last_tp_compliant = ST_RX_TP_COMPLIANT_MAX;
+  ctx->last_tp_failed_cause[0] = '\0';
+  return rv_tp_init(&ctx->impl, s);
+}
+
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port) {
   enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
   ctx->impl.dynfield_offset = ut_register_hw_rx_timestamp();
@@ -620,6 +649,14 @@ void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
 
 uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx) {
   return ctx->last_timestamp_first_pkt;
+}
+
+enum st_rx_tp_compliant ut20_last_tp_compliant(const ut20_test_ctx* ctx) {
+  return ctx->last_tp_compliant;
+}
+
+const char* ut20_last_tp_failed_cause(const ut20_test_ctx* ctx) {
+  return ctx->last_tp_failed_cause;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */

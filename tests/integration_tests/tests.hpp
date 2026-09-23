@@ -231,6 +231,12 @@ class tests_context {
   int check_sha_frame_cnt = 0;
   int last_user_meta_frame_idx = 0;
   int user_meta_fail_cnt = 0;
+  int tp_fail_cnt = 0;
+  bool tp_other_fail_logged = false;
+  int field_phase_fail_cnt = 0;
+  int field_phase_unverified_cnt = 0;
+  /* ns per field period, 0 disables the interlaced field-phase check */
+  double field_period_ns = 0;
   bool out_of_order_pkt = false; /* out of order pkt index */
   int* ooo_mapping = NULL;
   int slice_cnt = 0;

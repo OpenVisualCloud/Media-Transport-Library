@@ -690,7 +690,7 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
 }
 
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-                          uint64_t required_tai) {
+                          uint64_t required_tai, bool second_field) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
@@ -702,6 +702,15 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   /* the app asked for an exact start time and actually supplied one */
   bool exact_user_pacing =
       (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai;
+  /* an ST22 RTP-level session would read its F bit off the first codestream byte: its
+   * 16-byte rfc9134 header is not the struct st20_rfc4175_rtp_hdr this offset assumes */
+  bool field_parity_known = !(s->s_type == MT_ST22_HANDLE_TX_VIDEO && !s->st22_info);
+  /* ST 2110-21 6.2 frame grid: frame_time is one field, so even slot = first field.
+   * Applied here; calc_frame_count_since_epoch() stays parity-blind. doc/design.md 6.6 */
+  if (s->ops.interlaced && !exact_user_pacing && field_parity_known &&
+      ((pacing->cur_epochs & 0x1) != second_field)) {
+    pacing->cur_epochs++;
+  }
 
   if (exact_user_pacing) {
     start_time_tai = required_tai;
@@ -740,12 +749,12 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
 static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
                                struct st_tx_video_session_impl* s, uint64_t required_tai,
-                               int pkts_in_frame) {
+                               int pkts_in_frame, bool second_field) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
   dbg("%s(%d), trs %Lf\n", __func__, s->idx, pacing->trs);
-  return tv_sync_pacing(impl, s, required_tai);
+  return tv_sync_pacing(impl, s, required_tai, second_field);
 }
 
 /* Returns the TAI instant frame->rtp_timestamp was derived from, for the caller
@@ -1386,17 +1395,19 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
+    bool second_field = false;
     if (s->ops.interlaced) {
       struct st20_rfc4175_rtp_hdr* rfc4175 = rte_pktmbuf_mtod_offset(
           pkt, struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
       uint16_t line1_number = ntohs(rfc4175->row_number);
-      if (line1_number & ST20_SECOND_FIELD) {
+      second_field = !!(line1_number & ST20_SECOND_FIELD);
+      if (second_field) {
         s->port_user_stats.stat_interlace_second_field++;
       } else {
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0);
+    tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1458,17 +1469,19 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
+    bool second_field = false;
     if (s->ops.interlaced) {
       struct st20_rfc4175_rtp_hdr* rfc4175 =
           rte_pktmbuf_mtod(pkt_chain, struct st20_rfc4175_rtp_hdr*);
       uint16_t line1_number = ntohs(rfc4175->row_number);
-      if (line1_number & ST20_SECOND_FIELD) {
+      second_field = !!(line1_number & ST20_SECOND_FIELD);
+      if (second_field) {
         s->port_user_stats.stat_interlace_second_field++;
       } else {
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0);
+    tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1964,7 +1977,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         /* s->second_field is used to init the next frame */
         s->second_field = !frame->tv_meta.second_field;
       }
-      tv_sync_pacing(impl, s, required_tai);
+      tv_sync_pacing(impl, s, required_tai, frame->tv_meta.second_field);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       /* Report the same TAI instant frame->rtp_timestamp (set next) was
        * derived from, not tv_sync_pacing()'s scheduled ptp_time_cursor --
@@ -2466,7 +2479,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         /* s->second_field is used to init the next frame */
         s->second_field = !frame->tx_st22_meta.second_field;
       }
-      tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts);
+      tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts,
+                          frame->tx_st22_meta.second_field);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       /* Same reasoning as tv_tasklet_frame()'s frame->tv_meta.timestamp above:
        * report the instant frame->rtp_timestamp actually came from. */

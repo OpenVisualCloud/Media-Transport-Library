@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "mtl_api.h"
+#include "st_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,6 +140,12 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * dynfield, installs an identity-mapped PTP correction, and sets
  * MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP so mt_mbuf_time_stamp() reads the
  * mbuf dynfield instead of falling back to the software PTP clock. */
+/* Enable the ST 2110-21 timing parser on the session, as the public
+ * ST20_RX_FLAG_TIMING_PARSER_META would, and optionally make the session
+ * interlaced. Returns rv_tp_init()'s status; read the per-frame verdict with the
+ * two ut20_last_tp_* accessors below. */
+int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
+
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
 /* Park a software PTP correction in the port's no_timesync_delta accumulator --
@@ -149,6 +155,10 @@ void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta);
 
 /* timestamp_first_pkt captured off the most recent delivered frame's meta. */
 uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx);
+/* Timing-parser verdict for the last delivered frame, as the app reads it from
+ * st20_rx_frame_meta.tp[]. ST_RX_TP_COMPLIANT_MAX until a frame carries one. */
+enum st_rx_tp_compliant ut20_last_tp_compliant(const ut20_test_ctx* ctx);
+const char* ut20_last_tp_failed_cause(const ut20_test_ctx* ctx);
 
 /* Wrapper feeders — drive the production `_handle_mbuf` wrapper instead
  * of the per-packet handler. Use these (not the direct feeders above)

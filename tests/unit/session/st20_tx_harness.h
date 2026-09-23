@@ -48,6 +48,15 @@ void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx);
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns);
 void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts);
+/* ops.interlaced: selects the ST 2110-21 6.2 field/frame-grid schedule. */
+void ut_txv_set_interlaced(ut_txv_ctx* ctx, bool enable);
+/* s->s_type: the ST22 shape st22_tx_create() gives an ST22_TYPE_RTP_LEVEL session.
+ * st22_info stays NULL, which is what distinguishes it from ST22 frame level and
+ * makes its field parity unreadable. */
+void ut_txv_set_st22_rtp_level(ut_txv_ctx* ctx, bool enable);
+/* s->second_field -- the parity tv_init_next_meta() hands the NEXT frame. The
+ * tasklet paths read it from there, and production flips it after each frame. */
+void ut_txv_set_second_field(ut_txv_ctx* ctx, bool second_field);
 /* Toggle ST20_TX_FLAG_EXACT_USER_PACING on the session's ops.flags. */
 void ut_txv_set_exact_user_pacing(ut_txv_ctx* ctx, bool enable);
 /* Toggle ST20_TX_FLAG_USER_PACING on the session's ops.flags. */
@@ -90,6 +99,14 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);
+/* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
+ * number carries the given field parity, so the production builders' F-bit
+ * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
+ * over tv_build_rtp_chain(). Sets ops.type to ST20_TYPE_RTP_LEVEL; combine with
+ * ut_txv_set_st22_rtp_level() for the ST22 shape. Outputs pacing->cur_epochs, and
+ * fails if no packet reached the TX ring. Returns 0 on success. */
+int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
+                           uint64_t* epoch);
 /* Drives tv_tasklet_st22()'s frame->tx_st22_meta assignment -- the compressed-
  * video (ST22) mirror of tv_tasklet_frame()'s frame->tv_meta assignment above,
  * so both production call sites are held to the same timestamp/rtp_timestamp
@@ -109,6 +126,16 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
  * above (ptp_time_cursor, sampling_clock_rate). */
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                   uint64_t timestamp);
+/* Drives the real tv_init_pacing() -- the only place pacing->tr_offset is derived
+ * for a live session. Forces TSC pacing so no NIC queue or rate-limiter training
+ * is needed. Returns tv_init_pacing()'s status; read the result with
+ * ut_txv_pacing_tr_offset() below. */
+int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
+                       enum st_fps fps);
+/* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
+ * tv_sync_pacing() applies to the scheduled instant, so tests can express an
+ * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */
+uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
 
 /* ── session-owned mempool release (tv_mempool_free) ──────────────────── */
 /* Install a private header mempool on port P, as tv_mempool_init() would.
@@ -130,6 +157,7 @@ bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
+long double ut_txv_pacing_tr_offset(const ut_txv_ctx* ctx);
 long double ut_txv_tsc_time_cursor(const ut_txv_ctx* ctx);
 long double ut_txv_ptp_time_cursor(const ut_txv_ctx* ctx);
 uint64_t ut_txv_tsc_time_frame_start(const ut_txv_ctx* ctx);
@@ -144,6 +172,8 @@ int ut_txv_notify_frame_done_calls(const ut_txv_ctx* ctx);
 uint16_t ut_txv_notify_frame_done_idx(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_frame_done_timestamp(const ut_txv_ctx* ctx);
 uint64_t ut_txv_notify_frame_done_epoch(const ut_txv_ctx* ctx);
+/* Parity the session actually scheduled, as the app sees it in notify_frame_done(). */
+bool ut_txv_notify_frame_done_second_field(const ut_txv_ctx* ctx);
 /* The frame->rtp_timestamp the app would see in notify_frame_done(); paired
  * with ut_txv_notify_frame_done_timestamp() above to check that one
  * reconstructs the other via st10_tai_to_media_clk(). */

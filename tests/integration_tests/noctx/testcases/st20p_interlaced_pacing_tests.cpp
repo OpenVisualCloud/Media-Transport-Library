@@ -7,9 +7,12 @@
  * FIELD rate, and one st20p_tx_get_frame()/st20p_rx_get_frame() call carries
  * one field. pacing->frame_time (st_tx_video_session.c/st_rx_video_session.c)
  * is derived purely from ops.fps with no interlaced-specific halving, so with
- * fps set to the field rate it already represents one field period -- the
- * same St20pUserTimestamp math used for progressive sessions applies to
- * fields unmodified; no new strategy class is needed.
+ * fps set to the field rate it already represents one field period.
+ *
+ * Interlaced TX also pins the epoch parity to the ST 2110-21 6.2 frame grid, but
+ * St20pUserTimestamp's instants are exact multiples of the field period and
+ * st20p_tx_get_frame() alternates second_field from the first field on, so that
+ * correction is always a no-op here and the progressive math applies unmodified.
  */
 
 #include "core/constants.hpp"

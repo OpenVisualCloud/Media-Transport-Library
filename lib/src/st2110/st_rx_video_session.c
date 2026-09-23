@@ -852,7 +852,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   if (s->enable_timing_parser) {
     for (int s_port = 0; s_port < ops->num_port; s_port++) {
       struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
-      rv_tp_slot_parse_result(s, s_port, tp_slot);
+      rv_tp_slot_parse_result(s, s_port, tp_slot, slot->second_field);
       if (s->enable_timing_parser_meta) {
         meta->tp[s_port] = &tp_slot->meta;
       }
