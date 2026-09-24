@@ -92,7 +92,7 @@ in the same change:
 ## Capture and compliance split
 
 `create_pcap_file/netsniff.py` is **capture only** — process control, filter,
-packet sizing, nanosecond pcap with hardware RX timestamps. It holds no
+packet and RX ring sizing, nanosecond pcap with hardware RX timestamps. It holds no
 EBU/compliance state. The verdict lives in `mtl_engine/pcap_compliance.py`;
 the HTTP client lives in `compliance/`.
 
