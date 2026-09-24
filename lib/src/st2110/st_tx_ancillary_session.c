@@ -273,7 +273,7 @@ static int tx_ancillary_session_init_pacing(struct st_tx_ancillary_session_impl*
   return 0;
 }
 
-static int tx_ancillary_session_init_pacing_epoch(
+static int tx_ancillary_session_reset_pacing_epoch(
     struct mtl_main_impl* impl, struct st_tx_ancillary_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
@@ -499,7 +499,7 @@ static int tx_ancillary_sessions_tasklet_start(void* priv) {
     s = tx_ancillary_session_get(mgr, sidx);
     if (!s) continue;
 
-    tx_ancillary_session_init_pacing_epoch(impl, s);
+    tx_ancillary_session_reset_pacing_epoch(impl, s);
     tx_ancillary_session_put(mgr, sidx);
   }
 
@@ -1743,7 +1743,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
     return ret;
   }
-  tx_ancillary_session_init_pacing_epoch(impl, s);
+  tx_ancillary_session_reset_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
     ret = tx_ancillary_session_init_hdr(impl, mgr, s, i);
