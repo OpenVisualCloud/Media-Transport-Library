@@ -23,8 +23,11 @@ if ! "$VENV_DIR/bin/python3" -m pip --version >/dev/null 2>&1; then
 	"$VENV_DIR/bin/python3" -m ensurepip --upgrade
 fi
 
-# Install deps if mcp module is missing
-if ! "$VENV_DIR/bin/python3" -c "import mcp" 2>/dev/null; then
+# Install deps if the module the server imports is missing. Test mcp.server.fastmcp, not
+# mcp: an mcp 2.x venv imports mcp but dropped fastmcp, so a bare "import mcp" guard skips
+# pip and the version ceiling in requirements.txt never applies.
+if ! "$VENV_DIR/bin/python3" -c "import importlib.util, sys
+sys.exit(0 if importlib.util.find_spec('mcp.server.fastmcp') else 1)" 2>/dev/null; then
 	"$VENV_DIR/bin/python3" -m pip install --quiet -r "$REQUIREMENTS"
 fi
 

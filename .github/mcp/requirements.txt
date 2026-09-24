@@ -1,1 +1,5 @@
-mcp[cli]>=1.0.0
+# Ceiling is deliberate: mcp 2.x removed the mcp.server.fastmcp module that both
+# mtl_mcp_server.py and mtl_acceptance_mcp_server.py import. Lifting it to <3 breaks
+# every mtl-system-setup / mtl-acceptance-setup tool with ModuleNotFoundError.
+# Port both servers to the 2.x API before raising this.
+mcp[cli]>=1.0.0,<2.0.0
