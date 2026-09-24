@@ -40,6 +40,8 @@ endif
 
 unit_sources = [
   'common/ut_common.c',
+  'common/mt_bitmap_harness.c',
+  'common/mt_bitmap_test.cpp',
   'ffmpeg/mtl_common_harness.c',
   'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',
@@ -78,12 +80,14 @@ unit_sources = [
   'session/st30/reorder_test.cpp',
   'session/st30/err_packets_test.cpp',
   'session/st30/corruption_test.cpp',
+  'session/st30/bitmap_bounds_test.cpp',
   'session/st30_tx_harness.c',
   'session/st30_tx/pacing_test.cpp',
   'session/st20_harness.c',
   'session/st20/slot_test.cpp',
   'session/st20/redundancy_test.cpp',
   'session/st20/bitmap_test.cpp',
+  'session/st20/bitmap_bounds_test.cpp',
   'session/st20/header_validation_test.cpp',
   'session/st20/reorder_test.cpp',
   'session/st20/stats_test.cpp',

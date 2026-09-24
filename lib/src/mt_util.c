@@ -134,7 +134,23 @@ void mt_rte_free(void* p) {
 }
 #endif
 
-bool mt_bitmap_test(uint8_t* bitmap, int idx) {
+/* true if idx addresses a bit inside the size bytes of bitmap */
+static bool bitmap_idx_valid(const uint8_t* bitmap, size_t size, int idx,
+                             const char* caller) {
+  if (!bitmap) {
+    err("%s, NULL bitmap\n", caller);
+    return false;
+  }
+  if (idx < 0 || (size_t)(idx / 8) >= size) {
+    err("%s, idx %d out of bitmap of %" PRIu64 " byte(s)\n", caller, idx, size);
+    return false;
+  }
+  return true;
+}
+
+bool mt_bitmap_test(uint8_t* bitmap, size_t size, int idx) {
+  if (!bitmap_idx_valid(bitmap, size, idx, __func__)) return false;
+
   int pos = idx / 8;
   int off = idx % 8;
   uint8_t bits = bitmap[pos];
@@ -142,7 +158,10 @@ bool mt_bitmap_test(uint8_t* bitmap, int idx) {
   return (bits & (0x1 << off)) ? true : false;
 }
 
-bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
+bool mt_bitmap_test_and_set(uint8_t* bitmap, size_t size, int idx) {
+  /* report set so the caller drops the item instead of writing out of the bitmap */
+  if (!bitmap_idx_valid(bitmap, size, idx, __func__)) return true;
+
   int pos = idx / 8;
   int off = idx % 8;
   uint8_t bits = bitmap[pos];
@@ -155,7 +174,10 @@ bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   return false;
 }
 
-bool mt_bitmap_test_and_unset(uint8_t* bitmap, int idx) {
+bool mt_bitmap_test_and_unset(uint8_t* bitmap, size_t size, int idx) {
+  /* report unset, no bit to clear */
+  if (!bitmap_idx_valid(bitmap, size, idx, __func__)) return true;
+
   int pos = idx / 8;
   int off = idx % 8;
   uint8_t bits = bitmap[pos];

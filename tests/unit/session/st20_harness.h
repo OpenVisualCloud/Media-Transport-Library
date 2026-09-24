@@ -290,6 +290,10 @@ int ut20_total_frame_pkts(void);
  * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
 
+/* true while every byte the harness keeps past the declared slot bitmaps is
+ * still zero, i.e. no packet index wrote outside its bitmap. */
+bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx);
+
 /* Drive the production detach-time flush of any slot still holding a deferred
  * per-port deficit (test-only). Exercises `rv_flush_pending_loss`, the path the
  * production `rv_detach` runs before its final stat dump. */

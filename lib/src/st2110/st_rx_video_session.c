@@ -967,7 +967,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     int total_pkts = s->st20_frame_size / pd_sz_per_pkt;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
     for (int i = 0; i < total_pkts; i++) {
-      if (!mt_bitmap_test(slot->frame_bitmap, i))
+      if (!mt_bitmap_test(slot->frame_bitmap, s->st20_frame_bitmap_size, i))
         info("%s(%d): pkt %d miss for tmstamp %u\n", __func__, s->idx, i, slot->tmstamp);
     }
 #endif
@@ -1064,7 +1064,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     int total_pkts = s->st22_expect_size_per_frame / pd_sz_per_pkt;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
     for (int i = 0; i < total_pkts; i++) {
-      if (!mt_bitmap_test(slot->frame_bitmap, i))
+      if (!mt_bitmap_test(slot->frame_bitmap, s->st20_frame_bitmap_size, i))
         info("%s(%d): pkt %d miss for tmstamp %u\n", __func__, s->idx, i, slot->tmstamp);
     }
 #endif
@@ -1714,7 +1714,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return -EIO;
     }
 
-    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -1751,7 +1751,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       }
       slot->seq_id_base_u32 = seq_id_u32 - pkt_idx;
       slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, pkt_idx);
+      mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
     } else {
@@ -1918,7 +1918,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -1941,7 +1941,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       slot->seq_id_got = true;
       rte_atomic32_inc(&s->stat_frames_received);
       s->port_user_stats.common.port[s_port].frames++;
-      mt_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id,
           tmstamp);
@@ -2141,7 +2141,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       return -EIO;
     }
 
-    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -2177,7 +2177,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     slot->seq_id_base = seq_id - pkt_idx;
     slot->st22_payload_length = payload_length;
     slot->seq_id_got = true;
-    mt_bitmap_test_and_set(bitmap, pkt_idx);
+    mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
     dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
         "payload_length %u\n",
         __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
@@ -2328,7 +2328,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -2345,7 +2345,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     if (!line1_number && !line1_offset) { /* first packet */
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, s->st20_frame_bitmap_size, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
