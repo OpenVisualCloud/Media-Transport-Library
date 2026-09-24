@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
-"""Sweep of MTL st20p input pixel formats, driven through both RxTxApp and
-FFmpeg.
+"""Sweep of MTL st20p input pixel formats, driven through RxTxApp, FFmpeg and
+GStreamer.
 
 FFmpeg's ``-pix_fmt`` is not a separate feature to validate in isolation: the
 mtl_st20p FFmpeg plugin (ecosystem/ffmpeg_plugin/mtl_st20p_{tx,rx}.c) maps
 each AVPixelFormat straight onto an MTL ``input_fmt``/``transport_fmt`` pair
 -- the same knobs RxTxApp exposes as ``pixel_format``/``transport_format``.
 One input-format table therefore drives both apps instead of duplicating the
-sweep per app (this replaces the old ffmpeg-only test_pix_fmt.py).
+sweep per app (this replaces the old ffmpeg-only test_pix_fmt.py). GStreamer
+sweeps the two formats its mtl_st20p_tx caps accept
+(``yuv_files_gstreamer_input_formats``).
 
 Each pix_fmt has its own pre-generated media asset on the NFS share (see
 ``yuv_files_input_formats`` in mtl_engine/media_files.py) -- tests must never
@@ -24,19 +26,30 @@ Every case asserts both:
 import logging
 
 import pytest
-from mtl_engine.media_files import yuv_files_input_formats
+from mtl_engine.media_files import (
+    yuv_files_gstreamer_input_formats,
+    yuv_files_input_formats,
+)
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg"])
+# Explicit ids spell ``application`` the way pytest_mfd_logging does: the
+# combined report reads the app from that token.
 @pytest.mark.parametrize(
-    "pix_fmt, media_file",
-    list(yuv_files_input_formats.items()),
+    "application, pix_fmt, media_file",
+    [
+        pytest.param(app, fmt, info, id=f"{fmt}-|application = {app}|")
+        for fmt, info in yuv_files_input_formats.items()
+        for app in ("rxtxapp", "ffmpeg")
+    ]
+    + [
+        pytest.param("gstreamer", fmt, info, id=f"{fmt}-|application = gstreamer|")
+        for fmt, info in yuv_files_gstreamer_input_formats.items()
+    ],
     indirect=["media_file"],
-    ids=list(yuv_files_input_formats.keys()),
 )
 def test_st20p_input_format(
     application,

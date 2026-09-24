@@ -17,6 +17,7 @@ from mtl_engine.media_files import anc_files
                 reason="FFmpeg does not support st40p ancillary data pipeline"
             ),
         ),
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -71,6 +72,7 @@ def test_st40p_basic(
                 reason="FFmpeg does not support st40p ancillary data pipeline"
             ),
         ),
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
