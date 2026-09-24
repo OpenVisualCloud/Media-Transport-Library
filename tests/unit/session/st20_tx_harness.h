@@ -186,6 +186,15 @@ uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx);
 /* Result of the last ut_txv_update_rtp_time_stamp() call. */
 uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
 
+/* Run the periodic TX video stats dump (tv_sessions_stat) with a capturing log
+ * printer. Returns the number of log lines emitted; *locked_lines receives how
+ * many of them were emitted while the session spinlock was held. */
+int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
+/* First log line captured by the last ut_txv_run_sessions_stat() call. */
+const char* ut_txv_stat_first_log_line(void);
+void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
+uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
