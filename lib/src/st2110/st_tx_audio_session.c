@@ -220,8 +220,8 @@ static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl* s) {
   return 0;
 }
 
-static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
-                                              struct st_tx_audio_session_impl* s) {
+static int tx_audio_session_reset_pacing_epoch(struct mtl_main_impl* impl,
+                                               struct st_tx_audio_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
   pacing->cur_epochs = ptp_time / pacing->trs;
@@ -429,7 +429,7 @@ static int tx_audio_sessions_tasklet_start(void* priv) {
     s = tx_audio_session_get(mgr, sidx);
     if (!s) continue;
 
-    tx_audio_session_init_pacing_epoch(impl, s);
+    tx_audio_session_reset_pacing_epoch(impl, s);
     tx_audio_session_put(mgr, sidx);
   }
 
@@ -2200,7 +2200,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     err("%s(%d), tx_audio_session_init_pacing fail %d\n", __func__, idx, ret);
     return ret;
   }
-  tx_audio_session_init_pacing_epoch(impl, s);
+  tx_audio_session_reset_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
     ret = tx_audio_session_init_hdr(impl, mgr, s, i);
