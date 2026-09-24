@@ -380,6 +380,185 @@ verify_self_login() {
 	echo "SSH to 127.0.0.1 as ${user} with ${key} works, so the framework can reach this host."
 }
 
+# The DMA (Intel DSA/CBDMA) channels of one NUMA node, in state ${3}: "bound"
+# when already on vfio-pci, "free" when no driver holds it, "kernel" when one
+# does. Reads a `dpdk-devbind.py --status-dev dma` listing already captured to
+# ${1}, mirroring bind-test-ports.sh's dma_channels(), which snapshots once for
+# the same reason: a fresh shell-out per query risks an inconsistent view if
+# host state changes between calls, on a runner other jobs also touch.
+#
+# dpdk-devbind.py only prints a numa_node= field at all when the kernel reports
+# one for every device in the listing -- a single-socket host gets none, ever,
+# even though every device on it is trivially "node 0". Treating an absent
+# field as node 0 (like get_numa_node_from_pci does on the python side, via
+# max(0, numa)) is what a single-socket host needs to match anything here.
+dma_channels_of() {
+	local listing=$1 numa=$2 want_state=$3
+	awk -v want_numa="${numa}" -v want_state="${want_state}" \
+		'$1 !~ /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\.[0-9a-f]+$/ {next}
+		want_numa != "" {
+			if ($0 ~ /numa_node=[0-9]+/) {
+				if ($0 !~ ("numa_node=" want_numa "([^0-9]|$)")) next
+			} else if (want_numa != "0") {
+				next
+			}
+		}
+		{state = ($0 ~ /drv=vfio-pci/) ? "bound" : (($0 ~ /drv=/) ? "kernel" : "free")}
+		state == want_state {print $1}' "${listing}"
+}
+
+# vfio-pci denylists Intel DSA (8086:0b25) by default, so a device bound to it
+# without disable_denylist=1 never appears as a dmadev. Same quirk
+# bind-test-ports.sh works around for the gtest suite; see doc/dma.md.
+vfio_pci_allows_dsa() {
+	local denylist=/sys/module/vfio_pci/parameters/disable_denylist
+	[[ -r ${denylist} ]] && [[ $(cat "${denylist}") == Y ]]
+}
+
+allow_dsa_probe() {
+	vfio_pci_allows_dsa && return 0
+	echo "vfio-pci was loaded with its denylist on, which hides Intel DSA; reloading it" >&2
+	sudo modprobe -r vfio-pci || {
+		echo "could not unload vfio-pci: something on this host is holding it." >&2
+		return 1
+	}
+	sudo modprobe vfio-pci disable_denylist=1 2>/dev/null || sudo modprobe vfio-pci
+}
+
+: "${DMA_CHANNELS:=2}"
+
+# Whether any of ${channels[@]} still needs a bind, reading the ${bound[@]}
+# this call's snapshot already classified -- mirrors bind-test-ports.sh's
+# needs_bind(), which the denylist reload below has to match: a channel in
+# "free" state (no driver, so not in ${kernel[@]} either) still needs the
+# reload if vfio-pci is already loaded without disable_denylist=1, and gating
+# the reload on ${#kernel[@]} alone misses exactly that channel.
+any_channel_needs_bind() {
+	local channel
+	for channel in "${channels[@]}"; do
+		printf '%s\n' "${bound[@]-}" | grep -qFx "${channel}" || return 0
+	done
+	return 1
+}
+
+# Logs a DMA shortfall against ${DMA_CHANNELS}, ${numa} and ${first_bdf} of the
+# caller (bind_dma), and turns it into a hard failure when this host is meant
+# to serve DMA (MTL_CI_REQUIRE_DMA=1) -- same escape hatch bind-test-ports.sh's
+# report_dma_shortfall offers on the gtest side, and the same two checkpoints:
+# bind_dma calls this once for "found fewer than wanted" and, only when
+# binding itself lost more ground, again for "bound fewer than found".
+dma_shortfall() {
+	local found=$1
+	echo "This host serves ${found}/${DMA_CHANNELS} DMA channel(s) on NUMA ${numa} (where ${first_bdf} is)." >&2
+	echo "The suite runs without DMA offload; its DMA cases report themselves skipped." >&2
+	if [[ ${MTL_CI_REQUIRE_DMA:-0} == 1 ]]; then
+		echo "MTL_CI_REQUIRE_DMA=1 on this host, so this is a failure." >&2
+		return 1
+	fi
+	return 0
+}
+
+# Binds up to DMA_CHANNELS DMA devices on the NIC's own NUMA node to vfio-pci,
+# so the suite's RxTxApp sessions can be given one via --dma_dev instead of
+# silently falling back to a per-packet CPU copy (rv_init_dma, doc/dma.md).
+# Prints the comma-joined, actually-bound channel list to stdout (empty when
+# none); every log line above goes to stderr so a caller can capture it.
+#
+# Run explicitly, once per host, from its own workflow step -- never from
+# `ensure`: DMA bindings are host state, and a job that repairs host state on
+# every run hides drift in the host image and races with whatever else uses the
+# card, same reasoning as bind-test-ports.sh's header for the gtest side.
+#
+# Never fails the job over a missing DMA device by default: the suite's
+# DMA-offload cases ask the library for a channel and skip themselves when
+# there is none, so refusing here would cost every other case too. A host that
+# is meant to serve DMA sets MTL_CI_REQUIRE_DMA=1 to turn a shortfall into a
+# hard failure instead -- same escape hatch bind-test-ports.sh's
+# report_dma_shortfall offers on the gtest side.
+bind_dma() {
+	local pci_device=${1:?PCI_DEVICE is required}
+	local first_id=${pci_device%%,*}
+	local first_bdf numa channel served=0 listing
+	local -a bound=() free=() kernel=() channels=()
+
+	# One lspci match for the NIC's own vendor:device, same "first one with any
+	# port wins" simplicity resolve_nic() already uses to pick the NIC itself
+	# (pytest-setup.sh's own convention, not a lower bar than the rest of this
+	# file) -- link-state-aware selection would need nicctl.sh, which has no
+	# role here since VF creation for pytest happens later, inside the suite.
+	first_bdf=$(lspci -Dn -d "${first_id}" 2>/dev/null | head -n1 | cut -d' ' -f1)
+	if [[ -z ${first_bdf} ]]; then
+		echo "No PCI device found for ${first_id}; skipping DMA bind." >&2
+		echo ""
+		return 0
+	fi
+	numa=$(cat "/sys/bus/pci/devices/${first_bdf}/numa_node" 2>/dev/null || echo -1)
+	[[ ${numa} -lt 0 ]] && numa=0
+
+	if ! command -v dpdk-devbind.py >/dev/null 2>&1; then
+		echo "dpdk-devbind.py not found; skipping DMA bind." >&2
+		echo ""
+		return 0
+	fi
+
+	# >/dev/null on both: nothing this prints belongs on stdout, which
+	# bind_dma reserves for the channel list its caller captures.
+	sudo modprobe vfio-pci disable_denylist=1 >/dev/null 2>/dev/null ||
+		sudo modprobe vfio-pci >/dev/null || true
+
+	listing=$(mktemp)
+	trap 'rm -f "${listing}"' RETURN
+	dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
+
+	mapfile -t bound < <(dma_channels_of "${listing}" "${numa}" bound)
+	mapfile -t free < <(dma_channels_of "${listing}" "${numa}" free)
+	mapfile -t kernel < <(dma_channels_of "${listing}" "${numa}" kernel)
+	mapfile -t channels < <(printf '%s\n' "${bound[@]-}" "${free[@]-}" "${kernel[@]-}" |
+		awk 'NF' | head -n "${DMA_CHANNELS}")
+
+	if [[ ${#channels[@]} -lt ${DMA_CHANNELS} ]]; then
+		dma_shortfall "${#channels[@]}" || return 1
+	fi
+	if [[ ${#channels[@]} -eq 0 ]]; then
+		echo ""
+		return 0
+	fi
+
+	if any_channel_needs_bind && ! vfio_pci_allows_dsa; then
+		if allow_dsa_probe; then
+			# The reload drops every device vfio-pci held, DSA or not, so a
+			# channel this call's earlier snapshot saw as already bound may
+			# need re-binding too -- refresh before the loop below trusts it.
+			dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
+			mapfile -t bound < <(dma_channels_of "${listing}" "${numa}" bound)
+		fi
+	fi
+
+	local -a served_list=()
+	for channel in "${channels[@]}"; do
+		if printf '%s\n' "${bound[@]-}" | grep -qFx "${channel}"; then
+			served=$((served + 1))
+			served_list+=("${channel}")
+			continue
+		fi
+		echo "Binding DMA channel ${channel} to vfio-pci" >&2
+		if sudo dpdk-devbind.py -b vfio-pci "${channel}" >/dev/null; then
+			served=$((served + 1))
+			served_list+=("${channel}")
+		else
+			echo "could not bind ${channel} to vfio-pci" >&2
+		fi
+	done
+
+	echo "DMA: ${served}/${#channels[@]} channel(s) on NUMA ${numa} bound to vfio-pci" >&2
+	if [[ ${served} -lt ${DMA_CHANNELS} ]] && [[ ${served} -lt ${#channels[@]} ]]; then
+		dma_shortfall "${served}" || return 1
+	fi
+
+	local IFS=,
+	echo "${served_list[*]-}"
+}
+
 case "${1:-}" in
 verify)
 	# The pure check, for the provisioning workflow and for anyone asking
@@ -456,6 +635,11 @@ pci)
 		printf 'INTERFACE_TYPE=%s\n' "$interface_type"
 	} >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
+dma)
+	: "${PCI_DEVICE:?PCI_DEVICE is required}"
+	dma_device=$(bind_dma "$PCI_DEVICE")
+	printf 'DMA_DEVICE=%s\n' "$dma_device" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
+	;;
 pci-env)
 	# For runners that carry no NIC label (the perf SUT pair): the host states
 	# which card the perf rig owns, an E830 is the default, and perf_card_ports
@@ -485,6 +669,9 @@ config-single)
 	if [[ -n ${INTERFACE_TYPE:-} ]]; then
 		args+=(--interface_type "$INTERFACE_TYPE")
 	fi
+	if [[ -n ${DMA_DEVICE:-} ]]; then
+		args+=(--dma_device "$DMA_DEVICE")
+	fi
 	if [[ ${NO_CAPTURE:-0} == 1 ]]; then
 		args+=(--no_capture)
 	elif [[ -n ${EBU_IP:-} ]]; then
@@ -508,7 +695,7 @@ tag)
 	printf 'MTL_GITHUB_WORKFLOW=%s\n' "$WORKFLOW_TAG" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 *)
-	echo "Usage: $0 {verify|connection|ensure|install|workspace|session|nic-ids|nic-labels|pci|pci-env|config-single|config-perf|tag}" >&2
+	echo "Usage: $0 {verify|connection|ensure|install|workspace|session|nic-ids|nic-labels|pci|dma|pci-env|config-single|config-perf|tag}" >&2
 	exit 2
 	;;
 esac

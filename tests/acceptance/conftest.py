@@ -1503,17 +1503,27 @@ def _register_local_libs(hosts, mtl_path):
 
 
 @pytest.fixture(scope="session")
-def app_factory(mtl_path):
+def app_factory(mtl_path, test_config):
     """Return a factory that creates framework adapter instances.
 
     Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
     """
+    # Populated only via gen_config.py's --dma_device, itself only set by
+    # pytest-setup.sh's `dma` subcommand -- so this key exists exactly when a
+    # workflow opted into that bind step (currently nightly-pytest.yml only).
+    # Reading a static config key here, instead of inspecting host driver
+    # state live, means a DMA channel one workflow's job left bound to
+    # vfio-pci can never leak into a smoke/perf run that shares the same
+    # physical runner but never asked for DMA offload.
+    dma_dev = test_config.get("dma_device")
 
     def factory(application: str):
         if application == "rxtxapp":
-            return RxTxApp(
+            app = RxTxApp(
                 app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
             )
+            app._default_dma_dev = dma_dev
+            return app
         elif application == "ffmpeg":
             return FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
