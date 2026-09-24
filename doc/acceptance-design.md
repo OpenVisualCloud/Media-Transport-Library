@@ -18,7 +18,7 @@ test.
 | ---------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | **Harness**      | `conftest.py` (~1.4k lines)                                                                            | Every fixture: topology load, host prep, VF pools, media staging, capture, clocks, logging, cleanup         |
 | **Host control** | `common/nicctl.py`, `common/host_setup.py`                                                             | `Nicctl` (VF create/bind), `InterfaceSetup` (per-test interface allocation), hugepages, PF up, CPU governor |
-| **Adapters**     | `mtl_engine/application_base.py`, `rxtxapp.py`, `ffmpeg.py`                                            | `Application` ABC + its two concrete subclasses: command building, process lifecycle, result validation     |
+| **Adapters**     | `mtl_engine/application_base.py`, `rxtxapp.py`, `ffmpeg.py`, `gstreamer.py`                            | `Application` ABC + its three concrete subclasses: command building, process lifecycle, result validation   |
 | **Parameters**   | `mtl_engine/config/universal_params.py`, `rxtxapp_config.py`                                           | The single vocabulary of test knobs, and the RxTxApp JSON config template                                   |
 | **Media**        | `mtl_engine/media_files.py`, `media_creator.py`, `ramdisk.py`                                          | Curated asset registry with metadata; synthetic asset generation; tmpfs staging                             |
 | **Capture**      | `create_pcap_file/netsniff.py`, `mtl_engine/pcap_compliance.py`                                        | `NetsniffRecorder` (capture only) and `ComplianceSession` (capture lifecycle + EBU verdict)                 |
@@ -42,10 +42,11 @@ Each adapter implements four abstract methods and nothing more:
 (turn `self.params` into `(command, config_dict|None)`), and
 `validate_results(fail_on_error)` (the application-level oracle, [§5.1](#51-application-result)).
 
-`RxTxApp` and `FFmpeg` are therefore **siblings, not variants**. They share
-lifecycle, not behaviour: RxTxApp emits a JSON config plus one process;
-FFmpeg emits argv only and runs an RX process plus N TX processes. Neither
-can see the other's internals, and a third adapter can be added by
+`RxTxApp`, `FFmpeg` and `GStreamer` are therefore **siblings, not
+variants**. They share lifecycle, not behaviour: RxTxApp emits a JSON config
+plus one process; FFmpeg emits argv only and runs an RX process plus N TX
+processes; GStreamer runs one RX and one TX `gst-launch-1.0` pipeline. None
+can see another's internals, and a further adapter can be added by
 implementing the four methods without touching the existing ones.
 
 ### 2.2 One execution path, two topologies
@@ -67,9 +68,10 @@ invariants that are not obvious from the source:
    capture is also non-compliant — then re-raises once at the end.
 
 Where an adapter genuinely differs it overrides a concrete method and says
-why in a comment. `FFmpeg.execute_test()` is a full override because
-FFmpeg's traffic only flows once the *last* process is up, so it arms
-capture on `after_last_start` rather than `after_first_start`.
+why in a comment. `FFmpeg.execute_test()` and `GStreamer.execute_test()` are
+full overrides because their traffic only flows once the *last* process is
+up, so they arm capture on `after_last_start` rather than
+`after_first_start`.
 
 Dual-host runs a TX process on one host and an RX process on another and
 validates both applications. It does **not** capture packets; requesting
@@ -88,7 +90,9 @@ subclass). Migration is **unfinished**, so they are far from dead:
   adapter.
 * `ffmpeg_app.py` — command builders still called by the modern `ffmpeg.py`;
   its validation logic is not reused.
-* `GstreamerApp.py` — the only GStreamer path; no GStreamer adapter yet.
+* `GstreamerApp.py` — still the backend for `tests/dual/gstreamer/` and
+  `tests/single/gstreamer/anc_format/`; the shared st20p/st30p/st40p tests
+  use the `gstreamer.py` adapter.
 
 Do not extend these, and do not add a 29th `RxTxApp.py` importer. New work
 goes through `Application`.
@@ -196,8 +200,11 @@ Passing one oracle does not imply another ran. Tests opt in.
 ### 5.1 Application result
 
 Adapter-owned. RxTxApp parses per-session-type result markers from stdout;
-FFmpeg checks mode-specific output (frame counts, file sizes). This proves
-operation, not payload identity or standards conformance.
+FFmpeg checks mode-specific output (frame counts, file sizes); GStreamer
+checks the RX recording's frame count and MTL's per-interval RX rate. This
+proves operation, not payload identity or standards conformance. The one
+exception is GStreamer st40p, which no integrity check covers: its recording
+must repeat the input UDW.
 
 ### 5.2 Media integrity
 

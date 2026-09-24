@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo 'Killing any running DPDK or MTL related processes...'
-for process in gtest.sh KahawaiTest ffmpeg RxTxApp; do
+for process in gtest.sh KahawaiTest ffmpeg gst-launch-1.0 RxTxApp; do
 	sudo killall -SIGKILL "$process" || true
 done
 echo 'Cleaning up supporting processes...'
