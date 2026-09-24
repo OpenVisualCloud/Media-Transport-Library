@@ -14,6 +14,13 @@ acceptance_dir="${root_dir}/tests/acceptance"
 # replaces PATH even with -E -- same reasoning and same fix as
 # bind-test-ports.sh's identical block, and the same bug 921aa1b1 already fixed
 # once in mtl_engine/dma.py for perf-pytest.
+# A fixed copy of this shell's own stderr, for bounded_dma's host-fault
+# diagnostic: a caller that redirects fd 2 around a status query (to drop a
+# tool's routine chatter) would otherwise silence that diagnostic too, since a
+# redirect at a function's call site applies to everything the function
+# writes to that fd, not just what the wrapped command writes.
+exec 9>&2
+
 if [ -d "${root_dir}/.local_install/dpdk/bin" ]; then
 	export PATH="${root_dir}/.local_install/dpdk/bin:${PATH}"
 fi
@@ -416,6 +423,26 @@ dma_channels_of() {
 		state == want_state {print $1}' "${listing}"
 }
 
+: "${HOST_OP_TIMEOUT:=180}"
+
+# A wedged ICE/idxd driver puts whatever asks it something into uninterruptible
+# sleep, where not even SIGKILL reclaims it -- bind-test-ports.sh bounds every
+# such call on the gtest side for exactly this reason (its bounded()). Without
+# an equivalent here, a wedged driver during this step consumes the job's full
+# 720-minute timeout instead of failing with a diagnostic.
+bounded_dma() {
+	local label=$1 retval=0
+	shift
+	timeout --foreground --signal=SIGTERM --kill-after=30 "${HOST_OP_TIMEOUT}" "$@" || retval=$?
+	if [[ ${retval} -eq 124 || ${retval} -eq 137 ]]; then
+		echo "host fault: ${label} did not answer within ${HOST_OP_TIMEOUT}s" >&9
+		echo "The card has to be recovered before it can be prepared again:" >&9
+		echo "  echo 1 | sudo tee /sys/bus/pci/devices/<pf-bdf>/remove" >&9
+		echo "  echo 1 | sudo tee /sys/bus/pci/rescan" >&9
+	fi
+	return "${retval}"
+}
+
 # vfio-pci denylists Intel DSA (8086:0b25) by default, so a device bound to it
 # without disable_denylist=1 never appears as a dmadev. Same quirk
 # bind-test-ports.sh works around for the gtest suite; see doc/dma.md.
@@ -427,11 +454,12 @@ vfio_pci_allows_dsa() {
 allow_dsa_probe() {
 	vfio_pci_allows_dsa && return 0
 	echo "vfio-pci was loaded with its denylist on, which hides Intel DSA; reloading it" >&2
-	sudo modprobe -r vfio-pci || {
+	bounded_dma "modprobe -r vfio-pci" sudo modprobe -r vfio-pci || {
 		echo "could not unload vfio-pci: something on this host is holding it." >&2
 		return 1
 	}
-	sudo modprobe vfio-pci disable_denylist=1 2>/dev/null || sudo modprobe vfio-pci
+	bounded_dma "modprobe vfio-pci disable_denylist=1" sudo modprobe vfio-pci disable_denylist=1 2>/dev/null ||
+		bounded_dma "modprobe vfio-pci" sudo modprobe vfio-pci
 }
 
 : "${DMA_CHANNELS:=2}"
@@ -529,12 +557,14 @@ bind_dma() {
 
 	# >/dev/null on both: nothing this prints belongs on stdout, which
 	# bind_dma reserves for the channel list its caller captures.
-	sudo modprobe vfio-pci disable_denylist=1 >/dev/null 2>/dev/null ||
-		sudo modprobe vfio-pci >/dev/null || true
+	bounded_dma "modprobe vfio-pci disable_denylist=1" \
+		sudo modprobe vfio-pci disable_denylist=1 >/dev/null 2>/dev/null ||
+		bounded_dma "modprobe vfio-pci" sudo modprobe vfio-pci >/dev/null || true
 
 	listing=$(mktemp)
 	trap 'rm -f "${listing}"' RETURN
-	dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
+	bounded_dma "dpdk-devbind.py --status-dev dma" \
+		dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
 
 	mapfile -t bound < <(dma_channels_of "${listing}" "${numa}" bound)
 	mapfile -t free < <(dma_channels_of "${listing}" "${numa}" free)
@@ -555,7 +585,8 @@ bind_dma() {
 			# The reload drops every device vfio-pci held, DSA or not, so a
 			# channel this call's earlier snapshot saw as already bound may
 			# need re-binding too -- refresh before the loop below trusts it.
-			dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
+			bounded_dma "dpdk-devbind.py --status-dev dma" \
+				dpdk-devbind.py --status-dev dma >"${listing}" 2>/dev/null || true
 			mapfile -t bound < <(dma_channels_of "${listing}" "${numa}" bound)
 		fi
 	fi
@@ -568,7 +599,8 @@ bind_dma() {
 			continue
 		fi
 		echo "Binding DMA channel ${channel} to vfio-pci" >&2
-		if sudo dpdk-devbind.py -b vfio-pci "${channel}" >/dev/null; then
+		if bounded_dma "dpdk-devbind.py -b vfio-pci ${channel}" \
+			sudo dpdk-devbind.py -b vfio-pci "${channel}" >/dev/null; then
 			served=$((served + 1))
 			served_list+=("${channel}")
 		else
