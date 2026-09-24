@@ -696,6 +696,18 @@ static int parse_url(json_object* obj, const char* name, char* url) {
   return -ST_JSON_SUCCESS;
 }
 
+/* Replicas share one json object, so each rx replica records to url_<idx>. */
+static int parse_replica_url(char* url, int idx) {
+  size_t len = strlen(url);
+  if (!len) return ST_JSON_SUCCESS; /* not recording */
+  int n = snprintf(url + len, ST_APP_URL_MAX_LEN - len, "_%d", idx);
+  if (n < 0 || len + n >= ST_APP_URL_MAX_LEN) {
+    err("%s, no room for replica %d suffix in %s\n", __func__, idx, url);
+    return -ST_JSON_NOT_VALID;
+  }
+  return ST_JSON_SUCCESS;
+}
+
 static int st_json_parse_tx_video(int idx, json_object* video_obj,
                                   st_json_video_session_t* video) {
   if (video_obj == NULL || video == NULL) {
@@ -3330,6 +3342,11 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_st20p(k, st20p_session,
                                          &ctx->rx_st20p_sessions[num_st20p]);
             if (ret) goto error;
+            if (replicas > 1) {
+              ret =
+                  parse_replica_url(ctx->rx_st20p_sessions[num_st20p].info.st20p_url, k);
+              if (ret) goto error;
+            }
             if (ctx->rx_st20p_sessions[num_st20p].display) ctx->has_display = true;
             num_st20p++;
           }
@@ -3372,6 +3389,11 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_st30p(k, st30p_session,
                                       &ctx->rx_st30p_sessions[num_st30p], true);
             if (ret) goto error;
+            if (replicas > 1) {
+              ret =
+                  parse_replica_url(ctx->rx_st30p_sessions[num_st30p].info.audio_url, k);
+              if (ret) goto error;
+            }
             num_st30p++;
           }
         }
