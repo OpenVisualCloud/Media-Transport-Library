@@ -77,8 +77,12 @@ jobs:
         run: task ci:pytest-setup -- pci
       # DMA bindings are host state, so this runs as its own explicit step
       # rather than inside `ensure` -- same reasoning as ci:bind-test-ports for
-      # the gtest suite. Never fails the job: cases needing DMA offload skip
-      # themselves when this host serves none.
+      # the gtest suite. Never fails the job by default: unlike gtest's DMA
+      # cases, these st20p cases have no skip-aware DMA check, so a shortfall
+      # means they run on RxTxApp's CPU-copy fallback and may fail on
+      # throughput instead of skipping -- see dma_shortfall() in
+      # pytest-setup.sh, and set MTL_CI_REQUIRE_DMA=1 to make that a hard
+      # failure on a host meant to serve DMA.
       - name: 'preparation: Bind DMA channels to vfio-pci'
         env:
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
