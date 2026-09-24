@@ -216,7 +216,7 @@ static int tx_fastmetadata_session_init_pacing(
   return 0;
 }
 
-static int tx_fastmetadata_session_init_pacing_epoch(
+static int tx_fastmetadata_session_reset_pacing_epoch(
     struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
@@ -307,7 +307,8 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs)
+  /* user timestamps are authoritative, a gap between them is not a drop */
+  if (epochs > next_epochs && !required_tai)
     s->port_user_stats.common.stat_epoch_drop += (epochs - next_epochs);
   if (epochs < next_epochs) {
     s->port_user_stats.common.stat_epoch_onward += (next_epochs - epochs);
@@ -365,7 +366,7 @@ static int tx_fastmetadata_sessions_tasklet_start(void* priv) {
     s = tx_fastmetadata_session_get(mgr, sidx);
     if (!s) continue;
 
-    tx_fastmetadata_session_init_pacing_epoch(impl, s);
+    tx_fastmetadata_session_reset_pacing_epoch(impl, s);
     tx_fastmetadata_session_put(mgr, sidx);
   }
 
@@ -1488,6 +1489,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
     return ret;
   }
+  tx_fastmetadata_session_reset_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
     ret = tx_fastmetadata_session_init_hdr(impl, mgr, s, i);

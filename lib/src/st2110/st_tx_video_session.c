@@ -610,8 +610,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s) {
+static int tv_reset_pacing_epoch(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_video_pacing* pacing = &s->pacing;
   pacing->cur_epochs = ptp_time / pacing->frame_time;
@@ -1820,7 +1820,7 @@ static int tv_tasklet_start(void* priv) {
       s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
     }
     /* calculate the pacing epoch */
-    tv_init_pacing_epoch(impl, s);
+    tv_reset_pacing_epoch(impl, s);
     tx_video_session_put(mgr, sidx);
   }
 
@@ -3476,7 +3476,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
-  tv_init_pacing_epoch(impl, s);
+  tv_reset_pacing_epoch(impl, s);
   s->active = true;
 
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
