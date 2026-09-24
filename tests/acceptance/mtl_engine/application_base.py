@@ -139,6 +139,10 @@ class Application(ABC):
         self.config_file_path = config_file_path
         self.params = UNIVERSAL_PARAMS.copy()
         self._user_provided_params = set()
+        # test_config's dma_device key, stashed by app_factory in conftest.py
+        # (see its comment for where that value comes from). Applied in
+        # create_command() only when the caller didn't pass dma_dev= itself.
+        self._default_dma_dev: str | None = None
         self.command: str | None = None
         self.config: dict | None = None
         self.last_output: str | None = None
@@ -201,6 +205,8 @@ class Application(ABC):
         # silently leak into the next test and cause spurious failures.
         self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
+        if "dma_dev" not in self._user_provided_params and self._default_dma_dev:
+            self.params["dma_dev"] = self._default_dma_dev
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
 

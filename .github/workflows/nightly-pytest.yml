@@ -75,10 +75,19 @@ jobs:
         env:
           NIC: ${{ matrix.nic }}
         run: task ci:pytest-setup -- pci
+      # DMA bindings are host state, so this runs as its own explicit step
+      # rather than inside `ensure` -- same reasoning as ci:bind-test-ports for
+      # the gtest suite. Never fails the job: cases needing DMA offload skip
+      # themselves when this host serves none.
+      - name: 'preparation: Bind DMA channels to vfio-pci'
+        env:
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:pytest-setup -- dma
       - name: Generate test framework config files
         env:
           SESSION_ID: ${{ env.SESSION_ID }}
           PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          DMA_DEVICE: ${{ env.DMA_DEVICE }}
         run: task ci:pytest-setup -- config-single
       - name: Export workflow tag for PCAP naming
         env:
