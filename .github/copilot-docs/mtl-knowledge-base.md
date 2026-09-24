@@ -431,6 +431,32 @@ RX diagnostic stats:
 - RL: 128 shapers per port
 - TSC resolution ≈ 1ns, scheduler poll adds 10-100µs jitter
 
+### RX Video Frame Copy Is Cache-Bound, Not CPU-Bound
+
+At high session density the RX video scheduler core still has idle cycles while the
+NIC starts dropping — what runs out first is cache residency of the freshly DMA'd
+mbufs, not CPU time. Two consequences, both already in the code:
+
+- `rv_frame_memcpy()` (`st_rx_video_session.c`) streams payload to the frame buffer
+  with non-temporal stores (whole cache lines, `__SSE2__` builds, only once the
+  remaining length justifies it). An ordinary store spends a read-for-ownership on
+  every destination line and evicts the RX mbufs that following packets still have
+  to read.
+- `rv_handle_mbuf()` software-prefetches the next packet's header line (and, only for
+  the handlers that CPU-copy out of the same mbuf, the line behind it). The hardware
+  L2 streamer cannot do this job: each packet sits in an independently recycled mbuf
+  element, so successive packet-data addresses within one burst carry no stride for
+  the prefetcher to lock onto.
+
+Corollaries when tuning: enlarging `nb_rx_desc` past what fits in LLC makes density
+*worse*, not better — more in-flight mbufs than the last-level cache holds means the
+payload is cold by the time the copy reads it (on a 2-socket Xeon 8480+, 4096 RX
+descriptors × 22 1080p59.94 sessions was catastrophically worse than 1024). For the
+same reason, deliberately deferring polls to amortize per-pass overhead backfires: a
+deeper per-session backlog is a colder backlog. Benchmark on a quiet host — co-tenant
+memory traffic moves this ceiling by a whole session, so compare variants interleaved
+back-to-back, never across time.
+
 ### Performance Debugging Mental Model
 
 1. **NIC bottleneck?** Check `stat_tx_burst` vs `stat_tx_bytes`
@@ -481,9 +507,9 @@ Tasklet is per-manager (not per-session), registered in `st_rx_video_sessions_sc
 Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detect mode enabled.
 
 ### RX Packet Handlers (set by `rv_init_pkt_handler`)
-- `rv_handle_rtp_pkt` — standard frame mode
-- `rv_handle_frame_pkt` — frame mode variant
-- `rv_handle_hdr_split_pkt` — header-split mode
+- `rv_handle_frame_pkt` — frame/slice mode (the default for `st20_is_frame_type`)
+- `rv_handle_rtp_pkt` — RTP passthrough (`ST20_TYPE_RTP_LEVEL`), enqueues to `rtps_ring`
+- `rv_handle_hdr_split_pkt` — header-split mode, payload lives in `mbuf->next`
 - `rv_handle_st22_pkt` — compressed video
 - `rv_handle_detect_pkt` — auto-detection mode
 - `rv_handle_detect_err` — detection error handler

@@ -6,6 +6,9 @@
 
 #include <math.h>
 #include <rte_random.h>
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 #include "../datapath/mt_queue.h"
 #include "../mt_handle_guard.h"
@@ -849,6 +852,11 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_frame_meta* meta = &slot->meta;
   struct st_frame_trans* frame = slot->frame;
 
+#if defined(__SSE2__)
+  /* order the streaming stores in rv_frame_memcpy before the app reads them */
+  _mm_sfence();
+#endif
+
   if (s->enable_timing_parser) {
     for (int s_port = 0; s_port < ops->num_port; s_port++) {
       struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
@@ -1092,6 +1100,10 @@ static void rv_slice_notify(struct st_rx_video_session_impl* s,
   meta->second_field = slot->second_field;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
   meta->frame_recv_lines = slice_info->ready_slices * s->slice_lines;
+#if defined(__SSE2__)
+  /* order the streaming stores in rv_frame_memcpy before the app reads them */
+  _mm_sfence();
+#endif
   ops->notify_slice_ready(ops->priv, slot->frame->addr, meta);
   s->port_user_stats.stat_slices_received++;
 }
@@ -1562,6 +1574,34 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
 }
 
 static inline void* rv_frame_memcpy(void* dst, const void* src, size_t n) {
+#if defined(__SSE2__)
+  /* The frame is write-only until the app consumes it, so an ordinary store
+   * spends a read-for-ownership on every destination line and evicts the rx
+   * mbufs that the following packets still have to read. Stream it instead;
+   * rv_frame_notify/rv_slice_notify fence before the app sees the frame. */
+  /* Stream only whole cache lines: a partial write-combining flush costs a
+   * read-modify-write at the memory controller, which is worse than the
+   * read-for-ownership it was meant to avoid. Payload offsets are 16B but
+   * rarely 64B aligned, so copy the head and tail normally. */
+  size_t head = (64 - ((uintptr_t)dst & 63)) & 63;
+  if (n >= head + 256) {
+    size_t nt = (n - head) & ~(size_t)63;
+    uint8_t* d = (uint8_t*)dst + head;
+    const uint8_t* s = (const uint8_t*)src + head;
+    if (head) memcpy(dst, src, head);
+    for (size_t i = 0; i < nt; i += 64) {
+      _mm_stream_si128((__m128i*)(d + i), _mm_loadu_si128((const __m128i*)(s + i)));
+      _mm_stream_si128((__m128i*)(d + i + 16),
+                       _mm_loadu_si128((const __m128i*)(s + i + 16)));
+      _mm_stream_si128((__m128i*)(d + i + 32),
+                       _mm_loadu_si128((const __m128i*)(s + i + 32)));
+      _mm_stream_si128((__m128i*)(d + i + 48),
+                       _mm_loadu_si128((const __m128i*)(s + i + 48)));
+    }
+    if (head + nt < n) memcpy(d + nt, s + nt, n - head - nt);
+    return dst;
+  }
+#endif
   /* not use rte_memcpy since it find performance issue on writing frame */
   return memcpy(dst, src, n);
 }
@@ -2910,8 +2950,23 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   }
   if (!nb) return 0;
 
+  /* only a handler which copies the payload on the cpu out of this mbuf gains
+   * from warming up the line behind the header. a header split copies out of
+   * mbuf->next instead, and a dma session takes the payload on the device for
+   * every packet large enough to matter - it still copies the small, cross page
+   * and dma full ones on the cpu, but they are not worth a per packet test */
+  bool warm_payload = !s->dma_dev && ((s->pkt_handler == rv_handle_frame_pkt) ||
+                                      (s->pkt_handler == rv_handle_st22_pkt));
+
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
+    if (i + 1 < nb) {
+      /* the handlers read the rtp header first, so warm up the line holding it,
+       * and the one behind it which holds the payload start on a 64 byte line */
+      const uint8_t* next_pkt = rte_pktmbuf_mtod(mbuf[i + 1], const uint8_t*);
+      rte_prefetch0(next_pkt);
+      if (warm_payload) rte_prefetch0(next_pkt + RTE_CACHE_LINE_SIZE);
+    }
     if ((s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) && rv_simulate_pkt_loss(s))
       continue;
     if (s->rtcp_rx[s_port]) {

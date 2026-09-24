@@ -173,6 +173,10 @@ int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
                               uint8_t pt, uint32_t ssrc);
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port);
+/* Feed `nb` frame packets as one burst, so the wrapper's dispatch loop runs
+ * with more than one packet in the array. The array is sized to exactly `nb`. */
+int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, int nb,
+                                      uint32_t ts, enum mtl_session_port port);
 
 /* Per-port counter accessors (live inside `port_user_stats.common.port[]`). */
 uint64_t ut20_stat_port_err_packets(const ut20_test_ctx* ctx, enum mtl_session_port port);
