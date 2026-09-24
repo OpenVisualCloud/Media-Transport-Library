@@ -90,6 +90,7 @@ struct mt_rtcp_rx {
   uint16_t last_seq;
   uint16_t last_cont;
   uint8_t* seq_bitmap;
+  uint16_t seq_bitmap_size; /* length of seq_bitmap in bytes */
   uint16_t seq_window_size;
   uint16_t seq_skip_window;
 

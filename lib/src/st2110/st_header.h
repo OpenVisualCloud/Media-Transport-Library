@@ -972,6 +972,7 @@ struct st_rx_audio_session_impl {
   uint32_t rtp_ticks_per_frame; /* media-clock ticks spanning one frame buffer */
   uint32_t samples_per_pkt;     /* sample-clock ticks carried by one packet */
   uint8_t* frame_bitmap;        /* per-pkt received bitmap for the open frame */
+  size_t frame_bitmap_size;     /* length of frame_bitmap in bytes */
 
   /* simulated packet loss for test usage, ST30_RX_FLAG_SIMULATE_PKT_LOSS */
   uint16_t burst_loss_max;

@@ -176,7 +176,8 @@ static int rtcp_rx_update_last_cont(struct mt_rtcp_rx* rx) {
   uint16_t last_seq = rx->last_seq;
   /* find the last continuous seq */
   for (uint16_t i = last_cont + 1; rtp_seq_num_cmp(i, last_seq) <= 0; i++) {
-    if (!mt_bitmap_test(rx->seq_bitmap, i % rx->seq_window_size)) break;
+    if (!mt_bitmap_test(rx->seq_bitmap, rx->seq_bitmap_size, i % rx->seq_window_size))
+      break;
     rx->last_cont = i;
   }
 
@@ -191,7 +192,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     rx->ssrc = ntohl(rtp->ssrc);
     rx->last_cont = seq;
     rx->last_seq = seq;
-    mt_bitmap_test_and_set(rx->seq_bitmap, seq % rx->seq_window_size);
+    mt_bitmap_test_and_set(rx->seq_bitmap, rx->seq_bitmap_size,
+                           seq % rx->seq_window_size);
     rx->stat_rtp_received++;
     return 0;
   }
@@ -200,7 +202,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   if (cmp_result > 0) { /* new seq */
     /* clean the bitmap for missing packets */
     for (uint16_t i = rx->last_seq + 1; rtp_seq_num_cmp(i, seq) < 0; i++) {
-      mt_bitmap_test_and_unset(rx->seq_bitmap, i % rx->seq_window_size);
+      mt_bitmap_test_and_unset(rx->seq_bitmap, rx->seq_bitmap_size,
+                               i % rx->seq_window_size);
     }
     rx->last_seq = seq;
 
@@ -220,7 +223,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     }
   } /* else, ignore duplicate seq */
 
-  mt_bitmap_test_and_set(rx->seq_bitmap, seq % rx->seq_window_size);
+  mt_bitmap_test_and_set(rx->seq_bitmap, rx->seq_bitmap_size, seq % rx->seq_window_size);
   rx->stat_rtp_received++;
 
   return 0;
@@ -262,9 +265,10 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t start = seq;
   uint16_t end = rx->last_seq - rx->seq_skip_window;
   uint16_t miss = 0;
-  bool end_state = mt_bitmap_test_and_set(rx->seq_bitmap, end % rx->seq_window_size);
+  bool end_state = mt_bitmap_test_and_set(rx->seq_bitmap, rx->seq_bitmap_size,
+                                          end % rx->seq_window_size);
   while (rtp_seq_num_cmp(seq, end) <= 0) {
-    if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
+    if (!mt_bitmap_test(rx->seq_bitmap, rx->seq_bitmap_size, seq % rx->seq_window_size)) {
       miss++;
     } else {
       if (miss != 0) {
@@ -274,7 +278,8 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
           dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
           rx->stat_nack_drop_exceed += num_fci;
           if (!end_state)
-            mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
+            mt_bitmap_test_and_unset(rx->seq_bitmap, rx->seq_bitmap_size,
+                                     end % rx->seq_window_size);
           rte_pktmbuf_free(pkt);
           return -EINVAL;
         }
@@ -285,7 +290,9 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
     }
     seq++;
   }
-  if (!end_state) mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
+  if (!end_state)
+    mt_bitmap_test_and_unset(rx->seq_bitmap, rx->seq_bitmap_size,
+                             end % rx->seq_window_size);
   if (num_fci == 0) {
     rte_pktmbuf_free(pkt);
     return 0;
@@ -476,6 +483,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
     return NULL;
   }
   rx->seq_bitmap = seq_bitmap;
+  rx->seq_bitmap_size = ops->seq_bitmap_size;
   rx->seq_window_size = ops->seq_bitmap_size * 8;
 
   mt_stat_register(impl, rtcp_rx_stat, rx, rx->name);

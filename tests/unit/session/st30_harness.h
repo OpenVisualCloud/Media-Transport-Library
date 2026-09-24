@@ -137,6 +137,19 @@ uint32_t ut30_pkt_len(const ut30_test_ctx* ctx);
 /* Sample-clock ticks carried by one packet (RTP timestamp advance per packet). */
 uint32_t ut30_samples_per_pkt(const ut30_test_ctx* ctx);
 
+/* Override the ticks-per-packet the session divides by. A value that does not
+ * match the frame geometry makes the packet index leave the frame, which is the
+ * fault class the bitmap size guard exists for. */
+void ut30_set_samples_per_pkt(ut30_test_ctx* ctx, uint32_t spp);
+
+/* true while every byte the harness keeps past the declared bitmap is still
+ * zero, i.e. no call wrote outside the bitmap. */
+bool ut30_bitmap_guard_intact(const ut30_test_ctx* ctx);
+
+/* true while every frame buffer the session does not use is still zero, i.e.
+ * no payload copy ran past the end of an in-use frame. */
+bool ut30_spare_frame_storage_intact(const ut30_test_ctx* ctx);
+
 /* Ordered log of delivered frames, captured by the frame-ready stub. `count` is
  * the number logged; `ts`/`status`/`addr` index into it. Two entries sharing an
  * `addr` were carried by the same recycled framebuffer. */
