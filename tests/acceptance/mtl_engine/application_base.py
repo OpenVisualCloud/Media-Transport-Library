@@ -2,8 +2,10 @@
 # Copyright(c) 2026 Intel Corporation
 """Base application class providing unified interface for media framework adapters."""
 
+import json
 import logging
 import re
+import shlex
 import signal
 import time
 from abc import ABC, abstractmethod
@@ -11,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence
 
 from .config.universal_params import UNIVERSAL_PARAMS
+from .const import PREFIX
 from .execute import kill_stale_processes, log_fail, run
 from .integrity import min_expected_frames
 from .integrity_session import NO_INTEGRITY, IntegrityIntent
@@ -31,6 +34,14 @@ MTL_ENCODER_PLUGIN_MAP = {
     "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
     "libopenh264": "libst_plugin_st22_avcodec.so",
 }
+
+# (kahawai plugin name, tree under PREFIX, shared object) of each ST22 codec
+# plugin that the local install can hold.
+_LOCAL_ST22_PLUGINS = (
+    ("st22_svt_jpegxs", "jpegxs", "libst_plugin_st22_svt_jpeg_xs.so"),
+    ("st22_avcodec", "plugins", "libst_plugin_st22_avcodec.so"),
+)
+_KAHAWAI_ENV_PREFIX = "env KAHAWAI_CFG_PATH="
 
 _PACING_LOG_NAMES = {
     "auto": "auto",
@@ -571,6 +582,47 @@ class Application(ABC):
             **kwargs: Additional arguments passed from execute_test
         """
         pass
+
+    def with_local_kahawai(self, command: str, build: str, remote_conn) -> str:
+        """Return *command* with ``KAHAWAI_CFG_PATH`` set to a local ST22 plugin registry.
+
+        RxTxApp and FFmpeg run with ``cwd=build``. Without ``KAHAWAI_CFG_PATH``
+        libmtl reads the tracked ``kahawai.json``, which disables JPEG XS and
+        enables the sample plugin in /usr/local. A JPEG XS session then encodes
+        with the sample plugin, and check_codec_loaded() still passes. This
+        writes ``<build>/.local_install/kahawai.json`` on the host of
+        *remote_conn* with only the local plugins, so a missing plugin fails
+        the session instead.
+
+        The file goes through one shell command, so a local and an SSH
+        connection write the same bytes. Returns *command* unchanged when it
+        already sets ``KAHAWAI_CFG_PATH`` or the local install holds no ST22
+        plugin.
+        """
+        if command.startswith(_KAHAWAI_ENV_PREFIX):
+            return command
+        plugins = []
+        for name, tree, plugin_so in _LOCAL_ST22_PLUGINS:
+            res = remote_conn.execute_command(
+                f"find {build}/{PREFIX}/{tree} -name {plugin_so} -print -quit 2>/dev/null",
+                shell=True,
+                expected_return_codes=None,
+            )
+            path = (res.stdout or "").strip()
+            if path:
+                plugins.append({"enabled": 1, "name": name, "path": path})
+        if not plugins:
+            logger.info(f"No ST22 plugin under {build}/{PREFIX}; default registry")
+            return command
+
+        kahawai_path = f"{build}/{PREFIX}/kahawai.json"
+        kahawai_json = json.dumps({"plugins": plugins}, indent=4)
+        remote_conn.execute_command(
+            f"printf '%s\\n' {shlex.quote(kahawai_json)} > {shlex.quote(kahawai_path)}",
+            shell=True,
+        )
+        logger.info(f"Wrote ST22 plugin registry {kahawai_path}: {plugins}")
+        return f"{_KAHAWAI_ENV_PREFIX}{kahawai_path} {command}"
 
     def execute_test(
         self,

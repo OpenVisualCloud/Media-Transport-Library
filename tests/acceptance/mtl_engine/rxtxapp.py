@@ -1122,6 +1122,14 @@ class RxTxApp(Application):
             f"--config_file {config_file_relative}", f"--config_file {config_file_path}"
         )
 
+        has_st22p = any(
+            entry.get("st22p")
+            for direction in ("tx_sessions", "rx_sessions")
+            for entry in self.config.get(direction) or []
+        )
+        if has_st22p:
+            self.command = self.with_local_kahawai(self.command, build, remote_conn)
+
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """
         Validate execution results exactly like original RxTxApp.execute_test().
