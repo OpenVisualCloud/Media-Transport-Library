@@ -41,6 +41,9 @@ void ut_ring_drain(struct rte_ring* ring);
  *  mt_mbuf_time_stamp()'s HW path. Returns the dynfield offset. */
 int ut_register_hw_rx_timestamp(void);
 
+/** Return the validity flag registered with the HW RX timestamp dynfield. */
+uint64_t ut_hw_rx_timestamp_flag(void);
+
 /** Stamp mbuf's HW RX-timestamp dynfield with a raw nanosecond value. */
 void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns);
