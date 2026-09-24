@@ -52,10 +52,9 @@ jobs:
       # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40). It has no third
       # port to sniff with either, hence no capture and no compliance verdict.
       # 100s of traffic per case keeps the leg above the 20-minute floor the
-      # fleet expects of a smoke job -- 11 of the 14 cases run (the other three
-      # skip on capabilities the plugins do not have), and at 90s the leg came
-      # in at 19m31s. It stays non-blocking while the platform is being brought
-      # up.
+      # fleet expects of a smoke job -- 14 of the 17 cases run (the other three
+      # skip on capabilities the plugins do not have). It stays non-blocking
+      # while the platform is being brought up.
       matrix:
         include:
           - nic: e810

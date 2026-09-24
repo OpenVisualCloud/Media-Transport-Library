@@ -76,6 +76,11 @@ def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
         case "Y210" | "y210le":
             # Packed 4:2:2 10-bit, 2 samples per pixel × 2 bytes per sample
             pixel_size = 4
+        case "v210":
+            # Packed 4:2:2 10-bit, 16 bytes per 6 pixels, each row padded to a
+            # multiple of 48 pixels (Apple TN2162) as GStreamer and FFmpeg do
+            aligned_width = (width + 47) // 48 * 48
+            return aligned_width * 8 // 3 * height
         case "RGB8":
             pixel_size = 3
         case _:

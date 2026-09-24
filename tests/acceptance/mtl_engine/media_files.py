@@ -513,6 +513,20 @@ yuv_files_input_formats = {
     },
 }
 
+# The two input formats the mtl_st20p_tx caps accept (v210, I422_10LE). v210
+# has no AVPixelFormat, so it is a GStreamer-only row.
+yuv_files_gstreamer_input_formats = {
+    "yuv422p10le": yuv_files_input_formats["yuv422p10le"],
+    "v210": {
+        "filename": "gstreamer_v210_1920x1080_60hz.yuv",
+        "file_format": "v210",
+        "format": "YUV_422_10bit",
+        "fps": "60",
+        "width": 1920,
+        "height": 1080,
+    },
+}
+
 yuv_files_interlace = dict(
     Crosswalk_480p={
         "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422.yuv",
