@@ -41,6 +41,10 @@ size_t ut_dev_pci_devarg_size(void);
 void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, size_t len);
 int ut_dev_start_port(ut_dev_ctx* ctx);
 int ut_dev_create_ports(ut_dev_ctx* ctx);
+/* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
+ * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
+int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
+                                  uint16_t nb_rx_desc, uint16_t nb_max);
 
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */

@@ -46,6 +46,7 @@ unit_sources = [
   'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
+  'dev/mt_dev_rx_desc_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
   'dev/mt_flow_harness.c',

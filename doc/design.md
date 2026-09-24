@@ -590,6 +590,8 @@ In addition to the built-in RxTxApp, MTL also provides numerous sample codes tha
 To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, MTL provides several utilities for analysis.
 To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, MTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing. Please set `MTL_FLAG_ENABLE_HW_TIMESTAMP` flag to enable HW offload timestamp for all RX packets.
 
+On iavf VFs the DPDK vector RX path corrupts HW RX timestamps, so with this flag MTL raises a power-of-2 RX descriptor count by 32 (e.g. 2048 to 2080, or lowers it by 32 at the driver maximum), which makes iavf use its scalar RX path. The adjusted count is printed in the `dev_config_port` log.
+
 The fallback method is to read the time when MTL processes the packet. However, it's important to note that this fallback method cannot guarantee timing accuracy, potentially rendering the parsed results unreliable.
 
 The simplest method is to enable the built-in status report. An application can activate the feature by setting the flag `ST20_RX_FLAG_TIMING_PARSER_STAT` or `ST20P_RX_FLAG_TIMING_PARSER_STAT`. Subsequently, MTL will engage the Timing Parser module and include the results in the status log.
