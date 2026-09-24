@@ -1014,6 +1014,18 @@ static int dev_config_port(struct mt_interface* inf) {
     err("%s(%d), rte_eth_dev_adjust_nb_rx_tx_desc fail %d\n", __func__, port, ret);
     return ret;
   }
+  /* iavf vector RX flags every mbuf timestamp-valid without checking TS_VALID, and a
+   * power-of-2 ring selects vector RX. Workaround only for HW RX timestamps (-32 at
+   * nb_max), remove when fixed upstream; see KB §7 iavf HW RX timestamp workaround. */
+  if ((inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) &&
+      inf->drv_info.drv_type == MT_DRV_IAVF && rte_is_power_of_2(nb_rx_desc)) {
+    uint16_t adjusted = nb_rx_desc + 32 > inf->dev_info.rx_desc_lim.nb_max
+                            ? nb_rx_desc - 32
+                            : nb_rx_desc + 32;
+    info("%s(%d), nb_rx_desc %u -> %u, iavf vector rx corrupts hw rx timestamps\n",
+         __func__, port, nb_rx_desc, adjusted);
+    nb_rx_desc = adjusted;
+  }
   inf->nb_tx_desc = nb_tx_desc;
   inf->nb_rx_desc = nb_rx_desc;
 

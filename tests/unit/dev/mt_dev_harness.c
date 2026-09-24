@@ -53,6 +53,12 @@ static int ut_rte_eth_dev_stop(uint16_t port_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id);
 static int ut_rte_eal_init(int argc, char** argv);
+static int ut_rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t nb_tx_q,
+                                    const struct rte_eth_conf* conf);
+static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx_desc,
+                                               uint16_t* nb_tx_desc);
+static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_mask,
+                                               uint32_t* ptypes, int num);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -64,7 +70,13 @@ static int ut_rte_eal_init(int argc, char** argv);
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
 #define rte_eth_promiscuous_enable ut_rte_eth_promiscuous_enable
 #define rte_eal_init ut_rte_eal_init
+#define rte_eth_dev_configure ut_rte_eth_dev_configure
+#define rte_eth_dev_adjust_nb_rx_tx_desc ut_rte_eth_dev_adjust_nb_rx_tx_desc
+#define rte_eth_dev_get_supported_ptypes ut_rte_eth_dev_get_supported_ptypes
 #include "dev/mt_dev.c"
+#undef rte_eth_dev_get_supported_ptypes
+#undef rte_eth_dev_adjust_nb_rx_tx_desc
+#undef rte_eth_dev_configure
 #undef rte_eal_init
 #undef rte_eth_promiscuous_enable
 #undef rte_eth_stats_reset
@@ -172,6 +184,34 @@ static int ut_rte_eal_init(int argc, char** argv) {
   return -1;
 }
 
+static int ut_rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t nb_tx_q,
+                                    const struct rte_eth_conf* conf) {
+  (void)port_id;
+  (void)nb_rx_q;
+  (void)nb_tx_q;
+  (void)conf;
+  return 0;
+}
+
+/* Clamps to rx_desc_lim.nb_max, as the real one does. */
+static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx_desc,
+                                               uint16_t* nb_tx_desc) {
+  (void)port_id;
+  (void)nb_tx_desc;
+  *nb_rx_desc = RTE_MIN(*nb_rx_desc,
+                        ut_active_ctx->impl.inf[MTL_PORT_P].dev_info.rx_desc_lim.nb_max);
+  return 0;
+}
+
+static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_mask,
+                                               uint32_t* ptypes, int num) {
+  (void)port_id;
+  (void)ptype_mask;
+  (void)ptypes;
+  (void)num;
+  return 0;
+}
+
 ut_dev_ctx* ut_dev_create_ctx(void) {
   ut_dev_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -247,6 +287,20 @@ void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, siz
 int ut_dev_start_port(ut_dev_ctx* ctx) {
   ut_active_ctx = ctx;
   return dev_start_port(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
+                                  uint16_t nb_rx_desc, uint16_t nb_max) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  inf->drv_info.drv_type = iavf ? MT_DRV_IAVF : MT_DRV_ICE;
+  if (hw_timestamp) inf->feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+  inf->dev_info.rx_desc_lim.nb_max = nb_max;
+  ctx->impl.user_para.nb_rx_desc = nb_rx_desc;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->nb_rx_desc;
 }
 
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
