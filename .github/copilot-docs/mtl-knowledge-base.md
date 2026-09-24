@@ -700,7 +700,7 @@ Queue management abstracted via `mt_queue.c` (in `lib/src/datapath/`). Functions
 Static functions in `mt_dev.c`:
 - `dev_config_port()` — configure device (RSS, promiscuous, multi-seg TX, checksum offload)
 - `dev_start_port()` — start device, then `rte_eth_stats_reset()` (clean baseline, prevents stale counters from probe/startup contaminating session stats)
-- TX offloads: `MULTI_SEGS` (scatter-gather for header+chain) + `IPV4_CKSUM` (HW checksum). RX offloads: `0` (no scatter-gather, `rx_nseg=0`)
+- TX offloads: `MULTI_SEGS` (scatter-gather for header+chain) + `IPV4_CKSUM` (HW checksum). RX offloads: `TIMESTAMP` only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` (no scatter-gather, `rx_nseg=0`)
 - `rte_eth_dev_set_ptypes()`: tells NIC to only classify TIMESYNC/ARP/VLAN/QINQ/ICMP/IPv4/UDP/FRAG — reduces per-packet classification overhead. Only applied when driver reports ≥5 supported ptypes
 - No promiscuous mode by default — hardware flow rules steer traffic. `MTL_FLAG_NIC_RX_PROMISCUOUS` enables it for debugging
 
@@ -755,6 +755,14 @@ Continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size / 2` (≥64),
 
 ### Header-Split RX
 Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`: NIC writes payload directly into frame buffer, bypassing CPU memcpy. Requires DPDK ice driver patches.
+
+### iavf HW RX Timestamp Workaround
+Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
+- **Defect (DPDK 26.07 and upstream main)**: iavf AVX2/AVX512 flex RX (`iavf_rxtx_vec_avx2.c`, `iavf_rxtx_vec_avx512.c`) flags every mbuf timestamp-valid without checking `IAVF_RX_FLX_DESC_TS_VALID` and seeds `rxq->phc_time` from the last mbuf, so one unstamped descriptor makes later timestamps jump by ~2^32 ns. Scalar RX (`iavf_rxtx.c`) checks the bit.
+- **Workaround**: after `rte_eth_dev_adjust_nb_rx_tx_desc()`, `dev_config_port()` raises a power-of-2 `nb_rx_desc` by 32 (2048 → 2080), or lowers it by 32 at `rx_desc_lim.nb_max`. Vector RX needs a power-of-2 ring, so iavf picks "Scalar Bulk Alloc Flex" (a multiple of `rx_free_thresh` 32 keeps bulk alloc). Applies to a user-set `nb_rx_desc` too; no measurable cost at ~0.9 Mpps/queue.
+- **Verify**: testpmd `show rxq info` burst mode is "Scalar Bulk Alloc Flex". On regression, strict NoCtx pacing tests fail with ~2^32 ns jumps.
+- **Remove** once iavf vector RX checks TS_VALID upstream.
+- **Rejected**: a DPDK patch forcing scalar RX (no DPDK patch maintenance); EAL `--force-max-simd-bitwidth=64` (hits every PMD and the TX path); `proto_xtr` devarg (aux0/aux1 share the `flex_ts.ts_high` union); requesting scalar-only `RTE_ETH_RX_OFFLOAD_OUTER_UDP_CKSUM` (a VF does not advertise it).
 
 ### mbuf Lifecycle
 
