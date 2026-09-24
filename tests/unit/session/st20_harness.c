@@ -382,17 +382,29 @@ int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
   return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
 }
 
-int ut20_feed_frame_pkt_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
-                              enum mtl_session_port port, uint64_t hw_raw_ns) {
+static int feed_frame_pkt_dynfield_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                                      enum mtl_session_port port, uint64_t hw_raw_ns,
+                                      bool ts_valid) {
   uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
   struct rte_mbuf* m = make_video_mbuf(seq, ts, ln, lo, ll);
   if (!m) return -1;
   ut_mbuf_set_hw_timestamp(m, ctx->impl.dynfield_offset, hw_raw_ns);
+  if (!ts_valid) m->ol_flags &= ~ut_hw_rx_timestamp_flag();
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
+}
+
+int ut20_feed_frame_pkt_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                              enum mtl_session_port port, uint64_t hw_raw_ns) {
+  return feed_frame_pkt_dynfield_ts(ctx, pkt_idx, ts, port, hw_raw_ns, true);
+}
+
+int ut20_feed_frame_pkt_stale_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                                    enum mtl_session_port port, uint64_t hw_raw_ns) {
+  return feed_frame_pkt_dynfield_ts(ctx, pkt_idx, ts, port, hw_raw_ns, false);
 }
 
 int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
@@ -637,6 +649,7 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port) {
   enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
   ctx->impl.dynfield_offset = ut_register_hw_rx_timestamp();
+  ctx->impl.dyn_rx_timestamp_flag = ut_hw_rx_timestamp_flag();
   ctx->ptp_storage.coefficient = 1.0;
   ctx->ptp_storage.last_sync_ts = 0;
   ctx->impl.ptp[phy] = &ctx->ptp_storage;

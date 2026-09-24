@@ -2415,7 +2415,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #endif
     ) {
       if (!impl->dynfield_offset) {
-        ret = rte_mbuf_dyn_rx_timestamp_register(&impl->dynfield_offset, NULL);
+        ret = rte_mbuf_dyn_rx_timestamp_register(&impl->dynfield_offset,
+                                                 &impl->dyn_rx_timestamp_flag);
         if (ret < 0) {
           err("%s, rte_mbuf_dyn_rx_timestamp_register fail\n", __func__);
           return ret;
