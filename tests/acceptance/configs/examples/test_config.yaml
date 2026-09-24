@@ -27,3 +27,7 @@ ebu_server:
   password: password
   proxy: false
 interface_type: VF
+# CI-only: PCI address(es) of DMA channel(s) already bound to vfio-pci,
+# comma-separated, passed to RxTxApp as --dma_dev. Set by pytest-setup.sh's
+# `dma` subcommand via gen_config.py --dma_device; never write this by hand.
+# dma_device: 0000:80:01.0,0000:85:01.0
