@@ -23,6 +23,8 @@
  * is set up, since neither target function touches packets.
  */
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -733,4 +735,48 @@ uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx) {
 
 uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.rtp_time_stamp;
+}
+
+/* ── periodic stats dump ──────────────────────────────────────────────── */
+
+static struct ut_txv_ctx* ut_txv_stat_ctx;
+static int ut_txv_stat_lines;
+static int ut_txv_stat_locked_lines;
+static char ut_txv_stat_first_line[256];
+
+static void ut_txv_stat_log_printer(enum mtl_log_level level, const char* format, ...) {
+  va_list args;
+
+  (void)level;
+  if (rte_spinlock_is_locked(&ut_txv_stat_ctx->mgr.mutex[0])) ut_txv_stat_locked_lines++;
+  if (!ut_txv_stat_lines++) {
+    va_start(args, format);
+    vsnprintf(ut_txv_stat_first_line, sizeof(ut_txv_stat_first_line), format, args);
+    va_end(args);
+  }
+}
+
+int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
+  ut_txv_stat_ctx = ctx;
+  ut_txv_stat_lines = 0;
+  ut_txv_stat_locked_lines = 0;
+  ut_txv_stat_first_line[0] = '\0';
+  mtl_set_log_printer(ut_txv_stat_log_printer);
+  tv_sessions_stat(&ctx->mgr);
+  mtl_set_log_printer(NULL);
+  ut_txv_stat_ctx = NULL;
+  *locked_lines = ut_txv_stat_locked_lines;
+  return ut_txv_stat_lines;
+}
+
+const char* ut_txv_stat_first_log_line(void) {
+  return ut_txv_stat_first_line;
+}
+
+void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
+  ctx->session.port_user_stats.common.port[MTL_SESSION_PORT_P].frames = frames;
+}
+
+uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_snapshot.common.port[MTL_SESSION_PORT_P].frames;
 }

@@ -316,6 +316,10 @@ Three variants:
 
 Paired with `rx_video_session_put()` (unlock). Always get→work→put.
 
+Never log under a session spinlock: tasklets `*_try_get()` it and skip the session while
+it is held. Copy the counters under the lock, `put`, then log the copy (TX video:
+`tv_stat_collect()` / `tv_stat_log()`).
+
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
 - Migration: target manager mutex → source manager mutex
