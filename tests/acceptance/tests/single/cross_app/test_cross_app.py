@@ -9,19 +9,21 @@ from mtl_engine.media_files import yuv_files_422p10le
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
 
+# RxTxApp is one end; ``application`` is the other and orchestrates both.
 @pytest.mark.parametrize(
     "tx_application, rx_application, media_file",
     [
-        ("rxtxapp", "ffmpeg", yuv_files_422p10le["Penguin_1080p"]),
-        ("ffmpeg", "rxtxapp", yuv_files_422p10le["Penguin_1080p"]),
+        ("rxtxapp", None, yuv_files_422p10le["Penguin_1080p"]),
+        (None, "rxtxapp", yuv_files_422p10le["Penguin_1080p"]),
     ],
-    ids=["rxtxapp_to_ffmpeg", "ffmpeg_to_rxtxapp"],
+    ids=["rxtxapp_to_app", "app_to_rxtxapp"],
     indirect=["media_file"],
 )
 @pytest.mark.parametrize(
     "application",
     [
         "ffmpeg",
+        "gstreamer",
         pytest.param(
             "rxtxapp",
             marks=pytest.mark.skip(
@@ -52,6 +54,8 @@ def test_cross_app(
 ):
     """One TX app streaming ST2110-20 to a different RX app."""
     media_file_info, media_file_path = media_file
+    tx_application = tx_application or application
+    rx_application = rx_application or application
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")

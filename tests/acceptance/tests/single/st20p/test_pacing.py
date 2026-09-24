@@ -23,6 +23,12 @@ CORE = ["i1080p59", "i2160p59", "i2160p119"]
                 reason="FFmpeg does not support pacing mode selection"
             ),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer does not support pacing mode selection"
+            ),
+        ),
     ],
 )
 @pytest.mark.tx_side
