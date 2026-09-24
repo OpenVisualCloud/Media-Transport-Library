@@ -42,6 +42,12 @@ VF_PACING_WAYS = [
                 reason="FFmpeg does not support pacing_way selection"
             ),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer does not support pacing_way selection"
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize("pacing_way", VF_PACING_WAYS)

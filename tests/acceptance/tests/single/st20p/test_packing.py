@@ -20,6 +20,12 @@ pytestmark = pytest.mark.verified
                 reason="FFmpeg does not support packing mode selection"
             ),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer does not support packing mode selection"
+            ),
+        ),
     ],
 )
 @pytest.mark.tx_side

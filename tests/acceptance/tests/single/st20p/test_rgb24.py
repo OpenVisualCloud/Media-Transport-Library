@@ -23,6 +23,10 @@ RGB24_MEDIA = [
             "rxtxapp",
             marks=pytest.mark.skip(reason="RGB24 mode requires FFmpeg TX plugin"),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(reason="RGB24 mode requires FFmpeg TX plugin"),
+        ),
     ],
 )
 @pytest.mark.parametrize(

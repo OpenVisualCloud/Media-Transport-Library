@@ -22,7 +22,19 @@ FORMAT_CASES = [
 ]
 
 
-@pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        "rxtxapp",
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer RX has no h264 encoder or output_format choice"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
 @pytest.mark.parametrize(
     "video_format, fps, media_file",

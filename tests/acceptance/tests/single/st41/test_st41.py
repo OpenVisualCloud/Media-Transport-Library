@@ -21,6 +21,13 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+_GSTREAMER_SKIP = pytest.param(
+    "gstreamer",
+    marks=pytest.mark.skip(
+        reason="GStreamer does not support st41 fast metadata pipeline"
+    ),
+)
+
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
@@ -33,6 +40,7 @@ k_bit_mapping = {
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -91,6 +99,7 @@ def test_st41_dit(
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -153,6 +162,7 @@ def test_st41_fps(
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -211,6 +221,7 @@ def test_st41_k_bit(
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -271,6 +282,7 @@ def test_st41_no_chain(
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -331,6 +343,7 @@ def test_st41_payload_type(
                 reason="FFmpeg does not support st41 fast metadata pipeline"
             ),
         ),
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
