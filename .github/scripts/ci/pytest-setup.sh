@@ -9,6 +9,15 @@ acceptance_dir="${root_dir}/tests/acceptance"
 # shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
 . "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
 
+# dpdk-devbind.py ships with the DPDK build, which on a test host is a restored
+# cache and not an install into /usr, and this script runs under sudo, which
+# replaces PATH even with -E -- same reasoning and same fix as
+# bind-test-ports.sh's identical block, and the same bug 921aa1b1 already fixed
+# once in mtl_engine/dma.py for perf-pytest.
+if [ -d "${root_dir}/.local_install/dpdk/bin" ]; then
+	export PATH="${root_dir}/.local_install/dpdk/bin:${PATH}"
+fi
+
 # Host facts (EBU LIST credentials, shadow/SUT addresses, the account the tests
 # run as) live on the runner that owns the hardware, not in GitHub secrets: the
 # jobs that need them only ever run on that hardware, and a secret is a second
@@ -450,7 +459,18 @@ any_channel_needs_bind() {
 dma_shortfall() {
 	local found=$1
 	echo "This host serves ${found}/${DMA_CHANNELS} DMA channel(s) on NUMA ${numa} (where ${first_bdf} is)." >&2
-	echo "The suite runs without DMA offload; its DMA cases report themselves skipped." >&2
+	# Unlike gtest's DMA cases, which ask st_test_dma_available() and skip
+	# themselves, the nightly st20p cases this serves have no such check: they
+	# run on the CPU-copy fallback and can fail validation on throughput
+	# instead, on 8K/12-bit formats it cannot sustain (rv_init_dma, dma.md).
+	# This step never fails the job over that by default -- MTL_CI_REQUIRE_DMA=1
+	# below is how a host meant to serve DMA turns it into a loud one instead
+	# of a quiet CPU-bound failure inside the suite.
+	echo "The suite runs without DMA offload; cases that need it may fail on throughput instead of skipping." >&2
+	if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+		echo "No DMA offload for nightly st20p: $(hostname) serves ${found}/${DMA_CHANNELS} channel(s) on NUMA ${numa}." \
+			>>"${GITHUB_STEP_SUMMARY}"
+	fi
 	if [[ ${MTL_CI_REQUIRE_DMA:-0} == 1 ]]; then
 		echo "MTL_CI_REQUIRE_DMA=1 on this host, so this is a failure." >&2
 		return 1
@@ -469,12 +489,14 @@ dma_shortfall() {
 # every run hides drift in the host image and races with whatever else uses the
 # card, same reasoning as bind-test-ports.sh's header for the gtest side.
 #
-# Never fails the job over a missing DMA device by default: the suite's
-# DMA-offload cases ask the library for a channel and skip themselves when
-# there is none, so refusing here would cost every other case too. A host that
-# is meant to serve DMA sets MTL_CI_REQUIRE_DMA=1 to turn a shortfall into a
-# hard failure instead -- same escape hatch bind-test-ports.sh's
-# report_dma_shortfall offers on the gtest side.
+# Never fails the job over a missing DMA device by default: refusing here
+# would cost every st20p case run on this leg, not just the ones that need
+# DMA to hit their throughput target. Unlike gtest's DMA cases, none of these
+# ask the library for a channel and skip themselves when there is none -- they
+# just run on the CPU-copy fallback and may fail validation instead (see
+# dma_shortfall()). A host that is meant to serve DMA sets MTL_CI_REQUIRE_DMA=1
+# to turn that into a loud, immediate failure instead -- same escape hatch
+# bind-test-ports.sh's report_dma_shortfall offers on the gtest side.
 bind_dma() {
 	local pci_device=${1:?PCI_DEVICE is required}
 	local first_id=${pci_device%%,*}
