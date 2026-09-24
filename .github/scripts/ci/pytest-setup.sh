@@ -454,12 +454,12 @@ vfio_pci_allows_dsa() {
 allow_dsa_probe() {
 	vfio_pci_allows_dsa && return 0
 	echo "vfio-pci was loaded with its denylist on, which hides Intel DSA; reloading it" >&2
-	bounded_dma "modprobe -r vfio-pci" sudo modprobe -r vfio-pci || {
+	bounded_dma "modprobe -r vfio-pci" modprobe -r vfio-pci || {
 		echo "could not unload vfio-pci: something on this host is holding it." >&2
 		return 1
 	}
-	bounded_dma "modprobe vfio-pci disable_denylist=1" sudo modprobe vfio-pci disable_denylist=1 2>/dev/null ||
-		bounded_dma "modprobe vfio-pci" sudo modprobe vfio-pci
+	bounded_dma "modprobe vfio-pci disable_denylist=1" modprobe vfio-pci disable_denylist=1 2>/dev/null ||
+		bounded_dma "modprobe vfio-pci" modprobe vfio-pci
 }
 
 : "${DMA_CHANNELS:=2}"
@@ -526,6 +526,16 @@ dma_shortfall() {
 # to turn that into a loud, immediate failure instead -- same escape hatch
 # bind-test-ports.sh's report_dma_shortfall offers on the gtest side.
 bind_dma() {
+	# No internal sudo below: binding a driver needs root, checked here rather
+	# than on every modprobe/dpdk-devbind.py call, the way bind-test-ports.sh
+	# checks it once at its own top. A nested sudo on top of an already-root
+	# shell re-applies secure_path, which drops dpdk-devbind.py's PATH entry
+	# above right back out -- the same bug this file already fixed once for
+	# the bare (non-sudo) case.
+	if [[ $(id -u) -ne 0 ]]; then
+		echo "binding DMA needs root: sudo task ci:pytest-setup -- dma" >&2
+		return 1
+	fi
 	local pci_device=${1:?PCI_DEVICE is required}
 	local first_id=${pci_device%%,*}
 	local first_bdf numa channel served=0 listing
@@ -558,8 +568,8 @@ bind_dma() {
 	# >/dev/null on both: nothing this prints belongs on stdout, which
 	# bind_dma reserves for the channel list its caller captures.
 	bounded_dma "modprobe vfio-pci disable_denylist=1" \
-		sudo modprobe vfio-pci disable_denylist=1 >/dev/null 2>/dev/null ||
-		bounded_dma "modprobe vfio-pci" sudo modprobe vfio-pci >/dev/null || true
+		modprobe vfio-pci disable_denylist=1 >/dev/null 2>/dev/null ||
+		bounded_dma "modprobe vfio-pci" modprobe vfio-pci >/dev/null || true
 
 	listing=$(mktemp)
 	trap 'rm -f "${listing}"' RETURN
@@ -600,7 +610,7 @@ bind_dma() {
 		fi
 		echo "Binding DMA channel ${channel} to vfio-pci" >&2
 		if bounded_dma "dpdk-devbind.py -b vfio-pci ${channel}" \
-			sudo dpdk-devbind.py -b vfio-pci "${channel}" >/dev/null; then
+			dpdk-devbind.py -b vfio-pci "${channel}" >/dev/null; then
 			served=$((served + 1))
 			served_list+=("${channel}")
 		else
