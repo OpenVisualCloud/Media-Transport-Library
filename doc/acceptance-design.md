@@ -118,7 +118,7 @@ Authoring rules are enforced by
 | File                           | Answers                                                                                                                                                                                |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `configs/topology_config.yaml` | *What hardware exists* — hosts, roles (`sut`/`client`), their NICs by `pci_device` + `interface_index`, SSH connection details, per-host `extra_info` (`mtl_path`, `media_path`)       |
-| `configs/test_config.yaml`     | *How this run behaves* — `session_id` (drives IP subnets), default `test_time`, ramdisk sizes, `capture_cfg` (enable, pcap dir, sniff NIC, `phc_sync`), `ebu_server`, `interface_type` |
+| `configs/test_config.yaml`     | *How this run behaves* — `session_id` (drives IP subnets), default `test_time`, ramdisk sizes, `capture_cfg` (enable, pcap dir, sniff NIC, `phc_sync`), `ebu_server`, `interface_type`, `dma_device` |
 
 `configs/gen_config.py` generates both from CLI arguments and resolves a BDF
 to `vendor:device`. `configs/examples/` holds minimal variants and

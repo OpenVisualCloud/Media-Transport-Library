@@ -510,7 +510,10 @@ bind_dma() {
 	# role here since VF creation for pytest happens later, inside the suite.
 	first_bdf=$(lspci -Dn -d "${first_id}" 2>/dev/null | head -n1 | cut -d' ' -f1)
 	if [[ -z ${first_bdf} ]]; then
-		echo "No PCI device found for ${first_id}; skipping DMA bind." >&2
+		first_bdf=${first_id}
+		numa=0
+		echo "No PCI device found for ${first_id}; can't tell its NUMA node." >&2
+		dma_shortfall 0 || return 1
 		echo ""
 		return 0
 	fi
@@ -518,7 +521,8 @@ bind_dma() {
 	[[ ${numa} -lt 0 ]] && numa=0
 
 	if ! command -v dpdk-devbind.py >/dev/null 2>&1; then
-		echo "dpdk-devbind.py not found; skipping DMA bind." >&2
+		echo "dpdk-devbind.py not found." >&2
+		dma_shortfall 0 || return 1
 		echo ""
 		return 0
 	fi
