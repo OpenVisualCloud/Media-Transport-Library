@@ -2,11 +2,9 @@
 # Copyright(c) 2026 Intel Corporation
 
 import os
-from pathlib import Path
 
 import pytest
 from mtl_engine import media_files as mf
-from mtl_engine.const import LOG_FOLDER
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
@@ -64,13 +62,17 @@ def test_integrity(
     media_dict,
     media_key,
     media_integrity,
+    media_file,
+    output_files,
 ):
     media_file_info = getattr(mf, media_dict)[media_key]
     media_path = test_config.get("media_path", "/mnt/media")
     media_file_path = os.path.join(media_path, media_file_info["filename"])
-    log_dir = Path.cwd() / LOG_FOLDER / "latest"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    out_file_url = str(log_dir / "out.yuv")
+    # Record onto the media ramdisk, where the other st20p tests stage their
+    # media: root-disk writeback can stall the writer long enough to run the
+    # RX out of framebuffers and drop a frame.
+    _, ramdisk = media_file
+    out_file_url = output_files.register(os.path.join(ramdisk, "out.yuv"))
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
