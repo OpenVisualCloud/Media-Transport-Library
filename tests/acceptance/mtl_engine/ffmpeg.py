@@ -726,14 +726,14 @@ class FFmpeg(Application):
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
-        integrity_intent = self.integrity_intent(build, host)
+        integrity_intents = self.integrity_intents(build, host)
 
         return self._finalize_run(
             compliance,
             intent,
             fail_on_error,
             integrity=integrity,
-            integrity_intent=integrity_intent,
+            integrity_intents=integrity_intents,
         )
 
     # ----------------------------------------------------- compliance

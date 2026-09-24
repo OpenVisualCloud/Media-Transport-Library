@@ -4,9 +4,11 @@
 
 Validates ST2110-20 pipeline mode video transmission and reception over the
 kernel-socket loopback interface using the unified ``application`` fixture.
+Every replica's RX recording must match its source.
 """
 
 import pytest
+from mtl_engine.config.universal_params import UNIVERSAL_PARAMS
 from mtl_engine.media_files import yuv_files_422p10le
 
 
@@ -28,6 +30,8 @@ def test_kernello_st20p_video_format_refactored(
     replicas,
     media_file,
     application,
+    output_files,
+    media_integrity,
 ):
     """Refactored test for kernello st20p video format.
 
@@ -38,6 +42,8 @@ def test_kernello_st20p_video_format_refactored(
     :param replicas: Number of session replicas to spawn.
     :param media_file: Parametrized media file fixture (info dict, file path).
     :param application: Media application driver fixture (currently ``RxTxApp``).
+    :param output_files: Tracker that removes the RX recordings afterwards.
+    :param media_integrity: Compares every replica's RX recording with its source.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -54,12 +60,19 @@ def test_kernello_st20p_video_format_refactored(
         pixel_format=media_file_info["file_format"],
         transport_format=media_file_info["format"],
         input_file=media_file_path,
+        output_file=f"{media_file_path}.out",
         replicas=replicas,
         test_time=test_time,
+        # Each replica records its own file; split the default cap between them.
+        rx_max_file_size=UNIVERSAL_PARAMS["rx_max_file_size"] // replicas,
     )
+    # Track the files RxTxApp writes: <url>, or <url>_<k> for each replica.
+    for path in application.rx_output_files():
+        output_files.register(path)
 
     application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
+        integrity=media_integrity,
     )

@@ -218,7 +218,7 @@ class IntegritySession:
         )
 
     def close(self, enforce_dispatch: bool = True) -> None:
-        """Enforce the evaluated-exactly-once invariant.
+        """Enforce the evaluated-at-least-once invariant.
 
         Called from the ``media_integrity`` fixture's teardown -- catches a
         test that requested the fixture but never called ``execute_test()``

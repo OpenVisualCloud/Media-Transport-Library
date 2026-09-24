@@ -64,8 +64,9 @@ def test_xdp_mode_refactored(
                 "framerate": parse_fps_to_pformat(video_file["fps"]),
                 "pixel_format": video_file["file_format"],
                 "transport_format": video_file["format"],
+                # No output_file: an RX destination is opened fopen(url, "wb"),
+                # which here would truncate the shared /mnt/media master asset.
                 "input_file": str(host.connection.path(media, video_file["filename"])),
-                "output_file": str(host.connection.path(media, video_file["filename"])),
             },
             {
                 "session_type": "st30p",
@@ -74,7 +75,6 @@ def test_xdp_mode_refactored(
                 "audio_sampling": "48kHz",
                 "audio_ptime": "1",
                 "input_file": str(host.connection.path(media, audio_file["filename"])),
-                "output_file": str(host.connection.path(media, audio_file["filename"])),
             },
             {
                 "session_type": "ancillary",

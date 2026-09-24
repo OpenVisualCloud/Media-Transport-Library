@@ -6,10 +6,12 @@ Mirrors ``test_kernel_lo.py`` but uses the unified ``application`` fixture
 with the multi-session ``sessions=[...]`` API added to ``RxTxApp``.
 
 Pass criterion: process rc==0 AND ``check_rx_output`` passes for *every*
-populated session type (st20p OK + converters; st30p OK; anc OK).
+populated session type (st20p OK + converters; st30p OK; anc OK) AND every
+replica's st20p and st30p recordings match their sources.
 """
 
 import pytest
+from mtl_engine.config.universal_params import UNIVERSAL_PARAMS
 from mtl_engine.media_files import (
     anc_files,
     audio_files,
@@ -38,6 +40,8 @@ def test_kernello_mixed_format_refactored(
     media,
     setup_interfaces,
     application,
+    output_files,
+    media_integrity,
 ):
     """Test mixed media streams over kernel loopback interface (refactored).
 
@@ -55,6 +59,9 @@ def test_kernello_mixed_format_refactored(
     :param media: Source media directory path
     :param setup_interfaces: Interface setup helper for cleanup
     :param application: Media application driver (``RxTxApp``)
+    :param output_files: Tracker that removes the RX recordings afterwards
+    :param media_integrity: Compares every replica's st20p and st30p recordings
+        with their sources
     """
     media_file_info, media_file_path = media_file
     audio_file = audio_files["PCM24"]
@@ -74,6 +81,8 @@ def test_kernello_mixed_format_refactored(
         test_mode=test_mode,
         replicas=replicas,
         test_time=test_time,
+        # Each replica records its own file; split the default cap between them.
+        rx_max_file_size=UNIVERSAL_PARAMS["rx_max_file_size"] // replicas,
         sessions=[
             {
                 "session_type": "st20p",
@@ -83,7 +92,9 @@ def test_kernello_mixed_format_refactored(
                 "pixel_format": media_file_info["file_format"],
                 "transport_format": media_file_info["format"],
                 "input_file": media_file_path,
-                "output_file": media_file_path,
+                # Never the input_file: RX opens it fopen(url, "wb"), which would
+                # truncate the source this TX streams from.
+                "output_file": f"{media_file_path}.out",
             },
             {
                 "session_type": "st30p",
@@ -103,10 +114,14 @@ def test_kernello_mixed_format_refactored(
             },
         ],
     )
+    # Track the files RxTxApp writes: <url>, or <url>_<k> for each replica.
+    for path in application.rx_output_files():
+        output_files.register(path)
 
     application.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
         interface_setup=setup_interfaces,
+        integrity=media_integrity,
     )

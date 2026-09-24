@@ -8,7 +8,7 @@ import signal
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import kill_stale_processes, log_fail, run
@@ -342,6 +342,11 @@ class Application(ABC):
             test_time=self.params.get("test_time") or 30,
         )
 
+    def integrity_intents(self, test_repo_path: str, host) -> list[IntegrityIntent]:
+        """One intent per RX recording to verify; adapters that run one stream
+        have exactly one."""
+        return [self.integrity_intent(test_repo_path, host)]
+
     def set_params(self, **kwargs):
         """Set parameters from user input and track which were provided."""
         self._user_provided_params = set(kwargs.keys())
@@ -657,7 +662,7 @@ class Application(ABC):
         # evaluate() below so both see the exact same snapshot of self.params
         # (self.params is mutable and must not be re-read mid-run).
         intent = self.capture_intent()
-        integrity_intent = self.integrity_intent(build, host)
+        integrity_intents = self.integrity_intents(build, host)
 
         if not is_dual:
             specs = [
@@ -682,7 +687,7 @@ class Application(ABC):
                 intent,
                 fail_on_error,
                 integrity=integrity,
-                integrity_intent=integrity_intent,
+                integrity_intents=integrity_intents,
             )
 
         # Dual-host: 2 bounded procs across 2 hosts.
@@ -773,7 +778,7 @@ class Application(ABC):
         fail_on_error: bool,
         *,
         integrity=NO_INTEGRITY,
-        integrity_intent: Optional[IntegrityIntent] = None,
+        integrity_intents: Sequence[IntegrityIntent] = (),
     ) -> bool:
         """Evaluate compliance, integrity and validate_results, run unconditionally.
 
@@ -794,11 +799,14 @@ class Application(ABC):
             compliance_ok = compliance.evaluate(intent, fail_on_error)
         except AssertionError as e:
             compliance_ok, compliance_exc = False, e
-        integrity_ok, integrity_exc = True, None
-        try:
-            integrity_ok = integrity.evaluate(integrity_intent, fail_on_error)
-        except AssertionError as e:
-            integrity_ok, integrity_exc = False, e
+        integrity_ok, integrity_excs = True, []
+        for integrity_intent in integrity_intents:
+            try:
+                if not integrity.evaluate(integrity_intent, fail_on_error):
+                    integrity_ok = False
+            except AssertionError as e:
+                integrity_ok = False
+                integrity_excs.append(e)
         validate_ok, validate_exc = True, None
         try:
             validate_ok = self._dispatch_validate(fail_on_error)
@@ -806,7 +814,7 @@ class Application(ABC):
             validate_ok, validate_exc = False, e
         failures = [
             exc
-            for exc in (compliance_exc, integrity_exc, validate_exc)
+            for exc in (compliance_exc, *integrity_excs, validate_exc)
             if exc is not None
         ]
         if fail_on_error and len(failures) == 1:
