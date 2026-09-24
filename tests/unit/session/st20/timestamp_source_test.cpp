@@ -24,10 +24,13 @@ TEST_F(St20RxTimestampSourceTest, ReceiveTimestampSourcedFromHwOffload) {
   constexpr uint64_t kHwRawNs = 987654321000ull;
   ut20_ctx_enable_hw_timestamp(ctx_, MTL_SESSION_PORT_P);
 
-  feed_full(1000, MTL_SESSION_PORT_P);
+  for (int i = 0; i < pkts_per_frame(); i++) {
+    ut20_feed_frame_pkt_stale_hw_ts(ctx_, i, 1000, MTL_SESSION_PORT_P, kHwRawNs);
+  }
   uint64_t sw_only = ut20_last_timestamp_first_pkt(ctx_);
   ASSERT_EQ(frames_received(), 1);
-  EXPECT_NE(sw_only, kHwRawNs) << "sanity: SW ptp stub must not already equal kHwRawNs";
+  EXPECT_NE(sw_only, kHwRawNs)
+      << "an mbuf without the DPDK RX timestamp validity flag must use SW time";
 
   for (int i = 0; i < pkts_per_frame(); i++) {
     ut20_feed_frame_pkt_hw_ts(ctx_, i, 2000, MTL_SESSION_PORT_P, kHwRawNs);

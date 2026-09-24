@@ -78,6 +78,9 @@ int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
  * ut20_ctx_enable_hw_timestamp(). */
 int ut20_feed_frame_pkt_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                               enum mtl_session_port port, uint64_t hw_raw_ns);
+/* Same, but leaves the RX timestamp validity flag clear, as for a stale dynfield. */
+int ut20_feed_frame_pkt_stale_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                                    enum mtl_session_port port, uint64_t hw_raw_ns);
 
 /* Same as ut20_feed_frame_pkt() but with an explicit RTP sequence number,
  * for tests that need to drive seq independently of pkt_idx (e.g. wrap or
