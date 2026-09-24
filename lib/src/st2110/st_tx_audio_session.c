@@ -1296,6 +1296,8 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
         actual_per_sec);
     return 0;
   }
+  /* drain the profiling pkts, rl_first_pkt assumes an idle queue */
+  mt_sleep_ms(pad_pkts / (1 + rl->pads_per_st30_pkt) * MS_PER_S / actual_per_sec + 1);
   info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
        expect_per_sec, actual_per_sec,
        ((double)mt_get_tsc(impl) - train_start_tsc) / NS_PER_S);
