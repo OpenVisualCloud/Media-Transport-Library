@@ -45,6 +45,7 @@ convert2_formats = dict(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -102,6 +103,12 @@ def test_st20p_422p10le(
             "ffmpeg",
             marks=pytest.mark.skip(
                 reason="FFmpeg does not support RX-side pixel format conversion"
+            ),
+        ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer RX outputs only v210 and I422_10LE"
             ),
         ),
     ],
@@ -165,6 +172,12 @@ def test_st20p_convert_on_rx(
             "ffmpeg",
             marks=pytest.mark.skip(
                 reason="FFmpeg does not support TX/RX two-way format conversion"
+            ),
+        ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer carries only YUV_422_10bit, with no packing choice"
             ),
         ),
     ],

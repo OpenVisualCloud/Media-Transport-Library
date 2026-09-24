@@ -83,9 +83,8 @@ Cross-application coverage is one baseline case for each meaningful TX/RX
 application pair. Resolution, frame rate, and codec matrices remain in their
 own functional suites unless negotiation specifically depends on them.
 
-GStreamer currently owns both ends of one pipeline and cannot be paired with
-a foreign peer through the common adapter. Add those pairs when the adapter
-contract can execute them.
+Each application is paired with RxTxApp in both directions, and its adapter
+runs the pair. GStreamer puts RxTxApp in place of its own element on one end.
 
 ## Redundancy
 

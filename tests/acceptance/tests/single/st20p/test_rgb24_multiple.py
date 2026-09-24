@@ -32,6 +32,12 @@ RGB24_MULTI_CASES = [
                 reason="Multi-stream RGB24 requires FFmpeg TX plugin"
             ),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="Multi-stream RGB24 requires FFmpeg TX plugin"
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize(

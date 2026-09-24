@@ -12,6 +12,10 @@ from mtl_engine.media_files import yuv_files_422p10le
     [
         "rxtxapp",
         "ffmpeg",
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(reason="GStreamer does not support st22p pipeline"),
+        ),
     ],
 )
 @pytest.mark.parametrize(

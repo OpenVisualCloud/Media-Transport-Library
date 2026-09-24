@@ -12,7 +12,19 @@ MULTISESSION_MEDIA = [
 ]
 
 
-@pytest.mark.parametrize("application", ["ffmpeg", "rxtxapp"])
+@pytest.mark.parametrize(
+    "application",
+    [
+        "ffmpeg",
+        "rxtxapp",
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer runs one session per pipeline and takes no rfc4175"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize(
     "output_format",
     [

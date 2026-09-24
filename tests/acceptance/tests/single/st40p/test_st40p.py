@@ -138,6 +138,12 @@ def test_st40p_multicast_with_compliance(
                 reason="FFmpeg does not support st40p ancillary data pipeline"
             ),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer st40p plugin does not expose RTCP"
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize(

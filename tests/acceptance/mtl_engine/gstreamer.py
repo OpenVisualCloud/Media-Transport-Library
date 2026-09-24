@@ -7,7 +7,8 @@ The :class:`mtl_engine.ffmpeg.FFmpeg` peer for the MTL GStreamer plugin
 for st20p, st30p or st40p: ``create_command()`` builds the RX, ``execute_test()``
 the TX, and runs them on one host the way FFmpeg does -- RX first, TX
 ``sleep_interval`` later, both stopped after ``test_time`` of wall clock -- then
-compliance, integrity and ``validate_results()`` give the verdict.
+compliance, integrity and ``validate_results()`` give the verdict. In a cross-app
+test, RxTxApp runs in the place of the pipeline on its end.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from common.integrity.video_integrity import calculate_yuv_frame_size
 from mtl_engine import ip_pools
 from mtl_engine.application_base import Application, ProcSpec
 from mtl_engine.config.mappings import APP_NAME_MAP
-from mtl_engine.const import GSTREAMER_LIB_PATH
+from mtl_engine.const import GSTREAMER_LIB_PATH, RXTXAPP_PATH
 from mtl_engine.integrity import (
     get_channel_number,
     get_frame_sample_number,
@@ -31,6 +32,7 @@ from mtl_engine.integrity import (
 from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.media_files import pformat_to_exact_fps
 from mtl_engine.pcap_compliance import NO_COMPLIANCE
+from mtl_engine.rxtxapp import RxTxApp, check_rx_output
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,9 @@ _SAMPLING_HZ = {"48kHz": 48000, "96kHz": 96000}
 # puts the same packets on the wire; the plugin defaults to DID 0.
 _ST40P_DID = 0x43
 _ST40P_SDID = 0x02
+
+# The cross-app pairs (tx_application, rx_application), by the end RxTxApp takes.
+_RXTXAPP_END = {("rxtxapp", "gstreamer"): "tx", ("gstreamer", "rxtxapp"): "rx"}
 
 # MTL's periodic RX stats, e.g. "RX_VIDEO_SESSION(0,0:st20src): fps 25.000227
 # frames 250 pkts 1028753", over the interval since the last line.
@@ -66,6 +71,8 @@ class GStreamer(Application):
         super().__init__(app_path, config_file_path)
         self._tx_stages: list[str] = []
         self._return_codes: list[tuple[str, int | None]] = []
+        self._rxtxapp: RxTxApp | None = None
+        self._rxtxapp_end: str | None = None
 
     def get_app_name(self) -> str:
         return "GStreamer"
@@ -81,7 +88,8 @@ class GStreamer(Application):
 
     # ----------------------------------------------------- command build
     def _create_command_and_config(self) -> tuple:
-        """Return ``(rx_cmd, None)``; ``execute_test`` builds the TX pipeline."""
+        """Return ``(rx_cmd, None)``; ``execute_test`` builds the TX pipeline and
+        swaps in the RxTxApp end, if any."""
         session_type = self.params["session_type"]
         builders = {
             "st20p": self._build_st20p,
@@ -93,9 +101,26 @@ class GStreamer(Application):
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list or len(nic_port_list) < 2:
             raise ValueError("nic_port_list needs a TX and an RX port")
+        pair = (self.params["tx_application"], self.params["rx_application"])
+        self._rxtxapp = None
+        self._rxtxapp_end = _RXTXAPP_END.get(pair)
+        if pair != (None, None) and not self._rxtxapp_end:
+            raise ValueError(
+                f"GStreamer adapter does not support {pair[0]} to {pair[1]}"
+            )
+        if self._rxtxapp_end:
+            # RxTxApp stands in for the element on its end: the same NIC port
+            # and stream, from the same test parameters.
+            params = {k: self.params[k] for k in self._user_provided_params}
+            params["direction"] = self._rxtxapp_end
+            params["nic_port_list"] = [
+                nic_port_list[0 if self._rxtxapp_end == "tx" else 1]
+            ]
+            self._rxtxapp = RxTxApp(RXTXAPP_PATH)
+            self._rxtxapp.create_command(**params)
         if not self.params.get("output_file"):
-            # st40p tests assert on the wire and pass no output_file, but the
-            # RX recording is what proves the frames arrived.
+            # st40p and cross-app tests assert on the wire and pass no
+            # output_file, but the RX recording is what proves the frames arrived.
             self.params["output_file"] = os.path.join(
                 os.path.dirname(self.params["input_file"]),
                 f"gst_{session_type}_rx.out",
@@ -244,13 +269,19 @@ class GStreamer(Application):
 
         self.params["test_time"] = test_time
         self._output_files = [self.params["output_file"]]
-        # Built here: looping the video takes the run length and the input's
-        # frame count, which only the host can tell.
-        tx_cmd = self._pipeline(
-            [self._looping_source(host, test_time), *self._tx_stages]
-        )
+        if self._rxtxapp:
+            self._rxtxapp.prepare_execution(build=build, host=host)
+        rx_cmd = self._rxtxapp.command if self._rxtxapp_end == "rx" else self.command
+        if self._rxtxapp_end == "tx":
+            tx_cmd = self._rxtxapp.command
+        else:
+            # Built here: looping the video takes the run length and the
+            # input's frame count, which only the host can tell.
+            tx_cmd = self._pipeline(
+                [self._looping_source(host, test_time), *self._tx_stages]
+            )
         specs = [
-            ProcSpec(cmd=self.command, host=host, label="RX", bounded=False),
+            ProcSpec(cmd=rx_cmd, host=host, label="RX", bounded=False),
             ProcSpec(cmd=tx_cmd, host=host, label="TX1", bounded=False),
         ]
         # Traffic flows only once TX is up, so the capture arms after the last start.
@@ -322,7 +353,25 @@ class GStreamer(Application):
         )
         return int(res.stdout.strip()) if res.return_code == 0 else 0
 
+    def _validate_rxtxapp_rx(self, fail_on_error: bool) -> bool:
+        """RxTxApp received: one OK result per session means each session's
+        rate held within its 5 % (ST_APP_EXPECT_NEAR)."""
+        errors = [f"{label} exited {rc}" for label, rc in self._return_codes if rc != 0]
+        lines = (self.last_output or "").splitlines()
+        if not check_rx_output(
+            self._rxtxapp.config, lines, self.params["session_type"], False
+        ):
+            errors.append("RxTxApp RX reported no OK result")
+        if errors:
+            self._fail_validation(
+                f"GStreamer test failed: {'; '.join(errors)}", fail_on_error
+            )
+            return False
+        return True
+
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
+        if self._rxtxapp_end == "rx":
+            return self._validate_rxtxapp_rx(fail_on_error)
         host = self._host
         out_file = self.params["output_file"]
         try:

@@ -15,22 +15,27 @@ INTEGRITY_MEDIA = [
     ("Penguin_1080p_422p10le", "yuv_files_422p10le", "Penguin_1080p"),
 ]
 
+# The apps that cannot read an rfc4175 file, by the name their skip reason uses.
+NO_RFC_INPUT = {"ffmpeg": "FFmpeg", "gstreamer": "GStreamer"}
+
 
 def integrity_params():
     params = []
 
-    for application in ["ffmpeg", "rxtxapp"]:
+    for application in ["ffmpeg", "rxtxapp", "gstreamer"]:
         for media_case, media_dict, media_key in INTEGRITY_MEDIA:
             media_file_info = getattr(mf, media_dict)[media_key]
 
             marks = []
 
             if (
-                application == "ffmpeg"
+                application in NO_RFC_INPUT
                 and "rfc" in media_file_info["file_format"].lower()
             ):
                 marks.append(
-                    pytest.mark.skip(reason="FFmpeg does not support RFC media format")
+                    pytest.mark.skip(
+                        reason=f"{NO_RFC_INPUT[application]} does not support RFC media format"
+                    )
                 )
 
             params.append(
@@ -39,7 +44,9 @@ def integrity_params():
                     media_case,
                     media_dict,
                     media_key,
-                    id=f"{application}-{media_case}",
+                    # pytest_mfd_logging's spelling, which the combined
+                    # report reads the app from.
+                    id=f"|application = {application}|-{media_case}",
                     marks=marks,
                 )
             )
