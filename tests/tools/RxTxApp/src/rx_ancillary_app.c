@@ -18,7 +18,9 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-      err("%s(%d), anc RTP checkParityBits error\n", __func__, s->idx);
+      if (!s->stat_pkt_invalid)
+        err("%s(%d), anc RTP checkParityBits error\n", __func__, s->idx);
+      s->stat_pkt_invalid++;
       return;
     }
     int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
@@ -29,7 +31,9 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
     if (checksum !=
         st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
-      err("%s(%d), anc frame checksum error\n", __func__, s->idx);
+      if (!s->stat_pkt_invalid)
+        err("%s(%d), anc frame checksum error\n", __func__, s->idx);
+      s->stat_pkt_invalid++;
       return;
     }
     // get payload
@@ -189,11 +193,18 @@ static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
   double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
-  if (!s->stat_frame_total_received) return -EINVAL;
+  if (!s->stat_frame_total_received) {
+    /* A fully corrupt stream never reaches the result line below, so the reject
+     * count has to be reported here or it is lost. */
+    if (s->stat_pkt_invalid)
+      err("%s(%d), no valid packet, %d rejected on parity / checksum error\n", __func__,
+          idx, s->stat_pkt_invalid);
+    return -EINVAL;
+  }
 
-  notce("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-        app_rx_anc_fps_check(framerate) ? "OK" : "FAILED", framerate,
-        s->stat_frame_total_received);
+  notce("%s(%d), %s, fps %f, %d frame received, %d invalid pkt\n", __func__, idx,
+        (app_rx_anc_fps_check(framerate) && !s->stat_pkt_invalid) ? "OK" : "FAILED",
+        framerate, s->stat_frame_total_received, s->stat_pkt_invalid);
   return 0;
 }
 

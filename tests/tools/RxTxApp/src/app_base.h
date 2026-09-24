@@ -377,6 +377,7 @@ struct st_app_rx_anc_session {
 
   /* stat */
   int stat_frame_total_received;
+  int stat_pkt_invalid; /* RTP packets rejected on parity / checksum error */
   uint64_t stat_frame_first_rx_time;
 };
 
