@@ -15,6 +15,7 @@ pytestmark = pytest.mark.verified
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(

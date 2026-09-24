@@ -76,6 +76,9 @@ def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
         case "Y210" | "y210le":
             # Packed 4:2:2 10-bit, 2 samples per pixel × 2 bytes per sample
             pixel_size = 4
+        case "v210":
+            # Packed 4:2:2 10-bit: each row is padded to 48-pixel blocks of 128 bytes
+            return (width + 47) // 48 * 128 * height
         case "RGB8":
             pixel_size = 3
         case _:

@@ -24,6 +24,7 @@ _SMOKE_CASE = ("PCM16", "M")
                 reason="FFmpeg does not support st30p audio pipeline"
             ),
         ),
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -88,6 +89,7 @@ def test_st30p_integrity(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -124,6 +126,9 @@ def test_st30p_channel(
 
     if media_file_info["format"] in ["PCM16", "PCM24"] and audio_channel == "222":
         pytest.skip("Unsupported parameter combination")
+    # The mtl_st30p_{tx,rx} caps are channels = [1, 8].
+    if application == "gstreamer" and audio_channel == "222":
+        pytest.skip("GStreamer st30p plugin supports up to 8 channels")
 
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -164,6 +169,7 @@ def test_st30p_channel(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -229,6 +235,7 @@ def test_st30p_format(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -300,6 +307,7 @@ def test_st30p_ptime(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -367,6 +375,7 @@ def test_st30p_sampling(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(

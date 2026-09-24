@@ -4,32 +4,40 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import (
+    yuv_files_422p10le,
+    yuv_files_422p10le_4k,
+    yuv_files_422rfc10,
+)
 
 pytestmark = pytest.mark.verified
+
+_FFMPEG_SKIP = pytest.mark.skip(
+    reason="FFmpeg does not support rfc format, source files need to be changed"
+)
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
+    ("application", "media_file"),
     [
-        "rxtxapp",
         pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support rfc format, source files need to be changed"
-            ),
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        pytest.param(v, marks=pytest.mark.smoke) if k == "Penguin_1080p" else v
+            app,
+            v,
+            marks=([pytest.mark.smoke] if k == "Penguin_1080p" else [])
+            + ([_FFMPEG_SKIP] if app == "ffmpeg" else []),
+            id=f"{k}-{app}",
+        )
         for k, v in yuv_files_422rfc10.items()
+        for app in ("rxtxapp", "ffmpeg")
+    ]
+    # rfc4175 is not a mtl_st20p_tx input format, so GStreamer sends the
+    # planar 720p/1080p/4K Penguin clips instead.
+    + [
+        pytest.param("gstreamer", v, id=f"{k}-gstreamer")
+        for k, v in {**yuv_files_422p10le, **yuv_files_422p10le_4k}.items()
     ],
     indirect=["media_file"],
-    ids=list(yuv_files_422rfc10.keys()),
 )
 def test_st20p_resolutions(
     application,
