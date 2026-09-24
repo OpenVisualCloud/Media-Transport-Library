@@ -543,6 +543,16 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     bytes_to_write = map_info.size;
     /* This could be done with GstAdapter */
     while (bytes_to_write > 0) {
+      /* A buffer can hold seconds of audio; stop at the next frame once flushing. */
+      GST_OBJECT_LOCK(pad);
+      gboolean flushing = GST_PAD_IS_FLUSHING(pad);
+      GST_OBJECT_UNLOCK(pad);
+      if (flushing) {
+        gst_memory_unmap(gst_buffer_memory, &map_info);
+        gst_buffer_unref(buf);
+        return GST_FLOW_FLUSHING;
+      }
+
       frame = mtl_st30p_fetch_frame(sink);
       if (!frame) {
         GST_ERROR("Failed to get frame");
