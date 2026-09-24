@@ -15,6 +15,7 @@ from .application_base import MTL_ENCODER_PLUGIN_MAP, Application, mtl_plugin_ch
 from .config.mappings import APP_NAME_MAP, RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
 from .execute import log_fail
+from .integrity_session import IntegrityIntent
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +562,8 @@ class RxTxApp(Application):
         per-session dict so callers do not have to repeat them.
         """
         sessions = kwargs.pop("sessions", None)
+        # Every session's own params, for _rx_recordings(); empty when single.
+        self._session_params = []
         if sessions is None:
             return super().create_command(**kwargs)
 
@@ -587,6 +590,7 @@ class RxTxApp(Application):
         # so per-type defaults (FPS, payload size, etc.) are applied; we
         # then move the populated arrays into the base config.
         saved_params = dict(self.params)
+        self._session_params = [saved_params]
         try:
             for spec in sessions[1:]:
                 if not spec.get("session_type"):
@@ -597,6 +601,7 @@ class RxTxApp(Application):
                 stype = merged["session_type"]
                 self.params = UNIVERSAL_PARAMS.copy()
                 self.set_params(**merged)
+                self._session_params.append(self.params)
                 tmp_config = self._create_rxtxapp_config_dict()
                 _extend("tx_sessions", tmp_config, stype)
                 _extend("rx_sessions", tmp_config, stype)
@@ -1290,6 +1295,39 @@ class RxTxApp(Application):
         if self.params.get("session_type") != "st20p":
             return 0
         return int(self.params.get("rx_max_file_size") or 0)
+
+    def _rx_recordings(self):
+        """Yield (session params, file) for every st20p and st30p RX recording.
+
+        RxTxApp records replica k of a replicated receiver to ``<url>_<k>``
+        (``tests/tools/RxTxApp/src/parse_json.c``); a single one keeps ``<url>``.
+        No other session type is byte-checked: st22p is lossy, and the rest
+        have no checker.
+        """
+        for params in self._session_params or [self.params]:
+            if params["session_type"] not in ("st20p", "st30p"):
+                continue
+            url, replicas = params.get("output_file"), params.get("replicas", 1)
+            if not url or replicas <= 1:
+                yield params, url
+            else:
+                yield from ((params, f"{url}_{k}") for k in range(replicas))
+
+    def rx_output_files(self) -> list[str]:
+        """Every file this run's receivers record to, for the test to clean up."""
+        return [url for _, url in self._rx_recordings() if url]
+
+    def integrity_intents(self, test_repo_path: str, host) -> list[IntegrityIntent]:
+        """One intent per RX recording, built with its own session's params in
+        place so it names that recording's files."""
+        primary, intents = self.params, []
+        try:
+            for params, url in self._rx_recordings():
+                self.params = {**params, "output_file": url}
+                intents.append(self.integrity_intent(test_repo_path, host))
+        finally:
+            self.params = primary
+        return intents
 
     def _resolve_capture_dst_ips(self) -> tuple[str, ...]:
         """Return the destination IPs for netsniff capture, possibly empty.
