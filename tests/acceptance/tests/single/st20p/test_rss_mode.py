@@ -19,7 +19,8 @@ RSS_CASES = [
     pytest.param("l3", 1, yuv_files["i1080p59"], id="l3-x1-i1080p59"),
     pytest.param("none", 1, yuv_files["i1080p59"], id="none-x1-i1080p59"),
     pytest.param("l3_l4", 4, yuv_files["i2160p119"], id="l3_l4-x4-i2160p119"),
-    pytest.param("l3", 4, yuv_files["i2160p119"], id="l3-x4-i2160p119"),
+    # l3 hashes every replica to one RX queue, so their sum must fit one dispatcher
+    pytest.param("l3", 4, yuv_files["i1080p59"], id="l3-x4-i1080p59"),
 ]
 
 
