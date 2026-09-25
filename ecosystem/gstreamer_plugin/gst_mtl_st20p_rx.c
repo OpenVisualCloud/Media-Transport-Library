@@ -529,15 +529,12 @@ static GstFlowReturn gst_mtl_st20p_rx_chain(GstBaseSrc* basesrc, guint64 offset,
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
   gint ret = GST_FLOW_OK;
 
-  GST_OBJECT_LOCK(src);
-
   if (src->zero_copy) {
     ret = gst_mtl_st20p_rx_get_external_frame(src, buffer);
   } else {
     ret = gst_mtl_st20p_rx_get_internal_frame(src, buffer);
   }
 
-  GST_OBJECT_UNLOCK(src);
   return ret;
 }
 
