@@ -192,6 +192,8 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->rx_queues = &ctx->rx_queue;
   inf->tx_queues = &ctx->tx_queue;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  ctx->impl.inf[MTL_PORT_R].parent = &ctx->impl;
+  ctx->impl.inf[MTL_PORT_R].port = MTL_PORT_R;
   ut_active_ctx = ctx;
   return ctx;
 }
@@ -228,6 +230,22 @@ void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled) {
     ctx->impl.user_para.flags &= ~MTL_FLAG_PTP_ENABLE;
 }
 
+void ut_dev_set_tx_pacing_way(ut_dev_ctx* ctx, enum st21_tx_pacing_way way) {
+  for (int i = 0; i < MTL_PORT_MAX; i++) ctx->impl.inf[i].tx_pacing_way = way;
+}
+
+void ut_dev_enable_launch_time(ut_dev_ctx* ctx, enum mtl_port port) {
+  ctx->impl.inf[port].feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+}
+
+void ut_dev_set_tx_queues_cnt(ut_dev_ctx* ctx, enum mtl_port port, uint16_t cnt) {
+  ctx->impl.user_para.tx_queues_cnt[port] = cnt;
+}
+
+void ut_dev_set_tx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt) {
+  ctx->impl.user_para.tx_sessions_cnt_max = cnt;
+}
+
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
                      uint32_t rl_burst_size) {
   struct mtl_init_params* p = &ctx->impl.user_para;
@@ -254,6 +272,10 @@ int ut_dev_create_ports(ut_dev_ctx* ctx) {
   return mt_dev_create(&ctx->impl);
 }
 
+int ut_dev_init_pacing(ut_dev_ctx* ctx, enum mtl_port port) {
+  return dev_if_init_pacing(&ctx->impl.inf[port]);
+}
+
 int ut_dev_event_count(const ut_dev_ctx* ctx) {
   return ctx->event_count;
 }
@@ -268,6 +290,10 @@ bool ut_dev_port_started(const ut_dev_ctx* ctx) {
 
 bool ut_dev_timesync_feature(const ut_dev_ctx* ctx) {
   return ctx->impl.inf[MTL_PORT_P].feature & MT_IF_FEATURE_TIMESYNC;
+}
+
+enum st21_tx_pacing_way ut_dev_tx_pacing_way(const ut_dev_ctx* ctx, enum mtl_port port) {
+  return ctx->impl.inf[port].tx_pacing_way;
 }
 
 int ut_dev_eal_max_args(void) {

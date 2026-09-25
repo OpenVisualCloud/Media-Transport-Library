@@ -1440,6 +1440,10 @@ static int dev_if_init_tx_queues(struct mt_interface* inf) {
   return 0;
 }
 
+static bool dev_if_tx_requested(const struct mtl_init_params* p, enum mtl_port port) {
+  return p->tx_queues_cnt[port] || p->tx_sessions_cnt_max;
+}
+
 /* detect pacing */
 static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
@@ -1506,6 +1510,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       }
     }
   } else if (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+    if (!dev_if_tx_requested(mt_get_user_params(inf->parent), port)) {
+      info("%s(%d), use tsc as no tx queue requested\n", __func__, port);
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      return 0;
+    }
     if (!(inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
       err("%s(%d), this port not support tsn launch time\n", __func__, port);
       return -EINVAL;
@@ -2377,7 +2386,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     /* Detect LaunchTime capability */
     if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP &&
-        ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+        ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way && dev_if_tx_requested(p, i)) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
       ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
