@@ -161,29 +161,60 @@ rt_exit:
   return ret;
 }
 
+/* Count an invalid rtcp packet per reason. The sender controls the rate, so dbg
+ * logs only 1 in MT_RTCP_DROP_SAMPLE packets of each reason, with its first
+ * bytes. A shared count would log only some reasons of a repeated batch. */
+static void rtcp_tx_drop_invalid(struct mt_rtcp_tx* tx, enum mt_rtcp_drop_reason reason,
+                                 const struct mt_rtcp_hdr* rtcp, size_t len) {
+  static const char* const names[MT_RTCP_DROP_MAX] = {"short", "flags", "name", "len"};
+  MTL_MAY_UNUSED(names);
+
+  tx->stat_nack_drop_invalid++;
+  tx->stat_nack_drop_reason[reason]++;
+  uint32_t seen = ++tx->nack_drop_seen[reason];
+  if (seen % MT_RTCP_DROP_SAMPLE != 1) return;
+  tx->nack_drop_sampled = true;
+
+  const uint8_t* bytes = (const uint8_t*)rtcp;
+  char hex[16 * 3 + 1] = "";
+  size_t n = RTE_MIN(len, (size_t)16);
+  for (size_t i = 0; i < n; i++) snprintf(hex + i * 3, 4, "%02x ", bytes[i]);
+  if (len >= sizeof(*rtcp)) {
+    dbg("%s(%s), invalid #%u reason %s: recv %zu flags 0x%02x ptype %u len %u (%zu "
+        "bytes) name %.4s, bytes %s\n",
+        __func__, tx->name, seen, names[reason], len, rtcp->flags, rtcp->ptype,
+        ntohs(rtcp->len), ((size_t)ntohs(rtcp->len) + 1) * 4, (const char*)rtcp->name,
+        hex);
+  } else {
+    dbg("%s(%s), invalid #%u reason %s: recv %zu, bytes %s\n", __func__, tx->name, seen,
+        names[reason], len, hex);
+  }
+}
+
 int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp,
                                  size_t len) {
   if (!tx->active) return 0;
+  tx->nack_drop_sampled = false;
   /* The fixed header must be fully received before any of its fields are read:
    * a runt shorter than the header is neither a valid rtcp packet nor safe to
    * inspect. */
   if (len < sizeof(struct mt_rtcp_hdr)) {
     dbg("%s(%s), rtcp too short: %zu\n", __func__, tx->name, len);
-    tx->stat_nack_drop_invalid++;
+    rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_SHORT, rtcp, len);
     return -EIO;
   }
   /* a remote peer controls the rate of invalid packets, so count them and log
    * at dbg level only. rtcp_tx_stat() reports the count. */
   if (rtcp->flags != 0x80) {
     dbg("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
-    tx->stat_nack_drop_invalid++;
+    rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_FLAGS, rtcp, len);
     return -EIO;
   }
 
   if (rtcp->ptype == MT_RTCP_PTYPE_NACK) { /* nack packet */
     if (memcmp(rtcp->name, "IMTL", 4) != 0) {
       dbg("%s(%s), not IMTL RTCP packet\n", __func__, tx->name);
-      tx->stat_nack_drop_invalid++;
+      rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_NAME, rtcp, len);
       return -EIO;
     }
     tx->stat_nack_received++;
@@ -196,7 +227,7 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     if (rtcp_bytes < sizeof(struct mt_rtcp_hdr) || rtcp_bytes > len) {
       dbg("%s(%s), invalid nack: len %u recv %zu\n", __func__, tx->name, ntohs(rtcp->len),
           len);
-      tx->stat_nack_drop_invalid++;
+      rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_LEN, rtcp, len);
       return -EIO;
     }
     uint16_t num_fcis =
@@ -395,6 +426,12 @@ static int rtcp_tx_stat(void* priv) {
     notice("%s(%s), nack drop invalid %u\n", __func__, tx->name,
            tx->stat_nack_drop_invalid);
     tx->stat_nack_drop_invalid = 0;
+    dbg("%s(%s), nack drop invalid by reason: short %u flags %u name %u len %u\n",
+        __func__, tx->name, tx->stat_nack_drop_reason[MT_RTCP_DROP_SHORT],
+        tx->stat_nack_drop_reason[MT_RTCP_DROP_FLAGS],
+        tx->stat_nack_drop_reason[MT_RTCP_DROP_NAME],
+        tx->stat_nack_drop_reason[MT_RTCP_DROP_LEN]);
+    memset(tx->stat_nack_drop_reason, 0, sizeof(tx->stat_nack_drop_reason));
   }
   if (tx->stat_rtp_retransmit_fail) {
     notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u burst %u\n",
