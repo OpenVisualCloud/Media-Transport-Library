@@ -69,24 +69,21 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
                                           uint16_t bulk) {
   int ret = 0;
   uint16_t send = 0;
-  /* bulk = follow + 1 is attacker-controlled; the ring can hold at most its
-   * capacity, so a larger request is unsatisfiable. Clamp before sizing the
-   * on-stack arrays so a crafted follow cannot exhaust the tasklet stack. */
-  int ring_size = mt_u64_fifo_size(tx->mbuf_ring);
-  if (bulk > ring_size) bulk = ring_size;
+  /* bulk = follow + 1 is attacker-controlled: work in fixed chunks so the stack
+   * does not grow with it. The parser keeps bulk inside the ring count. */
+  struct rte_mbuf *mbufs[MT_RTCP_RETRANSMIT_BULK], *copy_mbufs[MT_RTCP_RETRANSMIT_BULK];
   if (bulk == 0) {
     tx->stat_rtp_retransmit_fail++;
     return -EIO;
   }
-  uint16_t nb_rt = bulk;
-  struct rte_mbuf *mbufs[bulk], *copy_mbufs[bulk];
   uint16_t ring_head_seq = 0;
   uint32_t ts = 0;
   MTL_MAY_UNUSED(ts);
 
   struct rte_mbuf* head_mbuf = NULL;
   if (mt_u64_fifo_read_front(tx->mbuf_ring, (uint64_t*)&head_mbuf) < 0 || !head_mbuf) {
-    err("%s(%s), empty ring\n", __func__, tx->name);
+    /* a remote peer controls how often this runs, so do not log at err level */
+    dbg("%s(%s), empty ring\n", __func__, tx->name);
     ret = -EIO;
     goto rt_exit;
   }
@@ -106,36 +103,52 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   }
 
   uint16_t diff = seq - ring_head_seq;
-  if (mt_u64_fifo_read_any_bulk(tx->mbuf_ring, (uint64_t*)mbufs, bulk, diff) < 0) {
-    dbg("%s(%s), failed to read retransmit mbufs from ring\n", __func__, tx->name);
+  /* the whole range must be in the ring, a longer request is refused */
+  if ((uint32_t)diff + bulk > (uint32_t)mt_u64_fifo_count(tx->mbuf_ring)) {
+    dbg("%s(%s), seq %u bulk %u not in ring\n", __func__, tx->name, seq, bulk);
     tx->stat_rtp_retransmit_fail_read += bulk;
     ret = -EIO;
     goto rt_exit;
   }
 
-  /* deep copy the mbuf then send */
-  for (int i = 0; i < bulk; i++) {
-    struct rte_mbuf* copied = rte_pktmbuf_copy(mbufs[i], tx->mbuf_pool, 0, UINT32_MAX);
-    if (!copied) {
-      dbg("%s(%s), failed to copy mbuf\n", __func__, tx->name);
-      tx->stat_rtp_retransmit_fail_nobuf += bulk - i;
-      nb_rt = i;
+  for (uint16_t done = 0; done < bulk;) {
+    uint16_t nb = RTE_MIN(bulk - done, MT_RTCP_RETRANSMIT_BULK);
+    uint16_t nb_rt = nb;
+    if (mt_u64_fifo_read_any_bulk(tx->mbuf_ring, (uint64_t*)mbufs, nb, diff + done) < 0) {
+      dbg("%s(%s), failed to read retransmit mbufs from ring\n", __func__, tx->name);
+      tx->stat_rtp_retransmit_fail_read += bulk - done;
       break;
     }
-    copy_mbufs[i] = copied;
-    if (tx->payload_format == MT_RTP_PAYLOAD_FORMAT_RFC4175) {
-      /* set the retransmit bit */
-      struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
-          copied, struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
-      uint16_t line1_length = ntohs(rtp->row_length);
-      rtp->row_length = htons(line1_length | ST20_RETRANSMIT);
+
+    /* deep copy the mbuf then send */
+    for (uint16_t i = 0; i < nb; i++) {
+      struct rte_mbuf* copied = rte_pktmbuf_copy(mbufs[i], tx->mbuf_pool, 0, UINT32_MAX);
+      if (!copied) {
+        dbg("%s(%s), failed to copy mbuf\n", __func__, tx->name);
+        tx->stat_rtp_retransmit_fail_nobuf += bulk - done - i;
+        nb_rt = i;
+        break;
+      }
+      copy_mbufs[i] = copied;
+      if (tx->payload_format == MT_RTP_PAYLOAD_FORMAT_RFC4175) {
+        /* set the retransmit bit */
+        struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+            copied, struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
+        uint16_t line1_length = ntohs(rtp->row_length);
+        rtp->row_length = htons(line1_length | ST20_RETRANSMIT);
+      }
     }
-  }
-  send = mt_txq_burst(tx->mbuf_queue, copy_mbufs, nb_rt);
-  if (send < nb_rt) {
-    uint16_t burst_fail = nb_rt - send;
-    rte_pktmbuf_free_bulk(&copy_mbufs[send], burst_fail);
-    tx->stat_rtp_retransmit_fail_burst += burst_fail;
+    uint16_t sent = mt_txq_burst(tx->mbuf_queue, copy_mbufs, nb_rt);
+    send += sent;
+    if (sent < nb_rt) {
+      rte_pktmbuf_free_bulk(&copy_mbufs[sent], nb_rt - sent);
+      tx->stat_rtp_retransmit_fail_burst += nb_rt - sent;
+      /* the queue is full, do not try the rest of the range */
+      if (nb_rt == nb) tx->stat_rtp_retransmit_fail_burst += bulk - done - nb;
+      break;
+    }
+    if (nb_rt < nb) break; /* no mbuf for the copy */
+    done += nb;
   }
   ret = send;
 
@@ -156,16 +169,21 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
    * inspect. */
   if (len < sizeof(struct mt_rtcp_hdr)) {
     dbg("%s(%s), rtcp too short: %zu\n", __func__, tx->name, len);
+    tx->stat_nack_drop_invalid++;
     return -EIO;
   }
+  /* a remote peer controls the rate of invalid packets, so count them and log
+   * at dbg level only. rtcp_tx_stat() reports the count. */
   if (rtcp->flags != 0x80) {
-    err("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
+    dbg("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
+    tx->stat_nack_drop_invalid++;
     return -EIO;
   }
 
   if (rtcp->ptype == MT_RTCP_PTYPE_NACK) { /* nack packet */
     if (memcmp(rtcp->name, "IMTL", 4) != 0) {
-      err("%s(%s), not IMTL RTCP packet\n", __func__, tx->name);
+      dbg("%s(%s), not IMTL RTCP packet\n", __func__, tx->name);
+      tx->stat_nack_drop_invalid++;
       return -EIO;
     }
     tx->stat_nack_received++;
@@ -178,23 +196,34 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     if (rtcp_bytes < sizeof(struct mt_rtcp_hdr) || rtcp_bytes > len) {
       dbg("%s(%s), invalid nack: len %u recv %zu\n", __func__, tx->name, ntohs(rtcp->len),
           len);
+      tx->stat_nack_drop_invalid++;
       return -EIO;
     }
     uint16_t num_fcis =
         (rtcp_bytes - sizeof(struct mt_rtcp_hdr)) / sizeof(struct mt_rtcp_fci);
     if (num_fcis > MT_RTCP_MAX_FCIS) num_fcis = MT_RTCP_MAX_FCIS;
+    /* one nack retransmits at most the ring once, repeated fcis get nothing */
+    uint32_t budget = mt_u64_fifo_count(tx->mbuf_ring);
     struct mt_rtcp_fci* fci = rtcp->fci;
-    for (uint16_t i = 0; i < num_fcis; i++) {
+    for (uint16_t i = 0; i < num_fcis; i++, fci++) {
       uint16_t start = ntohs(fci->start);
       uint16_t follow = ntohs(fci->follow);
+      /* uint32_t: follow 0xFFFF asks for 65536 packets, it must not wrap to 0 */
+      uint32_t bulk = (uint32_t)follow + 1;
       dbg("%s(%s), nack %u,%u\n", __func__, tx->name, start, follow);
 
-      if (rtcp_tx_retransmit_rtp_packets(tx, start, follow + 1) < 0) {
+      if (bulk > budget) {
+        dbg("%s(%s), nack %u,%u over budget %u\n", __func__, tx->name, start, follow,
+            budget);
+        tx->stat_rtp_retransmit_fail += bulk;
+        continue;
+      }
+      budget -= bulk;
+      /* bulk <= budget <= ring count, so it fits the uint16_t */
+      if (rtcp_tx_retransmit_rtp_packets(tx, start, (uint16_t)bulk) < 0) {
         dbg("%s(%s), failed to retransmit rtp packets %u,%u\n", __func__, tx->name, start,
             follow);
       }
-
-      fci++;
     }
   }
 
@@ -362,6 +391,11 @@ static int rtcp_tx_stat(void* priv) {
   tx->stat_rtp_sent = 0;
   tx->stat_nack_received = 0;
   tx->stat_rtp_retransmit_succ = 0;
+  if (tx->stat_nack_drop_invalid) {
+    notice("%s(%s), nack drop invalid %u\n", __func__, tx->name,
+           tx->stat_nack_drop_invalid);
+    tx->stat_nack_drop_invalid = 0;
+  }
   if (tx->stat_rtp_retransmit_fail) {
     notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u burst %u\n",
            __func__, tx->name, tx->stat_rtp_retransmit_fail,

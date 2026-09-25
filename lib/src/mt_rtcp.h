@@ -10,6 +10,8 @@
 #define MT_RTCP_PTYPE_NACK (204)
 #define MT_RTCP_MAX_NAME_LEN (24)
 #define MT_RTCP_MAX_FCIS (256)
+/* max mbufs of one retransmit chunk, sizes the on-stack arrays */
+#define MT_RTCP_RETRANSMIT_BULK (32)
 
 #define MT_RTCP_TX_RING_PREFIX "TRT_"
 
@@ -74,6 +76,7 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_retransmit_fail_obsolete;
   uint32_t stat_rtp_retransmit_fail_burst;
   uint32_t stat_nack_received;
+  uint32_t stat_nack_drop_invalid;
 };
 
 struct mt_rtcp_rx {

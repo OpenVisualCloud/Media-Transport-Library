@@ -23,7 +23,7 @@
 struct ut_rtcp_parse_result ut_rtcp_tx_feed_nack(int ring_size, uint16_t len_field,
                                                  uint32_t fci_count, uint16_t follow,
                                                  size_t recv_len) {
-  struct ut_rtcp_parse_result r = {0, 0, 0};
+  struct ut_rtcp_parse_result r = {0, 0, 0, 0};
 
   /* Large zero-filled buffer: an unpatched num_fcis underflow reads up to
    * 65535 * sizeof(fci) ~= 256KB past the header; keep that in-bounds and
@@ -67,6 +67,7 @@ struct ut_rtcp_parse_result ut_rtcp_tx_feed_nack(int ring_size, uint16_t len_fie
 
   r.retransmit_fail = tx.stat_rtp_retransmit_fail;
   r.nack_received = tx.stat_nack_received;
+  r.drop_invalid = tx.stat_nack_drop_invalid;
 
   free(buf);
   return r;
