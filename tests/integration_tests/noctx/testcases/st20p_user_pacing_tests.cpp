@@ -2,20 +2,54 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+/* Strict ST20p pacing: default, user (nearest epoch) and exact user pacing,
+ * measured with NIC RX timestamps against each planned packet-0 launch (-1/+10 us)
+ * and as elapsed time from frame 0 within +-10 us, plus exact RTP values.
+ * See README.md, "Timing model" and "Test catalogue".
+ *
+ * Common to every test here:
+ * Config:    initStrictPacingContext(); one session TX TEST_PORT_1 -> RX TEST_PORT_2,
+ *            1080p25 (T = 40 ms) YUV 4:2:2 10-bit BPM, 3 buffers (fillSt20Ops()).
+ * Expect:    every TX and RX frame also passes the St20pHandler thread checks.
+ * Skip/Fail: TX and RX on one physical port, no RX PHC or no NIC RX timestamp on
+ *            frame 0: SKIP, FAIL with NOCTX_REQUIRE_STRICT=1. A software RX time
+ *            after frame 0: FAIL (RxPhcClock).
+ */
+
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
 #include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
+static_assert(kNoCtxPacingEarlyMaxNs == 1 * NS_PER_US, "comments quote -1 us");
+static_assert(kNoCtxPacingLateMaxNs == 10 * NS_PER_US, "comments quote +10 us");
+static_assert(kNoCtxPacingElapsedErrorMaxNs == 10 * NS_PER_US, "comments quote +-10 us");
+static_assert(kSt20pUserPacingLeadNs == 800 * NS_PER_MS, "comments quote 800 ms");
+
+/* st20p_default_timestamps
+ * Config: default pacing, no TX flags.
+ * Plan:   none; each frame goes out on its epoch.
+ * Expect: on every frame, St20pDefaultPacingOracle
+ *         1. COMPLETE, BPM packet count            expectCompletePrimaryFrame()
+ *         2. timestamp == RTP header               expectRtpTimestamp()
+ *         3. frame 0 RTP on k*T + TR_offset - VRX*trs  expectRtpOnEpoch()
+ *         4. RTP step 3600                         rxTestFrameModifier()
+ *         5. packet 0 at frame 0 + n*T, -1/+10 us  expectPacingLaunch(),
+ *            kNoCtxPacingEarlyMaxNs, kNoCtxPacingLateMaxNs
+ *         6. elapsed n*T +-10 us                   expectPacingElapsed(),
+ *            kNoCtxPacingElapsedErrorMaxNs
+ *         after stop, in the test:
+ *         7. idx_rx > 0
+ */
 TEST_F(NoCtxTest, st20p_default_timestamps) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pDefaultTimestamp(handler); });
-  auto* frameTestStrategy = static_cast<St20pDefaultTimestamp*>(bundle.strategy);
+      [](St20pHandler* handler) { return new St20pDefaultPacingOracle(handler); });
+  auto* frameTestStrategy = static_cast<St20pDefaultPacingOracle*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -23,22 +57,40 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
   bundle.handler->stopSession();
 
   ASSERT_GT(frameTestStrategy->idx_rx, 0u)
-      << "st20p_user_pacing did not receive any frames";
+      << "st20p_default_timestamps did not receive any frames";
 }
 
+/* st20p_user_pacing
+ * Config: TX kTxFlags = USER_PACING.
+ * Plan:   t_user(n) = start + n*T, start = PTP now + 800 ms (kSt20pUserPacingLeadNs)
+ *         rounded up to T; each request is on an epoch.
+ * Expect: on every frame, St20pUserPacingOracle with expected TX = t_user(n) +
+ *         TR_offset - VRX*trs
+ *         1. COMPLETE, BPM packet count            expectCompletePrimaryFrame()
+ *         2. packet 0 at expected TX, -1/+10 us    verifyReceiveTiming(),
+ *            kNoCtxPacingEarlyMaxNs, kNoCtxPacingLateMaxNs
+ *         3. elapsed from frame 0 +-10 us          verifyReceiveTiming(),
+ *            kNoCtxPacingElapsedErrorMaxNs
+ *         4. timestamp == RTP header               expectRtpTimestamp()
+ *         5. RTP == tick90k(expected TX)           verifyMediaClock()
+ *         6. RTP step 3600                         verifyTimestampStep()
+ *         in the test, after mtl_start():
+ *         7. getPacingParameters() == 0; TR_offset, trs, VRX > 0
+ *         after stop:
+ *         8. idx_tx > 0, idx_rx > 0, idx_tx == idx_rx
+ */
 TEST_F(NoCtxTest, st20p_user_pacing) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
+  constexpr uint32_t kTxFlags = ST20P_TX_FLAG_USER_PACING;
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); },
-      [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-      });
+      [](St20pHandler* handler) { return new St20pUserPacingOracle(handler); },
+      [](St20pHandler* handler) { handler->sessionsOpsTx.flags |= kTxFlags; });
 
-  auto* frameTestStrategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
+  auto* frameTestStrategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -59,23 +111,34 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
       << "TX/RX frame count mismatch";
 }
 
+/* st20p_user_pacing_offset_jitter
+ * Config: TX kTxFlags = USER_PACING.
+ * Plan:   t_user(n) = start + (n + jitterMultipliers[n % 8])*T, start as in
+ *         st20p_user_pacing; every offset is inside +-T/2, so each request snaps
+ *         back to epoch start + n*T.
+ * Expect: on every frame, checks 1-6 of st20p_user_pacing, with expected TX = (epoch
+ *         nearest t_user(n)) + TR_offset - VRX*trs
+ *         in the test, after mtl_start():
+ *         7. getPacingParameters() == 0; TR_offset, trs, VRX > 0
+ *         after stop:
+ *         8. idx_tx >= 8, idx_rx >= 8, idx_tx == idx_rx
+ */
 TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
+  constexpr uint32_t kTxFlags = ST20P_TX_FLAG_USER_PACING;
   /* everything that does not cross the half-frame boundary should be snapped to correct
    * epochs */
   std::vector<double> jitterMultipliers = {0, 0.3, 0.1, -0.49, 0.37, -0.14, 0.0, 0.44};
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [jitterMultipliers](St20pHandler* handler) {
-        return new St20pUserTimestamp(handler, jitterMultipliers);
+        return new St20pUserPacingOracle(handler, jitterMultipliers);
       },
-      [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-      });
-  auto* strategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
+      [](St20pHandler* handler) { handler->sessionsOpsTx.flags |= kTxFlags; });
+  auto* strategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -93,8 +156,25 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
   ASSERT_EQ(strategy->idx_tx, strategy->idx_rx) << "TX/RX frame count mismatch";
 }
 
+/* st20p_exact_user_pacing
+ * Config: TX kTxFlags = USER_PACING | EXACT_USER_PACING.
+ * Plan:   t_user(n) = start + (n + exactOffsets[n % 8])*T, start as in
+ *         st20p_user_pacing; offsets -100 us .. +320 us, not snapped.
+ * Expect: on every frame, St20pExactUserPacingOracle with expected TX = t_user(n)
+ *         1-4 as in st20p_user_pacing (launch -1/+10 us, kNoCtxPacingEarlyMaxNs,
+ *            kNoCtxPacingLateMaxNs; elapsed +-10 us, kNoCtxPacingElapsedErrorMaxNs)
+ *         5. RTP == tick90k(t_user(n))             verifyMediaClock()
+ *         in the test, before mtl_start():
+ *         7. getPacingParameters() == 0 with TR_offset, trs, VRX > 0, or -ENOTSUP
+ *         after stop:
+ *         8. txFrames() and rxFrames() >= 8 and equal; idx_tx and idx_rx >= 8 and equal
+ */
 TEST_F(NoCtxTest, st20p_exact_user_pacing) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
+
+  constexpr uint32_t kTxFlags =
+      ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_EXACT_USER_PACING;
 
   /* Offset values must remain smaller than in standard user pacing, since exact mode
      lacks epoch snapping and only minimal timing slack exists between consecutive frames.
@@ -105,19 +185,15 @@ TEST_F(NoCtxTest, st20p_exact_user_pacing) {
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [exactOffsets](St20pHandler* handler) {
-        return new St20pExactUserPacing(handler, exactOffsets);
+        return new St20pExactUserPacingOracle(handler, exactOffsets);
       },
-      [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
-      });
+      [](St20pHandler* handler) { handler->sessionsOpsTx.flags |= kTxFlags; });
 
   auto* handler = bundle.handler;
-  auto* strategy = static_cast<St20pExactUserPacing*>(bundle.strategy);
+  auto* strategy = static_cast<St20pExactUserPacingOracle*>(bundle.strategy);
   ASSERT_NE(handler, nullptr);
   ASSERT_NE(strategy, nullptr);
 
-  StartFakePtpClock();
   handler->startSession();
 
   const int pacing_status = strategy->getPacingParameters();

@@ -16,9 +16,6 @@
 class St40pHandler : public PipelineHandlerBase<st40p_tx_ops, st40p_rx_ops,
                                                 st40p_tx_handle, st40p_rx_handle> {
  public:
-  St40pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
-               st40p_tx_ops ops_tx = {}, st40p_rx_ops ops_rx = {}, bool create = true,
-               bool start = true);
   explicit St40pHandler(st_tests_context* ctx, st40p_tx_ops ops_tx = {},
                         st40p_rx_ops ops_rx = {});
   ~St40pHandler() override;
@@ -30,7 +27,11 @@ class St40pHandler : public PipelineHandlerBase<st40p_tx_ops, st40p_rx_ops,
   void startSessionTx() override;
   void startSessionRx() override;
 
+  /* Every frame: one ANC of up to 255 bytes (populateFrame()); strategy; EXPECT
+   * put_frame >= 0. */
   void st40pTxDefaultFunction(std::atomic<bool>& stopFlag);
+  /* Every frame: ASSERT meta, meta_num > 0, udw_buff_addr, udw_buffer_fill > 0;
+   * strategy; EXPECT put_frame >= 0. */
   void st40pRxDefaultFunction(std::atomic<bool>& stopFlag);
 
  private:

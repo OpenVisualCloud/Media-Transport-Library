@@ -1240,6 +1240,7 @@ struct mtl_main_impl {
 
   /* rx timestamp register */
   int dynfield_offset;
+  uint64_t dyn_rx_timestamp_flag;
 
   struct mt_dma_mgr dma_mgr;
 

@@ -4,6 +4,16 @@
 
 #include "core/test_fixture.hpp"
 
+/* Common to every test here:
+ * Config:    mtl_init() with the SetUp() params (DEV_AUTO_START_STOP as on the command
+ *            line), FakePtpClockNow, INFO log and the TX/RX queue counts below on
+ *            both ports; no session.
+ * Expect:    1. mtl_init() returns a handle
+ *            2. mtl_start() == 0
+ *            3. mtl_stop() == 0
+ * Skip/Fail: none.
+ */
+
 /* Test MTL initialization with more than 16 queues (32 TX + 32 RX). */
 TEST_F(NoCtxTest, init_32_queues) {
   ctx->para.tx_queues_cnt[MTL_PORT_P] = 32;

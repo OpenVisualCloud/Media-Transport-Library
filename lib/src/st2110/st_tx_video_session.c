@@ -3530,13 +3530,81 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   s->stat_cpu_busy_score = s->cpu_busy_score;
 }
 
-static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
-                    struct st_tx_video_session_impl* s) {
-  int m_idx = mgr->idx, idx = s->idx;
+struct tv_stat_dump {
+  int m_idx;
+  int idx;
+  char ops_name[ST_MAX_NAME_LEN];
+  double time_sec;
+  struct st20_tx_user_stats us;
+  struct st20_tx_user_stats snap;
+  int trs_inflight_cnt;
+  int inflight_cnt;
+  double cpu_busy_score;
+  int pkts_burst;
+  int pkts_burst_dummy;
+  int build_ret_code;
+  int trs_ret_code[MTL_SESSION_PORT_MAX];
+  bool interlaced;
+  bool frames_busy;
+  int frames_in_trans;
+  uint16_t framebuff_cnt;
+  struct mt_stat_u64 stat_time;
+  uint32_t max_next_frame_us;
+  uint32_t max_notify_frame_us;
+};
+
+/* runs under the session spinlock the tasklets try_get, so copy and reset only, no log */
+static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
+                            struct st_tx_video_session_impl* s, struct tv_stat_dump* d) {
   uint64_t cur_time_ns = mt_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  struct st20_tx_user_stats* us = &s->port_user_stats;
-  struct st20_tx_user_stats* snap = &s->stat_snapshot;
+
+  d->m_idx = mgr->idx;
+  d->idx = s->idx;
+  memcpy(d->ops_name, s->ops_name, sizeof(d->ops_name));
+  d->time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
+  s->stat_last_time = cur_time_ns;
+
+  d->us = s->port_user_stats;
+  d->snap = s->stat_snapshot;
+  s->stat_snapshot = s->port_user_stats;
+
+  d->trs_inflight_cnt = s->trs_inflight_cnt[0];
+  d->inflight_cnt = s->inflight_cnt[0];
+  s->trs_inflight_cnt[0] = 0;
+  s->inflight_cnt[0] = 0;
+  d->cpu_busy_score = s->stat_cpu_busy_score;
+  d->pkts_burst = s->stat_pkts_burst;
+  s->stat_pkts_burst = 0;
+  d->pkts_burst_dummy = s->stat_pkts_burst_dummy;
+  if (d->us.stat_pkts_dummy != d->snap.stat_pkts_dummy) s->stat_pkts_burst_dummy = 0;
+  d->build_ret_code = s->stat_build_ret_code;
+  d->trs_ret_code[MTL_SESSION_PORT_P] = s->stat_trs_ret_code[MTL_SESSION_PORT_P];
+  d->trs_ret_code[MTL_SESSION_PORT_R] = s->stat_trs_ret_code[MTL_SESSION_PORT_R];
+  d->interlaced = s->ops.interlaced;
+
+  d->frames_in_trans = 0;
+  d->framebuff_cnt = s->ops.framebuff_cnt;
+  if (s->st20_frames) {
+    for (int i = 0; i < s->st20_frames_cnt; i++) {
+      if (rte_atomic32_read(&s->st20_frames[i].refcnt)) d->frames_in_trans++;
+    }
+  }
+  d->frames_busy = s->st20_frames &&
+                   ((d->frames_in_trans > 2) || (d->frames_in_trans >= d->framebuff_cnt));
+
+  d->stat_time = s->stat_time;
+  mt_stat_u64_init(&s->stat_time);
+  d->max_next_frame_us = s->stat_max_next_frame_us;
+  d->max_notify_frame_us = s->stat_max_notify_frame_us;
+  s->stat_max_next_frame_us = 0;
+  s->stat_max_notify_frame_us = 0;
+}
+
+static void tv_stat_log(const struct tv_stat_dump* dump) {
+  int m_idx = dump->m_idx, idx = dump->idx;
+  double time_sec = dump->time_sec;
+  const struct st20_tx_user_stats* us = &dump->us;
+  const struct st20_tx_user_stats* snap = &dump->snap;
   uint64_t d;
 
   uint64_t frames = us->common.port[MTL_SESSION_PORT_P].frames -
@@ -3554,24 +3622,19 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 
   notice("TX_VIDEO_SESSION(%d,%d:%s): fps %f frames %" PRIu64 " pkts %" PRIu64 ":%" PRIu64
          " inflight %d:%d\n",
-         m_idx, idx, s->ops_name, framerate, frames, build_p, build_r,
-         s->trs_inflight_cnt[0], s->inflight_cnt[0]);
+         m_idx, idx, dump->ops_name, framerate, frames, build_p, build_r,
+         dump->trs_inflight_cnt, dump->inflight_cnt);
   notice("TX_VIDEO_SESSION(%d,%d): throughput %f Mb/s: %f Mb/s, cpu busy %f\n", m_idx,
          idx, (double)bytes_p * 8 / time_sec / MTL_STAT_M_UNIT,
-         (double)bytes_r * 8 / time_sec / MTL_STAT_M_UNIT, s->stat_cpu_busy_score);
-  s->stat_last_time = cur_time_ns;
-  if (s->stat_pkts_burst > 0) {
-    notice("TX_VIDEO_SESSION(%d,%d): pkts burst %d\n", m_idx, idx, s->stat_pkts_burst);
-    s->stat_pkts_burst = 0;
+         (double)bytes_r * 8 / time_sec / MTL_STAT_M_UNIT, dump->cpu_busy_score);
+  if (dump->pkts_burst > 0) {
+    notice("TX_VIDEO_SESSION(%d,%d): pkts burst %d\n", m_idx, idx, dump->pkts_burst);
   }
-  s->trs_inflight_cnt[0] = 0;
-  s->inflight_cnt[0] = 0;
 
   d = us->stat_pkts_dummy - snap->stat_pkts_dummy;
   if (d) {
     dbg("TX_VIDEO_SESSION(%d,%d): dummy pkts %" PRIu64 ", burst %u\n", m_idx, idx, d,
-        s->stat_pkts_burst_dummy);
-    s->stat_pkts_burst_dummy = 0;
+        dump->pkts_burst_dummy);
   }
 
   d = us->stat_epoch_troffset_mismatch - snap->stat_epoch_troffset_mismatch;
@@ -3627,8 +3690,8 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   }
   if (frames <= 0) {
     warn("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
-         s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MTL_SESSION_PORT_P],
-         s->stat_trs_ret_code[MTL_SESSION_PORT_R]);
+         dump->ops_name, dump->build_ret_code, dump->trs_ret_code[MTL_SESSION_PORT_P],
+         dump->trs_ret_code[MTL_SESSION_PORT_R]);
   }
   uint64_t d_meta = us->stat_user_meta_cnt - snap->stat_user_meta_cnt;
   uint64_t d_meta_pkt = us->stat_user_meta_pkt_cnt - snap->stat_user_meta_pkt_cnt;
@@ -3645,7 +3708,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     err("TX_VIDEO_SESSION(%d,%d): unrecoverable_error %" PRIu64 " \n", m_idx, idx, d);
     /* not reset unrecoverable_error */
   }
-  if (s->ops.interlaced) {
+  if (dump->interlaced) {
     uint64_t d_first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
     uint64_t d_second =
         us->stat_interlace_second_field - snap->stat_interlace_second_field;
@@ -3654,42 +3717,30 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
            m_idx, idx, d_first, d_second);
   }
 
-  memcpy(snap, us, sizeof(*snap));
-
-  /* check frame busy stat */
-  if (s->st20_frames) {
-    struct st_frame_trans* frame_info;
-    int frames_in_trans = 0;
-    uint16_t framebuff_cnt = s->ops.framebuff_cnt;
-    for (int i = 0; i < s->st20_frames_cnt; i++) {
-      frame_info = &s->st20_frames[i];
-      if (rte_atomic32_read(&frame_info->refcnt)) frames_in_trans++;
-    }
-    if ((frames_in_trans > 2) || (frames_in_trans >= framebuff_cnt)) {
-      notice("TX_VIDEO_SESSION(%d,%d): %d frames are in trans, total %u\n", m_idx, idx,
-             frames_in_trans, framebuff_cnt);
-    }
+  if (dump->frames_busy) {
+    notice("TX_VIDEO_SESSION(%d,%d): %d frames are in trans, total %u\n", m_idx, idx,
+           dump->frames_in_trans, dump->framebuff_cnt);
   }
 
-  struct mt_stat_u64* stat_time = &s->stat_time;
+  const struct mt_stat_u64* stat_time = &dump->stat_time;
   if (stat_time->cnt) {
     uint64_t avg_ns = stat_time->sum / stat_time->cnt;
     notice("TX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
            m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
            (float)stat_time->min / NS_PER_US);
-    mt_stat_u64_init(stat_time);
   }
-  if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+  if (dump->max_next_frame_us > 8 || dump->max_notify_frame_us > 8) {
     notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
-           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+           m_idx, idx, dump->max_next_frame_us, dump->max_notify_frame_us);
   }
-  s->stat_max_next_frame_us = 0;
-  s->stat_max_notify_frame_us = 0;
 }
 
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
-  tv_stat(mgr, s);
+  struct tv_stat_dump dump;
+
+  tv_stat_collect(mgr, s, &dump);
+  tv_stat_log(&dump);
   tv_uinit(s);
   return 0;
 }
@@ -3888,12 +3939,14 @@ static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
 static int tv_sessions_stat(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
   struct st_tx_video_session_impl* s;
+  struct tv_stat_dump dump;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
     if (!s) continue;
-    tv_stat(mgr, s);
+    tv_stat_collect(mgr, s, &dump);
     tx_video_session_put(mgr, j);
+    tv_stat_log(&dump);
   }
 
   return 0;

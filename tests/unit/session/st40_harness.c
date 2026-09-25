@@ -256,6 +256,7 @@ void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
 void ut40_ctx_enable_hw_timestamp(ut_test_ctx* ctx, enum mtl_session_port port) {
   enum mtl_port phy = mt_port_logic2phy(ctx->session.port_maps, port);
   ctx->impl.dynfield_offset = ut_register_hw_rx_timestamp();
+  ctx->impl.dyn_rx_timestamp_flag = ut_hw_rx_timestamp_flag();
   ctx->ptp_storage.coefficient = 1.0;
   ctx->ptp_storage.last_sync_ts = 0;
   ctx->impl.ptp[phy] = &ctx->ptp_storage;

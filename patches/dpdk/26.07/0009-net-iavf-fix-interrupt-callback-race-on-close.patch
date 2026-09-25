@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Fri, 25 Sep 2026 08:09:01 +0000
+Subject: [PATCH] net/iavf: fix interrupt callback race on close
+
+iavf_dev_close() unregisters iavf_dev_interrupt_handler() with
+rte_intr_callback_unregister() and ignores the result. That call
+returns -EAGAIN, and leaves the callback registered, while the
+interrupt thread is running a callback of the same source.
+
+Close hits that window. It sends virtchnl commands (RSS, promiscuous
+mode, flows), and iavf_dev_interrupt_handler() handles each response.
+The handler clears the pending command before it returns, so the
+thread waiting in iavf_wait_for_msg() can go on to the unregister
+while the interrupt thread is still inside the callback. This is
+likely when the two threads share a CPU.
+
+Two failures follow:
+- The interrupt thread resumes the callback after
+  rte_eth_dev_release_port() has set dev->data to NULL, and
+  iavf_handle_virtchnl_msg() dereferences it: segmentation fault.
+- The callback returns, but its source stays registered after the
+  port is closed. At rte_eal_cleanup(),
+  pci_vfio_unmap_resource_primary() closes the interrupt eventfd, and
+  the next rebuild of the epoll set aborts the process:
+    EAL: PANIC in eal_intr_thread_main():
+    Error adding fd 49 epoll_ctl, Bad file descriptor
+
+Use rte_intr_callback_unregister_sync(), as ice_dev_close() does. The
+iavf_dev_init() error path has the same pattern; fix it too.
+
+The sync variant waits for a running callback to return. It would
+spin forever only if called from iavf_dev_interrupt_handler() itself,
+and that handler never closes or re-initializes the port: it hands PF
+events and resets to the iavf-event thread with iavf_dev_event_post().
+A close from any other interrupt thread callback, such as an alarm,
+returns at once, because the iavf source is not active then.
+
+Fixes: 22b123a36d07 ("net/avf: initialize PMD")
+Fixes: e35a5737a746 ("net/iavf: unregister intr handler before FD close")
+Cc: stable@dpdk.org
+
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/iavf/iavf_ethdev.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
+index f7c34df8a7..8b8e371435 100644
+--- a/drivers/net/intel/iavf/iavf_ethdev.c
++++ b/drivers/net/intel/iavf/iavf_ethdev.c
+@@ -3143,8 +3143,8 @@ flow_init_err:
+ 		rte_intr_disable(pci_dev->intr_handle);
+ 
+ 		/* unregister callback func from eal lib */
+-		rte_intr_callback_unregister(pci_dev->intr_handle,
+-					     iavf_dev_interrupt_handler, eth_dev);
++		rte_intr_callback_unregister_sync(pci_dev->intr_handle,
++						  iavf_dev_interrupt_handler, eth_dev);
+ 	}
+ 	iavf_phc_sync_alarm_stop(eth_dev);
+ 	rte_eal_alarm_cancel(iavf_dev_alarm_handler, eth_dev);
+@@ -3236,8 +3236,8 @@ iavf_dev_close(struct rte_eth_dev *dev)
+ 		rte_intr_disable(intr_handle);
+ 
+ 		/* unregister callback func from eal lib */
+-		rte_intr_callback_unregister(intr_handle,
+-					     iavf_dev_interrupt_handler, dev);
++		rte_intr_callback_unregister_sync(intr_handle,
++						  iavf_dev_interrupt_handler, dev);
+ 	}
+ 	iavf_phc_sync_alarm_stop(dev);
+ 	rte_eal_alarm_cancel(iavf_dev_alarm_handler, dev);
+-- 
+2.34.1
+

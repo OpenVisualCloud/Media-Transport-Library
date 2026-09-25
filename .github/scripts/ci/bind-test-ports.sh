@@ -24,12 +24,12 @@ fi
 : "${MIN_VFIO_PORTS:=4}"    # Ports of one PF the suite runs on
 : "${VF_COUNT:=6}"          # VFs to create; the suite uses MIN_VFIO_PORTS of them
 : "${DMA_CHANNELS:=2}"      # DMA channels to serve when the host has them
-: "${MIN_HUGEPAGES:=2048}"  # 2 MB pages: 4 GiB, what one case's EAL reserves
+: "${MIN_HUGEPAGES:=2048}"  # 2 MB pages per NUMA node: 4 GiB, what one case's EAL reserves
 : "${HOST_OP_TIMEOUT:=180}" # Hard bound for one NIC operation
 : "${HOST_FAULT_EXIT:=3}"   # "the host needs recovery", not a test failure
 # Host state the contract tests point at a fixture instead of the live kernel.
 : "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"
-: "${SYSFS_HUGEPAGES:=/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages}"
+: "${SYSFS_NODES:=/sys/devices/system/node}"
 : "${SYSFS_VFIO_DENYLIST:=/sys/module/vfio_pci/parameters/disable_denylist}"
 
 work_dir=$(mktemp -d)
@@ -129,24 +129,32 @@ allow_dsa_probe() {
 # the first case, which reads as a broken build rather than as a host that has
 # been rebooted since it was last set up. Raised, never lowered: a host may have
 # reserved more for something else, and this suite is not the one to take them.
+#
+# Per NUMA node, because EAL allocates a port's pools on the port's node and a
+# global count is split evenly across nodes: 2048 on a two-node host leaves
+# 2 GiB beside the NIC, and NoCtxTest.init_128_queues needs about 2.8 GiB there.
 ensure_hugepages() {
-	local have
-	if [ ! -w "${SYSFS_HUGEPAGES}" ]; then
-		log_error "no 2 MB hugepage pool at ${SYSFS_HUGEPAGES}; every case's EAL needs one."
-		return 0
-	fi
-	have=$(cat "${SYSFS_HUGEPAGES}")
-	if [ "${have}" -ge "${MIN_HUGEPAGES}" ]; then
-		echo "Hugepages: ${have} x 2 MB reserved, ${MIN_HUGEPAGES} needed"
-		return 0
-	fi
-	echo "Reserving ${MIN_HUGEPAGES} x 2 MB hugepages (this host had ${have})"
-	echo "${MIN_HUGEPAGES}" >"${SYSFS_HUGEPAGES}"
-	have=$(cat "${SYSFS_HUGEPAGES}")
-	if [ "${have}" -lt "${MIN_HUGEPAGES}" ]; then
-		log_error "the kernel served ${have} of ${MIN_HUGEPAGES} hugepages, so memory is fragmented."
-		log_error "EAL takes what there is; free memory or reboot the host if a case fails on it."
-	fi
+	local pool node have
+	for pool in "${SYSFS_NODES}"/node[0-9]*/hugepages/hugepages-2048kB/nr_hugepages; do
+		node=${pool#"${SYSFS_NODES}/"}
+		node=${node%%/*}
+		if [ ! -w "${pool}" ]; then
+			log_error "no 2 MB hugepage pool at ${pool}; every case's EAL needs one."
+			continue
+		fi
+		have=$(cat "${pool}")
+		if [ "${have}" -ge "${MIN_HUGEPAGES}" ]; then
+			echo "Hugepages: ${have} x 2 MB reserved on ${node}, ${MIN_HUGEPAGES} needed"
+			continue
+		fi
+		echo "Reserving ${MIN_HUGEPAGES} x 2 MB hugepages on ${node} (it had ${have})"
+		echo "${MIN_HUGEPAGES}" >"${pool}"
+		have=$(cat "${pool}")
+		if [ "${have}" -lt "${MIN_HUGEPAGES}" ]; then
+			log_error "the kernel served ${have} of ${MIN_HUGEPAGES} hugepages on ${node}, so memory is fragmented."
+			log_error "EAL takes what there is; free memory or reboot the host if a case fails on it."
+		fi
+	done
 	if ! grep -q hugetlbfs /proc/mounts; then
 		log_error "no hugetlbfs mounted; EAL looks for one at /dev/hugepages:"
 		log_error "  sudo mkdir -p /dev/hugepages && sudo mount -t hugetlbfs nodev /dev/hugepages"

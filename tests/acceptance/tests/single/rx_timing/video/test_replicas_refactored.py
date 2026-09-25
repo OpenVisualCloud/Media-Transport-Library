@@ -22,6 +22,8 @@ def test_rx_timing_video_replicas_refactored(
 ):
     """Refactored test for rx timing video replicas.
 
+    Requires an exclusive CPU partition (tests/tools/isolate/README.md) and fails without one.
+
     :param hosts: Mapping of host objects from the topology configuration.
     :param mtl_path: Path to the MTL build directory on the remote host.
     :param setup_interfaces: Interface setup helper for NIC / VF configuration.
@@ -51,6 +53,7 @@ def test_rx_timing_video_replicas_refactored(
         input_file=video_path,
         replicas=2,
         rx_timing_parser=True,
+        cpu_isolation="require",
         test_time=test_time,
     )
 

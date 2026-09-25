@@ -203,7 +203,9 @@ uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns) {
 
   ctx->impl.ptp[MTL_PORT_P] = &ctx->ptp;
   ctx->impl.dynfield_offset = offsetof(struct ut_timestamp_mbuf, timestamp);
+  ctx->impl.dyn_rx_timestamp_flag = ut_hw_rx_timestamp_flag();
   ctx->impl.inf[MTL_PORT_P].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+  timestamp_mbuf.mbuf.ol_flags |= ctx->impl.dyn_rx_timestamp_flag;
   timestamp_mbuf.timestamp = raw_ns;
   return mt_mbuf_time_stamp(&ctx->impl, &timestamp_mbuf.mbuf, MTL_PORT_P);
 }

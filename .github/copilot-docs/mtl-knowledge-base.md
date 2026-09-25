@@ -316,6 +316,10 @@ Three variants:
 
 Paired with `rx_video_session_put()` (unlock). Always get→work→put.
 
+Never log under a session spinlock: tasklets `*_try_get()` it and skip the session while
+it is held. Copy the counters under the lock, `put`, then log the copy (TX video:
+`tv_stat_collect()` / `tv_stat_log()`).
+
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
 - Migration: target manager mutex → source manager mutex
@@ -381,7 +385,9 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
 
 ### Warm-Up Padding
-Hardware RL has ramp-up delay. MTL sends padding packets (RTP padding bit set) before first frame. Default: 80% of `pkts_in_tr_offset`, capped at 128.
+In RL mode, at target − `warm_pkts`·`trs`, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` pads (`mt_build_pad()`, no RTP header) to start the shaper, then `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late.
+- `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
+- `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads needed; no pads are sent.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
@@ -700,7 +706,7 @@ Queue management abstracted via `mt_queue.c` (in `lib/src/datapath/`). Functions
 Static functions in `mt_dev.c`:
 - `dev_config_port()` — configure device (RSS, promiscuous, multi-seg TX, checksum offload)
 - `dev_start_port()` — start device, then `rte_eth_stats_reset()` (clean baseline, prevents stale counters from probe/startup contaminating session stats)
-- TX offloads: `MULTI_SEGS` (scatter-gather for header+chain) + `IPV4_CKSUM` (HW checksum). RX offloads: `0` (no scatter-gather, `rx_nseg=0`)
+- TX offloads: `MULTI_SEGS` (scatter-gather for header+chain) + `IPV4_CKSUM` (HW checksum). RX offloads: `TIMESTAMP` only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` (no scatter-gather, `rx_nseg=0`)
 - `rte_eth_dev_set_ptypes()`: tells NIC to only classify TIMESYNC/ARP/VLAN/QINQ/ICMP/IPv4/UDP/FRAG — reduces per-packet classification overhead. Only applied when driver reports ≥5 supported ptypes
 - No promiscuous mode by default — hardware flow rules steer traffic. `MTL_FLAG_NIC_RX_PROMISCUOUS` enables it for debugging
 
@@ -755,6 +761,19 @@ Continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size / 2` (≥64),
 
 ### Header-Split RX
 Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`: NIC writes payload directly into frame buffer, bypassing CPU memcpy. Requires DPDK ice driver patches.
+
+### iavf HW RX Timestamp Workaround
+Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
+- **Defect (DPDK 26.07)**: iavf AVX2/AVX512 flex RX (`iavf_rxtx_vec_avx2.c`, `iavf_rxtx_vec_avx512.c`) flags every mbuf timestamp-valid without checking `IAVF_RX_FLX_DESC_TS_VALID` and seeds `rxq->phc_time` from the last mbuf, so one unstamped descriptor makes later timestamps jump by ~2^32 ns. Scalar RX (`iavf_rxtx.c`) checks the bit.
+- **Workaround**: after `rte_eth_dev_adjust_nb_rx_tx_desc()`, `dev_config_port()` raises a power-of-2 `nb_rx_desc` by 32 (2048 → 2080), or lowers it by 32 at `rx_desc_lim.nb_max`. Vector RX needs a power-of-2 ring, so iavf picks "Scalar Bulk Alloc Flex" (a multiple of `rx_free_thresh` 32 keeps bulk alloc). Applies to a user-set `nb_rx_desc` too; no measurable cost at ~0.9 Mpps/queue.
+- **Verify**: testpmd `show rxq info` burst mode is "Scalar Bulk Alloc Flex". On regression, strict NoCtx pacing tests fail with ~2^32 ns jumps.
+- **Remove** once iavf vector RX checks TS_VALID upstream.
+
+### iavf Close vs. Interrupt Callback Race
+- **Defect (DPDK 26.07 and upstream main)**: `iavf_dev_close()` ignores the `-EAGAIN` that `rte_intr_callback_unregister()` returns while the EAL interrupt thread is inside iavf's callback. Likely when `dpdk-intr` shares a CPU with the closing thread, e.g. in a NoCtx exclusive partition.
+- **Symptoms** at `mtl_uninit()`, after a passing test: SIGSEGV during `mt_dev_if_uinit`, or `EAL: PANIC in eal_intr_thread_main(): Error adding fd N epoll_ctl, Bad file descriptor` in `rte_eal_cleanup()`.
+- **Fix**: `patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.patch`; root cause, evidence, reproducers and upstream status in the [.md next to it](../../patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md).
+- **Verify**: `UnitTest --gtest_filter='EalIntrCallback.*:DpdkIavfPatch.*'`; `DpdkIavfPatch.*` fails when the loaded iavf PMD lacks the patch.
 
 ### mbuf Lifecycle
 
@@ -833,8 +852,9 @@ Tests needing isolated `mtl_init`/`mtl_uninit` per test. DPDK EAL cannot
 re-init within one process, so each `NoCtxTest.*` case is run in its own
 `KahawaiTest` subprocess. `noctx/run.sh` enumerates cases via
 `--gtest_list_tests` and loops; the MCP `run_noctx_tests` tool does the same
-(accepts filters that match many cases). Requires 4 ports, 10s cooldown
-between processes.
+(accepts filters that match many cases). Requires 4 ports; `run.sh` waits 20 s
+between processes, `run_pf.sh` and the MCP tools 10 s. What each case proves:
+`tests/integration_tests/noctx/README.md`.
 
 ### Fuzz Tests (`tests/fuzz/`)
 
