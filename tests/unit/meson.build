@@ -50,6 +50,7 @@ unit_sources = [
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
   'dev/mt_dev_rl_teardown_test.cpp',
+  'dev/mt_dev_pacing_test.cpp',
   'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_flow_harness.c',
