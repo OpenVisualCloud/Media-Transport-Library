@@ -14,27 +14,6 @@ namespace {
 constexpr uint16_t kMaxAncUdwPerFrame = 255;
 } /* namespace */
 
-St40pHandler::St40pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
-                           st40p_tx_ops ops_tx, st40p_rx_ops ops_rx, bool create,
-                           bool start)
-    : PipelineHandlerBase(ctx, frameTestStrategy, st40p_tx_create, st40p_rx_create,
-                          st40p_tx_free, st40p_rx_free) {
-  if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
-    fillSt40pOps();
-    ops_tx = sessionsOpsTx;
-    ops_rx = sessionsOpsRx;
-  } else {
-    sessionsOpsTx = ops_tx;
-    sessionsOpsRx = ops_rx;
-  }
-
-  setFrameTestStrategy(frameTestStrategy);
-
-  if (create) {
-    createSession(ops_tx, ops_rx, start);
-  }
-}
-
 St40pHandler::St40pHandler(st_tests_context* ctx, st40p_tx_ops ops_tx,
                            st40p_rx_ops ops_rx)
     : PipelineHandlerBase(ctx, nullptr, st40p_tx_create, st40p_rx_create, st40p_tx_free,

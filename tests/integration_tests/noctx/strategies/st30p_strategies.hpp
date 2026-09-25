@@ -15,18 +15,37 @@
 class St30pHandler;
 struct st30_frame;
 
-class St30pDefaultTimestamp : public FrameTestStrategy {
+/* ST30p user pacing: |NIC RX time - t_user| per buffer, looser for buffer 0. */
+constexpr int64_t kSt30pRxToleranceNs = 40 * NS_PER_US;
+constexpr int64_t kSt30pFirstBufferRxToleranceNs = 80 * NS_PER_US;
+/* The user-paced plan starts this many buffers after PTP zero. */
+constexpr int kSt30pUserPacingStartBuffers = 60;
+
+/* Default pacing oracle. Checks on every RX buffer n:
+ * 1. buffer 0 RTP, as TAI, on the packet-time grid, not after its (software) RX time
+ *    and less than one buffer before it           expectFirstFrameOnPacketGrid()
+ * 2. RTP step == tick(nsFramebuffTime)            rxTestFrameModifier()
+ */
+class St30pDefaultPacingOracle : public FrameTestStrategy {
  public:
-  explicit St30pDefaultTimestamp(St30pHandler* parentHandler = nullptr);
+  explicit St30pDefaultPacingOracle(St30pHandler* parentHandler = nullptr);
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
 
  protected:
   uint64_t lastTimestamp;
 };
 
-class St30pUserTimestamp : public St30pDefaultTimestamp {
+/* USER_PACING oracle; replaces the default checks. TX requests t_user(n) =
+ * (kSt30pUserPacingStartBuffers + n) * B from PTP zero, B = nsFramebuffTime, once the
+ * test calls initializeTiming(). Checks on every RX buffer n:
+ * 1. |NIC RX time - t_user(n)| <= kSt30pRxToleranceNs
+ *    (kSt30pFirstBufferRxToleranceNs for buffer 0)   verifyReceiveTiming()
+ * 2. RTP == tick(t_user(n)) at the sample rate      verifyMediaClock()
+ * 3. RTP step == tick(B)                            verifyTimestampStep()
+ */
+class St30pUserPacingOracle : public St30pDefaultPacingOracle {
  public:
-  explicit St30pUserTimestamp(St30pHandler* parentHandler = nullptr);
+  explicit St30pUserPacingOracle(St30pHandler* parentHandler = nullptr);
   void initializeTiming(St30pHandler* handler);
   void txTestFrameModifier(void* frame, size_t frame_size) override;
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
@@ -46,13 +65,10 @@ class St30pUserTimestamp : public St30pDefaultTimestamp {
   RxPhcClock rxPhc;
 };
 
-class St30pRedundantLatency : public St30pUserTimestamp {
+/* TX plan only: the St30pUserPacingOracle plan. RX counts buffers in idx_rx and checks
+ * nothing. */
+class St30pRedundantStreamPlan : public St30pUserPacingOracle {
  public:
-  /* latency and startingTime describe the stream the test builds around this
-   * strategy; the timing base the strategy itself validates against comes from
-   * initializeTiming(), which every caller runs straight after construction, so
-   * neither argument is kept here. */
-  St30pRedundantLatency(unsigned int latency = 30, St30pHandler* parentHandler = nullptr,
-                        int startingTime = 100);
+  explicit St30pRedundantStreamPlan(St30pHandler* parentHandler = nullptr);
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
 };

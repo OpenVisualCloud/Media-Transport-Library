@@ -9,13 +9,30 @@
 #include <vector>
 
 #include "core/strategy.hpp"
+#include "test_util.h"
 
 class St40pHandler;
 
-class St40pUserTimestamp : public FrameTestStrategy {
+/* ST 2110-40:2023 6.5 (the default absent TM=LLTM, per 7): a sender transmits no
+ * later than T_EPO(j) + T_D, T_D = 1 ms. There is no ST 2110-21 style narrow
+ * window for ANC, so no video-style microsecond bound. */
+constexpr int64_t kSt40pMaxLateNs = 1 * NS_PER_MS;
+/* The user-paced plan starts this many frames after PTP zero. */
+constexpr double kSt40pUserPacingStartFrames = 70.0;
+
+/* USER_PACING oracle. TX requests t_user(n) = (kSt40pUserPacingStartFrames + n +
+ * offset[n % size]) * T from PTP zero; the expected TX is the epoch nearest t_user(n)
+ * (expectedTransmitTimeNs()). getPacingParameters() always returns -ENOTSUP.
+ * Checks on every RX frame n:
+ * 1. software RX time - expected TX in [0, kSt40pMaxLateNs]  verifyReceiveTiming()
+ * 2. RTP == tick90k(expected TX)                            verifyMediaClock()
+ * 3. RTP step == tick90k(base(n)) - tick90k(base(n - 1)),
+ *    base(n) = t_user(n) without its offset                verifyTimestampStep()
+ */
+class St40pUserPacingOracle : public FrameTestStrategy {
  public:
-  explicit St40pUserTimestamp(St40pHandler* parentHandler = nullptr,
-                              std::vector<double> offsetMultipliers = {});
+  explicit St40pUserPacingOracle(St40pHandler* parentHandler = nullptr,
+                                 std::vector<double> offsetMultipliers = {});
 
   void txTestFrameModifier(void* frame, size_t frame_size) override;
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
@@ -43,10 +60,12 @@ class St40pUserTimestamp : public FrameTestStrategy {
   std::vector<double> timestampOffsetMultipliers;
 };
 
-class St40pExactUserPacing : public St40pUserTimestamp {
+/* EXACT_USER_PACING oracle: St40pUserPacingOracle with the expected TX = t_user(n)
+ * itself; check 3 is not made. */
+class St40pExactUserPacingOracle : public St40pUserPacingOracle {
  public:
-  explicit St40pExactUserPacing(St40pHandler* parentHandler = nullptr,
-                                std::vector<double> offsetMultipliers = {});
+  explicit St40pExactUserPacingOracle(St40pHandler* parentHandler = nullptr,
+                                      std::vector<double> offsetMultipliers = {});
 
  protected:
   uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;

@@ -16,9 +16,6 @@ class St20pHandler : public PipelineHandlerBase<st20p_tx_ops, st20p_rx_ops,
  public:
   uint64_t nsFrameTime;
 
-  St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
-               st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {}, bool create = true,
-               bool start = true);
   explicit St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx = {},
                         st20p_rx_ops ops_rx = {});
   ~St20pHandler() override;
@@ -34,6 +31,9 @@ class St20pHandler : public PipelineHandlerBase<st20p_tx_ops, st20p_rx_ops,
   void startSessionTx() override;
   void startSessionRx() override;
 
+  /* Every frame: ASSERT addr[0], fmt, width, height; strategy; EXPECT put_frame >= 0. */
   void st20TxDefaultFunction(std::atomic<bool>& stopFlag);
+  /* Every frame: ASSERT addr[0], fmt, width, height, data_size >= frame size; strategy;
+   * EXPECT put_frame >= 0. */
   void st20RxDefaultFunction(std::atomic<bool>& stopFlag);
 };
