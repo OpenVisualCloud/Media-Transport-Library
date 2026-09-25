@@ -150,6 +150,8 @@ unit_sources = [
   'ptp/user_sync_test.cpp',
   'ptp/delta_math_test.cpp',
   'ptp/t3_test.cpp',
+  'main/tsc_calibrate_harness.c',
+  'main/tsc_calibrate_test.cpp',
   'main.cpp',
 ]
 
@@ -159,6 +161,6 @@ executable('UnitTest', unit_sources,
   link_args : unit_link_args,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
-  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, gtest_dep, gmock_dep, libpthread_dep,
-                  usdt_provider_header_dep] + unit_extra_deps,
+  dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, libnuma_dep, gtest_dep, gmock_dep,
+                  libpthread_dep, usdt_provider_header_dep] + unit_extra_deps,
   install : false)
