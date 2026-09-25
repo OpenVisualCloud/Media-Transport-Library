@@ -109,6 +109,8 @@ unit_sources = [
   'session/st20_tx/rtp_gate_snap_test.cpp',
   'session/st20_tx/mempool_release_test.cpp',
   'session/multi_essence_sync_test.cpp',
+  'session/rtcp_tx_harness.c',
+  'session/rtcp/parse_nack_bounds_test.cpp',
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
   'pipeline/st20p_rx_concurrency_test.cpp',
