@@ -51,6 +51,8 @@ unit_sources = [
   'dev/mt_dev_pacing_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
+  'datapath/mt_srss_harness.c',
+  'datapath/mt_srss_tasklet_test.cpp',
   'fmt/st_fmt_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',

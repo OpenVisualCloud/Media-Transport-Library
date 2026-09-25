@@ -77,6 +77,7 @@ static int srss_sch_tasklet_handler(void* priv) {
   struct mt_srss_list *list = NULL, *last_list = NULL;
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
+  int pending = MTL_TASKLET_ALL_DONE;
 
   for (uint16_t queue = srss_sch->q_start; queue < srss_sch->q_end; queue++) {
     uint16_t matched_pkts_nb = 0;
@@ -89,6 +90,7 @@ static int srss_sch_tasklet_handler(void* priv) {
           rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
     }
     if (!rx) continue;
+    pending = MTL_TASKLET_HAS_PENDING;
     srss_sch->stat_pkts_rx += rx;
 
     last_srss_entry = NULL;
@@ -135,7 +137,7 @@ static int srss_sch_tasklet_handler(void* priv) {
 
   if (last_list) srss_list_unlock(last_list);
 
-  return 0;
+  return pending;
 }
 
 static void* srss_traffic_thread(void* arg) {

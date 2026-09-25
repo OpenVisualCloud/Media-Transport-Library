@@ -156,7 +156,7 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 - Above 200µs: `pthread_cond_timedwait()` (works in both lcore and pthread modes)
 - `MTL_FLAG_TASKLET_SLEEP` works in both modes
 
-**Gotcha**: `advice_sleep_us = 0` → scheduler never sleeps → 100% CPU.
+**Gotcha**: `advice_sleep_us = 0` is no advice and keeps the 1 ms default; a sleep-enabled scheduler sleeps whenever every tasklet returns `MTL_TASKLET_ALL_DONE`, so a tasklet that did work must return `MTL_TASKLET_HAS_PENDING`.
 
 ### Why Spin Polling Is Necessary
 
