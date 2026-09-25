@@ -68,7 +68,17 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
 static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
                                           uint16_t bulk) {
   int ret = 0;
-  uint16_t nb_rt = bulk, send = 0;
+  uint16_t send = 0;
+  /* bulk = follow + 1 is attacker-controlled; the ring can hold at most its
+   * capacity, so a larger request is unsatisfiable. Clamp before sizing the
+   * on-stack arrays so a crafted follow cannot exhaust the tasklet stack. */
+  int ring_size = mt_u64_fifo_size(tx->mbuf_ring);
+  if (bulk > ring_size) bulk = ring_size;
+  if (bulk == 0) {
+    tx->stat_rtp_retransmit_fail++;
+    return -EIO;
+  }
+  uint16_t nb_rt = bulk;
   struct rte_mbuf *mbufs[bulk], *copy_mbufs[bulk];
   uint16_t ring_head_seq = 0;
   uint32_t ts = 0;
@@ -138,8 +148,16 @@ rt_exit:
   return ret;
 }
 
-int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
+int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp,
+                                 size_t len) {
   if (!tx->active) return 0;
+  /* The fixed header must be fully received before any of its fields are read:
+   * a runt shorter than the header is neither a valid rtcp packet nor safe to
+   * inspect. */
+  if (len < sizeof(struct mt_rtcp_hdr)) {
+    dbg("%s(%s), rtcp too short: %zu\n", __func__, tx->name, len);
+    return -EIO;
+  }
   if (rtcp->flags != 0x80) {
     err("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
     return -EIO;
@@ -152,7 +170,19 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     }
     tx->stat_nack_received++;
 
-    uint16_t num_fcis = ntohs(rtcp->len) + 1 - sizeof(struct mt_rtcp_hdr) / 4;
+    /* RFC3550: rtcp->len is the total length in 32-bit words minus one. With the
+     * fixed header already validated, check the declared size against the bytes
+     * actually received so a crafted len can neither underflow the fci count nor
+     * walk the fci pointer past the received data. */
+    size_t rtcp_bytes = ((size_t)ntohs(rtcp->len) + 1) * 4;
+    if (rtcp_bytes < sizeof(struct mt_rtcp_hdr) || rtcp_bytes > len) {
+      dbg("%s(%s), invalid nack: len %u recv %zu\n", __func__, tx->name, ntohs(rtcp->len),
+          len);
+      return -EIO;
+    }
+    uint16_t num_fcis =
+        (rtcp_bytes - sizeof(struct mt_rtcp_hdr)) / sizeof(struct mt_rtcp_fci);
+    if (num_fcis > MT_RTCP_MAX_FCIS) num_fcis = MT_RTCP_MAX_FCIS;
     struct mt_rtcp_fci* fci = rtcp->fci;
     for (uint16_t i = 0; i < num_fcis; i++) {
       uint16_t start = ntohs(fci->start);
