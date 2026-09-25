@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('mtl_app', 'c', default_options: ['buildtype=release'],
+project('mtl_app', 'c', default_options: ['buildtype=release', 'b_pie=true'],
   version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
 
 gpu_direct = dependency('mtl_gpu_direct', required: false)
@@ -55,6 +55,18 @@ subdir('v4l2_to_ip')
 
 app_c_args = []
 app_ld_args = []
+
+# Intel SDL / OpenSSF compiler hardening, see doc/build.md
+if not is_windows
+  add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
+    '-fstack-clash-protection', '-fcf-protection=full',
+    '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'c')
+  # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set
+  if get_option('optimization') not in ['0', 'plain'] and cc.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
+    add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'c')
+  endif
+  add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
+endif
 
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'

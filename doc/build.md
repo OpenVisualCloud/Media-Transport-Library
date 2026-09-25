@@ -162,6 +162,8 @@ git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
 
 ### 2.3. Build and install DPDK library
 
+`script/build_dpdk.sh` builds DPDK with the options of [4.5. Compiler hardening](#45-compiler-hardening); pass them to a manual build as that section shows.
+
 ```bash
 meson setup build
 ninja -C build
@@ -312,6 +314,39 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 [The exemplary location for Rocky Linux](https://dl.rockylinux.org/vault/rocky/)
 
 [The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
+
+### 4.5. Compiler hardening
+
+The Linux build compiles every binary with the Intel SDL and OpenSSF hardening options below. The `meson.build` of each shipped component sets them, `script/build_dpdk.sh` passes them to DPDK, and `ecosystem/ffmpeg_plugin/build.sh` passes them to openh264 and FFmpeg.
+
+| Option | Protection |
+| --- | --- |
+| `-fstack-protector-strong` | Stack buffer overflow canary |
+| `-fstack-clash-protection` | Stack clash |
+| `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
+| `-D_FORTIFY_SOURCE=2` | Buffer overflow checks in libc calls. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
+| `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
+| `-Wl,-z,noexecstack` | Non-executable stack |
+| `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
+
+For a manual DPDK build, pass them to `meson setup`, and add `-D_FORTIFY_SOURCE=2` to `c_args` if `echo | cc -O2 -dM -E - | grep _FORTIFY_SOURCE` prints nothing:
+
+```bash
+meson setup build -Db_pie=true \
+  -Dc_args="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security" \
+  -Dc_link_args="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+```
+
+The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch` to add IBT.
+
+The openh264 assembly has no CET mark, so `libopenh264` has neither IBT nor SHSTK, and a process that loads it runs without CET.
+
+To check an install tree, run the check CI runs on every dependency cache. Under `/usr/local` it also reports other software installed there.
+
+```bash
+.github/scripts/ci/check-hardening.sh /usr/local/lib /usr/local/bin
+```
 
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17'],
+project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17', 'b_pie=true'],
   version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),
 )
 
@@ -16,6 +16,16 @@ endif
 message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
+
+# Intel SDL / OpenSSF compiler hardening, see doc/build.md
+add_project_arguments(cpp_c.get_supported_arguments(['-fstack-protector-strong',
+  '-fstack-clash-protection', '-fcf-protection=full',
+  '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'cpp')
+# keep the level a compiler (Ubuntu 24.04 gcc: 3) or CXXFLAGS already set
+if get_option('optimization') not in ['0', 'plain'] and cpp_c.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
+  add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'cpp')
+endif
+add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'cpp')
 
 sources = ['mtl_manager.cpp']
 
