@@ -312,6 +312,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.notify_event = app_tx_st20p_notify_event;
   if (ctx->tx_static_pad) ops.flags |= ST20P_TX_FLAG_ENABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
+  if (st20p && st20p->nack_ssrc_check)
+    ops.rtcp.nack_ssrc_check = ST_RTCP_NACK_SSRC_CHECK_ENABLE;
 
   if (st20p && (st20p->user_timestamp || st20p->user_pacing)) {
     if (st20p->user_pacing) {

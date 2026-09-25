@@ -900,6 +900,12 @@ static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   return 0;
 }
 
+/* The ssrc this session writes into its rtp header. The rtcp nack ssrc check
+ * compares against the same value, so both must use this. */
+static uint32_t tv_session_ssrc(struct st_tx_video_session_impl* s) {
+  return s->ops.ssrc ? s->ops.ssrc : s->idx + 0x123450;
+}
+
 static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                        enum mtl_session_port s_port) {
   int idx = s->idx;
@@ -963,7 +969,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   rtp->base.marker = 0;
   rtp->base.payload_type =
       ops->payload_type ? ops->payload_type : ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
-  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x123450;
+  uint32_t ssrc = tv_session_ssrc(s);
   rtp->base.ssrc = htonl(ssrc);
   rtp->row_length = htons(s->st20_pkt_len);
   rtp->row_number = 0;
@@ -1025,6 +1031,10 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     rtcp_ops.udp_hdr = &hdr;
     if (!ops->rtcp.buffer_size) ops->rtcp.buffer_size = ST_TX_VIDEO_RTCP_RING_SIZE;
     rtcp_ops.buffer_size = ops->rtcp.buffer_size;
+    /* RFC4585: a nack for this session carries the session ssrc. The check uses
+     * the session ssrc, or the ssrc the application set for rtp level mode. */
+    rtcp_ops.ssrc_check = (ops->rtcp.nack_ssrc_check == ST_RTCP_NACK_SSRC_CHECK_ENABLE);
+    rtcp_ops.ssrc = ops->rtcp.nack_ssrc ? ops->rtcp.nack_ssrc : tv_session_ssrc(s);
     if (s->st22_info)
       rtcp_ops.payload_format = MT_RTP_PAYLOAD_FORMAT_RFC9134;
     else
@@ -4705,6 +4715,22 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
   struct st_tx_video_session_impl* s = s_impl->impl;
 
   rte_spinlock_lock(&s->mgr->mutex[s->idx]);
+  /* fold the rtcp nack counters of every port into the common block, so the
+   * public stats expose the retransmit path and the RFC4585 ssrc check */
+  struct st_tx_user_stats* common = &s->port_user_stats.common;
+  common->stat_rtcp_nack_received = 0;
+  common->stat_rtcp_nack_drop_invalid = 0;
+  common->stat_rtcp_nack_drop_ssrc = 0;
+  common->stat_rtcp_retransmit = 0;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (!s->rtcp_tx[i]) continue;
+    struct mt_rtcp_tx_stats rtcp_stats;
+    mt_rtcp_tx_read_stats(s->rtcp_tx[i], &rtcp_stats);
+    common->stat_rtcp_nack_received += rtcp_stats.nack_received;
+    common->stat_rtcp_nack_drop_invalid += rtcp_stats.nack_drop_invalid;
+    common->stat_rtcp_nack_drop_ssrc += rtcp_stats.nack_drop_ssrc;
+    common->stat_rtcp_retransmit += rtcp_stats.retransmit;
+  }
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
   rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
   MT_HANDLE_RELEASE(s_impl);

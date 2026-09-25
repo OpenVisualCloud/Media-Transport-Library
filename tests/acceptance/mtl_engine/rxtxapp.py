@@ -918,6 +918,8 @@ class RxTxApp(Application):
                         session["user_pacing"] = True
                     if p("drop_when_late", False):
                         session["drop_when_late"] = True
+                    if p("nack_ssrc_check", False):
+                        session["nack_ssrc_check"] = True
                 else:
                     session["output_format"] = p("output_pixel_format") or pixel_format
                     session["measure_latency"] = p("measure_latency")

@@ -113,6 +113,7 @@ unit_sources = [
   'session/rtcp/parse_nack_bounds_test.cpp',
   'session/rtcp_attack_harness.c',
   'session/rtcp/nack_attack_test.cpp',
+  'session/rtcp/parse_nack_ssrc_test.cpp',
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
   'pipeline/st20p_rx_concurrency_test.cpp',

@@ -279,6 +279,7 @@ typedef struct st_json_st20p_session {
   bool display;
   bool measure_latency;
   bool enable_rtcp;
+  bool nack_ssrc_check;
   bool user_pacing;
   bool exact_user_pacing;
   bool user_timestamp;
