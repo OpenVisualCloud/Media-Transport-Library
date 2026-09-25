@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/time.h"
 #include "mtl_common.h"
 
 typedef struct mtlSt22pMuxerContext {
@@ -42,6 +43,19 @@ typedef struct mtlSt22pMuxerContext {
   int64_t frame_counter;
   int frame_size;
 } mtlSt22pMuxerContext;
+
+/* Poll instead of ST22P_TX_FLAG_BLOCK_GET: a stale wake in that wait returns
+ * NULL at once. Give up after 1s, the default block timeout of the library. */
+static struct st_frame* mtl_st22p_tx_get_frame(mtlSt22pMuxerContext* s) {
+  int64_t deadline = av_gettime_relative() + AV_TIME_BASE;
+  struct st_frame* frame;
+
+  while (!(frame = st22p_tx_get_frame(s->tx_handle))) {
+    if (av_gettime_relative() > deadline) return NULL;
+    av_usleep(1000);
+  }
+  return frame;
+}
 
 static int mtl_st22p_write_close(AVFormatContext* ctx) {
   mtlSt22pMuxerContext* s = ctx->priv_data;
@@ -77,7 +91,6 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
   ops_tx.pack_type = ST22_PACK_CODESTREAM;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
 
@@ -168,7 +181,6 @@ static int mtl_st22_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
   ops_tx.pack_type = ST22_PACK_CODESTREAM;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
 
@@ -248,7 +260,7 @@ static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st22p_tx_get_frame(s->tx_handle);
+  frame = mtl_st22p_tx_get_frame(s);
   if (!frame) {
     info(ctx, "%s(%d), st22p_tx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
@@ -274,7 +286,7 @@ static int mtl_st22_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st22p_tx_get_frame(s->tx_handle);
+  frame = mtl_st22p_tx_get_frame(s);
   if (!frame) {
     info(ctx, "%s(%d), st22p_tx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
