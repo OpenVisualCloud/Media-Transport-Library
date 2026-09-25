@@ -2,10 +2,18 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+/* Proves ST 2022-7 audio merge with the redundant copy 10 ms behind, and with the
+ * primary stream stopping mid-run, from packet, loss and frame counts.
+ * See README.md, "Test catalogue".
+ */
+
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
 #include "handlers/st30p_handler.hpp"
 #include "strategies/st30p_strategies.hpp"
+
+/* 1 s of 10 ms buffers, so a stalled test consumer cannot drop merged frames */
+static constexpr uint16_t kRxFramebuffCnt = 100;
 
 /* TODO: the tests fail with ST31_PTIME_80US */
 TEST_F(NoCtxTest, st30p_redundant_latency) {
@@ -26,6 +34,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
       },
       [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
+        handler->sessionsOpsRx.framebuff_cnt = kRxFramebuffCnt;
         handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
       });
   auto* rxStrategy = static_cast<St30pRedundantLatency*>(rxBundle.strategy);
@@ -103,7 +112,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Lost packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
-      << "Comparison against primary stream";
+      << "Comparison against primary stream; packets refused for lack of an RX buffer: "
+      << stats.stat_slot_get_frame_fail;
 }
 
 /* TODO: the tests fail with ST31_PTIME_80US */
@@ -125,6 +135,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
       },
       [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
+        handler->sessionsOpsRx.framebuff_cnt = kRxFramebuffCnt;
         handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
       });
   auto* rxStrategy = static_cast<St30pRedundantLatency*>(rxBundle.strategy);
@@ -208,5 +219,6 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Lost packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
-      << "Comparison against primary stream";
+      << "Comparison against primary stream; packets refused for lack of an RX buffer: "
+      << stats.stat_slot_get_frame_fail;
 }
