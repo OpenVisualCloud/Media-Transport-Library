@@ -89,43 +89,31 @@ bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
   return false;
 }
 
-static int u64_cmp(const void* a, const void* b) {
-  const uint64_t* ai = a;
-  const uint64_t* bi = b;
+/* monotonic time and the TSC midpoint of the tightest TSC-bracketed read of 3 */
+static void mt_tsc_mono_pair(uint64_t* mono, uint64_t* tsc) {
+  uint64_t best = UINT64_MAX;
 
-  if (*ai < *bi) {
-    return -1;
-  } else if (*ai > *bi) {
-    return 1;
+  for (int i = 0; i < 3; i++) {
+    uint64_t t0 = rte_get_tsc_cycles();
+    uint64_t m = mt_get_monotonic_time();
+    uint64_t t1 = rte_get_tsc_cycles();
+
+    if (t1 - t0 < best) {
+      best = t1 - t0;
+      *mono = m;
+      *tsc = t0 + best / 2;
+    }
   }
-  return 0;
 }
 
 static void* mt_calibrate_tsc(void* arg) {
   struct mtl_main_impl* impl = arg;
-  int loop = 100;
-  int trim = 10;
-  uint64_t array[loop];
-  uint64_t tsc_hz_sum = 0;
+  uint64_t start = 0, start_tsc = 0, end = 0, end_tsc = 0;
 
-  for (int i = 0; i < loop; i++) {
-    uint64_t start, start_tsc, end, end_tsc;
-
-    start = mt_get_monotonic_time();
-    start_tsc = rte_get_tsc_cycles();
-
-    mt_sleep_ms(10);
-
-    end = mt_get_monotonic_time();
-    end_tsc = rte_get_tsc_cycles();
-    array[i] = NS_PER_S * (end_tsc - start_tsc) / (end - start);
-  }
-
-  qsort(array, loop, sizeof(uint64_t), u64_cmp);
-  for (int i = trim; i < loop - trim; i++) {
-    tsc_hz_sum += array[i];
-  }
-  impl->tsc_hz = tsc_hz_sum / (loop - trim * 2);
+  mt_tsc_mono_pair(&start, &start_tsc);
+  mt_sleep_ms(MS_PER_S);
+  mt_tsc_mono_pair(&end, &end_tsc);
+  impl->tsc_hz = (double)NS_PER_S * (end_tsc - start_tsc) / (end - start);
   mt_dev_tsc_done_action(impl);
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
