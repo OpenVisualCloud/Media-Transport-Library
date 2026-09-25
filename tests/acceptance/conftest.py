@@ -27,6 +27,7 @@ from mtl_engine.const import (
     FFMPEG_PATH,
     FRAMES_CAPTURE,
     GSTREAMER_LIB_PATH,
+    ISOLATE_SH,
     LOG_FOLDER,
     MTL_LIB_PATH,
     NIC_FAMILY_BY_DEVICE_ID,
@@ -1411,8 +1412,12 @@ def pytest_collection_modifyitems(items):
 # hermetic without killing any test on timeout.
 
 
-def _reset_host_state(host) -> None:
-    """Best-effort cleanup of MTL leftovers on a single host. Never raises."""
+def _reset_host_state(host, mtl_path: str) -> None:
+    """Best-effort cleanup of MTL leftovers on a single host.
+
+    Raises when isolate.sh --sweep cannot run or fails, unless sudo itself
+    refuses: a CPU partition left behind would skew every later test.
+    """
     try:
         kill_stale_processes(host)
     except Exception as e:  # pragma: no cover — best-effort
@@ -1426,10 +1431,27 @@ def _reset_host_state(host) -> None:
         )
     except Exception as e:  # pragma: no cover
         logger.debug("hugepage cleanup failed: %s", e)
+    res = host.connection.execute_command(
+        f"sudo -n {mtl_path}/{ISOLATE_SH} --sweep",
+        shell=True,
+        timeout=30,
+        stderr_to_stdout=True,
+        expected_return_codes=None,
+    )
+    output = (res.stdout or "").strip()
+    if res.return_code == 0:
+        if output:
+            logger.info("isolate.sh --sweep on %s:\n%s", host.name, output)
+    elif "isolate.sh: ERROR" not in output and output.startswith("sudo:"):
+        logger.warning("isolate.sh --sweep not run on %s: %s", host.name, output)
+    else:
+        raise RuntimeError(
+            f"isolate.sh --sweep failed on {host.name} (rc {res.return_code}): {output}"
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_clean_hw_state(hosts):
+def _ensure_clean_hw_state(hosts, mtl_path):
     """Guarantee a clean hardware state at session start and end.
 
     Runs before any test: kills stray RxTxApp/gtest processes that may
@@ -1437,10 +1459,10 @@ def _ensure_clean_hw_state(hosts):
     wipes stale DPDK hugepage mappings. The next session's start hook will
     repeat the work, so we deliberately do **not** run it again at session
     teardown — that just adds wall-clock for no observable benefit. Errors
-    are logged but never propagated.
+    are logged but never propagated, except a failing isolate.sh sweep.
     """
     for host in hosts.values():
-        _reset_host_state(host)
+        _reset_host_state(host, get_host_mtl_path(host, default=mtl_path))
     yield
 
 

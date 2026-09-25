@@ -2,7 +2,8 @@
 
 `isolate.sh [--] <command...>` runs one command at nice −20 inside a cgroup v2
 cpuset partition that exists only while the command runs. The NoCtx runner
-(`tests/integration_tests/noctx/run.sh`) uses it for its strict timing cases.
+(`tests/integration_tests/noctx/run.sh`) uses it for its strict timing cases,
+and the acceptance rx_timing tests for RxTxApp (`cpu_isolation="require"`).
 Background on static and dynamic CPU isolation: [doc/isolation.md](../../../doc/isolation.md).
 
 ## Environment
@@ -20,7 +21,7 @@ wrapper's. CI (`.github/scripts/gtest.sh`) runs NoCtx with `MTL_ISOLATE=require`
 
 ## Requirements
 
-- Root.
+- Root (the acceptance hook calls it through `sudo -n`).
 - cgroup v2 with the `cpuset` controller in `/sys/fs/cgroup/cgroup.subtree_control`.
 - The `isolated` value of `cpuset.cpus.partition`, Linux 6.1 or later.
   `cpuset.cpus.exclusive` (Linux 6.7) is written when present. Validated on 6.8.
@@ -67,7 +68,9 @@ session does this, so a kill of the wrapper's session or process group does not
 reach it, and it ignores SIGPIPE in case its stderr pipe is already gone. If
 both die, the next wrapper or `isolate.sh --sweep` (root) does; it exits 1 if
 a partition is left. `.github/scripts/gtest.sh` sweeps before and after the
-NoCtx run. `/run` is tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
+NoCtx run, the acceptance suite at session start, and
+`.github/scripts/ci/cleanup.sh` around the CI test jobs. `/run` is
+tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
 `flock /run/mtl-isolate.lock` (a wrapper waits 10 s, then gives up), and remove
 the stale `mtl-isolate-*` cgroups of dead wrappers.
 

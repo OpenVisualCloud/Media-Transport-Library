@@ -14,10 +14,13 @@ from . import ip_pools
 from .application_base import MTL_ENCODER_PLUGIN_MAP, Application, mtl_plugin_check_cmd
 from .config.mappings import APP_NAME_MAP, RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
+from .const import ISOLATE_SH
 from .execute import log_fail
 from .integrity_session import IntegrityIntent
 
 logger = logging.getLogger(__name__)
+
+PCI_BDF_RE = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
 
 
 # ============================================================================
@@ -623,9 +626,8 @@ class RxTxApp(Application):
         config_file_path = self.config_file_path or "tests/config.json"
 
         # Build command line
-        # Note: sudo is NOT needed because the test framework already runs as root
-        # (see README.md: "MTL validation must run as root user").
-        # Subprocesses inherit root privileges from the parent pytest process.
+        # No sudo: RxTxApp runs as the SSH account, which may be unprivileged
+        # (doc/ci_runner_setup.md). add_timeout adds sudo for cpu_isolation.
         cmd_parts = [
             self.get_executable_path(),
             "--config_file",
@@ -653,6 +655,53 @@ class RxTxApp(Application):
                     cmd_parts.extend([rxtx_param, str(value)])
 
         return " ".join(cmd_parts), self._create_rxtxapp_config_dict()
+
+    def add_timeout(self, command: str, test_time: int, grace: int = None) -> str:
+        """Wrap command with timeout, and in isolate.sh when ``cpu_isolation`` is set::
+
+            sudo -n timeout <T+grace> env MTL_ISOLATE=require MTL_ISOLATE_PORTS=<BDFs>
+            tests/tools/isolate/isolate.sh -- setpriv --reuid=$(id -u) ... <command>
+
+        setpriv runs RxTxApp as the SSH account again. The timeout is not raised:
+        past process_timeout_buffer, the Python wait would give up first.
+        """
+        isolation = self.params.get("cpu_isolation")
+        if isolation is None:
+            return super().add_timeout(command, test_time, grace)
+        if isolation != "require":
+            raise ValueError(f"cpu_isolation={isolation!r}, expected None or 'require'")
+        isolated = (
+            f"env MTL_ISOLATE=require MTL_ISOLATE_PORTS={self._isolate_ports()} "
+            f"{ISOLATE_SH} -- setpriv --reuid=$(id -u) --regid=$(id -g) "
+            f"--init-groups {command}"
+        )
+        return "sudo -n " + super().add_timeout(isolated, test_time, grace)
+
+    def _isolate_ports(self) -> str:
+        """The config's interface BDFs in order, port P first, without repeats."""
+        ports = list(dict.fromkeys(i["name"] for i in self.config["interfaces"]))
+        for name in ports:
+            if not PCI_BDF_RE.fullmatch(name):
+                raise ValueError(
+                    f"cpu_isolation needs PCI BDF interfaces, got {name!r}"
+                )
+        return ",".join(ports)
+
+    @staticmethod
+    def _rc_failure(rc: int, output_lines: list) -> str:
+        """Message for a failing rc: isolate.sh's error, a timeout, then sudo's error."""
+
+        def line_with(marker):
+            return next(
+                (ln.strip() for ln in output_lines if ln.startswith(marker)), None
+            )
+
+        return (
+            line_with("isolate.sh: ERROR")
+            or ("timed out (rc 124)" if rc == 124 else None)
+            or line_with("sudo:")
+            or f"Process return code {rc} indicates failure"
+        )
 
     # Sentinel for ``_p`` so callers can pass ``None`` as an explicit default.
     _PARAM_UNSET = object()
@@ -1162,6 +1211,12 @@ class RxTxApp(Application):
             if not self.config:
                 _fail("RxTxApp validate_results called without config")
 
+            if self.params.get("cpu_isolation"):
+                for line in (self.last_output or "").split("\n"):
+                    if "isolate.sh: exclusive CPU isolation of" in line:
+                        logger.info(line.strip())
+                        break
+
             # Multi-session aware: when more than one session type is populated
             # (e.g. kernel_lo / xdp / rx_timing/mixed run st20p+st30p+ancillary
             # in a single RxTxApp invocation), validate every type sequentially.
@@ -1170,7 +1225,7 @@ class RxTxApp(Application):
                 output_lines = self.last_output.split("\n") if self.last_output else []
                 rc = self.last_return_code
                 if rc not in (0, None):
-                    _fail(f"Process return code {rc} indicates failure")
+                    _fail(self._rc_failure(rc, output_lines))
                 for stype in all_types:
                     if not self._validate_single_session_type(stype, output_lines):
                         _fail(f"{stype} validation failed (multi-session)")
@@ -1184,7 +1239,7 @@ class RxTxApp(Application):
 
             # 1. Check return code (must be 0 or None for dual-host secondary)
             if rc not in (0, None):
-                _fail(f"Process return code {rc} indicates failure")
+                _fail(self._rc_failure(rc, output_lines))
 
             # 2. Validate based on session type. Single- and multi-session
             #    paths share the same per-type dispatch via

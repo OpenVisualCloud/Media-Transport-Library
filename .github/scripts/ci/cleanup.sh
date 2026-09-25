@@ -13,3 +13,7 @@ for process in pytest MtlManager phc2sys ptp4l netsniff-ng; do
 	sudo killall -SIGINT "$process" || true
 done
 sleep 2
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+isolate_sh="$root_dir/tests/tools/isolate/isolate.sh"
+echo 'Removing stale CPU isolation partitions...'
+sudo "$isolate_sh" --sweep
