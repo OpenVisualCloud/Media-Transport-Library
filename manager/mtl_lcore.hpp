@@ -6,52 +6,53 @@
 #define __MTL_LCORE_HPP__
 
 #include <bitset>
+#include <cstdint>
 #include <mutex>
 
-#define MTL_MAX_LCORE 128
+#include "mtl_mproto.h"
 
+/* One number, declared in the public header, because a client needs to know
+ * which lcore ids the manager will refuse. */
+#define MTL_MAX_LCORE MTL_MANAGER_MAX_LCORE
+
+/**
+ * Which lcore each MTL instance on this host holds.
+ *
+ * The server uses the process-wide get_instance(). The class is also directly
+ * constructible, so a test can exercise it without touching that state.
+ */
 class mtl_lcore {
- private:
-  std::bitset<MTL_MAX_LCORE> bs;
-  std::mutex bs_mtx;
-
-  mtl_lcore() {
-    bs.reset();
-  }
-  ~mtl_lcore() {
-  }
-
  public:
+  mtl_lcore() = default;
   mtl_lcore(const mtl_lcore&) = delete;
   mtl_lcore& operator=(const mtl_lcore&) = delete;
 
-  static mtl_lcore& get_instance() {
-    static mtl_lcore instance;
-    return instance;
-  }
+  static mtl_lcore& get_instance();
 
+  /**
+   * Claim an lcore.
+   *
+   * @return 0 on success, -EINVAL when the id is out of range, -EBUSY when
+   *         another instance already holds it.
+   */
   int get_lcore(uint16_t lcore_id);
+
+  /**
+   * Release an lcore.
+   *
+   * @return 0 on success, -EINVAL when the id is out of range or free.
+   */
   int put_lcore(uint16_t lcore_id);
+
+  /** Whether `lcore_id` is claimed. Out of range reads as not claimed. */
+  bool is_used(uint16_t lcore_id) const;
+
+  /** Number of claimed lcores. */
+  size_t used_count() const;
+
+ private:
+  std::bitset<MTL_MAX_LCORE> bs;
+  mutable std::mutex bs_mtx;
 };
-
-int mtl_lcore::get_lcore(uint16_t lcore_id) {
-  if (lcore_id >= MTL_MAX_LCORE) return -1;
-  std::lock_guard<std::mutex> lock(bs_mtx);
-  if (bs.test(lcore_id))
-    return -1;
-  else
-    bs.set(lcore_id, true);
-  return 0;
-}
-
-int mtl_lcore::put_lcore(uint16_t lcore_id) {
-  if (lcore_id >= MTL_MAX_LCORE) return -1;
-  std::lock_guard<std::mutex> lock(bs_mtx);
-  if (!bs.test(lcore_id))
-    return -1;
-  else
-    bs.set(lcore_id, false);
-  return 0;
-}
 
 #endif

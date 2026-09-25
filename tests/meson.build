@@ -15,6 +15,8 @@ add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
 mtl = dependency('mtl', required : true)
 gtest = dependency('gtest', required : true)
+# KahawaiTest brings its own main(). MtlManagerApiTest uses the gtest one.
+gtest_main = dependency('gtest_main', required : false)
 libpthread = cpp_c.find_library('pthread', required : true)
 if not is_windows
   libnuma = cpp_c.find_library('numa', required : true)
@@ -77,4 +79,21 @@ executable('KahawaiTest', sources,
   dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep],
   install: true,
 )
+endif
+
+# The MtlManager API test. It starts a manager of its own on a path below /tmp,
+# so it needs no NIC and no root. The manager is built after this project on a
+# fresh tree, so the dependency is optional: a second build picks it up.
+mtlm_client_dep = dependency('mtlm_client', required : false)
+if not is_windows and mtlm_client_dep.found() and gtest_main.found()
+  manager_api_test = executable('MtlManagerApiTest', manager_api_sources,
+    cpp_args : test_cpp_args,
+    link_args: test_ld_args,
+    # asan should be always the first dep
+    dependencies: [asan_dep, mtlm_client_dep, gtest, gtest_main, libpthread],
+    install: true,
+  )
+  test('manager_api', manager_api_test, protocol: 'gtest', timeout: 300)
+else
+  message('mtlm_client not found, no MtlManagerApiTest. Build manager/ first.')
 endif

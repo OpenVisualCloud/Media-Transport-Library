@@ -142,6 +142,19 @@ ninja
 do_install
 popd
 
+# build mtl_manager
+# It comes before tests/, because MtlManagerApiTest links the client library
+# this step installs.
+if [ "$OS" != "Windows_NT" ]; then
+	pushd manager/
+	meson setup "${MANAGER_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	popd
+	pushd "${MANAGER_BUILD_DIR}"
+	ninja
+	do_install
+	popd
+fi
+
 # build tests
 pushd tests/
 meson setup "${TEST_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
@@ -166,17 +179,6 @@ if [ "$OS" != "Windows_NT" ]; then
 	meson setup "${LD_PRELOAD_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 	popd
 	pushd "${LD_PRELOAD_BUILD_DIR}"
-	ninja
-	do_install
-	popd
-fi
-
-# build mtl_manager
-if [ "$OS" != "Windows_NT" ]; then
-	pushd manager/
-	meson setup "${MANAGER_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-	popd
-	pushd "${MANAGER_BUILD_DIR}"
 	ninja
 	do_install
 	popd

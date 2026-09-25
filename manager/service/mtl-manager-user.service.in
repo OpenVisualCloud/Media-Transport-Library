@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+#
+# A private MTL Manager for one user. It needs no root.
+#
+# The socket goes to $XDG_RUNTIME_DIR/imtl/mtl_manager.sock, which the user
+# alone can reach, so two users on one host do not share a manager. An MTL
+# instance of the same user finds it with no configuration.
+#
+# Start it with:
+#   systemctl --user enable --now mtl-manager
+#
+# It arbitrates the lcores, the receive queues and the flow rules of this user.
+# It cannot load an XDP program or install an ethtool rule, because those need
+# privilege. Such a request gets a refusal, and the AF_XDP backend needs the
+# system service instead.
+
+[Unit]
+Description=MTL Manager of this user
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/mtl/manager.env
+ExecStart=@BINDIR@/MtlManager $MTL_MANAGER_ARGS
+Restart=on-failure
+RestartSec=2s
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=default.target
