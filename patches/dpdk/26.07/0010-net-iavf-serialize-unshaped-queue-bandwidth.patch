@@ -1,0 +1,38 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Thu, 17 Sep 2026 14:20:00 +0200
+Subject: [PATCH] net/iavf: serialize unshaped queue bandwidth
+
+Set the queue ID and traffic class for every queue node. A leaf without a
+shaper profile represents the hardware default queue bandwidth. Previously,
+such a leaf left both fields zero and could reset queue 0 instead of the
+selected queue.
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_tm.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_tm.c b/drivers/net/intel/iavf/iavf_tm.c
+--- a/drivers/net/intel/iavf/iavf_tm.c
++++ b/drivers/net/intel/iavf/iavf_tm.c
+@@ -867,15 +867,15 @@ iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 		}
+ 		q_tc_mapping->tc[tm_node->tc].req.queue_count++;
+ 
++		q_bw->cfg[node_committed].queue_id = tm_node->id;
++		q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		if (tm_node->shaper_profile) {
+-			q_bw->cfg[node_committed].queue_id = tm_node->id;
+ 			q_bw->cfg[node_committed].shaper.peak =
+ 			tm_node->shaper_profile->profile.peak.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+ 			q_bw->cfg[node_committed].shaper.committed =
+ 			tm_node->shaper_profile->profile.committed.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+-			q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		}
+ 
+ 		node_committed++;
+-- 
+2.43.0
