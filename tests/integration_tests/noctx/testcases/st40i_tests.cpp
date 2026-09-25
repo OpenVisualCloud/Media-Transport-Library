@@ -14,9 +14,15 @@
 
 namespace {
 
-class SplitAncStrategy : public FrameTestStrategy {
+/* TX writes one ANC packet per entry of anc_sizes, each with its own byte pattern.
+ * Checks on every RX frame:
+ * 1. meta_num and pkts_total == anc_sizes.size(), RTP marker set
+ * 2. no sequence discontinuity, seq_lost == 0
+ * 3. each ANC's udw_size, udw_offset and bytes as sent, udw_buffer_fill == their sum
+ */
+class SplitAncRoundTripOracle : public FrameTestStrategy {
  public:
-  explicit SplitAncStrategy(std::vector<uint16_t> anc_sizes)
+  explicit SplitAncRoundTripOracle(std::vector<uint16_t> anc_sizes)
       : FrameTestStrategy(nullptr, true, true), anc_sizes_(std::move(anc_sizes)) {
   }
 
@@ -153,15 +159,29 @@ static int send_rtp_burst(const st_tests_context* ctx, uint16_t port,
 
 }  // namespace
 
+/* Common to every test here: initDefaultContext(); one session TX TEST_PORT_1 -> RX
+ * TEST_PORT_2, 60p, 4 buffers, TX and RX BLOCK_GET (fillSt40pOps()), default pacing;
+ * StartFakePtpClock() before the sessions start. Every TX and RX frame also passes the
+ * St40pHandler thread checks. No SKIP or FAIL rule, except that
+ * st40i_split_seq_gap_reports_loss SKIPs when no frame arrives.
+ */
+
+/* st40i_smoke
+ * Config: kInterlaced TX and RX, TX kFps = 50 fields/s; no strategy.
+ * Expect: after 20 s and stop: txFrames() > 0, rxFrames() > 0, equal.
+ */
 TEST_F(NoCtxTest, st40i_smoke) {
   initDefaultContext();
+
+  constexpr bool kInterlaced = true;
+  constexpr enum st_fps kFps = ST_FPS_P50;
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       /*strategyFactory=*/nullptr, [](St40pHandler* handler) {
-        handler->sessionsOpsTx.interlaced = true;
-        handler->sessionsOpsRx.interlaced = true;
-        handler->sessionsOpsTx.fps = ST_FPS_P50;
+        handler->sessionsOpsTx.interlaced = kInterlaced;
+        handler->sessionsOpsRx.interlaced = kInterlaced;
+        handler->sessionsOpsTx.fps = kFps;
       });
 
   auto* handler = bundle.handler;
@@ -181,14 +201,21 @@ TEST_F(NoCtxTest, st40i_smoke) {
       << "st40i_smoke TX/RX frame count mismatch";
 }
 
+/* st40i_split_flag_accepts_and_propagates
+ * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, RX progressive; one 1-byte ANC per frame.
+ * Expect: on every frame, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
+ *         txFrames() > 0, rxFrames() > 0.
+ */
 TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
   initDefaultContext();
 
+  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncStrategy({1}); },
+      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncRoundTripOracle({1}); },
       [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         handler->sessionsOpsRx.interlaced = false;
       });
 
@@ -206,18 +233,27 @@ TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
   EXPECT_GT(bundle.handler->rxFrames(), 0u);
 }
 
+/* st40i_split_multi_packet_roundtrip
+ * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, RX progressive, kFramebuffCnt = 4 TX and RX;
+ *         ANC packets of 8, 6 and 4 bytes per frame.
+ * Expect: on every frame, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
+ *         rxFrames() >= 1.
+ */
 TEST_F(NoCtxTest, st40i_split_multi_packet_roundtrip) {
   initDefaultContext();
+
+  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+  constexpr uint16_t kFramebuffCnt = 4;
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       /*strategyFactory=*/
-      [](St40pHandler*) { return new SplitAncStrategy({8, 6, 4}); },
+      [](St40pHandler*) { return new SplitAncRoundTripOracle({8, 6, 4}); },
       [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         handler->sessionsOpsRx.interlaced = false;
-        handler->sessionsOpsTx.framebuff_cnt = 4;
-        handler->sessionsOpsRx.framebuff_cnt = 4;
+        handler->sessionsOpsTx.framebuff_cnt = kFramebuffCnt;
+        handler->sessionsOpsRx.framebuff_cnt = kFramebuffCnt;
       });
 
   ASSERT_NE(bundle.handler, nullptr);
@@ -233,18 +269,28 @@ TEST_F(NoCtxTest, st40i_split_multi_packet_roundtrip) {
   EXPECT_GE(bundle.handler->rxFrames(), 1u);
 }
 
+/* st40i_split_loopback
+ * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, kInterlaced TX and RX, TX kFps = 50 fields/s;
+ *         two 4-byte ANC packets per frame.
+ * Expect: on every field, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
+ *         txFrames() > 0, rxFrames() > 0.
+ */
 TEST_F(NoCtxTest, st40i_split_loopback) {
   initDefaultContext();
+
+  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+  constexpr bool kInterlaced = true;
+  constexpr enum st_fps kFps = ST_FPS_P50;
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       /*strategyFactory=*/
-      [](St40pHandler*) { return new SplitAncStrategy({4, 4}); },
+      [](St40pHandler*) { return new SplitAncRoundTripOracle({4, 4}); },
       [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
-        handler->sessionsOpsRx.interlaced = true;
-        handler->sessionsOpsTx.interlaced = true;
-        handler->sessionsOpsTx.fps = ST_FPS_P50;
+        handler->sessionsOpsTx.flags |= kTxFlags;
+        handler->sessionsOpsRx.interlaced = kInterlaced;
+        handler->sessionsOpsTx.interlaced = kInterlaced;
+        handler->sessionsOpsTx.fps = kFps;
       });
 
   ASSERT_NE(bundle.handler, nullptr);
@@ -261,18 +307,27 @@ TEST_F(NoCtxTest, st40i_split_loopback) {
   EXPECT_GT(bundle.handler->rxFrames(), 0u);
 }
 
+/* st40i_split_seq_gap_reports_loss
+ * Config: RX only, progressive, UDP udp_port, payload type kPayloadType, BLOCK_GET.
+ * Plan:   the RX session thread runs; the test sends two RTP packets of one frame
+ *         (seq 100 and 102, marker on the second) from a kernel UDP socket to the P
+ *         mcast address, then reads a frame itself for up to 1 s.
+ * Expect: 1. seq_discont, seq_lost >= 1, rtp_marker, meta_num == 2
+ *         SKIP if no frame arrives within 1 s.
+ */
 TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
   initDefaultContext();
 
   constexpr uint16_t udp_port = 33000;
+  constexpr uint8_t kPayloadType = 113;
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
-      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncStrategy({4}); },
+      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncRoundTripOracle({4}); },
       [](St40pHandler* handler) {
         handler->sessionsOpsRx.interlaced = false;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
-        handler->sessionsOpsRx.port.payload_type = 113;
+        handler->sessionsOpsRx.port.payload_type = kPayloadType;
         handler->sessionsOpsRx.flags |= ST40P_RX_FLAG_BLOCK_GET;
       });
 

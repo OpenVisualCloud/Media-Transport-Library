@@ -9,36 +9,11 @@
 #include <stdexcept>
 #include <thread>
 
-St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
-                           st30p_tx_ops ops_tx, st30p_rx_ops ops_rx,
-                           uint msPerFramebuffer, bool create, bool start)
-    : PipelineHandlerBase(ctx, frameTestStrategy, st30p_tx_create, st30p_rx_create,
-                          st30p_tx_free, st30p_rx_free),
-      nsPacketTime(0),
-      msPerFramebuffer(msPerFramebuffer) {
-  if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
-    fillSt30pOps();
-    ops_tx = sessionsOpsTx;
-    ops_rx = sessionsOpsRx;
-  } else {
-    sessionsOpsTx = ops_tx;
-    sessionsOpsRx = ops_rx;
-  }
-
-  if (!frameTestStrategy) throw std::runtime_error("St30pHandler no frameTestStrategy");
-
-  setFrameTestStrategy(frameTestStrategy);
-
-  if (create) {
-    createSession(ops_tx, ops_rx, start);
-  }
-}
-
 St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
                            st30p_rx_ops ops_rx, uint msPerFramebuffer)
     : PipelineHandlerBase(ctx, nullptr, st30p_tx_create, st30p_rx_create, st30p_tx_free,
                           st30p_rx_free),
-      nsPacketTime(0),
+      nsFramebuffTime(0),
       msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
@@ -131,7 +106,7 @@ void St30pHandler::normalizeSessionOps() {
   if (!totalPackets) totalPackets = 1;
   uint64_t framesPerSec = (double)NS_PER_S / pktTime / totalPackets;
   if (!framesPerSec) framesPerSec = 1;
-  nsPacketTime = NS_PER_S / framesPerSec;
+  nsFramebuffTime = NS_PER_S / framesPerSec;
 }
 
 void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {

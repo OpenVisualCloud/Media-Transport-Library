@@ -66,29 +66,6 @@ class PipelineHandlerBase : public Handlers {
     setSessionPortsRx(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
   }
 
-  void createSession(TxOps ops_tx, RxOps ops_rx, bool start = true) {
-    sessionsOpsTx = ops_tx;
-    sessionsOpsRx = ops_rx;
-
-    resetFrameCounters();
-    createSessionTx();
-    createSessionRx();
-
-    if (start) {
-      startSession();
-    }
-  }
-
-  void createSession(bool start = true) {
-    resetFrameCounters();
-    createSessionTx();
-    createSessionRx();
-
-    if (start) {
-      startSession();
-    }
-  }
-
   void createSessionTx() {
     ASSERT_TRUE(ctx && ctx->handle != nullptr);
     releaseTxHandle();

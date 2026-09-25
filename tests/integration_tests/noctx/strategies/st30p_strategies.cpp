@@ -26,23 +26,23 @@ void expectFirstFrameOnPacketGrid(const st30_frame* f, const St30pHandler* handl
       << "frame 0 RTP time " << rtp_tai << " is off the " << packet_ns << " ns grid";
   ASSERT_LE(rtp_tai, f->receive_timestamp)
       << "frame 0 RTP time " << rtp_tai << " is after its receive time";
-  EXPECT_LT(f->receive_timestamp - rtp_tai, handler->nsPacketTime)
+  EXPECT_LT(f->receive_timestamp - rtp_tai, handler->nsFramebuffTime)
       << "frame 0 RTP time " << rtp_tai << " is a frame or more before its receive time "
       << f->receive_timestamp;
 }
 }  // namespace
 
-St30pDefaultTimestamp::St30pDefaultTimestamp(St30pHandler* parentHandler)
+St30pDefaultPacingOracle::St30pDefaultPacingOracle(St30pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true), lastTimestamp(0) {
   idx_tx = 0;
   idx_rx = 0;
 }
 
-void St30pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st30_frame*>(frame);
   auto* st30pParent = static_cast<St30pHandler*>(parent);
   uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
-  uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
+  uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsFramebuffTime, sampling);
 
   if (idx_rx == 0) expectFirstFrameOnPacketGrid(f, st30pParent);
   if (lastTimestamp != 0) {
@@ -54,29 +54,30 @@ void St30pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
   idx_rx++;
 }
 
-St30pUserTimestamp::St30pUserTimestamp(St30pHandler* parentHandler)
-    : St30pDefaultTimestamp(parentHandler) {
+St30pUserPacingOracle::St30pUserPacingOracle(St30pHandler* parentHandler)
+    : St30pDefaultPacingOracle(parentHandler) {
   enable_tx_modifier = true;
   enable_rx_modifier = true;
 }
 
-void St30pUserTimestamp::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St30pUserPacingOracle::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st30_frame*>(frame);
   auto* st30pParent = static_cast<St30pHandler*>(parent);
   ASSERT_NE(st30pParent, nullptr);
-  ASSERT_TRUE(timingInitialized)
-      << "Call St30pUserTimestamp::initializeTiming from the test before sending frames";
+  ASSERT_TRUE(timingInitialized) << "Call St30pUserPacingOracle::initializeTiming from "
+                                    "the test before sending frames";
   f->tfmt = ST10_TIMESTAMP_FMT_TAI;
   f->timestamp = plannedTimestampNs(idx_tx);
   idx_tx++;
 }
 
-void St30pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St30pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st30_frame*>(frame);
   auto* st30pParent = static_cast<St30pHandler*>(parent);
   ASSERT_NE(st30pParent, nullptr);
-  ASSERT_TRUE(timingInitialized) << "Call St30pUserTimestamp::initializeTiming from the "
-                                    "test before validating frames";
+  ASSERT_TRUE(timingInitialized)
+      << "Call St30pUserPacingOracle::initializeTiming from the "
+         "test before validating frames";
 
   const uint64_t frame_idx = idx_rx++;
   const uint64_t expected_timestamp_ns = plannedTimestampNs(frame_idx);
@@ -91,15 +92,15 @@ void St30pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   lastTimestamp = f->timestamp;
 }
 
-void St30pUserTimestamp::initializeTiming(St30pHandler* handler) {
+void St30pUserPacingOracle::initializeTiming(St30pHandler* handler) {
   if (!handler) {
-    throw std::invalid_argument("St30pUserTimestamp expects a valid handler");
+    throw std::invalid_argument("St30pUserPacingOracle expects a valid handler");
   }
   if (timingInitialized) {
     return;
   }
 
-  frameTimeNs = handler->nsPacketTime;
+  frameTimeNs = handler->nsFramebuffTime;
   if (!frameTimeNs) {
     auto& ops = handler->sessionsOpsTx;
     uint64_t packet_time = st30_get_packet_time(ops.ptime);
@@ -117,17 +118,18 @@ void St30pUserTimestamp::initializeTiming(St30pHandler* handler) {
     frameTimeNs = NS_PER_MS;
   }
 
-  startingTime = static_cast<uint64_t>(frameTimeNs * 60);
+  startingTime = static_cast<uint64_t>(frameTimeNs * kSt30pUserPacingStartBuffers);
   timingInitialized = true;
 }
 
-uint64_t St30pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
+uint64_t St30pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
   double base = startingTime + frame_idx * frameTimeNs;
   return base <= 0.0 ? 0 : static_cast<uint64_t>(base);
 }
 
-void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st30_frame* frame,
-                                             uint64_t expected_timestamp_ns) {
+void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
+                                                const st30_frame* frame,
+                                                uint64_t expected_timestamp_ns) {
   auto* handler = static_cast<St30pHandler*>(parent);
   const mtl_handle mt = handler->ctx->handle;
   uint64_t receive_mono_ns;
@@ -139,9 +141,9 @@ void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st30_fram
   const uint64_t receive_time_ns = monotonicRawToPtp(mt, receive_mono_ns);
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
-  int64_t expected_delta_ns = 40 * NS_PER_US;
+  int64_t expected_delta_ns = kSt30pRxToleranceNs;
   if (frame_idx == 0) {
-    expected_delta_ns = 80 * NS_PER_US;
+    expected_delta_ns = kSt30pFirstBufferRxToleranceNs;
   }
 
   EXPECT_LE(std::abs(delta_ns), expected_delta_ns)
@@ -150,17 +152,17 @@ void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st30_fram
       << " expected timestamp(ns): " << expected_timestamp_ns;
 }
 
-void St30pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
-                                          uint64_t timestamp_media_clk,
-                                          uint64_t expected_media_clk) const {
+void St30pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,
+                                             uint64_t timestamp_media_clk,
+                                             uint64_t expected_media_clk) const {
   EXPECT_EQ(timestamp_media_clk, expected_media_clk)
       << " idx_rx: " << frame_idx << " expected media clk: " << expected_media_clk
       << " received timestamp: " << timestamp_media_clk;
 }
 
-void St30pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
-                                             uint64_t current_timestamp,
-                                             uint64_t sampling_hz) {
+void St30pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
+                                                uint64_t current_timestamp,
+                                                uint64_t sampling_hz) {
   if (!lastTimestamp) {
     return;
   }
@@ -178,12 +180,11 @@ void St30pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
-St30pRedundantLatency::St30pRedundantLatency(unsigned int /*latency*/,
-                                             St30pHandler* parentHandler,
-                                             int /*startingTime*/)
-    : St30pUserTimestamp(parentHandler) {
+St30pRedundantStreamPlan::St30pRedundantStreamPlan(St30pHandler* parentHandler)
+    : St30pUserPacingOracle(parentHandler) {
 }
 
-void St30pRedundantLatency::rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
+void St30pRedundantStreamPlan::rxTestFrameModifier(void* /*frame*/,
+                                                   size_t /*frame_size*/) {
   idx_rx++;
 }

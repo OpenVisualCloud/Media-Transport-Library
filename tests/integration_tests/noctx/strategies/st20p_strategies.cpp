@@ -37,13 +37,6 @@
 #include "tests.hpp"
 
 namespace {
-/* Elapsed time is measured against frame zero, so drift is not forgiven per frame. */
-constexpr int64_t kNoCtxPacingElapsedErrorMaxNs = 10 * NS_PER_US;
-/* Packet 0 cannot arrive before its launch; this is only PHC cross-timestamp error. */
-constexpr int64_t kNoCtxPacingEarlyMaxNs = 1 * NS_PER_US;
-/* Wire and NIC latency of packet 0 plus launch jitter, like the elapsed bound. */
-constexpr int64_t kNoCtxPacingLateMaxNs = 10 * NS_PER_US;
-constexpr uint64_t kUserPacingLeadNs = 800 * NS_PER_MS;
 constexpr uint64_t kBpmPayloadBytes = 1260;
 constexpr const char* kStrictTopology =
     "strict pacing needs TX and RX on different physical ports, a PHC reachable from "
@@ -274,11 +267,11 @@ bool RxPhcClock::receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_ti
   return false;
 }
 
-St20pDefaultTimestamp::St20pDefaultTimestamp(St20pHandler* parentHandler)
+St20pDefaultPacingOracle::St20pDefaultPacingOracle(St20pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true) {
 }
 
-void St20pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st_frame*>(frame);
   auto* st20pParent = static_cast<St20pHandler*>(parent);
   uint64_t framebuffTime =
@@ -312,14 +305,14 @@ void St20pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
   idx_rx++;
 }
 
-St20pUserTimestamp::St20pUserTimestamp(St20pHandler* parentHandler,
-                                       std::vector<double> offsetMultipliers)
+St20pUserPacingOracle::St20pUserPacingOracle(St20pHandler* parentHandler,
+                                             std::vector<double> offsetMultipliers)
     : FrameTestStrategy(parentHandler, true, true),
       timestampOffsetMultipliers(std::move(offsetMultipliers)) {
   initializeTiming(parentHandler);
 }
 
-int St20pUserTimestamp::getPacingParameters() {
+int St20pUserPacingOracle::getPacingParameters() {
   auto* parentHandler = static_cast<St20pHandler*>(parent);
   if (parentHandler && parentHandler->sessionsHandleTx) {
     return st20p_tx_get_pacing_params(parentHandler->sessionsHandleTx,
@@ -330,14 +323,14 @@ int St20pUserTimestamp::getPacingParameters() {
   return -1;
 }
 
-void St20pUserTimestamp::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St20pUserPacingOracle::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st_frame*>(frame);
   f->tfmt = ST10_TIMESTAMP_FMT_TAI;
   f->timestamp = plannedTimestampNs(idx_tx);
   idx_tx++;
 }
 
-void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St20pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st_frame*>(frame);
   const uint64_t frame_idx = idx_rx++;
 
@@ -354,19 +347,19 @@ void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   lastTimestamp = f->timestamp;
 }
 
-uint64_t St20pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
+uint64_t St20pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
   uint64_t base = plannedTimestampBaseNs(frame_idx);
   int64_t offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
   int64_t adjusted = base + offset;
   return adjusted < 0 ? 0 : (adjusted);
 }
 
-uint64_t St20pUserTimestamp::plannedTimestampBaseNs(uint64_t frame_idx) const {
+uint64_t St20pUserPacingOracle::plannedTimestampBaseNs(uint64_t frame_idx) const {
   int64_t base = startingTime + frame_idx * frameTimeNs;
   return base < 0 ? 0 : base;
 }
 
-double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
+double St20pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const {
   if (timestampOffsetMultipliers.empty()) {
     return 0;
   }
@@ -375,7 +368,7 @@ double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
   return timestampOffsetMultipliers[loop_idx];
 }
 
-uint64_t St20pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
+uint64_t St20pUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
   /* snap the requested TAI to the epoch the transmitter will pick */
   const double requested_ts = static_cast<double>(plannedTimestampNs(frame_idx));
   const double snapped_epoch =
@@ -388,8 +381,8 @@ uint64_t St20pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
 
-void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st_frame* frame,
-                                             uint64_t expected_transmit_time_ns) {
+void St20pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx, const st_frame* frame,
+                                                uint64_t expected_transmit_time_ns) {
   uint64_t receive_time_ns;
   auto* handler = static_cast<St20pHandler*>(parent);
   if (!rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
@@ -408,16 +401,16 @@ void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st_frame*
   }
 }
 
-void St20pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
-                                          uint64_t timestamp_media_clk,
-                                          uint64_t expected_media_clk) const {
+void St20pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,
+                                             uint64_t timestamp_media_clk,
+                                             uint64_t expected_media_clk) const {
   EXPECT_EQ(timestamp_media_clk, expected_media_clk)
       << " idx_rx: " << frame_idx << "expected media clk: " << expected_media_clk
       << " received timestamp: " << timestamp_media_clk;
 }
 
-void St20pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
-                                             uint64_t current_timestamp) {
+void St20pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
+                                                uint64_t current_timestamp) {
   if (!lastTimestamp) {
     return;
   }
@@ -436,9 +429,9 @@ void St20pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
-void St20pUserTimestamp::initializeTiming(St20pHandler* handler) {
+void St20pUserPacingOracle::initializeTiming(St20pHandler* handler) {
   if (!handler) {
-    throw std::invalid_argument("St20pUserTimestamp expects a valid handler");
+    throw std::invalid_argument("St20pUserPacingOracle expects a valid handler");
   }
 
   frameTimeNs = handler->nsFrameTime;
@@ -458,53 +451,49 @@ void St20pUserTimestamp::initializeTiming(St20pHandler* handler) {
   /* The fake PTP clock starts at init, so plan from now rather than from zero. */
   const uint64_t frame_ns = static_cast<uint64_t>(frameTimeNs);
   const uint64_t now = mtl_ptp_read_time(handler->ctx->handle);
-  startingTime = (now + kUserPacingLeadNs + frame_ns - 1) / frame_ns * frame_ns;
+  startingTime = (now + kSt20pUserPacingLeadNs + frame_ns - 1) / frame_ns * frame_ns;
 }
 
-St20pUserTimestampCustomStart::St20pUserTimestampCustomStart(
-    St20pHandler* parentHandler, std::vector<double> offsetsNs,
-    uint64_t customStartingTimeNs)
-    : St20pUserTimestamp(parentHandler, std::move(offsetsNs)) {
-  startingTime = customStartingTimeNs;
+St20pRedundantStreamPlan::St20pRedundantStreamPlan(unsigned int latency,
+                                                   St20pHandler* parentHandler)
+    : St20pUserPacingOracle(parentHandler), latencyInMs(latency) {
+  startingTime = (kSt20pRedundantStartMs + latencyInMs) * NS_PER_MS;
 }
 
-St20pRedundantLatency::St20pRedundantLatency(unsigned int latency,
-                                             St20pHandler* parentHandler)
-    : St20pUserTimestamp(parentHandler), latencyInMs(latency) {
-  startingTime = (50 + latencyInMs) * NS_PER_MS;
-}
-
-void St20pRedundantLatency::rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
+void St20pRedundantStreamPlan::rxTestFrameModifier(void* /*frame*/,
+                                                   size_t /*frame_size*/) {
   idx_rx++;
 }
 
-St20pExactUserPacing::St20pExactUserPacing(St20pHandler* parentHandler,
-                                           std::vector<double> offsetMultipliers)
-    : St20pUserTimestamp(parentHandler, std::move(offsetMultipliers)) {
+St20pExactUserPacingOracle::St20pExactUserPacingOracle(
+    St20pHandler* parentHandler, std::vector<double> offsetMultipliers)
+    : St20pUserPacingOracle(parentHandler, std::move(offsetMultipliers)) {
 }
 
-uint64_t St20pExactUserPacing::expectedTransmitTimeNs(uint64_t frame_idx) const {
+uint64_t St20pExactUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
   return plannedTimestampNs(frame_idx);
 }
 
-void St20pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/,
-                                               uint64_t /*current_timestamp*/) {
+void St20pExactUserPacingOracle::verifyTimestampStep(uint64_t /*frame_idx*/,
+                                                     uint64_t /*current_timestamp*/) {
   /* Exact pacing uses user-provided deltas; no fixed increment enforced here. */
 }
 
 /* Frame grid: a first field takes an even slot, a second field an odd one. */
-uint64_t St20pInterlacedUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
+uint64_t St20pInterlacedUserPacingOracle::expectedTransmitTimeNs(
+    uint64_t frame_idx) const {
   const uint64_t frame_ns = static_cast<uint64_t>(frameTimeNs);
   const uint64_t epoch = (plannedTimestampNs(frame_idx) + frame_ns / 2) / frame_ns;
   const bool second_field = frame_idx & 1;
-  const uint64_t expected = St20pUserTimestamp::expectedTransmitTimeNs(frame_idx);
+  const uint64_t expected = St20pUserPacingOracle::expectedTransmitTimeNs(frame_idx);
   return (epoch & 1) == second_field ? expected : expected + frame_ns;
 }
 
-void St20pInterlacedUserTimestamp::rxTestFrameModifier(void* frame, size_t frame_size) {
+void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
+                                                          size_t frame_size) {
   auto* f = static_cast<st_frame*>(frame);
   EXPECT_TRUE(f->interlaced) << "received field was reported as progressive";
   EXPECT_EQ(f->second_field, (idx_rx & 1) != 0)
       << "field " << idx_rx << " has the wrong first/second-field identity";
-  St20pUserTimestamp::rxTestFrameModifier(frame, frame_size);
+  St20pUserPacingOracle::rxTestFrameModifier(frame, frame_size);
 }

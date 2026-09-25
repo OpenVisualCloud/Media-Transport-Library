@@ -15,7 +15,32 @@
 /* 1 s of 10 ms buffers, so a stalled test consumer cannot drop merged frames */
 static constexpr uint16_t kRxFramebuffCnt = 100;
 
-/* TODO: the tests fail with ST31_PTIME_80US */
+/* Indexes into --port_list. */
+constexpr int kRxPortP = 0;
+constexpr int kRxPortR = 1;
+constexpr int kPrimaryTxPort = 2;
+constexpr int kRedundantTxPort = 3;
+
+/* Common to both tests:
+ * Config:    4 ports, else std::runtime_error; initDefaultContext(). PCM16 48 kHz
+ *            stereo, 1 ms packets, 10 ms buffers (B), 3 TX buffers.
+ *            RX kRxPortP + kRxPortR (P and R), kRxFramebuffCnt = 100 buffers;
+ *            primary TX kPrimaryTxPort -> P mcast; redundant TX kRedundantTxPort
+ *            -> R mcast, UDP port + 1, rtp_timestamp_delta_us = -testedLatencyMs *
+ *            1000 (-10 ms); both TX kTxFlags = USER_PACING.
+ * Plan:      both TX St30pRedundantStreamPlan, t_user(n) = (60 + n) * B from PTP
+ *            zero (StartFakePtpClock() before mtl_start()). RX counts buffers.
+ * Expect:    every TX and RX buffer also passes the St30pHandler thread checks.
+ * Skip/Fail: none.
+ */
+
+/* st30p_redundant_latency
+ * Plan:      all three sessions run 20 s; stats read after they stop.
+ * Expect:    1. RX packets on P and on R == primary TX packets +- 10 %
+ *            2. stat_lost_packets <= (P + R packets) / 1000
+ *            3. RX buffers (idx_rx) == primary TX buffers (idx_tx) +- 1 %
+ *
+ * TODO: the tests fail with ST31_PTIME_80US */
 TEST_F(NoCtxTest, st30p_redundant_latency) {
   if (ctx->para.num_ports < 4) {
     throw std::runtime_error("st30p_redundant_latency test ctx needs at least 4 ports");
@@ -24,52 +49,54 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   initDefaultContext();
 
   uint testedLatencyMs = 10;
+  constexpr uint32_t kTxFlags = ST30P_TX_FLAG_USER_PACING;
 
   auto rxBundle = createSt30pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
       [](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(0, handler);
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
         handler->sessionsOpsRx.framebuff_cnt = kRxFramebuffCnt;
-        handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
+        handler->setSessionPorts(SESSION_SKIP_PORT, kRxPortP, SESSION_SKIP_PORT,
+                                 kRxPortR);
       });
-  auto* rxStrategy = static_cast<St30pRedundantLatency*>(rxBundle.strategy);
+  auto* rxStrategy = static_cast<St30pRedundantStreamPlan*>(rxBundle.strategy);
   ASSERT_NE(rxBundle.handler, nullptr);
   ASSERT_NE(rxStrategy, nullptr);
 
   auto primaryBundle = createSt30pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
       [](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(0, handler);
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [](St30pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
-        handler->setSessionPorts(2, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->setSessionPorts(kPrimaryTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
       });
-  auto* primaryStrategy = static_cast<St30pRedundantLatency*>(primaryBundle.strategy);
+  auto* primaryStrategy = static_cast<St30pRedundantStreamPlan*>(primaryBundle.strategy);
   ASSERT_NE(primaryBundle.handler, nullptr);
   ASSERT_NE(primaryStrategy, nullptr);
 
   auto latencyBundle = createSt30pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
-      [testedLatencyMs](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(testedLatencyMs, handler);
+      [](St30pHandler* handler) {
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [this, testedLatencyMs](St30pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
         handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
-        handler->setSessionPorts(3, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
                ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
@@ -116,7 +143,16 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
       << stats.stat_slot_get_frame_fail;
 }
 
-/* TODO: the tests fail with ST31_PTIME_80US */
+/* st30p_redundant_latency2
+ * Plan:      all run 10 s, the primary TX stops, the redundant TX runs 10 s more;
+ *            stats read after all stop.
+ * Expect:    1. RX packets on R == redundant TX packets +- 10 %
+ *            2. RX packets on P > 0
+ *            3. stat_pkts_received == redundant TX packets +- 1 %
+ *            4. stat_lost_packets <= (P + R packets) / 1000
+ *            5. RX buffers (idx_rx) == redundant TX buffers (idx_tx) +- 1 %
+ *
+ * TODO: the tests fail with ST31_PTIME_80US */
 TEST_F(NoCtxTest, st30p_redundant_latency2) {
   if (ctx->para.num_ports < 4) {
     throw std::runtime_error("st30p_redundant_latency test ctx needs at least 4 ports");
@@ -125,34 +161,36 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   initDefaultContext();
 
   uint testedLatencyMs = 10;
+  constexpr uint32_t kTxFlags = ST30P_TX_FLAG_USER_PACING;
 
   auto rxBundle = createSt30pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
       [](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(0, handler);
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
         handler->sessionsOpsRx.framebuff_cnt = kRxFramebuffCnt;
-        handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
+        handler->setSessionPorts(SESSION_SKIP_PORT, kRxPortP, SESSION_SKIP_PORT,
+                                 kRxPortR);
       });
-  auto* rxStrategy = static_cast<St30pRedundantLatency*>(rxBundle.strategy);
+  auto* rxStrategy = static_cast<St30pRedundantStreamPlan*>(rxBundle.strategy);
   ASSERT_NE(rxBundle.handler, nullptr);
   ASSERT_NE(rxStrategy, nullptr);
 
   auto primaryBundle = createSt30pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
       [](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(0, handler);
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [](St30pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
-        handler->setSessionPorts(2, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->setSessionPorts(kPrimaryTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
       });
   ASSERT_NE(primaryBundle.handler, nullptr);
@@ -160,22 +198,22 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
 
   auto latencyBundle = createSt30pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
-      [testedLatencyMs](St30pHandler* handler) {
-        auto* strategy = new St30pRedundantLatency(testedLatencyMs, handler);
+      [](St30pHandler* handler) {
+        auto* strategy = new St30pRedundantStreamPlan(handler);
         strategy->initializeTiming(handler);
         return strategy;
       },
       [this, testedLatencyMs](St30pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
         handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
-        handler->setSessionPorts(3, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
                ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
         handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P]++;
       });
-  auto* latencyStrategy = static_cast<St30pRedundantLatency*>(latencyBundle.strategy);
+  auto* latencyStrategy = static_cast<St30pRedundantStreamPlan*>(latencyBundle.strategy);
   ASSERT_NE(latencyBundle.handler, nullptr);
   ASSERT_NE(latencyStrategy, nullptr);
 
