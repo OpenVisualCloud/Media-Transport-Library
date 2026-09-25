@@ -20,11 +20,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol
 
+import requests
 from compliance.compliance_client import PcapComplianceClient, no_verdict_reason
 from mfd_connect.exceptions import ConnectionCalledProcessError
 
 from .csv_report import update_compliance_result
 from .execute import log_fail
+from .integrity import get_channel_number, get_sample_number
 from .media_files import parse_fps_to_pformat
 
 logger = logging.getLogger(__name__)
@@ -273,6 +275,38 @@ class CaptureIntent:
     transport_format: Optional[str] = None
     framerate: Optional[str] = None
     expected_video_streams: int = 1
+    # What an st30p session sends; None for any other session type.
+    audio_format: Optional[str] = None
+    audio_channels: Optional[list] = None
+    audio_sampling: Optional[str] = None
+    audio_ptime: Optional[str] = None
+
+
+# MTL audio_format/audio_sampling -> EBU LIST's media_specific.encoding and
+# .sampling, the only values pi-list cpp/libs/core/lib/src/ebu/list/core/
+# media/audio/sampling.cpp parses. PCM8 has no encoding there -- see
+# unparsable_reason().
+_AUDIO_FORMAT_TO_EBU_ENCODING = {"PCM16": "L16", "PCM24": "L24"}
+_AUDIO_SAMPLING_TO_EBU = {"48kHz": "48000", "96kHz": "96000"}
+
+
+def _ebu_audio_description(intent: CaptureIntent) -> Optional[dict]:
+    """The EBU LIST ``media_specific`` of the audio *intent* sends, or None.
+
+    None when *intent* holds no st30p session, or one LIST cannot describe.
+    """
+    encoding = _AUDIO_FORMAT_TO_EBU_ENCODING.get(intent.audio_format)
+    sampling = _AUDIO_SAMPLING_TO_EBU.get(intent.audio_sampling)
+    if not encoding or not sampling:
+        return None
+    samples = get_sample_number(intent.audio_sampling, intent.audio_ptime)
+    return {
+        "encoding": encoding,
+        "sampling": sampling,
+        "number_channels": get_channel_number(intent.audio_channels[0]),
+        # Milliseconds, printed the way LIST prints them (std::to_string).
+        "packet_time": f"{samples * 1000 / int(sampling):.6f}",
+    }
 
 
 class ComplianceCheck(Protocol):
@@ -486,16 +520,20 @@ class ComplianceSession:
         (binary-search/performance loops) can continue without a forced
         abort. Removes the pcap file after upload regardless of the verdict.
         """
-        report = self._fetch_report(fail_on_error)
+        report = self._fetch_report(fail_on_error, _ebu_audio_description(intent))
         self._apply_checks(report, intent, allow_wide, fail_on_error)
 
-    def _fetch_report(self, fail_on_error: bool) -> dict:
+    def _fetch_report(self, fail_on_error: bool, audio: Optional[dict] = None) -> dict:
         """Upload ``self._recorder.pcap_file`` and return its EBU LIST report.
+
+        *audio* is the ``media_specific`` the audio streams were sent with;
+        LIST analyses them as that, not as what it guessed from the packets.
 
         Raises ``AssertionError`` (via :meth:`_fail`) on any transport
         failure -- the upload command failing, its output not containing the
-        expected UUID marker, or the report remaining unavailable/not analyzed
-        after polling. Also raises on both analyzed outcomes that are not a
+        expected UUID marker, the report remaining unavailable/not analyzed
+        after polling, or LIST failing to re-analyse the audio streams as
+        *audio*. Also raises on both analyzed outcomes that are not a
         pass: a non-compliance verdict, and a report carrying no verdict at
         all because the capture held no streams (see
         :func:`no_verdict_reason`) -- the latter only after re-analysing the
@@ -565,6 +603,15 @@ class ComplianceSession:
                     f"for PCAP UUID {uuid}; compliance was not evaluated",
                     fail_on_error,
                 )
+            if audio:
+                try:
+                    report = uploader.reanalyze_audio(report, audio)
+                except requests.RequestException as e:
+                    self._fail(
+                        "EBU LIST did not re-analyse the audio streams of PCAP "
+                        f"UUID {uuid} ({e}); compliance was not evaluated",
+                        fail_on_error,
+                    )
             result, report = uploader.check_compliance(report)
             if not result:
                 logger.info(f"Compliance report: {report}")
@@ -724,8 +771,8 @@ if TYPE_CHECKING:
 NO_COMPLIANCE = _NullComplianceSession()
 
 
-# Media EBU LIST 2.2.2 cannot judge. Both cases are limits of the analyser, not
-# of MTL: the stream is transmitted correctly and only the verdict is dropped.
+# Media EBU LIST 2.2.2 cannot judge. All three cases are limits of the analyser,
+# not of MTL: the stream is transmitted correctly and only the verdict is dropped.
 #
 # 8K it does not parse at all. 119.88 fps it mis-detects, because it derives the
 # rate from two inter-frame RTP timestamp deltas as Rate(180000, d1 + d2), which
@@ -735,17 +782,22 @@ NO_COMPLIANCE = _NullComplianceSession()
 # 23.976 needs 7507.5 ticks for the same reason but upstream already escapes it,
 # so do not widen this to every fractional rate -- i720p23 would lose a verdict
 # it passes today.
+#
+# PCM8 it has no encoding for: ST 2110-30 defines L16 and L24 only, and so does
+# LIST. It reads PCM8 stereo as L16 mono and PCM8 mono as no audio at all, so
+# a PCM8 verdict is only ever on a stream LIST misread.
 UNPARSABLE_WIDTH = 7680
 UNPARSABLE_HEIGHT = 4320
 UNPARSABLE_FPS = ("p119",)
+UNPARSABLE_AUDIO_FORMATS = ("PCM8",)
 
 
 def unparsable_reason(media_info: Optional[dict]) -> Optional[str]:
     """Why EBU LIST 2.2.2 cannot judge *media_info*, or None if it can.
 
     *media_info* is a :mod:`mtl_engine.media_files` entry (the first half of the
-    ``media_file`` fixture's tuple). Media type is part of no case, so st20p,
-    st30p and st40 all use this. An fps it cannot read means "no known
+    ``media_file`` fixture's tuple) of any media type: st20p, st30p and st40
+    all use this. An fps it cannot read means "no known
     limitation" rather than an error -- this decides whether a verdict is taken
     at all, so an analyser gap must not become a test error.
     """
@@ -763,5 +815,8 @@ def unparsable_reason(media_info: Optional[dict]) -> Optional[str]:
         fps = media_info.get("fps")  # already a pXX label, or unreadable
     if fps in UNPARSABLE_FPS:
         return "EBU LIST 2.2.2 mis-detects 119.88 fps as 90000/751"
+
+    if media_info.get("format") in UNPARSABLE_AUDIO_FORMATS:
+        return "EBU LIST 2.2.2 has no encoding for PCM8, only for L16 and L24"
 
     return None

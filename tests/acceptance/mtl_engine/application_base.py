@@ -278,6 +278,9 @@ class Application(ABC):
             if self.params.get("enable_ptp", False)
             else 0
         )
+        # Only an st30p session's params describe its audio: every other session
+        # still carries the UNIVERSAL_PARAMS audio defaults.
+        audio = self.params if self.params.get("session_type") == "st30p" else {}
         return CaptureIntent(
             dst_ips=self._resolve_capture_dst_ips(),
             capture_time=self.params.get("test_time", 30),
@@ -290,6 +293,10 @@ class Application(ABC):
             transport_format=self.params.get("transport_format"),
             framerate=self.params.get("framerate"),
             expected_video_streams=self._expected_video_streams(),
+            audio_format=audio.get("audio_format"),
+            audio_channels=audio.get("audio_channels"),
+            audio_sampling=audio.get("audio_sampling"),
+            audio_ptime=audio.get("audio_ptime"),
         )
 
     def _expected_video_streams(self) -> int:
