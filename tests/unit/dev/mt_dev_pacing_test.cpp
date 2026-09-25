@@ -125,3 +125,69 @@ TEST_F(MtDevPacingTest, IavfTmCapabilityErrorStillClears) {
   ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
   ExpectQueuesClearedOnce();
 }
+
+TEST_F(MtDevPacingTest, TsnRxOnlyVfPacesWithTsc) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_TSN);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSC);
+}
+
+TEST_F(MtDevPacingTest, TsnRxOnlyPortWithLaunchTimePacesWithTsc) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_enable_launch_time(ctx_);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSC);
+}
+
+TEST_F(MtDevPacingTest, TsnRxOnlyPortNeedsNoPtp) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_enable_launch_time(ctx_);
+  ut_dev_set_ptp_enabled(ctx_, false);
+  EXPECT_EQ(ut_dev_init_pacing(ctx_), 0);
+}
+
+TEST_F(MtDevPacingTest, TsnRxOnlyPortBesideTxPortPacesWithTsc) {
+  ut_dev_set_tx_queues_cnt(ctx_, MTL_PORT_P, 1);
+  ASSERT_EQ(ut_dev_init_port_pacing(ctx_, MTL_PORT_R, ST21_TX_PACING_WAY_TSN), 0);
+  EXPECT_EQ(ut_dev_port_pacing_way(ctx_, MTL_PORT_R), ST21_TX_PACING_WAY_TSC);
+}
+
+TEST_F(MtDevPacingTest, TsnTxPfWithoutLaunchTimeRejected) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_set_tx_queues_cnt(ctx_, MTL_PORT_P, 1);
+  EXPECT_EQ(ut_dev_init_pacing(ctx_), -EINVAL);
+}
+
+TEST_F(MtDevPacingTest, TsnDeprecatedTxSessionsMaxMakesPortTx) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_set_tx_sessions_cnt_max(ctx_, 1);
+  EXPECT_EQ(ut_dev_init_pacing(ctx_), -EINVAL);
+}
+
+TEST_F(MtDevPacingTest, TsnTxPortWithLaunchTimeKeepsTsn) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_set_tx_queues_cnt(ctx_, MTL_PORT_P, 1);
+  ut_dev_enable_launch_time(ctx_);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSN);
+}
+
+TEST_F(MtDevPacingTest, TsnTxPortWithLaunchTimeRequiresPtp) {
+  ut_dev_set_pacing_port(ctx_, false, ST21_TX_PACING_WAY_TSN);
+  ut_dev_set_tx_queues_cnt(ctx_, MTL_PORT_P, 1);
+  ut_dev_enable_launch_time(ctx_);
+  ut_dev_set_ptp_enabled(ctx_, false);
+  EXPECT_EQ(ut_dev_init_pacing(ctx_), -EINVAL);
+}
+
+TEST_F(MtDevPacingTest, TsnRxOnlyPortDoesNotArmLaunchTime) {
+  EXPECT_EQ(ut_dev_if_init(ctx_, ST21_TX_PACING_WAY_TSN), -EIO);
+  ASSERT_EQ(ut_dev_configure_calls(ctx_), 1);
+  EXPECT_FALSE(ut_dev_configured_launch_time(ctx_));
+}
+
+TEST_F(MtDevPacingTest, TsnTxPortArmsLaunchTime) {
+  ut_dev_set_tx_queues_cnt(ctx_, MTL_PORT_P, 1);
+  EXPECT_EQ(ut_dev_if_init(ctx_, ST21_TX_PACING_WAY_TSN), -EIO);
+  EXPECT_TRUE(ut_dev_configured_launch_time(ctx_));
+}

@@ -273,11 +273,13 @@ How MTL uses the E810/E830 rate limiter to pace the packets, and to launch each 
 
 #### 4.3.3. TSN launch-time pacing
 
-TSN launch-time pacing (`--pacing_way tsn` / `ST21_TX_PACING_WAY_TSN`) offloads packet pacing to the NIC: MTL stamps each packet with a launch time and the NIC releases it once its internal clock (the PHC) reaches that timestamp. This has three requirements, all enforced at session init:
+TSN launch-time pacing (`--pacing_way tsn` / `ST21_TX_PACING_WAY_TSN`) offloads packet pacing to the NIC: MTL stamps each packet with a launch time and the NIC releases it once its internal clock (the PHC) reaches that timestamp. This has three requirements, which `mtl_init()` enforces on every port that requests TX queues, unless `MTL_FLAG_SHARED_TX_QUEUE` makes every port pace with TSC:
 
 - The NIC must be an Intel® E830 Series Ethernet Adapter. E810 lacks the TxPP launch-time hardware engine, so it never advertises the `RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP` capability.
 - The port must be a PF (Physical Function). VFs do not support the hardware timesync feature, so there is no HW PHC to compare the launch time against.
 - The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Setup](run.md#71-ptp-setup) for how to enable it.
+
+A port that requests no TX queues is exempt and paces with TSC, so an RX-only VF can sit beside a TSN TX port.
 
 ### 4.4. ST2110 RX
 
