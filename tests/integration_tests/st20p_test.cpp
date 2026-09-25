@@ -2432,3 +2432,27 @@ TEST(St20p, tx_no_epoch_drop) {
 TEST(St20p, tx_user_pacing_no_epoch_drop) {
   st20p_tx_epoch_drop_test(true);
 }
+
+TEST(St20p, tx_sch_separate_from_shared_rss) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  if (ctx->rss_mode == MTL_RSS_MODE_NONE)
+    GTEST_SKIP() << "shared RSS is off, run with --rss_mode l3_l4";
+
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 3;
+  struct st20p_tx_ops ops_tx;
+  st20p_tx_ops_init(test_ctx, &ops_tx);
+
+  int sch_cnt = st_test_sch_cnt(ctx);
+  auto tx_handle = st20p_tx_create(ctx->handle, &ops_tx);
+  ASSERT_TRUE(tx_handle != NULL);
+  EXPECT_EQ(st_test_sch_cnt(ctx), sch_cnt + 1)
+      << "tx session joined an existing scheduler";
+
+  int ret = st20p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx;
+}

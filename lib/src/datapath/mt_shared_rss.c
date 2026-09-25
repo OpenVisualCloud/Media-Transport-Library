@@ -478,7 +478,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
       srss_sch->parent = srss;
       srss_sch->idx = s_idx;
-      srss_sch->quota_mps = 0;
+      srss_sch->quota_mps = impl->main_sch->data_quota_mbs_limit;
       srss_sch->q_start = q_idx;
       uint16_t q_end = srss_sch->q_start + q_per_sch;
       if (s_idx < q_remaining) q_end++;

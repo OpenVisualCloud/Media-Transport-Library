@@ -49,6 +49,7 @@ struct ut_srss_ctx {
   struct mt_srss_impl srss;
   struct mt_srss_sch srss_sch;
   struct mt_sch_tasklet_impl tasklet;
+  int requested_quota_mbs;
   uint16_t nb_pkts;
 };
 
@@ -70,9 +71,9 @@ static uint16_t ut_rte_eth_rx_burst(uint16_t port_id, uint16_t queue_id,
 
 static struct mtl_sch_impl* ut_mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
                                           enum mt_sch_type type, mt_sch_mask_t mask) {
-  (void)quota_mbs;
   (void)type;
   (void)mask;
+  ut_active_ctx->requested_quota_mbs = quota_mbs;
   return impl->main_sch;
 }
 
@@ -144,6 +145,8 @@ ut_srss_ctx* ut_srss_init_port(uint32_t link_speed_mbps) {
 
   ctx->impl.user_para.num_ports = 1;
   ctx->impl.main_sch = mt_sch_instance(&ctx->impl, 0);
+  ctx->impl.main_sch->data_quota_mbs_limit =
+      ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
   struct mt_interface* inf = mt_if(&ctx->impl, MTL_PORT_P);
   inf->rss_mode = MTL_RSS_MODE_L3_L4;
   inf->nb_rx_q = 1;
@@ -170,6 +173,14 @@ int ut_srss_tasklet_handler(ut_srss_ctx* ctx) {
 
 uint64_t ut_srss_registered_advice_sleep_us(const ut_srss_ctx* ctx) {
   return ctx->tasklet.ops.advice_sleep_us;
+}
+
+int ut_srss_requested_quota_mbs(const ut_srss_ctx* ctx) {
+  return ctx->requested_quota_mbs;
+}
+
+int ut_srss_main_sch_quota_limit_mbs(const ut_srss_ctx* ctx) {
+  return ctx->impl.main_sch->data_quota_mbs_limit;
 }
 
 uint16_t ut_srss_burst_size(void) {

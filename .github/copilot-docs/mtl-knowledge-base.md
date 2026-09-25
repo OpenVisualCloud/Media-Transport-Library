@@ -149,6 +149,8 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
+**Gotcha**: `mt_sch_add_quota()` admits any request while a scheduler's quota total is 0, however busy the tasklets already on it keep it. Shared RSS dispatchers therefore request the full `data_quota_mbs_limit`, so each costs a scheduler (an lcore in lcore mode) that only zero-quota sessions, ancillary and fast metadata, can share.
+
 ### Sleep/Wake Design
 - Each tasklet declares `advice_sleep_us`
 - Scheduler takes minimum across all tasklets

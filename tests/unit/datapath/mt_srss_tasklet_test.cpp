@@ -71,3 +71,10 @@ TEST_F(MtSrssInitTest, UnreportedSpeedAdvisesAs100G) {
   EXPECT_EQ(RegisteredAdviceUs(RTE_ETH_SPEED_NUM_NONE), advice_100g_us);
   EXPECT_EQ(RegisteredAdviceUs(RTE_ETH_SPEED_NUM_UNKNOWN), advice_100g_us);
 }
+
+TEST_F(MtSrssInitTest, RequestsFullSchQuota) {
+  ctx_ = ut_srss_init_port(RTE_ETH_SPEED_NUM_100G);
+  ASSERT_NE(ctx_, nullptr);
+  ASSERT_GT(ut_srss_main_sch_quota_limit_mbs(ctx_), 0);
+  EXPECT_EQ(ut_srss_requested_quota_mbs(ctx_), ut_srss_main_sch_quota_limit_mbs(ctx_));
+}

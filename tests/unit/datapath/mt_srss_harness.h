@@ -27,6 +27,10 @@ int ut_srss_tasklet_handler(ut_srss_ctx* ctx);
 /* advice_sleep_us of the tasklet mt_srss_init() registered. */
 uint64_t ut_srss_registered_advice_sleep_us(const ut_srss_ctx* ctx);
 
+/* The quota mt_srss_init() asked mt_sch_get() for, and the main sch's quota limit. */
+int ut_srss_requested_quota_mbs(const ut_srss_ctx* ctx);
+int ut_srss_main_sch_quota_limit_mbs(const ut_srss_ctx* ctx);
+
 /* MT_SRSS_BURST_SIZE, the most packets one rx burst takes from a queue. */
 uint16_t ut_srss_burst_size(void);
 
