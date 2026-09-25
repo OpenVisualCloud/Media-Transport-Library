@@ -648,14 +648,14 @@ static struct mt_rl_shaper* dev_rl_shaper_get(struct mt_interface* inf, uint64_t
   return dev_rl_shaper_add(inf, bps);
 }
 
-static int dev_init_ratelimit_all(struct mt_interface* inf) {
+/* bps 0 adds each queue without a shaper */
+static int dev_init_ratelimit_all(struct mt_interface* inf, uint64_t bps) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
   struct mt_tx_queue* tx_queue;
-  struct mt_rl_shaper* shaper;
-  uint64_t bps = ST_DEFAULT_RL_BPS;
+  struct mt_rl_shaper* shaper = NULL;
   int ret;
 
   memset(&error, 0, sizeof(error));
@@ -663,13 +663,16 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
 
-    shaper = dev_rl_shaper_get(inf, bps);
-    if (!shaper) {
-      err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
-      return -EIO;
-    }
     memset(&qp, 0, sizeof(qp));
-    qp.shaper_profile_id = shaper->shaper_profile_id;
+    qp.shaper_profile_id = RTE_TM_SHAPER_PROFILE_ID_NONE;
+    if (bps) {
+      shaper = dev_rl_shaper_get(inf, bps);
+      if (!shaper) {
+        err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
+        return -EIO;
+      }
+      qp.shaper_profile_id = shaper->shaper_profile_id;
+    }
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
@@ -684,10 +687,13 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
           mt_string_safe(error.message));
       return ret;
     }
-    tx_queue->rl_shapers_mapping = shaper->idx;
+    tx_queue->rl_shapers_mapping = shaper ? shaper->idx : -1;
     tx_queue->bps = bps;
-    info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
-         shaper->shaper_profile_id);
+    if (shaper)
+      info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
+           shaper->shaper_profile_id);
+    else
+      info("%s(%d), q %d link to no shaper\n", __func__, port, q);
   }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
@@ -1441,7 +1447,7 @@ static int dev_if_init_tx_queues(struct mt_interface* inf) {
 }
 
 /* detect pacing */
-static int dev_if_init_pacing(struct mt_interface* inf) {
+static int dev_if_select_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
   bool auto_detect = false;
@@ -1491,7 +1497,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
     /* IAVF require all q config with RL */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      ret = dev_init_ratelimit_all(inf);
+      ret = dev_init_ratelimit_all(inf, ST_DEFAULT_RL_BPS);
     } else {
       ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
       if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
@@ -1521,6 +1527,49 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
   }
 
+  return 0;
+}
+
+/* the PF replays old VF queue rates on queue enable; a no-shaper commit clears them */
+static void dev_if_clear_iavf_queue_rate(struct mt_interface* inf) {
+/* MTL DPDK patch "net/iavf: reject TM ops without QoS capability" supplies this */
+#ifdef MTL_DPDK_HAS_IAVF_TM_QOS_CHECK
+  enum mtl_port port = inf->port;
+  struct rte_tm_capabilities cap;
+  struct rte_tm_error error;
+  int ret;
+
+  if (inf->drv_info.drv_type != MT_DRV_IAVF ||
+      inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
+    return;
+  if (inf->tx_rl_root_active) {
+    warn("%s(%d), tm in use after rl fallback, queue rates not cleared\n", __func__,
+         port);
+    return;
+  }
+
+  memset(&error, 0, sizeof(error));
+  ret = rte_tm_capabilities_get(inf->port_id, &cap, &error);
+  if (ret == -ENOTSUP) {
+    info("%s(%d), no tm on this vf, no queue rate to clear\n", __func__, port);
+    return;
+  }
+
+  ret = dev_rl_init_nonleaf_nodes(inf);
+  if (ret >= 0) ret = dev_init_ratelimit_all(inf, 0);
+  if (ret < 0)
+    warn("%s(%d), queue rate clear fail %d, a stale PF queue rate may cap tx\n", __func__,
+         port, ret);
+#else
+  MTL_MAY_UNUSED(inf);
+#endif
+}
+
+static int dev_if_init_pacing(struct mt_interface* inf) {
+  int ret = dev_if_select_pacing(inf);
+
+  if (ret < 0) return ret;
+  dev_if_clear_iavf_queue_rate(inf);
   return 0;
 }
 

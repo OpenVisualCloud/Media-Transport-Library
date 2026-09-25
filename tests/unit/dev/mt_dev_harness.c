@@ -14,11 +14,13 @@
 /* Wider than MT_EAL_MAX_ARGS so an argc past that bound can be recorded, and compared
  * against it, without the harness overflowing in turn. */
 #define UT_DEV_EAL_ARGV_MAX (256)
+#define UT_DEV_TX_QUEUES (4)
+#define UT_DEV_TM_NODES_MAX (16)
 
 struct ut_dev_ctx {
   struct mtl_main_impl impl;
   struct mt_rx_queue rx_queue;
-  struct mt_tx_queue tx_queue;
+  struct mt_tx_queue tx_queues[UT_DEV_TX_QUEUES];
   struct mt_kport_info kport_info;
   char* lcores;
   int eal_init_calls;
@@ -33,6 +35,13 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  struct ut_dev_tm_node tm_nodes[UT_DEV_TM_NODES_MAX];
+  int tm_node_count;
+  int tm_call_count;
+  int tm_commit_count;
+  int fail_tm_capabilities_error;
+  int fail_tm_node_add_error;
+  int fail_tm_commit_error;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -53,6 +62,19 @@ static int ut_rte_eth_dev_stop(uint16_t port_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id);
 static int ut_rte_eal_init(int argc, char** argv);
+static int ut_rte_tm_capabilities_get(uint16_t port_id, struct rte_tm_capabilities* cap,
+                                      struct rte_tm_error* error);
+static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
+                              uint32_t priority, uint32_t weight, uint32_t level_id,
+                              const struct rte_tm_node_params* params,
+                              struct rte_tm_error* error);
+static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
+                                 struct rte_tm_error* error);
+static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
+                                        const struct rte_tm_shaper_params* profile,
+                                        struct rte_tm_error* error);
+static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
+                                      struct rte_tm_error* error);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -64,7 +86,19 @@ static int ut_rte_eal_init(int argc, char** argv);
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
 #define rte_eth_promiscuous_enable ut_rte_eth_promiscuous_enable
 #define rte_eal_init ut_rte_eal_init
+#define rte_tm_capabilities_get ut_rte_tm_capabilities_get
+#define rte_tm_node_add ut_rte_tm_node_add
+#define rte_tm_node_delete ut_rte_tm_node_delete
+#define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
+#define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
+/* The pacing tests cover the iavf queue rate clear, which the MTL DPDK patch enables. */
+#define MTL_DPDK_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef rte_tm_hierarchy_commit
+#undef rte_tm_shaper_profile_add
+#undef rte_tm_node_delete
+#undef rte_tm_node_add
+#undef rte_tm_capabilities_get
 #undef rte_eal_init
 #undef rte_eth_promiscuous_enable
 #undef rte_eth_stats_reset
@@ -172,6 +206,77 @@ static int ut_rte_eal_init(int argc, char** argv) {
   return -1;
 }
 
+static int ut_rte_tm_capabilities_get(uint16_t port_id, struct rte_tm_capabilities* cap,
+                                      struct rte_tm_error* error) {
+  (void)port_id;
+  (void)cap;
+  (void)error;
+  ut_active_ctx->tm_call_count++;
+  return ut_active_ctx->fail_tm_capabilities_error;
+}
+
+static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
+                              uint32_t priority, uint32_t weight, uint32_t level_id,
+                              const struct rte_tm_node_params* params,
+                              struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
+  (void)port_id;
+  (void)priority;
+  (void)weight;
+  (void)level_id;
+  (void)error;
+  ctx->tm_call_count++;
+  if (ctx->fail_tm_node_add_error) return ctx->fail_tm_node_add_error;
+  if (ctx->tm_node_count >= UT_DEV_TM_NODES_MAX) return -ENOSPC;
+  /* As in the real PMD: a duplicate id, a second root, or an unknown parent fails. */
+  bool is_root = parent_node_id == RTE_TM_NODE_ID_NULL;
+  bool root_found = false;
+  bool parent_found = false;
+  for (int i = 0; i < ctx->tm_node_count; i++) {
+    if (ctx->tm_nodes[i].node_id == node_id) return -EINVAL;
+    if (ctx->tm_nodes[i].parent_node_id == RTE_TM_NODE_ID_NULL) root_found = true;
+    if (ctx->tm_nodes[i].node_id == parent_node_id) parent_found = true;
+  }
+  if (is_root && root_found) return -EINVAL;
+  if (!is_root && !parent_found) return -EINVAL;
+  ctx->tm_nodes[ctx->tm_node_count].node_id = node_id;
+  ctx->tm_nodes[ctx->tm_node_count].parent_node_id = parent_node_id;
+  ctx->tm_nodes[ctx->tm_node_count].shaper_profile_id = params->shaper_profile_id;
+  ctx->tm_node_count++;
+  return 0;
+}
+
+static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
+                                 struct rte_tm_error* error) {
+  (void)port_id;
+  (void)node_id;
+  (void)error;
+  ut_active_ctx->tm_call_count++;
+  return 0;
+}
+
+static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
+                                        const struct rte_tm_shaper_params* profile,
+                                        struct rte_tm_error* error) {
+  (void)port_id;
+  (void)shaper_profile_id;
+  (void)profile;
+  (void)error;
+  ut_active_ctx->tm_call_count++;
+  return 0;
+}
+
+static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
+                                      struct rte_tm_error* error) {
+  (void)port_id;
+  (void)clear_on_fail;
+  (void)error;
+  ut_active_ctx->tm_call_count++;
+  ut_active_ctx->tm_commit_count++;
+  return ut_active_ctx->fail_tm_commit_error;
+}
+
 ut_dev_ctx* ut_dev_create_ctx(void) {
   ut_dev_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -190,7 +295,8 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->nb_rx_desc = 128;
   inf->nb_tx_desc = 128;
   inf->rx_queues = &ctx->rx_queue;
-  inf->tx_queues = &ctx->tx_queue;
+  inf->tx_queues = &ctx->tx_queues[0];
+  for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
   ut_active_ctx = ctx;
   return ctx;
@@ -338,4 +444,74 @@ void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level) {
 
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_RXTX_SIMD_512;
+}
+
+void ut_dev_set_pacing_port(ut_dev_ctx* ctx, bool iavf, enum st21_tx_pacing_way pacing) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->drv_info.drv_type = iavf ? MT_DRV_IAVF : MT_DRV_ICE;
+  inf->drv_info.rl_type = MT_RL_TYPE_TM;
+  inf->nb_tx_q = UT_DEV_TX_QUEUES;
+  inf->tx_pacing_way = pacing;
+}
+
+void ut_dev_set_shared_txq(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_SHARED_TX_QUEUE;
+}
+
+void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_capabilities_error = error;
+}
+
+void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_node_add_error = error;
+}
+
+void ut_dev_set_rl_root_active(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].tx_rl_root_active = true;
+}
+
+void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_commit_error = error;
+}
+
+int ut_dev_init_pacing(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return dev_if_init_pacing(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].tx_pacing_way;
+}
+
+int ut_dev_nb_tx_queues(void) {
+  return UT_DEV_TX_QUEUES;
+}
+
+int ut_dev_tm_call_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_call_count;
+}
+
+int ut_dev_tm_commit_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_commit_count;
+}
+
+int ut_dev_tm_node_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_node_count;
+}
+
+struct ut_dev_tm_node ut_dev_tm_node_at(const ut_dev_ctx* ctx, int index) {
+  return ctx->tm_nodes[index];
+}
+
+uint32_t ut_dev_tm_shaper_none(void) {
+  return RTE_TM_SHAPER_PROFILE_ID_NONE;
+}
+
+int ut_dev_tx_queue_rl_mapping(const ut_dev_ctx* ctx, int queue) {
+  return ctx->tx_queues[queue].rl_shapers_mapping;
+}
+
+uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue) {
+  return ctx->tx_queues[queue].bps;
 }
