@@ -1194,8 +1194,9 @@ def pcap_capture(
 
     # Media the EBU LIST analyser cannot judge: there is no verdict to read, so
     # recording the capture is pointless too. mtl_engine.pcap_compliance is the
-    # single place these exclusions and their reasons live -- tests reach the same
-    # list through skip_unsupported_compliance().
+    # single place these exclusions and their reasons live -- a test that sends
+    # other media than its media_file reaches the same list through
+    # pcap_capture.skip(unparsable_reason(...)), as test_st20p_fps does.
     unparsable = unparsable_reason(media_file[0] if media_file else None)
     if unparsable:
         logger.info("Disabling PCAP capture and compliance check: %s", unparsable)
