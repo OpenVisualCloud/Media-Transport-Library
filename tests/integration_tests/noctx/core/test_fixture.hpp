@@ -64,6 +64,7 @@ class NoCtxTest : public ::testing::Test {
   St40pHandlerBundle registerSt40pResources(std::unique_ptr<St40pHandler> handler,
                                             std::unique_ptr<FrameTestStrategy> strategy);
   void initDefaultContext();
+  void initStrictPacingContext();
   bool waitForSession(Session& session,
                       std::chrono::milliseconds timeout =
                           std::chrono::milliseconds(SessionStartTimeoutMs));
