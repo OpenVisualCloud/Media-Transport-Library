@@ -38,4 +38,9 @@ ice) ICE_BUNDLE_ROOT="$component_root" bash "${root_dir}/.github/scripts/ci/vali
 	;;
 esac
 
+# Intel SDL compiler hardening of what MTL builds, see doc/build.md
+case "$component" in
+dpdk | mtl | ffmpeg | gstreamer | plugins) bash "${root_dir}/.github/scripts/ci/check-hardening.sh" "$component_root" ;;
+esac
+
 echo "${component} cache: valid"
