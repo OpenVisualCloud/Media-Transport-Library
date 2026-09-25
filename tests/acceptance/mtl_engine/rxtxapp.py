@@ -1325,6 +1325,40 @@ class RxTxApp(Application):
         """Every file this run's receivers record to, for the test to clean up."""
         return [url for _, url in self._rx_recordings() if url]
 
+    def rtcp_tx_stats(self) -> dict | None:
+        """RTCP TX counters of the last run, summed over every stats interval.
+
+        Only RxTxApp can enable RTCP: the FFmpeg and GStreamer plugins have no
+        RTCP option. MTL logs, for each TX session with RTCP enabled,
+        ``rtcp_tx_stat(<name>), rtp sent S nack recv N rtp retransmit succ R``
+        and, when not zero, ``rtcp_tx_stat(<name>), nack drop invalid D``.
+        Each interval resets its counters, so the run value is the sum.
+
+        Returns a dict with ``rtp_sent``, ``nack_recv``, ``retransmit_succ``
+        and ``nack_drop_invalid``, or None if no RTCP TX stats line was found.
+        """
+        if not self.last_output:
+            return None
+        main = re.compile(
+            r"rtcp_tx_stat\([^)]*\), rtp sent (\d+) nack recv (\d+) "
+            r"rtp retransmit succ (\d+)"
+        )
+        invalid = re.compile(r"rtcp_tx_stat\([^)]*\), nack drop invalid (\d+)")
+        stats = dict(rtp_sent=0, nack_recv=0, retransmit_succ=0, nack_drop_invalid=0)
+        seen = False
+        for line in self.last_output.split("\n"):
+            m = main.search(line)
+            if m:
+                seen = True
+                stats["rtp_sent"] += int(m.group(1))
+                stats["nack_recv"] += int(m.group(2))
+                stats["retransmit_succ"] += int(m.group(3))
+                continue
+            m = invalid.search(line)
+            if m:
+                stats["nack_drop_invalid"] += int(m.group(1))
+        return stats if seen else None
+
     def integrity_intents(self, test_repo_path: str, host) -> list[IntegrityIntent]:
         """One intent per RX recording, built with its own session's params in
         place so it names that recording's files."""
