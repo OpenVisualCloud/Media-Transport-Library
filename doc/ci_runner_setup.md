@@ -430,12 +430,17 @@ two channels on vfio-pci is what makes the next job's preparation a no-op.
 
 ## Hugepages are reserved by the job, not by the image
 
-`bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) when the
-host has fewer, because every process the gtest suite starts is a DPDK process
-and EAL stops on `Cannot get hugepage information` without them — several steps
-later, in words about DPDK rather than about the host. A reboot clears the
+`bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
+NUMA node that has fewer, because every process the gtest suite starts is a DPDK
+process and EAL stops on `Cannot get hugepage information` without them — several
+steps later, in words about DPDK rather than about the host. A reboot clears the
 reservation, so this is exactly the kind of state that is missing on a host
 nobody has touched since one.
+
+The floor is per node, not per host. EAL allocates a port's pools on the port's
+node, and a global count is split evenly across nodes, so 2048 pages on a
+two-node host leave 2 GiB beside the NIC. `NoCtxTest.init_128_queues` needs about
+2.8 GiB there and fails `mtl_init` with ENOMEM on less.
 
 It is raised, never lowered: a host may have reserved more for something else,
 and this suite is not the one to take them back. What it cannot do is defragment
