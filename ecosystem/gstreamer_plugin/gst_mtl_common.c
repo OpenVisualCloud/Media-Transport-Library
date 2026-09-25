@@ -599,6 +599,8 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
     strncpy(mtl_init_params->port[mtl_port_idx], general_args->port[mtl_port_idx],
             MTL_PORT_MAX_LEN);
+    mtl_init_params->pmd[mtl_port_idx] =
+        mtl_pmd_by_port_name(mtl_init_params->port[mtl_port_idx]);
 
     ret = inet_pton(AF_INET, general_args->local_ip_string[mtl_port_idx],
                     mtl_init_params->sip_addr[mtl_port_idx]);

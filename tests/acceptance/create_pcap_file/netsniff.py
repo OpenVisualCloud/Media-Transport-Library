@@ -33,6 +33,8 @@ _PGROUPS = {
 }
 _DEFAULT_PGROUP = (5, 2)  # 4:2:2 10-bit
 _BPM_PAYLOAD_SIZE = 1260  # ST_VIDEO_BPM_SIZE in lib/src/st2110/st_header.h
+_RING_BYTES_PER_PACKET = 2048
+_MIN_RING_MIB = 64
 
 
 def _pgroup_for(transport_format: str | None) -> tuple[int, int]:
@@ -82,6 +84,22 @@ def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
         )
         packets = max(packets, math.ceil(frame_size / _BPM_PAYLOAD_SIZE))
     return packets
+
+
+def _ring_size_mib(packets_capture: int) -> int:
+    """RX ring size for ``netsniff-ng --ring-size`` on a counted capture.
+
+    netsniff-ng's default ring is two seconds of line rate -- 23.3 GiB on a
+    100 GbE port -- taken from kernel memory at start. On a runner that keeps
+    most of its RAM as hugepages, that ring drives the host into direct reclaim
+    and swap for seconds, and the receiver under test drops frames. The ring
+    holds the whole capture instead, at <= 2 KiB per MTU-sized packet with its
+    TPACKET_V3 header, so a video capture cannot overflow however late
+    netsniff-ng drains it. The floor is for low-rate streams, whose ring blocks
+    the kernel hands over part-filled when the block timeout expires.
+    """
+    ring_bytes = packets_capture * _RING_BYTES_PER_PACKET
+    return max(_MIN_RING_MIB, math.ceil(ring_bytes / 2**20))
 
 
 class NetsniffRecorder:
@@ -218,6 +236,7 @@ class NetsniffRecorder:
                     "-T",
                     "0xa1b23c4d",
                     (
+                        f"--ring-size {_ring_size_mib(self.packets_capture)}MiB "
                         f"--num {self.packets_capture}"
                         if self.packets_capture is not None
                         else ""

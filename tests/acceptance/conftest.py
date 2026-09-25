@@ -38,6 +38,7 @@ from mtl_engine.const import (
 from mtl_engine.csv_report import csv_add_test, csv_write_report, get_compliance_result
 from mtl_engine.execute import kill_stale_processes
 from mtl_engine.ffmpeg import FFmpeg
+from mtl_engine.gstreamer import GStreamer
 from mtl_engine.integrity_session import IntegritySession
 from mtl_engine.pcap_compliance import (
     NO_COMPLIANCE,
@@ -1193,8 +1194,9 @@ def pcap_capture(
 
     # Media the EBU LIST analyser cannot judge: there is no verdict to read, so
     # recording the capture is pointless too. mtl_engine.pcap_compliance is the
-    # single place these exclusions and their reasons live -- tests reach the same
-    # list through skip_unsupported_compliance().
+    # single place these exclusions and their reasons live -- a test that sends
+    # other media than its media_file reaches the same list through
+    # pcap_capture.skip(unparsable_reason(...)), as test_st20p_fps does.
     unparsable = unparsable_reason(media_file[0] if media_file else None)
     if unparsable:
         logger.info("Disabling PCAP capture and compliance check: %s", unparsable)
@@ -1518,6 +1520,9 @@ def app_factory(mtl_path):
             return FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
             )
+        elif application == "gstreamer":
+            # gst-launch-1.0 is the system binary; only the plugin is in-tree.
+            return GStreamer()
         else:
             raise ValueError(f"Unknown application: {application}")
 

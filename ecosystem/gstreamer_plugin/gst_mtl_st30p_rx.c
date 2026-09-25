@@ -421,8 +421,6 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
 
   *buffer = buf;
 
-  GST_OBJECT_LOCK(src);
-
   for (int i = 0; i < src->retry_frame; i++) {
     frame = st30p_rx_get_frame(src->rx_handle);
     if (frame) {
@@ -432,7 +430,6 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
 
   if (!frame) {
     GST_INFO("Failed to get frame EOS");
-    GST_OBJECT_UNLOCK(src);
     return GST_FLOW_EOS;
   }
 
@@ -449,7 +446,6 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
   }
 
   st30p_rx_put_frame(src->rx_handle, frame);
-  GST_OBJECT_UNLOCK(src);
   return ret;
 }
 

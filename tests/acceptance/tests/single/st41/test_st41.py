@@ -21,18 +21,28 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+_FFMPEG_SKIP = pytest.param(
+    "ffmpeg",
+    marks=pytest.mark.skip(
+        reason="FFmpeg does not support st41 fast metadata pipeline"
+    ),
+)
+
+_GSTREAMER_SKIP = pytest.param(
+    "gstreamer",
+    marks=pytest.mark.skip(
+        reason="GStreamer does not support st41 fast metadata pipeline"
+    ),
+)
+
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -85,12 +95,8 @@ def test_st41_dit(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -147,12 +153,8 @@ def test_st41_fps(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -205,12 +207,8 @@ def test_st41_k_bit(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -265,12 +263,8 @@ def test_st41_no_chain(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(
@@ -325,12 +319,8 @@ def test_st41_payload_type(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st41 fast metadata pipeline"
-            ),
-        ),
+        _FFMPEG_SKIP,
+        _GSTREAMER_SKIP,
     ],
 )
 @pytest.mark.parametrize(

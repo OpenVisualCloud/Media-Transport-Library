@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 # loaded one, and the wait ends as soon as the new report appears.
 REANALYSIS_TIMEOUT = 10
 
+# How many seconds EBU LIST gets to re-analyse one stream and answer the PUT
+# that asked for it. Measured at 0.4 s for a 4 s audio capture. The answer can
+# also never come: LIST 2.2.2 only logs an exception its audio analysis raises.
+STREAM_REANALYSIS_TIMEOUT = 60
+
 
 def no_verdict_reason(report):
     """Return why *report* carries no compliance verdict, or None if it has one.
@@ -178,6 +183,56 @@ class PcapComplianceClient:
             time.sleep(1)
             report = self.download_report()
         return report
+
+    def reanalyze_audio(self, report, media_specific):
+        """Re-analyse each audio stream of *report* as *media_specific*.
+
+        An audio packet does not carry its sampling rate, so EBU LIST assumes
+        48 kHz and derives the packet time from that: it reads a 96 kHz stream
+        as 2 ms packets and fails its TS-DF, packet interval and RTP timestamp
+        checks on a clock running at half the real rate. This sends the
+        correction LIST's own "stream needs info" dialog sends, and LIST
+        replies only once it has re-analysed the stream.
+
+        Returns the fresh report, or *report* when LIST already read every
+        audio stream as *media_specific*.
+        """
+        url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        # The stream documents as stored, which the PUT below replaces whole.
+        # LIST's per-stream GET answers 404 for an audio stream.
+        response = self.session.get(
+            f"{url}/streams/", headers=headers, verify=False, proxies=self.proxies
+        )
+        response.raise_for_status()
+        misread = [
+            stream
+            for stream in response.json()
+            if stream.get("media_type") == "audio"
+            and stream.get("media_specific") != media_specific
+        ]
+        for stream in misread:
+            logger.info(
+                "EBU LIST read audio stream %s as %s; re-analysing it as %s",
+                stream["id"],
+                stream.get("media_specific"),
+                media_specific,
+            )
+            stream["media_specific"] = media_specific
+            # LIST picks the audio analyser by this, not by media_specific.
+            stream["full_media_type"] = f"audio/{media_specific['encoding']}"
+            response = self.session.put(
+                f"{url}/stream/{stream['id']}/help",
+                headers=headers,
+                json=stream,
+                verify=False,
+                proxies=self.proxies,
+                timeout=STREAM_REANALYSIS_TIMEOUT,
+            )
+            response.raise_for_status()
+        # No poll, unlike reanalyze(): pi-list's api/pcap.js answers this PUT
+        # only after pcapSingleStreamIngest has stored the re-analysis.
+        return self.download_report() if misread else report
 
     def check_compliance(self, report):
         """

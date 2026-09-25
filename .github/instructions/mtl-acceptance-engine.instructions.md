@@ -15,6 +15,7 @@ Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §
 | `application_base.py` | Everything application-**agnostic**: params, process ladders, timeouts, PTP budget, oracle dispatch | Any RxTxApp or FFmpeg specific knowledge |
 | `rxtxapp.py` | RxTxApp JSON config + argv + its result parsing | Generic lifecycle logic |
 | `ffmpeg.py` | FFmpeg argv + its result parsing | Generic lifecycle logic |
+| `gstreamer.py` | `gst-launch-1.0` pipelines + its result parsing | Generic lifecycle logic |
 | `config/universal_params.py` | The **only** list of legal test kwargs | Defaults only one adapter understands, unless that adapter strips them in `set_params()` |
 | `rxtxapp_config.py` | Empty JSON config templates | Logic (it is data) |
 | `media_files.py` | Asset registry + `parse_fps_to_pformat` | File I/O |
@@ -62,7 +63,8 @@ A new adapter subclasses `Application` and implements exactly four methods:
 
 `RxTxApp.py` (procedural, still the backend for `tests/dual/st20p|st30p|st40/`
 and `tests/single/performance/`), `ffmpeg_app.py` (command builders called by
-`ffmpeg.py`), and `GstreamerApp.py` (the only GStreamer path) predate the
+`ffmpeg.py`), and `GstreamerApp.py` (still the backend for
+`tests/dual/gstreamer/` and `tests/single/gstreamer/anc_format/`) predate the
 adapter model. Add new functionality to `Application`, not to these. Note
 the capitalisation trap: `RxTxApp.py` is legacy, `rxtxapp.py` is modern.
 

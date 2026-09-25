@@ -24,6 +24,7 @@ _SMOKE_CASE = ("PCM16", "M")
                 reason="FFmpeg does not support st30p audio pipeline"
             ),
         ),
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -82,25 +83,27 @@ def test_st30p_integrity(
     )
 
 
+# Explicit ids spell ``application`` the way pytest_mfd_logging does: the
+# combined report reads the app from that token.
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        "ffmpeg",
-    ],
-)
-@pytest.mark.parametrize(
-    ("media_file", "audio_channel"),
+    ("application", "media_file", "audio_channel"),
     [
         pytest.param(
+            app,
             audio_files[fmt],
             ch,
-            marks=[pytest.mark.smoke] if (fmt, ch) == _SMOKE_CASE else [],
-            id=f"{fmt}-{ch}",
+            # GStreamer's smoke row is test_st30p_format's.
+            marks=(
+                [pytest.mark.smoke]
+                if (fmt, ch) == _SMOKE_CASE and app != "gstreamer"
+                else []
+            ),
+            id=f"{fmt}-{ch}-|application = {app}|",
         )
         for fmt in _AUDIO_FORMATS
         for ch in _AUDIO_CHANNELS
+        for app in ("rxtxapp", "ffmpeg", "gstreamer")
     ],
     indirect=["media_file"],
 )
@@ -124,6 +127,9 @@ def test_st30p_channel(
 
     if media_file_info["format"] in ["PCM16", "PCM24"] and audio_channel == "222":
         pytest.skip("Unsupported parameter combination")
+    # The mtl_st30p_{tx,rx} caps are channels = [1, 8].
+    if application == "gstreamer" and audio_channel == "222":
+        pytest.skip("GStreamer st30p plugin supports up to 8 channels")
 
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -156,25 +162,26 @@ def test_st30p_channel(
     )
 
 
-@pytest.mark.smoke
-@pytest.mark.low_bandwidth
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "application",
+    ("application", "media_file"),
     [
-        "rxtxapp",
-        "ffmpeg",
-    ],
-)
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        audio_files["PCM8"],
-        audio_files["PCM16"],
-        audio_files["PCM24"],
+        pytest.param(
+            app,
+            audio_files[fmt],
+            # One GStreamer row smoke-tests the mtl_st30p elements; each row
+            # costs a smoke leg 74-110 s.
+            marks=(
+                [pytest.mark.smoke, pytest.mark.low_bandwidth]
+                if app != "gstreamer" or fmt == "PCM16"
+                else []
+            ),
+            id=f"{fmt}-|application = {app}|",
+        )
+        for fmt in _AUDIO_FORMATS
+        for app in ("rxtxapp", "ffmpeg", "gstreamer")
     ],
     indirect=["media_file"],
-    ids=["PCM8", "PCM16", "PCM24"],
 )
 @pytest.mark.tx_and_rx
 def test_st30p_format(
@@ -229,6 +236,7 @@ def test_st30p_format(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -300,6 +308,7 @@ def test_st30p_ptime(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(
@@ -367,6 +376,7 @@ def test_st30p_sampling(
     [
         "rxtxapp",
         "ffmpeg",
+        "gstreamer",
     ],
 )
 @pytest.mark.parametrize(

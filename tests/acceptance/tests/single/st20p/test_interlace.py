@@ -17,6 +17,12 @@ pytestmark = pytest.mark.verified
             "ffmpeg",
             marks=pytest.mark.skip(reason="FFmpeg does not support interlaced mode"),
         ),
+        pytest.param(
+            "gstreamer",
+            marks=pytest.mark.skip(
+                reason="GStreamer TX does not take rfc4175, the only interlaced media"
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize(
