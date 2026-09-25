@@ -49,6 +49,7 @@ unit_sources = [
   'dev/mt_dev_rx_desc_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
+  'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
   'fmt/st_fmt_test.cpp',
