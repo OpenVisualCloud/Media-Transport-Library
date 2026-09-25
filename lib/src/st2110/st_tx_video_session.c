@@ -2157,9 +2157,12 @@ static int tv_tasklet_rtcp(struct st_tx_video_session_impl* s) {
     if (rv) {
       for (uint16_t i = 0; i < rv; i++) {
         // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
+        uint16_t data_len = rte_pktmbuf_data_len(mbuf[i]);
+        if (data_len < sizeof(struct mt_udp_hdr)) continue; /* runt, no rtcp payload */
         struct mt_rtcp_hdr* rtcp = rte_pktmbuf_mtod_offset(mbuf[i], struct mt_rtcp_hdr*,
                                                            sizeof(struct mt_udp_hdr));
-        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp);
+        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp,
+                                     data_len - sizeof(struct mt_udp_hdr));
       }
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
     }
