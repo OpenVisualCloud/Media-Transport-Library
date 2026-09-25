@@ -4,6 +4,8 @@
 # Copyright 2025 Intel Corporation
 
 : "${EXIT_ON_FAILURE:=1}"
+# Comma-separated NoCtxTest cases to run under isolate.sh; the others run directly.
+: "${NOCTX_ISOLATE_CASES:=st20p_default_timestamps,st20p_user_pacing,st20p_user_pacing_offset_jitter,st20p_exact_user_pacing,st20p_user_pacing_interlaced,st30p_user_pacing}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -84,12 +86,17 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 	test_count=$((test_count + 1))
 	xml_file="${XML_OUTPUT_DIR}/noctx_${test_count}.xml"
 
-	if "$BUILD_PATH" \
-		--auto_start_stop \
-		--port_list="${PORT_LIST}" \
-		--gtest_filter="NoCtxTest.$test_name" \
-		--gtest_output="xml:${xml_file}" \
-		--no_ctx_tests; then
+	cmd=("$BUILD_PATH"
+		--auto_start_stop
+		--port_list="${PORT_LIST}"
+		--gtest_filter="NoCtxTest.$test_name"
+		--gtest_output="xml:${xml_file}"
+		--no_ctx_tests)
+	if [[ ",${NOCTX_ISOLATE_CASES}," == *",${test_name},"* ]]; then
+		cmd=(env MTL_ISOLATE="${MTL_ISOLATE:-try}" MTL_ISOLATE_PORTS="${PORT_LIST}"
+			"${mtl_folder}/tests/tools/isolate/isolate.sh" -- "${cmd[@]}")
+	fi
+	if "${cmd[@]}"; then
 		echo "Test NoCtxTest.$test_name passed"
 	else
 		echo "Test NoCtxTest.$test_name failed with exit code $?"
