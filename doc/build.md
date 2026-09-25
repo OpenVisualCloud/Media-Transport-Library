@@ -486,5 +486,7 @@ The `-U_FORTIFY_SOURCE` removes the level that Ubuntu gcc sets by itself, so `-W
 
 The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
 
+The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
