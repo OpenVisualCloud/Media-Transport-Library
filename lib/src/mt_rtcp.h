@@ -12,6 +12,16 @@
 #define MT_RTCP_MAX_FCIS (256)
 /* max mbufs of one retransmit chunk, sizes the on-stack arrays */
 #define MT_RTCP_RETRANSMIT_BULK (32)
+/* dbg logs 1 in this many invalid rtcp packets of each drop reason */
+#define MT_RTCP_DROP_SAMPLE (100)
+
+enum mt_rtcp_drop_reason {
+  MT_RTCP_DROP_SHORT = 0, /* shorter than the rtcp header */
+  MT_RTCP_DROP_FLAGS,     /* flags are not 0x80 */
+  MT_RTCP_DROP_NAME,      /* nack name is not IMTL */
+  MT_RTCP_DROP_LEN,       /* len field under the header or past the received bytes */
+  MT_RTCP_DROP_MAX,
+};
 
 #define MT_RTCP_TX_RING_PREFIX "TRT_"
 
@@ -77,6 +87,10 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_retransmit_fail_burst;
   uint32_t stat_nack_received;
   uint32_t stat_nack_drop_invalid;
+  /* invalid rtcp per reason, dbg logs 1 in MT_RTCP_DROP_SAMPLE of each reason */
+  uint32_t stat_nack_drop_reason[MT_RTCP_DROP_MAX]; /* reset by rtcp_tx_stat() */
+  uint32_t nack_drop_seen[MT_RTCP_DROP_MAX];        /* since create */
+  bool nack_drop_sampled;                           /* the last parse logged a sample */
 };
 
 struct mt_rtcp_rx {
