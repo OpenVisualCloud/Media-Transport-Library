@@ -40,7 +40,7 @@ the MtlManager IPC send (`main/mt_instance_harness.c`).
 
 If a test fails it's a real defect, unless a case with a wall-clock budget ran
 over it under load — an overrun that reproduces on an idle box is a defect. Only the
-eight `*Concurrency*` suites, `St20PipelineTxBlocking`, the three
+eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineRxBlocking`, the three
 `*WakePostedBeforeWaitIsNotLost` cases of `St22PipelineRxBlocking` /
 `St22PipelineTxEncodeBlocking`, `PipelineTxWakeBlock`, and
 `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
