@@ -339,5 +339,7 @@ meson setup build -Db_pie=true \
   -Dc_link_args="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
 ```
 
+The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch` to add IBT. The FFmpeg 6.1 and 4.4 assembly has no CET mark, so those versions build without IBT and SHSTK.
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
