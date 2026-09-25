@@ -340,5 +340,13 @@ meson setup build -Db_pie=true \
 
 The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch` to add IBT.
 
+The openh264 assembly has no CET mark, so `libopenh264` has neither IBT nor SHSTK, and a process that loads it runs without CET.
+
+To check an install tree, run the check CI runs on every dependency cache. Under `/usr/local` it also reports other software installed there.
+
+```bash
+.github/scripts/ci/check-hardening.sh /usr/local/lib /usr/local/bin
+```
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
