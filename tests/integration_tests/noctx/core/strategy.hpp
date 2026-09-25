@@ -25,7 +25,6 @@ class FrameTestStrategy {
   Handlers* parent;
   uint32_t idx_tx;
   uint32_t idx_rx;
-  double expect_fps;
   bool enable_tx_modifier;
   bool enable_rx_modifier;
 };

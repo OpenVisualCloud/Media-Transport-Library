@@ -16,26 +16,26 @@
 #include "handlers/st40p_handler.hpp"
 #include "tests.hpp"
 
-St40pUserTimestamp::St40pUserTimestamp(St40pHandler* parentHandler,
-                                       std::vector<double> offsetMultipliers)
+St40pUserPacingOracle::St40pUserPacingOracle(St40pHandler* parentHandler,
+                                             std::vector<double> offsetMultipliers)
     : FrameTestStrategy(parentHandler, true, true),
       timestampOffsetMultipliers(std::move(offsetMultipliers)) {
   initializeTiming(parentHandler);
 }
 
-int St40pUserTimestamp::getPacingParameters() {
+int St40pUserPacingOracle::getPacingParameters() {
   /* ST40 pipeline lacks a public pacing query; keep defaults for now. */
   return -ENOTSUP;
 }
 
-void St40pUserTimestamp::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St40pUserPacingOracle::txTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* info = static_cast<st40_frame_info*>(frame);
   info->tfmt = ST10_TIMESTAMP_FMT_TAI;
   info->timestamp = plannedTimestampNs(idx_tx);
   idx_tx++;
 }
 
-void St40pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void St40pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* info = static_cast<st40_frame_info*>(frame);
   const uint64_t frame_idx = idx_rx++;
 
@@ -50,19 +50,19 @@ void St40pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   lastTimestamp = info->timestamp;
 }
 
-uint64_t St40pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
+uint64_t St40pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
   double base = plannedTimestampBaseNs(frame_idx);
   double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
   double adjusted = base + offset;
   return adjusted <= 0.0 ? 0 : static_cast<uint64_t>(adjusted);
 }
 
-double St40pUserTimestamp::plannedTimestampBaseNs(uint64_t frame_idx) const {
+double St40pUserPacingOracle::plannedTimestampBaseNs(uint64_t frame_idx) const {
   double base = startingTime + frame_idx * frameTimeNs;
   return base < 0.0 ? 0.0 : base;
 }
 
-double St40pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
+double St40pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const {
   if (timestampOffsetMultipliers.empty()) {
     return 0;
   }
@@ -71,7 +71,7 @@ double St40pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
   return timestampOffsetMultipliers[loop_idx];
 }
 
-uint64_t St40pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
+uint64_t St40pUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
   const double target_ns = static_cast<double>(plannedTimestampNs(frame_idx));
   /* snap to the nearest epoch boundary as transport does when exact pacing is off */
   const double snapped_epoch = std::floor((target_ns + frameTimeNs / 2.0) / frameTimeNs);
@@ -79,35 +79,29 @@ uint64_t St40pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
 
-void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                                             uint64_t expected_transmit_time_ns) const {
+void St40pUserPacingOracle::verifyReceiveTiming(
+    uint64_t frame_idx, uint64_t receive_time_ns,
+    uint64_t expected_transmit_time_ns) const {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  /* ST2110-40:2023 6.5 Compatible Transmission Model (the default absent an
-   * explicit TM=LLTM signal, per 7): senders must transmit no later than
-   * T_EPO(j) + T_D, with T_D = 1ms. Unlike ST2110-20/21's Narrow-Sender/VRX
-   * model, ST2110-40 defines no tight rate-limited window for ANC, so a
-   * video-style microsecond tolerance does not apply here. */
-  const int64_t tolerance_ns = 1 * NS_PER_MS;
-
   EXPECT_GE(delta_ns, 0) << "st40p_user_pacing frame " << frame_idx
                          << " arrived before snapped epoch";
-  EXPECT_LE(delta_ns, tolerance_ns)
+  EXPECT_LE(delta_ns, kSt40pMaxLateNs)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected (snapped) timestamp(ns): " << expected_transmit_time_ns;
 }
 
-void St40pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
-                                          uint64_t timestamp_media_clk,
-                                          uint64_t expected_media_clk) const {
+void St40pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,
+                                             uint64_t timestamp_media_clk,
+                                             uint64_t expected_media_clk) const {
   EXPECT_EQ(timestamp_media_clk, expected_media_clk)
       << " idx_rx: " << frame_idx << " expected media clk: " << expected_media_clk
       << " received timestamp: " << timestamp_media_clk;
 }
 
-void St40pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
-                                             uint64_t current_timestamp) {
+void St40pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
+                                                uint64_t current_timestamp) {
   if (!lastTimestamp) {
     return;
   }
@@ -121,9 +115,9 @@ void St40pUserTimestamp::verifyTimestampStep(uint64_t frame_idx,
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }
 
-void St40pUserTimestamp::initializeTiming(St40pHandler* handler) {
+void St40pUserPacingOracle::initializeTiming(St40pHandler* handler) {
   if (!handler) {
-    throw std::invalid_argument("St40pUserTimestamp expects a valid handler");
+    throw std::invalid_argument("St40pUserPacingOracle expects a valid handler");
   }
 
   double framerate = st_frame_rate(handler->sessionsOpsTx.fps);
@@ -137,18 +131,19 @@ void St40pUserTimestamp::initializeTiming(St40pHandler* handler) {
     frameTimeNs = static_cast<long double>(NS_PER_S) / 25.0;
   }
 
-  startingTime = frameTimeNs * 70.0;
+  startingTime = frameTimeNs * kSt40pUserPacingStartFrames;
 }
 
-St40pExactUserPacing::St40pExactUserPacing(St40pHandler* parentHandler,
-                                           std::vector<double> offsetMultipliers)
-    : St40pUserTimestamp(parentHandler, std::move(offsetMultipliers)) {
+St40pExactUserPacingOracle::St40pExactUserPacingOracle(
+    St40pHandler* parentHandler, std::vector<double> offsetMultipliers)
+    : St40pUserPacingOracle(parentHandler, std::move(offsetMultipliers)) {
 }
 
-uint64_t St40pExactUserPacing::expectedTransmitTimeNs(uint64_t frame_idx) const {
+uint64_t St40pExactUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
   return plannedTimestampNs(frame_idx);
 }
 
-void St40pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/, uint64_t /*ts*/) {
+void St40pExactUserPacingOracle::verifyTimestampStep(uint64_t /*frame_idx*/,
+                                                     uint64_t /*ts*/) {
   /* In exact mode the user controls the step, so we don't enforce a fixed increment. */
 }

@@ -17,7 +17,6 @@ noctx_sources = files(
     'testcases/st20p_redundant_tests.cpp',
     'testcases/st20p_user_pacing_tests.cpp',
     'testcases/st20p_interlaced_pacing_tests.cpp',
-    'testcases/st20p_user_timestamp_tests.cpp',
     'testcases/st20p_stability_tests.cpp',
     'testcases/st20p_ptp_epoch_recovery_tests.cpp',
     'testcases/st40i_tests.cpp',

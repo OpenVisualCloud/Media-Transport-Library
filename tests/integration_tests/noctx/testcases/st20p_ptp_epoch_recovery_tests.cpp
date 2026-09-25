@@ -65,7 +65,7 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  /* No frame-content/timestamp strategy: St20pDefaultTimestamp assumes a
+  /* No frame-content/timestamp strategy: St20pDefaultPacingOracle assumes a
    * steady real-time-correlated clock, which this test deliberately violates
    * to reproduce the bug. Only stat_epoch_onward is asserted on below. */
   auto bundle =
@@ -165,7 +165,18 @@ int CollectPacingSpanRatios(NoCtxTest::St20pHandlerBundle& bundle, double trs_ns
 
 } /* namespace */
 
-/* TSN pacing (launch-time offload) is only advertised by PF drivers; this
+/* st20p_tx_epoch_onward_recovers_after_ptp_step_{pf_tsn,tsc}_pacing
+ * Config:    RunEpochOnwardRecoveryCase(): para.pacing = TSN or TSC (TSN adds
+ *            MTL_FLAG_PTP_ENABLE), EpochRecoveryPtpClockNow (CLOCK_MONOTONIC since
+ *            its first call, plus kFutureOffsetNs = 3 s), dump_period_s = 2,
+ *            DEV_AUTO_START_STOP off; TX TEST_PORT_1 -> RX TEST_PORT_2 1080p25, no
+ *            strategy.
+ * Plan:      run 6 s against the clock 3 s ahead, then step it back to real time.
+ * Expect:    1. every TX stats query == 0
+ *            2. stat_epoch_onward stops growing within three 1 s polls
+ * Skip/Fail: _pf_tsn needs E830 PF ports (run_pf.sh); fails or hangs elsewhere.
+ *
+ * TSN pacing (launch-time offload) is only advertised by PF drivers; this
  * test requires the noctx port pair to be bound as PF, not VF. The "_pf_"
  * infix lets run.sh/run_pf.sh select/exclude it with a plain gtest_filter
  * wildcard instead of parsing the test source.
@@ -184,7 +195,19 @@ TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step_tsc_pacing) {
   RunEpochOnwardRecoveryCase(this, ctx, ST21_TX_PACING_WAY_TSC);
 }
 
-/* Smoke-test: does TSN launch-time pacing actually spread packets across the
+/* st20p_tx_packets_are_spread_over_frame_pf_tsn_pacing
+ * Config:    para.pacing = TSN, MTL_FLAG_PTP_ENABLE | MTL_FLAG_ENABLE_HW_TIMESTAMP,
+ *            PTP_SOURCE_TSC and DEV_AUTO_START_STOP off, the KahawaiTest ptp_get_time_fn;
+ *            TX TEST_PORT_1 -> RX TEST_PORT_2 1080p25, RX TIMING_PARSER_META, no
+ *            strategy. Only the TX thread runs; CollectPacingSpanRatios() reads RX.
+ * Plan:      wait up to 10 s for a complete frame, skip 5, sample up to 20 in 6 s.
+ * Expect:    1. st20p_tx_get_pacing_params() == 0, trs > 0
+ *            2. >= kMinUsableFrames (15) frames with timing-parser coverage
+ *            3. >= 80 % of span ratios (ipt_avg / trs) in [0.5, 1.5]
+ *            4. median span ratio in [0.7, 1.3]
+ * Skip/Fail: E830 PF ports (run_pf.sh); fails or hangs elsewhere.
+ *
+ * Smoke-test: does TSN launch-time pacing actually spread packets across the
  * frame interval on the wire, instead of merely completing session setup?
  * Uses E830 PF RX hardware timestamps (st20_rx_tp_meta::ipt_avg, populated by
  * ST20P_RX_FLAG_TIMING_PARSER_META with MTL_FLAG_ENABLE_HW_TIMESTAMP) so

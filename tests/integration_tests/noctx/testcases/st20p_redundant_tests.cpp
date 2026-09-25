@@ -7,11 +7,33 @@
 #include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
-#define TX_SESSION_PORT_0 0
-#define TX_SESSION_PORT_1 1
-#define RX_SESSION_PORT_0 2
-#define RX_SESSION_PORT_1 3
+/* Indexes into --port_list. */
+constexpr int kPrimaryTxPort = 0;
+constexpr int kRedundantTxPort = 1;
+constexpr int kRxPortP = 2;
+constexpr int kRxPortR = 3;
 
+/* st20p_redundant_latency_drops_even_odd
+ * Config:    4 ports, else std::runtime_error. MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS:
+ *            kPrimaryTxPort drops even packets, kRedundantTxPort odd ones;
+ *            initDefaultContext(). 1080p25 (T = 40 ms), 3 buffers.
+ *            RX kRxPortP + kRxPortR on kUdpPortP / kUdpPortR (P and R);
+ *            primary TX kPrimaryTxPort -> P mcast, kUdpPortP;
+ *            redundant TX kRedundantTxPort -> R mcast, kUdpPortR,
+ *            rtp_timestamp_delta_us = -testedLatencyMs * 1000;
+ *            both TX kTxFlags = USER_PACING | USER_TIMESTAMP.
+ * Plan:      St20pRedundantStreamPlan from PTP zero (StartFakePtpClock() before
+ *            mtl_start()): primary t_user(n) = 50 ms + n*T, redundant 50 ms +
+ *            testedLatencyMs + n*T (kSt20pRedundantStartMs), each snapped to its
+ *            nearest epoch. Runs testDurationS = 120 s.
+ * Expect:    RX stats read before the sessions stop, frame counts after:
+ *            1. primary idx_tx == RX idx_rx +- 1 %
+ *            2. per-port lost_packets > 0 on P and on R
+ *            3. stat_lost_packets == lost P + lost R
+ *            4. each port loses 50 +- 5 % of its packets
+ *            5. stat_frames_incomplete == 0, stat_pkts_unrecovered == 0
+ * Skip/Fail: SKIP unless built with MTL_SIMULATE_PACKET_DROPS (debug, debugonly).
+ */
 TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   if (ctx->para.num_ports < 4) {
     throw std::runtime_error("st20p_redundant_latency test ctx needs at least 4 ports");
@@ -31,13 +53,13 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
                   "per-port loss";
 #else
   ctx->para.flags |= MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS;
-  ctx->para.port_packet_loss[TX_SESSION_PORT_0].tx_stream_loss_id =
+  ctx->para.port_packet_loss[kPrimaryTxPort].tx_stream_loss_id =
       0; /* drop even packets */
-  ctx->para.port_packet_loss[TX_SESSION_PORT_0].tx_stream_loss_divider =
+  ctx->para.port_packet_loss[kPrimaryTxPort].tx_stream_loss_divider =
       2; /* out of every 2 packets */
-  ctx->para.port_packet_loss[TX_SESSION_PORT_1].tx_stream_loss_id =
+  ctx->para.port_packet_loss[kRedundantTxPort].tx_stream_loss_id =
       1; /* drop odd packets */
-  ctx->para.port_packet_loss[TX_SESSION_PORT_1].tx_stream_loss_divider =
+  ctx->para.port_packet_loss[kRedundantTxPort].tx_stream_loss_divider =
       2; /* out of every 2 packets */
 #endif
 
@@ -46,41 +68,42 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   /* Class a */
   uint testedLatencyMs = 10;
   uint testDurationS = 120; /* 2 minutes */
+  constexpr uint16_t kUdpPortP = 20000;
+  constexpr uint16_t kUdpPortR = 20001;
+  constexpr uint32_t kTxFlags = ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP;
 
   auto rxBundle = createSt20pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
+      [](St20pHandler* handler) { return new St20pRedundantStreamPlan(0, handler); },
       [](St20pHandler* handler) {
-        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = 20000;
-        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = 20001;
-        handler->setSessionPorts(SESSION_SKIP_PORT, RX_SESSION_PORT_0, SESSION_SKIP_PORT,
-                                 RX_SESSION_PORT_1);
+        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortP;
+        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = kUdpPortR;
+        handler->setSessionPorts(SESSION_SKIP_PORT, kRxPortP, SESSION_SKIP_PORT,
+                                 kRxPortR);
       });
-  auto* rxStrategy = static_cast<St20pRedundantLatency*>(rxBundle.strategy);
+  auto* rxStrategy = static_cast<St20pRedundantStreamPlan*>(rxBundle.strategy);
 
   auto primaryBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
-      [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
+      [](St20pHandler* handler) { return new St20pRedundantStreamPlan(0, handler); },
       [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
-        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = 20000;
-        handler->setSessionPorts(TX_SESSION_PORT_0, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->sessionsOpsTx.flags |= kTxFlags;
+        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortP;
+        handler->setSessionPorts(kPrimaryTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
       });
-  auto* primaryStrategy = static_cast<St20pRedundantLatency*>(primaryBundle.strategy);
+  auto* primaryStrategy = static_cast<St20pRedundantStreamPlan*>(primaryBundle.strategy);
 
   auto latencyBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
       [testedLatencyMs](St20pHandler* handler) {
-        return new St20pRedundantLatency(testedLatencyMs, handler);
+        return new St20pRedundantStreamPlan(testedLatencyMs, handler);
       },
       [this, testedLatencyMs](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
-        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = 20001;
+        handler->sessionsOpsTx.flags |= kTxFlags;
+        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortR;
         handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
-        handler->setSessionPorts(TX_SESSION_PORT_1, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+        handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
                ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);

@@ -8,9 +8,10 @@
 
 namespace {
 
-class St40pAutoDetectStrategy : public FrameTestStrategy {
+/* Records whether any RX frame reported interlaced; the test asserts on it. */
+class St40pInterlaceFlagRecorder : public FrameTestStrategy {
  public:
-  St40pAutoDetectStrategy() : FrameTestStrategy(nullptr, false, true) {
+  St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, false, true) {
   }
 
   void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
@@ -32,20 +33,33 @@ class St40pAutoDetectStrategy : public FrameTestStrategy {
 
 }  // namespace
 
+/* st40p_rx_auto_detect_interlace
+ * Config:    initDefaultContext(); one session TX TEST_PORT_1 -> RX TEST_PORT_2, 60p,
+ *            4 buffers (fillSt40pOps()); TX kTxInterlaced (sets F bits), RX
+ *            kRxInterlaced = false, left to auto-detect.
+ * Plan:      default pacing.
+ * Expect:    after stop:
+ *            1. txFrames() > 0, rxFrames() > 0, equal
+ *            2. some RX frame reported interlaced   St40pInterlaceFlagRecorder
+ *            Every TX and RX frame also passes the St40pHandler thread checks.
+ * Skip/Fail: none.
+ */
 TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   initDefaultContext();
 
+  constexpr bool kTxInterlaced = true;
+  constexpr bool kRxInterlaced = false;
+
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      [](St40pHandler*) { return new St40pAutoDetectStrategy(); },
+      [](St40pHandler*) { return new St40pInterlaceFlagRecorder(); },
       [](St40pHandler* handler) {
-        handler->sessionsOpsTx.interlaced = true;  // emit F bits
-        handler->sessionsOpsRx.interlaced =
-            false;  // unknown at start, auto-detect default
+        handler->sessionsOpsTx.interlaced = kTxInterlaced;
+        handler->sessionsOpsRx.interlaced = kRxInterlaced;
       });
 
   auto* handler = bundle.handler;
-  auto* strategy = static_cast<St40pAutoDetectStrategy*>(bundle.strategy);
+  auto* strategy = static_cast<St40pInterlaceFlagRecorder*>(bundle.strategy);
   ASSERT_NE(handler, nullptr);
   ASSERT_NE(strategy, nullptr);
 

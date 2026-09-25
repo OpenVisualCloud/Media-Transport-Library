@@ -14,10 +14,6 @@
 class St30pHandler : public PipelineHandlerBase<st30p_tx_ops, st30p_rx_ops,
                                                 st30p_tx_handle, st30p_rx_handle> {
  public:
-  explicit St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
-                        st30p_tx_ops ops_tx = {}, st30p_rx_ops ops_rx = {},
-                        uint msPerFramebuffer = 10, bool create = true,
-                        bool start = true);
   explicit St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx = {},
                         st30p_rx_ops ops_rx = {}, uint msPerFramebuffer = 10);
   ~St30pHandler() override;
@@ -30,12 +26,14 @@ class St30pHandler : public PipelineHandlerBase<st30p_tx_ops, st30p_rx_ops,
   void startSessionTx() override;
   void startSessionRx() override;
 
+  /* Every buffer, both directions: ASSERT buffer_size and data_size == framebuff_size,
+   * fmt, channel, ptime, sampling as in the ops; strategy; EXPECT put_frame >= 0. */
   void st30pTxDefaultFunction(std::atomic<bool>& stopFlag);
   void st30pRxDefaultFunction(std::atomic<bool>& stopFlag);
 
   void normalizeSessionOps();
 
-  uint64_t nsPacketTime;
+  uint64_t nsFramebuffTime;
 
  private:
   uint msPerFramebuffer;

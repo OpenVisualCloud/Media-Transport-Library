@@ -45,6 +45,19 @@ int envInt(const char* name, int fallback) {
 
 }  // namespace
 
+/* st20p_tx_multithread_stability
+ * Config:    initDefaultContext(); TX only on TEST_PORT_1, 1080p25, default pacing,
+ *            kFrameCnt framebuffers (NOCTX_STABILITY_FBS, 4).
+ * Plan:      kProducers threads (NOCTX_STABILITY_PRODUCERS, 8) loop st20p_tx_get_frame()
+ *            / st20p_tx_put_frame() on the one handle for kSeconds
+ *            (NOCTX_STABILITY_SECONDS, 1800), stopping at the first failure.
+ * Expect:    1. no framebuffer owned by two producers at once (holder[])
+ *            2. every st20p_tx_put_frame() >= 0
+ *            3. every frame has a registered framebuffer address
+ *            4. at least one frame produced
+ *            5. if the TX stats query succeeds: stat_frames_sent <= produced
+ * Skip/Fail: none.
+ */
 TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
   initDefaultContext();
 
@@ -55,7 +68,7 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
-      [](St20pHandler* h) { return new St20pDefaultTimestamp(h); },
+      [](St20pHandler* h) { return new St20pDefaultPacingOracle(h); },
       [kFrameCnt](St20pHandler* h) {
         h->sessionsOpsTx.framebuff_cnt = (uint16_t)kFrameCnt;
       });

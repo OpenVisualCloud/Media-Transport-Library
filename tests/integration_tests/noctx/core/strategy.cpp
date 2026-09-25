@@ -9,7 +9,6 @@ FrameTestStrategy::FrameTestStrategy(Handlers* parent, bool enable_tx_modifier,
     : parent(parent),
       idx_tx(0),
       idx_rx(0),
-      expect_fps(0.0),
       enable_tx_modifier(enable_tx_modifier),
       enable_rx_modifier(enable_rx_modifier) {
 }
