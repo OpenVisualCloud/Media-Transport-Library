@@ -59,6 +59,14 @@ and `pytest.ini` for the authoritative list.
 The two performance markers select no `tests/single/` test. Select the
 `tests/single/performance/` modules by path.
 
+## rx_timing and CPU isolation
+
+The `tests/single/rx_timing/` tests run RxTxApp in an exclusive CPU partition
+(`cpu_isolation="require"`) and fail when the host cannot provide one. Besides
+the wrapper's requirements in
+[tests/tools/isolate/README.md](../tools/isolate/README.md), with the first
+interface as port P, they need passwordless `sudo -n` for the test account.
+
 ## Further reading
 
 - [Setup and run](../../doc/acceptance_quickstart.md)

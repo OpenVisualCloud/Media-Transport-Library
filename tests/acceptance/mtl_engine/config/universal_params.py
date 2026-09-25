@@ -89,6 +89,7 @@ UNIVERSAL_PARAMS = {
     # RxTxApp specific parameters
     "config_file": None,  # JSON config file path
     "lcores": None,  # DPDK lcore list (e.g., "28,29,30,31")
+    "cpu_isolation": None,  # None or "require" (exclusive cpuset partition, RxTxApp only)
     "dma_dev": None,  # DMA device list (e.g., "DMA1,DMA2,DMA3")
     "log_level": None,  # Log level (debug, info, notice, warning, error)
     "log_file": None,  # Log file path
