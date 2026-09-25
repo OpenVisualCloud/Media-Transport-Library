@@ -1,0 +1,194 @@
+From 64afcb153972f62840c92818ba097781ba179271 Mon Sep 17 00:00:00 2001
+From: "Wilczynski, Andrzej" <andrzej.wilczynski@intel.com>
+Date: Fri, 25 Sep 2026 12:00:00 +0200
+Subject: [PATCH] x86: add Intel CET IBT support
+
+x86inc.asm marks every NASM object with the SHSTK property only, so a
+build compiled with -fcf-protection=full still links libavcodec,
+libavutil and libswscale without IBT: the linker ANDs the property of
+all objects.
+
+Emit endbr64 at every cglobal entry and mark the objects IBT and SHSTK
+when NASM knows the CET instructions (2.15.01 and later). Make the
+indirect branch targets that are not function entries valid too: the
+vvc_mc jump table targets get an endbr64, the mlpdsp inline asm jumps
+into its unrolled filter with notrack, as GCC does for switch tables,
+and the swscale MMXEXT run-time generated code starts with endbr64.
+
+endbr64 is a NOP on CPUs without CET.
+
+Signed-off-by: Wilczynski, Andrzej <andrzej.wilczynski@intel.com>
+---
+ libavcodec/x86/mlpdsp_init.c               |  4 ++--
+ libavcodec/x86/vvc/vvc_mc.asm              | 16 +++++++++++++++-
+ libavutil/x86/x86inc.asm                   | 14 +++++++++++++-
+ libswscale/x86/hscale_fast_bilinear_simd.c |  8 ++++++++
+ 4 files changed, 38 insertions(+), 4 deletions(-)
+
+diff --git a/libavcodec/x86/mlpdsp_init.c b/libavcodec/x86/mlpdsp_init.c
+index 950f996..941a5f5 100644
+--- a/libavcodec/x86/mlpdsp_init.c
++++ b/libavcodec/x86/mlpdsp_init.c
+@@ -145,7 +145,7 @@ static void mlp_filter_channel_x86(int32_t *state, const int32_t *coeff,
+     __asm__ volatile(
+         "1:                           \n\t"
+         CLEAR_ACCUM
+-        "jmp  *%5                     \n\t"
++        "notrack jmp *%5              \n\t"
+         FIRMUL   (ff_mlp_firorder_8, 0x1c   )
+         FIRMUL   (ff_mlp_firorder_7, 0x18   )
+         FIRMUL   (ff_mlp_firorder_6, 0x14   )
+@@ -155,7 +155,7 @@ static void mlp_filter_channel_x86(int32_t *state, const int32_t *coeff,
+         FIRMUL   (ff_mlp_firorder_2, 0x04   )
+         FIRMULREG(ff_mlp_firorder_1, 0x00, 8)
+         LABEL_MANGLE(ff_mlp_firorder_0)":\n\t"
+-        "jmp  *%6                     \n\t"
++        "notrack jmp *%6              \n\t"
+         IIRMUL   (ff_mlp_iirorder_4, 0x0c   )
+         IIRMUL   (ff_mlp_iirorder_3, 0x08   )
+         IIRMUL   (ff_mlp_iirorder_2, 0x04   )
+diff --git a/libavcodec/x86/vvc/vvc_mc.asm b/libavcodec/x86/vvc/vvc_mc.asm
+index 30aa97c..9126583 100644
+--- a/libavcodec/x86/vvc/vvc_mc.asm
++++ b/libavcodec/x86/vvc/vvc_mc.asm
+@@ -47,7 +47,7 @@ pw_256  times 2 dw 256
+     %xdefine %%prefix mangle(private_prefix %+ _vvc_%1_%2bpc_%3)
+     %%table:
+     %rep %0 - 3
+-        dd %%prefix %+ .w%4 - %%base
++        dd %%prefix %+ .w%4_ibt - %%base
+         %rotate 1
+     %endrep
+ %endmacro
+@@ -79,6 +79,8 @@ SECTION .text
+ %macro AVG_FN 2 ; bpc, op
+    jmp                  wq
+ 
++.w2_ibt:
++    _CET_ENDBR
+ .w2:
+     movd                xm0, [src0q]
+     pinsrd              xm0, [src0q + AVG_SRC_STRIDE], 1
+@@ -88,6 +90,8 @@ SECTION .text
+     AVG_SAVE_W2          %1
+     AVG_LOOP_END        .w2
+ 
++.w4_ibt:
++    _CET_ENDBR
+ .w4:
+     movq                xm0, [src0q]
+     pinsrq              xm0, [src0q + AVG_SRC_STRIDE], 1
+@@ -98,6 +102,8 @@ SECTION .text
+ 
+     AVG_LOOP_END        .w4
+ 
++.w8_ibt:
++    _CET_ENDBR
+ .w8:
+     vinserti128         m0, m0, [src0q], 0
+     vinserti128         m0, m0, [src0q + AVG_SRC_STRIDE], 1
+@@ -108,21 +114,29 @@ SECTION .text
+ 
+     AVG_LOOP_END       .w8
+ 
++.w16_ibt:
++    _CET_ENDBR
+ .w16:
+     AVG_W16_FN          %1, %2, 1
+ 
+     AVG_LOOP_END       .w16
+ 
++.w32_ibt:
++    _CET_ENDBR
+ .w32:
+     AVG_W16_FN          %1, %2, 2
+ 
+     AVG_LOOP_END       .w32
+ 
++.w64_ibt:
++    _CET_ENDBR
+ .w64:
+     AVG_W16_FN          %1, %2, 4
+ 
+     AVG_LOOP_END       .w64
+ 
++.w128_ibt:
++    _CET_ENDBR
+ .w128:
+     AVG_W16_FN          %1, %2, 8
+ 
+diff --git a/libavutil/x86/x86inc.asm b/libavutil/x86/x86inc.asm
+index e61d924..f1b2678 100644
+--- a/libavutil/x86/x86inc.asm
++++ b/libavutil/x86/x86inc.asm
+@@ -849,6 +849,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae,
+     %endif
+     align function_align
+     %2:
++    _CET_ENDBR
+     RESET_MM_PERMUTATION        ; needed for x86-64, also makes disassembly somewhat nicer
+     %xdefine rstk rsp           ; copy of the original stack pointer, used when greater alignment than the known stack alignment is required
+     %assign stack_offset 0      ; stack pointer offset relative to the return address
+@@ -870,6 +871,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae,
+         global current_function %+ %1
+     %endif
+     %1:
++    _CET_ENDBR
+ %endmacro
+ 
+ %macro cextern 1
+@@ -899,6 +901,10 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae,
+     %1: %2
+ %endmacro
+ 
++; Indirect branch target marker (Intel CET IBT). Only emitted when the
++; GNU property note below advertises IBT; empty everywhere else.
++%define _CET_ENDBR
++
+ %if FORMAT_ELF
+     ; The GNU linker assumes the stack is executable by default.
+     [SECTION .note.GNU-stack noalloc noexec nowrite progbits]
+@@ -907,6 +913,12 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae,
+         %if __NASM_VERSION_ID__ >= 0x020e0300 ; 2.14.03
+             %if ARCH_X86_64
+                 ; Control-flow Enforcement Technology (CET) properties.
++                %if __NASM_VERSION_ID__ >= 0x020f0100 ; 2.15.01 added CET instructions
++                    %define _CET_ENDBR endbr64
++                    %define CET_FEATURE_1 3 ; GNU_PROPERTY_X86_FEATURE_1_IBT | GNU_PROPERTY_X86_FEATURE_1_SHSTK
++                %else
++                    %define CET_FEATURE_1 2 ; GNU_PROPERTY_X86_FEATURE_1_SHSTK
++                %endif
+                 [SECTION .note.gnu.property alloc noexec nowrite note align=gprsize]
+                 dd 0x00000004  ; n_namesz
+                 dd gprsize + 8 ; n_descsz
+@@ -914,7 +926,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae,
+                 db "GNU",0     ; n_name
+                 dd 0xc0000002  ; pr_type = GNU_PROPERTY_X86_FEATURE_1_AND
+                 dd 0x00000004  ; pr_datasz
+-                dd 0x00000002  ; pr_data = GNU_PROPERTY_X86_FEATURE_1_SHSTK
++                dd CET_FEATURE_1 ; pr_data
+                 dd 0x00000000  ; pr_padding
+             %endif
+         %endif
+diff --git a/libswscale/x86/hscale_fast_bilinear_simd.c b/libswscale/x86/hscale_fast_bilinear_simd.c
+index f6409b4..f7c587b 100644
+--- a/libswscale/x86/hscale_fast_bilinear_simd.c
++++ b/libswscale/x86/hscale_fast_bilinear_simd.c
+@@ -132,6 +132,14 @@ av_cold int ff_init_hscaler_mmxext(int dstW, int xInc, uint8_t *filterCode,
+     xpos        = 0; // lumXInc/2 - 0x8000; // difference between pixel centers
+     fragmentPos = 0;
+ 
++#if ARCH_X86_64
++    // The generated code is entered via an indirect call, so it must start
++    // with endbr64 to be a valid CET IBT target (a NOP on non-CET CPUs).
++    if (filterCode)
++        memcpy(filterCode, "\xf3\x0f\x1e\xfa", 4);
++    fragmentPos = 4;
++#endif
++
+     for (i = 0; i < dstW / numSplits; i++) {
+         int xx = xpos >> 16;
+ 
+-- 
+2.34.1
+
