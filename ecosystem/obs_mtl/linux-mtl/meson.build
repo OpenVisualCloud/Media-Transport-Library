@@ -21,6 +21,16 @@ sources = files(
   'mtl-output.c',
 )
 
+# Intel SDL / OpenSSF compiler hardening, see doc/build.md
+add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
+  '-fstack-clash-protection', '-fcf-protection=full',
+  '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'c')
+# keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set
+if get_option('optimization') not in ['0', 'plain'] and cc.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
+  add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'c')
+endif
+add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
+
 # args
 linux_mtl_c_args = []
 linux_mtl_c_args += ['-UHAVE_OBSCONFIG_H']

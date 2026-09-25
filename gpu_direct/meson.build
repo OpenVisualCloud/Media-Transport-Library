@@ -19,6 +19,16 @@ if is_windows
     error('not supported on Windows')
 endif
 
+# Intel SDL / OpenSSF compiler hardening, see doc/build.md
+add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
+    '-fstack-clash-protection', '-fcf-protection=full',
+    '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'c')
+# keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set
+if get_option('optimization') not in ['0', 'plain'] and cc.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
+    add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'c')
+endif
+add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
+
 # gpu_direct dependencies check
 mtl_gpu_direct_c_args = []
 if get_option('buildtype') != 'debug'

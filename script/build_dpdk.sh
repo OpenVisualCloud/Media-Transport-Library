@@ -109,7 +109,14 @@ if [ "$sourced" -eq 0 ]; then
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
 	fi
-	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"}
+	# Intel SDL / OpenSSF compiler hardening, see doc/build.md. -Dc_args replaces
+	# CFLAGS, so pass them through; keep the _FORTIFY_SOURCE level the compiler sets.
+	hardening_cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security"
+	if ! echo | "${CC:-cc}" -O2 -dM -E - | grep -q _FORTIFY_SOURCE; then
+		hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+	fi
+	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Db_pie=true -Dc_args="${CFLAGS:+$CFLAGS }${hardening_cflags}" \
+		-Dc_link_args="${LDFLAGS:+$LDFLAGS }-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
 	ninja -C build
 	(
 		cd build || exit 1
