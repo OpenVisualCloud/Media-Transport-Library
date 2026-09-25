@@ -129,6 +129,7 @@ unit_sources = [
   'pipeline/st22p_tx_drop_when_late_test.cpp',
   'pipeline/st22p_rx_blocking_test.cpp',
   'pipeline/st22p_tx_blocking_test.cpp',
+  'pipeline/st22p_tx_stale_wake_test.cpp',
   'pipeline/st22p_concurrency_test.cpp',
   'pipeline/st22p_concurrency_stress_test.cpp',
   'sch/mt_sch_harness.c',
