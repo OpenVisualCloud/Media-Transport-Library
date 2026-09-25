@@ -144,8 +144,8 @@ def test_create_command_explicit_dma_dev_overrides_default():
 
 
 def test_create_command_leaves_dma_dev_none_without_a_default():
-    """A host test_config never populated dma_device for (no nightly `dma`
-    bind step ran) must behave exactly as before this feature existed.
+    """A host whose nic_port_list found no DMA channel to bind must behave
+    exactly as before this feature existed.
     """
     app = _MinimalApp(app_path="minimal")
 

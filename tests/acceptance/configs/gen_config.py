@@ -44,7 +44,6 @@ def gen_test_config(
     no_capture: bool = False,
     capture_pci_device: str = None,
     interface_type: str = None,
-    dma_device: str = None,
 ) -> str:
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
 
@@ -71,11 +70,6 @@ def gen_test_config(
     # test_config["interface_type"]; leaving it out keeps the VF default.
     if interface_type:
         test_config["interface_type"] = interface_type
-
-    # Set only by pytest-setup.sh's `dma` subcommand; see conftest.py's
-    # app_factory for why this is opt-in config rather than discovered live.
-    if dma_device:
-        test_config["dma_device"] = dma_device
 
     has_ebu = all([ebu_ip, ebu_user, ebu_password])
     # capture_pci_device is the preferred, unambiguous way to designate the
@@ -279,17 +273,6 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--dma_device",
-        type=str,
-        default=None,
-        help=(
-            "Comma-separated PCI address(es) of DMA channel(s) already bound "
-            "to vfio-pci (see pytest-setup.sh's dma subcommand), passed "
-            "through to RxTxApp as --dma_dev. Omitted on hosts/workflows that "
-            "never ran that bind step."
-        ),
-    )
-    parser.add_argument(
         "--capture_pci_device",
         type=str,
         default=None,
@@ -328,7 +311,6 @@ def main() -> None:
         no_capture=args.no_capture,
         capture_pci_device=args.capture_pci_device,
         interface_type=args.interface_type,
-        dma_device=args.dma_device,
     )
 
     with open("test_config.yaml", "w") as file:
