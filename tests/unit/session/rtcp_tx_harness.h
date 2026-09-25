@@ -21,6 +21,7 @@ struct ut_rtcp_parse_result {
   int ret;                  /* parser return value (0 accept, <0 reject) */
   uint32_t retransmit_fail; /* stat_rtp_retransmit_fail: proxy for fci-walk count */
   uint32_t nack_received;   /* stat_nack_received */
+  uint32_t drop_invalid;    /* stat_nack_drop_invalid */
 };
 
 /*

@@ -198,10 +198,6 @@ static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) {
   return fifo->used;
 }
 
-static inline int mt_u64_fifo_size(struct mt_u64_fifo* fifo) {
-  return fifo->size;
-}
-
 static inline int mt_u64_fifo_free_count(struct mt_u64_fifo* fifo) {
   return fifo->size - fifo->used;
 }

@@ -106,22 +106,32 @@ TEST(MtRtcpTxParseNack, CapAtMaxFcis) {
 
 /* ── VLA vector: a huge "follow" must be clamped to the ring capacity ─────── */
 
-TEST(MtRtcpTxParseNack, ClampHugeFollowToRing) {
+TEST(MtRtcpTxParseNack, RefuseHugeFollow) {
   /* One well-formed FCI with follow=0xFFFE -> bulk = follow + 1 = 65535.
-   * Patched clamps bulk to the ring capacity before sizing the VLA, so the
-   * single failed attempt adds exactly kRing to the fail counter. */
+   * The ring does not hold the range, so the whole request fails; the
+   * retransmit works in fixed chunks, so no stack is sized from bulk. */
   auto r = ut_rtcp_tx_feed_nack(kRing, /*len_field=*/LenForFci(1), /*fci_count=*/1,
                                 /*follow=*/0xFFFE, /*recv_len=*/BytesForFci(1));
   EXPECT_EQ(r.ret, 0);
-  EXPECT_EQ(r.retransmit_fail, (uint32_t)kRing);
+  EXPECT_EQ(r.retransmit_fail, 65535u);
 }
 
-TEST(MtRtcpTxParseNack, FollowAllOnesWrapsToZeroBulk) {
-  /* follow=0xFFFF -> bulk = 0x10000 truncates to 0; must fail cleanly. */
+TEST(MtRtcpTxParseNack, FollowAllOnesIsRefused) {
+  /* follow=0xFFFF asks for 65536 packets. The count must not wrap to 0 in a
+   * uint16_t: the request is refused the same as follow=0xFFFE. */
   auto r = ut_rtcp_tx_feed_nack(kRing, /*len_field=*/LenForFci(1), /*fci_count=*/1,
                                 /*follow=*/0xFFFF, /*recv_len=*/BytesForFci(1));
   EXPECT_EQ(r.ret, 0);
-  EXPECT_EQ(r.retransmit_fail, 1u); /* one attempt, bulk==0 counted as one fail */
+  EXPECT_EQ(r.retransmit_fail, 65536u);
+}
+
+/* ── Invalid packets are counted, not logged at err level ──────────────────── */
+
+TEST(MtRtcpTxParseNack, InvalidIsCounted) {
+  auto r = ut_rtcp_tx_feed_nack(kRing, /*len_field=*/1, /*fci_count=*/0,
+                                /*follow=*/0, /*recv_len=*/20);
+  EXPECT_LT(r.ret, 0);
+  EXPECT_EQ(r.drop_invalid, 1u);
 }
 
 }  // namespace
