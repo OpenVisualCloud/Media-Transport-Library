@@ -80,8 +80,8 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
     rv_tp_compliant_set_cause(&slot->meta, "fpt exceed tr_offset");
     return ST_RX_TP_COMPLIANT_FAILED;
   }
-  /* rtp ts delta check */
-  if (slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
+  /* rtp ts delta check, 0 when the port has no previous frame */
+  if (slot->meta.rtp_ts_delta && slot->meta.rtp_ts_delta < tp->pass.rtp_ts_delta_min) {
     rv_tp_compliant_set_cause(&slot->meta, "rtp_ts_delta exceed min");
     return ST_RX_TP_COMPLIANT_FAILED;
   }

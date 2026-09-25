@@ -53,10 +53,8 @@ class St20RxInterlacedTpPhaseTest : public St20RxBaseTest {
     }
   }
 
-  /* The parser reports rtp_ts_delta against the previous frame, so the very
-   * first frame of a stream structurally fails ("rtp_ts_delta exceed min").
-   * Every case therefore primes with the preceding slot and asserts on the
-   * second frame. */
+  /* Every case primes with the preceding slot and asserts on the second frame,
+   * so rtp_ts_delta is checked against a real previous frame. */
   void PrimeThenFeedFirstFieldInEpoch(uint64_t epoch) {
     FeedFirstFieldInEpoch(epoch - 1);
     ASSERT_EQ(frames_received(), 1);
