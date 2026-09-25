@@ -472,8 +472,6 @@ static void test_st20p_rx_check_tp(tests_context* s, struct st_frame* frame) {
     s->incomplete_frame_cnt++;
     return;
   }
-  /* no previous frame to measure rtp_ts_delta against, so the parser always FAILs it */
-  if (!s->fb_rec) return;
   if (tp->compliant != ST_RX_TP_COMPLIANT_FAILED) return;
   if (strcmp(tp->failed_cause, "field parity off frame grid")) {
     if (!s->tp_other_fail_logged) {
