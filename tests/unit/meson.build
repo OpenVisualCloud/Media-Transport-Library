@@ -116,6 +116,7 @@ unit_sources = [
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
   'pipeline/st20p_rx_concurrency_test.cpp',
+  'pipeline/st20p_rx_blocking_test.cpp',
   'pipeline/st20p_tx_harness.c',
   'pipeline/st20p_tx_concurrency_test.cpp',
   'pipeline/st20p_tx_blocking_test.cpp',
