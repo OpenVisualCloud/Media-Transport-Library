@@ -15,6 +15,8 @@ script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
 mtl_folder=$(realpath "${script_folder}/../..")
+noctx_folder="${mtl_folder}/tests/integration_tests/noctx"
+isolate_sh="${mtl_folder}/tests/tools/isolate/isolate.sh"
 declare -A test_cases
 
 # Detect whether to use .local_install (CI) or local build/system paths
@@ -206,6 +208,34 @@ ports_of_one_pf() {
 	return 1
 }
 
+# Prints the NoCtx ports: $1 and $2 of PF A interleaved with two VFs of PF B, as
+# TX A, RX B, spare A, spare B. B is a sibling function of A (same bus:device):
+# CI cables the two ports of one NIC, never two NICs. VFs of one PF are switched
+# inside the NIC and get no RX timestamp, which the strict pacing cases need
+# (tests/integration_tests/noctx/README.md). Without a B it prints its
+# arguments, the one-PF ports.
+noctx_ports() {
+	local listing=$1 pf_a port pf group=()
+	shift
+	declare -A by_pf=()
+	pf_a=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/$1/physfn" 2>/dev/null)")
+	while read -r port; do
+		pf=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/${port}/physfn" 2>/dev/null)")
+		if [ "${pf}" != "${pf_a}" ] && [ "${pf%.*}" = "${pf_a%.*}" ]; then
+			by_pf["${pf}"]+="${port} "
+		fi
+	done < <(awk '$3 == "vfio-pci" {print $2}' "${listing}")
+
+	for pf in $(printf '%s\n' "${!by_pf[@]}" | sort); do
+		read -r -a group <<<"${by_pf[$pf]}"
+		if [ "${#group[@]}" -ge 2 ]; then
+			printf '%s\n' "$1" "${group[0]}" "$2" "${group[1]}"
+			return 0
+		fi
+	done
+	printf '%s\n' "$@"
+}
+
 # What the suite runs on: four ports of one PF, and two DMA channels beside
 # them. Reading, only -- see the header.
 discover_ports() {
@@ -257,10 +287,9 @@ discover_ports() {
 		echo "skipped."
 	fi
 
-	# Exported for the noctx tests, which take the four ports from the
-	# environment and run one process per case.
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
 	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
+	mapfile -t noctx_port < <(noctx_ports "${listing}" "${ports[@]:0:4}")
 	export TEST_DMA_PORT_P="${channels[0]:-}" TEST_DMA_PORT_R="${channels[1]:-}"
 	# What every case is given, built once: the option with the channels this
 	# host serves, and nothing at all when it serves none -- an empty --dma_dev
@@ -343,10 +372,19 @@ generate_test_cases() {
 	# EAL cannot be re-initialised in one process.
 	test_cases[redundant_stats]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
 	test_cases[st20p_kernel_loopback]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
-	test_cases[noctx]="\"${mtl_folder}/tests/integration_tests/noctx/run.sh\""
+	# NOCTX_REQUIRE_STRICT=1: a strict pacing case fails, not skips, on a topology without NIC RX timestamps.
+	# MTL_ISOLATE=require: a NOCTX_ISOLATE_CASES case fails, not runs unconfined, without an exclusive CPU partition.
+	test_cases[noctx]="TEST_PORT_1=${noctx_port[0]} TEST_PORT_2=${noctx_port[1]} TEST_PORT_3=${noctx_port[2]} TEST_PORT_4=${noctx_port[3]} NOCTX_REQUIRE_STRICT=1 MTL_ISOLATE=require \"${noctx_folder}/run.sh\""
 }
 
 # ── running them ────────────────────────────────────────────────────────────
+
+# Restores the CPU isolation settings and cgroups a SIGKILLed isolate.sh left.
+noctx_sweep() {
+	sudo "${isolate_sh}" --sweep && return 0
+	echo "✗ isolate.sh --sweep failed: CPU isolation settings or cgroups left behind" | sudo tee -a "$LOG_FILE"
+	return 1
+}
 
 kill_test_processes() {
 	# Kill by process group if available
@@ -404,6 +442,8 @@ run_case_bounded() {
 	sudo rm -f "${case_log}" "${sid_file}"
 	sudo install -m 0666 /dev/null "${case_log}"
 
+	[ "${test_name}" != noctx ] || noctx_sweep || return 1
+
 	tail -n 0 -F "${case_log}" &
 	local tail_pid=$!
 
@@ -422,6 +462,9 @@ run_case_bounded() {
 		if [ -n "${sid}" ]; then
 			sudo pkill -SIGKILL -s "${sid}" 2>/dev/null || true
 		fi
+	fi
+	if [ "${test_name}" = noctx ] && ! noctx_sweep && [ "${retval}" -eq 0 ]; then
+		retval=1
 	fi
 
 	return "${retval}"
@@ -496,6 +539,7 @@ print_configuration() {
 	echo "TEST_R_SIP: $TEST_R_SIP"
 	echo "FAIL_FAST: ${FAIL_FAST:-<not set>}"
 	echo "TEST_PORT_1..4: ${TEST_PORT_1} ${TEST_PORT_2} ${TEST_PORT_3} ${TEST_PORT_4}"
+	echo "NoCtx ports: ${noctx_port[*]}"
 	echo "DMA channels: ${TEST_DMA_ARG:-<none, the DMA cases skip themselves>}"
 	echo "=========================================="
 	echo ""

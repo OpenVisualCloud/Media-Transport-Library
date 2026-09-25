@@ -16,7 +16,7 @@ Background on static and dynamic CPU isolation: [doc/isolation.md](../../../doc/
 If the partition is unavailable, `try` prints one `WARNING` with the reason and
 runs the command unconfined; `require` prints `isolate.sh: ERROR ... (<why>)`
 and exits 1 without running it. Otherwise the command's exit status is the
-wrapper's.
+wrapper's. CI (`.github/scripts/gtest.sh`) runs NoCtx with `MTL_ISOLATE=require`.
 
 ## Requirements
 
@@ -66,7 +66,8 @@ restores the saved settings. If the wrapper is SIGKILLed, a watcher in its own
 session does this, so a kill of the wrapper's session or process group does not
 reach it, and it ignores SIGPIPE in case its stderr pipe is already gone. If
 both die, the next wrapper or `isolate.sh --sweep` (root) does; it exits 1 if
-a partition is left. `/run` is tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
+a partition is left. `.github/scripts/gtest.sh` sweeps before and after the
+NoCtx run. `/run` is tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
 `flock /run/mtl-isolate.lock` (a wrapper waits 10 s, then gives up), and remove
 the stale `mtl-isolate-*` cgroups of dead wrappers.
 
