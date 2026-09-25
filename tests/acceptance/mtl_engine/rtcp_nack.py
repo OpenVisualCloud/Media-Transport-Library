@@ -21,12 +21,30 @@ RTCP_NAME = b"IMTL"
 MAX_FCIS = 256  # MT_RTCP_MAX_FCIS
 
 
-def _nack(fcis, len_field=None, flags=RTCP_FLAGS, ptype=RTCP_PTYPE_NACK, name=None):
-    """Build one IMTL NACK. ``len_field`` defaults to the RFC 3550 value."""
+def _nack(
+    fcis, len_field=None, flags=RTCP_FLAGS, ptype=RTCP_PTYPE_NACK, name=None, ssrc=0
+):
+    """Build one IMTL NACK. ``len_field`` defaults to the RFC 3550 value.
+
+    ``ssrc`` is the RFC4585 "SSRC of media source". It is 0 for the crafted
+    batch, which does not know the session ssrc. A test that drives the accept
+    path passes the real session ssrc.
+    """
     if len_field is None:
         len_field = 2 + len(fcis)
-    hdr = struct.pack("!BBHI4s", flags, ptype, len_field, 0, name or RTCP_NAME)
+    hdr = struct.pack("!BBHI4s", flags, ptype, len_field, ssrc, name or RTCP_NAME)
     return hdr + b"".join(struct.pack("!HH", s, f) for s, f in fcis)
+
+
+def well_formed_nacks(ssrc: int):
+    """Return valid single-packet NACKs that carry ``ssrc``.
+
+    Every NACK passes each header guard and the RFC4585 ssrc check when the
+    check is on and ``ssrc`` is the session ssrc. Each asks for one packet at
+    a spread of sequence numbers, so a NACK hits a buffered packet whatever
+    the current ring holds. The TX must count each as received.
+    """
+    return [_nack([(seq, 0)], ssrc=ssrc) for seq in range(0, 1024, 128)]
 
 
 # The first four pass the header checks, the next seven are "nack drop invalid".
@@ -66,16 +84,20 @@ print("rtcp nack injector batches", batches)
 
 
 def start_rtcp_nack_injector(
-    host, dst_ip: str, dst_port: int, duration: int, interval: float = 0.2
+    host, dst_ip: str, dst_port: int, duration: int, interval: float = 0.2, packets=None
 ):
-    """Send :data:`CRAFTED_NACKS` to ``dst_ip:dst_port`` for ``duration`` s.
+    """Send NACK datagrams to ``dst_ip:dst_port`` for ``duration`` s.
 
-    The sender runs on ``host`` in the background and stops by itself.
-    Datagrams sent before the session binds its RTCP port are lost, which
-    is harmless. Returns the process handle; the caller waits on it.
+    ``packets`` defaults to :data:`CRAFTED_NACKS`. A test that drives the
+    accept path passes :func:`well_formed_nacks` output instead. The sender
+    runs on ``host`` in the background and stops by itself. Datagrams sent
+    before the session binds its RTCP port are lost, which is harmless.
+    Returns the process handle. The caller waits on it.
     """
+    if packets is None:
+        packets = CRAFTED_NACKS
     script = _SENDER.format(
-        hexes=[d.hex() for d in CRAFTED_NACKS],
+        hexes=[d.hex() for d in packets],
         duration=int(duration),
         ip=dst_ip,
         port=int(dst_port),

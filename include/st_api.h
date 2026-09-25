@@ -384,6 +384,24 @@ struct st_tx_user_stats {
    * pipeline TX session types only.
    */
   uint64_t stat_frames_dropped;
+
+  /* ------------------------------------------------------------------ */
+  /*  RTCP NACK (retransmission). Non-zero only when rtcp is enabled on  */
+  /*  the TX. Cumulative since session create, summed over all ports.    */
+  /* ------------------------------------------------------------------ */
+
+  /** Total inbound NACKs that passed every guard, including the optional
+   * RFC4585 ssrc check, and drove a retransmit attempt. */
+  uint64_t stat_rtcp_nack_received;
+  /** Total inbound NACKs dropped for any reason (runt, wrong flags, wrong
+   * name, bad length, or wrong ssrc). */
+  uint64_t stat_rtcp_nack_drop_invalid;
+  /** Total inbound NACKs dropped by the RFC4585 ssrc check because their
+   * "SSRC of media source" did not match the session ssrc. Zero when the
+   * check is off (st_tx_rtcp_ops.nack_ssrc_check disabled). */
+  uint64_t stat_rtcp_nack_drop_ssrc;
+  /** Total rtp packets the TX retransmitted in answer to a NACK. */
+  uint64_t stat_rtcp_retransmit;
 };
 
 /**

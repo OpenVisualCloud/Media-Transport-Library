@@ -709,6 +709,15 @@ struct st20p_rx_digest_test_para {
   bool interlace;
   bool user_meta;
   bool rtcp;
+  /* RFC4585 nack ssrc check on the tx. */
+  bool nack_ssrc_check;
+  /* The ssrc the tx nack check compares against. 0 uses the session ssrc, so a
+   * legit nack matches. A nonzero value that is not the session ssrc makes the
+   * tx drop every real nack, which the reject test uses. */
+  uint32_t nack_ssrc;
+  /* The reject scenario: expect the ssrc check to drop every nack, so no
+   * retransmit repairs the simulated loss. Relaxes the digest quality asserts. */
+  bool nack_expect_blocked;
   enum st20_packing packing;
   enum st21_pacing pacing;
   uint32_t ssrc;
@@ -739,6 +748,9 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->interlace = false;
   para->user_meta = false;
   para->rtcp = false;
+  para->nack_ssrc_check = false;
+  para->nack_ssrc = 0;
+  para->nack_expect_blocked = false;
   para->packing = ST20_PACKING_BPM;
   para->pacing = ST21_PACING_NARROW;
   para->ssrc = 0;
@@ -911,6 +923,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->rtcp) {
       ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
       ops_tx.rtcp.buffer_size = 1024;
+      if (para->nack_ssrc_check)
+        ops_tx.rtcp.nack_ssrc_check = ST_RTCP_NACK_SSRC_CHECK_ENABLE;
+      ops_tx.rtcp.nack_ssrc = para->nack_ssrc;
     }
 
     uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
@@ -1243,6 +1258,31 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   }
 
   for (int i = 0; i < sessions; i++) {
+    if (para->rtcp && para->nack_ssrc_check) {
+      /* the rx loses 10% of packets on purpose, so it sends real nacks with the
+       * sender ssrc. read the tx side to see what the ssrc check did. */
+      struct st20_tx_user_stats stats;
+      ret = st20p_tx_get_session_stats(tx_handle[i], &stats);
+      EXPECT_GE(ret, 0);
+      info("%s, session %d nack recv %" PRIu64 " drop invalid %" PRIu64
+           " drop ssrc %" PRIu64 " retransmit %" PRIu64 "\n",
+           __func__, i, stats.common.stat_rtcp_nack_received,
+           stats.common.stat_rtcp_nack_drop_invalid,
+           stats.common.stat_rtcp_nack_drop_ssrc, stats.common.stat_rtcp_retransmit);
+      if (para->nack_expect_blocked) {
+        /* the configured nack_ssrc is not the sender ssrc, so the check must
+         * drop every real nack. none is accepted and none retransmits. */
+        EXPECT_GT(stats.common.stat_rtcp_nack_drop_ssrc, 0u);
+        EXPECT_EQ(stats.common.stat_rtcp_nack_received, 0u);
+        EXPECT_EQ(stats.common.stat_rtcp_retransmit, 0u);
+      } else {
+        /* the check uses the session ssrc, so a real nack matches and passes.
+         * the retransmit repairs the loss, and none drops at the ssrc gate. */
+        EXPECT_GT(stats.common.stat_rtcp_nack_received, 0u);
+        EXPECT_GT(stats.common.stat_rtcp_retransmit, 0u);
+        EXPECT_EQ(stats.common.stat_rtcp_nack_drop_ssrc, 0u);
+      }
+    }
     ret = st20p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
@@ -1263,9 +1303,20 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    if (para->nack_expect_blocked) {
+      /* the ssrc check dropped every nack, so the simulated 10% loss stays
+       * unrepaired. almost every frame loses a packet, so few or no frames
+       * complete. the stream is expected to collapse, so skip the completeness,
+       * frame-count, and digest asserts. the tx stat asserts above prove the
+       * gate blocked the retransmit, which is what this test checks. */
+      info("%s, session %d nack blocked: fb_rec %d incomplete %d sha_fail %d\n", __func__,
+           i, test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt,
+           test_ctx_rx[i]->sha_fail_cnt);
+    } else {
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    }
     EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->tp_fail_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->field_phase_fail_cnt, 0);
@@ -1714,6 +1765,55 @@ TEST(St20p, digest_rtcp_s1) {
   test_st20p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.rtcp = true;
+  para.check_fps = false;
+  para.packing = ST20_PACKING_GPM_SL;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+/* RFC4585 nack ssrc check, accept path. The tx turns the check on and leaves
+ * nack_ssrc 0, so the check uses the session ssrc. The rx loses 10% of packets
+ * and sends real nacks that carry the sender ssrc, so the check passes them and
+ * the retransmit repairs the loss. The digest must still match. */
+TEST(St20p, digest_rtcp_ssrc_accept_s1) {
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+  enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.rtcp = true;
+  para.nack_ssrc_check = true;
+  para.check_fps = false;
+  para.packing = ST20_PACKING_GPM_SL;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+/* RFC4585 nack ssrc check, reject path. The tx sets nack_ssrc to a value that
+ * is not the session ssrc, so the check drops every real nack. No nack is
+ * accepted and no retransmit runs, so the simulated loss stays unrepaired.
+ * This proves an off-path forger that does not know the ssrc cannot drive the
+ * retransmit. */
+TEST(St20p, digest_rtcp_ssrc_reject_s1) {
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+  enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.rtcp = true;
+  para.nack_ssrc_check = true;
+  para.nack_ssrc = 0xDEADBEEF; /* not the session ssrc, so every nack is dropped */
+  para.nack_expect_blocked = true;
   para.check_fps = false;
   para.packing = ST20_PACKING_GPM_SL;
 

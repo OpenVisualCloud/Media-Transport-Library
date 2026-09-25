@@ -49,6 +49,15 @@ int ut_rtk_buffer(ut_rtk_ctx* ctx, uint16_t first, unsigned int n);
 /* The burst mock accepts at most this many mbufs per call (-1 = all). */
 void ut_rtk_set_burst_limit(ut_rtk_ctx* ctx, int limit);
 
+/* Turn on the RFC4585 nack ssrc check and set the session ssrc it compares to. */
+void ut_rtk_enable_ssrc_check(ut_rtk_ctx* ctx, uint32_t session_ssrc);
+
+/* Set the ssrc that ut_rtk_nack writes into the nack. Default is 0. */
+void ut_rtk_set_nack_ssrc(ut_rtk_ctx* ctx, uint32_t ssrc);
+
+/* Count of nacks dropped because the ssrc did not match, since create. */
+uint32_t ut_rtk_drop_ssrc(ut_rtk_ctx* ctx);
+
 /* Build a NACK with len_field and the FCIs, put its last received byte on the
  * last byte before a PROT_NONE page, and parse it with recv_len. */
 struct ut_rtk_stats ut_rtk_nack(ut_rtk_ctx* ctx, uint16_t len_field,
