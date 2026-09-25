@@ -81,7 +81,8 @@ run in its own KahawaiTest process**. Never pass a filter that matches multiple
 NoCtxTest cases to a single `KahawaiTest` invocation — the second case will
 fail with `dev_eal_init, eal not support re-init`.
 
-Requires 4 VF ports. Run serially with a cooldown (10s) between processes:
+`run.sh` requires 4 ports (PFs or VFs bound to vfio-pci) and runs the cases
+serially, 20 s apart (10 s for `run_pf.sh` and the MCP tools):
 
 ```bash
 TEST_PORT_1=... TEST_PORT_2=... TEST_PORT_3=... TEST_PORT_4=... \
@@ -93,6 +94,12 @@ process per test. The MCP tool `run_noctx_tests(gtest_filter=...)` does the
 same enumeration + one-process-per-test loop; it accepts filters that resolve
 to many cases (e.g. `*nonsplit*`, `NoCtxTest.st40i_*`) and reports per-test
 pass/fail.
+
+Strict pacing cases SKIP unless TX and RX are on different physical ports with a
+reachable PHC and NIC RX timestamps (FAIL with `NOCTX_REQUIRE_STRICT=1`, as in
+CI); `st30p_user_pacing` FAILs outside an isolated
+cpuset partition (`run.sh` creates one via `tests/tools/isolate/isolate.sh`). Per-case oracles and
+tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_tests/noctx/README.md).
 
 ## Interpreting Results
 
