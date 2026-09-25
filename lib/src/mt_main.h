@@ -643,6 +643,7 @@ struct mt_tx_queue {
   /* VF, caused by malicious detection in the PF */
   bool fatal_error;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
+  bool rl_node;           /* queue node in the tm hierarchy, with or without a shaper */
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
