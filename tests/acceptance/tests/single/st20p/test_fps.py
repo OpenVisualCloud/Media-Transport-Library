@@ -5,6 +5,7 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
 from mtl_engine.media_files import yuv_files_422p10le
+from mtl_engine.pcap_compliance import unparsable_reason
 
 pytestmark = pytest.mark.verified
 
@@ -88,6 +89,12 @@ def test_st20p_fps(
         actual_test_time = max(test_time, 15)
     elif fps in ["p100", "p119", "p120"]:
         actual_test_time = max(test_time, 10)
+
+    # The rate sent is this fps, not the media file's, which is the one the
+    # pcap_capture fixture checked.
+    unparsable = unparsable_reason({**media_file_info, "fps": fps})
+    if unparsable:
+        pcap_capture.skip(unparsable)
 
     app.execute_test(
         build=mtl_path,
