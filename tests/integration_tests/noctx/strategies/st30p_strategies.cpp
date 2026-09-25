@@ -2,14 +2,35 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+/* Oracles of the ST30p pacing and redundancy tests. See README.md, "Test catalogue".
+ */
+
 #include "st30p_strategies.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <stdexcept>
 
 #include "handlers/st30p_handler.hpp"
 #include "tests.hpp"
+
+namespace {
+/* Normal ST30 labels frame 0 with the packet-grid point it is sent at, not PTP zero. */
+void expectFirstFrameOnPacketGrid(const st30_frame* f, const St30pHandler* handler) {
+  const uint32_t sampling = st30_get_sample_rate(handler->sessionsOpsRx.sampling);
+  const uint64_t packet_ns = st30_get_packet_time(handler->sessionsOpsRx.ptime);
+  const uint64_t rtp_tai =
+      st10_media_clk_to_tai(f->receive_timestamp, f->timestamp, sampling);
+  EXPECT_EQ(rtp_tai % packet_ns, 0u)
+      << "frame 0 RTP time " << rtp_tai << " is off the " << packet_ns << " ns grid";
+  ASSERT_LE(rtp_tai, f->receive_timestamp)
+      << "frame 0 RTP time " << rtp_tai << " is after its receive time";
+  EXPECT_LT(f->receive_timestamp - rtp_tai, handler->nsPacketTime)
+      << "frame 0 RTP time " << rtp_tai << " is a frame or more before its receive time "
+      << f->receive_timestamp;
+}
+}  // namespace
 
 St30pDefaultTimestamp::St30pDefaultTimestamp(St30pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true), lastTimestamp(0) {
@@ -23,10 +44,7 @@ void St30pDefaultTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size
   uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
 
-  EXPECT_NEAR(f->timestamp,
-              st10_tai_to_media_clk(idx_rx * st30pParent->nsPacketTime, sampling),
-              framebuffTime)
-      << " idx_rx: " << idx_rx;
+  if (idx_rx == 0) expectFirstFrameOnPacketGrid(f, st30pParent);
   if (lastTimestamp != 0) {
     uint64_t diff = f->timestamp - lastTimestamp;
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
@@ -66,7 +84,7 @@ void St30pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
   const uint64_t expected_media_clk =
       st10_tai_to_media_clk(expected_timestamp_ns, sampling);
 
-  verifyReceiveTiming(frame_idx, f->receive_timestamp, expected_timestamp_ns);
+  verifyReceiveTiming(frame_idx, f, expected_timestamp_ns);
   verifyMediaClock(frame_idx, f->timestamp, expected_media_clk);
   verifyTimestampStep(frame_idx, f->timestamp, sampling);
 
@@ -108,8 +126,17 @@ uint64_t St30pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
   return base <= 0.0 ? 0 : static_cast<uint64_t>(base);
 }
 
-void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                                             uint64_t expected_timestamp_ns) const {
+void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, const st30_frame* frame,
+                                             uint64_t expected_timestamp_ns) {
+  auto* handler = static_cast<St30pHandler*>(parent);
+  const mtl_handle mt = handler->ctx->handle;
+  uint64_t receive_mono_ns;
+  if (!rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
+                                     handler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
+                                     mt, &receive_mono_ns))
+    return;
+
+  const uint64_t receive_time_ns = monotonicRawToPtp(mt, receive_mono_ns);
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
   int64_t expected_delta_ns = 40 * NS_PER_US;
@@ -117,7 +144,7 @@ void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
     expected_delta_ns = 80 * NS_PER_US;
   }
 
-  EXPECT_LE(delta_ns, expected_delta_ns)
+  EXPECT_LE(std::abs(delta_ns), expected_delta_ns)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected timestamp(ns): " << expected_timestamp_ns;
