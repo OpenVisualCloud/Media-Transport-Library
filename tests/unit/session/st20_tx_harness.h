@@ -96,6 +96,8 @@ uint64_t ut_txv_calc_frame_count_since_epoch(ut_txv_ctx* ctx, uint64_t cur_tai,
 int ut_txv_sync_pacing(ut_txv_ctx* ctx, uint64_t required_tai);
 uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp);
+/* Drives tv_retrain_bps(); both rates in bytes/s. */
+uint64_t ut_txv_retrain_bps(uint64_t rl_bps, double measured_bps);
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);

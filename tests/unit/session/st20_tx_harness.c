@@ -297,6 +297,10 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   return tv_pacing_required_tai(&ctx->session, tfmt, timestamp);
 }
 
+uint64_t ut_txv_retrain_bps(uint64_t rl_bps, double measured_bps) {
+  return tv_retrain_bps(rl_bps, measured_bps);
+}
+
 /* Header mempool and TX ring on port P, as tv_mempool_init()/tv_init_hw() would.
  * Shared by every driver below that lets the production builders run. */
 static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
