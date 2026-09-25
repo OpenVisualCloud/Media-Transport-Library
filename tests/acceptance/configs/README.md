@@ -83,11 +83,6 @@ Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
   - **media.size_gib**: Size of media RAM disk in GiB
   - **pcap.mountpoint**: Mount point for packet capture RAM disk
   - **pcap.size_gib**: Size of packet capture RAM disk in GiB
-- **dma_device**: Comma-separated PCI address(es) of DMA channel(s) already
-  bound to `vfio-pci`, passed to RxTxApp as `--dma_dev`. CI-only: set by
-  `pytest-setup.sh`'s `dma` subcommand via `gen_config.py --dma_device`, never
-  by hand -- omitted (and DMA offload left to RxTxApp's own fallback) when no
-  workflow ran that step.
 
 ### [`topology_config.yaml`](topology_config.yaml)
 

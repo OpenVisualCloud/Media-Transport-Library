@@ -428,31 +428,6 @@ One thing the step does *not* do is unbind a channel afterwards. `idxd` is a
 kernel accelerator driver that nothing else on a test host uses, and leaving the
 two channels on vfio-pci is what makes the next job's preparation a no-op.
 
-### The acceptance suite serves its own channels the same way
-
-`task ci:pytest-setup -- dma` does this for the nightly `st20p` legs: `RxTxApp`
-tries RX DMA offload unconditionally and falls back to a per-packet CPU copy
-that an 8K/12-bit-format leg cannot sustain (`rv_init_dma`, [`dma.md`](dma.md)), so a host
-that never serves a channel fails those legs on throughput instead of skipping
-them. It is its own workflow step in `nightly-pytest.yml`, between `pci` and
-`config-single`, and reuses the same mechanism as above -- the same
-`dpdk-devbind.py -b vfio-pci` call, the same denylist reload, the same
-`MTL_CI_REQUIRE_DMA=1` escape hatch.
-
-The one real difference is how the bound channel reaches the test: KahawaiTest
-takes `--dma_dev` straight from the shell that starts it, but RxTxApp's command
-line is built by the pytest harness, several processes removed from the shell
-that ran the bind step. So the channel list travels as data instead of an
-argument -- exported as `DMA_DEVICE`, threaded through `gen_config.py
---dma_device` into `test_config.yaml`'s `dma_device` key, and read from there by
-`conftest.py`'s `app_factory` to default every `RxTxApp`'s `--dma_dev` unless a
-test passes one itself. That key exists only when a workflow ran the `dma` step
--- currently `nightly-pytest.yml` alone -- but that is about which workflows'
-test code ever looks for `dma_device`, not a second unbind policy: the channels
-themselves are left bound exactly as above, and a smoke or perf run inheriting
-one is the same free preparation this section already describes, not something
-to guard against.
-
 ## Hugepages are reserved by the job, not by the image
 
 `bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) when the

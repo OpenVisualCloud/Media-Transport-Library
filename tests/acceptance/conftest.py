@@ -741,6 +741,17 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         host_path = get_host_mtl_path(host, default=mtl_path)
         nicctl = Nicctl(host_path, host)
 
+        # Best-effort: bind a DMA channel on the primary port's own NUMA node
+        # (for app_factory to default RxTxApp's --dma_dev to) *before*
+        # create_vfs below binds VFs to vfio-pci. On this host's first call,
+        # Nicctl.bind_dma()'s one-time vfio_pci reload (to lift Intel DSA's
+        # denylist) detaches every device already bound to it, DSA or not --
+        # calling it first means create_vfs() re-establishes VF bindings
+        # afterward regardless, rather than losing bindings the reload just
+        # stripped. None on a host that serves none -- an optional
+        # accelerator, not a setup requirement.
+        host.dma_device = nicctl.bind_dma(host.network_interfaces[0].pci_address.lspci)
+
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             nicctl.create_vfs(
@@ -1503,19 +1514,17 @@ def _register_local_libs(hosts, mtl_path):
 
 
 @pytest.fixture(scope="session")
-def app_factory(mtl_path, test_config):
+def app_factory(mtl_path, hosts, nic_port_list):
     """Return a factory that creates framework adapter instances.
 
     Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
     """
-    # Populated only via gen_config.py's --dma_device, itself only set by
-    # pytest-setup.sh's `dma` subcommand -- so this key exists exactly when a
-    # workflow opted into that bind step (currently nightly-pytest.yml only).
-    # Reading a static config key here, instead of inspecting host driver
-    # state live, means a DMA channel one workflow's job left bound to
-    # vfio-pci can never leak into a smoke/perf run that shares the same
-    # physical runner but never asked for DMA offload.
-    dma_dev = test_config.get("dma_device")
+    # nic_port_list sets host.dma_device; depending on it (not just its
+    # result) guarantees that already happened. Single-host only: every app
+    # this factory returns gets host #1's dma_dev, wrong for a future
+    # dual-host DMA test's rx_app -- none exists yet to need per-host values.
+    host = list(hosts.values())[0]
+    dma_dev = getattr(host, "dma_device", None)
 
     def factory(application: str):
         if application == "rxtxapp":

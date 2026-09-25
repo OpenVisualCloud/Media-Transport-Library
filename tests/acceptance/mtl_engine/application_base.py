@@ -139,9 +139,10 @@ class Application(ABC):
         self.config_file_path = config_file_path
         self.params = UNIVERSAL_PARAMS.copy()
         self._user_provided_params = set()
-        # test_config's dma_device key, stashed by app_factory in conftest.py
-        # (see its comment for where that value comes from). Applied in
-        # create_command() only when the caller didn't pass dma_dev= itself.
+        # host.dma_device (set by nic_port_list's Nicctl.bind_dma()), stashed
+        # by app_factory -- see conftest.py for where that value comes from.
+        # Applied in create_command() only when the caller didn't pass
+        # dma_dev= itself.
         self._default_dma_dev: str | None = None
         self.command: str | None = None
         self.config: dict | None = None
