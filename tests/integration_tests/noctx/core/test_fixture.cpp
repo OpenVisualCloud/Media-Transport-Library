@@ -11,12 +11,14 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 #include "handlers/st20p_handler.hpp"
 #include "handlers/st30p_handler.hpp"
 #include "handlers/st40p_handler.hpp"
 #include "session.hpp"
+#include "strategies/st20p_strategies.hpp"
 #include "strategy.hpp"
 
 namespace {
@@ -30,7 +32,8 @@ TestPtpClockState g_test_ptp_clock;
 
 uint64_t monotonicNowNs() {
   struct timespec spec;
-  clock_gettime(CLOCK_MONOTONIC, &spec);
+  /* The clock mt_get_tsc() is calibrated against; NTP slewing would read as drift. */
+  clock_gettime(CLOCK_MONOTONIC_RAW, &spec);
   return (uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec;
 }
 
@@ -141,19 +144,20 @@ NoCtxTest::St20pHandlerBundle NoCtxTest::createSt20pHandlerBundle(
 
   handler->normalizeSessionOps();
 
+  if (createRx) {
+    handler->createSessionRx();
+  }
+  if (createTx) {
+    handler->createSessionTx();
+  }
+
+  /* User-pacing strategies plan from construction; setup must not eat the lead. */
   std::unique_ptr<FrameTestStrategy> strategyOwned;
   FrameTestStrategy* strategy = nullptr;
   if (strategyFactory) {
     strategyOwned.reset(strategyFactory(handler));
     strategy = strategyOwned.get();
     handler->setFrameTestStrategy(strategy);
-  }
-
-  if (createRx) {
-    handler->createSessionRx();
-  }
-  if (createTx) {
-    handler->createSessionTx();
   }
 
   auto bundle = registerSt20pResources(std::move(handlerOwned), std::move(strategyOwned));
@@ -278,6 +282,23 @@ void NoCtxTest::initDefaultContext() {
   ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
+}
+
+void NoCtxTest::initStrictPacingContext() {
+  const std::string unsupported =
+      strictPacingTopologyError(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R]);
+  if (!unsupported.empty()) {
+    if (strictPacingRequired()) FAIL() << unsupported;
+    GTEST_SKIP() << unsupported;
+  }
+
+  /* NIC RX timestamps are the pacing oracle. The TX tasklet launches each frame in
+   * software (audio, and RL video's WAIT_TARGET gate), so keep the CNI and RX video
+   * tasklets off its scheduler. */
+  ctx->para.flags &= ~MTL_FLAG_CNI_TASKLET;
+  ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+  ctx->para.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
+  initDefaultContext();
 }
 
 bool NoCtxTest::waitForSession(Session& session, std::chrono::milliseconds timeout) {
