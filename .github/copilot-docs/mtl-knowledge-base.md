@@ -152,7 +152,7 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 ### Sleep/Wake Design
 - Each tasklet declares `advice_sleep_us`
 - Scheduler takes minimum across all tasklets
-- Below 200µs (`sch_zero_sleep_threshold_us`): just yields
+- Below 200µs (`sch_zero_sleep_threshold_us`): `mt_sleep_ms(0)`, a zero-length `nanosleep` that the default timer slack stretches to ~50µs
 - Above 200µs: `pthread_cond_timedwait()` (works in both lcore and pthread modes)
 - `MTL_FLAG_TASKLET_SLEEP` works in both modes
 

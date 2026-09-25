@@ -398,6 +398,13 @@ int mt_srss_put(struct mt_srss_entry* entry) {
   return 0;
 }
 
+/* Sleep no longer than one burst of MTU packets takes to arrive at link speed. */
+static uint64_t srss_advice_sleep_us(uint32_t mbps) {
+  if (mbps == RTE_ETH_SPEED_NUM_NONE || mbps == RTE_ETH_SPEED_NUM_UNKNOWN)
+    mbps = RTE_ETH_SPEED_NUM_100G;
+  return (uint64_t)MT_SRSS_BURST_SIZE * MTL_MTU_MAX_BYTES * 8 / mbps;
+}
+
 int mt_srss_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
@@ -494,6 +501,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       ops.start = srss_sch_tasklet_start;
       ops.stop = srss_sch_tasklet_stop;
       ops.handler = srss_sch_tasklet_handler;
+      ops.advice_sleep_us = srss_advice_sleep_us(mt_if(impl, port)->link_speed);
       srss_sch->tasklet = mtl_sch_register_tasklet(sch, &ops);
       if (!srss_sch->tasklet) {
         err("%s(%d), register tasklet fail on %d\n", __func__, port, s_idx);
