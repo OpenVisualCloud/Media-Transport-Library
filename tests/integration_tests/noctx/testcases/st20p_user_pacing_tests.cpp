@@ -2,20 +2,26 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+/* Strict ST20p pacing: default, user (nearest epoch) and exact user pacing,
+ * measured with NIC RX timestamps against each planned packet-0 launch (-1/+10 us)
+ * and as elapsed time from frame 0 within +-10 us, plus exact RTP values.
+ * See README.md, "Timing model" and "Test catalogue".
+ */
+
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
 #include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 TEST_F(NoCtxTest, st20p_default_timestamps) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [](St20pHandler* handler) { return new St20pDefaultTimestamp(handler); });
   auto* frameTestStrategy = static_cast<St20pDefaultTimestamp*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -23,11 +29,12 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
   bundle.handler->stopSession();
 
   ASSERT_GT(frameTestStrategy->idx_rx, 0u)
-      << "st20p_user_pacing did not receive any frames";
+      << "st20p_default_timestamps did not receive any frames";
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
@@ -38,7 +45,6 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
 
   auto* frameTestStrategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -60,7 +66,8 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   /* everything that does not cross the half-frame boundary should be snapped to correct
    * epochs */
@@ -75,7 +82,6 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
       });
   auto* strategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
@@ -94,7 +100,8 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
 }
 
 TEST_F(NoCtxTest, st20p_exact_user_pacing) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   /* Offset values must remain smaller than in standard user pacing, since exact mode
      lacks epoch snapping and only minimal timing slack exists between consecutive frames.
@@ -117,7 +124,6 @@ TEST_F(NoCtxTest, st20p_exact_user_pacing) {
   ASSERT_NE(handler, nullptr);
   ASSERT_NE(strategy, nullptr);
 
-  StartFakePtpClock();
   handler->startSession();
 
   const int pacing_status = strategy->getPacingParameters();

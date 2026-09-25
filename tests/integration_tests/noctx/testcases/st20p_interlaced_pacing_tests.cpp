@@ -9,10 +9,12 @@
  * is derived purely from ops.fps with no interlaced-specific halving, so with
  * fps set to the field rate it already represents one field period.
  *
- * Interlaced TX also pins the epoch parity to the ST 2110-21 6.2 frame grid, but
- * St20pUserTimestamp's instants are exact multiples of the field period and
- * st20p_tx_get_frame() alternates second_field from the first field on, so that
- * correction is always a no-op here and the progressive math applies unmodified.
+ * Interlaced TX also pins the epoch parity to the ST 2110-21 6.2 frame grid. When
+ * the first request lands on an odd field slot every field moves one slot later.
+ * The strategy expects that shift in each field's RTP timestamp; it is uniform, so
+ * elapsed time from field 0 and the RTP steps are unaffected.
+ *
+ * See README.md, "Test catalogue".
  */
 
 #include "core/constants.hpp"
@@ -21,11 +23,12 @@
 #include "strategies/st20p_strategies.hpp"
 
 TEST_F(NoCtxTest, st20p_user_pacing_interlaced) {
-  initDefaultContext();
+  initStrictPacingContext();
+  if (IsSkipped() || HasFatalFailure()) return;
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); },
+      [](St20pHandler* handler) { return new St20pInterlacedUserTimestamp(handler); },
       [](St20pHandler* handler) {
         handler->sessionsOpsTx.interlaced = true;
         handler->sessionsOpsRx.interlaced = true;
@@ -36,7 +39,6 @@ TEST_F(NoCtxTest, st20p_user_pacing_interlaced) {
 
   auto* frameTestStrategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
 
-  StartFakePtpClock();
   bundle.handler->startSession();
   mtl_start(ctx->handle);
 
