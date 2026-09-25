@@ -1541,18 +1541,21 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
                                     struct st_rx_video_slot_impl* slot, uint32_t tmstamp,
                                     int pkt_idx) {
   struct st_rx_video_tp* tp = s->tp;
-  if (s->cur_succ_burst_cnt > (tp->pass.cinst_max_narrow / 2)) {
-    /* untrusted result */
-    tp->stat_untrusted_pkts++;
-    return;
-  }
-  if (s->in_continuous_burst[s_port]) {
-    /* untrusted result */
-    tp->stat_untrusted_pkts++;
-    return;
-  }
   struct mtl_main_impl* impl = rv_get_impl(s);
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  /* SW time is read at processing, so packets of an RX burst are not timed at arrival */
+  bool sw_time = !mt_mbuf_has_hw_time_stamp(impl, mbuf, port);
+
+  if (sw_time && s->cur_succ_burst_cnt > (tp->pass.cinst_max_narrow / 2)) {
+    /* untrusted result */
+    tp->stat_untrusted_pkts++;
+    return;
+  }
+  if (sw_time && s->in_continuous_burst[s_port]) {
+    /* untrusted result */
+    tp->stat_untrusted_pkts++;
+    return;
+  }
 
   uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
   struct st_rv_tp_slot* tp_slot = &tp->slots[slot->idx][s_port];

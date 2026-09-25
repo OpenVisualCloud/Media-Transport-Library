@@ -1632,8 +1632,7 @@ static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* 
 
 uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
                             enum mtl_port port) {
-  if (mt_if_has_offload_timestamp(impl, port) &&
-      (mbuf->ol_flags & impl->dyn_rx_timestamp_flag))
+  if (mt_mbuf_has_hw_time_stamp(impl, mbuf, port))
     return mbuf_hw_time_stamp(impl, mbuf, port);
   else
     return mtl_ptp_read_time(impl);
