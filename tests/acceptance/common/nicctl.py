@@ -8,6 +8,7 @@ import time
 import pytest
 from mfd_connect.exceptions import RemoteProcessTimeoutExpired
 from mfd_network_adapter import NetworkInterface
+from mtl_engine.dma import setup_host_dma
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +345,39 @@ class Nicctl:
             )
             self._iommu_group_cache[pci_id] = res.stdout.strip().rsplit("/", 1)[-1]
         return self._iommu_group_cache[pci_id]
+
+    def bind_dma(self, nic_pci_id: str) -> str | None:
+        """Bind a DMA (Intel DSA) channel on *nic_pci_id*'s own NUMA node to
+        vfio-pci, so RxTxApp sessions on it can be given one via --dma_dev
+        instead of silently falling back to a per-packet CPU copy
+        (rv_init_dma, doc/dma.md). Returns the channel's PCI address, or
+        None when this host serves none on that node.
+
+        Delegates to mtl_engine.dma.setup_host_dma() rather than a bash
+        reimplementation: DSA's kernel driver (idxd) has a documented
+        use-after-free that can segfault the host on an unsafe unbind (see
+        _prepare_idxd_for_unbind() there), which that function avoids and a
+        bash version would not have.
+
+        Caller must invoke this before binding anything else on the NIC to
+        vfio-pci: on the first call on a given host (before the denylist
+        override persists), _prepare_idxd_for_unbind()'s modprobe reload of
+        vfio_pci detaches every device already bound to it, DSA or not --
+        calling this first means nothing else is bound yet to lose, and
+        whatever runs afterward (e.g. create_vfs()) establishes its own
+        bindings idempotently regardless of that churn.
+
+        Best-effort: called from nic_port_list, which every test depends on
+        via VF setup, so a DMA-specific problem here must not fail that
+        fixture the way a real VF-setup problem should.
+        """
+        try:
+            return setup_host_dma(self.host, nic_pci_id)
+        except Exception as e:
+            logger.warning(
+                "bind_dma %s failed (%s: %s)", nic_pci_id, type(e).__name__, e
+            )
+            return None
 
     def prepare_vfs_for_test(self, nic: NetworkInterface) -> list:
         """Prepare VFs for test."""

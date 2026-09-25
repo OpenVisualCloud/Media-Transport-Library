@@ -741,6 +741,17 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         host_path = get_host_mtl_path(host, default=mtl_path)
         nicctl = Nicctl(host_path, host)
 
+        # Best-effort: bind a DMA channel on the primary port's own NUMA node
+        # (for app_factory to default RxTxApp's --dma_dev to) *before*
+        # create_vfs below binds VFs to vfio-pci. On this host's first call,
+        # Nicctl.bind_dma()'s one-time vfio_pci reload (to lift Intel DSA's
+        # denylist) detaches every device already bound to it, DSA or not --
+        # calling it first means create_vfs() re-establishes VF bindings
+        # afterward regardless, rather than losing bindings the reload just
+        # stripped. None on a host that serves none -- an optional
+        # accelerator, not a setup requirement.
+        host.dma_device = nicctl.bind_dma(host.network_interfaces[0].pci_address.lspci)
+
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             nicctl.create_vfs(
@@ -1503,17 +1514,25 @@ def _register_local_libs(hosts, mtl_path):
 
 
 @pytest.fixture(scope="session")
-def app_factory(mtl_path):
+def app_factory(mtl_path, hosts, nic_port_list):
     """Return a factory that creates framework adapter instances.
 
     Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
     """
+    # nic_port_list sets host.dma_device; depending on it (not just its
+    # result) guarantees that already happened. Single-host only: every app
+    # this factory returns gets host #1's dma_dev, wrong for a future
+    # dual-host DMA test's rx_app -- none exists yet to need per-host values.
+    host = list(hosts.values())[0]
+    dma_dev = getattr(host, "dma_device", None)
 
     def factory(application: str):
         if application == "rxtxapp":
-            return RxTxApp(
+            app = RxTxApp(
                 app_path=os.path.join(mtl_path, RXTXAPP_PATH.removeprefix("./"))
             )
+            app._default_dma_dev = dma_dev
+            return app
         elif application == "ffmpeg":
             return FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))

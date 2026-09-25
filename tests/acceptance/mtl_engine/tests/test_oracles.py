@@ -98,3 +98,57 @@ def test_finalize_reports_both_ebu_and_mtl_failures():
 
     assert "EBU analyzed non-compliant" in str(error.value)
     assert "MTL parser reported failed frames" in str(error.value)
+
+
+class _MinimalApp(Application):
+    """Concrete stub so create_command()'s dma_dev precedence can be tested
+    without RxTxApp's session-type-specific config building getting involved.
+    """
+
+    def get_app_name(self):
+        return "minimal"
+
+    def get_executable_name(self):
+        return "minimal"
+
+    def _create_command_and_config(self):
+        return "minimal", None
+
+    def validate_results(self, fail_on_error: bool = True) -> bool:
+        return True
+
+
+def test_create_command_defaults_dma_dev_from_app_factory_when_unset():
+    """app_factory stashes the host's bound DMA channel(s) on
+    _default_dma_dev; create_command() must apply it when the test itself
+    never mentions dma_dev.
+    """
+    app = _MinimalApp(app_path="minimal")
+    app._default_dma_dev = "0000:80:01.0,0000:85:01.0"
+
+    app.create_command(session_type="st20p")
+
+    assert app.params["dma_dev"] == "0000:80:01.0,0000:85:01.0"
+
+
+def test_create_command_explicit_dma_dev_overrides_default():
+    """A test that passes dma_dev= itself must win over app_factory's
+    default -- the precedence app_factory's docstring promises.
+    """
+    app = _MinimalApp(app_path="minimal")
+    app._default_dma_dev = "0000:80:01.0"
+
+    app.create_command(session_type="st20p", dma_dev="0000:aa:01.0")
+
+    assert app.params["dma_dev"] == "0000:aa:01.0"
+
+
+def test_create_command_leaves_dma_dev_none_without_a_default():
+    """A host whose nic_port_list found no DMA channel to bind must behave
+    exactly as before this feature existed.
+    """
+    app = _MinimalApp(app_path="minimal")
+
+    app.create_command(session_type="st20p")
+
+    assert app.params["dma_dev"] is None
