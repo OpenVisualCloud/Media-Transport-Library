@@ -171,9 +171,9 @@ def test_st20p_convert_on_rx(
 )
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422rfc10["test_8K"]],
+    [yuv_files_422rfc10["Penguin_1080p"]],
     indirect=["media_file"],
-    ids=["test_8K"],
+    ids=["Penguin_1080p"],
 )
 @pytest.mark.parametrize("format", convert2_formats.keys())
 def test_st20p_tx_rx_conversion(
@@ -210,6 +210,11 @@ def test_st20p_tx_rx_conversion(
         input_file=media_file_path,
         test_time=test_time,
     )
+
+    # EBU LIST 2.2.2 gets no SDP and reports every stream as 4:2:2 10-bit,
+    # so its sampling check would fail any other transport format.
+    if transport_format != "YUV_422_10bit":
+        pcap_capture.skip(f"EBU LIST 2.2.2 has no SDP to detect {transport_format}")
 
     app.execute_test(
         build=mtl_path,
