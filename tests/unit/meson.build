@@ -108,6 +108,7 @@ unit_sources = [
   'session/st20_tx/rtp_timestamp_rounding_test.cpp',
   'session/st20_tx/rtp_gate_snap_test.cpp',
   'session/st20_tx/mempool_release_test.cpp',
+  'session/st20_tx/rl_train_pad_test.cpp',
   'session/multi_essence_sync_test.cpp',
   'session/rtcp_tx_harness.c',
   'session/rtcp/parse_nack_bounds_test.cpp',

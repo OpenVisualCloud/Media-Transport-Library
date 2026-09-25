@@ -157,6 +157,16 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
 /* Whether the pool itself still exists, independent of the session's pointer. */
 bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
+/* ── RL pacing training pads (tv_train_pad_type) ──────────────────────── */
+/* Lays out a progressive YUV 4:2:2 10-bit GPM_SL session through the real
+ * tv_init_pkt(). Returns its status. */
+int ut_txv_init_gpm_sl_pkt(ut_txv_ctx* ctx, uint32_t width, uint32_t height);
+/* Bytes of the st20_total_pkts pads tv_train_pacing() times as one frame. */
+uint64_t ut_txv_train_pad_bytes(ut_txv_ctx* ctx);
+/* Bytes one progressive GPM_SL frame puts on the wire: every line's pixels plus
+ * one st_rfc4175_video_hdr per packet, independent of st20_pkt_info[]. */
+uint64_t ut_txv_frame_bytes(const ut_txv_ctx* ctx);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
 long double ut_txv_pacing_tr_offset(const ut_txv_ctx* ctx);
@@ -187,6 +197,7 @@ uint64_t ut_txv_stat_port_frames(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx);
 /* Result of the last ut_txv_update_rtp_time_stamp() call. */
 uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
+uint32_t ut_txv_line_tail_pkts(const ut_txv_ctx* ctx);
 
 #ifdef __cplusplus
 }

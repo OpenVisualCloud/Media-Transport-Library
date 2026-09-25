@@ -641,6 +641,39 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx) {
   return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] != NULL;
 }
 
+/* ── RL pacing training pads (tv_train_pad_type) ──────────────────────── */
+
+int ut_txv_init_gpm_sl_pkt(ut_txv_ctx* ctx, uint32_t width, uint32_t height) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st20_tx_ops* ops = &s->ops;
+
+  s->s_type = MT_HANDLE_TX_VIDEO;
+  ops->type = ST20_TYPE_FRAME_LEVEL;
+  ops->packing = ST20_PACKING_GPM_SL;
+  ops->fmt = ST20_FMT_YUV_422_10BIT;
+  ops->width = width;
+  ops->height = height;
+  if (st20_get_pgroup(ops->fmt, &s->st20_pg) < 0) return -EINVAL;
+  return tv_init_pkt(&ctx->impl, s, ops, NULL);
+}
+
+uint64_t ut_txv_train_pad_bytes(ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  uint64_t bytes = 0;
+
+  /* tv_init_hw() builds each pad at its type's st20_pkt_info[].size */
+  for (int i = 0; i < s->st20_total_pkts; i++)
+    bytes += s->st20_pkt_info[tv_train_pad_type(s, i)].size;
+  return bytes;
+}
+
+uint64_t ut_txv_frame_bytes(const ut_txv_ctx* ctx) {
+  const struct st_tx_video_session_impl* s = &ctx->session;
+
+  return (uint64_t)s->ops.height * s->st20_bytes_in_line +
+         (uint64_t)s->st20_total_pkts * sizeof(struct st_rfc4175_video_hdr);
+}
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx) {
@@ -737,4 +770,8 @@ uint64_t ut_txv_stat_exceed_frame_time(const ut_txv_ctx* ctx) {
 
 uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.rtp_time_stamp;
+}
+
+uint32_t ut_txv_line_tail_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number;
 }
