@@ -162,6 +162,11 @@ uint64_t ut20_last_timestamp_first_pkt(const ut20_test_ctx* ctx);
  * st20_rx_frame_meta.tp[]. ST_RX_TP_COMPLIANT_MAX until a frame carries one. */
 enum st_rx_tp_compliant ut20_last_tp_compliant(const ut20_test_ctx* ctx);
 const char* ut20_last_tp_failed_cause(const ut20_test_ctx* ctx);
+uint32_t ut20_last_tp_pkts_cnt(const ut20_test_ctx* ctx);
+
+/* Make every following packet look like part of an RX burst, as the RX tasklet
+ * would: successive burst count on the session, continuous-burst state on port P. */
+void ut20_ctx_set_rx_burst(ut20_test_ctx* ctx, uint16_t succ_burst_cnt, bool continuous);
 
 /* Wrapper feeders — drive the production `_handle_mbuf` wrapper instead
  * of the per-packet handler. Use these (not the direct feeders above)

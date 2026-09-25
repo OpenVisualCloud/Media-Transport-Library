@@ -1945,6 +1945,12 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
+static inline bool mt_mbuf_has_hw_time_stamp(struct mtl_main_impl* impl,
+                                             struct rte_mbuf* mbuf, enum mtl_port port) {
+  return mt_if_has_offload_timestamp(impl, port) &&
+         (mbuf->ol_flags & impl->dyn_rx_timestamp_flag);
+}
+
 uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
                             enum mtl_port port);
 

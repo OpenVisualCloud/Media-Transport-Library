@@ -65,6 +65,7 @@ struct ut20_test_ctx {
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
   enum st_rx_tp_compliant last_tp_compliant;
+  uint32_t last_tp_pkts_cnt;
   char last_tp_failed_cause[64];
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
@@ -101,6 +102,7 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
   if (meta->tp[MTL_SESSION_PORT_P]) {
     ctx->last_tp_compliant = meta->tp[MTL_SESSION_PORT_P]->compliant;
+    ctx->last_tp_pkts_cnt = meta->tp[MTL_SESSION_PORT_P]->pkts_cnt;
     snprintf(ctx->last_tp_failed_cause, sizeof(ctx->last_tp_failed_cause), "%s",
              meta->tp[MTL_SESSION_PORT_P]->failed_cause);
   }
@@ -670,6 +672,15 @@ enum st_rx_tp_compliant ut20_last_tp_compliant(const ut20_test_ctx* ctx) {
 
 const char* ut20_last_tp_failed_cause(const ut20_test_ctx* ctx) {
   return ctx->last_tp_failed_cause;
+}
+
+uint32_t ut20_last_tp_pkts_cnt(const ut20_test_ctx* ctx) {
+  return ctx->last_tp_pkts_cnt;
+}
+
+void ut20_ctx_set_rx_burst(ut20_test_ctx* ctx, uint16_t succ_burst_cnt, bool continuous) {
+  ctx->session.cur_succ_burst_cnt = succ_burst_cnt;
+  ctx->session.in_continuous_burst[MTL_SESSION_PORT_P] = continuous;
 }
 
 /* ── stat accessors ───────────────────────────────────────────────────── */
