@@ -58,7 +58,7 @@ grep -q "^svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}$" "${bundle}/bundle.env" || {
 	echo "JPEG XS source revision does not match this checkout" >&2
 	exit 1
 }
-expected_source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')}
+expected_source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" -o /dev/stdout | sed -n 's/^jpegxs=//p')}
 grep -q "^source_hash=${expected_source_hash}$" "${bundle}/bundle.env" || {
 	echo "JPEG XS source hash does not match this checkout" >&2
 	exit 1
