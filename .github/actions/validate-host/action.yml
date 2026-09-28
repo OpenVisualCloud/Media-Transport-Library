@@ -17,6 +17,14 @@ inputs:
       unlabeled runner such as the performance rig gets.
     required: false
     default: ''
+  build_outputs:
+    description: >-
+      toJSON(needs.build.outputs) of the build.yml call this job tests. When
+      set, the job fails before restoring anything unless this checkout's
+      source checksums are the ones that build hashed and built. Empty skips
+      the check.
+    required: false
+    default: ''
 
 outputs:
   shadow_host_ip:
@@ -34,6 +42,28 @@ runs:
     - name: Compute local source checksums
       id: local-checksums
       uses: ./.github/actions/source-checksums
+
+    # Other checksums than the build's either miss the cache below or restore
+    # another tree's artifacts, so the job tests code that was not built.
+    # Step env is evaluated before `if`, hence the '{}' for an empty input.
+    - name: Check this checkout is the code the build job built
+      if: inputs.build_outputs != ''
+      shell: bash
+      env:
+        BUILT_COMMIT: ${{ fromJSON(inputs.build_outputs || '{}').mtl_commit }}
+        BUILT_MTL: ${{ fromJSON(inputs.build_outputs || '{}').mtl_hash }}
+        BUILT_JPEGXS: ${{ fromJSON(inputs.build_outputs || '{}').jpegxs_hash }}
+        BUILT_ICE: ${{ fromJSON(inputs.build_outputs || '{}').ice_hash }}
+        BUILT_FFMPEG: ${{ fromJSON(inputs.build_outputs || '{}').ffmpeg_hash }}
+        BUILT_GSTREAMER: ${{ fromJSON(inputs.build_outputs || '{}').gstreamer_hash }}
+        BUILT_PLUGINS: ${{ fromJSON(inputs.build_outputs || '{}').plugins_hash }}
+        HASH_MTL: ${{ steps.local-checksums.outputs.mtl }}
+        HASH_JPEGXS: ${{ steps.local-checksums.outputs.jpegxs }}
+        HASH_ICE: ${{ steps.local-checksums.outputs.ice }}
+        HASH_FFMPEG: ${{ steps.local-checksums.outputs.ffmpeg }}
+        HASH_GSTREAMER: ${{ steps.local-checksums.outputs.gstreamer }}
+        HASH_PLUGINS: ${{ steps.local-checksums.outputs.plugins }}
+      run: task ci:workflow -- check-built-sources
 
     - name: Compute exact cache keys
       id: keys

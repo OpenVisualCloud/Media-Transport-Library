@@ -12,6 +12,22 @@ overlay-tests)
 	echo "Test framework: ${TEST_SHA:?TEST_SHA is required} (${TEST_REF:?TEST_REF is required})"
 	git -C "$root_dir" checkout "$TEST_SHA" -- tests/acceptance/ .github/ Taskfile.yml
 	;;
+check-built-sources)
+	# BUILT_* are the checksums build.yml hashed and built, HASH_* those of
+	# this checkout. DPDK is not listed: the MTL checksum includes it.
+	echo "Built commit: ${BUILT_COMMIT:?BUILT_COMMIT is required}, checked out: $(git -C "$root_dir" rev-parse HEAD)"
+	status=0
+	for component in MTL JPEGXS ICE FFMPEG GSTREAMER PLUGINS; do
+		built="BUILT_${component}" checkout="HASH_${component}"
+		if [[ ${!built:?${built} is required} == "${!checkout:?${checkout} is required}" ]]; then
+			echo "${component}: ${!checkout}"
+		else
+			echo "::error::${component} checksum ${!checkout} is not the ${!built} the build job built: this job would test other code than was built"
+			status=1
+		fi
+	done
+	exit "$status"
+	;;
 both-workflows)
 	if [[ -n ${GTEST_RUN_ID:-} && -n ${PYTEST_RUN_ID:-} ]]; then
 		echo 'both_completed=true' >>"${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
@@ -40,7 +56,7 @@ coverity-dpdk)
 	(cd "${root_dir}/script" && ./build_dpdk.sh)
 	;;
 *)
-	echo "Usage: $0 {overlay-tests|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
+	echo "Usage: $0 {overlay-tests|check-built-sources|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
 	exit 2
 	;;
 esac
