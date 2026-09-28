@@ -174,7 +174,12 @@ regression from a test change. Left empty, nothing is overlaid.
 exports it as `mtl_commit`. The `build` job and the test jobs check out that
 commit and apply the same overlay. They have to: the source hashes include
 `.github/` files, so a job that hashed any other tree would miss the stash the
-build saved.
+build saved, or restore the stash of another tree.
+
+The test jobs check this, with or without `branch`. They pass
+`build_outputs: ${{ toJSON(needs.build.outputs) }}` to `validate-host`, which
+logs the built commit, the checked-out commit and each checksum. If any
+checksum differs from the build's, it fails before restoring a cache.
 
 ## Proposed host dependency outputs
 

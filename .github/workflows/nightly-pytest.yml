@@ -72,6 +72,8 @@ jobs:
         run: task ci:workflow -- overlay-tests
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
+        with:
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
 
       - name: 'cleanup: Kill stale processes before test'
         uses: ./.github/actions/cleanup

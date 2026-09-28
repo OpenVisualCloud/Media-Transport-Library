@@ -87,6 +87,7 @@ jobs:
         uses: ./.github/actions/validate-host
         with:
           shadow_host: ${{ inputs.enable_shadow_host && (inputs.shadow_host || '/etc/mtl-ci/shadow-host') || '' }}
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
       - name: Ensure the acceptance virtualenv
         run: task ci:pytest-setup -- ensure
       - name: Verify the login the suite makes
