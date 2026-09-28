@@ -169,3 +169,24 @@ def test_netsniff_drops_only_multicast_capture_destinations(capture_filter, expe
     recorder = object.__new__(NetsniffRecorder)
     recorder.capture_filter = capture_filter
     assert recorder._multicast_dst_ips() == expected
+
+
+def test_netsniff_restores_promisc_after_a_second_start():
+    class Conn:
+        def __init__(self):
+            self.promisc, self.cmds = False, []
+
+        def execute_command(self, cmd, **_):
+            self.cmds.append(cmd)
+            if "promisc on" in cmd:
+                self.promisc = True
+            flags = "<BROADCAST,MULTICAST,PROMISC,UP>" if self.promisc else "<UP>"
+            return type("Res", (), {"return_code": 0, "stdout": flags, "stderr": ""})
+
+    recorder = object.__new__(NetsniffRecorder)
+    recorder.interface, recorder._promisc_was_off = "eth0", False
+    recorder.host = type("Host", (), {"connection": Conn()})
+    recorder._enable_promisc(recorder.host.connection)
+    recorder._enable_promisc(recorder.host.connection)
+    recorder._restore_promisc()
+    assert recorder.host.connection.cmds[-1] == "sudo ip link set dev eth0 promisc off"
