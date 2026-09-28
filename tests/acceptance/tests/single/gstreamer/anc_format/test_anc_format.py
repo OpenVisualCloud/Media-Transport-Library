@@ -1078,7 +1078,8 @@ def test_st40i_redundant_split_gap(
 @pytest.mark.nightly
 @pytest.mark.parametrize("fps", [60])
 @pytest.mark.parametrize("file_size_kb", [100])
-@pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
+# st40 RX FRAME_LEVEL takes at least 2 buffers (rx_ancillary_ops_check).
+@pytest.mark.parametrize("framebuff", [2, 3, 6, 12])
 def test_st40p_framebuff(
     hosts,
     mtl_path,
@@ -1190,7 +1191,8 @@ def test_st40p_framebuff(
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
-@pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
+# st40 RX FRAME_LEVEL takes at least 2 buffers (rx_ancillary_ops_check).
+@pytest.mark.parametrize("framebuff", [2, 3, 6, 12])
 def test_st40p_format_8331(
     hosts,
     mtl_path,
