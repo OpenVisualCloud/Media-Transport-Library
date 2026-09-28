@@ -426,6 +426,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 #ifdef MTL_HAS_USDT
   notice("%s, MTL_HAS_USDT is defined for this build\n", __func__);
 #endif
+#ifdef MTL_SIMULATE_PACKET_DROPS
+  /* test_anc_format.py greps libmtl.so for this string: keep it verbatim */
+  notice("%s, MTL_SIMULATE_PACKET_DROPS is defined for this build\n", __func__);
+#endif
 
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];

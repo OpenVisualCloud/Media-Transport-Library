@@ -35,6 +35,16 @@ _FRAME_INFO_PATTERN = re.compile(
 )
 
 
+def _skip_without_tx_test_hooks(host) -> None:
+    """Skip unless libmtl on *host* announces MTL_SIMULATE_PACKET_DROPS (mt_main.c)."""
+    lib = "$(ldconfig -p | awk '/libmtl\\.so /{print $NF; exit}')"
+    notice = "MTL_SIMULATE_PACKET_DROPS is defined for this build"
+    if run(f'grep -qaF "{notice}" "{lib}"', host=host).return_code == 1:
+        pytest.skip(
+            "libmtl does not announce MTL_SIMULATE_PACKET_DROPS; tx-test-mode needs it"
+        )
+
+
 def _append_redundant_params(
     pipeline: list[str],
     dev_port_red: str,
@@ -468,6 +478,7 @@ def test_st40p_redundant_progressive_gap(
     Redundant ST40P progressive with TX seq-gap injection to exercise RX gap handling.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -714,6 +725,7 @@ def test_st40p_redundant_progressive_split_gap(
     Redundant ST40P split ANC with TX seq-gap injection to test RX redundancy.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -963,6 +975,7 @@ def test_st40i_redundant_split_gap(
     Redundant ST40i split-mode with TX seq-gap injection to probe RX redundancy.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -1618,6 +1631,7 @@ def test_st40p_interlace_auto_detect_reset(
     """
 
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2160,6 +2174,7 @@ def test_st40p_rx_missing_marker_no_ready(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2260,6 +2275,7 @@ def test_st40p_rx_seq_loss_logged(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2386,6 +2402,7 @@ def test_st40p_rx_bad_parity_drops_payload(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
