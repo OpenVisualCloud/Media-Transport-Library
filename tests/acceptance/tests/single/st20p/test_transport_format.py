@@ -16,6 +16,7 @@ TRANSPORT_MEDIA = list(
 )
 
 
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "media_file",
     TRANSPORT_MEDIA,
@@ -23,6 +24,7 @@ TRANSPORT_MEDIA = list(
     ids=[media["format"] for media in TRANSPORT_MEDIA],
 )
 def test_st20p_transport_format(
+    application,
     app_factory,
     hosts,
     test_time,
@@ -57,7 +59,7 @@ def test_st20p_transport_format(
         test_time=test_time,
     )
 
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,
@@ -74,6 +76,7 @@ _PACKING_FORMAT_CASES = [
 ] + [("GPM", media) for media in TRANSPORT_MEDIA if media["format"] != "YUV_422_10bit"]
 
 
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "packing, media_file",
     _PACKING_FORMAT_CASES,
@@ -81,6 +84,7 @@ _PACKING_FORMAT_CASES = [
     ids=[f"{packing}-{media['format']}" for packing, media in _PACKING_FORMAT_CASES],
 )
 def test_st20p_packing_transport_format(
+    application,
     app_factory,
     hosts,
     test_time,
@@ -116,7 +120,7 @@ def test_st20p_packing_transport_format(
         test_time=test_time,
     )
 
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,

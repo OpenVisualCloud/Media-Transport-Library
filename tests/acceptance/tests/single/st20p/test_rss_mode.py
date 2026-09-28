@@ -23,12 +23,14 @@ RSS_CASES = [
 ]
 
 
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "rss_mode, replicas, media_file",
     RSS_CASES,
     indirect=["media_file"],
 )
 def test_st20p_rss_mode(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -43,7 +45,7 @@ def test_st20p_rss_mode(
     """The requested dispatch path must be the one that carries the stream."""
     media_info, media_path = media_file
     host = list(hosts.values())[0]
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     config_params = dict(
         session_type="st20p",
         nic_port_list=setup_interfaces.get_interfaces_list_single("VF"),

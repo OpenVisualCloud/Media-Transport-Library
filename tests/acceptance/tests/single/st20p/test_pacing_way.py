@@ -93,10 +93,12 @@ def test_st20p_pacing_way_load(
     app.assert_pacing_way(pacing_way)
 
 
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "media_file", [yuv_files[key] for key in CORE_KEYS], indirect=True, ids=CORE_KEYS
 )
 def test_st20p_pacing_way_auto(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -127,7 +129,7 @@ def test_st20p_pacing_way_auto(
         pacing_way="auto",
         test_time=test_time,
     )
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,
@@ -143,6 +145,7 @@ def test_st20p_pacing_way_auto(
 # the capture on the same timescale as the RTP timestamps; without it every
 # packet_ts_vs_rtp_ts measure is off by the PTP-to-realtime offset.
 @pytest.mark.ptp
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "pacing_way",
     [
@@ -154,6 +157,7 @@ def test_st20p_pacing_way_auto(
     "media_file", [yuv_files[key] for key in CORE_KEYS], indirect=True, ids=CORE_KEYS
 )
 def test_st20p_pacing_way_phc(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -189,7 +193,7 @@ def test_st20p_pacing_way_phc(
     )
     # Allow the PF to relink and PTP to converge before capture.
     test_time = 60
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,
@@ -202,10 +206,12 @@ def test_st20p_pacing_way_phc(
 
 
 @pytest.mark.requires_nic_family("e810")
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "media_file", [yuv_files["i1080p59"]], indirect=True, ids=["i1080p59"]
 )
 def test_st20p_pacing_way_tsn_rejected_without_txpp(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -237,7 +243,7 @@ def test_st20p_pacing_way_tsn_rejected_without_txpp(
         enable_ptp=True,
         test_time=60,
     )
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,
@@ -248,6 +254,7 @@ def test_st20p_pacing_way_tsn_rejected_without_txpp(
     app.assert_tsn_unsupported()
 
 
+@pytest.mark.parametrize("application", ["rxtxapp"])
 # The vrx adjustment is computed per way -- -4 for RL, bulk=1 for tsc_narrow,
 # -(bulk-1) otherwise (st_tx_video_session.c:579-596) -- and the shaping
 # profile sets the budget that adjustment is spent against, so the two are
@@ -272,6 +279,7 @@ def test_st20p_pacing_way_tsn_rejected_without_txpp(
     "media_file", [yuv_files["i2160p59"]], indirect=True, ids=["i2160p59"]
 )
 def test_st20p_pacing_way_x_pacing(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -305,7 +313,7 @@ def test_st20p_pacing_way_x_pacing(
         pacing=pacing,
         test_time=test_time,
     )
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     app.execute_test(
         build=mtl_path,
@@ -318,10 +326,12 @@ def test_st20p_pacing_way_x_pacing(
 
 
 @pytest.mark.allow_wide_compliance
+@pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "media_file", [yuv_files["i576i50"]], indirect=True, ids=["i576i50"]
 )
 def test_st20p_pacing_way_sd_downgrade(
+    application,
     app_factory,
     hosts,
     mtl_path,
@@ -353,7 +363,7 @@ def test_st20p_pacing_way_sd_downgrade(
         interlaced=True,
         test_time=test_time,
     )
-    app = app_factory("rxtxapp")
+    app = app_factory(application)
     app.create_command(**config_params)
     run_ok = app.execute_test(
         build=mtl_path,
