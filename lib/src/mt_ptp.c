@@ -1136,8 +1136,10 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
       ptp->expect_result_cnt++;
       if (ptp->expect_result_cnt > 1000) {
         ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
-        info("%s(%d), expect delta %d, sum %d\n", __func__, port, ptp->expect_result_avg,
-             ptp->expect_result_sum);
+        /* a non-zero average ends learning, so this logs at most twice */
+        if (ptp->expect_result_cnt == 1001 || ptp->expect_result_avg)
+          info("%s(%d), expect delta %d, sum %d\n", __func__, port,
+               ptp->expect_result_avg, ptp->expect_result_sum);
       }
     }
   }
