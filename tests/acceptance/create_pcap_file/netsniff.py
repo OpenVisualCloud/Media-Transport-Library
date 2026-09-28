@@ -19,6 +19,8 @@ STARTUP_WAIT = 2  # Default wait time after starting the process
 _REAP_GRACE_SEC = 0.3  # Grace period between SIGTERM and SIGKILL for the capture
 
 _PCAP_HEADER_BYTES = 24  # written when netsniff-ng opens the file, before any packet
+DROP_AFTER_TAP_PREF = 2110  # tc filter preference of the capture's drop rules
+_DST_IP_RE = re.compile(r"\bdst (\d+)\.(\d+)\.(\d+)\.(\d+)\b")
 
 # pgroup size (octets) and coverage (pixels) per sampling system and bit depth,
 # from SMPTE ST 2110-20:2022 tables 1 (4:4:4), 2 (4:2:2) and 3 (4:2:0). Keyed by
@@ -145,6 +147,8 @@ class NetsniffRecorder:
         self.packets_capture = packets_capture
         self.capture_time = capture_time
         self._promisc_was_off = False
+        self._drop_rules = False
+        self._clsact_added = False
 
     def _captured_any_packet(self, connection) -> bool:
         """True if the capture file already holds at least one packet.
@@ -208,6 +212,7 @@ class NetsniffRecorder:
             connection = self.host.connection
             self._enable_promisc(connection)
             try:
+                self._drop_after_tap(connection)
                 self.pcap_file = self._build_pcap_path()
                 # netsniff-ng needs privilege for two separate things: it raises
                 # /proc/sys/net/core/{r,w}mem_max, and it opens a PF_PACKET
@@ -257,6 +262,7 @@ class NetsniffRecorder:
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
                     # No pcap was written; clear so teardown skips upload.
                     self.pcap_file = None
+                    self._undo_drop_after_tap()
                     self._restore_promisc()
                     return False
                 logger.info(
@@ -266,6 +272,7 @@ class NetsniffRecorder:
             except ConnectionCalledProcessError as e:
                 logger.error(f"Failed to start netsniff-ng: {e}")
                 self.pcap_file = None
+                self._undo_drop_after_tap()
                 self._restore_promisc()
                 return False
 
@@ -312,12 +319,16 @@ class NetsniffRecorder:
         """
         if not self.netsniff_process:
             logger.debug("No netsniff-ng process to stop.")
+            # start() may have raised after changing the netdev.
+            self._undo_drop_after_tap()
+            self._restore_promisc()
             return
 
         # Check if process is still running before trying to stop
         if not self.netsniff_process.running:
             logger.debug("netsniff-ng process has already finished.")
             self._reap()
+            self._undo_drop_after_tap()
             self._restore_promisc()
             return
 
@@ -335,6 +346,7 @@ class NetsniffRecorder:
             logger.debug("netsniff-ng process stopped gracefully.")
         finally:
             self._reap()
+            self._undo_drop_after_tap()
             self._restore_promisc()
 
     def _reap(self):
@@ -419,6 +431,92 @@ class NetsniffRecorder:
             logger.warning("Could not restore promisc on %s: %s", self.interface, e)
         finally:
             self._promisc_was_off = False
+
+    def _multicast_dst_ips(self) -> list[str]:
+        ips = []
+        for m in _DST_IP_RE.finditer(self.capture_filter or ""):
+            if 224 <= int(m.group(1)) <= 239:
+                ips.append(".".join(m.groups()))
+        return ips
+
+    def _drop_after_tap(self, connection):
+        """Drop the captured multicast in software right after the capture tap.
+
+        The promiscuous PF hands every packet of the stream to the host IP
+        stack, where netfilter (the Docker/k3s rule sets, conntrack) costs so
+        much per packet that the RX queue falls behind at ~1 Mpps (UHD 50/60)
+        and the NIC drops ~40% of the stream before netsniff-ng sees it. A tc
+        ingress rule runs after the packet taps, so the capture still gets
+        every packet, while the IP stack gets none of this multicast.
+        skip_hw keeps the NIC from dropping it before the tap. This assumes no
+        kernel UDP socket on this netdev receives these groups (MTL receives
+        them on a VF, or with native AF_XDP before tc): an MTL ``kernel:`` port
+        on the capture netdev would lose them. Unicast is left alone.
+        """
+        ips = self._multicast_dst_ips()
+        if not ips:
+            return
+        dev = self.interface
+        self._drop_rules = True  # undo is idempotent, so arm it before any change
+        res = connection.execute_command(
+            f"sudo tc qdisc add dev {dev} clsact", expected_return_codes=None
+        )
+        self._clsact_added = self._clsact_added or res.return_code == 0
+        # Replaces a killed test's or an earlier start()'s rules; flower rejects a
+        # duplicate key.
+        connection.execute_command(
+            f"sudo tc filter del dev {dev} ingress pref {DROP_AFTER_TAP_PREF}",
+            expected_return_codes=None,
+        )
+        for ip in ips:
+            res = connection.execute_command(
+                f"sudo tc filter add dev {dev} ingress pref {DROP_AFTER_TAP_PREF} "
+                f"protocol ip flower skip_hw dst_ip {ip} action drop",
+                expected_return_codes=None,
+            )
+            if res.return_code != 0:
+                logger.warning(
+                    "Could not drop %s after the capture tap on %s: %s",
+                    ip,
+                    dev,
+                    (res.stderr or res.stdout or "").strip(),
+                )
+        logger.debug("Dropping %s after the capture tap on %s", ips, dev)
+
+    def _undo_drop_after_tap(self):
+        if not self._drop_rules:
+            return
+        dev = self.interface
+        connection = self.host.connection
+        try:
+            res = connection.execute_command(
+                f"sudo tc filter del dev {dev} ingress pref {DROP_AFTER_TAP_PREF}",
+                expected_return_codes=None,
+            )
+            if res.return_code != 0:
+                logger.warning(
+                    "Could not remove the capture drop on %s, the multicast stays "
+                    "dropped for the host: %s",
+                    dev,
+                    (res.stderr or res.stdout or "").strip(),
+                )
+            # Remove the qdisc only if it is ours and nobody added filters to it.
+            if self._clsact_added:
+                res = connection.execute_command(
+                    f"tc filter show dev {dev} ingress; tc filter show dev {dev} egress",
+                    shell=True,
+                    expected_return_codes=None,
+                )
+                if not (res.stdout or "").strip():
+                    connection.execute_command(
+                        f"sudo tc qdisc del dev {dev} clsact",
+                        expected_return_codes=None,
+                    )
+        except Exception as e:
+            logger.warning("Could not remove the capture drop on %s: %s", dev, e)
+        finally:
+            self._drop_rules = False
+            self._clsact_added = False
 
     def update_filter(self, src_ip=None, dst_ip=None):
         """

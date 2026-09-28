@@ -16,7 +16,11 @@ from common.collect_platform_info import collect_platform_info
 from common.host_setup import ensure_hugepage_access, ensure_pf_up
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
-from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
+from create_pcap_file.netsniff import (
+    DROP_AFTER_TAP_PREF,
+    NetsniffRecorder,
+    calculate_packets_per_frame,
+)
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
@@ -1458,6 +1462,20 @@ def _reset_host_state(host, mtl_path: str) -> None:
         )
     except Exception as e:  # pragma: no cover
         logger.debug("hugepage cleanup failed: %s", e)
+    # Capture drop rules a killed session left (NetsniffRecorder._drop_after_tap).
+    try:
+        sweep_drops = [
+            f"sudo tc filter del dev {nic.name} ingress pref {DROP_AFTER_TAP_PREF} 2>/dev/null"
+            for nic in host.network_interfaces
+        ]
+        host.connection.execute_command(
+            "; ".join(sweep_drops + ["true"]),
+            shell=True,
+            timeout=10,
+            expected_return_codes=None,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.debug("capture drop rule cleanup failed: %s", e)
     res = host.connection.execute_command(
         f"sudo -n {mtl_path}/{ISOLATE_SH} --sweep",
         shell=True,
