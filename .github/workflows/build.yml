@@ -7,6 +7,10 @@ on:
         type: boolean
         default: true
         description: 'Skip waiting for the Linter workflow (default true for manual runs)'
+      branch:
+        type: string
+        default: ''
+        description: 'MTL branch, tag or full 40-char SHA to build; CI stays from the workflow branch (empty = workflow branch)'
   push:
     branches:
       - main
