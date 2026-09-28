@@ -592,8 +592,8 @@ def _split_data_by_application(data):
                     "failed": sum(1 for tc in cases if tc["result"] == "FAILED"),
                     "error": sum(1 for tc in cases if tc["result"] == "ERROR"),
                     "skipped": sum(1 for tc in cases if tc["result"] == "SKIPPED"),
-                    "xpassed": sum(1 for tc in cases if tc["result"] == "XPASS"),
-                    "xfailed": sum(1 for tc in cases if tc["result"] == "XFAIL"),
+                    "xpassed": sum(1 for tc in cases if tc["result"] == "XPASSED"),
+                    "xfailed": sum(1 for tc in cases if tc["result"] == "XFAILED"),
                     "total": len(cases),
                     "test_cases": cases,
                 }
