@@ -5,7 +5,8 @@
 # driver loaded by `sudo task ci:activate-ice`, and the ports created by
 # `sudo task ci:bind-test-ports`.
 #
-# This script changes no host state. It finds the ports, runs the cases and
+# This script changes no NIC state, only the NoCtx CPU isolation isolate.sh
+# restores. It finds the ports, runs the cases and
 # reports. A port that is missing is reported with the command that creates it
 # and never created here: bringing a driver or a set of VFs back underneath a
 # suite that is already running is how a bare-metal runner ends up wedged for
@@ -380,6 +381,13 @@ generate_test_cases() {
 
 # ── running them ────────────────────────────────────────────────────────────
 
+# isolate.sh's verdict for the NoCtx ports, printed before the run.
+noctx_isolation_probe() {
+	local port_list="${noctx_port[0]},${noctx_port[1]},${noctx_port[2]},${noctx_port[3]}" output
+	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${port_list}" "${isolate_sh}" -- true 2>&1)
+	grep -m 1 'exclusive CPU isolation' <<<"${output}" || echo "no verdict: ${output##*$'\n'}"
+}
+
 # Restores the CPU isolation settings and cgroups a SIGKILLed isolate.sh left.
 noctx_sweep() {
 	sudo "${isolate_sh}" --sweep && return 0
@@ -543,6 +551,7 @@ print_configuration() {
 	echo "FAIL_FAST: ${FAIL_FAST:-<not set>}"
 	echo "TEST_PORT_1..4: ${TEST_PORT_1} ${TEST_PORT_2} ${TEST_PORT_3} ${TEST_PORT_4}"
 	echo "NoCtx ports: ${noctx_port[*]}"
+	echo "NoCtx CPU isolation: ${noctx_isolation:-<not probed, no noctx case>}"
 	echo "DMA channels: ${TEST_DMA_ARG:-<none, the DMA cases skip themselves>}"
 	echo "=========================================="
 	echo ""
@@ -563,6 +572,7 @@ echo "Starting MTL test suite..."
 kill_test_processes
 discover_ports
 generate_test_cases
+[ -z "${test_cases[noctx]+set}" ] || noctx_isolation=$(noctx_isolation_probe)
 print_configuration
 
 for test_name in "${!test_cases[@]}"; do
