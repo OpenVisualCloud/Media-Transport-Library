@@ -10,7 +10,10 @@ case "${1:-}" in
 overlay-tests)
 	echo "MTL source: ${MTL_SOURCE:?MTL_SOURCE is required}"
 	echo "Test framework: ${TEST_SHA:?TEST_SHA is required} (${TEST_REF:?TEST_REF is required})"
-	git -C "$root_dir" checkout "$TEST_SHA" -- tests/acceptance/ .github/ Taskfile.yml
+	# The hash script and lists too: they decide which of these CI files the
+	# cache keys cover, and only the workflow commit's lists name all of them.
+	git -C "$root_dir" checkout "$TEST_SHA" -- tests/acceptance/ .github/ Taskfile.yml \
+		script/hash_sources.sh 'script/hash_sources_*.env'
 	;;
 check-built-sources)
 	# BUILT_* are the checksums build.yml hashed and built, HASH_* those of

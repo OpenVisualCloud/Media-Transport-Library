@@ -52,13 +52,16 @@ jobs:
           fetch-depth: '0'
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      # Twice: the branch's own overlay-tests may be older than the workflow
+      # commit's. The first run checks out the workflow commit's copy, the
+      # second runs it.
       - name: Overlay test framework from workflow branch
         if: inputs.branch != ''
         env:
           MTL_SOURCE: ${{ inputs.branch }}
           TEST_SHA: ${{ github.sha }}
           TEST_REF: ${{ github.ref_name }}
-        run: task ci:workflow -- overlay-tests
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
       - name: 'preparation: Validate host and download artifacts'
         id: validate
         uses: ./.github/actions/validate-host

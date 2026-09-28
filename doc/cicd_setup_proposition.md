@@ -164,17 +164,25 @@ regression from a test change. Left empty, nothing is overlaid.
 | `.github/` (actions, CI scripts, `setup_environment.sh`)             | workflow commit |
 | `Taskfile.yml`                                                       | workflow commit |
 | `tests/acceptance/`                                                  | workflow commit |
+| `script/hash_sources.sh`, `script/hash_sources_*.env`                | workflow commit |
 | `lib/`, `include/`, `app/`, `manager/`, `ld_preload/`                | `branch`        |
 | `tests/tools/RxTxApp/`, `tests/tools/gstreamer_tools/`               | `branch`        |
 | `ecosystem/`, `plugins/`, `patches/`, `versions.env`                 | `branch`        |
-| `script/` (including `hash_sources*.sh`, `nicctl.sh`, `build_*.sh`)  | `branch`        |
-| The `overlay-tests` code that performs the overlay                   | `branch`        |
+| The rest of `script/` (`nicctl.sh`, `build_*.sh`, `common.sh`)       | `branch`        |
+| The first `overlay-tests` pass                                       | `branch`        |
+| The second `overlay-tests` pass                                      | workflow commit |
 
 `build.yml` resolves `branch` to a commit once, in the `checksums` job, and
 exports it as `mtl_commit`. The `build` job and the test jobs check out that
 commit and apply the same overlay. They have to: the source hashes include
 `.github/` files, so a job that hashed any other tree would miss the stash the
 build saved, or restore the stash of another tree.
+
+The hash script and its lists come from the workflow commit too, so every
+`branch` keys its stash on the CI files the current build uses; older lists
+leave some of them out. `overlay-tests` runs twice for this: the first pass is
+the `branch` copy, which may predate that, and checks out the workflow
+commit's; the second pass runs it.
 
 The test jobs check this, with or without `branch`. They pass
 `build_outputs: ${{ toJSON(needs.build.outputs) }}` to `validate-host`, which
