@@ -165,6 +165,15 @@ verdict. Neither is an MTL fault, and neither is visible from the
 label — a runner advertising `e830` has to be cabled port to port as well as
 carrying the card.
 
+#### The NoCtx strict pacing cases need both ports cabled
+
+`bind-test-ports` gives the second port of the chosen card two VFs when its link
+is up, and the NoCtx run transmits on one port and receives on the other. The six
+strict pacing cases need the NIC RX timestamp, which only traffic that crossed the
+wire carries, so they fail if the second port has no link (the step logs `no
+other port of <pf>'s card has its link up`) or is cabled elsewhere (the cases
+receive nothing).
+
 #### The ST 2022-7 leg needs both ports cabled too
 
 The performance rig carries no NIC label, so `perf-pytest.yml` resolves its card
