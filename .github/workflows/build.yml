@@ -21,7 +21,14 @@ on:
         type: boolean
         default: false
         description: 'Skip waiting for the Linter workflow (use for schedule/nightly triggers)'
+      branch:
+        type: string
+        default: ''
+        description: 'MTL branch, tag or SHA to build; CI and tests stay from the workflow commit (empty = workflow ref)'
     outputs:
+      mtl_commit:
+        description: 'Commit the MTL sources were hashed and built from'
+        value: ${{ jobs.checksums.outputs.commit }}
       mtl_hash:
         description: 'MTL source checksum'
         value: ${{ jobs.checksums.outputs.mtl }}
@@ -133,16 +140,34 @@ jobs:
       ffmpeg: ${{ steps.sums.outputs.ffmpeg }}
       gstreamer: ${{ steps.sums.outputs.gstreamer }}
       plugins: ${{ steps.sums.outputs.plugins }}
+      commit: ${{ steps.checkout.outputs.commit }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
 
+      # The branch is resolved to a commit here, once. The build job and the
+      # caller's test jobs check out that commit, never the branch again: the
+      # hashes below include .github/ files, so all of them must hash and
+      # build the same source commit with the same overlay, or the test jobs'
+      # fail-on-cache-miss restore finds nothing.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        id: checkout
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
 
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests
 
       - id: sums
         uses: ./.github/actions/source-checksums
@@ -163,9 +188,20 @@ jobs:
 
       - name: Checkout MTL
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        with:
+          ref: ${{ needs.checksums.outputs.commit }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
 
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests
 
       # Before anything expensive: this runner is long-lived, and a missing
       # libelf otherwise surfaces as a pkg-config failure deep inside the build.
