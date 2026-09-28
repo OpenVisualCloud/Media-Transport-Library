@@ -22,7 +22,9 @@ from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
+    MAX_DROP_PCT,
     CpuCoreMonitor,
+    companion_steady_window,
     display_session_results,
     log_cpu_core_results,
     monitor_dev_rate,
@@ -32,13 +34,12 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_fps,
     monitor_tx_frames,
     monitor_tx_throughput,
+    paced_fps,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
-WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
-MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
 
 # Exit codes that mean the app died rather than finished.
@@ -643,7 +644,7 @@ def _run_iteration(
         monitor_fps_fn = monitor_tx_fps if is_tx else monitor_rx_fps
         success, count, fps_details = monitor_fps_fn(
             stdout_lines,
-            fps,
+            paced_fps(fps),
             num_sessions,
             max_drop_pct=MAX_DROP_PCT,
         )
@@ -653,17 +654,18 @@ def _run_iteration(
         rx_lines = companion_lines if is_tx else stdout_lines
         tx_frames = monitor_tx_frames(tx_lines, num_sessions)
         rx_frames = monitor_rx_frames_simple(rx_lines, num_sessions)
+        # Rates are only meaningful over the dumps that carried steady traffic,
+        # which is the window the FPS verdict already established.  The
+        # companion has no verdict of its own, so derive its window separately.
+        m_window = fps_details["window"]
+        c_window = companion_steady_window(companion_lines, num_sessions, companion_dir)
         m_tp_fn = monitor_tx_throughput if is_tx else monitor_rx_throughput
         c_tp_fn = monitor_rx_throughput if is_tx else monitor_tx_throughput
-        m_throughput = m_tp_fn(
-            stdout_lines, num_sessions, warmup_seconds=WARMUP_SECONDS
-        )
-        c_throughput = c_tp_fn(
-            companion_lines, num_sessions, warmup_seconds=WARMUP_SECONDS
-        )
+        m_throughput = m_tp_fn(stdout_lines, m_window)
+        c_throughput = c_tp_fn(companion_lines, c_window)
 
-        m_dev_rate = monitor_dev_rate(stdout_lines, warmup_seconds=WARMUP_SECONDS)
-        c_dev_rate = monitor_dev_rate(companion_lines, warmup_seconds=WARMUP_SECONDS)
+        m_dev_rate = monitor_dev_rate(stdout_lines, m_window)
+        c_dev_rate = monitor_dev_rate(companion_lines, c_window)
 
         # ── Display results ──
         logger.info("=" * 70)
@@ -680,7 +682,7 @@ def _run_iteration(
             direction.upper(),
             dma_label,
             num_sessions,
-            fps,
+            paced_fps(fps),
             fps_details,
             tx_frames,
             rx_frames,
@@ -830,7 +832,7 @@ def _run_session_sweep(
         f"  {sweep_desc}: {mode_tag}{direction.upper()} "
         f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
         f"{'sessions=' + str(num_sessions) if fixed_mode else 'range=[1, ' + str(max_sess) + ']'} "
-        f"test_time={test_time}s rate_warmup={WARMUP_SECONDS}s\n"
+        f"test_time={test_time}s nominal_fps={paced_fps(fps):.3f}\n"
         f"{'═' * 70}"
     )
 
