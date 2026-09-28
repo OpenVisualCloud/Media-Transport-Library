@@ -37,7 +37,8 @@ with `--gtest_list_tests`, run each `KahawaiTest --auto_start_stop
 (`noctx_pf_<n>.xml` for `run_pf.sh`). `run.sh` wraps only the cases in
 `NOCTX_ISOLATE_CASES` (comma-separated, default: the six strict tests listed
 under [Requirements](#requirements-and-skipfail-policy)) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
-`EXIT_ON_FAILURE=0` continues past a failure; `BUILD_PATH` overrides the binary, which defaults to
+`EXIT_ON_FAILURE=0` continues past a failure and exits 1 at the end if any
+case failed; `BUILD_PATH` overrides the binary, which defaults to
 `.local_install/mtl/bin/KahawaiTest` if `.local_install` exists, else
 `build/tests/KahawaiTest`. One case by hand:
 
