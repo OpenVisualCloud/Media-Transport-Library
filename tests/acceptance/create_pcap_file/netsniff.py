@@ -398,7 +398,7 @@ class NetsniffRecorder:
                 return
             flags = (res.stdout or "").upper()
             if "PROMISC" in flags:
-                self._promisc_was_off = False
+                # Keeps ownership when an earlier start() is what turned it on.
                 return
             set_res = connection.execute_command(
                 f"sudo ip link set dev {self.interface} promisc on",
