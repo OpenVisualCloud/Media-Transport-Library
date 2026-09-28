@@ -7,6 +7,7 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.media_files import audio_files
+from tests.xfail import add_issue
 
 _AUDIO_FORMATS = ["PCM8", "PCM16", "PCM24"]
 _AUDIO_CHANNELS = ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
@@ -264,11 +265,19 @@ def test_st30p_ptime(
     pcap_capture,
     output_files,
     media_integrity,
+    request,
 ):
     """Test st30p with different ptime values."""
     # FFmpeg mtl_st30p plugin only supports ptime "1ms" and "125us".
     if application == "ffmpeg" and audio_ptime not in ("1", "0.12"):
         pytest.skip(f"FFmpeg st30p plugin does not support ptime={audio_ptime}")
+    # libmtl: st30 RL rate profiling leaves RL queue 0 backlogged, so the TX reorders
+    # its first frames; GStreamer loses more of them than the integrity check tolerates.
+    if application == "gstreamer" and audio_ptime == "0.33":
+        add_issue(
+            "XFAIL: st30 RL TX reorders its first frames after rate profiling",
+            request,
+        )
 
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
