@@ -3,6 +3,11 @@
  */
 
 #include <gtest/gtest.h>
+#include <string.h>
+
+extern "C" {
+#include "mt_log.h"
+}
 
 #include "ptp/ptp_harness.h"
 
@@ -151,4 +156,23 @@ TEST_F(PtpUserSyncTest, HardwareTimestampKeepsFrequencyDriftCorrection) {
 
   EXPECT_EQ(ut_ptp_mbuf_time_stamp(ctx_, kLastSyncNs + kAdvanceNs),
             kLastSyncNs + kAdvanceNs + 1);
+}
+
+static int g_expect_delta_logs;
+
+static void ut_count_expect_delta_printer(enum mtl_log_level, const char* format, ...) {
+  if (strstr(format, "expect delta")) g_expect_delta_logs++;
+}
+
+/* A learned average of 0 keeps the learning branch live on every 10 ms sync. */
+TEST_F(PtpUserSyncTest, ZeroLearnedDeltaIsLoggedOnce) {
+  const enum mtl_log_level old_level = mt_get_log_global_level();
+  ut_ptp_set_user_time(ctx_, 1000000000000ull);
+  g_expect_delta_logs = 0;
+  mt_set_log_global_level(MTL_LOG_LEVEL_INFO);
+  mtl_set_log_printer(ut_count_expect_delta_printer);
+  for (int i = 0; i < 1100; i++) ut_ptp_sync_from_user(ctx_);
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(old_level);
+  EXPECT_EQ(g_expect_delta_logs, 1);
 }
