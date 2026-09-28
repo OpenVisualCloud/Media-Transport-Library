@@ -26,6 +26,12 @@ enum ut_dev_event {
   UT_DEV_EVENT_PORT_STOP,
 };
 
+struct ut_dev_tm_node {
+  uint32_t node_id;
+  uint32_t parent_node_id;
+  uint32_t shaper_profile_id;
+};
+
 ut_dev_ctx* ut_dev_create_ctx(void);
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx);
 void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
@@ -64,6 +70,31 @@ void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores)
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
 void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);
+
+/* Pacing init. The rte_tm_* calls of mt_dev.c go to fakes that record each node add. */
+
+void ut_dev_set_pacing_port(ut_dev_ctx* ctx, bool iavf, enum st21_tx_pacing_way pacing);
+void ut_dev_set_shared_txq(ut_dev_ctx* ctx);
+/** Injects the rte_tm_capabilities_get() return; 0 keeps the port TM capable. */
+void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error);
+/** Injects the rte_tm_node_add() return; 0 keeps the fake checking parent and id. */
+void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error);
+/** Marks the TM root as built, as an rl attempt earlier in this process leaves it. */
+void ut_dev_set_rl_root_active(ut_dev_ctx* ctx);
+/** Injects the rte_tm_hierarchy_commit() return; 0 keeps the commit successful. */
+void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error);
+int ut_dev_init_pacing(ut_dev_ctx* ctx);
+enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx);
+int ut_dev_nb_tx_queues(void);
+/** Every rte_tm_* call, of any kind. */
+int ut_dev_tm_call_count(const ut_dev_ctx* ctx);
+int ut_dev_tm_commit_count(const ut_dev_ctx* ctx);
+int ut_dev_tm_node_count(const ut_dev_ctx* ctx);
+struct ut_dev_tm_node ut_dev_tm_node_at(const ut_dev_ctx* ctx, int index);
+/** RTE_TM_SHAPER_PROFILE_ID_NONE, so the tests need no DPDK header. */
+uint32_t ut_dev_tm_shaper_none(void);
+int ut_dev_tx_queue_rl_mapping(const ut_dev_ctx* ctx, int queue);
+uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue);
 
 int ut_dev_event_count(const ut_dev_ctx* ctx);
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index);
