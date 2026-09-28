@@ -3,6 +3,7 @@
 
 import pytest
 from compliance.compliance_client import PcapComplianceClient
+from create_pcap_file.netsniff import NetsniffRecorder
 from mtl_engine.application_base import Application
 from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.pcap_compliance import CaptureIntent
@@ -152,3 +153,19 @@ def test_create_command_leaves_dma_dev_none_without_a_default():
     app.create_command(session_type="st20p")
 
     assert app.params["dma_dev"] is None
+
+
+@pytest.mark.parametrize(
+    "capture_filter, expected",
+    [
+        ("dst 239.1.0.1", ["239.1.0.1"]),
+        ("(dst 239.1.0.1 or dst 239.1.0.2)", ["239.1.0.1", "239.1.0.2"]),
+        ("src 192.168.0.8 and dst 239.1.0.1", ["239.1.0.1"]),
+        ("dst 192.168.17.2", []),
+        (None, []),
+    ],
+)
+def test_netsniff_drops_only_multicast_capture_destinations(capture_filter, expected):
+    recorder = object.__new__(NetsniffRecorder)
+    recorder.capture_filter = capture_filter
+    assert recorder._multicast_dst_ips() == expected
