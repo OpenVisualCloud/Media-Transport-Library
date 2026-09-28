@@ -147,6 +147,7 @@ unit_sources = [
   'pipeline/st22p_concurrency_stress_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
+  'sch/mt_sch_mempolicy_test.cpp',
   'ptp/ptp_harness.c',
   'ptp/servo_test.cpp',
   'ptp/adjust_delta_test.cpp',
