@@ -35,7 +35,7 @@ on:
         type: boolean
         default: false
       branch:
-        description: 'MTL branch, tag or SHA to build and test; CI and tests stay from the workflow branch (empty = workflow branch)'
+        description: 'MTL branch, tag or full 40-char SHA to build and test; CI and tests stay from the workflow branch (empty = workflow branch)'
         required: false
         type: string
 

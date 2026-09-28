@@ -24,7 +24,7 @@ on:
       branch:
         type: string
         default: ''
-        description: 'MTL branch, tag or SHA to build; CI and tests stay from the workflow commit (empty = workflow ref)'
+        description: 'MTL branch, tag or full 40-char SHA to build; CI and tests stay from the workflow commit (empty = workflow ref)'
     outputs:
       mtl_commit:
         description: 'Commit the MTL sources were hashed and built from'
