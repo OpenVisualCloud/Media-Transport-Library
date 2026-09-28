@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -41,6 +42,7 @@ constexpr uint64_t kBpmPayloadBytes = 1260;
 constexpr const char* kStrictTopology =
     "strict pacing needs TX and RX on different physical ports, a PHC reachable from "
     "the RX port, and NIC RX timestamps delivered: ";
+constexpr int kPhcReadAttempts = 3;
 
 uint32_t expectedBpmPackets(const St20pHandler* handler) {
   const auto& ops = handler->sessionsOpsTx;
@@ -112,6 +114,65 @@ int openPortPhc(const char* port) {
   return open(("/dev/ptp" + std::to_string(ts_info.phc_index)).c_str(), O_RDONLY);
 }
 
+uint64_t timespecNs(const timespec& t) {
+  return static_cast<uint64_t>(t.tv_sec) * NS_PER_S + t.tv_nsec;
+}
+
+/* CLOCK_REALTIME minus CLOCK_MONOTONIC_RAW, to +-*half_width_ns. */
+int64_t realtimeMinusMonotonicRaw(uint64_t* half_width_ns) {
+  timespec before, real, after;
+  clock_gettime(CLOCK_MONOTONIC_RAW, &before);
+  clock_gettime(CLOCK_REALTIME, &real);
+  clock_gettime(CLOCK_MONOTONIC_RAW, &after);
+  *half_width_ns = (timespecNs(after) - timespecNs(before)) / 2;
+  return static_cast<int64_t>(timespecNs(real) - timespecNs(before) - *half_width_ns);
+}
+
+/* A PHC reading and its CLOCK_MONOTONIC_RAW time, to +-*uncertainty_ns. The
+ * PTP_SYS_OFFSET_PRECISE cross-timestamp (E830) is exact. Without one (E810,
+ * EOPNOTSUPP) the tightest PTP_SYS_OFFSET_EXTENDED CLOCK_REALTIME bracket is mapped to
+ * CLOCK_MONOTONIC_RAW; u is half that bracket, half the mapping bracket and half any
+ * CLOCK_REALTIME change across the read. Empty on success, otherwise why not. */
+std::string readPhc(int fd, uint64_t* phc_ns, uint64_t* mono_ns,
+                    uint64_t* uncertainty_ns) {
+  ptp_sys_offset_precise xts = {};
+  if (ioctl(fd, PTP_SYS_OFFSET_PRECISE, &xts) == 0) {
+    *phc_ns = ptpClockTimeNs(xts.device);
+    *mono_ns = ptpClockTimeNs(xts.sys_monoraw);
+    *uncertainty_ns = 0;
+    return "";
+  }
+  if (errno != EOPNOTSUPP)
+    return std::string("PTP_SYS_OFFSET_PRECISE: ") + strerror(errno);
+
+  for (int attempt = 0; attempt < kPhcReadAttempts; attempt++) {
+    uint64_t before_half_width, after_half_width;
+    const int64_t before = realtimeMinusMonotonicRaw(&before_half_width);
+    ptp_sys_offset_extended ext = {};
+    ext.n_samples = PTP_MAX_SAMPLES;
+    if (ioctl(fd, PTP_SYS_OFFSET_EXTENDED, &ext) < 0)
+      return std::string("PTP_SYS_OFFSET_EXTENDED: ") + strerror(errno);
+    const int64_t after = realtimeMinusMonotonicRaw(&after_half_width);
+
+    uint64_t width = UINT64_MAX;
+    for (unsigned i = 0; i < ext.n_samples; i++) {
+      const uint64_t w = ptpClockTimeNs(ext.ts[i][2]) - ptpClockTimeNs(ext.ts[i][0]);
+      if (w < width) {
+        width = w;
+        *phc_ns = ptpClockTimeNs(ext.ts[i][1]);
+        *mono_ns = ptpClockTimeNs(ext.ts[i][0]) + w / 2 -
+                   static_cast<uint64_t>((before + after) / 2);
+      }
+    }
+    *uncertainty_ns = width / 2 + std::max(before_half_width, after_half_width) +
+                      static_cast<uint64_t>(std::llabs(after - before)) / 2;
+    if (*uncertainty_ns <= kPhcReadMaxUncertaintyNs) return "";
+  }
+  return "no PTP_SYS_OFFSET_EXTENDED read within +-" +
+         std::to_string(kPhcReadMaxUncertaintyNs) + "ns (last +-" +
+         std::to_string(*uncertainty_ns) + "ns)";
+}
+
 /* Default pacing stamps RTP at frame TX start: k * frame + tr_offset - vrx * trs. */
 void expectRtpOnEpoch(const st_frame* frame, St20pHandler* handler, uint64_t* launch_ns) {
   double tr_offset_ns = 0, trs_ns = 0;
@@ -140,41 +201,51 @@ void skipOrFailWithoutNicRxTimestamps(const char* port, uint64_t receive_timesta
 }
 
 void expectPacingLaunch(uint64_t frame_idx, uint64_t receive_ptp_ns,
-                        uint64_t expected_launch_ns, PacingErrorLog* log) {
+                        uint64_t expected_launch_ns, int64_t u, PacingErrorLog* log) {
   const int64_t abs_error_ns = static_cast<int64_t>(receive_ptp_ns - expected_launch_ns);
   log->abs_error_ns.add(abs_error_ns);
 
-  EXPECT_GE(abs_error_ns, -kNoCtxPacingEarlyMaxNs)
-      << "frame " << frame_idx << ": packet 0 abs_error=" << abs_error_ns
+  EXPECT_GE(abs_error_ns - u, -kNoCtxPacingEarlyMaxNs)
+      << "frame " << frame_idx << ": packet 0 abs_error=" << abs_error_ns << "+-" << u
       << "ns measured=" << receive_ptp_ns << "ns expected launch=" << expected_launch_ns
       << "ns";
-  EXPECT_LE(abs_error_ns, kNoCtxPacingLateMaxNs)
-      << "frame " << frame_idx << ": packet 0 abs_error=" << abs_error_ns
+  EXPECT_LE(abs_error_ns + u, kNoCtxPacingLateMaxNs)
+      << "frame " << frame_idx << ": packet 0 abs_error=" << abs_error_ns << "+-" << u
       << "ns measured=" << receive_ptp_ns << "ns expected launch=" << expected_launch_ns
       << "ns";
 }
 
-void expectPacingElapsed(uint64_t frame_idx, uint64_t receive_time_ns,
-                         uint64_t receive_anchor_ns, uint64_t expected_transmit_time_ns,
-                         uint64_t expected_anchor_ns, PacingErrorLog* log) {
-  ASSERT_GE(receive_time_ns, receive_anchor_ns)
+void expectPacingElapsed(uint64_t frame_idx, const RxTime& rx, const PacingAnchor& anchor,
+                         uint64_t expected_ns, PacingErrorLog* log) {
+  ASSERT_GE(rx.ns, anchor.rx.ns)
       << "NIC RX timestamp moved backwards at frame " << frame_idx;
-  ASSERT_GE(expected_transmit_time_ns, expected_anchor_ns)
+  ASSERT_GE(expected_ns, anchor.expected_ns)
       << "expected TX plan moved backwards at frame " << frame_idx;
 
-  const int64_t measured_elapsed_ns =
-      static_cast<int64_t>(receive_time_ns - receive_anchor_ns);
+  const int64_t measured_elapsed_ns = static_cast<int64_t>(rx.ns - anchor.rx.ns);
   const int64_t expected_elapsed_ns =
-      static_cast<int64_t>(expected_transmit_time_ns - expected_anchor_ns);
+      static_cast<int64_t>(expected_ns - anchor.expected_ns);
   const int64_t elapsed_error_ns = measured_elapsed_ns - expected_elapsed_ns;
+  const int64_t u = rx.u_ns + anchor.rx.u_ns;
   log->elapsed_error_ns.add(elapsed_error_ns);
 
-  EXPECT_GE(elapsed_error_ns, -kNoCtxPacingElapsedErrorMaxNs)
-      << "frame " << frame_idx << ": measured elapsed=" << measured_elapsed_ns
-      << "ns expected elapsed=" << expected_elapsed_ns << "ns";
-  EXPECT_LE(elapsed_error_ns, kNoCtxPacingElapsedErrorMaxNs)
-      << "frame " << frame_idx << ": measured elapsed=" << measured_elapsed_ns
-      << "ns expected elapsed=" << expected_elapsed_ns << "ns";
+  EXPECT_GE(elapsed_error_ns - u, -kNoCtxPacingElapsedErrorMaxNs)
+      << "frame " << frame_idx << ": measured elapsed=" << measured_elapsed_ns << "+-"
+      << u << "ns expected elapsed=" << expected_elapsed_ns << "ns";
+  EXPECT_LE(elapsed_error_ns + u, kNoCtxPacingElapsedErrorMaxNs)
+      << "frame " << frame_idx << ": measured elapsed=" << measured_elapsed_ns << "+-"
+      << u << "ns expected elapsed=" << expected_elapsed_ns << "ns";
+}
+
+/* Packet-0 launch and elapsed checks; the first frame checked becomes the anchor. */
+void expectPacing(uint64_t frame_idx, mtl_handle mt, const RxTime& rx,
+                  uint64_t expected_ns, PacingAnchor* anchor, PacingErrorLog* log) {
+  expectPacingLaunch(frame_idx, monotonicRawToPtp(mt, rx.ns), expected_ns, rx.u_ns, log);
+  if (!anchor->rx.ns) {
+    *anchor = {rx, expected_ns};
+    return;
+  }
+  expectPacingElapsed(frame_idx, rx, *anchor, expected_ns, log);
 }
 }  // namespace
 
@@ -188,12 +259,12 @@ std::string strictPacingTopologyError(const char* tx_port, const char* rx_port) 
   if (fd < 0)
     return std::string(kStrictTopology) + "no PHC found for RX " + rx_port +
            " (its PF must stay bound to its kernel driver)";
-  ptp_sys_offset_precise xts = {};
-  const int ret = ioctl(fd, PTP_SYS_OFFSET_PRECISE, &xts);
+  uint64_t phc_ns, mono_ns, uncertainty_ns;
+  const std::string why = readPhc(fd, &phc_ns, &mono_ns, &uncertainty_ns);
   close(fd);
-  if (ret < 0)
-    return std::string(kStrictTopology) + "the PHC of RX " + rx_port +
-           " does not support PTP_SYS_OFFSET_PRECISE";
+  if (!why.empty())
+    return std::string(kStrictTopology) + "cannot read the PHC of RX " + rx_port + ": " +
+           why;
   return "";
 }
 
@@ -233,25 +304,55 @@ PacingErrorLog::~PacingErrorLog() {
 
 RxPhcClock::~RxPhcClock() {
   if (fd >= 0) close(fd);
+  if (last_mono_ns > first_mono_ns)
+    fprintf(stderr, "NoCtx RX PHC: rate %+.3f ppm over %.1f s, u max %llu ns\n",
+            rateOffsetPpm(), (double)(last_mono_ns - first_mono_ns) / NS_PER_S,
+            (unsigned long long)uncertainty_max_ns);
+}
+
+double RxPhcClock::rateOffsetPpm() const {
+  const double mono = static_cast<double>(last_mono_ns - first_mono_ns);
+  return (static_cast<double>(last_phc_ns - first_phc_ns) - mono) / mono * 1e6;
+}
+
+/* Like the other checks, the rate must hold at both ends of the two reads' +-u. */
+void RxPhcClock::expectRate(const char* port, uint64_t uncertainty_ns) {
+  const uint64_t mono = last_mono_ns - first_mono_ns;
+  if (rate_failed || mono < NS_PER_S) return;
+  const double u_ppm = (first_uncertainty_ns + uncertainty_ns) * 1e6 / mono;
+  if (std::fabs(rateOffsetPpm()) + u_ppm <= kPhcRateMaxPpm) return;
+  rate_failed = true;
+  ADD_FAILURE() << "the PHC of " << port << " runs " << rateOffsetPpm() << "+-" << u_ppm
+                << " ppm off CLOCK_MONOTONIC_RAW, over " << kPhcRateMaxPpm << " ppm";
 }
 
 bool RxPhcClock::receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_timestamp,
-                                         const char* port, mtl_handle mt,
-                                         uint64_t* mono_ns) {
+                                         const char* port, mtl_handle mt, RxTime* rx) {
   if (skipped) return false;
   if (fd < 0) fd = openPortPhc(port);
-  ptp_sys_offset_precise xts = {};
-  if (fd < 0 || ioctl(fd, PTP_SYS_OFFSET_PRECISE, &xts) < 0) {
-    ADD_FAILURE() << "frame " << frame_idx << ": cannot cross-timestamp the PHC of "
-                  << port;
+  uint64_t phc_now, mono_now, uncertainty_ns;
+  const std::string why =
+      fd < 0 ? "no PHC found" : readPhc(fd, &phc_now, &mono_now, &uncertainty_ns);
+  if (!why.empty()) {
+    ADD_FAILURE() << "frame " << frame_idx << ": cannot read the PHC of " << port << ": "
+                  << why;
     return false;
   }
 
+  if (!first_mono_ns) {
+    first_phc_ns = phc_now;
+    first_mono_ns = mono_now;
+    first_uncertainty_ns = uncertainty_ns;
+  }
+  last_phc_ns = phc_now;
+  last_mono_ns = mono_now;
+  uncertainty_max_ns = std::max(uncertainty_max_ns, uncertainty_ns);
+  expectRate(port, uncertainty_ns);
+
   /* A VF never steers its PF's PHC, so a NIC timestamp is a recent PHC reading. */
-  const uint64_t phc_now = ptpClockTimeNs(xts.device);
   const uint64_t ts = receive_timestamp;
   if (ts <= phc_now && phc_now - ts < NS_PER_S) {
-    *mono_ns = ts - (phc_now - ptpClockTimeNs(xts.sys_monoraw));
+    *rx = {ts - (phc_now - mono_now), static_cast<int64_t>(uncertainty_ns)};
     return true;
   }
 
@@ -286,20 +387,13 @@ void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
   }
 
-  uint64_t receive_time_ns;
+  RxTime rx;
   if (rxPhc.receiveTimeMonotonicRaw(
           idx_rx, f->receive_timestamp,
           st20pParent->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
-          st20pParent->ctx->handle, &receive_time_ns)) {
-    expectPacingLaunch(idx_rx,
-                       monotonicRawToPtp(st20pParent->ctx->handle, receive_time_ns),
-                       firstLaunchNs + idx_rx * st20pParent->nsFrameTime, &pacingLog);
-    if (receiveAnchorTimestamp)
-      expectPacingElapsed(idx_rx, receive_time_ns, receiveAnchorTimestamp,
-                          idx_rx * st20pParent->nsFrameTime, 0, &pacingLog);
-    else
-      receiveAnchorTimestamp = receive_time_ns;
-  }
+          st20pParent->ctx->handle, &rx))
+    expectPacing(idx_rx, st20pParent->ctx->handle, rx,
+                 firstLaunchNs + idx_rx * st20pParent->nsFrameTime, &anchor, &pacingLog);
 
   lastTimestamp = f->timestamp;
   idx_rx++;
@@ -383,22 +477,13 @@ uint64_t St20pUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const
 
 void St20pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx, const st_frame* frame,
                                                 uint64_t expected_transmit_time_ns) {
-  uint64_t receive_time_ns;
+  RxTime rx;
   auto* handler = static_cast<St20pHandler*>(parent);
-  if (!rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
-                                     handler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
-                                     handler->ctx->handle, &receive_time_ns))
-    return;
-
-  expectPacingLaunch(frame_idx, monotonicRawToPtp(handler->ctx->handle, receive_time_ns),
-                     expected_transmit_time_ns, &pacingLog);
-  if (receiveAnchorTimestamp) {
-    expectPacingElapsed(frame_idx, receive_time_ns, receiveAnchorTimestamp,
-                        expected_transmit_time_ns, expectedAnchorTime, &pacingLog);
-  } else {
-    receiveAnchorTimestamp = receive_time_ns;
-    expectedAnchorTime = expected_transmit_time_ns;
-  }
+  if (rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
+                                    handler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
+                                    handler->ctx->handle, &rx))
+    expectPacing(frame_idx, handler->ctx->handle, rx, expected_transmit_time_ns, &anchor,
+                 &pacingLog);
 }
 
 void St20pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,

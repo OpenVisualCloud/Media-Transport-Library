@@ -59,7 +59,7 @@ redundant tests map sessions to ports by index.
 
 | Tests | Requirement | If missing |
 |---|---|---|
-| Strict: `st20p_default_timestamps`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing` | TX, RX on **different physical ports**; RX-port **PHC** with `PTP_SYS_OFFSET_PRECISE`; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1` (`gtest.sh` sets it). SW RX time after frame 0: FAIL |
+| Strict: `st20p_default_timestamps`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing` | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1` (`gtest.sh` sets it). SW RX time after frame 0: FAIL |
 | `st30p_user_pacing` | An exclusive CPU partition: its own cgroup's `cpuset.cpus.partition` reads `isolated`. Checked after the strict topology, which may SKIP or FAIL the case first | FAIL, never SKIP |
 | `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | The case errors (`std::runtime_error`) |
 | `st20p_redundant_latency_drops_even_odd` | `MTL_SIMULATE_PACKET_DROPS` build (`./build.sh debug` / `debugonly`) | SKIP |
@@ -136,14 +136,19 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   RTP is always compared by integer equality.
 - **PHC → `CLOCK_MONOTONIC_RAW`.** `receive_timestamp` is the NIC timestamp
   of the packet that opened the RX slot, in the PHC domain. `RxPhcClock`
-  takes one `PTP_SYS_OFFSET_PRECISE` cross-timestamp per frame:
-  `rx_mono_raw = receive_timestamp − (phc_now − mono_raw_now)`.
+  reads the PHC once per frame and converts
+  `rx_mono_raw = receive_timestamp − (phc_now − mono_raw_now)`. E830 gives
+  `mono_raw_now` exactly (`PTP_SYS_OFFSET_PRECISE`). E810 has no
+  cross-timestamp, so it is read with `PTP_SYS_OFFSET_EXTENDED` and
+  `mono_raw_now` is known to ±u ≤ 1 µs; every check below must hold at both
+  ends of ±u, and a PHC that cannot be read to ±1 µs fails. `phc_now` lags
+  `receive_timestamp` by about a frame, so a PHC rate more than 5 ppm off
+  `CLOCK_MONOTONIC_RAW` fails; each run prints it (`NoCtx RX PHC: rate …`).
 - **Strict ST20p: launch −1/+10 µs, elapsed from frame 0 ±10 µs.** Packet 0
   of every frame `n` is checked twice. Launch: its RX time, mapped on to the
   fake PTP clock, against its planned launch,
   `−1 µs ≤ rx(n) − expected_tx(n) ≤ +10 µs`; it cannot arrive early, so 1 µs
-  is PHC cross-timestamp error, and 10 µs covers path latency and launch
-  jitter. Elapsed:
+  is PHC read error, and 10 µs covers path latency and launch jitter. Elapsed:
   `|(rx(n) − rx(0)) − (expected_tx(n) − expected_tx(0))| ≤ 10 µs` for `n ≥ 1`,
   where the clock origin, path delay, PHY latency and timestamp-point offset
   cancel but drift does not. 10 µs is just above one `trs` at 1080p25.
