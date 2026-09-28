@@ -69,7 +69,7 @@ sudo ./build/tests/KahawaiTest \
 - Shards `St20_rx*` and `St20_tx*` into 2 parts for parallelism
 - Randomizes station IPs
 - Retries failed tests (MAX_RETRIES=2, RETRY_DELAY=20s)
-- TEST_CASE_TIMEOUT=1800s per test case
+- TEST_CASE_TIMEOUT=1800s per test case; NOCTX_CASE_TIMEOUT=4200s for the noctx case (all NoCtx tests in one run)
 
 Key env vars: `TEST_PORT_1..4`, `TEST_DMA_PORT_P`, `TEST_DMA_PORT_R`, `NIGHTLY=1`
 

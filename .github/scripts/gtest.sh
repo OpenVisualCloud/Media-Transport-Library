@@ -43,6 +43,7 @@ SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} PATH=${PATH}"
 : "${EXIT_ON_FAILURE:=1}"
 : "${NIGHTLY:=1}"                                       # Set to 1 to run full test suite, 0 for quick tests
 : "${TEST_CASE_TIMEOUT:=1800}"                          # 30 minutes per test case
+: "${NOCTX_CASE_TIMEOUT:=4200}"                         # The noctx case: every NoCtx test, st20p_tx_multithread_stability alone 30 min
 : "${HOST_OP_TIMEOUT:=180}"                             # Hard bound for one nicctl listing
 : "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
@@ -426,7 +427,7 @@ exec timeout --signal=SIGTERM --kill-after="$2" "$3" bash -c "$4"
 PROGRAM
 )
 
-# Runs one test case bounded by TEST_CASE_TIMEOUT.
+# Runs one test case bounded by TEST_CASE_TIMEOUT (NOCTX_CASE_TIMEOUT for noctx).
 #
 # The payload is not piped into `tee`: KahawaiTest runs as root under sudo, so
 # an orphan that outlives `timeout` keeps the pipe open and stalls the whole
@@ -437,8 +438,9 @@ run_case_bounded() {
 	local test_name="$1"
 	local case_log="${TMP_FOLDER}/${test_name}.out"
 	local sid_file="${TMP_FOLDER}/${test_name}.sid"
-	local retval=0
+	local retval=0 limit="${TEST_CASE_TIMEOUT}"
 
+	[ "${test_name}" != noctx ] || limit="${NOCTX_CASE_TIMEOUT}"
 	sudo rm -f "${case_log}" "${sid_file}"
 	sudo install -m 0666 /dev/null "${case_log}"
 
@@ -448,7 +450,7 @@ run_case_bounded() {
 	local tail_pid=$!
 
 	setsid --wait bash -c "${case_program}" gtest-case \
-		"${sid_file}" "${TEST_KILL_GRACE}" "${TEST_CASE_TIMEOUT}" "${test_cases[$test_name]}" \
+		"${sid_file}" "${TEST_KILL_GRACE}" "${limit}" "${test_cases[$test_name]}" \
 		>>"${case_log}" 2>&1 || retval=$?
 
 	kill "${tail_pid}" 2>/dev/null || true
@@ -456,7 +458,7 @@ run_case_bounded() {
 	sudo cat "${case_log}" | sudo tee -a "$LOG_FILE" >/dev/null
 
 	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
-		echo "✗ Test case exceeded ${TEST_CASE_TIMEOUT}s: ${test_name}"
+		echo "✗ Test case exceeded ${limit}s: ${test_name}"
 		local sid
 		sid=$(cat "${sid_file}" 2>/dev/null)
 		if [ -n "${sid}" ]; then
@@ -532,6 +534,7 @@ print_configuration() {
 	echo "EXIT_ON_FAILURE: $EXIT_ON_FAILURE"
 	echo "NIGHTLY: $NIGHTLY"
 	echo "TEST_CASE_TIMEOUT: $TEST_CASE_TIMEOUT seconds"
+	echo "NOCTX_CASE_TIMEOUT: $NOCTX_CASE_TIMEOUT seconds"
 	echo "HOST_OP_TIMEOUT: $HOST_OP_TIMEOUT seconds"
 	echo "TEST_KILL_GRACE: $TEST_KILL_GRACE seconds"
 	echo "TEST_SIP_SEED: $TEST_SIP_SEED"
