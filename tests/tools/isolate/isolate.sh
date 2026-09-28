@@ -30,6 +30,7 @@ cg=$CG_ROOT/$CG_PREFIX$$
 restore_file=$STATE_PREFIX$$.restore
 lock_fd=""
 why=""
+busy=0
 
 log() { echo "isolate.sh: $*" >&2; }
 
@@ -166,10 +167,11 @@ release_lock() {
 	lock_fd=""
 }
 
+# Sets why, and busy for a held lock (exit 3, so a caller can tell it from a host that cannot isolate).
 take_lock() {
 	command -v flock >/dev/null || { why="flock not found" && return 1; }
 	{ exec {lock_fd}>>"$LOCK"; } 2>/dev/null || { why="cannot open $LOCK" && return 1; }
-	flock -w 10 "$lock_fd" || { why="$LOCK held by another isolate.sh for 10 s" && return 1; }
+	flock -w 10 "$lock_fd" || { why="$LOCK held by another isolate.sh for 10 s" && busy=1 && return 1; }
 }
 
 # Every live wrapper with a cgroup or saved settings holds LOCK, so under it all of them are stale.
@@ -187,8 +189,13 @@ sweep_stale() {
 setup() {
 	local cpus="" mems="" node bdf state pick first_cpu="" first_node
 	local -a ports
-	grep -qw cpuset "$CG_ROOT/cgroup.subtree_control" 2>/dev/null ||
-		{ why="no cgroup v2 cpuset controller at $CG_ROOT" && return 1; }
+	if ! grep -qw cpuset "$CG_ROOT/cgroup.subtree_control" 2>/dev/null; then
+		# systemd hands cpuset to the root's children only once a unit asks for it
+		grep -qw cpuset "$CG_ROOT/cgroup.controllers" 2>/dev/null ||
+			{ why="no cgroup v2 cpuset controller at $CG_ROOT" && return 1; }
+		put_or_why "$CG_ROOT/cgroup.subtree_control" +cpuset || return 1
+		log "enabled the cpuset controller in $CG_ROOT/cgroup.subtree_control"
+	fi
 	take_lock || return 1
 	sweep_stale
 	IFS=, read -ra ports <<<"${MTL_ISOLATE_PORTS:-}"
@@ -231,7 +238,7 @@ unconfined() {
 	release_lock
 	if [ "$mode" = require ]; then
 		log "ERROR: exclusive CPU isolation unavailable ($why); MTL_ISOLATE=require, not running the command"
-		exit 1
+		exit $((busy ? 3 : 1))
 	fi
 	log "WARNING: exclusive CPU isolation unavailable ($why); running unconfined${prio[*]:+ at nice -20}"
 	export MTL_CPU_ISOLATION=none
@@ -252,7 +259,7 @@ watch() {
 
 sweep() {
 	[ "$(id -u)" -eq 0 ] || { log "ERROR: --sweep needs root" && exit 1; }
-	take_lock || { log "ERROR: $why" && exit 1; }
+	take_lock || { log "ERROR: $why" && exit 3; }
 	sweep_stale
 	! compgen -G "$CG_ROOT/$CG_PREFIX*" >/dev/null || { log "ERROR: could not remove every $CG_ROOT/$CG_PREFIX*" && exit 1; }
 	exit 0

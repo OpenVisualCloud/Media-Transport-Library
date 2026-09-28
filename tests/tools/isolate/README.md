@@ -16,13 +16,17 @@ Background on static and dynamic CPU isolation: [doc/isolation.md](../../../doc/
 
 If the partition is unavailable, `try` prints one `WARNING` with the reason and
 runs the command unconfined; `require` prints `isolate.sh: ERROR ... (<why>)`
-and exits 1 without running it. Otherwise the command's exit status is the
+and exits without running it: 3 when another wrapper holds the lock, else 1.
+Usage errors exit 2. Otherwise the command's exit status is the
 wrapper's. CI (`.github/scripts/gtest.sh`) runs NoCtx with `MTL_ISOLATE=require`.
 
 ## Requirements
 
 - Root (the acceptance hook calls it through `sudo -n`).
-- cgroup v2 with the `cpuset` controller in `/sys/fs/cgroup/cgroup.subtree_control`.
+- cgroup v2 with the `cpuset` controller (`/sys/fs/cgroup/cgroup.controllers`). If
+  it is not enabled for the root's children (`cgroup.subtree_control`),
+  `isolate.sh` enables it, which restricts nothing; systemd may turn it off
+  again, and the next wrapper re-enables it.
 - The `isolated` value of `cpuset.cpus.partition`, Linux 6.1 or later.
   `cpuset.cpus.exclusive` (Linux 6.7) is written when present. Validated on 6.8.
 - No root-level sibling cgroup with an explicit overlapping `cpuset.cpus`,
@@ -67,8 +71,8 @@ restores the saved settings. If the wrapper is SIGKILLed, a watcher in its own
 session does this, so a kill of the wrapper's session or process group does not
 reach it, and it ignores SIGPIPE in case its stderr pipe is already gone. If
 both die, the next wrapper or `isolate.sh --sweep` (root) does; it exits 1 if
-a partition is left. `.github/scripts/gtest.sh` sweeps before and after the
-NoCtx run, the acceptance suite at session start, and
+a partition is left, 3 if the lock is held. `.github/scripts/gtest.sh` sweeps
+before and after the NoCtx run, the acceptance suite at session start, and
 `.github/scripts/ci/cleanup.sh` around the CI test jobs. `/run` is
 tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
 `flock /run/mtl-isolate.lock` (a wrapper waits 10 s, then gives up), and remove
