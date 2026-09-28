@@ -8,7 +8,7 @@ import time
 import pytest
 from mfd_connect.exceptions import RemoteProcessTimeoutExpired
 from mfd_network_adapter import NetworkInterface
-from mtl_engine.dma import setup_host_dma
+from mtl_engine.dma import DSA_DEVICE_ID, setup_host_dma
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +353,9 @@ class Nicctl:
         (rv_init_dma, doc/dma.md). Returns the channel's PCI address, or
         None when this host serves none on that node.
 
+        DSA only, never setup_host_dma()'s CBDMA fallback: RxTxApp given a
+        CBDMA channel dies with SIGILL during EAL init on the i225 runner.
+
         Delegates to mtl_engine.dma.setup_host_dma() rather than a bash
         reimplementation: DSA's kernel driver (idxd) has a documented
         use-after-free that can segfault the host on an unsafe unbind (see
@@ -372,7 +375,7 @@ class Nicctl:
         DMA-specific problem here must not fail session setup.
         """
         try:
-            return setup_host_dma(self.host, nic_pci_id)
+            return setup_host_dma(self.host, nic_pci_id, dma_config=DSA_DEVICE_ID)
         except Exception as e:
             logger.warning(
                 "bind_dma %s failed (%s: %s)", nic_pci_id, type(e).__name__, e
