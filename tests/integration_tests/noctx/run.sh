@@ -77,6 +77,7 @@ XML_OUTPUT_DIR="${TMP_FOLDER}"
 mkdir -p "$XML_OUTPUT_DIR"
 
 test_count=0
+failed_count=0
 while IFS= read -r test_name || [ -n "$test_name" ]; do
 	if [[ -z "$test_name" || "$test_name" == \#* ]]; then
 		continue
@@ -100,6 +101,7 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		echo "Test NoCtxTest.$test_name passed"
 	else
 		echo "Test NoCtxTest.$test_name failed with exit code $?"
+		failed_count=$((failed_count + 1))
 		if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
 			echo "Exiting due to test failure."
 			exit 1
@@ -115,4 +117,5 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 done < <(echo "$test_names")
 
 echo "All noctx tests completed. XML files saved in $XML_OUTPUT_DIR"
-echo "Total test count: $test_count"
+echo "Total test count: $test_count, failed: $failed_count"
+[ "$failed_count" -eq 0 ]
