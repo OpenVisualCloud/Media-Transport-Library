@@ -57,12 +57,15 @@ wrapper's. CI (`.github/scripts/gtest.sh`) runs NoCtx with `MTL_ISOLATE=require`
 - **Housekeeping, exclusive mode only.** IRQ affinities
   (`/proc/irq/*/smp_affinity_list`) are moved off the partition where the
   kernel allows it, `/proc/irq/default_smp_affinity` excludes it (VF MSI-X
-  vectors are only allocated when the ports open), and `vm.stat_interval` is
-  raised to 120 s. The originals are written to
+  vectors are only allocated when the ports open), `vm.stat_interval` is
+  raised to 120 s, and `kernel.numa_balancing` is set to 0 where the kernel
+  has it: its scan runs as task work on the busiest threads, the MTL
+  schedulers, and stalls them for up to ~400 µs. The originals are written to
   `/run/mtl-isolate-<pid>.restore` first and restored on exit.
 - **Host impact.** While the command runs, the partition's CPUs are taken from
-  all other workloads, movable IRQs run only on the other CPUs, and system-wide
-  VM counters fold per-CPU deltas only every 120 s.
+  all other workloads, movable IRQs run only on the other CPUs, system-wide
+  VM counters fold per-CPU deltas only every 120 s, and automatic NUMA
+  balancing migrates no process's memory.
 
 ## Cleanup and sweep
 
