@@ -34,6 +34,10 @@ on:
         required: false
         type: boolean
         default: false
+      branch:
+        description: 'MTL branch, tag or SHA to build and test; CI and tests stay from the workflow branch (empty = workflow branch)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +48,7 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       skip_linter_check: true
+      branch: ${{ inputs.branch }}
     permissions:
       contents: read
       checks: read
@@ -65,7 +70,18 @@ jobs:
       - name: Checkout MTL
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
         with:
-          ref: "${{ github.ref }}"
+          ref: "${{ needs.build.outputs.mtl_commit }}"
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests
       - name: Validate host and download stashes
         id: validate
         uses: ./.github/actions/validate-host
