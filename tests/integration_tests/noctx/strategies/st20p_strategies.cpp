@@ -43,6 +43,7 @@ constexpr const char* kStrictTopology =
     "strict pacing needs TX and RX on different physical ports, a PHC reachable from "
     "the RX port, and NIC RX timestamps delivered: ";
 constexpr int kPhcReadAttempts = 3;
+constexpr int kPtpMappingSamples = 4;
 
 uint32_t expectedBpmPackets(const St20pHandler* handler) {
   const auto& ops = handler->sessionsOpsTx;
@@ -240,7 +241,8 @@ void expectPacingElapsed(uint64_t frame_idx, const RxTime& rx, const PacingAncho
 /* Packet-0 launch and elapsed checks; the first frame checked becomes the anchor. */
 void expectPacing(uint64_t frame_idx, mtl_handle mt, const RxTime& rx,
                   uint64_t expected_ns, PacingAnchor* anchor, PacingErrorLog* log) {
-  expectPacingLaunch(frame_idx, monotonicRawToPtp(mt, rx.ns), expected_ns, rx.u_ns, log);
+  const RxTime ptp = monotonicRawToPtp(mt, rx);
+  expectPacingLaunch(frame_idx, ptp.ns, expected_ns, ptp.u_ns, log);
   if (!anchor->rx.ns) {
     *anchor = {rx, expected_ns};
     return;
@@ -273,12 +275,20 @@ bool strictPacingRequired() {
   return required && !strcmp(required, "1");
 }
 
-uint64_t monotonicRawToPtp(mtl_handle mt, uint64_t mono_ns) {
-  timespec now;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &now);
-  const uint64_t ptp_now = mtl_ptp_read_time_raw(mt);
-  const uint64_t mono_now = (uint64_t)now.tv_sec * NS_PER_S + now.tv_nsec;
-  return mono_ns - (mono_now - ptp_now);
+RxTime monotonicRawToPtp(mtl_handle mt, const RxTime& rx) {
+  uint64_t width = UINT64_MAX, mono_minus_ptp = 0;
+  for (int i = 0; i < kPtpMappingSamples; i++) {
+    timespec before, after;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &before);
+    const uint64_t ptp_now = mtl_ptp_read_time_raw(mt);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &after);
+    const uint64_t w = timespecNs(after) - timespecNs(before);
+    if (w < width) {
+      width = w;
+      mono_minus_ptp = timespecNs(before) + w / 2 - ptp_now;
+    }
+  }
+  return {rx.ns - mono_minus_ptp, rx.u_ns + static_cast<int64_t>(width / 2)};
 }
 
 void PacingErrorSeries::add(int64_t error_ns) {

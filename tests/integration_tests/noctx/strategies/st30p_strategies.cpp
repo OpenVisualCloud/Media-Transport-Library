@@ -138,7 +138,8 @@ void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
                                      mt, &rx))
     return;
 
-  const uint64_t receive_time_ns = monotonicRawToPtp(mt, rx.ns);
+  const RxTime ptp = monotonicRawToPtp(mt, rx);
+  const uint64_t receive_time_ns = ptp.ns;
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
   int64_t expected_delta_ns = kSt30pRxToleranceNs;
@@ -146,8 +147,8 @@ void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
     expected_delta_ns = kSt30pFirstBufferRxToleranceNs;
   }
 
-  EXPECT_LE(std::abs(delta_ns) + rx.u_ns, expected_delta_ns)
-      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns << "+-" << rx.u_ns
+  EXPECT_LE(std::abs(delta_ns) + ptp.u_ns, expected_delta_ns)
+      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns << "+-" << ptp.u_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected timestamp(ns): " << expected_timestamp_ns;
 }

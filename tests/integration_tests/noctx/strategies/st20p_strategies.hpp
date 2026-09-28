@@ -41,7 +41,7 @@ std::string strictPacingTopologyError(const char* tx_port, const char* rx_port);
 /* NOCTX_REQUIRE_STRICT=1: an unsuitable strict topology fails instead of skipping. */
 bool strictPacingRequired();
 
-/* A CLOCK_MONOTONIC_RAW time known to +-u_ns. */
+/* A time known to +-u_ns. */
 struct RxTime {
   uint64_t ns = 0;
   int64_t u_ns = 0;
@@ -77,8 +77,10 @@ class RxPhcClock {
   uint64_t uncertainty_max_ns = 0;
 };
 
-/* The NoCtx fake PTP clock is CLOCK_MONOTONIC_RAW minus a start offset. */
-uint64_t monotonicRawToPtp(mtl_handle mt, uint64_t mono_ns);
+/* The NoCtx fake PTP clock is CLOCK_MONOTONIC_RAW minus a start offset. The offset is
+ * read against MTL's PTP time in the tightest of a few CLOCK_MONOTONIC_RAW brackets,
+ * whose half-width adds to u. */
+RxTime monotonicRawToPtp(mtl_handle mt, const RxTime& rx);
 
 struct PacingErrorSeries {
   int64_t min = INT64_MAX;
