@@ -201,6 +201,15 @@ def _assert_redundant_frame_info(entries: list[dict[str, int]]) -> None:
     )
 
 
+def _assert_seq_gaps_healed(entries: list[dict[str, int]]) -> None:
+    # TX pads its first 8 frames to tx-test-pkt-count (200) packets and drops the first
+    # few on P or R. seq_lost cannot see a frame's lost head, so count packets.
+    gap_frame_pkts = [e["pkts_total"] for e in entries if e["pkts_total"] > 1]
+    assert (
+        gap_frame_pkts == [200] * 8
+    ), f"The redundant path did not heal the injected seq gaps: {gap_frame_pkts}"
+
+
 def _parse_frame_info_timestamps(frame_info_text: str) -> list[int]:
     """Extract timestamps from frame-info log lines."""
     ts_values = []
@@ -576,12 +585,15 @@ def test_st40p_redundant_progressive_gap(
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                # tx-test-pkt-count pads the gap frames: the output outgrows the input.
+                skip_file_compare=True,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_seq_gaps_healed(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -822,12 +834,15 @@ def test_st40p_redundant_progressive_split_gap(
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                # tx-test-pkt-count pads the gap frames: the output outgrows the input.
+                skip_file_compare=True,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_seq_gaps_healed(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -1076,12 +1091,15 @@ def test_st40i_redundant_split_gap(
                 host=host,
                 tx_first=False,
                 sleep_interval=4,
+                # tx-test-pkt-count pads the gap frames: the output outgrows the input.
+                skip_file_compare=True,
                 log_frame_info=True,
             )
             info_dump = run(f"cat {frame_info_path}", host=host)
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_seq_gaps_healed(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -1628,6 +1646,7 @@ def test_st40p_interlace_auto_detect_reset(
     .. rubric:: Pass Criteria
     - Pipeline succeeds with TX interlaced and RX auto-detect enabled.
     - Payload round-trips without timeout using default frame-info logging.
+    - After the injected seq gap, RX logs the discontinuity and keeps delivering.
     """
 
     host = list(hosts.values())[0]
@@ -1735,6 +1754,9 @@ def test_st40p_interlace_auto_detect_reset(
                 host=host,
                 tx_first=False,
                 sleep_interval=5,
+                # tx-test-pkt-count pads the gap frame with repeated ANC packets, so the
+                # output outgrows the input; the clean run above compares the bytes.
+                skip_file_compare=True,
                 log_frame_info=True,
             )
 
@@ -1746,6 +1768,9 @@ def test_st40p_interlace_auto_detect_reset(
             assert any(
                 entry.get("seq_discont", 0) > 0 for entry in gap_entries
             ), "Seq-gap auto-detect reset did not log any discontinuity after gap"
+            assert not gap_entries[-1].get(
+                "seq_discont", 0
+            ), "RX delivered no clean frame after the seq gap"
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
