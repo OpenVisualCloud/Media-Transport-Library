@@ -139,6 +139,43 @@ flowchart LR
 
 The path lists that feed each hash live in `script/hash_sources_*.env`.
 
+## Testing other MTL sources with the current tests
+
+On a manual run, `nightly-pytest` and `custom-pytest` take an optional
+`branch` input. The run builds and tests the MTL sources of that ref, while
+the workflow, the CI scripts and the acceptance tests stay at the workflow
+commit, the commit of the branch picked in "Use workflow from". It is the
+overlay `perf-pytest` already uses (`task ci:workflow -- overlay-tests`), and
+its typical use is running today's tests against older code to tell a
+regression from a test change. Left empty, nothing is overlaid.
+
+- `branch` takes a branch, a tag or a **full 40-character commit SHA**. A
+  shorter SHA is read as a branch or tag name and fails the `checksums` job.
+- The ref must contain 0aff97f0 (#1700). Older trees lack the `Taskfile.yml`
+  and `overlay-tests` that perform the overlay, and `script/` interfaces the
+  current CI calls. They fail in the `checksums` job, before any hardware
+  runner is taken.
+- The overlay adds and replaces files but deletes none: a file removed under
+  the overlaid paths after the `branch` commit is still there.
+
+| Part                                                                 | Comes from      |
+| -------------------------------------------------------------------- | --------------- |
+| Workflow YAML                                                        | workflow commit |
+| `.github/` (actions, CI scripts, `setup_environment.sh`)             | workflow commit |
+| `Taskfile.yml`                                                       | workflow commit |
+| `tests/acceptance/`                                                  | workflow commit |
+| `lib/`, `include/`, `app/`, `manager/`, `ld_preload/`                | `branch`        |
+| `tests/tools/RxTxApp/`, `tests/tools/gstreamer_tools/`               | `branch`        |
+| `ecosystem/`, `plugins/`, `patches/`, `versions.env`                 | `branch`        |
+| `script/` (including `hash_sources*.sh`, `nicctl.sh`, `build_*.sh`)  | `branch`        |
+| The `overlay-tests` code that performs the overlay                   | `branch`        |
+
+`build.yml` resolves `branch` to a commit once, in the `checksums` job, and
+exports it as `mtl_commit`. The `build` job and the test jobs check out that
+commit and apply the same overlay. They have to: the source hashes include
+`.github/` files, so a job that hashed any other tree would miss the stash the
+build saved.
+
 ## Proposed host dependency outputs
 
 ICE and JPEG XS should join the existing cache waterfall, but they have
