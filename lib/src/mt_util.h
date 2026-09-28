@@ -56,9 +56,10 @@ static inline void mt_u32_to_ip(uint32_t group, uint8_t ip[MTL_IP_ADDR_LEN]) {
   ip[3] = group >> 24;
 }
 
-bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx);
-bool mt_bitmap_test(uint8_t* bitmap, int idx);
-bool mt_bitmap_test_and_unset(uint8_t* bitmap, int idx);
+/* size is the length of bitmap in bytes, idx the bit to address */
+bool mt_bitmap_test_and_set(uint8_t* bitmap, size_t size, int idx);
+bool mt_bitmap_test(uint8_t* bitmap, size_t size, int idx);
+bool mt_bitmap_test_and_unset(uint8_t* bitmap, size_t size, int idx);
 
 /* only for mbuf ring with RING_F_SP_ENQ | RING_F_SC_DEQ */
 int mt_ring_dequeue_clean(struct rte_ring* ring);

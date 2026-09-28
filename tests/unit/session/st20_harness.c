@@ -731,6 +731,15 @@ int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
   return (int)ctx->session.ops.height;
 }
 
+bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx) {
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
+    for (size_t j = ctx->session.st20_frame_bitmap_size; j < UT20_MAX_BITMAP_SIZE; j++) {
+      if (ctx->bitmaps[i][j] != 0) return false;
+    }
+  }
+  return true;
+}
+
 void ut20_session_detach(ut20_test_ctx* ctx) {
   rv_flush_pending_loss(&ctx->session);
 }

@@ -2157,9 +2157,27 @@ static int tv_tasklet_rtcp(struct st_tx_video_session_impl* s) {
     if (rv) {
       for (uint16_t i = 0; i < rv; i++) {
         // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
+        uint16_t data_len = rte_pktmbuf_data_len(mbuf[i]);
+        if (data_len < sizeof(struct mt_udp_hdr)) continue; /* runt, no rtcp payload */
+        struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf[i], struct mt_udp_hdr*);
+        /* the rtcp offset below is correct only for an ipv4 header with no options */
+        if ((hdr->ipv4.version_ihl & RTE_IPV4_HDR_IHL_MASK) != RTE_IPV4_MIN_IHL) continue;
+        uint16_t dgram_len = ntohs(hdr->udp.dgram_len);
+        if (dgram_len < sizeof(struct rte_udp_hdr)) continue;
+        /* a frame can hold ethernet padding after the udp datagram. Give the parser
+         * only the bytes that the udp header declares and that the mbuf holds. */
+        size_t rtcp_len = RTE_MIN((size_t)(data_len - sizeof(struct mt_udp_hdr)),
+                                  (size_t)(dgram_len - sizeof(struct rte_udp_hdr)));
         struct mt_rtcp_hdr* rtcp = rte_pktmbuf_mtod_offset(mbuf[i], struct mt_rtcp_hdr*,
                                                            sizeof(struct mt_udp_hdr));
-        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp);
+        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp, rtcp_len);
+        if (s->rtcp_tx[s_port]->nack_drop_sampled) { /* the parser logged a sample */
+          uint8_t* ip = (uint8_t*)&hdr->ipv4.src_addr;
+          MTL_MAY_UNUSED(ip);
+          dbg("%s(%d), invalid rtcp from %u.%u.%u.%u:%u, data_len %u dgram_len %u\n",
+              __func__, s->idx, ip[0], ip[1], ip[2], ip[3], ntohs(hdr->udp.src_port),
+              data_len, dgram_len);
+        }
       }
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
     }

@@ -39,6 +39,13 @@ void ut22p_tx_ctx_destroy(ut22p_tx_ctx* ctx);
 int ut22p_tx_framebuff_cnt(const ut22p_tx_ctx* ctx);
 
 /**
+ * Turn on ST22P_TX_FLAG_BLOCK_GET behaviour for the app side: init the block
+ * cond/mutex and set the wait timeout of ut22p_tx_get_frame(). Call before
+ * any ut22p_tx_get_frame().
+ */
+void ut22p_tx_ctx_enable_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
+
+/**
  * Turn on ST22_ENCODER_RESP_FLAG_BLOCK_GET behaviour for the encoder-plugin
  * side: init the encode block cond/mutex and set its wait timeout. Call before
  * any ut22p_tx_encode_get_frame().

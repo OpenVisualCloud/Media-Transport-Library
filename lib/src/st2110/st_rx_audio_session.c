@@ -110,6 +110,7 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
   if (s->frame_bitmap) {
     mt_rte_free(s->frame_bitmap);
     s->frame_bitmap = NULL;
+    s->frame_bitmap_size = 0;
   }
 
   dbg("%s(%d), succ\n", __func__, s->idx);
@@ -150,12 +151,14 @@ static int rx_audio_session_alloc_frames(struct st_rx_audio_session_impl* s) {
     st30_frame->iova = rte_malloc_virt2iova(frame);
   }
 
-  s->frame_bitmap = mt_rte_zmalloc_socket(((size_t)s->st30_total_pkts + 7) / 8, soc_id);
+  size_t bitmap_size = ((size_t)s->st30_total_pkts + 7) / 8;
+  s->frame_bitmap = mt_rte_zmalloc_socket(bitmap_size, soc_id);
   if (!s->frame_bitmap) {
     err("%s(%d), frame_bitmap alloc fail\n", __func__, idx);
     rx_audio_session_free_frames(s);
     return -ENOMEM;
   }
+  s->frame_bitmap_size = bitmap_size;
 
   dbg("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -278,7 +281,7 @@ static int rx_audio_session_open_frame(struct st_rx_audio_session_impl* s,
   int64_t frames = delta / ticks - (delta % ticks < 0); /* floor, not truncate */
   uint32_t base = grid_base + (uint32_t)(frames * ticks);
 
-  memset(s->frame_bitmap, 0, ((size_t)s->st30_total_pkts + 7) / 8);
+  memset(s->frame_bitmap, 0, s->frame_bitmap_size);
   s->frame_recv_size = 0;
   s->first_pkt_rtp_ts = base;
   s->first_pkt_ptp_ts = ptp_ts;
@@ -291,7 +294,7 @@ static int rx_audio_session_open_frame(struct st_rx_audio_session_impl* s,
 static void rx_audio_session_zero_frame_gaps(struct st_rx_audio_session_impl* s,
                                              struct st_frame_trans* frame) {
   for (int i = 0; i < s->st30_total_pkts; i++) {
-    if (mt_bitmap_test(s->frame_bitmap, i)) continue;
+    if (mt_bitmap_test(s->frame_bitmap, s->frame_bitmap_size, i)) continue;
     memset((uint8_t*)frame->addr + (size_t)i * s->pkt_len, 0, s->pkt_len);
   }
 }
@@ -497,7 +500,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     idx = (tmstamp - s->first_pkt_rtp_ts) / spp;
   }
 
-  if (mt_bitmap_test_and_set(s->frame_bitmap, (int)idx)) {
+  if (mt_bitmap_test_and_set(s->frame_bitmap, s->frame_bitmap_size, (int)idx)) {
     dbg("%s(%d,%d), seq %d idx %u already received\n", __func__, s->idx, s_port, seq_id,
         idx);
     s->port_user_stats.common.stat_pkts_redundant++;

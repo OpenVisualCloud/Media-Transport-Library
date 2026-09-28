@@ -761,19 +761,31 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
    * even while other FREE frames remain (spurious failure under contention). */
   framebuff = tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
   if (!framebuff && ctx->block_get) {
+    struct timespec deadline;
+    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
+    timespec_add_ns(&deadline, ctx->block_timeout_ns);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    while (!ctx->block_wake_pending &&
-           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
-      int _ret = mt_pthread_cond_timedwait_ns(
-          &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+    while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+      if (ctx->block_wake_pending) {
+        /* A frame done sets the wake also when no thread waits, so the wake can
+         * be stale. Use it only when the claim finds a free frame. */
+        ctx->block_wake_pending = false;
+        framebuff =
+            tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
+        if (framebuff) break;
+        continue;
+      }
+      int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                           &deadline);
       if (_ret) break;
     }
-    ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-    /* get again */
-    framebuff =
-        tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
+    if (!framebuff) {
+      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
+      /* get again */
+      framebuff =
+          tx_st22p_claim_available(ctx, ST22P_TX_FRAME_FREE, ST22P_TX_FRAME_IN_USER);
+    }
   }
   /* not any free frame */
   if (!framebuff) {

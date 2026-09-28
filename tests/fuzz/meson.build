@@ -50,6 +50,7 @@ fuzz_targets = [
   ['st30_rx_frame_fuzz', 'st30/st30_rx_frame_fuzz.c'],
   ['st20_rx_frame_fuzz', 'st20/st20_rx_frame_fuzz.c'],
   ['st22_rx_frame_fuzz', 'st22/st22_rx_frame_fuzz.c'],
+  ['mt_rtcp_tx_parse_fuzz', 'rtcp/mt_rtcp_tx_parse_fuzz.c'],
 ]
 
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'

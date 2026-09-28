@@ -650,6 +650,13 @@ class FFmpeg(Application):
                 out_path = ffmpeg_app.create_empty_output_files(ext, 1, host, build)
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
+            if mode == _MODE_ST22P:
+                conn = host.connection
+                self.command = self.with_local_kahawai(self.command, build, conn)
+                self._tx_commands = [
+                    self.with_local_kahawai(cmd, build, conn)
+                    for cmd in self._tx_commands
+                ]
 
     # ----------------------------------------------------- execute_test
     def execute_test(  # type: ignore[override]

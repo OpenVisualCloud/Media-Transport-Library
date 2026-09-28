@@ -564,6 +564,8 @@ static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
   udp->src_port = addr_in.sin_port;
   ipv4->src_addr = addr_in.sin_addr.s_addr;
   ipv4->next_proto_id = IPPROTO_UDP;
+  /* the kernel removed the ip options, a parser can read the payload at &hdr[1] */
+  ipv4->version_ihl = RTE_IPV4_VHL_DEF;
 
   if (stats) {
     stats->rx_packets++;
