@@ -4,9 +4,10 @@
 # Copyright 2026 Intel Corporation
 
 # Runs one command at nice -20 inside an exclusive cgroup v2 cpuset partition
-# ("isolated") that exists only for the lifetime of that command, and moves IRQs
-# and vmstat off its CPUs until exit. If the partition cannot be created, try
-# mode warns once and runs the command unconfined. See README.md.
+# ("isolated") that exists only for the lifetime of that command, moves IRQs and
+# vmstat off its CPUs and pauses NUMA balancing until exit. If the partition
+# cannot be created, try mode warns once and runs the command unconfined. See
+# README.md.
 # The command sees the achieved level as MTL_CPU_ISOLATION=exclusive|none.
 #
 # Usage: isolate.sh [--] <command...>
@@ -24,6 +25,8 @@ STATE_PREFIX=/run/mtl-isolate-
 LOCK=/run/mtl-isolate.lock
 STAT_INTERVAL=/proc/sys/vm/stat_interval
 DEFAULT_AFFINITY=/proc/irq/default_smp_affinity
+# Absent on kernels without CONFIG_NUMA_BALANCING.
+NUMA_BALANCING=/proc/sys/kernel/numa_balancing
 
 mode=${MTL_ISOLATE:-off}
 cg=$CG_ROOT/$CG_PREFIX$$
@@ -131,24 +134,29 @@ irq_moves() {
 
 # Saves the originals to restore_file first, so every exit path can restore them.
 isolate_housekeeping() {
-	local moves old defmask path new total moved=0
+	local moves old numab defmask path new total moved=0
 	old=$(cat "$STAT_INTERVAL")
+	numab=$(cat "$NUMA_BALANCING" 2>/dev/null)
 	moves=$(irq_moves "$1")
 	# IRQs allocated later (VF MSI-X vectors at port open) start from the default mask.
 	defmask=$(cat "$DEFAULT_AFFINITY")
 	if ! { echo "$STAT_INTERVAL $old" && echo "$DEFAULT_AFFINITY $defmask" &&
+		{ [ -z "$numab" ] || echo "$NUMA_BALANCING $numab"; } &&
 		awk 'NF { print $1, $2 }' <<<"$moves"; } 2>/dev/null >"$restore_file"; then
 		rm -f "$restore_file"
-		log "WARNING: cannot write $restore_file; not moving IRQs or vmstat"
+		log "WARNING: cannot write $restore_file; not moving IRQs or vmstat, NUMA balancing unchanged"
 		return
 	fi
 	put "$STAT_INTERVAL" 120
+	# NUMA balancing's scan runs as task work on the thread the tick interrupts,
+	# i.e. the busy MTL schedulers, stalling them for up to ~400 us.
+	[ -z "$numab" ] || put "$NUMA_BALANCING" 0
 	put "$DEFAULT_AFFINITY" "$(mask_without "$defmask" "$1")"
 	while read -r path _ new; do
 		[ -n "$path" ] && put "$path" "$new" && moved=$((moved + 1))
 	done <<<"$moves"
-	total=$(($(wc -l <"$restore_file") - 2))
-	log "moved $moved of $total IRQs off $1, vm.stat_interval $old -> 120; originals in $restore_file"
+	total=$(awk NF <<<"$moves" | wc -l)
+	log "moved $moved of $total IRQs off $1, vm.stat_interval $old -> 120${numab:+, kernel.numa_balancing $numab -> 0}; originals in $restore_file"
 }
 
 restore_housekeeping() {
@@ -159,7 +167,7 @@ restore_housekeeping() {
 		put "$path" "$value" && restored=$((restored + 1))
 	done <"$1"
 	rm -f "$1"
-	log "restored $restored of $total saved settings (vm.stat_interval, IRQ affinities) from $1"
+	log "restored $restored of $total saved settings (sysctls, default IRQ mask, IRQ affinities) from $1"
 }
 
 release_lock() {
