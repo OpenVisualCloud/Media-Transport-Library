@@ -1394,7 +1394,7 @@ def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
     ip_pools.init(session_id=session_id)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(params=["rxtxapp"])
 def application() -> RxTxApp:
     """Application handle used by refactored tests.
 
@@ -1402,6 +1402,10 @@ def application() -> RxTxApp:
     deliberately application-agnostic so individual test modules can later
     parametrise over alternative framework adapters (FFmpeg, GStreamer)
     without churning every signature.
+
+    The param puts ``|application = rxtxapp|`` in the test id, which the
+    nightly report groups results by. It is function-scoped because a
+    session-scoped param makes pytest regroup tests across modules.
     """
     return RxTxApp(RXTXAPP_PATH)
 
