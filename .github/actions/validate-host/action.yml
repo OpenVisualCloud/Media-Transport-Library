@@ -17,6 +17,14 @@ inputs:
       unlabeled runner such as the performance rig gets.
     required: false
     default: ''
+  build_outputs:
+    description: >-
+      toJSON(needs.build.outputs) of the build.yml call this job tests. When
+      set, the job fails before restoring anything unless this checkout's
+      source checksums are the ones that build hashed and built. Empty skips
+      the check.
+    required: false
+    default: ''
 
 outputs:
   shadow_host_ip:
@@ -34,6 +42,16 @@ runs:
     - name: Compute local source checksums
       id: local-checksums
       uses: ./.github/actions/source-checksums
+
+    # Other checksums than the build's either miss the cache below or restore
+    # another tree's artifacts, so the job tests code that was not built.
+    - name: Check this checkout is the code the build job built
+      if: inputs.build_outputs != ''
+      shell: bash
+      env:
+        BUILD_OUTPUTS: ${{ inputs.build_outputs }}
+        CHECKSUMS: ${{ toJSON(steps.local-checksums.outputs) }}
+      run: task ci:workflow -- check-built-sources
 
     - name: Compute exact cache keys
       id: keys
