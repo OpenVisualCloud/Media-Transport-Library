@@ -157,6 +157,10 @@ regression from a test change. Left empty, nothing is overlaid.
   runner is taken.
 - The overlay adds and replaces files but deletes none: a file removed under
   the overlaid paths after the `branch` commit is still there.
+- `Build` takes the same input on a manual run, so a ref can be built on its
+  own, without a test job. Use it to fill the stash before `perf-pytest`,
+  which restores caches with `fail-on-cache-miss` but builds nothing itself.
+  It still queues on the shared `dpdk` build runner.
 
 | Part                                                                 | Comes from      |
 | -------------------------------------------------------------------- | --------------- |
