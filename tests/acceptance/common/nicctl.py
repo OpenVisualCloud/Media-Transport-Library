@@ -367,9 +367,9 @@ class Nicctl:
         whatever runs afterward (e.g. create_vfs()) establishes its own
         bindings idempotently regardless of that churn.
 
-        Best-effort: called from nic_port_list, which every test depends on
-        via VF setup, so a DMA-specific problem here must not fail that
-        fixture the way a real VF-setup problem should.
+        Best-effort: called from the session-scoped host_dma_devices
+        fixture, which app_factory and nic_port_list depend on, so a
+        DMA-specific problem here must not fail session setup.
         """
         try:
             return setup_host_dma(self.host, nic_pci_id)

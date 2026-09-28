@@ -711,7 +711,28 @@ def _capability_gate(request, nic_family):
 
 
 @pytest.fixture(scope="session")
-def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
+def host_dma_devices(hosts: dict, mtl_path) -> None:
+    """Best-effort: bind a DMA channel on each host's primary port NUMA node
+    and store it as host.dma_device (None on a host that serves none -- an
+    optional accelerator, not a setup requirement).
+
+    Session scope so pytest runs it before any function-scoped
+    setup_interfaces binds a VF or PF to vfio-pci, and nic_port_list
+    depends on it for the same reason: on a host's first call,
+    Nicctl.bind_dma()'s one-time vfio_pci reload (to lift Intel DSA's
+    denylist) detaches every device already bound to it, DSA or not.
+
+    Kept apart from nic_port_list so tests that never use a session VF pool
+    (single-host setup_interfaces tests, NICs without SR-IOV such as i225)
+    get the DMA default without also running VF setup.
+    """
+    for host in hosts.values():
+        nicctl = Nicctl(get_host_mtl_path(host, default=mtl_path), host)
+        host.dma_device = nicctl.bind_dma(host.network_interfaces[0].pci_address.lspci)
+
+
+@pytest.fixture(scope="session")
+def nic_port_list(hosts: dict, mtl_path, test_config, host_dma_devices) -> None:
     # Default session-pool size. Tests rarely need more than 6 VFs at once;
     # we cap at the PF's ``sriov_totalvfs`` so a host that exposes only 2
     # VFs per PF still gets a pool of 2 (instead of nicctl creating 2 and
@@ -740,17 +761,6 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         # the global mtl_path fixture.
         host_path = get_host_mtl_path(host, default=mtl_path)
         nicctl = Nicctl(host_path, host)
-
-        # Best-effort: bind a DMA channel on the primary port's own NUMA node
-        # (for app_factory to default RxTxApp's --dma_dev to) *before*
-        # create_vfs below binds VFs to vfio-pci. On this host's first call,
-        # Nicctl.bind_dma()'s one-time vfio_pci reload (to lift Intel DSA's
-        # denylist) detaches every device already bound to it, DSA or not --
-        # calling it first means create_vfs() re-establishes VF bindings
-        # afterward regardless, rather than losing bindings the reload just
-        # stripped. None on a host that serves none -- an optional
-        # accelerator, not a setup requirement.
-        host.dma_device = nicctl.bind_dma(host.network_interfaces[0].pci_address.lspci)
 
         # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
@@ -1514,15 +1524,15 @@ def _register_local_libs(hosts, mtl_path):
 
 
 @pytest.fixture(scope="session")
-def app_factory(mtl_path, hosts, nic_port_list):
+def app_factory(mtl_path, hosts, host_dma_devices):
     """Return a factory that creates framework adapter instances.
 
     Usage: app = app_factory("ffmpeg") or app = app_factory("rxtxapp")
     """
-    # nic_port_list sets host.dma_device; depending on it (not just its
-    # result) guarantees that already happened. Single-host only: every app
-    # this factory returns gets host #1's dma_dev, wrong for a future
-    # dual-host DMA test's rx_app -- none exists yet to need per-host values.
+    # host_dma_devices sets host.dma_device; depending on it guarantees that
+    # already happened. Single-host only: every app this factory returns gets
+    # host #1's dma_dev, wrong for a future dual-host DMA test's rx_app --
+    # none exists yet to need per-host values.
     host = list(hosts.values())[0]
     dma_dev = getattr(host, "dma_device", None)
 
