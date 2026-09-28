@@ -73,14 +73,14 @@ VFs of one PF are switched inside the NIC and get no RX timestamp, so on a host
 with two cabled ports interleave the VFs: `TEST_PORT_1=<PF0 VF0>`,
 `TEST_PORT_2=<PF1 VF0>`, `TEST_PORT_3=<PF0 VF1>`, `TEST_PORT_4=<PF1 VF1>`.
 
-**CI.** A CI host has one NIC with two cabled PFs. `.github/scripts/gtest.sh`
-gives the NoCtx run this layout with PF1 a sibling function of PF0 (same PCI
-bus and device, never another NIC), for example
-`15:01.0,15:11.0,15:01.1,15:11.1` on an E830 with PFs `15:00.0` and
-`15:00.1`. If only one PF has `vfio-pci` VFs, it passes the four VFs of that
-PF that the other suites use. It sets `NOCTX_REQUIRE_STRICT=1`, so there the six
-strict tests fail instead of skipping, and `MTL_ISOLATE=require`, so they also
-fail without an exclusive CPU partition.
+**CI.** `bind-test-ports` gives the chosen PF six VFs and the other port of the
+same card two, when its link is up (`doc/ci_runner_setup.md`). For the NoCtx run
+`.github/scripts/gtest.sh` interleaves them as above, for example
+`15:01.0,15:11.0,15:01.1,15:11.1` on an E830 with PFs `15:00.0` and `15:00.1`.
+Without VFs on the other port it passes the four VFs of one PF that the other
+suites use. It sets `NOCTX_REQUIRE_STRICT=1`, so there the six strict tests fail
+instead of skipping, and `MTL_ISOLATE=require`, so they also fail without an
+exclusive CPU partition.
 
 **Policy.** A SKIP means the host cannot measure wire timing, never that pacing
 passed; the message gives the reason. No NoCtx test skips because of CPU

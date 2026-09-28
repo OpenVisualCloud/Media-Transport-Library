@@ -240,8 +240,9 @@ need. Gtest and pytest jobs never compile, install, or reload a driver.
 
 Preparing the NIC is likewise the job's step and not the suite's work. A gtest
 job runs `sudo task ci:bind-test-ports`, which creates the trusted VFs on one
-PF and binds two DMA channels on that PF's NUMA node; `.github/scripts/gtest.sh`
-then only reads what that left, runs the cases and reports. A retry re-runs the
+PF, two more on the other port of its card for NoCtx, and binds two DMA channels
+on that PF's NUMA node; `.github/scripts/gtest.sh` then only reads what that
+left, runs the cases and reports. A retry re-runs the
 case on the same ports: a card rebuilt under a running suite is how a bare-metal
 runner ends up wedged, and a case that only passes after its NIC was rebuilt is
 not a pass worth reporting.

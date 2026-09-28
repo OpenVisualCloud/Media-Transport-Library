@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Prepares this host's NIC for the gtest suite: trusted VFs on one ICE PF and
-# two DMA channels beside it, all bound to vfio-pci.
+# Prepares this host's NIC for the gtest suite: trusted VFs on one ICE PF, two
+# on the other port of its card for NoCtx, and two DMA channels beside them, all
+# bound to vfio-pci.
 #
 # This is the only step of a gtest job that changes NIC state. The suite reads
 # what this leaves behind and runs the tests; it does not rebuild a NIC under
@@ -23,6 +24,7 @@ fi
 
 : "${MIN_VFIO_PORTS:=4}"    # Ports of one PF the suite runs on
 : "${VF_COUNT:=6}"          # VFs to create; the suite uses MIN_VFIO_PORTS of them
+: "${SIBLING_VF_COUNT:=2}"  # VFs on the other port of the card, the NoCtx RX ports
 : "${DMA_CHANNELS:=2}"      # DMA channels to serve when the host has them
 : "${MIN_HUGEPAGES:=2048}"  # 2 MB pages per NUMA node: 4 GiB, what one case's EAL reserves
 : "${HOST_OP_TIMEOUT:=180}" # Hard bound for one NIC operation
@@ -190,7 +192,7 @@ report_dma_shortfall() {
 }
 
 # Whether any of the chosen channels still has to be taken -- reading the
-# ${channels} the main flow selected, as bound_vf_count reads ${pf}.
+# ${channels} the main flow selected.
 needs_bind() {
 	local channel
 	for channel in "${channels[@]}"; do
@@ -199,11 +201,11 @@ needs_bind() {
 	return 1
 }
 
-# The VFs of the chosen PF that are on vfio-pci. Read from sysfs rather than
-# from a listing, because this runs right after creating them.
+# The VFs of PF $1 that are on vfio-pci. Read from sysfs rather than from a
+# listing, because this runs right after creating them.
 bound_vf_count() {
 	local virtfn count=0
-	for virtfn in "${SYSFS_PCI_DEVICES}/${pf}/virtfn"*; do
+	for virtfn in "${SYSFS_PCI_DEVICES}/$1/virtfn"*; do
 		[ -e "${virtfn}" ] || continue
 		[ "$(basename "$(readlink -f "${virtfn}/driver" 2>/dev/null)")" = vfio-pci ] || continue
 		count=$((count + 1))
@@ -284,6 +286,20 @@ bounded "nicctl.sh create_tvf ${pf}" \
 	exit 1
 }
 
+# NoCtx strict pacing needs RX on another port of this card: traffic between VFs
+# of one PF gets no RX timestamp. Fewer than MIN_VFIO_PORTS VFs, so gtest.sh
+# still picks ${pf} for the other suites.
+sibling=$(awk -v pf="${pf}" -v dev="${pf%.*}." \
+	'$3 == "ice" && $2 != pf && index($2, dev) == 1 {print $2; exit}' "${ports}")
+if [ -z "${sibling}" ]; then
+	log_error "no other port of ${pf}'s card has its link up: the NoCtx strict pacing cases will fail"
+else
+	echo "Preparing ${sibling} with ${SIBLING_VF_COUNT} trusted VFs for NoCtx"
+	bounded "nicctl.sh create_tvf ${sibling}" \
+		"${root_dir}/script/nicctl.sh" create_tvf "${sibling}" "${SIBLING_VF_COUNT}" ||
+		log_error "nicctl.sh create_tvf ${sibling} failed: the NoCtx strict pacing cases will fail"
+fi
+
 served=()
 for channel in "${channels[@]}"; do
 	if dma_channels "" bound | grep -qFx "${channel}"; then
@@ -309,7 +325,7 @@ if [ "${#served[@]}" -lt "${DMA_CHANNELS}" ] && [ "${#served[@]}" -lt "${#channe
 	report_dma_shortfall "${#served[@]}"
 fi
 
-bound=$(bound_vf_count)
+bound=$(bound_vf_count "${pf}")
 if [ "${bound}" -lt "${MIN_VFIO_PORTS}" ]; then
 	log_error "${pf} came back with ${bound} vfio-pci VF(s), and the suite needs ${MIN_VFIO_PORTS}."
 	log_error "A VF that does not bind is usually a missing IOMMU: check that the kernel"
@@ -320,3 +336,9 @@ fi
 bounded "nicctl.sh list all" "${root_dir}/script/nicctl.sh" list all
 bounded "dpdk-devbind.py --status-dev dma" dpdk-devbind.py --status-dev dma
 echo "Prepared ${pf}: ${bound} vfio-pci VFs, DMA channels: ${served[*]:-none}"
+if [ -n "${sibling}" ]; then
+	bound=$(bound_vf_count "${sibling}")
+	echo "Prepared ${sibling} for NoCtx: ${bound} vfio-pci VFs"
+	[ "${bound}" -ge "${SIBLING_VF_COUNT}" ] ||
+		log_error "${sibling} came back with ${bound} vfio-pci VF(s), and NoCtx needs ${SIBLING_VF_COUNT}."
+fi
