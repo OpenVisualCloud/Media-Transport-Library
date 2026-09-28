@@ -22,10 +22,14 @@ struct st_frame;
 /* Strict ST20p pacing tolerances on packet 0 of every frame. */
 /* Elapsed time is measured against frame zero, so drift is not forgiven per frame. */
 constexpr int64_t kNoCtxPacingElapsedErrorMaxNs = 10 * NS_PER_US;
-/* Packet 0 cannot arrive before its launch; this is only PHC cross-timestamp error. */
+/* Packet 0 cannot arrive before its launch; this is only PHC read error, u included. */
 constexpr int64_t kNoCtxPacingEarlyMaxNs = 1 * NS_PER_US;
 /* Wire and NIC latency of packet 0 plus launch jitter, like the elapsed bound. */
 constexpr int64_t kNoCtxPacingLateMaxNs = 10 * NS_PER_US;
+/* A PHC read without a NIC cross-timestamp (E810) must place it to +-this. */
+constexpr uint64_t kPhcReadMaxUncertaintyNs = 1 * NS_PER_US;
+/* The PHC is read about a frame after the NIC timestamp: 5 ppm is 0.2 us at 25 fps. */
+constexpr double kPhcRateMaxPpm = 5.0;
 /* A user-paced plan starts this far past PTP now, rounded up to a frame. */
 constexpr uint64_t kSt20pUserPacingLeadNs = 800 * NS_PER_MS;
 /* St20pRedundantStreamPlan starts at PTP zero plus this plus its latency. */
@@ -37,7 +41,21 @@ std::string strictPacingTopologyError(const char* tx_port, const char* rx_port);
 /* NOCTX_REQUIRE_STRICT=1: an unsuitable strict topology fails instead of skipping. */
 bool strictPacingRequired();
 
-/* Converts NIC RX timestamps from the RX port's PHC to CLOCK_MONOTONIC_RAW. */
+/* A CLOCK_MONOTONIC_RAW time known to +-u_ns. */
+struct RxTime {
+  uint64_t ns = 0;
+  int64_t u_ns = 0;
+};
+
+/* The first frame of a strict check, which elapsed time is measured from. */
+struct PacingAnchor {
+  RxTime rx;
+  uint64_t expected_ns = 0;
+};
+
+/* Converts NIC RX timestamps from the RX port's PHC to CLOCK_MONOTONIC_RAW, to +-u
+ * (kPhcReadMaxUncertaintyNs), fails a PHC rate off by more than kPhcRateMaxPpm and
+ * prints the rate when destroyed. */
 class RxPhcClock {
  public:
   RxPhcClock() = default;
@@ -46,11 +64,17 @@ class RxPhcClock {
   ~RxPhcClock();
   /* False without a NIC timestamp; frame 0 skips unless strictPacingRequired(). */
   bool receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_timestamp,
-                               const char* port, mtl_handle mt, uint64_t* mono_ns);
+                               const char* port, mtl_handle mt, RxTime* rx);
 
  private:
+  double rateOffsetPpm() const;
+  void expectRate(const char* port, uint64_t uncertainty_ns);
   int fd = -1;
   bool skipped = false;
+  bool rate_failed = false;
+  uint64_t first_phc_ns = 0, first_mono_ns = 0, first_uncertainty_ns = 0;
+  uint64_t last_phc_ns = 0, last_mono_ns = 0;
+  uint64_t uncertainty_max_ns = 0;
 };
 
 /* The NoCtx fake PTP clock is CLOCK_MONOTONIC_RAW minus a start offset. */
@@ -76,14 +100,15 @@ struct PacingErrorLog {
  * 2. timestamp is the media-clock RTP header value      expectRtpTimestamp()
  * 3. frame 0 RTP on the k*T + TR_offset - VRX*trs grid  expectRtpOnEpoch()
  * 4. RTP step == tick90k(T)                             rxTestFrameModifier()
- * With a NIC RX timestamp (RxPhcClock), packet 0 of frame n against frame 0 + n*T:
+ * With a NIC RX timestamp (RxPhcClock), at both ends of its +-u, packet 0 of frame n
+ * against frame 0 + n*T:
  * 5. launch within -kNoCtxPacingEarlyMaxNs..+kNoCtxPacingLateMaxNs  expectPacingLaunch()
  * 6. elapsed from frame 0 within +-kNoCtxPacingElapsedErrorMaxNs    expectPacingElapsed()
  */
 class St20pDefaultPacingOracle : public FrameTestStrategy {
  protected:
   uint64_t lastTimestamp = 0;
-  uint64_t receiveAnchorTimestamp = 0;
+  PacingAnchor anchor;
   uint64_t firstLaunchNs = 0;
   RxPhcClock rxPhc;
   PacingErrorLog pacingLog;
@@ -103,7 +128,7 @@ class St20pDefaultPacingOracle : public FrameTestStrategy {
  * 4. timestamp is the media-clock RTP header value      expectRtpTimestamp()
  * 5. RTP == tick90k(expected TX)                        verifyMediaClock()
  * 6. RTP step == tick90k(T)                             verifyTimestampStep()
- * 2 and 3 need a NIC RX timestamp (RxPhcClock).
+ * 2 and 3 need a NIC RX timestamp (RxPhcClock) and hold at both ends of its +-u.
  */
 class St20pUserPacingOracle : public FrameTestStrategy {
  public:
@@ -133,8 +158,7 @@ class St20pUserPacingOracle : public FrameTestStrategy {
   double frameTimeNs = 0.0;
   uint64_t startingTime = 0;
   uint64_t lastTimestamp = 0;
-  uint64_t receiveAnchorTimestamp = 0;
-  uint64_t expectedAnchorTime = 0;
+  PacingAnchor anchor;
   std::vector<double> timestampOffsetMultipliers;
   RxPhcClock rxPhc;
   PacingErrorLog pacingLog;

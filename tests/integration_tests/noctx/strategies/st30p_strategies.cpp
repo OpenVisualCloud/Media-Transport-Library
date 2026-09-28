@@ -132,13 +132,13 @@ void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
                                                 uint64_t expected_timestamp_ns) {
   auto* handler = static_cast<St30pHandler*>(parent);
   const mtl_handle mt = handler->ctx->handle;
-  uint64_t receive_mono_ns;
+  RxTime rx;
   if (!rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
                                      handler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
-                                     mt, &receive_mono_ns))
+                                     mt, &rx))
     return;
 
-  const uint64_t receive_time_ns = monotonicRawToPtp(mt, receive_mono_ns);
+  const uint64_t receive_time_ns = monotonicRawToPtp(mt, rx.ns);
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
   int64_t expected_delta_ns = kSt30pRxToleranceNs;
@@ -146,8 +146,8 @@ void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
     expected_delta_ns = kSt30pFirstBufferRxToleranceNs;
   }
 
-  EXPECT_LE(std::abs(delta_ns), expected_delta_ns)
-      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
+  EXPECT_LE(std::abs(delta_ns) + rx.u_ns, expected_delta_ns)
+      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns << "+-" << rx.u_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected timestamp(ns): " << expected_timestamp_ns;
 }
