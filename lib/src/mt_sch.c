@@ -5,6 +5,9 @@
 #include "mt_sch.h"
 
 #include <signal.h>
+#ifndef WINDOWSENV
+#include <numaif.h>
+#endif
 
 #include "mt_instance.h"
 #include "mt_log.h"
@@ -120,6 +123,35 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
   return enabled;
 }
 
+/* MPOL_LOCAL lacks the default policy's MPOL_F_MOF, so a NUMA balancing scan run on this
+ * busy thread rewrites no PTEs and faults migrate nothing; allocation is unchanged. */
+static bool sch_set_local_mempolicy(struct mtl_sch_impl* sch) {
+#ifndef WINDOWSENV
+  int mode;
+  int ret = get_mempolicy(&mode, NULL, 0, NULL, 0);
+  if (!ret && mode != MPOL_DEFAULT) return false;
+  if (!ret) ret = set_mempolicy(MPOL_LOCAL, NULL, 0);
+  if (!ret) return true;
+  if (errno == ENOSYS)
+    dbg("%s(%d), no NUMA mempolicy support\n", __func__, sch->idx);
+  else
+    warn_once("%s(%d), no MPOL_LOCAL, %s, NUMA balancing may stall tasklets\n", __func__,
+              sch->idx, strerror(errno));
+#else
+  MTL_MAY_UNUSED(sch);
+#endif
+  return false;
+}
+
+/* EAL lcores go back to the pool for other users. */
+static void sch_restore_default_mempolicy(bool local) {
+#ifndef WINDOWSENV
+  if (local) set_mempolicy(MPOL_DEFAULT, NULL, 0);
+#else
+  MTL_MAY_UNUSED(local);
+#endif
+}
+
 static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
@@ -128,6 +160,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
+
+  bool local_mempolicy = sch_set_local_mempolicy(sch);
 
   num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets, t_pid %d\n", __func__, idx, num_tasklet,
@@ -201,6 +235,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     if (ops->stop) ops->stop(ops->priv);
   }
 
+  sch_restore_default_mempolicy(local_mempolicy);
   rte_atomic32_set(&sch->stopped, 1);
   info("%s(%d), end with %d tasklets\n", __func__, idx, num_tasklet);
   return 0;

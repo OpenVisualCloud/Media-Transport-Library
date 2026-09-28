@@ -399,6 +399,18 @@ This section includes some optional guides. If you are not familiar with the det
 ```{include} chunks/_ptp_setup.md
 ```
 
+### 7.2. Disable Automatic NUMA Balancing
+
+On timing-critical hosts, disable automatic NUMA balancing. Its periodic scans run on the busy MTL scheduler threads and can stall them for up to a few hundred microseconds:
+
+```bash
+sudo sysctl -w kernel.numa_balancing=0
+# keep it across reboots
+echo "kernel.numa_balancing=0" | sudo tee /etc/sysctl.d/99-mtl-numa-balancing.conf
+```
+
+MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`, which only shortens those scans. See also the [sysctl tuning list](experimental/performance_optimizations.md).
+
 ## 8. FAQs
 
 ### 8.1. Notes After Reboot

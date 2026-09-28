@@ -135,6 +135,12 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
+Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
+- Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
+- Mitigation only: scans on other default-policy threads still mark shared PTEs, so scheduler threads still take hinting faults; `kernel.numa_balancing=0` is the fix
+- Pthread-mode schedulers inherit the policy of the thread calling `sch_start()`, usually `mtl_init()`'s `numa_bind()` `MPOL_BIND` on multi-node hosts, and keep it; plain `MPOL_BIND` has no `MPOL_F_MOF` either; EAL lcores predate that bind
+- Other busy lib threads (`rv_pkt_lcore_func`, shared RSS, socket datapath) are not opted out
+
 ### Pthread-Mode Tasklets Are Unregistered Non-EAL Threads
 - `MTL_FLAG_TASKLET_THREAD` schedulers come from a bare `pthread_create()` (`mt_sch.c`); `lib/` contains zero `rte_thread_register()` calls
 - So `rte_lcore_id()` returns `LCORE_ID_ANY`, and each DPDK per-lcore mechanism reacts differently: `RTE_LCORE_VAR` pointers are invalid, `rte_random` falls back to one shared "unregistered" state, while `RTE_PER_LCORE` (`__thread`, e.g. `rte_errno`) still gives every thread its own copy
