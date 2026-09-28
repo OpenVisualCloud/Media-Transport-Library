@@ -21,8 +21,10 @@ DMA_DEVICE_IDS = {
     "8086:0b00": "Intel CBDMA (QuickData Technology)",
 }
 
+DSA_DEVICE_ID = "8086:0b25"
+
 # Default device ID to search for (DSA first, then CBDMA as fallback)
-DEFAULT_DMA_DEVICE_IDS = ["8086:0b25", "8086:0b00"]
+DEFAULT_DMA_DEVICE_IDS = [DSA_DEVICE_ID, "8086:0b00"]
 
 # PCI address pattern: domain:bus:device.function (e.g., 0000:6a:01.0)
 PCI_ADDRESS_PATTERN = re.compile(
