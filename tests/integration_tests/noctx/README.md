@@ -38,7 +38,8 @@ with `--gtest_list_tests`, run each `KahawaiTest --auto_start_stop
 `NOCTX_ISOLATE_CASES` (comma-separated, default: the six strict tests listed
 under [Requirements](#requirements-and-skipfail-policy)) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
 `EXIT_ON_FAILURE=0` continues past a failure and exits 1 at the end if any
-case failed; `BUILD_PATH` overrides the binary, which defaults to
+case failed; `TEST_P_SIP` is passed as `--p_sip`, and the multicast groups follow
+it (`gtest.sh` sets a per-host subnet); `BUILD_PATH` overrides the binary, which defaults to
 `.local_install/mtl/bin/KahawaiTest` if `.local_install` exists, else
 `build/tests/KahawaiTest`. One case by hand:
 
