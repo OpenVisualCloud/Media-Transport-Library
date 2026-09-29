@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'branch to run scans on'
-        default: 'main'
+        description: 'branch to run scans on (empty: the branch the workflow runs from)'
+        default: ''
         type: string
 
 
