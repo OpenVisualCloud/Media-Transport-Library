@@ -55,8 +55,6 @@ RUN export CFLAGS="-Wno-error=format-truncation" && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 26.04, runtime/final stage
-ARG MTL_REPO
-ARG IMAGE_CACHE_REGISTRY
 FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"

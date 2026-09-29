@@ -52,8 +52,6 @@ RUN ./build.sh unit && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 24.04, runtime/final stage
-ARG MTL_REPO
-ARG IMAGE_CACHE_REGISTRY
 FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
