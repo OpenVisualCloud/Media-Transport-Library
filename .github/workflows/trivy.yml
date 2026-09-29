@@ -162,6 +162,16 @@ jobs:
           format: spdx-json
           output: Trivy-sbom.spdx.json
 
+      # trivy fs writes downloadLocation "git+." for a checkout, which is not valid SPDX
+      - name: Set SBOM download locations
+        run: |
+          location="git+${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}@$(git rev-parse HEAD)"
+          jq --arg location "$location" '
+            (.packages[] | select(.downloadLocation == "git+.") | .downloadLocation) = "NOASSERTION"
+            | (.packages[] | select(.primaryPackagePurpose == "SOURCE") | .downloadLocation) = $location
+          ' Trivy-sbom.spdx.json > Trivy-sbom.spdx.json.tmp
+          mv Trivy-sbom.spdx.json.tmp Trivy-sbom.spdx.json
+
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
