@@ -24,6 +24,7 @@ enum ut_dev_event {
   UT_DEV_EVENT_TIMESYNC_READ,
   UT_DEV_EVENT_PORT_START,
   UT_DEV_EVENT_PORT_STOP,
+  UT_DEV_EVENT_TX_RL_COMMIT,
 };
 
 ut_dev_ctx* ut_dev_create_ctx(void);
@@ -41,6 +42,11 @@ size_t ut_dev_pci_devarg_size(void);
 void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, size_t len);
 int ut_dev_start_port(ut_dev_ctx* ctx);
 int ut_dev_create_ports(ut_dev_ctx* ctx);
+/** Marks the port a started iavf VF at a 25G link, as mt_dev_free() finds it. */
+void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
+                                enum st21_tx_pacing_way pacing_way);
+void ut_dev_set_port_stopped(ut_dev_ctx* ctx);
+int ut_dev_free_ports(ut_dev_ctx* ctx);
 /* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
@@ -73,6 +79,8 @@ int ut_dev_event_count(const ut_dev_ctx* ctx);
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index);
 bool ut_dev_port_started(const ut_dev_ctx* ctx);
 bool ut_dev_timesync_feature(const ut_dev_ctx* ctx);
+/** peak.rate, in bytes/s, of the last shaper profile added. */
+uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx);
 
 #ifdef __cplusplus
 }

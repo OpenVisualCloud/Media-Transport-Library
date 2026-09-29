@@ -772,6 +772,27 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   return 0;
 }
 
+/* the PF keeps VF queue rates after this process, the next one may not program them */
+static void dev_tx_queues_reset_line_rate(struct mt_interface* inf) {
+  enum mtl_port port = inf->port;
+  uint64_t line_bps = (uint64_t)inf->link_speed * 1000 * 1000 / 8;
+  int ret = 0;
+
+  if (!line_bps) {
+    warn("%s(%d), unknown link speed, tx queues keep their rate limit\n", __func__, port);
+    return;
+  }
+
+  for (uint16_t q = 0; q < inf->nb_tx_q && ret >= 0; q++)
+    ret = dev_tx_queue_set_rl_rate(inf, q, line_bps);
+  if (ret < 0)
+    warn("%s(%d), tx queues may keep their rate limit, reset fail %d\n", __func__, port,
+         ret);
+  else
+    info("%s(%d), tx queues reset to line rate %" PRIu64 " bytes/s\n", __func__, port,
+         line_bps);
+}
+
 static int dev_stop_port(struct mt_interface* inf) {
   int ret;
   uint16_t port_id = inf->port_id;
@@ -2103,6 +2124,10 @@ int mt_dev_free(struct mtl_main_impl* impl) {
       mt_rte_free(inf->dev_stats_sw);
       inf->dev_stats_sw = NULL;
     }
+    /* iavf locks TM after one commit on a stopped port (mtl_init failure), rates stay */
+    if (inf->tx_rl_root_active && inf->drv_info.drv_type == MT_DRV_IAVF &&
+        (inf->status & MT_IF_STAT_PORT_STARTED))
+      dev_tx_queues_reset_line_rate(inf);
     dev_stop_port(inf);
   }
 

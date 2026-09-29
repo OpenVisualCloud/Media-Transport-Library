@@ -359,6 +359,7 @@ Intel E810 Traffic Manager enforces per-flow rate limits:
 - NIC hardware spaces packets — CPU just enqueues
 - Sub-microsecond accuracy, zero CPU overhead for timing
 - Max shapers: `MT_MAX_RL_ITEMS = 128` per port
+- IAVF queue rates persist in the PF across processes, so `mt_dev_free()` puts every queue back to line rate; a killed RL process, a `mtl_init()` that fails in `mt_dev_create()` or a link speed iavf reports as 0 (e.g. 200G) still leave them (a port that never built the RL root never programs TM, as stock ice VFs crash in `iavf_tm_node_add`)
 
 ### Software TSC Pacing — Fallback
 When no hardware RL available:
