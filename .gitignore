@@ -111,6 +111,10 @@ script/xdp-tools
 #Generated documentation
 doc/_build
 
+# The output of .github/scripts/ci/fuzz.sh
+fuzz-report/
+fuzz-corpus/
+
 # Gpu direct files
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*

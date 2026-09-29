@@ -1,0 +1,111 @@
+---
+name: Fuzz Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  # A schedule runs on the default branch only, so this is the nightly run of main.
+  schedule:
+    - cron: '43 1 * * *' # Every day at 01:43 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # A pull request runs the targets only when the fuzz_tests filter matches.
+      # The nightly run and a manual run always run them.
+      fuzz_tests: ${{ github.event_name != 'pull_request' || steps.filter.outputs.fuzz_tests == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          filters: .github/path_filters.yml
+
+  # The fuzz targets need no NIC and no hugepages, so they run on a GitHub-hosted
+  # runner. Clang 14 of Ubuntu 22.04 builds them; clang 18 of Ubuntu 24.04 does
+  # not (T-115).
+  fuzz-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.fuzz_tests == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      # A pull request gets a short run. The nightly run gets the long run.
+      FUZZ_TIME: ${{ github.event_name == 'pull_request' && '60' || '600' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Install the dependencies and DPDK
+        run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          SETUP_ENVIRONMENT: 1
+          SETUP_BUILD_AND_INSTALL_DPDK: 1
+          CICD_BUILD: 1
+
+      # Each run starts from the corpus of the last run. A pull request can read
+      # the cache of main, and main cannot read the cache of a pull request.
+      - name: Restore the fuzz corpus
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: fuzz-corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Build the fuzz targets with clang and ASan
+        run: task ci:fuzz -- build
+
+      - name: Run each fuzz target for FUZZ_TIME seconds
+        run: task ci:fuzz -- run
+
+      - name: Upload the fuzz report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-report
+          path: fuzz-report/
+          if-no-files-found: ignore
+
+  # The one check to require in branch protection. It always runs, so it
+  # reports even when the path filter skips the fuzz targets, and it fails only
+  # if a job it needs failed or was cancelled.
+  fuzz-tests-result:
+    name: fuzz-tests-result
+    needs: [changes, fuzz-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All fuzz targets ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: A fuzz target failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
