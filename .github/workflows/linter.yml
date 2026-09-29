@@ -116,10 +116,9 @@ jobs:
           # and would destroy its deliberate grouping. Only changed files are
           # linted, which is why this has not blocked anyone yet.
           VALIDATE_ENV: true
-          # eslint over 135 *.ts. Cannot move into checkpatch until
-          # tests/tools/perf_debug_mcp/package.json is tracked -- .gitignore's
-          # blanket `*.json` currently excludes it, so the project has no
-          # buildable or lintable configuration from a clean clone.
+          # eslint over 135 *.ts. Cannot move into checkpatch until the
+          # repository has an eslint configuration; until then super-linter
+          # lints them with its bundled rules.
           VALIDATE_TYPESCRIPT_ES: true
           # rustfmt and clippy. All three edition validators were active before
           # this split and stay active; narrowing them to 2021, which is what

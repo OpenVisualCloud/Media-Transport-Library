@@ -1,0 +1,27 @@
+{
+  "name": "perf-debug-mcp",
+  "version": "0.5.2",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:native": "./build.sh --skip-ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

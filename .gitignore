@@ -118,6 +118,13 @@ gpu_direct/subprojects/*
 _temp*
 gpu_offline_install
 
+# perf_debug_mcp: its npm manifests are tracked, its install and build output is not
+!tests/tools/perf_debug_mcp/package.json
+!tests/tools/perf_debug_mcp/package-lock.json
+!tests/tools/perf_debug_mcp/tsconfig.json
+tests/tools/perf_debug_mcp/node_modules/
+tests/tools/perf_debug_mcp/dist/
+
 # Ecosystem
 FFmpeg-release-*
 script/dpdk_*
