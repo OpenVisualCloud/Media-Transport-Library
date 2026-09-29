@@ -174,7 +174,7 @@ you must also synchronize the system's physical clock using `phc2sys`.
 The following message informs you about the amount of frames that had incorrectly
 defined timestamps by the user (this error message should be 0).
 
-```log
+```text
  TX_VIDEO_SESSION(0,0): error user timestamp 250
 ```
 

@@ -1,7 +1,7 @@
 # Media Transport Library
 
 > [!TIP]
-> [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
+> [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/).
 
 [![License](https://img.shields.io/badge/license-BSD_3_Clause-stable.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/LICENSE)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://securityscorecards.dev/viewer/?uri=github.com/OpenVisualCloud/Media-Transport-Library)

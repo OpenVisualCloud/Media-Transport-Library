@@ -621,4 +621,5 @@ sudo ipcrm -m <shmid>
 ## 9. [Intel I226-V Runtime Flow](chunks/_run_i226.md)
 
 ```{include} chunks/_run_i226.md
+:relative-docs: ../
 ```

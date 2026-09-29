@@ -208,9 +208,6 @@ platform is being brought up.
 The label was served by nothing until `mtl-runner-12` came online on 2026-08-21,
 so the leg was queued-and-cancelled on every run before that and looked like a
 failure.
-[`i225_leg_analysis.md`](i225_leg_analysis.md) has that history, the one API field
-that distinguishes "no runner has this label" from "the fleet is busy", and what
-the first real run failed on.
 
 Turning capture on for this leg takes more than dropping `no_capture`, and the
 failure mode if you only drop it is total: `gen_config.py` derives the sniff

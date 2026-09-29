@@ -1,5 +1,27 @@
 # Changelog
 
+## Changelog for 26.09
+
+<!-- Draft from the commits since v26.01. Complete it before the release tag. -->
+
+* DPDK: add support for DPDK 26.03 and 26.07
+* ice: add support for driver version 2.5.4, 2.6.6, and 2.6.7; iavf: add support for 4.13.35
+* e830: add TX time launch support for TSN pacing
+* Add the Intel I226-V run guide (DPDK and AF_XDP flows) and an I225 CI leg
+* Add a global flag that lets ports be down at initialization time, also in GStreamer
+* st20p: add st20p_tx_notify_ext_frame_done for a safe ext_frame lifecycle
+* TX pipelines: add late-frame drop, and a late-frame check in st20p
+* st40p: add interlace auto-detection on RX; add st40p support to RxTxApp
+* st40: add RFC 8331 encode and decode helpers
+* Stats: add per-port RX stats with reorder and duplicate counters, and frame-level counters
+* RTCP: bound NACK parsing and retransmit work; count invalid RTCP packets per drop reason
+* FFmpeg: add 12-bit and UYVY pixel formats, PTP AVOptions, and p2-p7 NIC AVOptions
+* Add the CPU isolation guide and scripts, and the set_tai_offset tool
+* Add the MTL with MXL ecosystem bridge
+* Remove the deprecated user-space UDP stack and the deprecated gst_mtl_st40_rx plugin
+* Documentation: add the acceptance test, isolation, stats, fuzzing, and GStreamer guides to the site
+* General bugfixes and stability improvements
+
 ## Changelog for 26.01
 
 * DPDK: add support for DPDK 25.03, 25.07, and 25.11

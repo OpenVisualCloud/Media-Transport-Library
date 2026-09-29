@@ -52,7 +52,7 @@ both-workflows)
 	;;
 docs-dependencies)
 	sudo apt-get update -y
-	sudo apt-get install -y --no-install-recommends make python3 python3-pip python3-sphinx
+	sudo apt-get install -y --no-install-recommends make python3 python3-venv
 	;;
 coverity-dependencies)
 	sudo apt-get update -y

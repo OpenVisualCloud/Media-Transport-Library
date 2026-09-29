@@ -4,7 +4,7 @@
 
 Instance type tested: **m6i.nxlarge**, **m6i.metal**
 
-(check the bandwidth limitation here: [network-performance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose-instances.html#general-purpose-network-performance))
+(check the bandwidth limitation here: [network-performance](https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_network))
 
 Images tested: **Amazon Linux 2023, Amazon Linux 2**
 

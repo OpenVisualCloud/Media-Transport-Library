@@ -30,7 +30,7 @@ Has header "sys/sdt.h" : YES
 Message: usdt tools check ok, build with USDT support
 ```
 
-Then please find all USDT probes available in MTL by the `bpftrace` tool, the `bpftrace` installation please follow <https://github.com/bpftrace/bpftrace/blob/master/INSTALL.md>.
+Then please find all USDT probes available in MTL by the `bpftrace` tool, the `bpftrace` installation please follow the [bpftrace Quick Start](https://github.com/bpftrace/bpftrace#quick-start).
 
 ```bash
 # customize the so path as your setup
