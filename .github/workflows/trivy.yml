@@ -128,7 +128,7 @@ jobs:
           sarif_file: Trivy-manager-dockerfile.sarif
 
   trivy-sbom:
-    name: spdx sbom output
+    name: spdx sbom and vulnerability scan
     runs-on: ubuntu-22.04
     steps:
       - name: Harden Runner
@@ -180,6 +180,32 @@ jobs:
         with:
           name: trivy-sbom-spdx
           path: Trivy-sbom.spdx.json
+
+      - name: Run Trivy vulnerability scanner on the SBOM with json output
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: Trivy-sbom.spdx.json
+          cache: false
+          format: json
+          exit-code: 0
+          output: Trivy-sbom-vulnerabilities.json
+
+      - name: Upload vulnerability report as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-sbom-vulnerabilities
+          path: Trivy-sbom-vulnerabilities.json
+
+      - name: Fail on CRITICAL or HIGH vulnerabilities in the SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: Trivy-sbom.spdx.json
+          cache: false
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
 
   trivy-stdout:
     name: table output scan
