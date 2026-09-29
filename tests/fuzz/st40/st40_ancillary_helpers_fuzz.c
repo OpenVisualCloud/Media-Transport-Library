@@ -1,4 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file st40_ancillary_helpers_fuzz.c
+ *
+ * Sends each input to the public ST 2110-40 helper functions st40_set_udw(),
+ * st40_get_udw(), st40_calc_checksum(), st40_add_parity_bits() and
+ * st40_check_parity_bits().
+ *
+ * The harness copies the first 512 bytes of the input to a scratch buffer, and takes
+ * the word index, the word value and the word count from the input. It starts no EAL.
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

@@ -1,4 +1,17 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file st40_rx_rtp_fuzz.c
+ *
+ * Sends each input as one packet to rx_ancillary_session_handle_pkt(), the RX path of
+ * an ST 2110-40 session of the type ST40_TYPE_RTP_LEVEL.
+ *
+ * The input is a full packet that starts with the Ethernet header. The harness ignores
+ * an input shorter than struct st_rfc8331_anc_hdr (62 bytes) and uses only the first
+ * 2048 bytes. The notify callback empties the RTP ring after each packet, so the
+ * harness releases each mbuf.
+ */
+
 #include <rte_eal.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
@@ -132,6 +145,7 @@ static void st40_fuzz_reset_context(void) {
   g_session.mgr = &g_mgr;
   g_session.packet_ring = g_ring;
   g_session.attached = true;
+  g_session.ops.type = ST40_TYPE_RTP_LEVEL;
   g_session.ops.num_port = 1;
   g_session.ops.payload_type = 0;
   g_session.ops.interlaced = false;

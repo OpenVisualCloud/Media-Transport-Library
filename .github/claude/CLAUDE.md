@@ -157,7 +157,9 @@ Host prep: `.github/scripts/acceptance_setup.sh` (interactive, or `--auto`). Mos
 test pass — fix the environment or config.
 
 **Fuzz (`tests/fuzz/`)** — single-packet libFuzzer harnesses over RX parsers; see
-`doc/fuzzing.md`.
+`tests/doc/fuzz/index.rst`. `task ci:fuzz -- build` then `task ci:fuzz -- run` is what
+the `fuzz-tests` job of `fuzz_tests.yml` does (on a PR that changes `lib/`, `include/`
+or `tests/fuzz/`, and each night on main).
 
 ## Runtime setup (needed for anything beyond unit tests)
 

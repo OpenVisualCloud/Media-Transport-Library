@@ -1,21 +1,31 @@
 # SPDX-License-Identifier: BSD-3-Clause
+"""Run each libFuzzer target of ``tests/fuzz`` as one pytest case.
+
+The test reads the target names from ``tests/fuzz/meson.build``, so a new
+harness gets a case with no change here. The test skips a target that is not
+built.
+"""
+
 import logging
 import os
 import pathlib
+import re
 import subprocess
 
 import pytest
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[3]
-FUZZ_BIN_DIR = ROOT_DIR / "build" / "tests" / "fuzz"
-FUZZ_TARGETS = [
-    "st40_rx_rtp_fuzz",
-    "st40_ancillary_helpers_fuzz",
-    "st30_rx_frame_fuzz",
-    "st20_rx_frame_fuzz",
-    "st22_rx_frame_fuzz",
-]
+FUZZ_BIN_DIR = (
+    pathlib.Path(os.environ.get("MTL_FUZZ_BUILD_DIR", ROOT_DIR / "build"))
+    / "tests"
+    / "fuzz"
+)
+# The ['name', 'dir/file.c'] entries of the fuzz_targets list.
+FUZZ_TARGETS = re.findall(
+    r"\[\s*'(\w+)'\s*,\s*'[^']+\.c'\s*\]",
+    (ROOT_DIR / "tests" / "fuzz" / "meson.build").read_text(encoding="utf-8"),
+)
 FUZZ_RUNS = int(os.environ.get("MTL_FUZZ_TEST_RUNS", "500000"))
 
 
@@ -40,6 +50,15 @@ def _run_with_logging(target: str, cmd: list[str]) -> None:
 @pytest.mark.nightly
 @pytest.mark.parametrize("target", FUZZ_TARGETS)
 def test_fuzz_target_full_run(target, tmp_path):
+    """Run one fuzz target for ``MTL_FUZZ_TEST_RUNS`` inputs.
+
+    The corpus starts empty, in a temporary directory. The case fails when the
+    target exits with a code that is not zero, for example on a crash or on a
+    sanitizer finding. Each output line of the target goes to the test log.
+
+    :param target: Name of the fuzz target, from ``tests/fuzz/meson.build``.
+    :param tmp_path: Temporary directory of the case, for the corpus.
+    """
     binary = FUZZ_BIN_DIR / target
     if not binary.exists():
         pytest.skip(f"fuzz target {target} not built (expected {binary})")
