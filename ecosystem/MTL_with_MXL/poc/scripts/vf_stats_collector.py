@@ -352,6 +352,10 @@ def main():
         )
         print("           Hint: source poc/monitoring/env.sh", file=sys.stderr)
         sys.exit(1)
+    # urlopen() would also follow file:// and custom schemes
+    if urlparse(url).scheme not in ("http", "https"):
+        print("[VF-STATS] ERROR: INFLUXDB_URL must be http(s)://", file=sys.stderr)
+        sys.exit(1)
 
     host = socket.gethostname()
 
