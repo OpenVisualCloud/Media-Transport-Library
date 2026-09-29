@@ -503,7 +503,7 @@ static int sch_stat(void* priv) {
 }
 
 static int sch_filelock_lock(struct mt_sch_mgr* mgr) {
-  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
+  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0444);
   if (fd < 0) {
     /* sometimes may fail due to user permission, try open read-only */
     fd = open(MT_FLOCK_PATH, O_RDONLY);
