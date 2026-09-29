@@ -33,6 +33,7 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  uint64_t last_shaper_rate;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -59,6 +60,18 @@ static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx
                                                uint16_t* nb_tx_desc);
 static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_mask,
                                                uint32_t* ptypes, int num);
+static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
+                              uint32_t priority, uint32_t weight, uint32_t level_id,
+                              const struct rte_tm_node_params* params,
+                              struct rte_tm_error* error);
+static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
+                                 struct rte_tm_error* error);
+static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
+                                        const struct rte_tm_shaper_params* profile,
+                                        struct rte_tm_error* error);
+static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
+                                      struct rte_tm_error* error);
+static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -73,7 +86,17 @@ static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_
 #define rte_eth_dev_configure ut_rte_eth_dev_configure
 #define rte_eth_dev_adjust_nb_rx_tx_desc ut_rte_eth_dev_adjust_nb_rx_tx_desc
 #define rte_eth_dev_get_supported_ptypes ut_rte_eth_dev_get_supported_ptypes
+#define rte_tm_node_add ut_rte_tm_node_add
+#define rte_tm_node_delete ut_rte_tm_node_delete
+#define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
+#define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
+#define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
 #include "dev/mt_dev.c"
+#undef mt_sch_mrg_uinit
+#undef rte_tm_hierarchy_commit
+#undef rte_tm_shaper_profile_add
+#undef rte_tm_node_delete
+#undef rte_tm_node_add
 #undef rte_eth_dev_get_supported_ptypes
 #undef rte_eth_dev_adjust_nb_rx_tx_desc
 #undef rte_eth_dev_configure
@@ -212,6 +235,53 @@ static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_
   return 0;
 }
 
+static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
+                              uint32_t priority, uint32_t weight, uint32_t level_id,
+                              const struct rte_tm_node_params* params,
+                              struct rte_tm_error* error) {
+  (void)port_id;
+  (void)node_id;
+  (void)parent_node_id;
+  (void)priority;
+  (void)weight;
+  (void)level_id;
+  (void)params;
+  (void)error;
+  return 0;
+}
+
+static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
+                                 struct rte_tm_error* error) {
+  (void)port_id;
+  (void)node_id;
+  (void)error;
+  return 0;
+}
+
+static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
+                                        const struct rte_tm_shaper_params* profile,
+                                        struct rte_tm_error* error) {
+  (void)port_id;
+  (void)shaper_profile_id;
+  (void)error;
+  ut_active_ctx->last_shaper_rate = profile->peak.rate;
+  return 0;
+}
+
+static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
+                                      struct rte_tm_error* error) {
+  (void)port_id;
+  (void)clear_on_fail;
+  (void)error;
+  ut_dev_record(UT_DEV_EVENT_TX_RL_COMMIT);
+  return 0;
+}
+
+static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
+  (void)impl;
+  return 0;
+}
+
 ut_dev_ctx* ut_dev_create_ctx(void) {
   ut_dev_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -306,6 +376,31 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
   ut_active_ctx = ctx;
   return mt_dev_create(&ctx->impl);
+}
+
+void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
+                                enum st21_tx_pacing_way pacing_way) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->drv_info.drv_type = MT_DRV_IAVF;
+  inf->drv_info.port_type = MT_PORT_VF;
+  inf->status |= MT_IF_STAT_PORT_STARTED;
+  inf->link_speed = RTE_ETH_SPEED_NUM_25G;
+  inf->tx_rl_root_active = rl_root_active;
+  inf->tx_pacing_way = pacing_way;
+}
+
+void ut_dev_set_port_stopped(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].status &= ~MT_IF_STAT_PORT_STARTED;
+}
+
+int ut_dev_free_ports(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return mt_dev_free(&ctx->impl);
+}
+
+uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx) {
+  return ctx->last_shaper_rate;
 }
 
 int ut_dev_event_count(const ut_dev_ctx* ctx) {
