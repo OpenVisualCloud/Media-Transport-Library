@@ -140,13 +140,13 @@ The runtime log summarizes the number of metadata entries and UDW bytes received
 
 ## 4. Misc samples
 
-[tx_video_split_sample.c](tx_video_split_sample.c): A tx video(st2110-20) application based on frame interface, application reads a series of 4k frames from the file, square splits them to 4 parts and sends with 4 1080p sessions.
+[tx_video_split_sample.c](ext_frame/tx_video_split_sample.c): A tx video(st2110-20) application based on frame interface, application reads a series of 4k frames from the file, square splits them to 4 parts and sends with 4 1080p sessions.
 
 ```bash
 ./build/app/TxVideoSplitSample --p_port 0000:af:01.0 --p_sip 192.168.75.11 --p_tx_ip 239.168.75.20
 ```
 
-[rx_st20_redundant_sample.c](rx_st20_redundant_sample.c): A rx video(st2110-22-7) redundant application based on frame interface, application need handle the color format conversion in case the user format is not the one defined in RFC4175.
+[rx_st20_redundant_combined_sample.c](experimental/rx_st20_redundant_combined_sample.c): An experimental rx video (st2110-20, ST 2022-7) combined redundant application based on frame interface, application need handle the color format conversion in case the user format is not the one defined in RFC4175.
 
 ```bash
 ./build/app/RxSt20RedundantSample --p_port 0000:af:01.0 --r_port 0000:af:01.1 --p_sip 192.168.77.11 --r_sip 192.168.77.12 --p_rx_ip 239.168.77.20 --r_rx_ip 239.168.77.21

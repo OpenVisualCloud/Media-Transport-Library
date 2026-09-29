@@ -204,7 +204,7 @@ set of parameters to fill in.
 | Intel® E810/E835 NIC | 200GbE with ice driver (SR-IOV capable) |
 | DPDK | System-wide, linked via pkg-config |
 | MTL | Intel® Media Transport Library at commit [`c02b9f6e`](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/c02b9f6e3169d213bc2130f5459b6c1176e5e2e7) (v26.01.0.DEV), with `patches/mtl_disable_remap_lcore_ids.patch` applied |
-| [MXL Fabrics SDK](https://github.com/dmf-mxl/mxl) | Build from [source](https://github.com/dmf-mxl/mxl/pull/266/changes/364a1ccd53e643fe1f1e68173dd0436e6bac4829) with `patches/mxl_sdk.patch` applied, pass prefix to `build.sh` |
+| [MXL Fabrics SDK](https://github.com/dmf-mxl/mxl) | Build from [source](https://github.com/dmf-mxl/mxl/commit/364a1ccd53e643fe1f1e68173dd0436e6bac4829) with `patches/mxl_sdk.patch` applied, pass prefix to `build.sh` |
 | libfabric | verbs provider required for RoCEv2 |
 | irdma | Intel® OOT driver with `roce_ena=1` for E810/E835 |
 | [Intel® JPEG-XS Library](https://github.com/OpenVisualCloud/SVT-JPEG-XS) | Required for poc_8k compositor (ISO/IEC 21122) |

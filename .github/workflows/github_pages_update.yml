@@ -4,6 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
+  pull_request:
+    paths:
+      - '**.md'
+      - '**.rst'
+      - 'doc/**'
+      - 'VERSION'
+      - '.github/workflows/github_pages_update.yml'
+      - '.github/scripts/ci/workflow-ops.sh'
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -16,15 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publishGitHubPages:
-    name: Publish GitHub Pages
-    permissions:
-      contents: read
-      id-token: write
-      pages: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # See doc/sphinx/build_docs.md: this job runs the steps of that guide.
+  buildDocumentation:
+    name: Build documentation
     runs-on: 'ubuntu-22.04'
     timeout-minutes: 20
     steps:
@@ -43,15 +45,49 @@ jobs:
         run: task ci:workflow -- docs-dependencies
 
       - name: Prepare environment for documentation build
-        run: python3 -m pip install sphinx_book_theme myst_parser sphinxcontrib.mermaid sphinx-copybutton
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/venv-docs"
+          "${RUNNER_TEMP}/venv-docs/bin/python3" -m pip install -r doc/sphinx/requirements.txt
+          echo "${RUNNER_TEMP}/venv-docs/bin" >> "${GITHUB_PATH}"
 
       - name: Build documentation
-        run:  make -C doc/sphinx html
+        run: make -C doc/sphinx html SPHINXOPTS="-W --keep-going"
 
       - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./doc/_build/html
+
+  publishGitHubPages:
+    name: Publish GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: buildDocumentation
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: 'ubuntu-22.04'
+    timeout-minutes: 20
+    steps:
+      - name: Secure the runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      # With the "Deploy from a branch" source, GitHub serves a Jekyll build of
+      # the Markdown files, and this Sphinx site never goes live.
+      - name: Check the GitHub Pages source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type=$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type || echo unknown)
+          if [ "${build_type}" != "workflow" ]; then
+            echo "::warning::GitHub Pages source is '${build_type}', not 'workflow'. GitHub does not serve this Sphinx site. Set Settings > Pages > Source to GitHub Actions."
+          fi
 
       - name: Publish to GitHub Pages
         id: deployment

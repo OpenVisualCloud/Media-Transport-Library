@@ -43,10 +43,12 @@ Contents
    doc/external_frame.md
    doc/gpu.md
    gpu_direct/README.md
+   doc/isolation.md
    doc/plugin.md
    doc/rtcp.md
    doc/sdm_appliance.md
    doc/shm_lcore.md
+   doc/stats_guide.md
    doc/usdt.md
    doc/xdp.md
    ST2110 Compliance Result <doc/compliance.md>
@@ -72,8 +74,24 @@ Ecosystem
    :caption: Ecosystem:
 
    Ffmpeg Plugin <ecosystem/ffmpeg_plugin/README.md>
+   GStreamer Plugin <ecosystem/gstreamer_plugin/README.md>
    plugins/st22_avcodec/README.md
    OBS Studio <ecosystem/obs_mtl/README.md>
+   MTL with MXL <ecosystem/MTL_with_MXL/README.md>
+
+Development and Testing
+------------------------
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Development and Testing:
+
+   doc/coding_standard.md
+   doc/acceptance_quickstart.md
+   doc/acceptance-design.md
+   doc/fuzzing.md
+   doc/ci_runner_setup.md
+   doc/cicd_setup_proposition.md
 
 Doxygen
 --------
@@ -99,6 +117,7 @@ Other
    Rust Support <rust/README.md>
    docker/README.md
    tools/ebpf/README.md
+   tools/set_tai_offset/README.md
    doc/sphinx/build_docs.md
 
 
@@ -112,4 +131,5 @@ Experimental features
    doc/experimental/af_packet.md
    doc/experimental/af_xdp.md
    doc/experimental/header_split.md
+   doc/experimental/performance_optimizations.md
 

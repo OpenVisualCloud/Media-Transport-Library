@@ -165,7 +165,7 @@ ip -4 addr show dev <ifname>
 #### 9.3.3. Run with an AF_XDP Config
 
 Use JSON profiles under RxTxApp AF_XDP examples and update interface names/IPs for your setup.
-See also [AF_XDP guide](experimental/af_xdp.md).
+See also [AF_XDP guide](../experimental/af_xdp.md).
 
 For native AF_XDP, use the `native_af_xdp:` prefix. The I226-V exposes four combined queues in a
 typical configuration. Queue 0 remains available to the kernel, leaving queues 1 through 3 for
