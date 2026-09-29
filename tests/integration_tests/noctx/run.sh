@@ -93,6 +93,9 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		--gtest_filter="NoCtxTest.$test_name"
 		--gtest_output="xml:${xml_file}"
 		--no_ctx_tests)
+	# The multicast groups follow the primary address, so a runner's own subnet keeps
+	# another host's NoCtx streams on a shared network out of these receivers.
+	[ -z "${TEST_P_SIP:-}" ] || cmd+=(--p_sip="${TEST_P_SIP}")
 	if [[ ",${NOCTX_ISOLATE_CASES}," == *",${test_name},"* ]]; then
 		cmd=(env MTL_ISOLATE="${MTL_ISOLATE:-try}" MTL_ISOLATE_PORTS="${PORT_LIST}"
 			"${mtl_folder}/tests/tools/isolate/isolate.sh" -- "${cmd[@]}")
