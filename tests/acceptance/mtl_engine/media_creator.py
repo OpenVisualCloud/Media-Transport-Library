@@ -3,7 +3,7 @@
 
 import logging
 import os
-import random
+import secrets
 import string
 import subprocess
 import threading
@@ -157,7 +157,7 @@ def create_text_file(size_kb: int, output_path: str = "test_anc.txt", host=None)
     content = ""
     while size_bytes > 0:
         chunk_size = min(size_bytes, 1024)
-        content += "".join(random.choice(chars) for _ in range(chunk_size))
+        content += "".join(secrets.choice(chars) for _ in range(chunk_size))
         size_bytes -= chunk_size
 
     # Escape content for shell command and use printf for better handling

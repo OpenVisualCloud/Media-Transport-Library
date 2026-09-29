@@ -47,7 +47,7 @@ def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
                     f"{len(chunk)} < {chunk_size} bytes"
                 )
                 break
-            chunk_sums.append(hashlib.md5(chunk).hexdigest())
+            chunk_sums.append(hashlib.md5(chunk, usedforsecurity=False).hexdigest())
             chunk_index += 1
     return chunk_sums
 
@@ -129,7 +129,7 @@ class VideoIntegritor:
                 first_chunk = handle.read(self.frame_size)
             if len(first_chunk) != self.frame_size:
                 raise ValueError(f"Output file {out_file} is smaller than one frame")
-            first_sum = hashlib.md5(first_chunk).hexdigest()
+            first_sum = hashlib.md5(first_chunk, usedforsecurity=False).hexdigest()
             if first_sum not in self.src_chunk_sums:
                 self.logger.warning(
                     f"First frame hash not found in {self.src_url}; "

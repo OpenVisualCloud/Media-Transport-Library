@@ -28,14 +28,14 @@ def check_st20p_integrity(
 
     with open(src_url, "rb") as f:
         while chunk := f.read(frame_size):
-            chunk_sum = hashlib.md5(chunk).hexdigest()
+            chunk_sum = hashlib.md5(chunk, usedforsecurity=False).hexdigest()
             src_chunk_sums.append(chunk_sum)
 
     out_chunk_sums = []
 
     with open(out_url, "rb") as f:
         while chunk := f.read(frame_size):
-            chunk_sum = hashlib.md5(chunk).hexdigest()
+            chunk_sum = hashlib.md5(chunk, usedforsecurity=False).hexdigest()
             out_chunk_sums.append(chunk_sum)
 
     # Skip initial frames that may be corrupted during session establishment
