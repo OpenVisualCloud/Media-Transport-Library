@@ -46,6 +46,9 @@ int main() {
   if (!fs::exists(directory_path)) {
     try {
       fs::create_directory(directory_path);
+      fs::permissions(directory_path, fs::perms::owner_all | fs::perms::group_read |
+                                          fs::perms::group_exec | fs::perms::others_read |
+                                          fs::perms::others_exec);
     } catch (const std::exception& e) {
       logger::log(log_level::ERROR,
                   "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
@@ -93,7 +96,11 @@ int main() {
   }
 
   /* Allow all users to connect (which might be insecure) */
-  fs::permissions(MTL_MANAGER_SOCK_PATH, fs::perms::all, fs::perm_options::replace);
+  fs::permissions(MTL_MANAGER_SOCK_PATH,
+                  fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
+                      fs::perms::group_write | fs::perms::others_read |
+                      fs::perms::others_write,
+                  fs::perm_options::replace);
 
   ret = listen(sockfd, MAX_CLIENTS);
   if (ret < 0) {
