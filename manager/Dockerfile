@@ -18,8 +18,11 @@ ARG VERSION
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends git build-essential pkg-config m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev meson gcc-multilib ca-certificates
 
-# Clone and build the xdp-tools project
-RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git
+# Clone and build xdp-tools at a commit past XDP_TOOLS_VER in versions.env, because the
+# v1.6.3 tag lacks the libxdp dispatcher bounds fix.
+RUN git clone https://github.com/xdp-project/xdp-tools.git && \
+    git -C xdp-tools checkout f27ea2a83fd4fcce8968f627b25493950aaf5c44 && \
+    git -C xdp-tools submodule update --init --recursive
 WORKDIR /xdp-tools
 RUN ./configure && make && \
     make install && \

@@ -26,10 +26,14 @@ ldconfig -p | grep libopenh264
 
 If the command outputs a path to `libopenh264.so`, openh264 is present and you can skip the build step below.
 
+> Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
+
 ```bash
+. $mtl_source_code/versions.env
+
 git clone https://github.com/cisco/openh264.git
 cd openh264
-git checkout openh264v2.4.0
+git checkout "v${OPENH264_VER}"
 make -j "$(nproc)"
 sudo make install
 sudo ldconfig
@@ -46,7 +50,8 @@ cd ../
 
 git clone https://github.com/FFmpeg/FFmpeg.git
 cd FFmpeg
-git checkout release/${FFMPEG_VERSION}
+ffmpeg_commit_var="FFMPEG_${FFMPEG_VERSION//./_}_COMMIT"
+git checkout "${!ffmpeg_commit_var}"
 # apply the build patch
 git am $mtl_source_code/ecosystem/ffmpeg_plugin/${FFMPEG_VERSION}/*.patch
 # copy the mtl in/out implementation code
@@ -59,7 +64,7 @@ sudo make install
 sudo ldconfig
 ```
 
-> Note: For FFmpeg version 4.4 or 6.1, export `FFMPEG_VERSION=4.4` or 6.1.
+> Note: For FFmpeg version 4.4 or 6.1, export `FFMPEG_VERSION=4.4` or 6.1 after sourcing `versions.env`, which sets it to 7.0.
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 

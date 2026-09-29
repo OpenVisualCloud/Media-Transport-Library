@@ -55,9 +55,10 @@ If FFmpeg Plugin was installed earlier, remove its directory before proceeding w
    ```
 1. Clone build and install FFmpeg.
    ```bash
+   . <repo_dir>/versions.env
    git clone https://github.com/FFmpeg/FFmpeg.git
    cd FFmpeg
-   git checkout release/7.0
+   git checkout "${FFMPEG_7_0_COMMIT}"
    # apply the build patch
    git am <repo_dir>/ecosystem/ffmpeg_plugin/7.0/*.patch
    # copy the mtl in/out implementation code

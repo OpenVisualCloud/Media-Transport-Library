@@ -74,7 +74,7 @@ Refer to below commands for how to build from code.
 #### 1.2.1. json-c
 
 ```bash
-git clone https://github.com/json-c/json-c.git -b json-c-0.16
+git clone https://github.com/json-c/json-c.git -b json-c-0.16-20220414
 cd json-c/
 mkdir build
 cd build
@@ -89,6 +89,7 @@ cd ../../
 ```bash
 git clone https://github.com/the-tcpdump-group/libpcap.git -b libpcap-1.9
 cd libpcap/
+git checkout 5baf0ea8babe28e4cdece3f947158c71e8c3c7f7
 ./configure
 make
 sudo make install
@@ -98,7 +99,7 @@ cd ..
 #### 1.2.3. gtest
 
 ```bash
-git clone https://github.com/google/googletest.git -b v1.13.x
+git clone https://github.com/google/googletest.git -b v1.13.0
 cd googletest/
 mkdir build
 cd build/

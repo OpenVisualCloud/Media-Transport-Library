@@ -56,6 +56,13 @@ while getopts ":v:hgj" opt; do
 	esac
 done
 
+ffmpeg_commit_var="FFMPEG_${FFMPEG_VERSION//./_}_COMMIT"
+ffmpeg_commit="${!ffmpeg_commit_var:-}"
+if [ -z "$ffmpeg_commit" ]; then
+	echo "Error: versions.env has no ${ffmpeg_commit_var} for FFmpeg ${FFMPEG_VERSION}" >&2
+	exit 1
+fi
+
 build_openh264() {
 	if command -v pkg-config >/dev/null 2>&1; then
 		if pkg-config --exists openh264; then
@@ -66,14 +73,14 @@ build_openh264() {
 		echo "Warning: pkg-config not found. Skipping openh264 installation check."
 	fi
 
-	if [ -d "openh264-openh264v2.4.0" ]; then
-		echo "openh264v2.4.0 directory already exists. Removing it to ensure a clean build."
-		rm -rf openh264-openh264v2.4.0
+	if [ -d "openh264-${OPENH264_VER}" ]; then
+		echo "openh264-${OPENH264_VER} directory already exists. Removing it to ensure a clean build."
+		rm -rf "openh264-${OPENH264_VER}"
 	fi
 
-	wget https://github.com/cisco/openh264/archive/refs/heads/openh264v2.4.0.zip
-	unzip openh264v2.4.0.zip && rm -f openh264v2.4.0.zip
-	cd openh264-openh264v2.4.0
+	wget "https://github.com/cisco/openh264/archive/refs/tags/v${OPENH264_VER}.zip"
+	unzip "v${OPENH264_VER}.zip" && rm -f "v${OPENH264_VER}.zip"
+	cd "openh264-${OPENH264_VER}"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		make -j "$(nproc)" PREFIX="${MTL_INSTALL_PREFIX}"
 		make install PREFIX="${MTL_INSTALL_PREFIX}"
@@ -91,9 +98,12 @@ build_ffmpeg() {
 		echo "FFmpeg directory already exists. Removing it to ensure a clean build."
 		rm -rf "FFmpeg-release-${FFMPEG_VERSION}"
 	fi
+	# Left behind when a previous run stopped between the unzip and the mv
+	rm -rf "FFmpeg-${ffmpeg_commit}"
 
-	wget "https://github.com/FFmpeg/FFmpeg/archive/refs/heads/release/${FFMPEG_VERSION}.zip"
-	unzip "${FFMPEG_VERSION}.zip" && rm -f "${FFMPEG_VERSION}.zip"
+	wget "https://github.com/FFmpeg/FFmpeg/archive/${ffmpeg_commit}.zip"
+	unzip "${ffmpeg_commit}.zip" && rm -f "${ffmpeg_commit}.zip"
+	mv "FFmpeg-${ffmpeg_commit}" "FFmpeg-release-${FFMPEG_VERSION}"
 
 	pushd "./FFmpeg-release-${FFMPEG_VERSION}"
 	cp -f "$script_path"/mtl_* ./libavdevice/
