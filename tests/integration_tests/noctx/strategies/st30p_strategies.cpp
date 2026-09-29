@@ -58,6 +58,8 @@ St30pUserPacingOracle::St30pUserPacingOracle(St30pHandler* parentHandler)
     : St30pDefaultPacingOracle(parentHandler) {
   enable_tx_modifier = true;
   enable_rx_modifier = true;
+  if (parentHandler)
+    rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
 void St30pUserPacingOracle::txTestFrameModifier(void* frame, size_t /*frame_size*/) {

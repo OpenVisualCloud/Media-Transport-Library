@@ -28,8 +28,6 @@ constexpr int64_t kNoCtxPacingEarlyMaxNs = 1 * NS_PER_US;
 constexpr int64_t kNoCtxPacingLateMaxNs = 10 * NS_PER_US;
 /* A PHC read without a NIC cross-timestamp (E810) must place it to +-this. */
 constexpr uint64_t kPhcReadMaxUncertaintyNs = 1 * NS_PER_US;
-/* The PHC is read about a frame after the NIC timestamp: 5 ppm is 0.2 us at 25 fps. */
-constexpr double kPhcRateMaxPpm = 5.0;
 /* A user-paced plan starts this far past PTP now, rounded up to a frame. */
 constexpr uint64_t kSt20pUserPacingLeadNs = 800 * NS_PER_MS;
 /* St20pRedundantStreamPlan starts at PTP zero plus this plus its latency. */
@@ -53,25 +51,27 @@ struct PacingAnchor {
   uint64_t expected_ns = 0;
 };
 
-/* Converts NIC RX timestamps from the RX port's PHC to CLOCK_MONOTONIC_RAW, to +-u
- * (kPhcReadMaxUncertaintyNs), fails a PHC rate off by more than kPhcRateMaxPpm and
- * prints the rate when destroyed. */
+/* Converts NIC RX timestamps from the RX port's PHC to CLOCK_MONOTONIC_RAW along the
+ * line through a PHC read taken by start() and one taken per frame, to +-u
+ * (kPhcReadMaxUncertaintyNs). Assumes the PHC rate is steady between the two reads,
+ * so a PHC stepped or steered mid-run is not covered. Prints the rate when destroyed. */
 class RxPhcClock {
  public:
   RxPhcClock() = default;
   RxPhcClock(const RxPhcClock&) = delete;
   RxPhcClock& operator=(const RxPhcClock&) = delete;
   ~RxPhcClock();
+  /* Reads the PHC of port before the stream; a failure is reported by the first frame. */
+  void start(const char* port);
   /* False without a NIC timestamp; frame 0 skips unless strictPacingRequired(). */
   bool receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_timestamp,
                                const char* port, mtl_handle mt, RxTime* rx);
 
  private:
   double rateOffsetPpm() const;
-  void expectRate(const char* port, uint64_t uncertainty_ns);
   int fd = -1;
   bool skipped = false;
-  bool rate_failed = false;
+  std::string start_error = "start() was not called";
   uint64_t first_phc_ns = 0, first_mono_ns = 0, first_uncertainty_ns = 0;
   uint64_t last_phc_ns = 0, last_mono_ns = 0;
   uint64_t uncertainty_max_ns = 0;

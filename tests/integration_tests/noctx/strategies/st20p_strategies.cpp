@@ -325,44 +325,44 @@ double RxPhcClock::rateOffsetPpm() const {
   return (static_cast<double>(last_phc_ns - first_phc_ns) - mono) / mono * 1e6;
 }
 
-/* Like the other checks, the rate must hold at both ends of the two reads' +-u. */
-void RxPhcClock::expectRate(const char* port, uint64_t uncertainty_ns) {
-  const uint64_t mono = last_mono_ns - first_mono_ns;
-  if (rate_failed || mono < NS_PER_S) return;
-  const double u_ppm = (first_uncertainty_ns + uncertainty_ns) * 1e6 / mono;
-  if (std::fabs(rateOffsetPpm()) + u_ppm <= kPhcRateMaxPpm) return;
-  rate_failed = true;
-  ADD_FAILURE() << "the PHC of " << port << " runs " << rateOffsetPpm() << "+-" << u_ppm
-                << " ppm off CLOCK_MONOTONIC_RAW, over " << kPhcRateMaxPpm << " ppm";
+void RxPhcClock::start(const char* port) {
+  fd = openPortPhc(port);
+  start_error = fd < 0
+                    ? "no PHC found"
+                    : readPhc(fd, &first_phc_ns, &first_mono_ns, &first_uncertainty_ns);
+  uncertainty_max_ns = first_uncertainty_ns;
 }
 
 bool RxPhcClock::receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_timestamp,
                                          const char* port, mtl_handle mt, RxTime* rx) {
   if (skipped) return false;
-  if (fd < 0) fd = openPortPhc(port);
+  if (!start_error.empty()) {
+    skipped = true;
+    ADD_FAILURE() << "cannot read the PHC of " << port
+                  << " before the stream: " << start_error;
+    return false;
+  }
   uint64_t phc_now, mono_now, uncertainty_ns;
-  const std::string why =
-      fd < 0 ? "no PHC found" : readPhc(fd, &phc_now, &mono_now, &uncertainty_ns);
+  const std::string why = readPhc(fd, &phc_now, &mono_now, &uncertainty_ns);
   if (!why.empty()) {
     ADD_FAILURE() << "frame " << frame_idx << ": cannot read the PHC of " << port << ": "
                   << why;
     return false;
   }
 
-  if (!first_mono_ns) {
-    first_phc_ns = phc_now;
-    first_mono_ns = mono_now;
-    first_uncertainty_ns = uncertainty_ns;
-  }
   last_phc_ns = phc_now;
   last_mono_ns = mono_now;
   uncertainty_max_ns = std::max(uncertainty_max_ns, uncertainty_ns);
-  expectRate(port, uncertainty_ns);
 
   /* A VF never steers its PF's PHC, so a NIC timestamp is a recent PHC reading. */
   const uint64_t ts = receive_timestamp;
-  if (ts <= phc_now && phc_now - ts < NS_PER_S) {
-    *rx = {ts - (phc_now - mono_now), static_cast<int64_t>(uncertainty_ns)};
+  if (first_phc_ns < ts && ts <= phc_now && phc_now - ts < NS_PER_S) {
+    /* ts maps to a weighted mean of the two reads, so its u is that mean of theirs. */
+    const long double w =
+        static_cast<long double>(phc_now - ts) / (phc_now - first_phc_ns);
+    *rx = {mono_now - static_cast<uint64_t>(std::llround(w * (mono_now - first_mono_ns))),
+           static_cast<int64_t>(
+               std::ceil((1 - w) * uncertainty_ns + w * first_uncertainty_ns))};
     return true;
   }
 
@@ -373,13 +373,16 @@ bool RxPhcClock::receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_ti
   } else {
     ADD_FAILURE() << "frame " << frame_idx << ": receive_timestamp " << ts
                   << " is not a NIC RX timestamp from the last second of the PHC of "
-                  << port << " (PHC " << phc_now << ", PTP " << ptp_now << ")";
+                  << port << " since the pre-stream read (PHC " << first_phc_ns << ".."
+                  << phc_now << ", PTP " << ptp_now << ")";
   }
   return false;
 }
 
 St20pDefaultPacingOracle::St20pDefaultPacingOracle(St20pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true) {
+  if (parentHandler)
+    rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
 void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
@@ -414,6 +417,7 @@ St20pUserPacingOracle::St20pUserPacingOracle(St20pHandler* parentHandler,
     : FrameTestStrategy(parentHandler, true, true),
       timestampOffsetMultipliers(std::move(offsetMultipliers)) {
   initializeTiming(parentHandler);
+  rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
 int St20pUserPacingOracle::getPacingParameters() {
