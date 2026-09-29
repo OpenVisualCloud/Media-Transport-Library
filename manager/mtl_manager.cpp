@@ -212,6 +212,7 @@ int main() {
       }
     }
   }
+  unlink(MTL_MANAGER_SOCK_PATH);
   logger::log(log_level::INFO, "MTL Manager exited.");
 
 out:
