@@ -161,6 +161,9 @@ jobs:
           cache: false
           format: spdx-json
           output: Trivy-sbom.spdx.json
+        env:
+          # Trivy only reads files named exactly requirements.txt by default
+          TRIVY_FILE_PATTERNS: 'pip:(^|/)requirements-[^/]*\.txt$'
 
       # trivy fs writes downloadLocation "git+." for a checkout, which is not valid SPDX
       - name: Set SBOM download locations
