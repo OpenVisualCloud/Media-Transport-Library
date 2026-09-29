@@ -89,7 +89,6 @@ Development and Testing
    doc/coding_standard.md
    doc/acceptance_quickstart.md
    doc/acceptance-design.md
-   doc/fuzzing.md
    doc/ci_runner_setup.md
    doc/cicd_setup_proposition.md
 

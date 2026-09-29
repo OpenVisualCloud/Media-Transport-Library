@@ -1,4 +1,18 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file st30_rx_frame_fuzz.c
+ *
+ * Sends each input as one packet to rx_audio_session_handle_frame_pkt(), the RX path
+ * of an ST 2110-30 session of the type ST30_TYPE_FRAME_LEVEL (PCM16, 2 channels,
+ * 48 kHz, 1 ms).
+ *
+ * The input is a full packet that starts with the Ethernet header. The harness ignores
+ * an input shorter than struct st_rfc3550_audio_hdr (54 bytes) and uses only the first
+ * 2048 bytes. The payload length of the input sets the packet size and the frame size
+ * of the session.
+ */
+
 #include <rte_atomic.h>
 #include <rte_eal.h>
 #include <rte_ether.h>
@@ -54,6 +68,8 @@ static bool g_eal_ready;
 
 static struct st_frame_trans g_frames[ST30_FUZZ_FRAME_COUNT];
 static uint8_t g_frame_storage[ST30_FUZZ_FRAME_COUNT][ST30_FUZZ_FRAME_CAPACITY];
+/* one bit per packet; a 1-byte payload gives the most packets per frame */
+static uint8_t g_frame_bitmap[(ST30_FUZZ_FRAME_CAPACITY + 7) / 8];
 
 static void st30_fuzz_enable_logging(void) {
   static bool logging_ready;
@@ -179,6 +195,8 @@ static void st30_fuzz_reset_context(size_t payload_len) {
   g_session.st30_frame_size = frame_bytes;
   g_session.ops.framebuff_size = (uint32_t)frame_bytes;
   g_session.st30_pkt_size = (uint32_t)(payload + sizeof(struct st_rfc3550_audio_hdr));
+  g_session.frame_bitmap = g_frame_bitmap;
+  g_session.frame_bitmap_size = (pkt_multiple + 7) / 8;
   g_session.port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   g_session.usdt_dump_fd = -1;
 

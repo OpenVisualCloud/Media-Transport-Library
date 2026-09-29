@@ -130,6 +130,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/reports.sh {{.CLI_ARGS}}
 
+  ci:fuzz:
+    desc: Build the fuzz targets with clang and ASan, or run each one for FUZZ_TIME seconds
+    cmds:
+      - bash {{.CI_SCRIPTS}}/fuzz.sh {{.CLI_ARGS}}
+
   ci:gtest-nightly:
     desc: Run the nightly bare-metal gtest harness
     cmds:

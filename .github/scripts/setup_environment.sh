@@ -230,7 +230,6 @@ function setup_ubuntu_install_dependencies() {
 			libpcap-dev
 	fi
 
-	sudo ldconfig
 	echo "All dependencies installed."
 }
 

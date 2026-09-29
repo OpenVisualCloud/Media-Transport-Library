@@ -879,16 +879,26 @@ between processes, `run_pf.sh` and the MCP tools 10 s. What each case proves:
 | ST2110-30 audio RX | `st30/st30_rx_frame_fuzz.c` | Audio parsing |
 | ST2110-40 ancillary RX | `st40/st40_rx_rtp_fuzz.c` | Ancillary parsing |
 | ST40 helpers | `st40/st40_ancillary_helpers_fuzz.c` | UDW, checksum, parity |
+| RTCP TX | `rtcp/mt_rtcp_tx_parse_fuzz.c` | RTCP NACK parsing |
 
 Architecture: minimal DPDK EAL (no hugepages, no PCI) → full session context reset per input → call internal handler.
 
 **Limitations**: single-packet fuzzing only (no multi-packet sequence bugs), no TX/control/PTP coverage.
 
+**Stub context must track the session**: a harness hand-builds `g_impl`/`g_session`, so a new mandatory field breaks it silently. Set `ops.type` explicitly (0 is FRAME_LEVEL for ST40, which reads PTP time the stub lacks) and supply any per-session buffer the create path allocates (ST30 `frame_bitmap`).
+
+Build with clang (gcc lacks `-fsanitize=fuzzer-no-link`); `-Denable_asan=true` fails under clang (needs gcc `libasan`), use `b_sanitize`:
+
 ```bash
-meson setup build_fuzz -Denable_fuzzing=true -Denable_asan=true
+CC=clang CXX=clang++ meson setup build_fuzz -Denable_fuzzing=true \
+  -Db_sanitize=address -Db_lundef=false -Dc_args=-Wno-error=unused-but-set-variable
 ninja -C build_fuzz
 ./build_fuzz/tests/fuzz/st20_rx_frame_fuzz corpus/st20
 ```
+
+The guide is `tests/doc/fuzz/index.rst`.
+The `fuzz-tests` job of `fuzz_tests.yml` runs `.github/scripts/ci/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target on the nightly schedule of `main` and on a manual run.
+The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
 
 ### Acceptance Tests (`tests/acceptance/`)
 E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.

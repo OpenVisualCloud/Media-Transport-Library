@@ -62,8 +62,9 @@ autodoc_default_options = {
     "exclude-members": "__weakref__",
 }
 autodoc_typehints = "description"
+# pytest is not mocked: a mocked decorator such as pytest.mark.nightly replaces
+# the test function with a mock, and autodoc then skips the function.
 autodoc_mock_imports = [
-    "pytest",
     "pytest_mfd_config",
     "pytest_mfd_logging",
     "mfd_connect",
