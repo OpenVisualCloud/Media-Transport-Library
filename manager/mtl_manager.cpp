@@ -60,6 +60,7 @@ int main() {
   sigset_t signal_mask;
   sigemptyset(&signal_mask);
   sigaddset(&signal_mask, SIGINT);
+  sigaddset(&signal_mask, SIGTERM);
 
   ret = sigprocmask(SIG_BLOCK, &signal_mask, NULL);
   if (ret == -1) {
@@ -181,8 +182,11 @@ int main() {
           return 1;
         }
 
-        if (siginfo.ssi_signo == SIGINT) {
-          logger::log(log_level::INFO, "Received SIGINT. Shutting down.");
+        if (siginfo.ssi_signo == SIGINT || siginfo.ssi_signo == SIGTERM) {
+          logger::log(log_level::INFO,
+                      std::string("Received ") +
+                          (siginfo.ssi_signo == SIGINT ? "SIGINT" : "SIGTERM") +
+                          ". Shutting down.");
           is_running = false;
         }
       } else { /* handle client message */
