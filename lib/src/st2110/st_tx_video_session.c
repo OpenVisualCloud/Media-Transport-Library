@@ -2772,7 +2772,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.bytes_per_sec = tv_rl_bps(s);
-    mt_pacing_train_bps_result_search(impl, i, flow.bytes_per_sec, &flow.bytes_per_sec);
+    mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec,
+                                      &flow.bytes_per_sec);
     mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
