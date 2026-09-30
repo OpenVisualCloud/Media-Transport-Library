@@ -4,7 +4,7 @@
  * C harness for the ST 2110-41 (fast metadata) TX session unit tests.
  * Wraps the static tx_fastmetadata_session_build_packet() so its mbuf
  * capacity checks can be exercised directly, and drives the frame-level
- * tasklet with mocked PTP/TSC time for the timestamp tests.
+ * tasklet with mocked PTP/TSC time for the pacing and timestamp tests.
  */
 
 #ifndef _ST41_TX_HARNESS_H_
@@ -63,6 +63,8 @@ int ut41tx_run_frame(ut41tx_ctx* ctx, enum st10_timestamp_fmt tfmt, uint64_t tim
 const struct st41_tx_frame_meta* ut41tx_done_meta(const ut41tx_ctx* ctx);
 /* RTP timestamp of the last packet the session sent, host order. */
 uint32_t ut41tx_wire_rtp_timestamp(const ut41tx_ctx* ctx);
+uint64_t ut41tx_stat_error_user_timestamp(const ut41tx_ctx* ctx);
+uint64_t ut41tx_stat_epoch_mismatch(const ut41tx_ctx* ctx);
 
 #ifdef __cplusplus
 }

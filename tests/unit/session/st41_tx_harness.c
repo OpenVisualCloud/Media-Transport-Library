@@ -203,3 +203,11 @@ const struct st41_tx_frame_meta* ut41tx_done_meta(const ut41tx_ctx* ctx) {
 uint32_t ut41tx_wire_rtp_timestamp(const ut41tx_ctx* ctx) {
   return ctx->wire_rtp_timestamp;
 }
+
+uint64_t ut41tx_stat_error_user_timestamp(const ut41tx_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_error_user_timestamp;
+}
+
+uint64_t ut41tx_stat_epoch_mismatch(const ut41tx_ctx* ctx) {
+  return ctx->session.port_user_stats.common.stat_epoch_mismatch;
+}
