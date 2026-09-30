@@ -125,6 +125,10 @@ void ut30p_tx_wake_block(ut30p_tx_ctx* ctx) {
   st30p_tx_wake_block(&ctx->pipeline);
 }
 
+void ut30p_tx_frame_free_wake(ut30p_tx_ctx* ctx) {
+  tx_st30p_notify_frame_available(&ctx->pipeline);
+}
+
 void ut30p_tx_force_destroying(ut30p_tx_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }

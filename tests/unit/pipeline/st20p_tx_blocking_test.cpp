@@ -117,7 +117,7 @@ TEST(St20PipelineTxBlocking, StaleWakeFromEarlierFastPathDoesNotShortCircuitBloc
    * tx_st20p_notify_frame_available(); here we call the same wake function
    * directly. Nobody is blocked right now, so this just signals a condition
    * variable nobody is waiting on yet -- a true no-op under ground truth. */
-  ut20p_tx_wake_block(ctx);
+  ut20p_tx_frame_free_wake(ctx);
 
   /* Step 3: claim slot 1. Still FREE, so this is another fast-path claim. */
   struct st_frame* held1 = ut20p_tx_get_frame(ctx);

@@ -504,12 +504,13 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
     struct timespec deadline;
     clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
     timespec_add_ns(&deadline, ctx->block_timeout_ns);
-    /* Re-attempt the real claim on every wake/timeout; there's nothing to
-     * desync since this never relies on a separate notify flag. */
+    uint32_t wake_block_cnt = ctx->wake_block_cnt;
+    /* Claim again on every wake; only a wake_block() or destroy ends the wait early. */
     while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       framebuff =
           tx_st40p_claim_available(ctx, ST40P_TX_FRAME_FREE, ST40P_TX_FRAME_IN_USER);
       if (framebuff) break;
+      if (ctx->wake_block_cnt != wake_block_cnt) break;
       int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                            &deadline);
       if (_ret) break; /* real timeout against the fixed deadline, or error */
@@ -758,7 +759,12 @@ int st40p_tx_wake_block(st40p_tx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_TX, -EIO);
 
-  if (ctx->block_get) tx_st40p_block_wake(ctx);
+  if (ctx->block_get) {
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    ctx->wake_block_cnt++;
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  }
 
   MT_HANDLE_RELEASE(ctx);
   return 0;

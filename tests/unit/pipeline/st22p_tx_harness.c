@@ -120,6 +120,10 @@ void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns)
   ctx->encode_blocking = true;
 }
 
+void ut22p_tx_wake_block(ut22p_tx_ctx* ctx) {
+  st22p_tx_wake_block(&ctx->pipeline);
+}
+
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx) {
   tx_st22p_encode_wake_block(&ctx->pipeline);
 }
