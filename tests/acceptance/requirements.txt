@@ -3,8 +3,7 @@
 # Only top-level packages that are actually `import`ed by the test code
 # are pinned here. All other packages (transport crypto, mfd-* sub-libs,
 # pytest internals, HTML report renderers, etc.) are pulled in transitively
-# by pip and resolved against these pins. See REQUIREMENTS_CLEANUP.md
-# for the full audit and rationale.
+# by pip and resolved against these pins.
 #
 # If you need to lock the full transitive set for reproducible CI, run:
 #     pip install -r requirements.txt && pip freeze > constraints.txt

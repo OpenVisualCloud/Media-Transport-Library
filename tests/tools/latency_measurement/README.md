@@ -74,7 +74,7 @@ If FFmpeg Plugin was installed earlier, remove its directory before proceeding w
    ```
 1. Install Python packages
    ```bash
-   pip install opencv-python~=4.11.0 pytesseract~=0.3.13 matplotlib~=3.10.3
+   pip install "opencv-python>=5.0.0" "pytesseract>=0.3.13" matplotlib~=3.10.3
    ```
 1. Setup time synchronization on host machines
 
