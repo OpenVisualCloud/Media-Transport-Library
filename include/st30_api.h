@@ -158,7 +158,7 @@ enum st30_ptime {
   ST30_PTIME_250US,   /**< packet time of 250us */
   ST30_PTIME_333US,   /**< packet time of 333us */
   ST30_PTIME_4MS,     /**< packet time of 4ms */
-  ST31_PTIME_80US,    /**< packet time of 80us */
+  ST31_PTIME_80US,    /**< packet time of 83.33us: 4 samples at 48kHz, 8 at 96kHz */
   ST31_PTIME_1_09MS,  /**< packet time of 1.09ms, only for 44.1kHz sample */
   ST31_PTIME_0_14MS,  /**< packet time of 0.14ms, only for 44.1kHz sample */
   ST31_PTIME_0_09MS,  /**< packet time of 0.09ms, only for 44.1kHz sample */
