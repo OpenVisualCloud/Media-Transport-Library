@@ -278,6 +278,13 @@ int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len);
 
 uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx);
 
+/* Run the production rv_init_sw() with ST20_RX_FLAG_DMA_OFFLOAD over dedicated
+ * ext frames, marked as GPU VRAM frames when `gpu_frames`, then rv_uinit_sw().
+ * Ext frames keep the GPU allocator out, so only the flag is under test.
+ * Returns how many DMA devices it requested, or rv_init_sw()'s error. The
+ * context cannot be fed packets afterwards. */
+int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames);
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 /* Switch the session into ST 2110-22 frame mode: install the st22 rx info and
