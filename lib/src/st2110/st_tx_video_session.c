@@ -3823,8 +3823,9 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
-    s->st20_dst_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
+    if (!mt_user_random_src_port(impl))
+      s->st20_src_port[i] =
+          (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
 
     /* update hdr */
     ret = tv_init_hdr(impl, s, i);

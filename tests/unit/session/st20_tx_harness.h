@@ -135,6 +135,15 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
 int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
                                  uint64_t trained_bps, enum mtl_port* queue_port,
                                  uint64_t* queue_bps);
+/* Toggle MTL_FLAG_RANDOM_SRC_PORT in the instance's init flags. */
+void ut_txv_set_random_src_port(ut_txv_ctx* ctx, bool enable);
+/* Drives tv_update_dst() on a one-port session with the given ops.udp_src_port and
+ * the source port st20_tx_create() chose (created_src_port). A user-supplied
+ * destination MAC keeps ARP out of it. Outputs the UDP ports now in the session's
+ * packet header template, host order. Returns 0 on success. */
+int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_src_port,
+                      uint16_t new_udp_port, uint16_t* hdr_src_port,
+                      uint16_t* hdr_dst_port);
 /* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
  * above (ptp_time_cursor, sampling_clock_rate). */
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
