@@ -285,6 +285,12 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
+static int tx_st22p_notify_frame_late(void* priv, uint64_t epoch_skipped) {
+  struct st22p_tx_ctx* ctx = priv;
+
+  return ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
+}
+
 static int tx_st22p_notify_event(void* priv, enum st_event event, void* args) {
   struct st22p_tx_ctx* ctx = priv;
 
@@ -520,6 +526,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.get_next_frame = tx_st22p_next_frame;
   ops_tx.notify_frame_done = tx_st22p_frame_done;
   ops_tx.notify_event = tx_st22p_notify_event;
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st22p_notify_frame_late;
   if (ops->codec != ST22_CODEC_JPEGXS) {
     ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
   }
