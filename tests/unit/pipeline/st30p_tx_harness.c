@@ -231,3 +231,10 @@ int ut30p_tx_transport_report_late(ut30p_tx_ctx* ctx, uint64_t epoch_skipped) {
 st30p_tx_handle ut30p_tx_handle(ut30p_tx_ctx* ctx) {
   return &ctx->pipeline;
 }
+
+void ut30p_tx_set_notify_frame_done(ut30p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st30_frame* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
+}

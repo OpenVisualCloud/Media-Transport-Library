@@ -203,3 +203,10 @@ int ut40p_tx_fbs_init_uinit(uint16_t framebuff_cnt, uint32_t max_udw_buff_size) 
   free(p);
   return ret;
 }
+
+void ut40p_tx_set_notify_frame_done(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st40_frame_info* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
+}
