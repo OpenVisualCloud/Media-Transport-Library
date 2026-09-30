@@ -44,6 +44,8 @@ struct ut_txv_ctx {
   enum st10_timestamp_fmt app_tfmt;
   uint64_t app_timestamp;
   int get_next_frame_calls;
+  bool app_busy;
+  int peer_get_next_frame_calls;
   int notify_frame_done_calls;
   uint16_t notify_frame_done_idx;
   struct st20_tx_frame_meta notify_frame_done_meta;
@@ -98,6 +100,7 @@ static int ut_txv_get_next_frame(void* priv, uint16_t* next_frame_idx,
                                  struct st20_tx_frame_meta* meta) {
   struct ut_txv_ctx* ctx = priv;
   ctx->get_next_frame_calls++;
+  if (ctx->app_busy) return -EBUSY;
   *next_frame_idx = 0;
   meta->tfmt = ctx->app_tfmt;
   meta->timestamp = ctx->app_timestamp;
@@ -345,31 +348,25 @@ static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx) {
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
 }
 
-int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                             uint64_t timestamp, uint64_t* packet_tsc,
-                             uint64_t* packet_ptp) {
+/* One frame of total_pkts 4-byte packets, sent one per bulk, with no chain mbufs. */
+static void ut_txv_frame_setup(struct ut_txv_ctx* ctx, struct st_frame_trans* frame,
+                               uint8_t* data, int total_pkts) {
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct st_frame_trans frame = {0};
-  struct rte_mbuf* packet = NULL;
-  uint8_t frame_data[4] = {0};
-  int ret = -1;
 
-  if (ut_txv_tx_path_init(ctx) < 0) goto out;
-
-  frame.addr = frame_data;
-  frame.idx = 0;
-  frame.priv = s;
-  s->st20_frames = &frame;
+  frame->addr = data;
+  frame->idx = 0;
+  frame->priv = s;
+  s->st20_frames = frame;
   s->st20_frames_cnt = 1;
-  s->st20_frame_size = sizeof(frame_data);
-  s->st20_fb_size = sizeof(frame_data);
-  s->st20_linesize = sizeof(frame_data);
-  s->st20_bytes_in_line = sizeof(frame_data);
+  s->st20_frame_size = UT_TXV_FRAME_SIZE;
+  s->st20_fb_size = UT_TXV_FRAME_SIZE;
+  s->st20_linesize = UT_TXV_FRAME_SIZE;
+  s->st20_bytes_in_line = UT_TXV_FRAME_SIZE;
   s->st20_pkts_in_line = 1;
-  s->st20_pkt_len = sizeof(frame_data);
-  s->st20_total_pkts = 1;
+  s->st20_pkt_len = UT_TXV_FRAME_SIZE;
+  s->st20_total_pkts = total_pkts;
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
-  s->st20_pg.size = sizeof(frame_data);
+  s->st20_pg.size = UT_TXV_FRAME_SIZE;
   s->st20_pg.coverage = 2;
   s->bulk = 1;
   s->tx_no_chain = true;
@@ -378,6 +375,20 @@ int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
   s->ops.packing = ST20_PACKING_GPM_SL;
   s->ops.width = 2;
   s->ops.height = 1;
+}
+
+int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                             uint64_t timestamp, uint64_t* packet_tsc,
+                             uint64_t* packet_ptp) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  struct rte_mbuf* packet = NULL;
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  int ret = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+
+  ut_txv_frame_setup(ctx, &frame, frame_data, 1);
   ctx->app_tfmt = tfmt;
   ctx->app_timestamp = timestamp;
   ctx->get_next_frame_calls = 0;
@@ -398,26 +409,18 @@ out:
   return ret;
 }
 
-/* Drives the RTP-level builders (tv_build_rtp() when tx_no_chain, otherwise
- * tv_build_rtp_chain()) with one app packet whose st20_rfc4175_rtp_hdr names the
- * given field parity, so the F-bit extraction feeding tv_sync_pacing() runs for
- * real. Reports the epoch slot the session settled on. */
-int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
-                           uint64_t* epoch) {
+/* Queues one app packet for tv_tasklet_rtp() on a one-packet RTP-level frame. */
+static int ut_txv_rtp_setup(struct ut_txv_ctx* ctx, bool second_field, bool tx_no_chain) {
   static unsigned int test_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct rte_mbuf* app_pkt = NULL;
-  struct rte_mbuf* built_pkt = NULL;
   char ring_name[RTE_RING_NAMESIZE];
-  int ret = -1;
 
-  if (ut_txv_tx_path_init(ctx) < 0) goto out;
   snprintf(ring_name, sizeof(ring_name), "ut_txv_app_ring_%u", test_idx++);
   s->packet_ring = ut_ring_create(ring_name, 32);
-  if (!s->packet_ring) goto out;
+  if (!s->packet_ring) return -1;
 
-  app_pkt = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
-  if (!app_pkt) goto out;
+  struct rte_mbuf* app_pkt = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (!app_pkt) return -1;
   /* st20_tx_put_mbuf() leaves room for MTL's own mt_udp_hdr in the no-chain case; in
    * the chain case MTL prepends a header mbuf, so the app packet starts at the RTP
    * header */
@@ -433,8 +436,10 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
   /* the builders only treat a packet as the start of a new frame, and so only read
    * the parity, when its RTP timestamp differs from the last one sent */
   rfc4175->base.tmstamp = s->st20_rtp_time + 1;
-  if (rte_ring_sp_enqueue(s->packet_ring, app_pkt) < 0) goto out;
-  app_pkt = NULL;
+  if (rte_ring_sp_enqueue(s->packet_ring, app_pkt) < 0) {
+    rte_pktmbuf_free(app_pkt);
+    return -1;
+  }
 
   s->bulk = 4; /* production's default */
   s->tx_no_chain = tx_no_chain;
@@ -445,6 +450,30 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
    * above and pads the rest of the burst with dummies */
   s->st20_total_pkts = 1;
   s->st20_pkt_idx = 0;
+  return 0;
+}
+
+static void ut_txv_rtp_teardown(struct ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (!s->packet_ring) return;
+  ut_ring_drain(s->packet_ring);
+  rte_ring_free(s->packet_ring);
+  s->packet_ring = NULL;
+}
+
+/* Drives the RTP-level builders (tv_build_rtp() when tx_no_chain, otherwise
+ * tv_build_rtp_chain()) with one app packet whose st20_rfc4175_rtp_hdr names the
+ * given field parity, so the F-bit extraction feeding tv_sync_pacing() runs for
+ * real. Reports the epoch slot the session settled on. */
+int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
+                           uint64_t* epoch) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mbuf* built_pkt = NULL;
+  int ret = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  if (ut_txv_rtp_setup(ctx, second_field, tx_no_chain) < 0) goto out;
 
   tvs_tasklet_handler(&ctx->mgr);
   /* a built packet on the TX ring is the proof the builder actually ran */
@@ -454,38 +483,24 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
 
 out:
   rte_pktmbuf_free(built_pkt);
-  rte_pktmbuf_free(app_pkt);
-  if (s->packet_ring) {
-    ut_ring_drain(s->packet_ring);
-    rte_ring_free(s->packet_ring);
-    s->packet_ring = NULL;
-  }
+  ut_txv_rtp_teardown(ctx);
   ut_txv_tx_path_uinit(ctx);
   return ret;
 }
 
-/* Drives exactly as much of tv_tasklet_st22() as the frame->tx_st22_meta.timestamp
- * / .rtp_timestamp assignment needs: tvs_tasklet_handler() dispatches to
- * tv_tasklet_st22() purely because s->st22_info is non-NULL (no ops.type check),
- * and that function returns MTL_TASKLET_HAS_PENDING right after the metadata
- * assignment, before touching any mempool or building a packet -- so the only
- * prerequisite here is a non-full ring for its rte_ring_full() guard. */
-int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                                    uint64_t timestamp, uint64_t* frame_timestamp,
-                                    uint32_t* frame_rtp_timestamp) {
+static int ut_txv_st22_frame_setup(struct ut_txv_ctx* ctx, struct st_frame_trans* frame,
+                                   enum st10_timestamp_fmt tfmt, uint64_t timestamp) {
   static unsigned int test_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct st_frame_trans frame = {0};
   char ring_name[RTE_RING_NAMESIZE];
-  int ret = -1;
 
   snprintf(ring_name, sizeof(ring_name), "ut_txv_st22_ring_%u", test_idx++);
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
-  if (!s->ring[MTL_SESSION_PORT_P]) goto out;
+  if (!s->ring[MTL_SESSION_PORT_P]) return -1;
 
-  frame.idx = 0;
-  frame.priv = s;
-  s->st20_frames = &frame;
+  frame->idx = 0;
+  frame->priv = s;
+  s->st20_frames = frame;
   s->st20_frames_cnt = 1;
   /* codestream_size == pkt_len makes tv_tasklet_st22() compute exactly one
    * total packet; its "not > allowed" / "not zero" size checks both pass. */
@@ -501,6 +516,32 @@ int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   s->st22_info = &ctx->st22_info;
   ctx->app_tfmt = tfmt;
   ctx->app_timestamp = timestamp;
+  return 0;
+}
+
+static void ut_txv_st22_frame_teardown(struct ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->st22_info = NULL;
+  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = NULL;
+  s->st20_frames = NULL;
+}
+
+/* Drives exactly as much of tv_tasklet_st22() as the frame->tx_st22_meta.timestamp
+ * / .rtp_timestamp assignment needs: tvs_tasklet_handler() dispatches to
+ * tv_tasklet_st22() purely because s->st22_info is non-NULL (no ops.type check),
+ * and that function returns MTL_TASKLET_HAS_PENDING right after the metadata
+ * assignment, before touching any mempool or building a packet -- so the only
+ * prerequisite here is a non-full ring for its rte_ring_full() guard. */
+int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                    uint64_t timestamp, uint64_t* frame_timestamp,
+                                    uint32_t* frame_rtp_timestamp) {
+  struct st_frame_trans frame = {0};
+  int ret = -1;
+
+  if (ut_txv_st22_frame_setup(ctx, &frame, tfmt, timestamp) < 0) goto out;
 
   tvs_tasklet_handler(&ctx->mgr);
   *frame_timestamp = frame.tx_st22_meta.timestamp;
@@ -508,12 +549,108 @@ int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   ret = 0;
 
 out:
-  s->st22_info = NULL;
-  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
-  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
-  s->ring[MTL_SESSION_PORT_P] = NULL;
-  s->st20_frames = NULL;
+  ut_txv_st22_frame_teardown(ctx);
   return ret;
+}
+
+static int ut_txv_peer_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                      struct st20_tx_frame_meta* meta) {
+  struct ut_txv_ctx* ctx = priv;
+  (void)next_frame_idx;
+  (void)meta;
+  ctx->peer_get_next_frame_calls++;
+  return -EBUSY;
+}
+
+static struct st_tx_video_session_impl* ut_txv_peer_create(struct ut_txv_ctx* ctx,
+                                                           int idx, bool active) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* peer = calloc(1, sizeof(*peer));
+  char ring_name[RTE_RING_NAMESIZE];
+
+  if (!peer) return NULL;
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_peer_ring_%u", test_idx++);
+  peer->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
+  if (!peer->ring[MTL_SESSION_PORT_P]) {
+    free(peer);
+    return NULL;
+  }
+  peer->impl = &ctx->impl;
+  peer->mgr = &ctx->mgr;
+  peer->idx = idx;
+  peer->active = active;
+  peer->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
+  peer->ops.type = ST20_TYPE_FRAME_LEVEL;
+  peer->ops.num_port = 1;
+  peer->ops.get_next_frame = ut_txv_peer_get_next_frame;
+  peer->ops.priv = ctx;
+  return peer;
+}
+
+static void ut_txv_peer_free(struct st_tx_video_session_impl* peer) {
+  if (!peer) return;
+  rte_ring_free(peer->ring[MTL_SESSION_PORT_P]);
+  free(peer);
+}
+
+int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
+                             const enum ut_txv_slot* slots, int nb_slots) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  int ret = -1;
+
+  if (nb_slots > ST_SCH_MAX_TX_VIDEO_SESSIONS) return -1;
+  if (work == UT_TXV_WORK_ST22) {
+    if (ut_txv_st22_frame_setup(ctx, &frame, ST10_TIMESTAMP_FMT_TAI, 0) < 0) goto out;
+  } else {
+    if (ut_txv_tx_path_init(ctx) < 0) goto out;
+    if (work == UT_TXV_WORK_RTP) {
+      if (ut_txv_rtp_setup(ctx, false, true) < 0) goto out;
+    } else {
+      /* two packets, so the one built leaves the frame unfinished */
+      ut_txv_frame_setup(ctx, &frame, frame_data, 2);
+      ctx->app_busy = (work == UT_TXV_WORK_NONE);
+    }
+  }
+
+  mgr->sessions[0] = NULL;
+  for (int i = 0; i < nb_slots; i++) {
+    rte_spinlock_init(&mgr->mutex[i]);
+    if (slots[i] == UT_TXV_SLOT_SELF) {
+      s->idx = i;
+      mgr->sessions[i] = s;
+    } else if (slots[i] != UT_TXV_SLOT_EMPTY) {
+      mgr->sessions[i] = ut_txv_peer_create(ctx, i, slots[i] == UT_TXV_SLOT_IDLE);
+      if (!mgr->sessions[i]) goto out;
+    }
+  }
+  mgr->max_idx = nb_slots;
+  ctx->peer_get_next_frame_calls = 0;
+  ret = tvs_tasklet_handler(mgr);
+
+out:
+  for (int i = 0; i < nb_slots; i++) {
+    if (mgr->sessions[i] != s) ut_txv_peer_free(mgr->sessions[i]);
+    mgr->sessions[i] = NULL;
+  }
+  s->idx = 0;
+  mgr->sessions[0] = s;
+  mgr->max_idx = 1;
+  ctx->app_busy = false;
+  if (work == UT_TXV_WORK_ST22) {
+    ut_txv_st22_frame_teardown(ctx);
+  } else {
+    ut_txv_rtp_teardown(ctx);
+    ut_txv_tx_path_uinit(ctx);
+    s->st20_frames = NULL;
+  }
+  return ret;
+}
+
+int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx) {
+  return ctx->peer_get_next_frame_calls;
 }
 
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
