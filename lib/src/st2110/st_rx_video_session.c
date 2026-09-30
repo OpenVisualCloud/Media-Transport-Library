@@ -2612,7 +2612,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   /* try to request dma dev */
   if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+      !s->st20_uframe_size && !rv_is_hdr_split(s) &&
+      !rv_framebuffer_in_gpu_direct_vram(s)) {
     rv_init_dma(impl, s);
   }
 
