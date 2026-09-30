@@ -1190,7 +1190,8 @@ struct st20_tx_ops {
    * The callback when lib finish the sending of one frame, frame_idx indicate the
    * done frame. It implicit means the frame ownership is transferred to app. And only
    * non-block method can be used within this callback as it run from lcore tasklet
-   * routine.
+   * routine. st20_tx_get_framebuffer() returns an ext frame's buffer only until this
+   * callback returns, unless the frame is set again.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st20_tx_frame_meta* meta);

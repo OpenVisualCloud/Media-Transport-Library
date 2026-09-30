@@ -145,6 +145,7 @@ struct st_frame_trans {
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
+  void* done_addr; /* st20 tx ext: the cleared addr, during notify_frame_done */
 
   void* user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
@@ -159,6 +160,10 @@ struct st_frame_trans {
     struct st30_rx_frame_meta ra_meta; /* not use now */
     struct st40_tx_frame_meta tc_meta;
     struct st41_tx_frame_meta tf_meta;
+  };
+  union { /* st20/st22 tx: the meta notify_frame_done reports, kept past the release */
+    struct st20_tx_frame_meta done_tv_meta;
+    struct st22_tx_frame_meta done_st22_meta;
   };
 };
 

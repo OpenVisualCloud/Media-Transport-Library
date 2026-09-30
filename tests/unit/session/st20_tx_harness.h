@@ -155,6 +155,32 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
 /* Whether the pool itself still exists, independent of the session's pointer. */
 bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
+/* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
+enum { UT_TXV_FRAME_SIZE = 4 };
+/* One ST_FT_FLAG_EXT frame holding buf, fully built and still in flight in the
+ * transmitter. Buffers are UT_TXV_FRAME_SIZE bytes. Returns 0 on success. */
+int ut_txv_ext_frame_setup(ut_txv_ctx* ctx, void* buf);
+/* st20_tx_set_ext_frame() on the session's public handle. */
+int ut_txv_set_ext_frame(ut_txv_ctx* ctx, uint16_t idx, void* buf);
+/* Releases the ext buffer the way the last mbuf free does (tv_frame_free_cb). */
+void ut_txv_ext_frame_complete(ut_txv_ctx* ctx);
+/* notify_frame_done re-arms the completed frame with buf, as st20p_tx_put_ext_frame()
+ * does. */
+void ut_txv_set_rearm_on_done(ut_txv_ctx* ctx, void* buf);
+/* notify_frame_done runs the builder once; get_next_frame hands back the frame. */
+void ut_txv_set_build_on_done(ut_txv_ctx* ctx);
+int ut_txv_rearm_ret(const ut_txv_ctx* ctx);
+/* st20_tx_get_framebuffer() of the completed frame, read inside notify_frame_done. */
+void* ut_txv_done_framebuffer(const ut_txv_ctx* ctx);
+/* The same, read inside notify_frame_done after the re-arm. */
+void* ut_txv_rearmed_framebuffer(const ut_txv_ctx* ctx);
+/* Packets on the TX ring after the builder run started from notify_frame_done. */
+unsigned int ut_txv_built_on_done(const ut_txv_ctx* ctx);
+/* Whether the meta notify_frame_done got was unchanged after that builder run. */
+bool ut_txv_done_meta_kept(const ut_txv_ctx* ctx);
+void* ut_txv_framebuffer(const ut_txv_ctx* ctx);
+mtl_iova_t ut_txv_ext_frame_iova(const ut_txv_ctx* ctx);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
 long double ut_txv_pacing_tr_offset(const ut_txv_ctx* ctx);
