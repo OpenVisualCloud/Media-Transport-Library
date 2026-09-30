@@ -119,6 +119,11 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
 int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp, uint64_t* frame_timestamp,
                                     uint32_t* frame_rtp_timestamp);
+/* Runs tvs_tasklet_handler() once over two sessions: the harness session in slot
+ * 0, which starts an ST22 frame and so has work, then an idle peer in slot 1
+ * whose TX ring is full. Returns the handler's MTL_TASKLET_* result, < 0 on
+ * setup failure. */
+int ut_txv_run_tasklet_with_idle_peer(ut_txv_ctx* ctx);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);

@@ -462,28 +462,19 @@ out:
   return ret;
 }
 
-/* Drives exactly as much of tv_tasklet_st22() as the frame->tx_st22_meta.timestamp
- * / .rtp_timestamp assignment needs: tvs_tasklet_handler() dispatches to
- * tv_tasklet_st22() purely because s->st22_info is non-NULL (no ops.type check),
- * and that function returns MTL_TASKLET_HAS_PENDING right after the metadata
- * assignment, before touching any mempool or building a packet -- so the only
- * prerequisite here is a non-full ring for its rte_ring_full() guard. */
-int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                                    uint64_t timestamp, uint64_t* frame_timestamp,
-                                    uint32_t* frame_rtp_timestamp) {
+static int ut_txv_st22_frame_setup(struct ut_txv_ctx* ctx, struct st_frame_trans* frame,
+                                   enum st10_timestamp_fmt tfmt, uint64_t timestamp) {
   static unsigned int test_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct st_frame_trans frame = {0};
   char ring_name[RTE_RING_NAMESIZE];
-  int ret = -1;
 
   snprintf(ring_name, sizeof(ring_name), "ut_txv_st22_ring_%u", test_idx++);
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
-  if (!s->ring[MTL_SESSION_PORT_P]) goto out;
+  if (!s->ring[MTL_SESSION_PORT_P]) return -1;
 
-  frame.idx = 0;
-  frame.priv = s;
-  s->st20_frames = &frame;
+  frame->idx = 0;
+  frame->priv = s;
+  s->st20_frames = frame;
   s->st20_frames_cnt = 1;
   /* codestream_size == pkt_len makes tv_tasklet_st22() compute exactly one
    * total packet; its "not > allowed" / "not zero" size checks both pass. */
@@ -499,6 +490,32 @@ int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   s->st22_info = &ctx->st22_info;
   ctx->app_tfmt = tfmt;
   ctx->app_timestamp = timestamp;
+  return 0;
+}
+
+static void ut_txv_st22_frame_teardown(struct ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->st22_info = NULL;
+  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = NULL;
+  s->st20_frames = NULL;
+}
+
+/* Drives exactly as much of tv_tasklet_st22() as the frame->tx_st22_meta.timestamp
+ * / .rtp_timestamp assignment needs: tvs_tasklet_handler() dispatches to
+ * tv_tasklet_st22() purely because s->st22_info is non-NULL (no ops.type check),
+ * and that function returns MTL_TASKLET_HAS_PENDING right after the metadata
+ * assignment, before touching any mempool or building a packet -- so the only
+ * prerequisite here is a non-full ring for its rte_ring_full() guard. */
+int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                    uint64_t timestamp, uint64_t* frame_timestamp,
+                                    uint32_t* frame_rtp_timestamp) {
+  struct st_frame_trans frame = {0};
+  int ret = -1;
+
+  if (ut_txv_st22_frame_setup(ctx, &frame, tfmt, timestamp) < 0) goto out;
 
   tvs_tasklet_handler(&ctx->mgr);
   *frame_timestamp = frame.tx_st22_meta.timestamp;
@@ -506,11 +523,42 @@ int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   ret = 0;
 
 out:
-  s->st22_info = NULL;
-  ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
-  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
-  s->ring[MTL_SESSION_PORT_P] = NULL;
-  s->st20_frames = NULL;
+  ut_txv_st22_frame_teardown(ctx);
+  return ret;
+}
+
+int ut_txv_run_tasklet_with_idle_peer(ut_txv_ctx* ctx) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* peer = calloc(1, sizeof(*peer));
+  struct st_frame_trans frame = {0};
+  char ring_name[RTE_RING_NAMESIZE];
+  int ret = -1;
+
+  if (!peer) return -1;
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_peer_ring_%u", test_idx++);
+  /* a 2-entry ring holds one element, so one enqueue leaves it full */
+  peer->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 2);
+  if (!peer->ring[MTL_SESSION_PORT_P]) goto out;
+  if (rte_ring_sp_enqueue(peer->ring[MTL_SESSION_PORT_P], peer) < 0) goto out;
+  peer->impl = &ctx->impl;
+  peer->mgr = &ctx->mgr;
+  peer->idx = 1;
+  peer->active = true;
+  peer->ops.type = ST20_TYPE_FRAME_LEVEL;
+  peer->ops.num_port = 1;
+  if (ut_txv_st22_frame_setup(ctx, &frame, ST10_TIMESTAMP_FMT_TAI, 0) < 0) goto out;
+
+  rte_spinlock_init(&ctx->mgr.mutex[1]);
+  ctx->mgr.sessions[1] = peer;
+  ctx->mgr.max_idx = 2;
+  ret = tvs_tasklet_handler(&ctx->mgr);
+  ctx->mgr.max_idx = 1;
+  ctx->mgr.sessions[1] = NULL;
+
+out:
+  ut_txv_st22_frame_teardown(ctx);
+  rte_ring_free(peer->ring[MTL_SESSION_PORT_P]);
+  free(peer);
   return ret;
 }
 
