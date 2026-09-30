@@ -161,6 +161,8 @@ unit_sources = [
   'ptp/t3_test.cpp',
   'main/tsc_calibrate_harness.c',
   'main/tsc_calibrate_test.cpp',
+  'dma/mt_map_harness.c',
+  'dma/mt_map_test.cpp',
   'main.cpp',
 ]
 
