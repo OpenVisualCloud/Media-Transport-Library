@@ -54,9 +54,12 @@ enum st30p_tx_flag {
   ST30P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
+   * Drop a ready frame instead of sending it when it is already late. Only effective
+   * together with ST30P_TX_FLAG_USER_PACING and a frame timestamp in
+   * ST10_TIMESTAMP_FMT_TAI, otherwise the flag is ignored. Checked when the transport
+   * asks for its next frame: a frame counts as late once PTP time reaches its timestamp
+   * plus one frame period. A dropped frame gets notify_frame_done with
+   * ST_FRAME_STATUS_DROPPED, then notify_frame_late with epoch_skipped 0.
    */
   ST30P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(16)),
 };
@@ -140,8 +143,10 @@ struct st30p_tx_ops {
   int (*notify_frame_available)(void* priv);
   /**
    * Optional. Callback when frame done.
-   * If TX_FLAG_DROP_WHEN_LATE is enabled AND notify_frame_late is set,
-   * then this will be called only when notify_frame_late is NOT called.
+   * If both ST30P_TX_FLAG_DROP_WHEN_LATE and ST30P_TX_FLAG_USER_PACING are enabled,
+   * it is also called for a frame dropped for being late, with frame->status set to
+   * ST_FRAME_STATUS_DROPPED. notify_frame_late fires for that same frame, the two
+   * callbacks are not mutually exclusive.
    */
   int (*notify_frame_done)(void* priv, struct st30_frame* frame);
   /**
@@ -185,8 +190,6 @@ struct st30p_tx_ops {
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -201,8 +204,6 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -240,7 +241,8 @@ enum st30p_rx_flag {
   /**
    * Flag bit in flags of struct st30p_rx_ops, for non MTL_PMD_DPDK_USER.
    * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
-   * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   * There is no st30p_rx_get_queue_meta, so the queue meta(queue number etc) info
+   * can not be retrieved through the st30p API.
    */
   ST30P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
   /** Force the numa of the created session, both CPU and memory */
@@ -309,8 +311,6 @@ struct st30p_rx_ops {
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -325,8 +325,6 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-30(pipeline) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.

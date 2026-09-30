@@ -114,8 +114,7 @@ int mtl_sch_stop(mtl_sch_handle sch);
 int mtl_sch_free(mtl_sch_handle sch);
 
 /**
- * Register one tasklet into the sch. One tasklet can be registered at runtime after
- * mtl_sch_start.
+ * Register one tasklet into the sch, either before or after mtl_sch_start.
  *
  * @param sch
  *   The sch context.
@@ -129,11 +128,13 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
                                             struct mtl_tasklet_ops* tasklet_ops);
 
 /**
- * Unregister the tasklet from the bind sch. One tasklet can be unregistered at runtime
- * before mtl_sch_start.
+ * Unregister the tasklet from the bind sch, either before or after mtl_sch_start. Once
+ * the sch is started it blocks until the sch thread acks the exit, so never call it on
+ * that thread (a tasklet handler or a callback it runs): the exit is never acked and it
+ * returns -EIO after about 1s.
  *
- * @param sch
- *   The handle to sch context.
+ * @param tasklet
+ *   The handle to the tasklet.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
