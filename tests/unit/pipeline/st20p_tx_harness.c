@@ -249,3 +249,7 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped) {
   return ut20p_tx_transport_ops.notify_frame_late(ut20p_tx_transport_ops.priv,
                                                   epoch_skipped);
 }
+
+st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx) {
+  return &ctx->pipeline;
+}
