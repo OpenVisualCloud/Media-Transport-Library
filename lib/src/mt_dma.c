@@ -155,20 +155,17 @@ static int dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* 
       goto exit;
     }
 
-    uint16_t nb_dq = 0;
-    int sleep_interval_ms = 10;
-    int max_retry = 100; /* timeout 1s */
-    int retry = 0;
-    while (nb_dq < 1) {
-      nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
+    uint64_t deadline_ns = mt_get_monotonic_time() + NS_PER_S;
+    while (true) {
+      uint16_t nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
       dbg("%s(%d), nb_dq %d\n", __func__, idx, nb_dq);
-      retry++;
-      if (retry > max_retry) {
+      if (nb_dq) break;
+      if (mt_get_monotonic_time() > deadline_ns) {
         ret = -ETIMEDOUT;
         err("%s(%d), poll timeout\n", __func__, idx);
         goto exit;
       }
-      mt_sleep_ms(sleep_interval_ms);
+      mt_sleep_us(10);
     }
     if (!memcmp(src + off, dst + off, len - off)) {
       ret = 0;
