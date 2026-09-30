@@ -1169,9 +1169,9 @@ void* st20p_rx_get_fb_addr(st20p_rx_handle handle, uint16_t idx) {
     goto out;
   }
   if (ctx->derive)
-    ret_addr = ctx->framebuffs[idx].src.addr;
+    ret_addr = ctx->framebuffs[idx].src.addr[0];
   else
-    ret_addr = ctx->framebuffs[idx].dst.addr;
+    ret_addr = ctx->framebuffs[idx].dst.addr[0];
 out:
   MT_HANDLE_RELEASE(ctx);
   return ret_addr;
