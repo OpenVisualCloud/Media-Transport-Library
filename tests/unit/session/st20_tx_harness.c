@@ -753,6 +753,32 @@ int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
   return 0;
 }
 
+void ut_txv_set_random_src_port(ut_txv_ctx* ctx, bool enable) {
+  if (enable)
+    ctx->impl.user_para.flags |= MTL_FLAG_RANDOM_SRC_PORT;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_RANDOM_SRC_PORT;
+}
+
+int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_src_port,
+                      uint16_t new_udp_port, uint16_t* hdr_src_port,
+                      uint16_t* hdr_dst_port) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_tx_dest_info dst = {.dip_addr[MTL_SESSION_PORT_P] = {239, 0, 0, 1},
+                                .udp_port[MTL_SESSION_PORT_P] = new_udp_port};
+
+  /* the source MAC then comes from inf->k_mac_addr instead of an ethdev */
+  ctx->impl.inf[MTL_PORT_P].drv_info.flags |= MT_DRV_F_NOT_DPDK_PMD;
+  s->ops.num_port = 1;
+  s->ops.flags |= ST20_TX_FLAG_USER_P_MAC;
+  s->ops.udp_src_port[MTL_SESSION_PORT_P] = udp_src_port;
+  s->st20_src_port[MTL_SESSION_PORT_P] = created_src_port;
+  if (tv_update_dst(&ctx->impl, s, &dst) < 0) return -1;
+  *hdr_src_port = ntohs(s->s_hdr[MTL_SESSION_PORT_P].udp.src_port);
+  *hdr_dst_port = ntohs(s->s_hdr[MTL_SESSION_PORT_P].udp.dst_port);
+  return 0;
+}
+
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                   uint64_t timestamp) {
   tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
