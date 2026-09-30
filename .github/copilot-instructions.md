@@ -17,8 +17,8 @@ This is a **client-visible, production repository**. Every change goes through r
 
 ## Always-On Coding Conventions
 
-- **C99 only** in library core (`lib/`). C++ allowed only in tests (gtest).
-- **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_`/`st41_` (media APIs), `st20p_`/`st22p_`/`st30p_` (pipeline APIs).
+- **C99** in library core (`lib/`), plus C11 `<stdatomic.h>` atomics. C++ allowed only in tests (gtest).
+- **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_`/`st41_` (media APIs), `st20p_`/`st22p_`/`st30p_`/`st40p_` (pipeline APIs).
 - **Error returns**: 0 = success, negative = error. Free resources in reverse allocation order on failure.
 - **Never block in tasklets** — no malloc, no mutex, no sleep, no INFO-level logging in data-plane paths.
 - **Formatting**: `clang-format-14` enforced by CI. Always run `./format-coding.sh` before committing.
