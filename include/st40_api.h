@@ -59,6 +59,7 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 /**
  * Flag bit in flags of struct st40_tx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST40_TX_FLAG_ENABLE_RTCP (MTL_BIT32(5))
 /**
@@ -108,7 +109,7 @@ struct st40_tx_test_config {
 };
 
 /**
- * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
+ * Flag bit in flags of struct st40_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st40_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
@@ -116,6 +117,7 @@ struct st40_tx_test_config {
 /**
  * Flag bit in flags of struct st40_rx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST40_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 /**
@@ -573,8 +575,6 @@ struct st40_rx_user_stats {
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-40(ancillary) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -589,8 +589,6 @@ int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-40(ancillary) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -655,8 +653,6 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(ancillary) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -671,8 +667,6 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(ancillary) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
