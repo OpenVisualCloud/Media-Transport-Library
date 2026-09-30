@@ -101,6 +101,7 @@ enum st40p_tx_flag {
   /**
    * Flag bit in flags of struct st40_tx_ops.
    * If enable the rtcp.
+   * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
    */
   ST40P_TX_FLAG_ENABLE_RTCP = (MTL_BIT32(5)),
   /**
@@ -109,9 +110,12 @@ enum st40p_tx_flag {
    */
   ST40P_TX_FLAG_DEDICATE_QUEUE = (MTL_BIT32(6)),
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
+   * Drop a ready frame instead of sending it when it is already late. Only effective
+   * together with ST40P_TX_FLAG_USER_PACING and a frame timestamp in
+   * ST10_TIMESTAMP_FMT_TAI, otherwise the flag is ignored. Checked when the transport
+   * asks for its next frame: a frame counts as late once PTP time reaches its timestamp
+   * plus one frame period. A dropped frame gets notify_frame_done with
+   * ST_FRAME_STATUS_DROPPED, then notify_frame_late with epoch_skipped 0.
    */
   ST40P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(7)),
   /**
@@ -163,8 +167,11 @@ struct st40p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done.
+   * If both ST40P_TX_FLAG_DROP_WHEN_LATE and ST40P_TX_FLAG_USER_PACING are enabled,
+   * it is also called for a frame dropped for being late, with frame_info->status set
+   * to ST_FRAME_STATUS_DROPPED. notify_frame_late fires for that same frame, the two
+   * callbacks are not mutually exclusive.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
@@ -197,6 +204,7 @@ enum st40p_rx_flag {
   /**
    * Flag bit in flags of struct st40_rx_ops.
    * If enable the rtcp.
+   * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
    */
   ST40P_RX_FLAG_ENABLE_RTCP = (MTL_BIT32(1)),
   /**
@@ -230,7 +238,7 @@ struct st40p_rx_ops {
   uint16_t framebuff_cnt;
   /** Maximum combined size of all user data words to receive in single st40p frame */
   uint32_t max_udw_buff_size;
-  /** Mandatory. RTP ring queue size, must be power of 2 */
+  /** Unused, the pipeline runs the frame-level transport which has no RTP ring */
   uint32_t rtp_ring_size;
   /** Optional. name */
   const char* name;
@@ -252,8 +260,6 @@ struct st40p_rx_ops {
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -268,8 +274,6 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.

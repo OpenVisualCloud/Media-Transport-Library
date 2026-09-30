@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-/** Handle to rx st2110-22 pipeline session of lib */
+/** Handle to rx st2110-20 combined redundant session of lib */
 typedef struct st20rc_rx_ctx* st20rc_rx_handle;
 
 /**

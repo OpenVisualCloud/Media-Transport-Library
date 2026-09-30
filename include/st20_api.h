@@ -574,7 +574,7 @@ struct st20_rx_frame_meta {
   void* opaque;
   /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
   uint64_t timestamp_first_pkt;
-  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the last pkt */
   uint64_t timestamp_last_pkt;
   /** first packet time in ns to the start of current epoch */
   int64_t fpt;
@@ -1982,8 +1982,6 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -1998,8 +1996,6 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -2333,8 +2329,6 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -2349,8 +2343,6 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.

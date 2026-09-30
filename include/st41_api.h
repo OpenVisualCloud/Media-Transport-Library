@@ -52,6 +52,7 @@ typedef struct st_rx_fastmetadata_session_handle_impl* st41_rx_handle;
 /**
  * Flag bit in flags of struct st41_tx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST41_TX_FLAG_ENABLE_RTCP (MTL_BIT32(5))
 /**
@@ -61,7 +62,7 @@ typedef struct st_rx_fastmetadata_session_handle_impl* st41_rx_handle;
 #define ST41_TX_FLAG_DEDICATE_QUEUE (MTL_BIT32(6))
 
 /**
- * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
+ * Flag bit in flags of struct st41_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st41_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
@@ -69,6 +70,7 @@ typedef struct st_rx_fastmetadata_session_handle_impl* st41_rx_handle;
 /**
  * Flag bit in flags of struct st41_rx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST41_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 
@@ -308,8 +310,6 @@ struct st41_rx_user_stats {
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -324,8 +324,6 @@ int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the tx st2110-41(fastmetadata) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -338,8 +336,6 @@ int st41_tx_reset_session_stats(st41_tx_handle handle);
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-40(fastmetadata) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -354,8 +350,6 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
  * @note Thread-safe. Briefly acquires the per-session spinlock.
  * @param handle
  *   The handle to the rx st2110-41(fastmetadata) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
