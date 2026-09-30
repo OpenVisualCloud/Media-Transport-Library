@@ -17,6 +17,8 @@ updating them. Exceptions: the frame counters a pipeline overlays (`stat_frames_
 `stat_frames_dropped`, ...) are relaxed atomics read outside that lock, and RX video with a
 dedicated packet lcore updates its counters without the lock, so such a snapshot is not
 guaranteed to be consistent.
+Session callbacks may run with that spinlock held, so do not call `get_session_stats`
+or `reset_session_stats` from a callback of the same session: it deadlocks.
 
 ## RX packet processing pipeline
 
