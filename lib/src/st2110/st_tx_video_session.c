@@ -5006,6 +5006,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
   st20_ops.notify_event = ops->notify_event;
+  st20_ops.notify_frame_late = ops->notify_frame_late;
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     s = tv_mgr_attach(sch, &st20_ops, MT_ST22_HANDLE_TX_VIDEO, NULL);
