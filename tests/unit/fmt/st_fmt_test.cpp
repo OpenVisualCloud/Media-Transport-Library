@@ -156,3 +156,19 @@ TEST_F(StFrameRateToStFps, RateOutsideEveryWindowIsRejected) {
   EXPECT_EQ(st_frame_rate_to_st_fps(48.0), ST_FPS_MAX);
   EXPECT_EQ(g_warn_cnt, 0);
 }
+
+/* The pacer sends one packet per st30_get_packet_time() and the RTP clock advances by
+ * st30_get_sample_num() per packet, so the two must agree with the sampling rate. */
+TEST(St30PacketTime, CarriesExactlyTheSamplesOfOnePacket) {
+  for (int sampling = 0; sampling < ST30_SAMPLING_MAX; sampling++) {
+    for (int ptime = 0; ptime < ST30_PTIME_MAX; ptime++) {
+      int samples =
+          st30_get_sample_num((enum st30_ptime)ptime, (enum st30_sampling)sampling);
+      if (samples < 0) continue;
+      double rate = st30_get_sample_rate((enum st30_sampling)sampling);
+      double pkt_time_ns = st30_get_packet_time((enum st30_ptime)ptime);
+      EXPECT_NEAR(pkt_time_ns, samples * 1e9 / rate, 1.0)
+          << "ptime " << ptime << " sampling " << sampling;
+    }
+  }
+}
