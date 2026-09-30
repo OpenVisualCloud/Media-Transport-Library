@@ -102,6 +102,10 @@ struct ut20_test_ctx {
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
+  struct st20_ext_frame query_ext_frame;
+  uint8_t ext_frame_storage[UT20_MAX_FRAME_SIZE];
+  struct st20_ext_frame ext_frames[UT20_FRAME_COUNT];
+  struct mtl_dma_lender_dev idle_dma_dev;
 };
 
 #include "session/st20_harness.h"
@@ -541,6 +545,45 @@ int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts
   return rc;
 }
 
+/* ── external frames ──────────────────────────────────────────────────── */
+
+static int ut20_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+                                struct st20_rx_frame_meta* meta) {
+  ut20_test_ctx* ctx = priv;
+  (void)meta;
+  *ext_frame = ctx->query_ext_frame;
+  return 0;
+}
+
+void ut20_ctx_enable_query_ext_frame(ut20_test_ctx* ctx, bool has_addr, uint64_t iova) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  ctx->query_ext_frame.buf_addr = has_addr ? ctx->ext_frame_storage : NULL;
+  ctx->query_ext_frame.buf_iova = iova;
+  ctx->query_ext_frame.buf_len = s->st20_fb_size;
+  s->ops.query_ext_frame = ut20_query_ext_frame;
+  s->ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+void ut20_ctx_attach_idle_dma(ut20_test_ctx* ctx) {
+  ctx->session.dma_dev = &ctx->idle_dma_dev;
+}
+
+int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = buf_len;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+  int ret = rv_alloc_frames(&ctx->impl, s);
+  if (ret == 0) rv_free_frames(s);
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  return ret;
+}
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 static int ut20_st22_notify_frame_ready(void* priv, void* frame,
@@ -799,6 +842,10 @@ uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_slot_get_frame_fail;
 }
 
+uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_slot_query_ext_fail;
+}
+
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
   bool was_holding = ctx->hold_frames;
   ctx->hold_frames = hold;
@@ -869,6 +916,10 @@ int ut20_total_frame_pkts(void) {
 
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
   return (int)ctx->session.ops.height;
+}
+
+size_t ut20_frame_size(const ut20_test_ctx* ctx) {
+  return ctx->session.st20_fb_size;
 }
 
 bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx) {

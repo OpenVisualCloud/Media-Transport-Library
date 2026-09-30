@@ -268,6 +268,22 @@ uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx);
 /* Bumped once per frame whose first pkt carried accepted ST 2110-22 boxes. */
 uint64_t ut20_stat_st22_boxes(const ut20_test_ctx* ctx);
 
+/* ── external frames ──────────────────────────────────────────────────── */
+
+/* Switch to dynamic ext frames: query_ext_frame hands out a harness buffer of the
+ * session's frame size, or a NULL address when !has_addr, with `iova`. */
+void ut20_ctx_enable_query_ext_frame(ut20_test_ctx* ctx, bool has_addr, uint64_t iova);
+
+/* Give the session a DMA device with nothing in flight. The harness pkts are below
+ * the DMA copy threshold, so it is never asked to copy. */
+void ut20_ctx_attach_idle_dma(ut20_test_ctx* ctx);
+
+/* Run the production frame allocation over dedicated ext frames of `buf_len`
+ * bytes each, release them again, and return rv_alloc_frames()'s status. */
+int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len);
+
+uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx);
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 /* Switch the session into ST 2110-22 frame mode: install the st22 rx info and
@@ -313,6 +329,9 @@ int ut20_total_frame_pkts(void);
 /* Live geometry: number of packets per frame for THIS context. Returns
  * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
+
+/* Framebuffer size in bytes for THIS context. */
+size_t ut20_frame_size(const ut20_test_ctx* ctx);
 
 /* true while every byte the harness keeps past the declared slot bitmaps is
  * still zero, i.e. no packet index wrote outside its bitmap. */
