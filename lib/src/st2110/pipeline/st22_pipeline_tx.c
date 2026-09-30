@@ -772,6 +772,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
     timespec_add_ns(&deadline, ctx->block_timeout_ns);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    uint32_t wake_block_cnt = ctx->wake_block_cnt;
     while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       if (ctx->block_wake_pending) {
         /* A frame done sets the wake also when no thread waits, so the wake can
@@ -782,6 +783,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
         if (framebuff) break;
         continue;
       }
+      if (ctx->wake_block_cnt != wake_block_cnt) break;
       int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                            &deadline);
       if (_ret) break;
@@ -1188,7 +1190,12 @@ int st22p_tx_wake_block(st22p_tx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
-  if (ctx->block_get) tx_st22p_block_wake(ctx);
+  if (ctx->block_get) {
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    ctx->wake_block_cnt++;
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  }
 
   MT_HANDLE_RELEASE(ctx);
   return 0;
