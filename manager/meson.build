@@ -19,8 +19,8 @@ cpp_c = meson.get_compiler('cpp')
 
 # Intel SDL / OpenSSF compiler hardening, see doc/build.md
 add_project_arguments(cpp_c.get_supported_arguments(['-fstack-protector-strong',
-  '-fstack-clash-protection', '-fcf-protection=full',
-  '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'cpp')
+  '-fstack-clash-protection', '-fcf-protection=full']),
+  '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'cpp')
 # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CXXFLAGS already set
 if get_option('optimization') not in ['0', 'plain'] and cpp_c.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
   add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'cpp')

@@ -60,10 +60,13 @@ if mtl_has_usdt
     output: 'mt_usdt_provider.h',
     command: [dtrace, '-C', '-h', '-s', '@INPUT@', '-o', '@OUTPUT@'],
   )
+  # dtrace compiles the object with CFLAGS from the environment. Without the CET
+  # flag it carries no .note.gnu.property and ld drops IBT/SHSTK from libmtl.so.
   usdt_provider_object = custom_target('usdt_provider_object',
     input: usdt_provider,
     output: 'mt_usdt_provider.o',
     command: [dtrace, '-C', '-G', '-s', '@INPUT@', '-o', '@OUTPUT@'],
+    env: {'CFLAGS': ' '.join(cc.get_supported_arguments(['-fcf-protection=full']))},
     depends: usdt_provider_header,
   )
 endif
@@ -85,8 +88,8 @@ mtl_link_c_args = []
 # Intel SDL / OpenSSF compiler hardening, see doc/build.md
 if not is_windows
   add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
-    '-fstack-clash-protection', '-fcf-protection=full',
-    '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'c')
+    '-fstack-clash-protection', '-fcf-protection=full']),
+    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
   # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set
   if get_option('optimization') not in ['0', 'plain'] and cc.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
     add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'c')

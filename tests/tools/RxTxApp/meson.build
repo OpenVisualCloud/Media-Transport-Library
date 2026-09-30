@@ -56,8 +56,8 @@ app_ld_args = []
 # Intel SDL / OpenSSF compiler hardening, see doc/build.md
 if not is_windows
   add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
-    '-fstack-clash-protection', '-fcf-protection=full',
-    '-Wformat', '-Wformat-security', '-Werror=format-security']), language : 'c')
+    '-fstack-clash-protection', '-fcf-protection=full']),
+    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
   # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set
   if get_option('optimization') not in ['0', 'plain'] and cc.get_define('_FORTIFY_SOURCE', args : '-O2') == ''
     add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'c')

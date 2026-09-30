@@ -55,7 +55,8 @@ RUN ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
-    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
+    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp && \
+    .github/scripts/ci/check-hardening.sh /install /usr/local/bin/RxTxApp /usr/local/bin/MtlManager /usr/local/bin/KahawaiTest
 
 # Rocky Linux 9, runtime/final stage
 ARG MTL_REPO
