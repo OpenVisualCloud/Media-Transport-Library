@@ -27,6 +27,12 @@
 #define mt_dma_borrow_mbuf ut20_dma_borrow_mbuf
 #define mt_dma_drop_mbuf ut20_dma_drop_mbuf
 #define mt_dma_full ut20_dma_full
+/* rv_init_dma()'s requests are counted and refused; tests attach the fake directly. */
+struct mtl_main_impl;
+struct mt_dma_request_req;
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req);
+#define mt_dma_request_dev ut20_dma_request_dev
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
@@ -37,6 +43,7 @@
 #undef mt_dma_borrow_mbuf
 #undef mt_dma_drop_mbuf
 #undef mt_dma_full
+#undef mt_dma_request_dev
 /* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
  * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
  * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
@@ -161,6 +168,16 @@ int ut20_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
 
 bool ut20_dma_full(struct mtl_dma_lender_dev* dev) {
   return dev->nb_borrowed >= UT20_DMA_MAX_BORROWED;
+}
+
+static int ut20_dma_requests;
+
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req) {
+  (void)impl;
+  (void)req;
+  ut20_dma_requests++;
+  return NULL;
 }
 
 /* ── PTP time stub ────────────────────────────────────────────────────── */
@@ -582,6 +599,29 @@ int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len) {
   s->ops.ext_frames = NULL;
   s->st20_frames = ctx->frames;
   return ret;
+}
+
+int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = s->st20_fb_size;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  s->ops.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  s->ops.gpu_direct_framebuffer_in_vram_device_address = gpu_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+
+  ut20_dma_requests = 0;
+  int ret = rv_init_sw(&ctx->impl, &ctx->mgr, s, NULL);
+  if (ret == 0) rv_uinit_sw(&ctx->impl, s);
+
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++)
+    s->slots[i].frame_bitmap = ctx->bitmaps[i];
+  return ret < 0 ? ret : ut20_dma_requests;
 }
 
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
