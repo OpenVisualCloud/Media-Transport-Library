@@ -21,7 +21,6 @@
 #include "st2110/pipeline/st30_pipeline_tx.c"
 #undef st30_tx_create
 #pragma GCC diagnostic pop
-#undef st30_tx_create
 
 #include "common/ut_common.h"
 
