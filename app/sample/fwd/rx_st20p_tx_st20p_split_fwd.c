@@ -97,6 +97,7 @@ static void* tx_st20p_fwd_thread(void* args) {
     }
 
     st20p_rx_put_frame(rx_handle, frame);
+    s->fb_fwd++;
   }
 
   return NULL;
