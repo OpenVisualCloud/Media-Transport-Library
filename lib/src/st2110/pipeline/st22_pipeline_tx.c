@@ -260,6 +260,14 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  bool notify = ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called;
+  if (notify) {
+    /* Before FREE: a get_frame() of the freed slot resets it for the next frame. */
+    framebuff->frame_done_cb_called = true;
+    frame->status = ST_FRAME_STATUS_COMPLETE;
+  }
+
   if (ST22P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST22P_TX_FRAME_FREE;
@@ -270,13 +278,7 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
 
-  if (ctx->ops.notify_frame_done &&
-      !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
-    frame->status = ST_FRAME_STATUS_COMPLETE;
-    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
-  }
+  if (notify) ctx->ops.notify_frame_done(ctx->ops.priv, frame);
 
   tx_st22p_notify_frame_available(ctx);
 

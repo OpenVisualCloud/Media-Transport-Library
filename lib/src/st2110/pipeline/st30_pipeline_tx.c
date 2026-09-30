@@ -218,6 +218,13 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
 
+  bool notify = ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called;
+  if (notify) {
+    /* Before FREE: a get_frame() of the freed slot resets it for the next frame. */
+    framebuff->frame_done_cb_called = true;
+    frame->status = ST_FRAME_STATUS_COMPLETE;
+  }
+
   if (ST30P_TX_FRAME_IN_TRANSMITTING ==
       atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
     ret = 0;
@@ -229,12 +236,7 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
         (int)atomic_load_explicit(&framebuff->stat, memory_order_relaxed), frame_idx);
   }
 
-  if (ctx->ops.notify_frame_done &&
-      !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    frame->status = ST_FRAME_STATUS_COMPLETE;
-    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
-  }
+  if (notify) ctx->ops.notify_frame_done(ctx->ops.priv, frame);
   if (ret == 0)
     atomic_fetch_add_explicit(&ctx->stat_frames_sent, 1, memory_order_relaxed);
 
