@@ -4,6 +4,8 @@
  * ST41 TX timestamp flags, driven through the real frame-level tasklet:
  *   ST41_TX_FLAG_USER_TIMESTAMP puts an app ST10_TIMESTAMP_FMT_MEDIA_CLK
  *   value on the wire as the RTP timestamp.
+ *   ST41_TX_FLAG_USER_PACING rejects ST10_TIMESTAMP_FMT_MEDIA_CLK and keeps
+ *   the default epoch pacing, as ST30 and ST40 do.
  *
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St41TxTimestamp*'
  */
@@ -46,4 +48,14 @@ TEST_F(St41TxTimestampTest, UserTimestampMediaClkIsTheWireRtpTimestamp) {
 
   EXPECT_EQ(ut41tx_wire_rtp_timestamp(ctx_), kUserMediaClk);
   EXPECT_EQ(ut41tx_done_meta(ctx_)->rtp_timestamp, kUserMediaClk);
+}
+
+TEST_F(St41TxTimestampTest, UserPacingMediaClkFallsBackToDefaultPacing) {
+  ut41tx_set_ops_flags(ctx_, ST41_TX_FLAG_USER_PACING);
+
+  ASSERT_EQ(ut41tx_run_frame(ctx_, ST10_TIMESTAMP_FMT_MEDIA_CLK, kUserMediaClk), 0);
+
+  EXPECT_EQ(ut41tx_done_meta(ctx_)->timestamp, kEpochStartNs + kNsPerMs);
+  EXPECT_EQ(ut41tx_stat_epoch_mismatch(ctx_), 0u);
+  EXPECT_EQ(ut41tx_stat_error_user_timestamp(ctx_), 1u);
 }
