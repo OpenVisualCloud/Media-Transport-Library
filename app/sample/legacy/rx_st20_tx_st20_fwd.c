@@ -394,7 +394,7 @@ int main(int argc, char** argv) {
   st20_fwd_open_logo(&ctx, &app, ctx.logo_url);
 
   ret = pthread_create(&app.fwd_thread, NULL, fwd_thread, &app);
-  if (ret < 0) {
+  if (ret) {
     err("%s, fwd thread create fail\n", __func__);
     ret = -EIO;
     goto error;

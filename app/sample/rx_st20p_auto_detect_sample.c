@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle;
 
     ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

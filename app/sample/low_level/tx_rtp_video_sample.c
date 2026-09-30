@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
     app[i]->total_packet_in_frame = ops_tx.rtp_frame_total_pkts;
 
     ret = pthread_create(&app[i]->app_thread, NULL, app_tx_rtp_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

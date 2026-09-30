@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
     ret = tx_st22p_open_source(&ctx, app[i], ctx.tx_url);
 
     ret = pthread_create(&app[i]->frame_thread, NULL, tx_st22p_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;
