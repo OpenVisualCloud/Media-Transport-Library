@@ -250,6 +250,13 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   MT_USDT_ST40P_TX_FRAME_DONE(ctx->idx, frame_idx, frame_info->rtp_timestamp);
   return ret;
 }
+
+static int tx_st40p_notify_frame_late(void* priv, uint64_t epoch_skipped) {
+  struct st40p_tx_ctx* ctx = priv;
+
+  return ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
+}
+
 static int tx_st40p_asign_anc_frames(struct st40p_tx_ctx* ctx) {
   struct st40p_tx_frame* frames = ctx->framebuffs;
   struct st40_frame_info* frame_info;
@@ -313,7 +320,7 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
     ops_tx.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (ops->flags & ST40P_TX_FLAG_SPLIT_ANC_BY_PKT)
     ops_tx.flags |= ST40_TX_FLAG_SPLIT_ANC_BY_PKT;
-  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st40p_notify_frame_late;
   if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
   /* test-only mutation config */
