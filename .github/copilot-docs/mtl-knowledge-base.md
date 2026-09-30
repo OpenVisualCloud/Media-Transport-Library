@@ -38,7 +38,7 @@ Pipeline wraps session: `st20p_tx_create()` calls `st20_tx_create()` internally.
 |--------|-----------|
 | `mt_` | Core library (non-media) |
 | `st_` / `st20_` / `st22_` / `st30_` / `st40_` / `st41_` | Media session APIs |
-| `st20p_` / `st22p_` / `st30p_` | Pipeline APIs |
+| `st20p_` / `st22p_` / `st30p_` / `st40p_` | Pipeline APIs |
 | `tv_` | TX video session internals |
 | `rv_` | RX video session internals |
 | `tx_audio_session_` | TX audio internals |
@@ -113,7 +113,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 - Error paths must free in reverse allocation order
 - Every `rte_malloc` must have a matching `rte_free` on the same NUMA socket
 - `dbg()` / `info()` / `warn()` / `err()` for logging — never `printf`
-- No C++ in library core (C99 only); tests use C++ for gtest
+- No C++ in library core (C99 plus C11 `<stdatomic.h>` atomics); tests use C++ for gtest
 - All public API in `include/` — internal headers stay in `lib/src/`
 
 ---
@@ -403,7 +403,7 @@ In RL mode, at target − `warm_pkts`·`trs`, `video_trs_rl_warm_up()` queues `c
 
 ### Epoch Timing
 Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period ≈ 16.683ms.
-- Late frame → advance to next epoch → `stat_frame_late` increments
+- Late frame (next free epoch already past) → snap to the current epoch, `stat_epoch_drop` += skipped epochs, `notify_frame_late` fires (`calc_frame_count_since_epoch()`)
 - Fix is in the application, not MTL
 - Interlaced TX: `frame_time` is one FIELD period, so the ST 2110-21 frame grid is every
   SECOND epoch slot (even = first field). Corrected at the `tv_sync_pacing()` call site;
@@ -451,7 +451,7 @@ RX diagnostic stats:
 
 1. **NIC bottleneck?** Check `stat_tx_burst` vs `stat_tx_bytes`
 2. **Scheduler overloaded?** 100% CPU, never sleeping → too many sessions
-3. **Pacing broken?** RX: VRX stats. TX: `stat_epoch_mismatch`, `stat_frame_late`
+3. **Pacing broken?** RX: VRX stats. TX: `stat_epoch_drop`, `stat_epoch_onward`; audio/anc/fmd also `stat_epoch_mismatch`
 4. **NUMA problem?** Socket mismatch → 2× DMA latency
 5. **Ring underflow?** Transmitter sends fewer packets than expected → increase ring or reduce builder load
 6. **RX losing packets?** NIC `imissed` counter → increase `nb_rx_desc`, mempool, or drain faster (continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size/2`, loop immediately via `MTL_TASKLET_HAS_PENDING`)
@@ -791,7 +791,7 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 Hierarchy: port → shapers (max 128, `MT_MAX_RL_ITEMS`). Each shaper = one session's rate limit.
 
 ### Multi-Process
-MTL supports `--proc-type=secondary` for read-only stats access. Full multi-process TX/RX not supported.
+Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to. Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead.
 
 ### Backend Support
 
