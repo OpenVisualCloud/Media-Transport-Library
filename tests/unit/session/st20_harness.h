@@ -234,6 +234,22 @@ uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx);
  * standing up an mt_stat thread. Tests assert on its real log output. */
 void ut20_invoke_rv_stat(ut20_test_ctx* ctx);
 
+/* Route payload copies through a fake DMA engine: a copy completes only after it
+ * is submitted, and never while the engine is stalled. */
+void ut20_ctx_enable_dma(ut20_test_ctx* ctx);
+void ut20_dma_set_stalled(ut20_test_ctx* ctx, bool stalled);
+/* End the current burst as the RX tasklet does (submit queued copies), then run one
+ * rv_pkt_rx_tasklet() pass, which reaps completions with no packets to receive. */
+void ut20_rx_tasklet_pass(ut20_test_ctx* ctx);
+/* copies the session handed to the DMA engine */
+uint64_t ut20_dma_copies(const ut20_test_ctx* ctx);
+/* completion polls the session made on the DMA engine */
+uint64_t ut20_dma_polls(const ut20_test_ctx* ctx);
+/* new-frame packets dropped because the previous frame's DMA did not finish */
+int ut20_dma_busy_drops(const ut20_test_ctx* ctx);
+/* new frames whose bounded flush of the previous frame's DMA timed out */
+uint64_t ut20_dma_flush_timeouts(const ut20_test_ctx* ctx);
+
 /* Number of frames the production handler has marked completed/delivered
  * since session reset. Returns the live value of `stat_frames_received`. */
 int ut20_frames_received(const ut20_test_ctx* ctx);
