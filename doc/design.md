@@ -387,7 +387,7 @@ st40p_rx_get_frame
 st40p_rx_put_frame
 ```
 
-- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
+- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy and user pacing/timestamps; frame and UDW buffers are always allocated by the library (there is no external-frame mode). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
 - **RX pipeline (`st40p_rx_*`)** is a thin shim over the **FRAME_LEVEL transport**
   (`ST40_TYPE_FRAME_LEVEL` on `st40_rx_ops`). The transport owns the frame-buffer pool,
   parses RFC 8331 packets, and assembles full frames using a 64-bit per-frame
@@ -545,9 +545,10 @@ Consequently, the application will receive notifications through `notify_event` 
 By default, applications simply push frames into MTL TX sessions, where the MTL TX session automatically assigns timestamps and epochs based on timing.
 
 The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and calculates RTP timestamp straight from this value.
-Transmission time in unchanged.
+Transmission time is unchanged.
 
-The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use their own timestamp values for each frame. Consequently, the RTP timestamp for all packets that belong to that frame will be assigned the customized value.
+The ST**_TX_FLAG_USER_PACING flag allows applications to control when each frame is sent. MTL reads a TAI timestamp from st**_tx_frame_meta and holds the frame until that time; only ST10_TIMESTAMP_FMT_TAI is honored, other formats fall back to the default epoch-based pacing.
+Video and ancillary sessions round the timestamp to the nearest frame epoch and pace from there; with ST20_TX_FLAG_EXACT_USER_PACING / ST40_TX_FLAG_EXACT_USER_PACING the first packet of the frame leaves exactly at the given time instead.
 
 ### 6.12. SIMD for color space convert
 
@@ -567,10 +568,16 @@ To offer significant flexibility in switch/forward scenarios, it is advantageous
   st30_rx_update_source
   st40_tx_update_destination
   st40_rx_update_source
+  st41_tx_update_destination
+  st41_rx_update_source
   st20p_tx_update_destination
   st20p_rx_update_source
   st22p_tx_update_destination
   st22p_rx_update_source
+  st30p_tx_update_destination
+  st30p_rx_update_source
+  st40p_tx_update_destination
+  st40p_rx_update_source
 ```
 
 ### 6.14. Ecosystem
@@ -615,7 +622,8 @@ In MTL, similar to st20 video, each field is treated as an individual frame, wit
 
 For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, fps: ST_FPS_P50`.
 
-For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), RTP passthrough mode is the only supported, it's application's duty to check the if it's the first or second by inspecting the F bits in rfc8331 header.
+For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), the frame-level transport (`ST40_TYPE_FRAME_LEVEL`) and the st40p pipeline report it in `second_field` of the frame meta;
+in RTP passthrough mode (`ST40_TYPE_RTP_LEVEL`) it's application's duty to check if it's the first or second by inspecting the F bits in rfc8331 header.
 
 ## 7. Misc
 
@@ -672,12 +680,10 @@ On Intel Xeon 6 CPUs (GNR), the `isolcpus` kernel parameter may not be fully res
 
 This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix, upgrading your kernel, or using `taskset` as a workaround for pinning threads to specific cores.
 
-### 8.2. RTP timestamps and latency compensation in rate-limit pacing
+### 8.2. RTP timestamps of paced video
 
-When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: packets rtp_timestamps are increased to account for NIC queue and processing delay.
-Without this workaround, packets appear on the wire marginally earlier than the theoretical transmission schedule.
-
-Because the RTP timestamp embedded in frame packets reflects the actual wire time (the moment the first packet leaves the NIC), the compensation shift is subtracted from the RTP timestamp so that receivers see timestamps consistent with the true on-wire timing.
+By default the RTP timestamp of a video frame is the scheduled transmission time of its first packet, `epoch + TR_OFFSET - VRX × TRS` (`transmission_start_time()` in `st_tx_video_session.c`), rounded to the media clock.
+The transmitter holds the first content packet until that same instant, also with rate-limit pacing, so the RTP timestamp and the send gate agree; no separate latency compensation is applied to the RTP timestamp. It is the scheduled time, not a measured wire time.
 
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.
