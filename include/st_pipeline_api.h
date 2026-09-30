@@ -2304,7 +2304,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
 
 /** helper to know if it's a codestream fmt */
 static inline bool st_frame_fmt_is_codestream(enum st_frame_fmt fmt) {
-  if (fmt >= ST_FRAME_FMT_CODESTREAM_START && fmt <= ST_FRAME_FMT_CODESTREAM_END)
+  if (fmt >= ST_FRAME_FMT_CODESTREAM_START && fmt < ST_FRAME_FMT_CODESTREAM_END)
     return true;
   else
     return false;
