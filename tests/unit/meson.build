@@ -53,6 +53,8 @@ unit_sources = [
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
+  'datapath/mt_dp_socket_harness.c',
+  'datapath/mt_dp_socket_tx_test.cpp',
   'fmt/st_fmt_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',
