@@ -235,3 +235,11 @@ int ut20p_get_session_stats(ut20p_ctx* ctx, struct st20_rx_user_stats* stats) {
 int ut20p_reset_session_stats(ut20p_ctx* ctx) {
   return st20p_rx_reset_session_stats(&ctx->pipeline);
 }
+
+st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut20p_force_destroying(ut20p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}

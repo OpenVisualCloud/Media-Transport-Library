@@ -186,3 +186,7 @@ int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped) {
   return ut40p_tx_transport_ops.notify_frame_late(ut40p_tx_transport_ops.priv,
                                                   epoch_skipped);
 }
+
+st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx) {
+  return &ctx->pipeline;
+}
