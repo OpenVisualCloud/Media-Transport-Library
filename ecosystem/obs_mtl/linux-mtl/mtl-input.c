@@ -122,7 +122,6 @@ static void* mtl_thread(void* vptr) {
       pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    pthread_mutex_unlock(&s->wake_mutex);
 
     for (uint_fast32_t i = 0; i < MAX_AV_PLANES; ++i)
       out.data[i] = frame->addr[0] + plane_offsets[i];
