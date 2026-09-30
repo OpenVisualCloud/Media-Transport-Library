@@ -2,9 +2,11 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -34,6 +36,11 @@ struct ut_dev_ctx {
   int fail_timesync_read_error;
   int fail_port_start_error;
   uint64_t last_shaper_rate;
+  struct mtl_port_status sw_stats;
+  pthread_t stats_writer;
+  bool stats_writer_started;
+  rte_atomic32_t stats_writer_holding;
+  bool stats_writer_on_unlock;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -72,6 +79,7 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
+static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -91,7 +99,9 @@ static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 #define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
 #define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
+#define rte_spinlock_unlock ut_rte_spinlock_unlock
 #include "dev/mt_dev.c"
+#undef rte_spinlock_unlock
 #undef mt_sch_mrg_uinit
 #undef rte_tm_hierarchy_commit
 #undef rte_tm_shaper_profile_add
@@ -487,4 +497,64 @@ void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level) {
 
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_RXTX_SIMD_512;
+}
+
+void ut_dev_use_sw_stats(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].dev_stats_sw = &ctx->sw_stats;
+}
+
+/* Holds stats_lock across a two-step update of user_stats_port, as a concurrent
+ * dev_inf_get_stat() would, with the lock held long enough to be observed. */
+static void* ut_dev_stats_writer(void* arg) {
+  ut_dev_ctx* ctx = arg;
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  rte_spinlock_lock(&inf->stats_lock);
+  inf->user_stats_port.rx_packets += UT_DEV_STATS_WRITER_STEP;
+  rte_atomic32_set(&ctx->stats_writer_holding, 1);
+  usleep(50 * 1000);
+  inf->user_stats_port.tx_packets += UT_DEV_STATS_WRITER_STEP;
+  rte_spinlock_unlock(&inf->stats_lock);
+  return NULL;
+}
+
+int ut_dev_stats_writer_start(ut_dev_ctx* ctx) {
+  rte_atomic32_set(&ctx->stats_writer_holding, 0);
+  int ret = pthread_create(&ctx->stats_writer, NULL, ut_dev_stats_writer, ctx);
+  if (ret) return -ret;
+  ctx->stats_writer_started = true;
+  while (!rte_atomic32_read(&ctx->stats_writer_holding)) rte_pause();
+  return 0;
+}
+
+int ut_dev_stats_writer_join(ut_dev_ctx* ctx) {
+  if (!ctx->stats_writer_started) return -ENOENT;
+  ctx->stats_writer_started = false;
+  return -pthread_join(ctx->stats_writer, NULL);
+}
+
+void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx) {
+  ctx->stats_writer_on_unlock = true;
+}
+
+static void ut_rte_spinlock_unlock(rte_spinlock_t* sl) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
+  rte_spinlock_unlock(sl);
+  if (ctx && ctx->stats_writer_on_unlock && sl == &ctx->impl.inf[MTL_PORT_P].stats_lock) {
+    ctx->stats_writer_on_unlock = false;
+    ut_dev_stats_writer_start(ctx);
+  }
+}
+
+int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats) {
+  return mtl_get_port_stats(&ctx->impl, MTL_PORT_P, stats);
+}
+
+int ut_dev_reset_port_stats(ut_dev_ctx* ctx) {
+  return mtl_reset_port_stats(&ctx->impl, MTL_PORT_P);
+}
+
+void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats) {
+  *stats = ctx->impl.inf[MTL_PORT_P].user_stats_port;
 }

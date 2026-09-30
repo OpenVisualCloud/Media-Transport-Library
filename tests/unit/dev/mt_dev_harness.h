@@ -82,6 +82,23 @@ bool ut_dev_timesync_feature(const ut_dev_ctx* ctx);
 /** peak.rate, in bytes/s, of the last shaper profile added. */
 uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx);
 
+/* Port stats. The writer thread holds the port's stats_lock while it adds
+ * UT_DEV_STATS_WRITER_STEP to user_stats_port rx_packets, sleeps 50 ms, then adds it to
+ * tx_packets, so a copy taken under the lock always sees the two counters equal. */
+#define UT_DEV_STATS_WRITER_STEP (100u)
+/** Feeds the stats from the zeroed software counters instead of rte_eth_stats_get(). */
+void ut_dev_use_sw_stats(ut_dev_ctx* ctx);
+/** Returns once the writer holds the lock mid-update. */
+int ut_dev_stats_writer_start(ut_dev_ctx* ctx);
+/** Returns -ENOENT if no writer was started. */
+int ut_dev_stats_writer_join(ut_dev_ctx* ctx);
+/** Starts the writer, as ut_dev_stats_writer_start(), right after mt_dev.c next
+ * releases the port's stats_lock. */
+void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx);
+int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats);
+int ut_dev_reset_port_stats(ut_dev_ctx* ctx);
+void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats);
+
 #ifdef __cplusplus
 }
 #endif
