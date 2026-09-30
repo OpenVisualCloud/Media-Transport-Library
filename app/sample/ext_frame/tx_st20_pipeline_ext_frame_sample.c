@@ -275,8 +275,6 @@ int main(int argc, char** argv) {
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
-
-    tx_st20p_close_source(app[i]);
   }
 
   // check result
@@ -293,6 +291,7 @@ error:
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);
       if (app[i]->handle) st20p_tx_free(app[i]->handle);
+      tx_st20p_close_source(app[i]);
       free(app[i]);
     }
   }
