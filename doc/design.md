@@ -697,3 +697,8 @@ Use `docker/ubuntu24.dockerfile` or `docker/rocky.dockerfile` for AF_XDP support
 - Pin DPDK to version 25.11 (set `DPDK_VER=25.11` in `versions.env`) and use the matching patch set under `patches/dpdk/25.11/`.
 - Alternatively, upgrade to Ubuntu 24.04 or Rocky Linux 9.
 
+### 8.4. Known TR offset issues with multiple sessions
+
+When one scheduler handles many sessions, a high quota can cause a negative TR offset.
+Reduce `data_quota_mbs_per_sch` until the TR offset remains positive.
+
