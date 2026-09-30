@@ -1,26 +1,21 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * C harness for the ST 2110-20 (video) TX epoch/pacing math unit tests.
+ * C harness for the ST 2110-20 (video) TX session unit tests.
  *
- * Includes the production st_tx_video_session.c directly so the file-local
- * static functions (calc_frame_count_since_epoch, tv_sync_pacing,
- * validate_user_timestamp, transmission_start_time, ...) become visible in
- * this translation unit. Non-static symbols duplicate those in libmtl; this
+ * Includes the production st_tx_video_session.c and st_video_transmitter.c
+ * directly so their file-local static functions become visible in this
+ * translation unit. Non-static symbols duplicate those in libmtl; this
  * object's definition preempts the shared library's. USDT is disabled to avoid
  * probe-semaphore link references.
  *
- * mt_get_tsc() is mocked with a preprocessor seam instead of any production
- * source change: mt_main.h is included first, under its real name, so the
- * genuine mt_get_tsc() compiles normally; its include guard then makes the
- * copy pulled in transitively by st_tx_video_session.c a no-op, so the
- * `#define mt_get_tsc ...` below only rewrites the call sites written inside
- * st_tx_video_session.c itself. mt_get_ptp_time() needs no such seam -- it
- * already dispatches through the pre-existing, production `ptp_get_time_fn`
- * function-pointer field on `struct mt_interface`.
- *
- * Only pacing math is exercised here -- no mbuf pool, queue, or packet I/O
- * is set up, since neither target function touches packets.
+ * mt_get_tsc(), mt_txq_get() and mt_txq_burst() are mocked with preprocessor
+ * seams instead of any production source change: mt_main.h and
+ * datapath/mt_queue.h are included first, under their real names, so their
+ * include guards turn the copies the production files include into no-ops and
+ * each `#define` below only rewrites call sites inside those files.
+ * mt_get_ptp_time() needs no seam -- it dispatches through the production
+ * `ptp_get_time_fn` field of `struct mt_interface`.
  */
 
 #include <stdarg.h>
@@ -30,6 +25,7 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "datapath/mt_queue.h"
 #include "mt_main.h"
 #include "st2110/st_tx_video_session.h"
 
@@ -72,6 +68,9 @@ struct ut_txv_ctx {
   bool build_on_done;
   unsigned int built_on_done;
   bool done_meta_kept;
+  int txq_get_calls;
+  enum mtl_port txq_get_port;
+  uint64_t txq_get_bytes_per_sec;
 };
 
 #include "session/st20_tx_harness.h"
@@ -134,11 +133,21 @@ static int ut_txv_st22_get_next_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-/* Seam: from here on, calls to mt_get_tsc() written inside st_tx_video_session.c
- * resolve to our mock instead. The real mt_get_tsc() compiled above (via the
- * explicit mt_main.h include) is unaffected. */
+/* Records the queue request and fails it, so tv_init_hw() stops right after. */
+static struct mt_txq_entry* ut_txv_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                           struct mt_txq_flow* flow) {
+  struct ut_txv_ctx* ctx = (struct ut_txv_ctx*)impl;
+  ctx->txq_get_calls++;
+  ctx->txq_get_port = port;
+  ctx->txq_get_bytes_per_sec = flow->bytes_per_sec;
+  return NULL;
+}
+
+/* Seams: mt_get_tsc() and mt_txq_get() calls in st_tx_video_session.c hit the mocks. */
 #define mt_get_tsc ut_txv_tsc_time_fn
+#define mt_txq_get ut_txv_txq_get
 #include "st2110/st_tx_video_session.c"
+#undef mt_txq_get
 #define mt_txq_burst ut_txv_txq_burst
 static struct ut_txv_ctx* ut_txv_active_burst_ctx;
 static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -720,6 +729,28 @@ out:
   s->trs_target_tsc[MTL_SESSION_PORT_P] = 0;
   s->trs_inflight_num[MTL_SESSION_PORT_P] = 0;
   return ret;
+}
+
+int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
+                                 uint64_t trained_bps, enum mtl_port* queue_port,
+                                 uint64_t* queue_bps) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->ops.num_port = 1;
+  s->port_maps[MTL_SESSION_PORT_P] = phy_port;
+  s->st20_pkt_size = 1200;
+  s->st20_total_pkts = 100;
+  s->fps_tm.mul = 60;
+  s->fps_tm.den = 1;
+  if (mt_pacing_train_bps_result_add(&ctx->impl, phy_port, tv_rl_bps(s), trained_bps) < 0)
+    return -1;
+
+  ctx->txq_get_calls = 0;
+  tv_init_hw(&ctx->impl, &ctx->mgr, s);
+  if (ctx->txq_get_calls != 1) return -1;
+  *queue_port = ctx->txq_get_port;
+  *queue_bps = ctx->txq_get_bytes_per_sec;
+  return 0;
 }
 
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
