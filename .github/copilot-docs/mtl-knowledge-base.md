@@ -123,6 +123,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 ### Cooperative Tasklet Model
 - Tasklets are function pointers called repeatedly by a scheduler thread in a tight loop
 - Tasklets **must never block** — one blocked tasklet starves all others
+- Deliberate exception: `rv_dma_flush()` busy-polls at most `ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS` per newer frame per DMA session, only while the previous frame's copies are pending, since the new frame cannot take a slot before they finish. Do not copy this pattern without such a bound
 - Signal "I have work" (positive return) or "I'm idle" (return 0)
 - Scheduler-to-tasklet: 1:many
 
@@ -580,7 +581,13 @@ Note: `ST21_TX_STAT_WAIT_PKTS` exists in enum but is dead code (never assigned/c
 ```text
 1. SCAN: Check active slots — if tmstamp matches, return it
 2. STALE: If T < active slot's tmstamp → drop packet (old frame)
-3. DMA GUARD: If slot has pending DMA (dma_nb > 0) → don't evict
+3. DMA GUARD: If the session has copies pending (!mt_dma_empty(), lender nb_borrowed > 0)
+   → rv_dma_flush(): copies go to the engine once per tasklet pass, so a burst holding
+   frame N's tail and N+1's head gets here with N's copies unsubmitted. Submit them and
+   poll completions for up to ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS, which completes N if N is
+   full. Still pending (tried once per newer frame; never with a pkt lcore) → drop the
+   packet (dma_previous_busy_cnt). Worst case per engine: each of up to
+   MT_DMA_MAX_SESSIONS sessions sharing it spends one bounded flush per new frame
 4. EVICT (round-robin): Pick next free/oldest slot. If occupied → notify partial frame (CORRUPTED status)
 5. CLAIM: Acquire frame buffer, set tmstamp, clear bitmap, reset recv_size
 6. RETURN: Caller writes payload into slot's frame

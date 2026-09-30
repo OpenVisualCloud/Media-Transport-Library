@@ -652,6 +652,10 @@ struct st_rx_video_session_impl {
   double dma_busy_score;
   double imiss_busy_score;
   rte_atomic32_t dma_previous_busy_cnt;
+  /* newest frame whose dma flush timed out: pkts up to it drop without another flush
+   * until the session's copies drain */
+  bool dma_flush_failed;
+  uint32_t dma_flush_fail_tmstamp;
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
@@ -681,6 +685,9 @@ struct st_rx_video_session_impl {
    * also bumped by past-ts and DMA-busy paths. */
   uint64_t stat_pkts_pool_empty;
   uint64_t stat_pkts_pool_empty_snap;
+  /* rv_dma_flush() timeouts, snap kept for the rv_stat delta */
+  uint64_t stat_dma_flush_timeouts;
+  uint64_t stat_dma_flush_timeouts_snap;
   /* Consecutive rv_stat intervals with back-pressure; drives the
    * "(sustained Nx)" suffix. Reset on any clean interval. */
   uint32_t stat_consecutive_busy_intervals;

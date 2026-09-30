@@ -8,6 +8,8 @@
 #include "st_main.h"
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
+/* max busy-poll for the previous frame's dma copies at a new frame, ~2x the DSA tail */
+#define ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS (20 * 1000)
 /* Number of slots for out of order packet recovery for RTCP retransmission
    cannot be bigger than ST_VIDEO_RX_REC_NUM_OFO*/
 #define ST_RX_VIDEO_RTCP_SLOT_NUM 2
