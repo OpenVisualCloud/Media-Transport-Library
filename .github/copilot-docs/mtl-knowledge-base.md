@@ -250,7 +250,7 @@ Default mempool ops: `"stack"` (LIFO) — better cache reuse than FIFO ring ops.
   - In **IOVA VA mode** (default with `--in-memory`): chain pool `data_room = 0` — chain mbufs are pure pointer containers
   - In **IOVA PA mode** (legacy): chain pool `data_room = s->st20_pkt_len` (~1200-1260B, session-calculated) — cross-page payloads copied into mbuf
 - Cross-page fallback: if payload spans hugepage boundary, memcpy into chain mbuf's data room instead of extbuf
-- `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) decrements frame refcnt
+- `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) decrements frame refcnt, then calls `notify_frame_done` — so the app (or st20p) may re-arm and re-queue the frame from inside the callback
 - **Cost without zero-copy**: memcpy at 312 MB/s per 1080p60 stream, 1.2 GB/s at 4K60. A 16-stream appliance would need ~19 GB/s just for copying — most of a NUMA node's memory bandwidth
 - NIC scatter-gather DMA: segment 1 = header mbuf (~62B), segment 2 = chain extbuf (~1260B). Requires `RTE_ETH_TX_OFFLOAD_MULTI_SEGS`
 

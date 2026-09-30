@@ -60,6 +60,14 @@ struct ut_txv_ctx {
    * so ut_txv_run_st22_next_frame_step() can point s->st22_info at it and
    * reclaim it for free when the ctx itself is destroyed. */
   struct st22_tx_video_info st22_info;
+  struct st_tx_video_session_handle_impl handle;
+  struct st_frame_trans ext_frames[2];
+  bool ext_frames_ready;
+  void* rearm_buf;
+  int rearm_ret;
+  void* done_framebuffer;
+  bool build_on_done;
+  unsigned int built_on_done;
 };
 
 #include "session/st20_tx_harness.h"
@@ -144,6 +152,8 @@ static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** t
 #undef mt_txq_burst
 #undef mt_get_tsc
 
+static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx);
+
 /* ── init (delegates to common) ───────────────────────────────────────── */
 
 int ut_txv_init(void) {
@@ -183,6 +193,10 @@ ut_txv_ctx* ut_txv_create(void) {
 void ut_txv_destroy(ut_txv_ctx* ctx) {
   if (!ctx) return;
 
+  if (ctx->ext_frames_ready) {
+    ut_txv_tx_path_uinit(ctx);
+    ctx->session.st20_frames = NULL;
+  }
   ut_txv_release_hdr_mbuf(ctx);
   /* by name, so a pool the session only borrowed and cleared is still reclaimed */
   if (ctx->hdr_pool_name[0]) {
@@ -639,6 +653,106 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx) {
   return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] != NULL;
 }
 
+/* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
+
+static int ut_txv_ext_notify_frame_done(void* priv, uint16_t frame_idx,
+                                        struct st20_tx_frame_meta* meta) {
+  struct ut_txv_ctx* ctx = priv;
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  ut_txv_notify_frame_done(priv, frame_idx, meta);
+  ctx->done_framebuffer = st20_tx_get_framebuffer(&ctx->handle, frame_idx);
+  if (ctx->rearm_buf)
+    ctx->rearm_ret = ut_txv_set_ext_frame(ctx, frame_idx, ctx->rearm_buf);
+  if (ctx->build_on_done) {
+    ctx->build_on_done = false;
+    tvs_tasklet_handler(&ctx->mgr);
+    ctx->built_on_done = rte_ring_count(s->ring[MTL_SESSION_PORT_P]);
+  }
+  return 0;
+}
+
+int ut_txv_ext_frames_setup(ut_txv_ctx* ctx, void* buf) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  ctx->ext_frames_ready = true;
+  if (ut_txv_tx_path_init(ctx) < 0) return -1;
+
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  s->st20_handle = &ctx->handle;
+  for (uint16_t i = 0; i < RTE_DIM(ctx->ext_frames); i++) {
+    ctx->ext_frames[i].idx = i;
+    ctx->ext_frames[i].priv = s;
+    ctx->ext_frames[i].flags = ST_FT_FLAG_EXT;
+  }
+  s->st20_frames = ctx->ext_frames;
+  s->st20_frames_cnt = RTE_DIM(ctx->ext_frames);
+  s->st20_frame_size = UT_TXV_EXT_FRAME_SIZE;
+  s->st20_fb_size = UT_TXV_EXT_FRAME_SIZE;
+  s->st20_linesize = UT_TXV_EXT_FRAME_SIZE;
+  s->st20_bytes_in_line = UT_TXV_EXT_FRAME_SIZE;
+  s->st20_pkts_in_line = 1;
+  s->st20_pkt_len = UT_TXV_EXT_FRAME_SIZE;
+  /* two packets with bulk 1, so a build started from notify_frame_done stays in flight */
+  s->st20_total_pkts = 2;
+  s->st20_pg.size = UT_TXV_EXT_FRAME_SIZE;
+  s->st20_pg.coverage = 2;
+  s->bulk = 1;
+  s->tx_no_chain = true;
+  s->ops.num_port = 1;
+  s->ops.type = ST20_TYPE_FRAME_LEVEL;
+  s->ops.packing = ST20_PACKING_GPM_SL;
+  s->ops.width = 2;
+  s->ops.height = 1;
+  s->ops.notify_frame_done = ut_txv_ext_notify_frame_done;
+
+  if (ut_txv_set_ext_frame(ctx, 0, buf) < 0) return -1;
+  /* built and handed to the transmitter; the builder waits for the next frame */
+  rte_atomic32_set(&ctx->ext_frames[0].refcnt, 1);
+  s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
+  return 0;
+}
+
+int ut_txv_set_ext_frame(ut_txv_ctx* ctx, uint16_t idx, void* buf) {
+  struct st20_ext_frame ext = {
+      .buf_addr = buf,
+      .buf_iova = (rte_iova_t)(uintptr_t)buf,
+      .buf_len = UT_TXV_EXT_FRAME_SIZE,
+  };
+  return st20_tx_set_ext_frame(&ctx->handle, idx, &ext);
+}
+
+void ut_txv_ext_frame_complete(ut_txv_ctx* ctx) {
+  struct st_frame_trans* frame = &ctx->ext_frames[0];
+  tv_frame_free_cb(frame->addr, frame);
+}
+
+void ut_txv_set_rearm_on_done(ut_txv_ctx* ctx, void* buf) {
+  ctx->rearm_buf = buf;
+}
+
+void ut_txv_set_build_on_done(ut_txv_ctx* ctx) {
+  ctx->build_on_done = true;
+}
+
+int ut_txv_rearm_ret(const ut_txv_ctx* ctx) {
+  return ctx->rearm_ret;
+}
+
+void* ut_txv_done_framebuffer(const ut_txv_ctx* ctx) {
+  return ctx->done_framebuffer;
+}
+
+unsigned int ut_txv_built_on_done(const ut_txv_ctx* ctx) {
+  return ctx->built_on_done;
+}
+
+void* ut_txv_framebuffer(ut_txv_ctx* ctx, uint16_t idx) {
+  return st20_tx_get_framebuffer(&ctx->handle, idx);
+}
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx) {
@@ -779,4 +893,27 @@ void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
 
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
   return ctx->session.stat_snapshot.common.port[MTL_SESSION_PORT_P].frames;
+}
+
+static const char* ut_txv_log_needle;
+static int ut_txv_log_matches;
+static enum mtl_log_level ut_txv_log_saved_level;
+
+static void ut_txv_needle_printer(enum mtl_log_level level, const char* format, ...) {
+  (void)level;
+  if (strstr(format, ut_txv_log_needle)) ut_txv_log_matches++;
+}
+
+void ut_txv_log_count_begin(const char* needle) {
+  ut_txv_log_needle = needle;
+  ut_txv_log_matches = 0;
+  ut_txv_log_saved_level = mt_get_log_global_level();
+  mt_set_log_global_level(MTL_LOG_LEVEL_INFO);
+  mtl_set_log_printer(ut_txv_needle_printer);
+}
+
+int ut_txv_log_count_end(void) {
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(ut_txv_log_saved_level);
+  return ut_txv_log_matches;
 }

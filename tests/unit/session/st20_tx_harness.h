@@ -155,6 +155,27 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
 /* Whether the pool itself still exists, independent of the session's pointer. */
 bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
+/* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
+enum { UT_TXV_EXT_FRAME_SIZE = 4 };
+/* Two ST_FT_FLAG_EXT frames; frame 0 holds buf, fully built and still in flight
+ * in the transmitter. Buffers are UT_TXV_EXT_FRAME_SIZE bytes. Returns 0 on success. */
+int ut_txv_ext_frames_setup(ut_txv_ctx* ctx, void* buf);
+/* st20_tx_set_ext_frame() on the session's public handle. */
+int ut_txv_set_ext_frame(ut_txv_ctx* ctx, uint16_t idx, void* buf);
+/* Releases frame 0's ext buffer the way the last mbuf free does (tv_frame_free_cb). */
+void ut_txv_ext_frame_complete(ut_txv_ctx* ctx);
+/* notify_frame_done re-arms the completed frame with buf, as st20p_tx_put_ext_frame()
+ * does. */
+void ut_txv_set_rearm_on_done(ut_txv_ctx* ctx, void* buf);
+/* notify_frame_done runs the builder once; get_next_frame hands back frame 0. */
+void ut_txv_set_build_on_done(ut_txv_ctx* ctx);
+int ut_txv_rearm_ret(const ut_txv_ctx* ctx);
+/* st20_tx_get_framebuffer() of the completed frame, read inside notify_frame_done. */
+void* ut_txv_done_framebuffer(const ut_txv_ctx* ctx);
+/* Packets on the TX ring after the builder run started from notify_frame_done. */
+unsigned int ut_txv_built_on_done(const ut_txv_ctx* ctx);
+void* ut_txv_framebuffer(ut_txv_ctx* ctx, uint16_t idx);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
 long double ut_txv_pacing_tr_offset(const ut_txv_ctx* ctx);
@@ -192,6 +213,9 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
 /* First log line captured by the last ut_txv_run_sessions_stat() call. */
 const char* ut_txv_stat_first_log_line(void);
+/* Count log lines whose format string contains needle, between begin and end. */
+void ut_txv_log_count_begin(const char* needle);
+int ut_txv_log_count_end(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 

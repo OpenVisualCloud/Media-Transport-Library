@@ -131,13 +131,9 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     return;
   }
 
-  tv_notify_frame_done(s, frame_idx);
+  /* release first: the app may re-arm and re-queue the frame from the callback */
   rte_atomic32_dec(&frame_info->refcnt);
-  /* clear ext frame info */
-  if (frame_info->flags & ST_FT_FLAG_EXT) {
-    frame_info->addr = NULL;
-    frame_info->iova = 0;
-  }
+  tv_notify_frame_done(s, frame_idx);
 
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
@@ -4537,7 +4533,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   }
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
-    if (addr == s->st20_frames[i].addr) {
+    if (addr == s->st20_frames[i].addr && rte_atomic32_read(&s->st20_frames[i].refcnt)) {
       warn_once("%s(%d), buffer %p still in tansport!\n", __func__, s_idx, addr);
     }
   }
