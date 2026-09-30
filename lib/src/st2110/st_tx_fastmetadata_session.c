@@ -767,7 +767,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     bool second_field = frame->tf_meta.second_field;
     tx_fastmetadata_session_sync_pacing(impl, s, false, required_tai, second_field);
     if (ops->flags & ST41_TX_FLAG_USER_TIMESTAMP &&
-        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
+        (frame->tf_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
       pacing->rtp_time_stamp = (uint32_t)frame->tf_meta.timestamp;
     }
     frame->tf_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
