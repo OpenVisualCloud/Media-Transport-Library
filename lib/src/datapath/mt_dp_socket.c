@@ -121,8 +121,12 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
     uint16_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
     void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
     dbg("%s(%d,%d), mbuf %u payload_len %u\n", __func__, port, fd, i, payload_len);
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+    struct sockaddr_in dst;
+    mt_dp_init_sockaddr(&dst, (uint8_t*)&hdr->ipv4.dst_addr, ntohs(hdr->udp.dst_port));
+    bool same_dst = !memcmp(&dst, &t->send_addr, sizeof(dst));
 
-    if (payload_len == gso_sz) {
+    if (payload_len == gso_sz && same_dst) {
       iovs[gso_cnt].iov_base = payload;
       iovs[gso_cnt].iov_len = payload_len;
       gso_cnt++;
@@ -145,6 +149,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
 
         gso_cnt = 0;
       }
+      t->send_addr = dst;
       write = sendto(fd, payload, payload_len, MSG_DONTWAIT, &t->send_addr,
                      sizeof(t->send_addr));
       if (write != payload_len) {

@@ -19,8 +19,9 @@ TX packet building/queueing, DMA, kernel-socket / AF_XDP backends, and
 multi-process scenarios are out of scope — see
 [`tests/integration_tests/`](../integration_tests/) and
 [`tests/acceptance/`](../acceptance/) for those. TX epoch/pacing *math*
-(`session/st20_tx_harness.c`) and the ST 2110-41 packet builder's mbuf
-capacity checks (`session/st41_tx_harness.c`) are covered here.
+(`session/st20_tx_harness.c`), the ST 2110-41 packet builder's mbuf
+capacity checks (`session/st41_tx_harness.c`) and the kernel-socket TX send
+path over loopback (`datapath/mt_dp_socket_harness.c`) are covered here.
 
 ## What makes this different
 
