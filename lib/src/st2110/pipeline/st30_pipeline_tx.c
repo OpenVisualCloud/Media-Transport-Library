@@ -245,6 +245,12 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
+static int tx_st30p_notify_frame_late(void* priv, uint64_t epoch_skipped) {
+  struct st30p_tx_ctx* ctx = priv;
+
+  return ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
+}
+
 static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx_ctx* ctx,
                                      struct st30p_tx_ops* ops) {
   int idx = ctx->idx;
@@ -280,7 +286,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
   }
   if (ops->flags & ST30P_TX_FLAG_USER_PACING) ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
-  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st30p_notify_frame_late;
   ops_tx.pacing_way = ops->pacing_way;
   ops_tx.rtp_timestamp_delta_us = ops->rtp_timestamp_delta_us;
 

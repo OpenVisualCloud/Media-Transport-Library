@@ -93,6 +93,18 @@ int ut40p_tx_frame_stat(const ut40p_tx_ctx* ctx, int i);
 
 uint64_t ut40p_tx_stat_frames_sent(const ut40p_tx_ctx* ctx);
 
+/** Register ops.notify_frame_late (and ops.priv). */
+void ut40p_tx_set_notify_frame_late(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped);
+
 #ifdef __cplusplus
 }
 #endif

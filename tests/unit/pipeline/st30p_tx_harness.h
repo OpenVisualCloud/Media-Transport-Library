@@ -100,6 +100,18 @@ uint64_t ut30p_tx_stat_frames_sent(const ut30p_tx_ctx* ctx);
  */
 int ut30p_tx_create_ctx_socket(int nic_socket, uint32_t flags, int socket_id);
 
+/** Register ops.notify_frame_late (and ops.priv). */
+void ut30p_tx_set_notify_frame_late(ut30p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut30p_tx_transport_report_late(ut30p_tx_ctx* ctx, uint64_t epoch_skipped);
+
 #ifdef __cplusplus
 }
 #endif
