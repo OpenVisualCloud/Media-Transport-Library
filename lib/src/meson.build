@@ -22,6 +22,16 @@ sources = files(
   'mt_pcap.c',
 )
 
+if not is_windows
+  # The client of MtlManager. The library compiles the same source the manager
+  # installs as libmtlm_client, so there is one record layout and one socket
+  # path search, and no new runtime dependency for a user of libmtl.
+  sources += files(
+    '../../manager/mtlm_client.c',
+    '../../manager/mtlm_sock_path.c',
+  )
+endif
+
 if is_windows
 if get_option('enable_tap') == true
   sources += files('mt_tap.c')
