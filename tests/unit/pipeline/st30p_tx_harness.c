@@ -1,13 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * C harness for ST30p (audio) TX pipeline-layer concurrency unit tests.
+ * C harness for ST30p (audio) TX pipeline-layer unit tests.
  * Includes the production translation unit so the file-local transport
  * callbacks (tx_st30p_next_frame / tx_st30p_frame_done) are reachable, and
- * stubs the libmtl transport symbols the TU references but the test never
- * calls (create_transport is bypassed).
+ * stubs the libmtl transport symbols the TU references. st30_tx_create is
+ * redirected to a recorder that fails, so st30p_tx_create() runs up to its
+ * transport step and no further.
  */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,12 +17,14 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#define st30_tx_create ut30p_tx_st30_tx_create
 #include "st2110/pipeline/st30_pipeline_tx.c"
+#undef st30_tx_create
 #pragma GCC diagnostic pop
 
 #include "common/ut_common.h"
 
-/* libmtl stubs: only referenced via create/free/update paths we never run. */
+/* libmtl stubs: only referenced via stats paths we never run. */
 
 int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* stats) {
   (void)handle;
@@ -31,6 +35,15 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
 int st30_tx_reset_session_stats(st30_tx_handle handle) {
   (void)handle;
   return 0;
+}
+
+static int ut30p_tx_transport_ctx_socket;
+
+/* Records the socket st30p_tx_create() placed its ctx on, then fails the create. */
+st30_tx_handle ut30p_tx_st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
+  (void)mt;
+  ut30p_tx_transport_ctx_socket = ((struct st30p_tx_ctx*)ops->priv)->socket_id;
+  return NULL;
 }
 
 struct ut30p_tx_ctx {
@@ -162,4 +175,32 @@ int ut30p_tx_frame_stat(const ut30p_tx_ctx* ctx, int i) {
 
 uint64_t ut30p_tx_stat_frames_sent(const ut30p_tx_ctx* ctx) {
   return ctx->pipeline.stat_frames_sent;
+}
+
+int ut30p_tx_create_ctx_socket(int nic_socket, uint32_t flags, int socket_id) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!impl) return INT_MIN;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut30p_tx_port");
+  impl->inf[MTL_PORT_P].socket_id = nic_socket;
+
+  struct st30p_tx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut30p_tx_create";
+  ops.port.num_port = 1;
+  snprintf(ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut30p_tx_port");
+  ops.fmt = ST30_FMT_PCM16;
+  ops.channel = 1;
+  ops.sampling = ST30_SAMPLING_48K;
+  ops.ptime = ST30_PTIME_1MS;
+  ops.framebuff_cnt = 1;
+  ops.framebuff_size = 96;
+  ops.flags = flags;
+  ops.socket_id = socket_id;
+
+  ut30p_tx_transport_ctx_socket = INT_MIN;
+  st30p_tx_create(impl, &ops);
+  free(impl);
+  return ut30p_tx_transport_ctx_socket;
 }

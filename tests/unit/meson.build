@@ -131,6 +131,7 @@ unit_sources = [
   'pipeline/st30p_test.cpp',
   'pipeline/st30p_tx_harness.c',
   'pipeline/st30p_tx_blocking_test.cpp',
+  'pipeline/st30p_tx_create_test.cpp',
   'pipeline/st30p_concurrency_test.cpp',
   'pipeline/st40p_harness.c',
   'pipeline/st40p_test.cpp',

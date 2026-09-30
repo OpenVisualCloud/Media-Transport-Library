@@ -668,9 +668,9 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
   if (port >= MTL_PORT_MAX) return NULL;
   int socket = mt_socket_id(impl, port);
 
-  if (ops->flags & ST30P_RX_FLAG_FORCE_NUMA) {
+  if (ops->flags & ST30P_TX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;
-    info("%s, ST30P_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+    info("%s, ST30P_TX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
   }
 
   ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
