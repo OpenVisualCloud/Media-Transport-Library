@@ -102,6 +102,13 @@ int ut22p_tx_all_free(const ut22p_tx_ctx* ctx);
 /* Raw stat value of framebuffer i (for diagnostics). */
 int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i);
 
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped);
+
 #ifdef __cplusplus
 }
 #endif

@@ -12,12 +12,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st22_tx_create ut22p_tx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include "st2110/pipeline/st22_pipeline_tx.c"
 #pragma GCC diagnostic pop
+#undef st22_tx_create
 
 #include "common/ut_common.h"
 
@@ -202,4 +204,20 @@ int ut22p_tx_all_free(const ut22p_tx_ctx* ctx) {
 
 int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i) {
   return (int)ctx->framebuffs[i].stat;
+}
+
+static struct st22_tx_ops ut22p_tx_transport_ops;
+
+st22_tx_handle ut22p_tx_capture_create(mtl_handle mt, struct st22_tx_ops* ops) {
+  (void)mt;
+  ut22p_tx_transport_ops = *ops;
+  return NULL;
+}
+
+int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut22p_tx_transport_ops, 0, sizeof(ut22p_tx_transport_ops));
+  tx_st22p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  if (!ut22p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut22p_tx_transport_ops.notify_frame_late(ut22p_tx_transport_ops.priv,
+                                                  epoch_skipped);
 }

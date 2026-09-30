@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "pipeline/st20p_tx_harness.h"
+#include "pipeline/st22p_tx_harness.h"
 #include "pipeline/st30p_tx_harness.h"
 #include "pipeline/st40p_tx_harness.h"
 
@@ -79,4 +80,20 @@ TEST(PipelineTxNotifyFrameLate, St40pTransportLateReachesAppPriv) {
   EXPECT_EQ(g_late.epoch_skipped, kEpochSkipped);
 
   ut40p_tx_ctx_destroy(ctx);
+}
+
+TEST(PipelineTxNotifyFrameLate, St22pTransportLateReachesAppPriv) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(1);
+  ASSERT_NE(ctx, nullptr);
+  int app_priv;
+  g_late = LateSpy();
+  ut22p_tx_set_notify_frame_late(ctx, OnFrameLate, &app_priv);
+
+  EXPECT_EQ(ut22p_tx_transport_report_late(ctx, kEpochSkipped), 0);
+  EXPECT_EQ(g_late.calls, 1);
+  EXPECT_EQ(g_late.priv, &app_priv);
+  EXPECT_EQ(g_late.epoch_skipped, kEpochSkipped);
+
+  ut22p_tx_ctx_destroy(ctx);
 }
