@@ -80,30 +80,24 @@ An important point to note is that narrow pacing of TX is only supported for the
 
 ### 1.4. Platform support matrix
 
-This matrix shows the tests that continuous integration runs for each operating system.
-It does not limit MTL to these operating systems.
-MTL should build and run on other Linux systems that provide the required compiler, DPDK, and library dependencies.
-A system without hardware validation is not known to be incompatible.
+This matrix shows the operating systems with a release container definition.
+It does not limit MTL to these operating systems. MTL should build and run on
+other Linux systems that provide the required compiler, DPDK, and library
+dependencies.
 
-| Operating system | Container build | Unit tests | Bare-metal integration tests | Acceptance tests | Validation kernel |
-| --- | --- | --- | --- | --- | --- |
-| Ubuntu 22.04 LTS | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
-| Ubuntu 24.04 LTS | Yes | Yes | Yes, E810/E830/E835 | Yes, smoke and nightly suites | `6.8.0-137-generic` |
-| Ubuntu 26.04 LTS | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
-| Rocky Linux 9 | Yes | Yes | Not run in CI | Not run in CI | Not applicable |
-| Other Linux systems | Expected | Not run in CI | Not run in CI | Not run in CI | Not applicable |
+| Operating system | Container build |
+| --- | --- |
+| Ubuntu 22.04 LTS | Yes |
+| Ubuntu 24.04 LTS | Yes |
+| Ubuntu 26.04 LTS | Yes |
+| Rocky Linux 9 | Yes |
+| Other Linux systems | Expected |
 
 The container build includes DPDK, MTL, sample applications, plugins, and the selected data path backends.
-The unit tests run without a NIC or root access.
-The bare-metal integration tests run the C++ gtest suite with physical NICs.
-The hardware validation runs the end-to-end pytest suites with media traffic.
-
-The Ubuntu 24.04 validation kernel value records the fleet state on September 18, 2026.
-Kernel updates can change this value without changing the supported operating system.
 
 ## 2. Build
 
-Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [doc/fuzzing.md](doc/fuzzing.md).
+Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
 
 For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
 
@@ -145,48 +139,9 @@ Before opening a pull request, please follow these steps:
 4. Push your changes to your forked repository.
 5. Open a pull request to the main repository.
 
-If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
+### 6.2. Before you open a pull request
 
-### 6.2. Set up the checks once
-
-```bash
-./checkpatch.sh --bootstrap      # install pre-commit, the only prerequisite
-./checkpatch.sh --install-hooks  # run the checks automatically on commit
-```
-
-`--bootstrap` uses pipx or `pip --user`. If your distribution marks its system
-Python as externally managed (Fedora, Arch, Debian 12+ and others), it prints the
-package to install instead; the same list is in
-[doc/coding_standard.md §6](doc/coding_standard.md#6-platforms), together with the
-Windows and macOS routes.
-
-### 6.3. Coding style
-
-Every language in this repository is checked by one command, and it is the same
-command the git hooks and CI run:
-
-```bash
-./checkpatch.sh                  # verify every tracked file
-./checkpatch.sh --staged         # verify what you are about to commit
-./format-coding.sh               # apply every autofix
-```
-
-You do not need clang-format, shfmt, shellcheck, Node.js or any other linter on
-your `PATH`. `pre-commit` installs the pinned version of each tool itself, which
-is also what stops a different locally-installed version from silently
-reformatting hundreds of unrelated files.
-
-[doc/coding_standard.md](doc/coding_standard.md) is the reference: the rules, which
-check runs where, and how to change one.
-
-### 6.4. Before you open a pull request
-
-1. `./format-coding.sh` and then `./checkpatch.sh`, until it reports `clean`.
-2. If you touched code: `./build.sh` succeeds, `./build.sh unit` passes, and a
-   test covers the change at the cheapest tier that can catch it --
-   [unit](tests/unit) needs no NIC, [integration](tests/integration_tests) needs
-   VFs, [acceptance](tests/acceptance) is end-to-end.
-3. Write the commit message as
+1. If you touched code, verify that `./build.sh` succeeds.
+2. Write the commit message as
    [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) with a
-   capitalized type: `Fix: ...`, `Add: ...`, `Docs: ...`. The full list is in
-   [doc/coding_standard.md §7](doc/coding_standard.md#7-commit-messages).
+   capitalized type, such as `Fix: ...`, `Add: ...`, or `Docs: ...`.

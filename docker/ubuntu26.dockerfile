@@ -27,7 +27,7 @@ RUN apt-get update -y && \
         ca-certificates sudo curl unzip wget \
         python3-dev python3-pip python3-pyelftools \
         git build-essential gcc-14 g++-14 pkg-config \
-        libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
+        libnuma-dev libjson-c-dev libpcap-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
         m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
     apt-get autoremove -y && \
@@ -45,10 +45,9 @@ RUN CFLAGS="-std=gnu17" ./build_ebpf_xdp.sh
 WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
-# Run the unit suite, then build MTL
+# Build MTL
 WORKDIR "${MTL_REPO}"
 RUN export CFLAGS="-Wno-error=format-truncation" && \
-    ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \

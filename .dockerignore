@@ -88,9 +88,6 @@ mtl_system_status_*
 *.pyc
 *.mp4
 tests/tools/RxTxApp/build
-tests/acceptance/logs
-tests/acceptance/report.html
-tests/acceptance/report.json
 /report.html
 /report.json
 
