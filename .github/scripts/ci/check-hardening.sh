@@ -27,7 +27,7 @@ while IFS= read -r -d '' file; do
 	missing=()
 	grep -q ' GNU_RELRO ' <<<"$elf" || missing+=(RELRO)
 	grep -qE '\(FLAGS\) .*BIND_NOW|\(FLAGS_1\) .*Flags:.* NOW' <<<"$elf" || missing+=(BIND_NOW)
-	grep -qE ' GNU_STACK .* RW +0x' <<<"$elf" || missing+=(NX)
+	grep -qE ' GNU_STACK .* RW ' <<<"$elf" || missing+=(NX)
 	grep -qE 'Type: *DYN ' <<<"$elf" || missing+=(PIE)
 	# The openh264 assembly has no CET mark, see doc/build.md
 	if [[ ${file##*/} != libopenh264.so* ]]; then
