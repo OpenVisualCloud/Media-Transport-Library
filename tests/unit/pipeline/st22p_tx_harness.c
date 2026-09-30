@@ -225,3 +225,15 @@ int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped) {
   return ut22p_tx_transport_ops.notify_frame_late(ut22p_tx_transport_ops.priv,
                                                   epoch_skipped);
 }
+
+static struct mtl_main_impl ut22p_tx_create_impl;
+
+st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops) {
+  struct mtl_main_impl* impl = &ut22p_tx_create_impl;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  impl->inf[MTL_PORT_P].socket_id = rte_socket_id();
+  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  return st22p_tx_create(impl, ops);
+}

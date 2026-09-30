@@ -112,6 +112,13 @@ int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i);
  */
 int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped);
 
+/**
+ * Call st22p_tx_create() on a bare instance with one port, named in
+ * ops->port.port[0] by this call. For create paths that fail before any
+ * transport or encoder is needed.
+ */
+st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops);
+
 #ifdef __cplusplus
 }
 #endif
