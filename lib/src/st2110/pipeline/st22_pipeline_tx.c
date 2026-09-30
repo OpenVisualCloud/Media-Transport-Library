@@ -1028,6 +1028,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
     if (!src_size) {
       err("%s(%d), get source size fail\n", __func__, idx);
+      mt_rte_free(ctx);
       return NULL;
     }
   }
