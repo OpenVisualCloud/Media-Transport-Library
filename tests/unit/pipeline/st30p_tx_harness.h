@@ -112,6 +112,9 @@ void ut30p_tx_set_notify_frame_late(ut30p_tx_ctx* ctx,
  */
 int ut30p_tx_transport_report_late(ut30p_tx_ctx* ctx, uint64_t epoch_skipped);
 
+/** The pipeline handle, for calling the public st*p API directly. */
+st30p_tx_handle ut30p_tx_handle(ut30p_tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

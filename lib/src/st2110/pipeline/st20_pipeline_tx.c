@@ -1313,7 +1313,7 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st20_tx_get_session_stats(ctx->transport, stats);
   if (ret < 0) goto out;
@@ -1337,7 +1337,7 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   atomic_store_explicit(&ctx->stat_frames_sent, 0, memory_order_relaxed);
   atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);

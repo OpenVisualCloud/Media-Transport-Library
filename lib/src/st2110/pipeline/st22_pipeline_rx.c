@@ -919,7 +919,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta) 
   struct st22p_rx_ctx* ctx = handle;
   int ret;
 
-  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, -EIO);
 
   ret = st22_rx_get_queue_meta(ctx->transport, meta);
   MT_HANDLE_RELEASE(ctx);

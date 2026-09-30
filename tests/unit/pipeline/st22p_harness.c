@@ -167,3 +167,11 @@ int ut22p_frame_idx(const struct st_frame* frame) {
 int ut22p_frame_stat(const ut22p_ctx* ctx, int i) {
   return (int)ctx->framebuffs[i].stat;
 }
+
+st22p_rx_handle ut22p_handle(ut22p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut22p_force_destroying(ut22p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}

@@ -171,3 +171,15 @@ int ut30p_get_session_stats(ut30p_ctx* ctx, struct st30_rx_user_stats* stats) {
 int ut30p_reset_session_stats(ut30p_ctx* ctx) {
   return st30p_rx_reset_session_stats(&ctx->pipeline);
 }
+
+st30p_rx_handle ut30p_handle(ut30p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut30p_force_destroying(ut30p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta) {
+  return st30p_rx_get_queue_meta(&ctx->pipeline, meta);
+}
