@@ -172,3 +172,11 @@ TEST(St30PacketTime, CarriesExactlyTheSamplesOfOnePacket) {
     }
   }
 }
+
+TEST(StFrameFmtIsCodestream, EndSentinelIsNotACodestream) {
+  EXPECT_TRUE(st_frame_fmt_is_codestream(ST_FRAME_FMT_JPEGXS_CODESTREAM));
+  EXPECT_TRUE(st_frame_fmt_is_codestream(ST_FRAME_FMT_H265_CODESTREAM));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_CODESTREAM_END));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_MAX));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_RGB_END));
+}
