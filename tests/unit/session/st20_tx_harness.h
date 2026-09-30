@@ -127,6 +127,14 @@ int ut_txv_run_tasklet_with_idle_peer(ut_txv_ctx* ctx);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Drives tv_init_hw() for a one-port session whose logical port P maps to
+ * phy_port, after recording a rate-limiter training result (trained_bps) for the
+ * session's bitrate on phy_port only. The TX queue request is intercepted and
+ * failed; outputs the physical port and bytes_per_sec it carried. Returns 0 if
+ * exactly one queue was requested. */
+int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
+                                 uint64_t trained_bps, enum mtl_port* queue_port,
+                                 uint64_t* queue_bps);
 /* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
  * above (ptp_time_cursor, sampling_clock_rate). */
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
