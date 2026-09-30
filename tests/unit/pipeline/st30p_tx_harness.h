@@ -9,7 +9,7 @@
  *   - consumer (transport):  next_frame (READY->IN_TRANSMITTING) /
  *                            frame_done (->FREE)
  *
- * The harness bypasses create_transport: there is no real DPDK session, the
+ * The ring helpers bypass create_transport: there is no real DPDK session, the
  * framebuffers are plain heap memory and the ctx is hand-initialised into the
  * "ready" state. This isolates the claim/lifecycle state machine so the test
  * can hammer it with many threads and assert single-ownership + conservation +
@@ -92,6 +92,13 @@ int ut30p_tx_all_free(const ut30p_tx_ctx* ctx);
 int ut30p_tx_frame_stat(const ut30p_tx_ctx* ctx, int i);
 
 uint64_t ut30p_tx_stat_frames_sent(const ut30p_tx_ctx* ctx);
+
+/**
+ * Run st30p_tx_create() on a one-port instance whose NIC is on nic_socket, with
+ * ops.flags = flags and ops.socket_id = socket_id. Returns the socket the pipeline
+ * ctx was placed on, or INT_MIN if the create failed before its transport step.
+ */
+int ut30p_tx_create_ctx_socket(int nic_socket, uint32_t flags, int socket_id);
 
 #ifdef __cplusplus
 }
