@@ -448,6 +448,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         rv_free_frames(s);
         return -EIO;
       }
+      if (s->ops.ext_frames[i].buf_len < size) {
+        err("%s(%d), external framebuffer %d size %" PRIu64 " < %" PRIu64 "\n", __func__,
+            idx, i, s->ops.ext_frames[i].buf_len, size);
+        rv_free_frames(s);
+        return -EIO;
+      }
       st20_frame->addr = frame;
       st20_frame->iova = frame_iova;
       st20_frame->flags = ST_FT_FLAG_EXT;
@@ -1280,6 +1286,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       s->port_user_stats.stat_slot_query_ext_fail++;
       err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
           __func__, s->idx, fb_size, ext_frame.buf_len);
+      rte_atomic32_dec(&frame_info->refcnt);
+      return NULL;
+    }
+    if (!ext_frame.buf_addr ||
+        (s->dma_dev && (ext_frame.buf_iova == 0 || ext_frame.buf_iova == MTL_BAD_IOVA))) {
+      s->port_user_stats.stat_slot_query_ext_fail++;
+      err("%s(%d): ext frame addr %p iova 0x%" PRIx64 " not usable\n", __func__, s->idx,
+          ext_frame.buf_addr, ext_frame.buf_iova);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
