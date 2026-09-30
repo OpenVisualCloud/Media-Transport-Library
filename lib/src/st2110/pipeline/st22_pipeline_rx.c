@@ -765,6 +765,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
     if (!dst_size) {
       err("%s(%d), get dst size fail\n", __func__, idx);
+      mt_rte_free(ctx);
       return NULL;
     }
   }

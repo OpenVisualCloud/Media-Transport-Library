@@ -159,6 +159,7 @@ unit_sources = [
   'pipeline/st22p_rx_blocking_test.cpp',
   'pipeline/st22p_tx_blocking_test.cpp',
   'pipeline/st22p_tx_stale_wake_test.cpp',
+  'pipeline/st22p_create_test.cpp',
   'pipeline/st22p_concurrency_test.cpp',
   'pipeline/st22p_concurrency_stress_test.cpp',
   'pipeline/tx_notify_frame_late_test.cpp',
