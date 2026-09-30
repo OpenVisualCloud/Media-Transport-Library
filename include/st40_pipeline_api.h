@@ -257,7 +257,8 @@ struct st40p_rx_ops {
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @param stats
@@ -271,7 +272,8 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @return
@@ -352,7 +354,8 @@ int st40p_rx_get_queue_meta(st40p_rx_handle handle, struct st_queue_meta* meta);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @param stats
@@ -366,7 +369,8 @@ int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-40(pipeline) session.
  * @return
