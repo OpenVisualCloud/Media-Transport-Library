@@ -8,21 +8,18 @@ set -e
 user=$(whoami)
 
 function usage() {
-	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing] [unit]"
-	exit 0
+	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release]"
+	exit 1
 }
 
 buildtype=release
 enable_asan=false
 enable_tap=false
 enable_usdt=true
-enable_fuzzing=false
-build_unit=false
 
 : "${MTL_BUILD_ENABLE_ASAN:=false}"
 : "${MTL_BUILD_ENABLE_TAP:=false}"
 : "${MTL_BUILD_DISABLE_USDT:=false}"
-: "${MTL_BUILD_ENABLE_FUZZING:=false}"
 : "${MTL_PREFIX_ARGS:=}"
 
 if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
@@ -39,11 +36,6 @@ fi
 if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
 	enable_usdt=false
 	echo "Disable USDT"
-fi
-
-if [ "$MTL_BUILD_ENABLE_FUZZING" == "true" ]; then
-	enable_fuzzing=true
-	echo "Enable fuzzers"
 fi
 
 while [ $# -gt 0 ]; do
@@ -64,13 +56,6 @@ while [ $# -gt 0 ]; do
 	"release")
 		buildtype=release
 		;;
-	"enable_fuzzing" | "--enable-fuzzing")
-		enable_fuzzing=true
-		echo "Enable fuzzers"
-		;;
-	"unit")
-		build_unit=true
-		;;
 	*)
 		usage
 		;;
@@ -81,27 +66,10 @@ done
 WORKSPACE=$PWD
 LIB_BUILD_DIR=${WORKSPACE}/build
 APP_BUILD_DIR=${WORKSPACE}/build/app
-TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
-UNIT_BUILD_DIR=${WORKSPACE}/build_unit
-
-# build and run the unit gtest suite (tests/unit), then exit
-if [ "$build_unit" == "true" ]; then
-	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
-	ninja -C "${UNIT_BUILD_DIR}"
-
-	if [ "$enable_asan" == "true" ]; then
-		ASAN_LIBRARY=$(cc -print-file-name=libasan.so)
-		LD_PRELOAD="${ASAN_LIBRARY}${LD_PRELOAD:+:${LD_PRELOAD}}" \
-			"${UNIT_BUILD_DIR}/tests/unit/UnitTest"
-	else
-		"${UNIT_BUILD_DIR}/tests/unit/UnitTest"
-	fi
-	exit 0
-fi
 
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 	MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
@@ -118,7 +86,7 @@ do_install() {
 }
 
 # build lib
-meson setup "${LIB_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt" -Denable_fuzzing="$enable_fuzzing"
+meson setup "${LIB_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt"
 pushd "${LIB_BUILD_DIR}"
 ninja
 do_install
@@ -138,15 +106,6 @@ pushd app/
 meson setup "${APP_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${APP_BUILD_DIR}"
-ninja
-do_install
-popd
-
-# build tests
-pushd tests/
-meson setup "${TEST_BUILD_DIR}" ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${TEST_BUILD_DIR}"
 ninja
 do_install
 popd

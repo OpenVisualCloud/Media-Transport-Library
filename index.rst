@@ -79,20 +79,6 @@ Ecosystem
    OBS Studio <ecosystem/obs_mtl/README.md>
    MTL with MXL <ecosystem/MTL_with_MXL/README.md>
 
-Development and Testing
-------------------------
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Development and Testing:
-
-   doc/coding_standard.md
-   doc/acceptance_quickstart.md
-   doc/acceptance-design.md
-   doc/fuzzing.md
-   doc/ci_runner_setup.md
-   doc/cicd_setup_proposition.md
-
 Doxygen
 --------
 

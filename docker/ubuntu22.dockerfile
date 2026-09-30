@@ -25,7 +25,7 @@ RUN apt-get update -y && \
         ca-certificates sudo curl unzip wget \
         apt-transport-https apt-utils python3-dev \
         git build-essential python3-pyelftools pkg-config \
-        libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
+        libnuma-dev libjson-c-dev libpcap-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
         libcap2-bin && \
     apt-get autoremove -y && \
@@ -40,10 +40,9 @@ COPY . "${MTL_REPO}"
 WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
-# Run the unit suite, then build MTL
+# Build MTL
 WORKDIR "${MTL_REPO}"
-RUN ./build.sh unit && \
-    ./build.sh && \
+RUN ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp

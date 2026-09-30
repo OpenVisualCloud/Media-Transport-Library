@@ -376,30 +376,16 @@ packet egresses from the sender.
 ```
 
 
-## 6. Tests
-
-This project includes many automated test cases based on gtest. Below there is an example command to run. Customize the argument according to your setup.
-
-```bash
-./build/tests/KahawaiTest --p_port 0000:af:01.0 --r_port 0000:af:01.1
-```
-
-In case the test requires large huge page settings, please expand it to 8GB.
-
-```bash
-sudo sysctl -w vm.nr_hugepages=4096
-```
-
-## 7. Optional Setup
+## 6. Optional Setup
 
 This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
-### 7.1. [PTP Setup](chunks/_ptp_setup.md)
+### 6.1. [PTP Setup](chunks/_ptp_setup.md)
 
 ```{include} chunks/_ptp_setup.md
 ```
 
-### 7.2. Disable Automatic NUMA Balancing
+### 6.2. Disable Automatic NUMA Balancing
 
 On timing-critical hosts, disable automatic NUMA balancing. Its periodic scans run on the busy MTL scheduler threads and can stall them for up to a few hundred microseconds:
 

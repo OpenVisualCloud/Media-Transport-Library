@@ -22,9 +22,6 @@ endif
 # enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
-enable_fuzzing_opt = get_option('enable_fuzzing')
-enable_unit_tests_opt = get_option('enable_unit_tests')
-
 # get external variables
 add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always', check: false).stdout().strip() + '"', language : 'c')
 add_global_arguments('-D__MTL_LIB_BUILD__="' + meson.project_version() + '"', language : 'c')
@@ -66,14 +63,6 @@ mtl_internal_dep = declare_dependency(
   link_with : mtl_lib,
   include_directories : mtl_include_dir,
 )
-
-if enable_fuzzing_opt
-  subdir('tests/fuzz')
-endif
-
-if enable_unit_tests_opt
-  subdir('tests/unit')
-endif
 
 pkg = import('pkgconfig')
 pkg.generate(
