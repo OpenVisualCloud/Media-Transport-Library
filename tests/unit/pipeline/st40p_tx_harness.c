@@ -190,3 +190,16 @@ int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped) {
 st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx) {
   return &ctx->pipeline;
 }
+
+int ut40p_tx_fbs_init_uinit(uint16_t framebuff_cnt, uint32_t max_udw_buff_size) {
+  struct st40p_tx_ctx* p = calloc(1, sizeof(*p));
+  if (!p) return -ENOMEM;
+  p->socket_id = rte_socket_id();
+  p->framebuff_cnt = framebuff_cnt;
+  p->ops.max_udw_buff_size = max_udw_buff_size;
+
+  int ret = tx_st40p_init_fbs(p, &p->ops);
+  tx_st40p_uinit_fbs(p);
+  free(p);
+  return ret;
+}
