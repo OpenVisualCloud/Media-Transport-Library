@@ -52,6 +52,9 @@ void ut22p_tx_ctx_enable_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
  */
 void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
 
+/** Wake a blocking get_frame sleeper (wraps st22p_tx_wake_block). */
+void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
+
 /** Wake a blocking encode_get_frame sleeper, via the callback the encoder
  * device is registered with (wraps tx_st22p_encode_wake_block). */
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx);

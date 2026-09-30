@@ -47,13 +47,13 @@ void ut30p_tx_ctx_destroy(ut30p_tx_ctx* ctx);
 void ut30p_tx_ctx_enable_blocking(ut30p_tx_ctx* ctx, uint64_t timeout_ns);
 
 /**
- * Fire the same wake used internally whenever a frame slot becomes free
- * (wraps st30p_tx_wake_block(), i.e. tx_st30p_block_wake()). Fires
- * unconditionally, whether or not anyone is currently blocked in get_frame().
- * Use this to simulate an unrelated wake independently of actually freeing a
- * slot.
+ * App wake (wraps st30p_tx_wake_block()). Ends a get_frame() blocked at the
+ * time of the call; a wake with no thread blocked is a no-op.
  */
 void ut30p_tx_wake_block(ut30p_tx_ctx* ctx);
+
+/** The wake a frame done sends (wraps tx_st30p_notify_frame_available()). */
+void ut30p_tx_frame_free_wake(ut30p_tx_ctx* ctx);
 
 /**
  * Force ctx->lc_destroying, bypassing the CAS handshake real st30p_tx_free()
