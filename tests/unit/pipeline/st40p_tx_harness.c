@@ -10,12 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st40_tx_create ut40p_tx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include "st2110/pipeline/st40_pipeline_tx.c"
 #pragma GCC diagnostic pop
+#undef st40_tx_create
 
 #include "common/ut_common.h"
 
@@ -154,4 +156,29 @@ int ut40p_tx_frame_stat(const ut40p_tx_ctx* ctx, int i) {
 
 uint64_t ut40p_tx_stat_frames_sent(const ut40p_tx_ctx* ctx) {
   return ctx->pipeline.stat_frames_sent;
+}
+
+static struct st40_tx_ops ut40p_tx_transport_ops;
+
+st40_tx_handle ut40p_tx_capture_create(mtl_handle mt, struct st40_tx_ops* ops) {
+  (void)mt;
+  ut40p_tx_transport_ops = *ops;
+  return NULL;
+}
+
+void ut40p_tx_set_notify_frame_late(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_late = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
+int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut40p_tx_transport_ops, 0, sizeof(ut40p_tx_transport_ops));
+  st40_tx_handle transport = ctx->pipeline.transport;
+  tx_st40p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  ctx->pipeline.transport = transport;
+  if (!ut40p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut40p_tx_transport_ops.notify_frame_late(ut40p_tx_transport_ops.priv,
+                                                  epoch_skipped);
 }

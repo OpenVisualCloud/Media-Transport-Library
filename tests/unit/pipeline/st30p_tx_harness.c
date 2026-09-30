@@ -21,6 +21,7 @@
 #include "st2110/pipeline/st30_pipeline_tx.c"
 #undef st30_tx_create
 #pragma GCC diagnostic pop
+#undef st30_tx_create
 
 #include "common/ut_common.h"
 
@@ -38,10 +39,13 @@ int st30_tx_reset_session_stats(st30_tx_handle handle) {
 }
 
 static int ut30p_tx_transport_ctx_socket;
+static struct st30_tx_ops ut30p_tx_transport_ops;
 
-/* Records the socket st30p_tx_create() placed its ctx on, then fails the create. */
+/* Records the transport ops and the socket st30p_tx_create() placed its ctx on, then
+ * fails the create. */
 st30_tx_handle ut30p_tx_st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
   (void)mt;
+  ut30p_tx_transport_ops = *ops;
   ut30p_tx_transport_ctx_socket = ((struct st30p_tx_ctx*)ops->priv)->socket_id;
   return NULL;
 }
@@ -203,4 +207,19 @@ int ut30p_tx_create_ctx_socket(int nic_socket, uint32_t flags, int socket_id) {
   st30p_tx_create(impl, &ops);
   free(impl);
   return ut30p_tx_transport_ctx_socket;
+}
+
+void ut30p_tx_set_notify_frame_late(ut30p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_late = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
+int ut30p_tx_transport_report_late(ut30p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut30p_tx_transport_ops, 0, sizeof(ut30p_tx_transport_ops));
+  tx_st30p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  if (!ut30p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut30p_tx_transport_ops.notify_frame_late(ut30p_tx_transport_ops.priv,
+                                                  epoch_skipped);
 }
