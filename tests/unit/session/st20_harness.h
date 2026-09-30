@@ -217,6 +217,16 @@ uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx);
  * hold→release transition drains the withheld refcnts. */
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold);
 
+/* Make notify_frame_ready (st20 and st22) return `ret`. A negative value refuses
+ * the frame: the harness then keeps no reference to it, as an app would not. */
+void ut20_set_notify_frame_ready_ret(ut20_test_ctx* ctx, int ret);
+
+/* Set ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME on the session. */
+void ut20_ctx_enable_incomplete_frames(ut20_test_ctx* ctx);
+
+/* Framebuffers neither held by a slot nor by the app. */
+int ut20_free_frames(const ut20_test_ctx* ctx);
+
 /* Bump stat_pkts_no_slot by `n` without touching stat_pkts_pool_empty —
  * simulates a non-back-pressure no_slot bump path (e.g. past-tmstamp
  * drop, DMA-busy drop) so tests can prove the warn line's pkts number

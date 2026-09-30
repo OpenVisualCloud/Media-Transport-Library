@@ -980,9 +980,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
-    if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      rv_notify_frame_ready(s, frame->addr, meta);
-    } else {
+    if (!(ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) ||
+        rv_notify_frame_ready(s, frame->addr, meta) < 0) {
       rv_put_frame(s, frame);
       slot->frame = NULL;
     }
@@ -1077,9 +1076,8 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
-    if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      st22_notify_frame_ready(s, frame->addr, meta);
-    } else {
+    if (!(ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) ||
+        st22_notify_frame_ready(s, frame->addr, meta) < 0) {
       rv_put_frame(s, frame);
       slot->frame = NULL;
     }

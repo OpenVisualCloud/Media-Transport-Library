@@ -62,6 +62,7 @@ struct ut20_test_ctx {
   uint8_t user_meta_storage[UT20_FRAME_COUNT][UT20_USER_META_SIZE];
 
   bool hold_frames;
+  int notify_ret;
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
   enum st_rx_tp_compliant last_tp_compliant;
@@ -110,6 +111,7 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
     snprintf(ctx->last_tp_failed_cause, sizeof(ctx->last_tp_failed_cause), "%s",
              meta->tp[MTL_SESSION_PORT_P]->failed_cause);
   }
+  if (ctx->notify_ret < 0) return ctx->notify_ret;
   if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
   return 0;
 }
@@ -506,6 +508,7 @@ static int ut20_st22_notify_frame_ready(void* priv, void* frame,
   if (!ctx || !frame) return 0;
   ctx->st22_frames_ready++;
   ctx->st22_last_frame_size = meta->frame_total_size;
+  if (ctx->notify_ret < 0) return ctx->notify_ret;
   if (!ctx->hold_frames) ut20_release_frame(ctx, frame);
   return 0;
 }
@@ -768,6 +771,22 @@ void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
       rte_atomic32_set(&ctx->frames[i].refcnt, 0);
     }
   }
+}
+
+void ut20_set_notify_frame_ready_ret(ut20_test_ctx* ctx, int ret) {
+  ctx->notify_ret = ret;
+}
+
+void ut20_ctx_enable_incomplete_frames(ut20_test_ctx* ctx) {
+  ctx->session.ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+int ut20_free_frames(const ut20_test_ctx* ctx) {
+  int n = 0;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    if (rte_atomic32_read(&ctx->frames[i].refcnt) == 0) n++;
+  }
+  return n;
 }
 
 void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n) {

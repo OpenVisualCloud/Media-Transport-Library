@@ -24,14 +24,13 @@ static int rx_frame_ready_cb(void* priv, void* frame, struct st20_rx_frame_meta*
   if (!complete) {
     atomic_fetch_add(&rx->stats->rx_incomplete, 1);
     if (!rx->accept_incomplete) {
-      /* Drop incomplete frame — return buffer immediately.
+      /* Drop incomplete frame; returning -1 hands the buffer back to MTL.
        * CRITICAL: also release the grain slot that was claimed
        * by query_ext_frame, otherwise it leaks permanently. */
       if (meta->opaque) {
         poc_grain_slot_t* gs = (poc_grain_slot_t*)meta->opaque;
         atomic_store_explicit(&gs->in_use, false, memory_order_release);
       }
-      st20_rx_put_framebuff(rx->rx_handle, frame);
       return -1;
     }
   }
@@ -61,7 +60,6 @@ static int rx_frame_ready_cb(void* priv, void* frame, struct st20_rx_frame_meta*
   /* Enqueue — if queue is full, drop and return buffer */
   if (poc_queue_push(rx->queue, &entry) != 0) {
     atomic_fetch_add(&rx->stats->rx_drops, 1);
-    st20_rx_put_framebuff(rx->rx_handle, frame);
     return -1;
   }
 
