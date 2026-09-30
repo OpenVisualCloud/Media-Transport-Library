@@ -27,7 +27,7 @@ jobs:
   # See doc/sphinx/build_docs.md: this job runs the steps of that guide.
   buildDocumentation:
     name: Build documentation
-    runs-on: 'ubuntu-22.04'
+    runs-on: 'ubuntu-24.04'
     timeout-minutes: 20
     steps:
       - name: Secure the runner
