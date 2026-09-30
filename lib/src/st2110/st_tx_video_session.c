@@ -2708,11 +2708,11 @@ static int tvs_tasklet_handler(void* priv) {
 
     s->stat_build_ret_code = 0;
     if (s->st22_info)
-      pending = tv_tasklet_st22(impl, s);
+      pending += tv_tasklet_st22(impl, s);
     else if (st20_is_frame_type(s->ops.type))
-      pending = tv_tasklet_frame(impl, s);
+      pending += tv_tasklet_frame(impl, s);
     else
-      pending = tv_tasklet_rtp(impl, s);
+      pending += tv_tasklet_rtp(impl, s);
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;

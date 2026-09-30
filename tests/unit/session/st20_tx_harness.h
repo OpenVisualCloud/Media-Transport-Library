@@ -119,6 +119,25 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
 int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp, uint64_t* frame_timestamp,
                                     uint32_t* frame_rtp_timestamp);
+/* What the harness session has to do in ut_txv_run_tasklet_slots(). */
+enum ut_txv_work {
+  UT_TXV_WORK_NONE,  /* frame level, get_next_frame busy */
+  UT_TXV_WORK_FRAME, /* frame level, starts a two-packet frame */
+  UT_TXV_WORK_RTP,   /* RTP level, one app packet queued */
+  UT_TXV_WORK_ST22,  /* ST22 frame level, starts a frame */
+};
+enum ut_txv_slot {
+  UT_TXV_SLOT_SELF,     /* the harness session */
+  UT_TXV_SLOT_IDLE,     /* a frame-level peer whose get_next_frame is always busy */
+  UT_TXV_SLOT_INACTIVE, /* the same peer, not active */
+  UT_TXV_SLOT_EMPTY,    /* no session */
+};
+/* Runs tvs_tasklet_handler() once over the manager slots in slots[], exactly one of
+ * them UT_TXV_SLOT_SELF. Returns the handler's result, < 0 on setup failure. */
+int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
+                             const enum ut_txv_slot* slots, int nb_slots);
+/* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
+int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
