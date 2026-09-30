@@ -108,6 +108,12 @@ int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped);
 /** The pipeline handle, for calling the public st*p API directly. */
 st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx);
 
+/**
+ * Run tx_st40p_init_fbs() then tx_st40p_uinit_fbs() on a fresh ctx, the
+ * create-then-free (or create-failure) path. Returns the init result.
+ */
+int ut40p_tx_fbs_init_uinit(uint16_t framebuff_cnt, uint32_t max_udw_buff_size);
+
 #ifdef __cplusplus
 }
 #endif

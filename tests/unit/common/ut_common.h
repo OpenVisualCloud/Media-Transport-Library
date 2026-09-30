@@ -48,6 +48,9 @@ uint64_t ut_hw_rx_timestamp_flag(void);
 void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns);
 
+/** Number of live rte_malloc allocations, summed over all sockets. */
+uint64_t ut_rte_alloc_count(void);
+
 #ifdef __cplusplus
 }
 #endif
