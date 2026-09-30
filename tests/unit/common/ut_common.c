@@ -6,6 +6,7 @@
 
 #include "ut_common.h"
 
+#include <rte_malloc.h>
 #include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,4 +83,14 @@ void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns) {
   *RTE_MBUF_DYNFIELD(mbuf, dynfield_offset, rte_mbuf_timestamp_t*) = raw_ns;
   mbuf->ol_flags |= ut_hw_rx_timestamp_flag();
+}
+
+uint64_t ut_rte_alloc_count(void) {
+  uint64_t count = 0;
+  for (unsigned int i = 0; i < rte_socket_count(); i++) {
+    struct rte_malloc_socket_stats stats;
+    if (rte_malloc_get_socket_stats(rte_socket_id_by_idx(i), &stats) == 0)
+      count += stats.alloc_count;
+  }
+  return count;
 }

@@ -355,6 +355,8 @@ static int tx_st40p_uinit_fbs(struct st40p_tx_ctx* ctx) {
       warn("%s(%d), frame %u is still in %s\n", __func__, ctx->idx, i,
            tx_st40p_stat_name(ctx->framebuffs[i].stat));
     }
+    if (ctx->framebuffs[i].frame_info.udw_buff_addr)
+      mt_rte_free(ctx->framebuffs[i].frame_info.udw_buff_addr);
   }
   mt_rte_free(ctx->framebuffs);
   ctx->framebuffs = NULL;
@@ -389,7 +391,6 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     frame_info->udw_buff_addr = mt_rte_zmalloc_socket(ops->max_udw_buff_size, soc_id);
     if (!frame_info->udw_buff_addr) {
       err("%s(%d), udw_buff malloc failed\n", __func__, idx);
-      mt_rte_free(frames);
       return -ENOMEM;
     }
     frame_info->udw_buffer_size = ops->max_udw_buff_size;
