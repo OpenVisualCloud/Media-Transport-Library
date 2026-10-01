@@ -229,6 +229,20 @@ The default NIC queue depth is set to 512 in MTL, and MTL will always ensure the
 With a queue depth of 512, the MTL can tolerate a kernel scheduler jitter of up to ~2.5ms. If you observe any packet timing jitter, consider increasing the queue depth. MTL provides the `nb_tx_desc` option for this adjustment.
 However, for a 4K 50fps session, the time for one packet is approximately ~1us, indicating that the duration for 512 packets is around ~500us. With a queue depth of 512, MTL can only tolerate a scheduler jitter of about ~500us. However, by adjusting the depth to the maximum hardware-permitted value of 4096, MTL should be capable of handling a maximum scheduler jitter of 4ms.
 
+The start of each frame has its own, shorter tolerance. With the rate limiter, the library starts sending padding packets a short time before a frame's scheduled first-packet time, so that the NIC shaper releases the first packet on time (see [8.2](#82-rtp-timestamps-and-the-first-packet-in-rate-limit-pacing)).
+That time is 80% of the ST 2110-21 TR_OFFSET, but at most 128 packet times. If the scheduler reaches the frame later than that, the first packet leaves late by how far past its scheduled time the scheduler reaches it.
+The frame-start tolerance below applies when the port has a pad plan (see [8.2](#82-rtp-timestamps-and-the-first-packet-in-rate-limit-pacing)); without one, the library holds the first packet until its scheduled time, so any scheduler delay at the frame start makes it late.
+
+| Format | One packet time | Frame-start tolerance | Frame tolerance at queue depth 512 |
+|---|---|---|---|
+| 1080p29.97 | ~7.8 µs | ~1.0 ms | ~4.0 ms |
+| 1080p59.94 | ~3.9 µs | ~0.5 ms | ~2.0 ms |
+| 1080p119.88 | ~1.9 µs | ~0.25 ms | ~1.0 ms |
+| 2160p59.94 | ~1.0 µs | ~0.12 ms | ~0.5 ms |
+
+The frame-start tolerance cannot exceed the idle time ST 2110-21 leaves between two frames: about 4% of the frame time for gapped senders.
+MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR` is not implemented for TX.
+
 > **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](isolation.md) for setup instructions.
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
