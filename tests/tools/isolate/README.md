@@ -91,5 +91,8 @@ the stale `mtl-isolate-*` cgroups of dead wrappers.
 - Not covered without boot parameters: the timer tick (`nohz_full=`), RCU
   callbacks and expedited grace periods (`rcu_nocbs=`), per-CPU work queued on
   the CPU that triggered it, and managed or per-CPU IRQs.
-- RL video launches packet 0 from the TX tasklet (`WAIT_TARGET`), so outside a
-  partition a late tasklet sends it late (tens of µs at high frame rates).
+- RL video queues packet 0 behind warm-up pads the NIC shaper drains up to its
+  target, so a late tasklet delays it only when it misses the warm-up window
+  (`warm_pkts` packets, ~120 µs at 2160p59), or when there is no pad plan
+  (unmeasured pad interval, unknown burst bucket) and `WAIT_TARGET` holds it
+  until its target.

@@ -681,7 +681,15 @@ This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance 
 ### 8.2. RTP timestamps of paced video
 
 By default the RTP timestamp of a video frame is the scheduled transmission time of its first packet, `epoch + TR_OFFSET - VRX × TRS` (`transmission_start_time()` in `st_tx_video_session.c`), rounded to the media clock.
-The transmitter holds the first content packet until that same instant, also with rate-limit pacing, so the RTP timestamp and the send gate agree; no separate latency compensation is applied to the RTP timestamp. It is the scheduled time, not a measured wire time.
+It is the scheduled time, not a measured wire time; no separate latency compensation is applied to the RTP timestamp.
+With the rate limiter, if the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
+It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the patched kernel ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF.
+The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
+The model puts the first packet in [scheduled time, scheduled time + one packet interval), also after a tasklet stall that ends before it: the library queues whole padding packets and rounds a partial one up, so the first packet is never early.
+After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+Measured on E830 and E810 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.
+Without a known shaper, for example with a user-set pad interval, the library pads one packet per interval and holds the first packet until the scheduled time, so a busy scheduler can send it late.
+With ST20 user metadata, the metadata packet goes out when the first packet is queued, so up to the warm-up time (at most 128 packet intervals) before it.
 
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.
