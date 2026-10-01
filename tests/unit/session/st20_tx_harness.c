@@ -636,6 +636,62 @@ int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
   return tv_init_pacing(&ctx->impl, s);
 }
 
+int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
+                          bool static_pad, const float* trained_pad_interval, bool wide) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.width = 1920;
+  s->ops.height = 1080;
+  s->ops.fps = ST_FPS_P59_94;
+  s->ops.packing = ST20_PACKING_GPM;
+  s->ops.interlaced = false;
+  s->ops.num_port = num_port;
+  s->ops.pad_interval = user_pad_interval;
+  if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
+  s->st20_total_pkts = 4320;
+  s->st20_pkt_size = 1262;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts;
+  s->st21_vrx_narrow = 8;
+  s->st21_vrx_wide = 720;
+  for (int i = 0; i < num_port; i++) {
+    struct mt_interface* inf = &ctx->impl.inf[i];
+    if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
+    inf->nb_tx_desc = 512;
+    s->port_maps[i] = (enum mtl_port)i;
+    s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
+    /* a pre-train result keeps tv_train_pacing() off the NIC */
+    if (trained_pad_interval)
+      mt_pacing_train_pad_result_add(&ctx->impl, (enum mtl_port)i, tv_rl_bps(s),
+                                     trained_pad_interval[i]);
+  }
+  return tv_init_pacing(&ctx->impl, s);
+}
+
+void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size) {
+  ctx->impl.inf[port].drv_info.drv_type = MT_DRV_ICE;
+  ctx->impl.user_para.port_params[port].rl_burst_size = rl_burst_size;
+}
+
+long double ut_txv_pacing_trs(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.trs;
+}
+
+uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.warm_pkts;
+}
+
+long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.pacing.rl_drain[port];
+}
+
+long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.pacing.rl_credit[port];
+}
+
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   return st_tai_round_to_media_clk_ns(tai_ns, sampling_rate);
 }

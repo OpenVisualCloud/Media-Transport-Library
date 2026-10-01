@@ -889,6 +889,106 @@ TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuil
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
 }
 
+/* tv_init_pacing()'s per-port RL warm-up plan: the shaper sends pad_interval + 1
+ * packets in pad_interval trs, and its full burst bucket leaves at line rate. A plan
+ * needs a measured pad_interval and a known bucket, else packet 0 is held. */
+class St20TxRlPlanTest : public ::testing::Test {
+ protected:
+  static constexpr int kPortP = 0;
+  static constexpr int kPortR = 1;
+  static constexpr long double kNormalPadSize = 1262;
+  static constexpr long double kVfBurstSize = 2048;
+  static constexpr double kTolNs = 1e-6;
+  const float kTrained[2] = {164, 170};
+
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+    ctx_ = ut_txv_create();
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    ut_txv_destroy(ctx_);
+  }
+  long double Drain(long double pad_interval) {
+    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1);
+  }
+  void ExpectHold(int port) {
+    EXPECT_EQ((double)ut_txv_rl_drain(ctx_, port), 0.0);
+    EXPECT_EQ((double)ut_txv_rl_credit(ctx_, port), 0.0);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+};
+
+TEST_F(St20TxRlPlanTest, DrainFollowsEachPortsTrainedPadInterval) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, kTrained, false), 0);
+
+  EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortP), (double)Drain(164), kTolNs);
+  EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortR), (double)Drain(170), kTolNs);
+}
+
+TEST_F(St20TxRlPlanTest, UserPadIntervalHolds) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 200, false, nullptr, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, StaticPadIntervalHolds) {
+  /* g_cvl_static_pad_tables has 1080p59 gpm */
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, true, nullptr, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, VfCreditIsThePatchedKernelIceBucket) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  EXPECT_NEAR((double)ut_txv_rl_credit(ctx_, kPortP),
+              (double)(Drain(164) * kVfBurstSize / kNormalPadSize), kTolNs);
+}
+
+TEST_F(St20TxRlPlanTest, PfWithDefaultBucketHolds) {
+  ut_txv_set_ice_pf(ctx_, kPortP, 0);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, PfCreditIsTheBucketTheIcePmdPrograms) {
+  /* ice_cfg_rl_burst_size(): nearest 64 B up to 2047 * 64 B, else nearest 1 KB */
+  const uint32_t cases[][2] = {
+      {4000, 4032}, {3990, 3968}, {131008, 131008}, {131040, 131072}, {150000, 149504},
+  };
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c[0]);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_ice_pf(ctx, kPortP, c[0]);
+    EXPECT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+    long double drain = ut_txv_pacing_trs(ctx) * 164 / 165;
+    EXPECT_NEAR((double)ut_txv_rl_credit(ctx, kPortP),
+                (double)(drain * c[1] / kNormalPadSize), kTolNs);
+    ut_txv_destroy(ctx);
+  }
+}
+
+TEST_F(St20TxRlPlanTest, PfBucketBeyondHalfTheTxRingHolds) {
+  /* ~792 pads of credit, more than the 512-descriptor ring should hold */
+  ut_txv_set_ice_pf(ctx_, kPortP, 1000000);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, WidePacingHolds) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, true), 0);
+
+  ASSERT_EQ(ut_txv_pacing_warm_pkts(ctx_), 0u);
+  ExpectHold(kPortP);
+}
+
 TEST(St20TxInitHwTest, RedundantQueueTakesItsPhysicalPortsTrainedRate) {
   /* R leg on physical port 2, as with TX P, RX P, TX R, RX R on ports 0-3 */
   constexpr int kRPort = 2;

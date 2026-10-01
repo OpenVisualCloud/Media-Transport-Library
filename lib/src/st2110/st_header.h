@@ -174,6 +174,9 @@ struct st_tx_video_pacing {
   long double frame_idle_time;
   long double reactive;
   float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
+  /* per port RL warm-up plan in ns, 0 without one */
+  long double rl_drain[MTL_SESSION_PORT_MAX];  /* shaper time of one NORMAL pad */
+  long double rl_credit[MTL_SESSION_PORT_MAX]; /* pad time the full bucket skips */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */

@@ -393,9 +393,21 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
 
 ### Warm-Up Padding
-In RL mode, at target − `warm_pkts`·`trs`, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` pads (`mt_build_pad()`, no RTP header) to start the shaper, then `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late.
+At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_init_pacing()` planned the port: `rl_drain` ≠ 0, which stays 0 otherwise.
+- A plan needs both inputs:
+  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of one NORMAL pad at that port's own measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`). A user `ops.pad_interval` or the static table gives none; `pacing->pad_interval` keeps only the last port's pi.
+  - `rl_credit` = `rl_drain`·B/S, the pads the full burst bucket B sends at line rate. `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
+- With a plan, `video_trs_rl_pre_arm()` queues pads the shaper finishes draining at the target and packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
+- The pads cover `(target − now) + rl_credit` in whole NORMAL pads, rounded up by one pad. Measured on E810 and E830 VF TX: each NORMAL pad drains exactly `rl_drain`, but the shaper does not resolve shorter packets (S/2, S/4, S/8 pads cost ~0.2–0.7 µs each, not a share of `rl_drain`), so sub-pad trims would launch packet 0 early.
+- The model puts the launch in [target, target + `rl_drain`) and is never early. Measured on hardware, the launch can be up to ~2.7 µs ahead of the model, which the ~3.8 µs NIC TX latency covers, so first-packet latency stayed ≥ 0. Shaper wire overhead or a bucket that needs a whole packet of tokens (credit B − S) only makes it later.
+- Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
+- The user-meta packet (`st20_frame_tx_start()`, sys queue) leaves when packet 0 is queued, up to `warm_pkts`·`trs` ahead of it, but after the previous frame's last packet; RX matches it by RTP timestamp and the timing parser skips it.
+- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `rl_credit` deep over what is queued, so a stall only shrinks the rest and keeps the one-pad bound.
+- A stall is a delay between two bursts long enough that the queue drained and the bucket refilled (the drain end fell behind TSC − `rl_credit`); resetting the drain end then counts `stat_trans_recalculate_warmup`.
+- Refused NORMAL pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. Ports without a plan keep one pad per burst and per retry.
+- Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
-- `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads needed; no pads are sent.
+- `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
