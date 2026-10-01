@@ -1,0 +1,68 @@
+{
+  "results": [
+    {
+      "packages": [
+        {
+          "package": {
+            "name": "https://github.com/DPDK/dpdk",
+            "commit": "93ecf13ac97335e8afe81b57a36cc43f87669259"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/libbpf/libbpf",
+            "commit": "f5dcbae736e5d7f83a35718e01be1a8e3010fa39"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/intel/ethernet-linux-ice",
+            "commit": "760813ce7c2c68c1c778a571e86cd34344e522fc"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/xdp-project/xdp-tools",
+            "commit": "8fbad9f0af621a22aa87ff2520b3735915b1f0fd"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/cisco/openh264",
+            "commit": "652bdb7719f30b52b08e506645a7322ff1b2cc6f"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/OpenVisualCloud/SVT-JPEG-XS",
+            "commit": "8e50180ad909a0bdcdf91b462c64033f0fe3e112"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/oneapi-src/level-zero",
+            "commit": "79ce2b51cccfc6a2d868847c5a8f3abceb13de81"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/the-tcpdump-group/libpcap",
+            "commit": "1926f4163e4eef978c71fde28a3f6d51fff183a8"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/google/googletest",
+            "commit": "e39786088138f2749d64e9e90e0f9902daa77c40"
+          }
+        },
+        {
+          "package": {
+            "name": "https://github.com/swig/swig",
+            "commit": "77323a0f07562b7d90d36181697a72a909b9519a"
+          }
+        }
+      ]
+    }
+  ]
+}

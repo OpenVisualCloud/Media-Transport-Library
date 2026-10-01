@@ -1,0 +1,103 @@
+name: OSV-Scanner
+
+on:
+  pull_request:
+    branches: [main, 'maint-**']
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OSV_SCANNER_VERSION: v2.6.0
+  OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+
+jobs:
+  osv-scan:
+    # Not "osv-scanner": the code-scanning check that the SARIF upload creates has that name
+    name: osv-scan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install OSV-Scanner
+        run: |
+          curl -sSfL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+
+      - name: Check that the C/C++ inventory matches versions.env
+        run: |
+          .github/scripts/ci/osv-c-deps.sh >"$RUNNER_TEMP/c-deps.json"
+          diff -u .github/osv/c-deps.json "$RUNNER_TEMP/c-deps.json" || {
+            echo "::error::Regenerate it: .github/scripts/ci/osv-c-deps.sh >.github/osv/c-deps.json"
+            exit 1
+          }
+
+      # The inventory lists libbpf at EBPF_VER, so the MtlManager image has to build that tag too
+      - name: Check that manager/Dockerfile builds libbpf EBPF_VER
+        run: |
+          . ./versions.env
+          grep -q "libbpf checkout v${EBPF_VER}\$" manager/Dockerfile || {
+            echo "::error::Change the libbpf tag in manager/Dockerfile to v${EBPF_VER}"
+            exit 1
+          }
+
+      # Exit code 1 means "vulnerabilities found"; anything else is an error
+      - name: Scan
+        run: |
+          ./osv-scanner scan source --recursive --no-resolve \
+            --config .github/osv-scanner.toml \
+            --lockfile osv-scanner:.github/osv/c-deps.json \
+            --format sarif --output-file osv.sarif ./ || [ $? -eq 1 ]
+
+      - name: Upload OSV-Scanner results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: osv.sarif
+          category: osv-scanner
+
+      # A PR fails only on what it adds, so a new advisory against main does not block it
+      - name: Fail on vulnerabilities that this PR adds
+        if: github.event_name == 'pull_request'
+        shell: bash  # for pipefail: without it, a jq error in ids() passes the step
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          scan() { # <tree> <output>
+            local args=()
+            [ -f "$1/.github/osv-scanner.toml" ] && args+=(--config "$1/.github/osv-scanner.toml")
+            [ -f "$1/.github/osv/c-deps.json" ] && args+=(--lockfile "osv-scanner:$1/.github/osv/c-deps.json")
+            ./osv-scanner scan source --recursive --no-resolve "${args[@]}" \
+              --format json --output-file "$2" "$1" || [ $? -eq 1 ]
+          }
+          ids() { jq -r '.results[].packages[] | .package.name as $n | .groups[] | "\($n) \(.ids[0])"' "$1" | sort -u; }
+          scan . "$RUNNER_TEMP/head.json"
+          scan "$RUNNER_TEMP/base" "$RUNNER_TEMP/base.json"
+          ids "$RUNNER_TEMP/head.json" >"$RUNNER_TEMP/head.ids"
+          ids "$RUNNER_TEMP/base.json" >"$RUNNER_TEMP/base.ids"
+          new=$(comm -13 "$RUNNER_TEMP/base.ids" "$RUNNER_TEMP/head.ids")
+          [ -z "$new" ] || { echo "::error::New vulnerabilities: ${new//$'\n'/, }"; exit 1; }
+
+      - name: Fail on vulnerabilities that the triage file does not list
+        if: github.event_name != 'pull_request'
+        run: |
+          n=$(jq '[.runs[].results[].ruleId] | unique | length' osv.sarif)
+          [ "$n" -eq 0 ] || { echo "::error::$n advisories are not in .github/osv-scanner.toml; see the Security tab"; exit 1; }

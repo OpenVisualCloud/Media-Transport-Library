@@ -1,0 +1,15 @@
+# Findings that were checked and accepted. Each needs a reason and an end date.
+[[IgnoredVulns]]
+id = "OSV-2023-877"
+ignoreUntil = 2027-03-31
+reason = "libbpf: fixed on master after v1.7.0 (dd92bef7), not yet in a release. Recheck at v1.8.0."
+
+[[IgnoredVulns]]
+id = "OSV-2023-1307"
+ignoreUntil = 2027-03-31
+reason = "libbpf: fixed on master after v1.7.0 (dcaac950), not yet in a release. Recheck at v1.8.0."
+
+[[IgnoredVulns]]
+id = "OSV-2024-395"
+ignoreUntil = 2027-03-31
+reason = "libpcap: no upstream fix. Only the doc/build.md fallback installs it; MTL runs no BPF filter."
