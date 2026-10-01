@@ -50,7 +50,7 @@ sudo pip3 install meson ninja pyelftools
 RHEL 9 doesn't provide `json-c-devel libpcap-devel gtest-devel` package as default, it has to build these three libs from source code, install below dependency and follow section [1.2. Build dependency from source code](#12-build-dependency-from-source-code) to build.
 
 ```bash
-sudo yum install cmake flex bison
+sudo yum install cmake flex bison autoconf
 ```
 
 #### 1.1.4. Arch Linux
@@ -87,8 +87,9 @@ cd ../../
 #### 1.2.2. libpcap
 
 ```bash
-git clone https://github.com/the-tcpdump-group/libpcap.git -b libpcap-1.9
+git clone https://github.com/the-tcpdump-group/libpcap.git -b libpcap-1.10.7
 cd libpcap/
+./autogen.sh
 ./configure
 make
 sudo make install
