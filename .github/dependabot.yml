@@ -1,7 +1,9 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: "monthly"
     commit-message:
@@ -21,8 +23,33 @@ updates:
     commit-message:
       prefix: "Ci: "
 
+  - package-ecosystem: pip
+    directory: /.github/mcp
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+    ignore:
+      # mcp 2.0 removed mcp.server.fastmcp, which both servers import
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: pip
+    directory: /doc/sphinx
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
   - package-ecosystem: cargo
     directory: /rust
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
+  - package-ecosystem: cargo
+    directory: /tests/tools/perf_debug_mcp/native
     schedule:
       interval: "monthly"
     commit-message:
