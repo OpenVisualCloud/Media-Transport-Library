@@ -412,18 +412,22 @@ function setup_distribution() {
 	. /etc/os-release
 	ID_LIKE="${ID_LIKE:-}"
 
-	case "${ID}" in
-	ubuntu)
+	case " ${ID} ${ID_LIKE} " in
+	*" ubuntu "*)
 		PACKAGE_MANAGER="apt-get"
 		PACKAGE_INSTALL_COMMAND="apt-get install -y"
 		DRIVER_PACKAGE="linux-modules-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="libnuma-dev"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
-	debian)
+	*" debian "*)
 		PACKAGE_MANAGER="apt-get"
 		PACKAGE_INSTALL_COMMAND="apt-get install -y"
 		DRIVER_PACKAGE="linux-image-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="libnuma-dev"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
-	centos | fedora | rhel | rockos | rocky)
+	*" centos "* | *" fedora "* | *" rhel "* | *" rockos "* | *" rocky "*)
 		if command_exists dnf; then
 			PACKAGE_MANAGER="dnf"
 		else
@@ -431,16 +435,48 @@ function setup_distribution() {
 		fi
 		PACKAGE_INSTALL_COMMAND="${PACKAGE_MANAGER} install -y"
 		DRIVER_PACKAGE="kernel-modules-core-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="numactl-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
+		;;
+	*" suse "*)
+		PACKAGE_MANAGER="zypper"
+		PACKAGE_INSTALL_COMMAND="zypper --non-interactive install"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="libnuma-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
+		;;
+	*" arch "*)
+		PACKAGE_MANAGER="pacman"
+		PACKAGE_INSTALL_COMMAND="pacman --noconfirm -S"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl"
+		PYELFTOOLS_PACKAGE="python-pyelftools"
+		;;
+	*" alpine "*)
+		PACKAGE_MANAGER="apk"
+		PACKAGE_INSTALL_COMMAND="apk add"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl-dev"
+		PYELFTOOLS_PACKAGE="py3-elftools"
+		;;
+	*" void "*)
+		PACKAGE_MANAGER="xbps-install"
+		PACKAGE_INSTALL_COMMAND="xbps-install -Sy"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
 	*)
 		PACKAGE_MANAGER=""
 		PACKAGE_INSTALL_COMMAND=""
 		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE=""
+		PYELFTOOLS_PACKAGE=""
 		;;
 	esac
 
 	PM="${PACKAGE_MANAGER}"
-	export ID VERSION_ID ID_LIKE PM PACKAGE_MANAGER PACKAGE_INSTALL_COMMAND DRIVER_PACKAGE
+	export ID VERSION_ID ID_LIKE PM PACKAGE_MANAGER PACKAGE_INSTALL_COMMAND DRIVER_PACKAGE NUMA_DEVEL_PACKAGE PYELFTOOLS_PACKAGE
 }
 
 function install_packages() {
