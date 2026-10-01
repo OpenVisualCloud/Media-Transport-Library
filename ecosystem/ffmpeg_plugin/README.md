@@ -18,18 +18,22 @@ The manual way of building is described below
 
 ### 1.1. Build openh264
 
-Before building, check if openh264 is already installed:
+Before building, check which openh264 is already installed, if any:
 
 ```bash
-ldconfig -p | grep libopenh264
+pkg-config --modversion openh264
 ```
 
-If the command outputs a path to `libopenh264.so`, openh264 is present and you can skip the build step below.
+If it prints the `OPENH264_VER` from `versions.env` or a later version, skip the build step below. An older openh264 has known vulnerabilities, so build the pinned version.
+
+> Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
 
 ```bash
+. $mtl_source_code/versions.env
+
 git clone https://github.com/cisco/openh264.git
 cd openh264
-git checkout openh264v2.4.0
+git checkout "v${OPENH264_VER}"
 make -j "$(nproc)"
 sudo make install
 sudo ldconfig
