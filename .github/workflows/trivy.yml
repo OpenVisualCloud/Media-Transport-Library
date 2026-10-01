@@ -21,7 +21,9 @@ env:
   MTL_BUILD_DISABLE_PCAPNG: true
   PREFIX_DIR: /usr/local
   DEBIAN_FRONTEND: noninteractive
-  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  # Mirrors of the same database. Trivy tries the next one when a source is rate limited
+  # or answers with a server error.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db,mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db
   TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 permissions:
   contents: read
