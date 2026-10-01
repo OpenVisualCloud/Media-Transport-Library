@@ -781,6 +781,20 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 - **Fix**: `patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.patch`; root cause, evidence, reproducers and upstream status in the [.md next to it](../../patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md).
 - **Verify**: `UnitTest --gtest_filter='EalIntrCallback.*:DpdkIavfPatch.*'`; `DpdkIavfPatch.*` fails when the loaded iavf PMD lacks the patch.
 
+### iavf Per-Queue Rate Limits Outlive the Process
+- **Defect (ice PF)**: RL pacing on an iavf VF puts every TX queue on a TM shaper (`ST_DEFAULT_RL_BPS` 1 Gb/s, then each session's rate). The ice PF saves each queue's rate and re-applies it whenever any later process enables the queue, across VF resets, until the VF is destroyed. Neither iavf close nor MTL uninit clears it.
+- **Symptom**: a later non-RL process on the same VFs has sessions capped at a constant ~134 MB/s on some queues: 1080p at 27.8 fps whatever the target, 4K at 7.0 fps.
+- **Fix**: `dev_tx_queues_clear_rl()` commits all TX queues on a shaper with peak 0. The PF maps peak 0 to its unlimited default and drops the saved rate; a link-rate peak would be saved and replayed instead, and fails where the VF has a `max_tx_rate`. Best effort: a failure only warns.
+  - `dev_if_init_pacing()` runs it for every non-RL way that reaches its end, for the shared TX queue path, and after an AUTO RL init that failed past the TM root. Not for AUTO on a driver without TM, nor when the RL root init itself fails.
+    - There `dev_rl_drop_hierarchy()` first deletes the nodes RL left and resets MTL's shaper table. It cannot free RL's profiles: 26.07 iavf node delete never drops the reference node add took, so profile delete answers "profile in use" until `iavf_tm_conf_uninit()` at close.
+    - The clear therefore uses its own profile ID, `MT_TM_NO_RL_PROFILE_ID` (`ST_SHAPER_PROFILE_ID` + `MT_MAX_RL_ITEMS`), outside `dev_rl_shaper_add()`'s range.
+  - With the MTL-patched ice PF (`patches/ice_drv/2.6.7/0001-ice-support-VF-runtime-rate-limit-queue-reconfigurat.patch`; `0001-vf-support-kahawai-runtime-rl-queue.patch` in 2.6.6 and older) the rates change at the commit. Stock OOT ice only stores them at `VIRTCHNL_OP_CONFIG_QUEUE_BW` and applies them at the next `CONFIG_VSI_QUEUES`, so the clear takes effect one process later.
+- **Guard (DPDK 26.07 on)**: without PF-granted QoS, iavf never allocates `qos_cap` nor initializes the `tm_conf` lists. `iavf_tm_node_add` and `iavf_tm_capabilities_get` dereference `qos_cap` (the `iavf_tm_node_add` SIGSEGV with the stock kernel ice), and `iavf_shaper_profile_add` inserts into the uninitialized list.
+  - Only 26.07's `iavf_hierarchy_commit` checks `VIRTCHNL_VF_OFFLOAD_QOS` before anything else, so an empty commit runs first and `IAVF_NOT_SUPPORTED` (-64) skips the clear; a PF without QoS cannot hold queue rates.
+  - Before 26.07 the clear is compiled out (`MT_IAVF_TM_QOS_PROBE`) and logs that rates may remain: `patches/dpdk/{25.03..26.03}/0002-net-iavf-refine-queue-rate-limit-configure.patch` makes commit read `qos_cap->num_elem` first, and unpatched commit returns the not-stopped error before the QoS check.
+  - The probe logs one benign iavf ERR per port: `Please stop port first` (PF granted QoS) or `VF queue tc mapping is not supported` (it did not).
+- **Verify**: `UnitTest --gtest_filter='*MtDevTxRl*'` (the clear cases skip before DPDK 26.07). On hardware: an RL run, then `--pacing_way tsc` on the same VFs; `St20_tx.mix_s3` and `St20p.digest_user_meta_s2` must pass.
+
 ### mbuf Lifecycle
 
 **TX**: alloc header → fill headers → chain extbuf → enqueue ring → tx_burst → NIC DMA → mbuf freed back to pool (extbuf refcnt dec)
