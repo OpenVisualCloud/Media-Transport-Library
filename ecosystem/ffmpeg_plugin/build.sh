@@ -58,22 +58,22 @@ done
 
 build_openh264() {
 	if command -v pkg-config >/dev/null 2>&1; then
-		if pkg-config --exists openh264; then
-			echo "openh264 is already installed (detected by pkg-config). Skipping build."
+		if pkg-config --exists "openh264 >= ${OPENH264_VER}"; then
+			echo "openh264 $(pkg-config --modversion openh264) is already installed (detected by pkg-config). Skipping build."
 			return
 		fi
 	else
 		echo "Warning: pkg-config not found. Skipping openh264 installation check."
 	fi
 
-	if [ -d "openh264-openh264v2.4.0" ]; then
-		echo "openh264v2.4.0 directory already exists. Removing it to ensure a clean build."
-		rm -rf openh264-openh264v2.4.0
+	if [ -d "openh264-${OPENH264_VER}" ]; then
+		echo "openh264-${OPENH264_VER} directory already exists. Removing it to ensure a clean build."
+		rm -rf "openh264-${OPENH264_VER}"
 	fi
 
-	wget https://github.com/cisco/openh264/archive/refs/heads/openh264v2.4.0.zip
-	unzip openh264v2.4.0.zip && rm -f openh264v2.4.0.zip
-	cd openh264-openh264v2.4.0
+	wget "https://github.com/cisco/openh264/archive/refs/tags/v${OPENH264_VER}.zip"
+	unzip "v${OPENH264_VER}.zip" && rm -f "v${OPENH264_VER}.zip"
+	cd "openh264-${OPENH264_VER}"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		make -j "$(nproc)" PREFIX="${MTL_INSTALL_PREFIX}"
 		make install PREFIX="${MTL_INSTALL_PREFIX}"
@@ -146,9 +146,10 @@ build_ffmpeg() {
 
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# Ensure FFmpeg can find libraries installed in its own prefix (e.g. openh264)
+		# -L first, so an older openh264 elsewhere on the link path is not linked in too
 		export PKG_CONFIG_PATH="${MTL_INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 		export LD_LIBRARY_PATH="${MTL_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-ldflags="-Wl,-rpath,${MTL_INSTALL_PREFIX}/lib" "${extra_config_flags[@]}"
+		./configure --prefix="${MTL_INSTALL_PREFIX}" --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-ldflags="-L${MTL_INSTALL_PREFIX}/lib -Wl,-rpath,${MTL_INSTALL_PREFIX}/lib" "${extra_config_flags[@]}"
 		make -j "$(nproc)"
 		make install
 	else
