@@ -352,11 +352,11 @@ class NetsniffRecorder:
     def _reap(self):
         """Make sure no root ``netsniff-ng`` survives the process handle.
 
-        ``start_process("sudo netsniff-ng ...")`` runs under ``bash -c``, so the
-        handle above signals the bash wrapper and sudo does not pass the signal
-        on to its child. The capture therefore keeps running as root, reparented
-        to PID 1: it grows the pcap while it is being uploaded and holds the
-        interface open for the next test. This is the same reason
+        The pid of ``start_process("sudo netsniff-ng ...")`` is the root
+        ``sudo``: when the SSH user is not root, the handle's kill above fails
+        with EPERM. The capture then keeps running as root: it grows the pcap
+        while it is being uploaded and holds the interface open for the next
+        test. This is the same reason
         ``conftest._reap_ptp_daemons`` reaps ptp4l/phc2sys by argv, and the fix
         is the same -- ``pkill`` on the argv rather than on the handle.
 
