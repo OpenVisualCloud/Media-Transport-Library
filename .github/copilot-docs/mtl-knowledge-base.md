@@ -407,6 +407,54 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
 - `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
 
+### RL Pacing Limits
+Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their own `reactive`/`tr_offset` (`tv_init_pacing()`), same reasoning.
+- **Frame budget.** Packets span `reactive`·T = 1080/1125·T at `trs` each. From the previous frame's last packet to the next target is `frame_idle_time` + `tr_offset` = (2 + 43)/1125·T, 0.67 ms at 59.94.
+- **Warm-up window** [target − `warm_pkts`·`trs`, target], with `warm_pkts` = min(0.8·`tr_offset`/`trs`, 128).
+  - Uncapped, the window is 34.4/1125·T. It opens ~10/1125·T (~150 µs at 60p) after the previous frame's last packet left the NIC.
+  - That margin is what lets `video_trs_rl_pre_arm()` treat the queue as empty and the bucket as full: its drain starts at TSC − `rl_credit`.
+  - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
+- **Ring bound on a plan.** `tv_init_pacing()` keeps a plan only if (`warm_pkts`·`trs` + `rl_credit`)/`rl_drain` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 512, the window plus `rl_credit` must fit in 255 pad drains (256 less the round-up pad), which leaves ~251 for the window.
+- **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
+
+**Tolerance at each point** (scheduler lateness, or a tasklet stall):
+
+| Point | With a plan | Without a plan |
+|---|---|---|
+| Reaching WAIT_WARMUP's pre-arm | Anywhere in the window: packet 0 still lands in [target, target + `rl_drain`). At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
+| Between pad bursts | A stall that ends before target only shrinks the remaining pads (`stat_trans_recalculate_warmup`). | — |
+| Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`·`trs` drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
+
+| Format | `trs` | `tr_offset` | `warm_pkts` | Window | 512-ring body | Ring-capped window: 512 / 2048 |
+|---|---|---|---|---|---|---|
+| 1080p29.97 | 7.78 µs | 1.27 ms | 128 | 1.0 ms | 4.0 ms | same (cap not binding) |
+| 1080p59.94 | 3.89 µs | 0.64 ms | 128 | 0.50 ms | 2.0 ms | same |
+| 1080p119.88 | 1.95 µs | 0.32 ms | 128 | 0.25 ms | 1.0 ms | same |
+| 2160p29.97 | 1.95 µs | 1.27 ms | 128 | 0.25 ms | 1.0 ms | 251 → 0.49 ms / 524 → 1.0 ms |
+| 2160p59.94 | 0.97 µs | 0.64 ms | 128 | 0.12 ms | 0.50 ms | 251 → 0.24 ms / 524 → 0.51 ms |
+| 2160p119.88 | 0.49 µs | 0.32 ms | 128 | 62 µs | 0.25 ms | 251 → 0.12 ms / 524 → 0.26 ms |
+
+- **Longer pad trains.** Measured 2160p59.94, E830 VF TX, isolated, rx_timing parser, `rl_drain` 965 ns:
+
+  | `warm_pkts` | `nb_tx_desc` | Latency avg | Latency min |
+  |---|---|---|---|
+  | 128 | 512 | 3824 ns | 3032 ns |
+  | 128 | 2048 | 3848 ns | 3288 ns |
+  | 256 | 2048 | 3817 ns | 3288 ns |
+  | 512 | 2048 | 3700 ns | 2776 ns |
+
+  All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
+- **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs ⌈n/32⌉ `tx_burst` calls.
+- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
+- **No plan, so the #1622 behavior.** This happens with:
+  - a user `ops.pad_interval` or the static pad table;
+  - a DPDK ice PF without the `rl_burst_size` devarg;
+  - drivers other than iavf and ice;
+  - a window that fails the half-ring check, for example with a small `nb_tx_desc`.
+- **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
+  - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
+  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.
+
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
 - NIC hardware timestamps PTP packets
