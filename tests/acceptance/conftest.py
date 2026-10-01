@@ -1355,7 +1355,6 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
 
     def fail_test(stage):
         logger.log(level=TEST_FAIL, msg=f"{stage} failed for {case_id}")
-        os.chmod(logfile, 0o4755)
         return "Fail"
 
     if report["setup"].failed:
@@ -1370,7 +1369,6 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
             result = fail_test("Compliance")
         else:
             logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
-            os.chmod(logfile, 0o755)
             result = "Pass"
     else:
         logger.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")
