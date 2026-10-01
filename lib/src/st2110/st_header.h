@@ -467,6 +467,7 @@ struct st_rx_video_detector {
   int frame_num;
   bool single_line;
   int pkt_per_frame;
+  bool retry_warned; /* survives rv_detector_init() */
 
   /* detect result */
   struct st20_detect_meta meta;

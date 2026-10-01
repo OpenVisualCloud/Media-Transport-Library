@@ -99,6 +99,7 @@ unit_sources = [
   'session/st20/tp_burst_test.cpp',
   'session/st20/tp_rtp_ts_delta_test.cpp',
   'session/st20/tp_stat_test.cpp',
+  'session/st20/format_detect_test.cpp',
   'session/st20/interlaced_tp_phase_test.cpp',
   'session/st20/st22_box_parse_test.cpp',
   'session/st20/st22_pkt_counter_test.cpp',
