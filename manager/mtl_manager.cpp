@@ -37,6 +37,7 @@ static const char* mtlm_version(void) {
 int main() {
   int ret = 0;
   bool is_running = true;
+  bool bound = false;
   int epfd = -1, sockfd = -1;
   std::vector<std::unique_ptr<mtl_instance>> clients;
 
@@ -106,13 +107,19 @@ int main() {
                 "appropriate privileges.");
     goto out;
   }
+  bound = true;
 
   /* Allow all users to connect (which might be insecure) */
   fs::permissions(MTL_MANAGER_SOCK_PATH,
                   fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
                       fs::perms::group_write | fs::perms::others_read |
                       fs::perms::others_write,
-                  fs::perm_options::replace);
+                  fs::perm_options::replace, ec);
+  if (ec) {
+    logger::log(log_level::ERROR, "Failed to set the socket mode: " + ec.message());
+    ret = -EIO;
+    goto out;
+  }
 
   ret = listen(sockfd, MAX_CLIENTS);
   if (ret < 0) {
@@ -190,7 +197,8 @@ int main() {
         ssize_t len = read(signal_fd, &siginfo, sizeof(siginfo));
         if (len != sizeof(siginfo)) {
           logger::log(log_level::ERROR, "Failed to read signal.");
-          return 1;
+          ret = 1;
+          goto out;
         }
 
         if (siginfo.ssi_signo == SIGINT || siginfo.ssi_signo == SIGTERM) {
@@ -227,10 +235,10 @@ int main() {
       }
     }
   }
-  unlink(MTL_MANAGER_SOCK_PATH);
   logger::log(log_level::INFO, "MTL Manager exited.");
 
 out:
+  if (bound) unlink(MTL_MANAGER_SOCK_PATH);
   if (signal_fd >= 0) close(signal_fd);
   if (epfd >= 0) close(epfd);
   if (sockfd >= 0) close(sockfd);
