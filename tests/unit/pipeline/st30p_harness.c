@@ -102,6 +102,7 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt) {
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;
   p->ops.framebuff_size = UT30P_FRAMEBUFF_SIZE;
+  p->usdt_dump_fd = -1;
   p->ready = true;
   p->transport = (st30_rx_handle)(uintptr_t)0x1;
 
