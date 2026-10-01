@@ -117,9 +117,9 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   starts near 0 and epoch `k` is `k·T`. ST20 packet 0 of epoch `k` is at
   `k·T + TR_offset − VRX·trs`, later packets `+i·trs`.
 - **RL warm-up.** With the hardware rate limiter, the transmitter queues pad
-  packets (KB §5 Warm-Up Padding) from `warm_pkts·trs` before the target, then
-  holds packet 0 until the target, so a late TX tasklet launches it late. A
-  frame late within its epoch goes out late in it. A target already
+  packets (KB §5 Warm-Up Padding) that the shaper finishes at the target, so
+  packet 0 queued behind them launches there, within one 8-byte cut after it.
+  A frame late within its epoch goes out late in it. A target already
   more than two `trs` late when the warm-up begins gets no pads
   (`stat_trans_troffset_mismatch`).
 - **Pacing modes.** Default: the current epoch (ST40: the epoch itself; ST30:

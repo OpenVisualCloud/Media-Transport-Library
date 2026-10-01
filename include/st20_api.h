@@ -1734,7 +1734,11 @@ struct st20_tx_user_stats {
   struct st_tx_user_stats common;
   uint64_t stat_pkts_dummy;
   uint64_t stat_epoch_troffset_mismatch;
+  /** RL: frames whose transmitter reached the frame start outside its warm-up window,
+   * so no warm-up pads were queued ahead of packet 0 */
   uint64_t stat_trans_troffset_mismatch;
+  /** RL: warm-ups re-planned after a stall, between pad bursts or inside one, including
+   * those that then hold packet 0 until its scheduled time */
   uint64_t stat_trans_recalculate_warmup;
   uint64_t stat_user_busy;
   uint64_t stat_lines_not_ready;
