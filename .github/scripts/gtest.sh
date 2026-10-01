@@ -450,7 +450,7 @@ run_case_bounded() {
 
 	[ "${test_name}" != noctx ] || limit="${NOCTX_CASE_TIMEOUT}"
 	sudo rm -f "${case_log}" "${sid_file}"
-	sudo install -m 0666 /dev/null "${case_log}"
+	sudo install -m 0600 -o "$(id -u)" /dev/null "${case_log}"
 
 	[ "${test_name}" != noctx ] || noctx_sweep || return 1
 
