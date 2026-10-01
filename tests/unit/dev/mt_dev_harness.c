@@ -14,11 +14,17 @@
 /* Wider than MT_EAL_MAX_ARGS so an argc past that bound can be recorded, and compared
  * against it, without the harness overflowing in turn. */
 #define UT_DEV_EAL_ARGV_MAX (256)
+#define UT_DEV_TX_QUEUES_MAX (8)
+#define UT_DEV_TM_PROFILES_MAX (MT_MAX_RL_ITEMS + 2)
+#define UT_DEV_TM_NONLEAF_MAX (8)
+/* iavf_status.h codes iavf_hierarchy_commit() returns */
+#define UT_IAVF_ERR_PARAM (-5)
+#define UT_IAVF_ERR_NOT_READY (-63)
 
 struct ut_dev_ctx {
   struct mtl_main_impl impl;
   struct mt_rx_queue rx_queue;
-  struct mt_tx_queue tx_queue;
+  struct mt_tx_queue tx_queues[UT_DEV_TX_QUEUES_MAX];
   struct mt_kport_info kport_info;
   char* lcores;
   int eal_init_calls;
@@ -33,6 +39,20 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  bool tm_vf_without_qos;
+  int tm_queue_node_adds;
+  int tm_fail_queue_node_add_call;
+  int tm_fail_queue_node_add_error;
+  int tm_fail_commit_error;
+  int tm_calls;
+  int tm_calls_needing_qos;
+  bool tm_profile[UT_DEV_TM_PROFILES_MAX];
+  uint64_t tm_profile_rate[UT_DEV_TM_PROFILES_MAX];
+  bool tm_nonleaf[UT_DEV_TM_NONLEAF_MAX];
+  bool tm_leaf[UT_DEV_TX_QUEUES_MAX];
+  uint32_t tm_leaf_profile_id[UT_DEV_TX_QUEUES_MAX];
+  bool tm_committed[UT_DEV_TX_QUEUES_MAX];
+  uint64_t tm_committed_rate[UT_DEV_TX_QUEUES_MAX];
   uint64_t last_shaper_rate;
 };
 
@@ -60,15 +80,15 @@ static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx
                                                uint16_t* nb_tx_desc);
 static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_mask,
                                                uint32_t* ptypes, int num);
+static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
+                                        const struct rte_tm_shaper_params* profile,
+                                        struct rte_tm_error* error);
 static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
                               uint32_t priority, uint32_t weight, uint32_t level_id,
                               const struct rte_tm_node_params* params,
                               struct rte_tm_error* error);
 static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
                                  struct rte_tm_error* error);
-static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
-                                        const struct rte_tm_shaper_params* profile,
-                                        struct rte_tm_error* error);
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
@@ -86,17 +106,17 @@ static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 #define rte_eth_dev_configure ut_rte_eth_dev_configure
 #define rte_eth_dev_adjust_nb_rx_tx_desc ut_rte_eth_dev_adjust_nb_rx_tx_desc
 #define rte_eth_dev_get_supported_ptypes ut_rte_eth_dev_get_supported_ptypes
+#define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_node_add ut_rte_tm_node_add
 #define rte_tm_node_delete ut_rte_tm_node_delete
-#define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
 #define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
 #include "dev/mt_dev.c"
 #undef mt_sch_mrg_uinit
 #undef rte_tm_hierarchy_commit
-#undef rte_tm_shaper_profile_add
 #undef rte_tm_node_delete
 #undef rte_tm_node_add
+#undef rte_tm_shaper_profile_add
 #undef rte_eth_dev_get_supported_ptypes
 #undef rte_eth_dev_adjust_nb_rx_tx_desc
 #undef rte_eth_dev_configure
@@ -235,45 +255,127 @@ static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_
   return 0;
 }
 
-static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
-                              uint32_t priority, uint32_t weight, uint32_t level_id,
-                              const struct rte_tm_node_params* params,
-                              struct rte_tm_error* error) {
-  (void)port_id;
-  (void)node_id;
-  (void)parent_node_id;
-  (void)priority;
-  (void)weight;
-  (void)level_id;
-  (void)params;
-  (void)error;
-  return 0;
+/* Without PF-granted QoS, iavf commit fails cleanly; the others crash or cannot tell. */
+static bool ut_tm_vf_crashes(ut_dev_ctx* ctx) {
+  ctx->tm_calls++;
+  if (!ctx->tm_vf_without_qos) return false;
+  ctx->tm_calls_needing_qos++;
+  return true;
 }
 
-static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
-                                 struct rte_tm_error* error) {
-  (void)port_id;
-  (void)node_id;
-  (void)error;
-  return 0;
+static bool ut_tm_is_nonleaf(uint32_t node_id) {
+  return node_id >= ST_ROOT_NODE_ID && node_id < ST_ROOT_NODE_ID + UT_DEV_TM_NONLEAF_MAX;
 }
 
 static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
                                         const struct rte_tm_shaper_params* profile,
                                         struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
   (void)port_id;
-  (void)shaper_profile_id;
   (void)error;
-  ut_active_ctx->last_shaper_rate = profile->peak.rate;
+
+  if (ut_tm_vf_crashes(ctx)) return -EIO;
+  if (shaper_profile_id >= UT_DEV_TM_PROFILES_MAX) return -ENOSPC;
+  if (ctx->tm_profile[shaper_profile_id]) return -EINVAL;
+  ctx->tm_profile[shaper_profile_id] = true;
+  ctx->tm_profile_rate[shaper_profile_id] = profile->peak.rate;
+  ctx->last_shaper_rate = profile->peak.rate;
   return 0;
+}
+
+static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
+                              uint32_t priority, uint32_t weight, uint32_t level_id,
+                              const struct rte_tm_node_params* params,
+                              struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  (void)port_id;
+  (void)priority;
+  (void)weight;
+  (void)level_id;
+  (void)error;
+
+  if (ut_tm_vf_crashes(ctx)) return -EIO;
+  if (parent_node_id != RTE_TM_NODE_ID_NULL &&
+      (!ut_tm_is_nonleaf(parent_node_id) ||
+       !ctx->tm_nonleaf[parent_node_id - ST_ROOT_NODE_ID]))
+    return -EINVAL;
+  if (ut_tm_is_nonleaf(node_id)) {
+    if (ctx->tm_nonleaf[node_id - ST_ROOT_NODE_ID]) return -EEXIST;
+    ctx->tm_nonleaf[node_id - ST_ROOT_NODE_ID] = true;
+    return 0;
+  }
+  if (node_id >= UT_DEV_TX_QUEUES_MAX) return -EINVAL;
+  ctx->tm_queue_node_adds++;
+  if (ctx->tm_queue_node_adds == ctx->tm_fail_queue_node_add_call)
+    return ctx->tm_fail_queue_node_add_error;
+  if (ctx->tm_leaf[node_id]) return -EEXIST;
+  if (params->shaper_profile_id >= UT_DEV_TM_PROFILES_MAX ||
+      !ctx->tm_profile[params->shaper_profile_id])
+    return -EINVAL;
+  ctx->tm_leaf[node_id] = true;
+  ctx->tm_leaf_profile_id[node_id] = params->shaper_profile_id;
+  return 0;
+}
+
+static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
+                                 struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  (void)port_id;
+  (void)error;
+
+  if (ut_tm_vf_crashes(ctx)) return -EIO;
+  if (node_id < UT_DEV_TX_QUEUES_MAX) {
+    if (!ctx->tm_leaf[node_id]) return -EINVAL;
+    ctx->tm_leaf[node_id] = false;
+    return 0;
+  }
+  if (!ut_tm_is_nonleaf(node_id) || !ctx->tm_nonleaf[node_id - ST_ROOT_NODE_ID])
+    return -EINVAL;
+  for (uint32_t i = node_id - ST_ROOT_NODE_ID + 1; i < UT_DEV_TM_NONLEAF_MAX; i++) {
+    if (ctx->tm_nonleaf[i]) return -EBUSY;
+  }
+  for (int q = 0; q < UT_DEV_TX_QUEUES_MAX; q++) {
+    if (ctx->tm_leaf[q]) return -EBUSY;
+  }
+  ctx->tm_nonleaf[node_id - ST_ROOT_NODE_ID] = false;
+  return 0;
+}
+
+static int ut_tm_commit_fail(ut_dev_ctx* ctx, int clear_on_fail, int error) {
+  if (!clear_on_fail) return error;
+  memset(ctx->tm_profile, 0, sizeof(ctx->tm_profile));
+  memset(ctx->tm_nonleaf, 0, sizeof(ctx->tm_nonleaf));
+  memset(ctx->tm_leaf, 0, sizeof(ctx->tm_leaf));
+  return error;
 }
 
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  uint16_t nb_tx_q = ctx->impl.inf[MTL_PORT_P].nb_tx_q;
+  int fail_error = ctx->tm_fail_commit_error;
   (void)port_id;
-  (void)clear_on_fail;
   (void)error;
+
+  ctx->tm_calls++;
   ut_dev_record(UT_DEV_EVENT_TX_RL_COMMIT);
+  if (ctx->tm_vf_without_qos)
+    return ut_tm_commit_fail(ctx, clear_on_fail, MT_IAVF_TM_NOT_SUPPORTED);
+  /* one tc node allows a commit on a started port */
+  if (!ctx->tm_nonleaf[ST_TM_NONLEAF_NODES_NUM_VF - 1]) return UT_IAVF_ERR_NOT_READY;
+  for (uint16_t q = 0; q < nb_tx_q; q++) {
+    if (!ctx->tm_leaf[q]) return ut_tm_commit_fail(ctx, clear_on_fail, UT_IAVF_ERR_PARAM);
+  }
+  if (fail_error) {
+    ctx->tm_fail_commit_error = 0;
+    return ut_tm_commit_fail(ctx, clear_on_fail, fail_error);
+  }
+
+  for (int q = 0; q < UT_DEV_TX_QUEUES_MAX; q++) {
+    ctx->tm_committed[q] = ctx->tm_leaf[q];
+    if (ctx->tm_leaf[q])
+      ctx->tm_committed_rate[q] = ctx->tm_profile_rate[ctx->tm_leaf_profile_id[q]];
+  }
   return 0;
 }
 
@@ -300,7 +402,7 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->nb_rx_desc = 128;
   inf->nb_tx_desc = 128;
   inf->rx_queues = &ctx->rx_queue;
-  inf->tx_queues = &ctx->tx_queue;
+  inf->tx_queues = ctx->tx_queues;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
   ut_active_ctx = ctx;
   return ctx;
@@ -388,6 +490,13 @@ void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
   inf->link_speed = RTE_ETH_SPEED_NUM_25G;
   inf->tx_rl_root_active = rl_root_active;
   inf->tx_pacing_way = pacing_way;
+  if (!rl_root_active) return;
+  /* the hierarchy RL init leaves: every queue linked to shaper 0 */
+  for (int i = 0; i < ST_TM_NONLEAF_NODES_NUM_VF; i++) ctx->tm_nonleaf[i] = true;
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    ctx->tm_leaf[q] = true;
+    inf->tx_queues[q].rl_shapers_mapping = 0;
+  }
 }
 
 void ut_dev_set_port_stopped(ut_dev_ctx* ctx) {
@@ -487,4 +596,67 @@ void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level) {
 
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_RXTX_SIMD_512;
+}
+
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name) {
+  parse_driver_info(driver_name, &ctx->impl.inf[MTL_PORT_P].drv_info);
+}
+
+void ut_dev_enable_shared_tx_queue(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_SHARED_TX_QUEUE;
+}
+
+void ut_dev_tm_set_vf_without_qos(ut_dev_ctx* ctx) {
+  ctx->tm_vf_without_qos = true;
+}
+
+void ut_dev_tm_fail_queue_node_add(ut_dev_ctx* ctx, int call, int error) {
+  ctx->tm_fail_queue_node_add_call = call;
+  ctx->tm_fail_queue_node_add_error = error;
+}
+
+void ut_dev_tm_fail_commit_once(ut_dev_ctx* ctx, int error) {
+  ctx->tm_fail_commit_error = error;
+}
+
+int ut_dev_init_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing_way,
+                       uint16_t nb_tx_q) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (nb_tx_q > UT_DEV_TX_QUEUES_MAX) return -EINVAL;
+  inf->nb_tx_q = nb_tx_q;
+  for (uint16_t q = 0; q < nb_tx_q; q++) {
+    inf->tx_queues[q].queue_id = q;
+    inf->tx_queues[q].rl_shapers_mapping = -1;
+  }
+  inf->tx_pacing_way = pacing_way;
+  ut_active_ctx = ctx;
+  return dev_if_init_pacing(inf);
+}
+
+enum st21_tx_pacing_way ut_dev_tx_pacing_way(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].tx_pacing_way;
+}
+
+int ut_dev_tm_calls(const ut_dev_ctx* ctx) {
+  return ctx->tm_calls;
+}
+
+int ut_dev_tm_calls_needing_qos(const ut_dev_ctx* ctx) {
+  return ctx->tm_calls_needing_qos;
+}
+
+bool ut_dev_tm_committed_rate(const ut_dev_ctx* ctx, uint16_t queue,
+                              uint64_t* bytes_per_sec) {
+  if (queue >= UT_DEV_TX_QUEUES_MAX || !ctx->tm_committed[queue]) return false;
+  *bytes_per_sec = ctx->tm_committed_rate[queue];
+  return true;
+}
+
+bool ut_dev_dpdk_iavf_commit_checks_qos_first(void) {
+  return MT_IAVF_TM_QOS_PROBE;
+}
+
+uint64_t ut_dev_default_rl_bps(void) {
+  return ST_DEFAULT_RL_BPS;
 }

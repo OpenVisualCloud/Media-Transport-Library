@@ -562,6 +562,12 @@ static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queu
 #define ST_TM_LAST_NONLEAF_NODE_ID_VF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_VF - 1)
 #define ST_TM_LAST_NONLEAF_NODE_ID_PF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_PF - 1)
 #define ST_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
+/* IAVF_NOT_SUPPORTED: iavf commit on a VF whose PF granted no QoS */
+#define MT_IAVF_TM_NOT_SUPPORTED (-64)
+/* since DPDK 26.07 iavf commit checks for QoS before it touches QoS state */
+#define MT_IAVF_TM_QOS_PROBE (RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0))
+/* past dev_rl_shaper_add()'s ids: iavf refuses to delete a profile any leaf used */
+#define MT_TM_NO_RL_PROFILE_ID (ST_SHAPER_PROFILE_ID + MT_MAX_RL_ITEMS)
 
 static int dev_rl_init_nonleaf_nodes(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
@@ -698,6 +704,82 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   dbg("%s(%d), succ\n", __func__, port);
   return ret;
 }
+
+#if MT_IAVF_TM_QOS_PROBE
+/* removes the nodes a failed rl init left; iavf may have cleared some already */
+static void dev_rl_drop_hierarchy(struct mt_interface* inf) {
+  uint16_t port_id = inf->port_id;
+  struct rte_tm_error error;
+
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    rte_tm_node_delete(port_id, q, &error);
+    inf->tx_queues[q].rl_shapers_mapping = -1;
+    inf->tx_queues[q].bps = 0;
+  }
+  for (int i = ST_TM_NONLEAF_NODES_NUM_VF - 1; i >= 0; i--)
+    rte_tm_node_delete(port_id, ST_ROOT_NODE_ID + i, &error);
+  inf->tx_rl_root_active = false;
+  memset(inf->tx_rl_shapers, 0, sizeof(inf->tx_rl_shapers));
+}
+
+/* ice PF re-applies a VF queue's last rate in later processes; peak 0 means unlimited */
+static void dev_tx_queues_clear_rl(struct mt_interface* inf) {
+  uint16_t port_id = inf->port_id;
+  enum mtl_port port = inf->port;
+  struct rte_tm_error error;
+  struct rte_tm_shaper_params sp;
+  struct rte_tm_node_params qp;
+  int ret;
+
+  if (inf->drv_info.drv_type != MT_DRV_IAVF) return;
+
+  if (inf->tx_rl_root_active) { /* rl init failed after the PF granted QoS */
+    dev_rl_drop_hierarchy(inf);
+  } else {
+    info("%s(%d), probe tm, an iavf_hierarchy_commit err line is expected\n", __func__,
+         port);
+    /* only iavf commit checks for QoS; the other TM ops crash or cannot tell */
+    ret = rte_tm_hierarchy_commit(port_id, 0, &error);
+    if (ret == MT_IAVF_TM_NOT_SUPPORTED) {
+      info("%s(%d), no tm on this vf, no queue rate to clear\n", __func__, port);
+      return;
+    }
+  }
+
+  memset(&error, 0, sizeof(error));
+  memset(&sp, 0, sizeof(sp));
+  ret = rte_tm_shaper_profile_add(port_id, MT_TM_NO_RL_PROFILE_ID, &sp, &error);
+  if (ret < 0) goto fail;
+  ret = dev_rl_init_nonleaf_nodes(inf);
+  if (ret < 0) goto fail_logged;
+
+  memset(&qp, 0, sizeof(qp));
+  qp.shaper_profile_id = MT_TM_NO_RL_PROFILE_ID;
+  qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
+  qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    ret = rte_tm_node_add(port_id, q, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                          ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
+    if (ret < 0) goto fail;
+  }
+
+  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  if (ret < 0) goto fail;
+  info("%s(%d), %u tx queues without rate limit\n", __func__, port, inf->nb_tx_q);
+  return;
+
+fail:
+  warn("%s(%d), tm error %d(%s)\n", __func__, port, ret, mt_string_safe(error.message));
+fail_logged:
+  warn("%s(%d), rate limit left by an earlier process may remain\n", __func__, port);
+}
+#else
+static void dev_tx_queues_clear_rl(struct mt_interface* inf) {
+  if (inf->drv_info.drv_type != MT_DRV_IAVF) return;
+  info("%s(%d), dpdk before 26.07, rate limit left by an earlier process may remain\n",
+       __func__, inf->port);
+}
+#endif
 
 static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
                                     uint64_t bytes_per_sec) {
@@ -1482,6 +1564,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   if (mt_user_shared_txq(inf->parent, inf->port)) {
     info("%s(%d), use tsc as shared tx queue\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+    dev_tx_queues_clear_rl(inf);
     return 0;
   }
 
@@ -1554,6 +1637,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
   }
 
+  if (ST21_TX_PACING_WAY_RL != inf->tx_pacing_way) dev_tx_queues_clear_rl(inf);
   return 0;
 }
 
