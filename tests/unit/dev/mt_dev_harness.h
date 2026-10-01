@@ -45,6 +45,9 @@ int ut_dev_create_ports(ut_dev_ctx* ctx);
 /** Marks the port a started iavf VF at a 25G link, as mt_dev_free() finds it. */
 void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
                                 enum st21_tx_pacing_way pacing_way);
+/** Leaves the queue as a rate change failing after its node delete does: no node, the
+ * rate it had still in the PF. */
+void ut_dev_unlink_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 void ut_dev_set_port_stopped(ut_dev_ctx* ctx);
 int ut_dev_free_ports(ut_dev_ctx* ctx);
 /* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
@@ -98,6 +101,36 @@ void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx);
 int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats);
 int ut_dev_reset_port_stats(ut_dev_ctx* ctx);
 void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats);
+/* TX pacing init against a mocked rte_tm modelled on the iavf of DPDK 26.07 on a started
+ * port: only its QoS, parent, child, profile and every-queue checks are modelled. */
+
+/** Takes the drv info a real port with this ethdev driver name gets. */
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
+void ut_dev_enable_shared_tx_queue(ut_dev_ctx* ctx);
+/** As if the PF granted no QoS: commit fails cleanly, the others crash or cannot tell. */
+void ut_dev_tm_set_vf_without_qos(ut_dev_ctx* ctx);
+/** As ut_dev_tm_set_vf_without_qos(), its commit failing with error instead. */
+void ut_dev_tm_set_vf_without_qos_answer(ut_dev_ctx* ctx, int error);
+/** Marks the port started with its link up, as pacing init finds it. */
+void ut_dev_set_started_link(ut_dev_ctx* ctx, uint32_t link_speed);
+/** Fails the call-th TX queue node add (1-based) with error. */
+void ut_dev_tm_fail_queue_node_add(ut_dev_ctx* ctx, int call, int error);
+/** Fails the next commit that would succeed, clearing with clear_on_fail as iavf does. */
+void ut_dev_tm_fail_commit_once(ut_dev_ctx* ctx, int error);
+/** Runs dev_if_init_pacing() with pacing_way requested on nb_tx_q TX queues. */
+int ut_dev_init_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing_way,
+                       uint16_t nb_tx_q);
+enum st21_tx_pacing_way ut_dev_tx_pacing_way(const ut_dev_ctx* ctx);
+int ut_dev_tm_calls(const ut_dev_ctx* ctx);
+/** TM calls made on a VF without QoS, each a crash on real iavf. */
+int ut_dev_tm_calls_needing_qos(const ut_dev_ctx* ctx);
+/** False unless a committed hierarchy covers queue; its peak rate in bytes/s. */
+bool ut_dev_tm_committed_rate(const ut_dev_ctx* ctx, uint16_t queue,
+                              uint64_t* bytes_per_sec);
+/** DPDK 26.07 on: iavf commit checks the PF granted QoS before it touches QoS state. */
+bool ut_dev_dpdk_iavf_commit_checks_qos_first(void);
+/** ST_DEFAULT_RL_BPS, the rate RL pacing puts every iavf queue on before sessions. */
+uint64_t ut_dev_default_rl_bps(void);
 
 #ifdef __cplusplus
 }

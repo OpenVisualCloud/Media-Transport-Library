@@ -33,6 +33,14 @@ TEST_F(MtDevRlTeardownTest, IavfFallenBackToTscResetsTxQueuesBeforeStop) {
   EXPECT_EQ(ut_dev_last_shaper_rate(ctx_), 25000ull * 1000 * 1000 / 8);
 }
 
+TEST_F(MtDevRlTeardownTest, IavfQueueUnlinkedByAFailedRateChangeIsResetToo) {
+  ut_dev_set_started_iavf_tx(ctx_, true, ST21_TX_PACING_WAY_TSC);
+  ut_dev_unlink_tx_queue(ctx_, 0);
+  ASSERT_EQ(ut_dev_free_ports(ctx_), 0);
+  ExpectEvents({UT_DEV_EVENT_TX_RL_COMMIT, UT_DEV_EVENT_PORT_STOP});
+  EXPECT_EQ(ut_dev_last_shaper_rate(ctx_), 25000ull * 1000 * 1000 / 8);
+}
+
 TEST_F(MtDevRlTeardownTest, IavfWithoutRlRootStopsWithoutTxQueueReset) {
   ut_dev_set_started_iavf_tx(ctx_, false, ST21_TX_PACING_WAY_TSC);
   ASSERT_EQ(ut_dev_free_ports(ctx_), 0);

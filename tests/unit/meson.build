@@ -52,6 +52,7 @@ unit_sources = [
   'dev/mt_dev_rl_teardown_test.cpp',
   'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_dev_port_stats_test.cpp',
+  'dev/mt_dev_tx_rl_clear_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
   'datapath/mt_dp_socket_harness.c',
