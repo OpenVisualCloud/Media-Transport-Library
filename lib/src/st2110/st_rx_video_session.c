@@ -55,6 +55,7 @@ static int rv_detector_init(struct st_rx_video_session_impl* s) {
 static void rv_detector_calculate_dimension(struct st_rx_video_session_impl* s,
                                             struct st_rx_video_detector* detector,
                                             int max_line_num) {
+  MTL_MAY_UNUSED(s);
   struct st20_detect_meta* meta = &detector->meta;
 
   dbg("%s(%d), interlaced %d, max_line_num %d\n", __func__, s->idx,
@@ -82,7 +83,7 @@ static void rv_detector_calculate_dimension(struct st_rx_video_session_impl* s,
         meta->width = 7680;
         break;
       default:
-        err("%s(%d), max_line_num %d\n", __func__, s->idx, max_line_num);
+        dbg("%s(%d), max_line_num %d\n", __func__, s->idx, max_line_num);
         break;
     }
   } else {
@@ -108,7 +109,7 @@ static void rv_detector_calculate_dimension(struct st_rx_video_session_impl* s,
         meta->width = 7680;
         break;
       default:
-        err("%s(%d), max_line_num %d\n", __func__, s->idx, max_line_num);
+        dbg("%s(%d), max_line_num %d\n", __func__, s->idx, max_line_num);
         break;
     }
   }
@@ -116,6 +117,7 @@ static void rv_detector_calculate_dimension(struct st_rx_video_session_impl* s,
 
 static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
                                       struct st_rx_video_detector* detector) {
+  MTL_MAY_UNUSED(s);
   struct st20_detect_meta* meta = &detector->meta;
   int d0 = detector->rtp_tm[1] - detector->rtp_tm[0];
   int d1 = detector->rtp_tm[2] - detector->rtp_tm[1];
@@ -159,23 +161,24 @@ static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
         meta->fps = ST_FPS_P23_98;
         return;
       default:
-        err("%s(%d), err d0 %d d1 %d\n", __func__, s->idx, d0, d1);
+        dbg("%s(%d), err d0 %d d1 %d\n", __func__, s->idx, d0, d1);
         break;
     }
   } else {
-    err("%s(%d), err d0 %d d1 %d\n", __func__, s->idx, d0, d1);
+    dbg("%s(%d), err d0 %d d1 %d\n", __func__, s->idx, d0, d1);
   }
 }
 
 static void rv_detector_calculate_n_packet(struct st_rx_video_session_impl* s,
                                            struct st_rx_video_detector* detector) {
+  MTL_MAY_UNUSED(s);
   int total0 = detector->pkt_num[1] - detector->pkt_num[0];
   int total1 = detector->pkt_num[2] - detector->pkt_num[1];
 
   if (total0 == total1) {
     detector->pkt_per_frame = total0;
   } else {
-    err("%s(%d), err total0 %d total1 %d\n", __func__, s->idx, total0, total1);
+    dbg("%s(%d), err total0 %d total1 %d\n", __func__, s->idx, total0, total1);
   }
 }
 
@@ -2786,6 +2789,20 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
       rv_detector_calculate_n_packet(s, detector);
       rv_detector_calculate_packing(detector);
       detector->frame_num = 0;
+      /* inconsistent cadence or packet counts: resample */
+      if (meta->fps == ST_FPS_MAX || !detector->pkt_per_frame) {
+        if (!detector->retry_warned) {
+          warn(
+              "%s(%d), no consistent format (unsupported fps or packet loss), rtp delta "
+              "%d %d pkts %d %d, retrying\n",
+              __func__, s->idx, (int)(detector->rtp_tm[1] - detector->rtp_tm[0]),
+              (int)(detector->rtp_tm[2] - detector->rtp_tm[1]),
+              detector->pkt_num[1] - detector->pkt_num[0],
+              detector->pkt_num[2] - detector->pkt_num[1]);
+          detector->retry_warned = true;
+        }
+        rv_detector_init(s);
+      }
     }
     if (meta->fps != ST_FPS_MAX && meta->packing != ST20_PACKING_MAX) {
       if (!meta->height) {
