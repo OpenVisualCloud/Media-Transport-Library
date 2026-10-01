@@ -195,6 +195,12 @@ const char* ut_txv_stat_first_log_line(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
+/* Drives tv_init_hw() for a redundant 1080p59 RL session, R leg on physical port r_port,
+ * with the queues mocked. Each physical port holds a bps training result for the
+ * session rate; returns the rate asked of each leg's queue. Returns 0 on success. */
+int ut_txv_init_hw_queue_bps(ut_txv_ctx* ctx, int r_port, uint64_t p_trained_bps,
+                             uint64_t r_trained_bps, uint64_t* p_bps, uint64_t* r_bps);
+
 #ifdef __cplusplus
 }
 #endif
