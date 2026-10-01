@@ -672,12 +672,17 @@ On Intel Xeon 6 CPUs (GNR), the `isolcpus` kernel parameter may not be fully res
 
 This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix, upgrading your kernel, or using `taskset` as a workaround for pinning threads to specific cores.
 
-### 8.2. RTP timestamps and latency compensation in rate-limit pacing
+### 8.2. RTP timestamps and the first packet in rate-limit pacing
 
-When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: packets rtp_timestamps are increased to account for NIC queue and processing delay.
-Without this workaround, packets appear on the wire marginally earlier than the theoretical transmission schedule.
-
-Because the RTP timestamp embedded in frame packets reflects the actual wire time (the moment the first packet leaves the NIC), the compensation shift is subtracted from the RTP timestamp so that receivers see timestamps consistent with the true on-wire timing.
+When the rate limiter is used for ST 2110-21 pacing, the RTP timestamp of a frame is the media-clock tick of its scheduled first-packet time.
+If the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
+It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the patched kernel ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF.
+The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
+The model puts the first packet in [scheduled time, scheduled time + one packet interval), also after a tasklet stall that ends before it: the library queues whole padding packets and rounds a partial one up, so the first packet is never early.
+After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+Measured on E830 and E810 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.
+Without a known shaper, for example with a user-set pad interval, the library pads one packet per interval and holds the first packet until the scheduled time, so a busy scheduler can send it late.
+With ST20 user metadata, the metadata packet goes out when the first packet is queued, so up to the warm-up time (at most 128 packet intervals) before it.
 
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.

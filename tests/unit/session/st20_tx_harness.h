@@ -132,6 +132,21 @@ void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
  * ut_txv_pacing_tr_offset() below. */
 int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
                        enum st_fps fps);
+/* Drives the real tv_init_pacing() for a 1080p59 GPM RL session on num_port ports
+ * (port i on physical port i, an iavf VF unless ut_txv_set_ice_pf() made it an ice PF).
+ * tv_train_pacing() resolves pad_interval without the NIC: from user_pad_interval when
+ * non-zero, else the static table when static_pad, else the pre-train result
+ * trained_pad_interval[port]. */
+int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
+                          bool static_pad, const float* trained_pad_interval, bool wide);
+/* Physical port is a DPDK-driven ice PF with this mtl_port_init_params.rl_burst_size
+ * (0 = the PMD default). Call before ut_txv_init_rl_pacing(). */
+void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size);
+long double ut_txv_pacing_trs(const ut_txv_ctx* ctx);
+uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
+/* pacing->rl_drain / rl_credit of a session port, in ns */
+long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
+long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
 /* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
  * tv_sync_pacing() applies to the scheduled instant, so tests can express an
  * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */

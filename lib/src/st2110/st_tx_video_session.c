@@ -81,6 +81,9 @@ static inline void pacing_forward_cursor(struct st_tx_video_pacing* pacing) {
   pacing->ptp_time_cursor += pacing->trs;
 }
 
+/* bytes, ICE_SCHED_DFLT_BURST_SIZE of the patched kernel ice driver */
+#define ST_TX_VIDEO_RL_VF_BURST_SIZE (2048)
+
 static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
   double reactive = 1.0;
   if (s->ops.interlaced && s->ops.height <= 576) {
@@ -330,6 +333,36 @@ static int uint64_t_cmp(const void* a, const void* b) {
   return 0;
 }
 
+/* measured only: the shaper sends pad_interval + 1 pkts in pad_interval trs */
+static void tv_set_measured_pad_interval(struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port,
+                                         float pad_interval) {
+  s->pacing.pad_interval = pad_interval;
+  s->pacing.rl_drain[s_port] = s->pacing.trs * pad_interval / (pad_interval + 1);
+}
+
+/* ice_round_to_num() of the DPDK ice base code: nearest multiple of r */
+static uint32_t tv_ice_round(uint32_t n, uint32_t r) {
+  return (n % r < r / 2) ? n / r * r : (n + r - 1) / r * r;
+}
+
+/* burst bucket of the port's RL shaper in bytes, 0 when unknown */
+static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port) {
+  uint32_t size = mt_get_user_params(impl)->port_params[port].rl_burst_size;
+
+  switch (mt_if(impl, port)->drv_info.drv_type) {
+    case MT_DRV_IAVF:
+      return ST_TX_VIDEO_RL_VF_BURST_SIZE;
+    case MT_DRV_ICE:
+      /* what ice_cfg_rl_burst_size() programs; without the devarg the PMD keeps 15 KB */
+      if (!size) return 0;
+      if (tv_ice_round(size, 64) <= 2047 * 64) return tv_ice_round(size, 64);
+      return RTE_MIN(tv_ice_round(size, 1024), 2047 * 1024);
+    default:
+      return 0;
+  }
+}
+
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -365,7 +398,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
 
   ret = mt_pacing_train_pad_result_search(impl, port, rl_bps, &pad_interval);
   if (ret >= 0) {
-    s->pacing.pad_interval = pad_interval;
+    tv_set_measured_pad_interval(s, s_port, pad_interval);
     info("%s(%d), use pre-train pad_interval %f\n", __func__, idx, pad_interval);
     return 0;
   }
@@ -456,7 +489,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
    * rate. If the difference is too significant, it indicates an issue. A minimum padding
    * value of 32 is chosen as a reasonable threshold. */
   if (measured_bps > rl_bps && pad_interval > 32) {
-    s->pacing.pad_interval = pad_interval;
+    tv_set_measured_pad_interval(s, s_port, pad_interval);
     mt_pacing_train_pad_result_add(impl, port, rl_bps, pad_interval);
     train_end_time = mt_get_tsc(impl);
     info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
@@ -597,6 +630,29 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->vrx = RTE_MIN(max_vrx, wide_vrx);
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
+  }
+  /* no plan means the transmitter holds packet 0 until its target */
+  for (int i = 0; i < num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    uint32_t burst_size = tv_rl_burst_size(impl, port);
+    bool plan = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
+                pacing->rl_drain[i] && burst_size;
+
+    if (plan) {
+      pacing->rl_credit[i] =
+          pacing->rl_drain[i] * burst_size / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+      /* a full-window plan must fit half the ring, clear of the PMD's lazy cleanup */
+      long double window = pacing->warm_pkts * pacing->trs + pacing->rl_credit[i];
+      plan = window / pacing->rl_drain[i] + 1 <= mt_if_nb_tx_desc(impl, port) / 2;
+    }
+    if (plan) {
+      info("%s[%02d], port %d rl plan, rl_drain %Lf rl_credit %Lf burst size %u\n",
+           __func__, idx, i, pacing->rl_drain[i], pacing->rl_credit[i], burst_size);
+    } else {
+      pacing->rl_drain[i] = 0;
+      pacing->rl_credit[i] = 0;
+      info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+    }
   }
   info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
