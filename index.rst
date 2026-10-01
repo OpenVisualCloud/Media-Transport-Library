@@ -90,6 +90,7 @@ Development and Testing
    doc/acceptance_quickstart.md
    doc/acceptance-design.md
    doc/fuzzing.md
+   doc/vulnerability_scanning.md
    doc/ci_runner_setup.md
    doc/cicd_setup_proposition.md
 
