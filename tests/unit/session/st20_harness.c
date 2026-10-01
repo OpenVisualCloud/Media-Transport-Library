@@ -658,6 +658,33 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
   ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
 }
 
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx) {
+  ctx->session.enable_timing_parser_stat = true;
+}
+
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rv_tp_slot slot;
+
+  rv_tp_slot_init(&slot);
+  slot.meta.vrx_min = vrx_min;
+  slot.meta.vrx_max = vrx_max;
+  slot.meta.ipt_min = ipt_min;
+  slot.meta.ipt_max = ipt_max;
+  slot.meta.pkts_cnt = 1;
+  rv_tp_slot_parse_result(s, port, &slot, false);
+}
+
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.vrx_max;
+}
+
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.ipt_max;
+}
+
 void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
   ctx->ptp_storage.no_timesync_delta = delta;
 }

@@ -151,6 +151,16 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
+/* Enable the 10 s timing-parser stat, as ST20_RX_FLAG_TIMING_PARSER_STAT would. */
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx);
+/* Fold one frame's timing-parser result into the 10 s stat rv_tp_stat() logs.
+ * Requires a prior ut20_ctx_enable_timing_parser_stat(). */
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max);
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
+
 /* Park a software PTP correction in the port's no_timesync_delta accumulator --
  * what a real no-timesync port (any VF) holds once PTP has synced. It must never
  * reach a HW RX timestamp. */
