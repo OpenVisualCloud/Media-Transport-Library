@@ -10,6 +10,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* a pad burst returning later than this past its plan stalled: a healthy one returns
+ * well within it, a timer tick costs 2-10 us */
+#define ST_TX_VIDEO_RL_STALL_NS (2 * NS_PER_US)
 #define ST_TX_VIDEO_RL_MAX_PADS_PER_BURST (32)
 /* bytes, ICE_SCHED_DFLT_BURST_SIZE of the MTL-patched kernel ice (patches/ice_drv) that
  * RL requires; the stock 15 KB bucket would launch packet 0 ~10 pkts early */
