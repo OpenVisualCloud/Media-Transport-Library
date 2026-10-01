@@ -8,12 +8,21 @@
 
 #include "sch/mt_sch_harness.h"
 
+#include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "mt_platform.h"
+/* Only the filelock helper swaps this: the host lock may be held or keep its old mode. */
+static const char* ut_sch_flock_path = MT_FLOCK_PATH;
+#undef MT_FLOCK_PATH
+#define MT_FLOCK_PATH ut_sch_flock_path
 #include "mt_sch.c"
 
 int ut_sch_init(void) {
@@ -141,5 +150,36 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode) {
   if (!ret) ret = -pthread_join(thread, NULL);
   *exit_mode = ctx->exit_mode;
   ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+int ut_sch_filelock_create_mode(unsigned int* mode) {
+  char dir[] = "/tmp/ut_sch_flock_XXXXXX";
+  if (!mkdtemp(dir)) return -errno;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/lock", dir);
+
+  int ret = -ENOMEM;
+  struct mt_sch_mgr* mgr = calloc(1, sizeof(*mgr));
+  if (mgr) {
+    mgr->lcore_lock_fd = -1;
+    const char* old_path = ut_sch_flock_path;
+    ut_sch_flock_path = path;
+    mode_t old_mask = umask(0);
+    ret = sch_filelock_lock(mgr);
+    umask(old_mask);
+    ut_sch_flock_path = old_path;
+  }
+  if (!ret) {
+    struct stat st;
+    if (fstat(mgr->lcore_lock_fd, &st) < 0)
+      ret = -errno;
+    else
+      *mode = st.st_mode & 07777;
+    if (sch_filelock_unlock(mgr) < 0 && !ret) ret = -EIO;
+  }
+  unlink(path);
+  free(mgr);
+  rmdir(dir);
   return ret;
 }

@@ -44,6 +44,10 @@ int ut_sch_thread_mode_mempolicy(int* mode);
  * thread's mode once the entry returns. */
 int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
 
+/* Creates the lcore lock file through sch_filelock_lock() under umask 0, in a fresh
+ * temporary directory; *mode is its permission bits. Returns 0 on success. */
+int ut_sch_filelock_create_mode(unsigned int* mode);
+
 #ifdef __cplusplus
 }
 #endif
