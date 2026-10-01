@@ -97,7 +97,8 @@ pass/fail.
 
 Strict pacing cases SKIP unless TX and RX are on different physical ports with a
 reachable PHC and NIC RX timestamps (FAIL with `NOCTX_REQUIRE_STRICT=1`, as in
-CI); `st30p_user_pacing` FAILs outside an isolated
+CI); `st30p_user_pacing` and `st20p_redundant_1080p59_s8_equal_vrx_margin` (4 ports,
+TX on one PF and RX on the other on both legs) FAIL outside an isolated
 cpuset partition (`run.sh` creates one via `tests/tools/isolate/isolate.sh`). Per-case oracles and
 tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_tests/noctx/README.md).
 
@@ -120,7 +121,7 @@ tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_te
 
 ## 4-Port / Redundancy Tests
 
-Tests named `*redundant*` need 4 ports. The test skips gracefully if only 2 ports are provided:
+KahawaiTest cases named `*redundant*` need 4 ports and skip gracefully if only 2 ports are provided (NoCtx redundant cases FAIL instead):
 ```text
 TestBody, need 4 ports for redundant test, skipping
 ```
