@@ -4,9 +4,11 @@
 
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <csignal>
 #include <filesystem>
 #include <memory>
@@ -43,19 +45,28 @@ int main() {
 
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
-  if (!fs::exists(directory_path)) {
-    try {
-      fs::create_directory(directory_path);
-      fs::permissions(directory_path, fs::perms::owner_all | fs::perms::group_read |
-                                          fs::perms::group_exec | fs::perms::others_read |
-                                          fs::perms::others_exec);
-    } catch (const std::exception& e) {
-      logger::log(log_level::ERROR,
-                  "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
-                      ", please run the application with the appropriate privileges");
-      return -EIO;
-    }
+  std::error_code ec;
+  /* mkdir() never widens the mode it is given, so others never get write */
+  if (mkdir(directory_path.c_str(), 0755) == 0) {
+    /* the umask may have narrowed it, but clients need search */
+    fs::permissions(directory_path,
+                    fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                        fs::perms::others_read | fs::perms::others_exec,
+                    ec);
+  } else if (errno == EEXIST) {
+    /* others' write would let any user replace the socket; the group is the admin's */
+    fs::perms mode = fs::status(directory_path, ec).permissions();
+    if (!ec && (mode & fs::perms::others_write) != fs::perms::none)
+      fs::permissions(directory_path, mode & ~fs::perms::others_write, ec);
+  } else {
+    logger::log(log_level::ERROR,
+                "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
+                    ", please run the application with the appropriate privileges");
+    return -EIO;
   }
+  if (ec)
+    logger::log(log_level::WARNING, "Failed to set the mode of " +
+                                        directory_path.string() + ": " + ec.message());
 
   sigset_t signal_mask;
   sigemptyset(&signal_mask);
