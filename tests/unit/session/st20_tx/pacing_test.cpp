@@ -888,3 +888,23 @@ TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuil
   EXPECT_EQ(ut_txv_notify_frame_done_epoch(ctx_), kCurrentEpoch);
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
 }
+
+TEST(St20TxInitHwTest, RedundantQueueTakesItsPhysicalPortsTrainedRate) {
+  /* R leg on physical port 2, as with TX P, RX P, TX R, RX R on ports 0-3 */
+  constexpr int kRPort = 2;
+  constexpr uint64_t kPTrainedBps = 306044021;
+  constexpr uint64_t kRTrainedBps = 306044891;
+  uint64_t p_bps = 0, r_bps = 0;
+
+  ASSERT_EQ(ut_txv_init(), 0);
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(ctx, nullptr);
+
+  ASSERT_EQ(
+      ut_txv_init_hw_queue_bps(ctx, kRPort, kPTrainedBps, kRTrainedBps, &p_bps, &r_bps),
+      0);
+
+  EXPECT_EQ(p_bps, kPTrainedBps);
+  EXPECT_EQ(r_bps, kRTrainedBps);
+  ut_txv_destroy(ctx);
+}
