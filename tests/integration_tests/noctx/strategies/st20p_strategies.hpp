@@ -8,8 +8,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <future>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/strategy.hpp"
@@ -34,12 +37,28 @@ constexpr double kPhcRateMaxPpm = 5.0;
 constexpr uint64_t kSt20pUserPacingLeadNs = 800 * NS_PER_MS;
 /* St20pRedundantStreamPlan starts at PTP zero plus this plus its latency. */
 constexpr int kSt20pRedundantStartMs = 50;
+/* PhcFollowingClock health: the largest lag of MTL's PTP time behind its target. */
+constexpr uint64_t kPhcFollowMaxLagNs = 5 * NS_PER_US;
+/* PhcFollowingClock health: the longest time between two successful PHC reads. */
+constexpr uint64_t kPhcFollowMaxGapNs = 100 * NS_PER_MS;
+/* PhcFollowingClock health: the least share of its 10 ms read slots that read the PHC. */
+constexpr double kPhcFollowMinReadShare = 0.9;
+/* The most packets a 2022-7 leg may finish behind the other; the parser does not time
+ * the lagging leg's packets after the frame completed. */
+constexpr uint32_t kSt20pVrxMaxLegLagPkts = 4;
+/* St20pVrxRecorder skips the start-up underflows of the first kSt20pVrxWarmupS. */
+constexpr int kSt20pVrxWarmupS = 20;
+/* St20pVrxRecorder then records for this long. */
+constexpr int kSt20pVrxWindowS = 30;
 
 /* Empty if the ports suit the strict pacing tests, otherwise the reason they do not. */
 std::string strictPacingTopologyError(const char* tx_port, const char* rx_port);
 
 /* NOCTX_REQUIRE_STRICT=1: an unsuitable strict topology fails instead of skipping. */
 bool strictPacingRequired();
+
+/* Empty if both ports' RX timestamps come from one PHC, otherwise why not. */
+std::string sharedPhcError(const char* port_a, const char* port_b);
 
 /* A time known to +-u_ns. */
 struct RxTime {
@@ -75,6 +94,42 @@ class RxPhcClock {
   uint64_t first_phc_ns = 0, first_mono_ns = 0, first_uncertainty_ns = 0;
   uint64_t last_phc_ns = 0, last_mono_ns = 0;
   uint64_t uncertainty_max_ns = 0;
+};
+
+/* MTL PTP time as an RX port's PHC plus a fixed offset, for tests whose oracle is the
+ * library's RX timing parser. now() is CLOCK_MONOTONIC_RAW plus an offset that a thread
+ * re-measures every 10 ms and slews toward over the next 10 ms at up to 100 ppm; each
+ * update can move now() by ~10-20 ns, either way. now() costs a vDSO clock read, as
+ * FakePtpClockNow, but spins while the follower is mid-update, so a follower preempted
+ * there stalls every caller, TX tasklets included. One instance per process. */
+class PhcFollowingClock {
+ public:
+  PhcFollowingClock() = default;
+  PhcFollowingClock(const PhcFollowingClock&) = delete;
+  PhcFollowingClock& operator=(const PhcFollowingClock&) = delete;
+  ~PhcFollowingClock();
+  /* Reads the PHC of port's PF once, so now() is PHC + ptp_minus_phc_ns; empty on
+   * success, else why not. */
+  std::string open(const char* port, int64_t ptp_minus_phc);
+  /* Starts the thread that re-reads the PHC, pinned to the calling thread's CPU;
+   * empty on success, else why not. */
+  std::string follow();
+  /* Stops following, freezes the offset and prints the read statistics. */
+  void stop();
+  /* For mtl_init_params.ptp_get_time_fn. */
+  static uint64_t now(void* priv);
+  /* After stop(): empty if the reads met kPhcFollowMaxLagNs, kPhcFollowMaxGapNs and
+   * kPhcFollowMinReadShare, else why not. */
+  std::string healthError() const;
+
+ private:
+  void run(int cpu, std::promise<int> pinned);
+  int fd = -1;
+  int64_t ptp_minus_phc_ns = 0;
+  std::thread thread;
+  std::atomic<bool> stopping{false};
+  uint64_t follow_mono_ns = 0, stop_mono_ns = 0, last_read_mono_ns = 0;
+  uint64_t reads = 0, failed_reads = 0, max_lag_ns = 0, max_gap_ns = 0;
 };
 
 /* The NoCtx fake PTP clock is CLOCK_MONOTONIC_RAW minus a start offset. The offset is
@@ -201,4 +256,31 @@ class St20pInterlacedUserPacingOracle : public St20pUserPacingOracle {
 
  protected:
   uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;
+};
+
+/* For the frames received kSt20pVrxWarmupS to kSt20pVrxWarmupS + kSt20pVrxWindowS after
+ * the session's first, by receive_timestamp, with MTL's PTP time = RX PHC +
+ * ptp_minus_phc_ns (a whole number of frames), records PTP now - receive_timestamp and
+ * per port with packets:
+ * - sw_rx_frames: rtp_offset not shifted by ptp_minus_phc_ns, so the parser timed the
+ *   port's packets in software
+ * - off_band_frames: rtp_offset neither within a frame of 0 nor within half a frame
+ *   of the shift, e.g. a frame one period late or across an RTP wrap
+ * - otherwise vrx_min, and the frame's packets the port's tp missed: the most in
+ *   max_missing_pkts, and partial_frames if more than kSt20pVrxMaxLegLagPkts. */
+class St20pVrxRecorder : public FrameTestStrategy {
+ public:
+  St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc);
+  void rxTestFrameModifier(void* frame, size_t frame_size) override;
+
+  std::vector<int64_t> delivery_ns;
+  std::vector<int32_t> vrx_min[MTL_SESSION_PORT_MAX];
+  uint32_t max_missing_pkts[MTL_SESSION_PORT_MAX] = {};
+  uint64_t partial_frames[MTL_SESSION_PORT_MAX] = {};
+  uint64_t sw_rx_frames[MTL_SESSION_PORT_MAX] = {};
+  uint64_t off_band_frames[MTL_SESSION_PORT_MAX] = {};
+
+ private:
+  int64_t ptp_minus_phc_ns;
+  uint64_t first_rx_ns = 0;
 };

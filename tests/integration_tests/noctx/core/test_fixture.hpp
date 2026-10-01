@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "handlers/st20p_handler.hpp"
@@ -70,13 +71,19 @@ class NoCtxTest : public ::testing::Test {
       std::function<void(St40pHandler*)> configure = nullptr);
   St40pHandlerBundle registerSt40pResources(std::unique_ptr<St40pHandler> handler,
                                             std::unique_ptr<FrameTestStrategy> strategy);
+  using PtpTimeFn = uint64_t (*)(void* priv);
   /* mtl_init() with the command-line params, the SetUp() changes (RANDOM_SRC_PORT, INFO
-   * log, 16 TX and RX queues per port), FakePtpClockNow and DEV_AUTO_START_STOP off. */
-  void initDefaultContext();
-  /* initDefaultContext() plus MTL_FLAG_ENABLE_HW_TIMESTAMP. SKIPs, or FAILs with
-   * NOCTX_REQUIRE_STRICT=1, unless strictPacingTopologyError() is empty; the caller
-   * returns on IsSkipped() || HasFatalFailure(). */
-  void initStrictPacingContext();
+   * log, 16 TX and RX queues per port), ptpTimeFn and DEV_AUTO_START_STOP off. */
+  void initDefaultContext(PtpTimeFn ptpTimeFn = FakePtpClockNow);
+  /* SKIPs, or FAILs with NOCTX_REQUIRE_STRICT=1, unless unsupported is empty; the
+   * caller returns on IsSkipped() || HasFatalFailure(). */
+  static void requireStrictTopology(const std::string& unsupported);
+  /* initDefaultContext() plus MTL_FLAG_ENABLE_HW_TIMESTAMP, after
+   * requireStrictTopology(strictPacingTopologyError()) of TEST_PORT_1 -> TEST_PORT_2. */
+  void initStrictPacingContext(PtpTimeFn ptpTimeFn = FakePtpClockNow);
+  /* Empty if this process runs in an isolated cgroup v2 cpuset partition, else why not;
+   * test names the case and what it needs the partition for. */
+  static std::string exclusivePartitionError(const std::string& test);
   bool waitForSession(Session& session,
                       std::chrono::milliseconds timeout =
                           std::chrono::milliseconds(SessionStartTimeoutMs));
