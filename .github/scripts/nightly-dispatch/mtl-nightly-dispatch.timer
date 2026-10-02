@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+
+[Unit]
+Description=Start the MTL nightly workflows at 18:07 UTC on workdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 18:07:00 UTC
+# The default lets systemd fire up to a minute late to batch wakeups.
+AccuracySec=1s
+# Not Persistent: a start missed while the host was down is skipped rather
+# than run whenever the host comes back.
+
+[Install]
+WantedBy=timers.target

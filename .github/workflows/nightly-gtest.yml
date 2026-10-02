@@ -1,14 +1,13 @@
 name: nightly-gtest
 on:
-  # allow manually trigger
+  # Also how the nightly starts: GitHub fires cron events here hours late, so a
+  # timer dispatches this at 18:07 UTC on workdays (doc/ci_runner_setup.md).
   workflow_dispatch:
     inputs:
       commit_sha:
         description: 'Commit SHA to test (leave empty for current tip)'
         required: false
         default: ''
-  schedule:
-  - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 permissions:
   contents: read
   checks: read
