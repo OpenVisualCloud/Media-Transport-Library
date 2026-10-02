@@ -185,6 +185,17 @@ unit_sources = [
   'main.cpp',
 ]
 
+# The plugin header that gstreamer/ compiles includes gst/video and gst/audio as well.
+gst_dep = dependency('gstreamer-1.0', required : false)
+gst_video_dep = dependency('gstreamer-video-1.0', required : false)
+gst_audio_dep = dependency('gstreamer-audio-1.0', required : false)
+if gst_dep.found() and gst_video_dep.found() and gst_audio_dep.found()
+  unit_sources += ['gstreamer/gst_mtl_common_harness.c', 'gstreamer/gst_mtl_common_test.cpp']
+  unit_extra_deps += [gst_dep, gst_video_dep, gst_audio_dep]
+else
+  message('GStreamer development files not found: skipping tests/unit/gstreamer')
+endif
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
