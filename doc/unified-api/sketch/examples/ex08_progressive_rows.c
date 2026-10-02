@@ -1,0 +1,30 @@
+/* ex08 — low-latency progressive TX (SDI-to-IP gateway): the first rows leave while the
+   rest of the frame is still arriving. Session: a video TX config with sc.unit =
+   MTL_UNIT_ROWS, sc.source_kind = MTL_SOURCE_GATEWAY and sc.media_mode = MTL_MEDIA_INDEX.
+   Each submit of the same lease publishes rows. */
+#include <mtl/experimental/mtl_sync.h>
+
+#include "ex_common.h"
+
+#define STEP 64u
+void render_rows(struct mtl_unit* u, uint32_t first, uint32_t end);
+
+int send_one_frame(mtl_session_h s) {
+  struct mtl_unit u;
+  struct mtl_slot_hint hint;
+  MTL_INIT(&u);
+  int ret = mtl_tx_next_slot(s, &hint, sizeof(hint)); /* which frame is being filled */
+  if (ret >= 0) ret = mtl_tx_acquire(s, &u, MTL_MS(20));
+  if (ret < 0) return ex_fail("acquire", ret);
+
+  u.media_index = hint.next_media_index;
+  for (uint32_t done = 0; done < u.plane[0].rows;) {
+    uint32_t next = done + STEP < u.plane[0].rows ? done + STEP : u.plane[0].rows;
+    render_rows(&u, done, next);
+    u.used = next; /* rows [0, next) are final; used == rows ends the frame */
+    ret = mtl_tx_submit(s, &u); /* on failure the frame ends here, with what was sent */
+    if (ret < 0) return ex_fail("submit", ret);
+    done = next;
+  }
+  return 0;
+}
