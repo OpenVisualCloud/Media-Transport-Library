@@ -38,4 +38,19 @@ ice) ICE_BUNDLE_ROOT="$component_root" bash "${root_dir}/.github/scripts/ci/vali
 	;;
 esac
 
+# Compiler hardening of what MTL builds, see doc/build.md. In branch mode
+# (the input branch of build.yml and the pytest workflows) the trees come
+# from HEAD and this script from the workflow commit, so the check is the
+# one HEAD has: a HEAD that predates it is not checked. A git error fails
+# the validation.
+case "$component" in
+dpdk | mtl | ffmpeg | gstreamer | plugins)
+	head_check=$(git -C "$root_dir" ls-tree --name-only HEAD .github/scripts/ci/check-hardening.sh)
+	if [[ -n $head_check ]]; then
+		checker=$(git -C "$root_dir" show "HEAD:${head_check}")
+		bash -c "$checker" check-hardening.sh "$component_root"
+	fi
+	;;
+esac
+
 echo "${component} cache: valid"
