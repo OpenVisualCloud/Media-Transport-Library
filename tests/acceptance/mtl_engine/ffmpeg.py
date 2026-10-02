@@ -468,7 +468,7 @@ class FFmpeg(Application):
             f"-f mtl_st22p -"
         ]
 
-        # RX: mtl_st22p demuxer (receive + decode) → raw video output
+        # RX: mtl_st22p demuxer (receive + decode) → the newest decoded frame only
         rx_cmd = (
             f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
@@ -478,7 +478,7 @@ class FFmpeg(Application):
             f"-st22_codec {st22_codec} "
             f"-init_retry 20 "
             f"-f mtl_st22p -i k "
-            f"-f rawvideo {{out0}} -y"
+            f"-f image2 -update 1 -c:v rawvideo {{out0}} -y"
         )
         return rx_cmd, None
 
@@ -647,7 +647,12 @@ class FFmpeg(Application):
                 host.connection.path(out_path_param).touch()
             else:
                 ext = "yuv" if mode == _MODE_ST22P else "raw"
-                out_path = ffmpeg_app.create_empty_output_files(ext, 1, host, build)
+                # tmpfs: ext4 flushes the st22p frame on every rewrite, and a slow
+                # root disk then stalls FFmpeg in close() while it holds its VF.
+                out_dir = "/dev/shm" if mode == _MODE_ST22P else ""
+                out_path = ffmpeg_app.create_empty_output_files(
+                    ext, 1, host, build, directory=out_dir
+                )
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
             if mode == _MODE_ST22P:
@@ -808,9 +813,7 @@ class FFmpeg(Application):
                     logger.error(f"{mode}: output file is empty: {out_file}")
                 # An integrity session, when the test asked for one, has already
                 # read this file: _finalize_run() evaluates it before
-                # validate_results() runs. Nothing downstream needs it, and a
-                # recording of a full test's traffic is far too large to leave
-                # in the workspace -- 1080p yuv422p10le is about 250 MB/s.
+                # validate_results() runs, and nothing downstream needs it.
                 self._cleanup_output_files(host)
             else:
                 self._fail_validation(f"Unknown mode {mode}", fail_on_error)

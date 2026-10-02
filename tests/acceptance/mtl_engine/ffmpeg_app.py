@@ -778,16 +778,21 @@ def check_output_rgb24(rx_output: str, number_of_sessions: int):
 
 
 def create_empty_output_files(
-    output_format: str, number_of_files: int = 1, host=None, build: str = ""
+    output_format: str,
+    number_of_files: int = 1,
+    host=None,
+    build: str = "",
+    directory: str = "",
 ) -> list:
     output_files = []
+    out_dir = directory or f"{build}/tests"
 
     # Create a timestamp for uniqueness
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     test_name = sanitize_filename(get_case_id())
 
     for i in range(number_of_files):
-        output_file = f"{build}/tests/{test_name}_{timestamp}_out_{i}.{output_format}"
+        output_file = f"{out_dir}/{test_name}_{timestamp}_out_{i}.{output_format}"
         output_files.append(output_file)
 
         remote_conn = host.connection
