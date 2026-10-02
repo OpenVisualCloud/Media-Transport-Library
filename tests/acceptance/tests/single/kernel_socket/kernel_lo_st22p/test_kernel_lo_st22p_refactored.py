@@ -3,14 +3,14 @@
 """Refactored kernel loopback ST22P JPEG XS test (new RxTxApp API)."""
 
 import pytest
-from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422p10le
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize(
     "media_file",
-    [yuv_files_422rfc10["Penguin_1080p"]],
+    [yuv_files_422p10le["Penguin_1080p"]],
     indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
@@ -40,6 +40,7 @@ def test_kernello_st22p_video_format_refactored(
     # Kernel-socket loopback + JPEG-XS plugin init needs extra headroom.
     test_time = max(test_time, 90)
 
+    application.require_encoder(host, "libsvt_jpegxs", use_mtl_plugin=True)
     application.create_command(
         session_type="st22p",
         nic_port_list=["kernel:lo", "kernel:lo"],
