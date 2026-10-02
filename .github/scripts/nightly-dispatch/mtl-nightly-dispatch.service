@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+
+[Unit]
+Description=Start the MTL nightly workflows on GitHub
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+# The token file stays root's and 0600; systemd gives this unprivileged run a
+# copy of it.
+LoadCredential=token:/etc/mtl-ci/nightly-dispatch.token
+# A lab host reaches api.github.com through the proxy it exports there, and a
+# service does not inherit a login shell's environment.
+EnvironmentFile=-/etc/environment
+ExecStart=/usr/local/libexec/mtl-ci/nightly-dispatch.sh

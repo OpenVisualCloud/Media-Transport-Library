@@ -82,6 +82,10 @@ The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
 
+The one host that starts the nightlies holds the token it starts them with in
+`/etc/mtl-ci/nightly-dispatch.token`; see
+[The nightlies start from a timer, not a cron](#the-nightlies-start-from-a-timer-not-a-cron).
+
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.
 
@@ -560,3 +564,47 @@ that never started is invisible in the Actions UI beyond its own spinner, and
 `gh run view <id> --json jobs` reports `runnerName` empty for it. The way to see
 which host carries a label is the jobs API of the last run that did get picked
 up.
+
+## The nightlies start from a timer, not a cron
+
+`nightly-gtest` and `nightly-pytest` have no `schedule:` trigger. GitHub fires
+a cron event when its queue allows, not at the time it was given, and for this
+repository that has been two to five hours late at every minute of the hour. A
+`workflow_dispatch` run is created the moment it is requested, so the start
+time belongs to a timer that requests it.
+
+The timer is the systemd pair in `.github/scripts/nightly-dispatch/`. At 18:07
+UTC on workdays it dispatches both workflows on `main`. Install it on exactly
+one always-on host: a second copy starts both suites twice, and while the second
+`nightly-gtest` cancels the first one's legs, the second `nightly-pytest` runs
+its whole matrix again on the same runners. The host must also run no CI jobs,
+because the test jobs on the runners use `sudo`, so a pull request could read
+the token there. It needs systemd 247 for `LoadCredential` and curl 7.76 for
+`--fail-with-body`; Ubuntu 22.04 has both.
+
+```bash
+sudo install -D -m 755 .github/scripts/nightly-dispatch/nightly-dispatch.sh \
+  /usr/local/libexec/mtl-ci/nightly-dispatch.sh
+sudo install -m 644 .github/scripts/nightly-dispatch/mtl-nightly-dispatch.service \
+  .github/scripts/nightly-dispatch/mtl-nightly-dispatch.timer /etc/systemd/system/
+sudo install -D -m 600 /dev/stdin /etc/mtl-ci/nightly-dispatch.token   # paste the token, Enter, Ctrl-D
+sudo systemctl daemon-reload
+sudo systemctl enable --now mtl-nightly-dispatch.timer
+systemctl list-timers mtl-nightly-dispatch.timer   # NEXT: the coming 18:07 UTC, in local time
+```
+
+The token is a fine-grained one, limited to this repository, with Actions read
+and write and no other permission. Its owner is the actor of every nightly run,
+so a bot account with write access is a better owner than a person. The token
+expires, so note the date: an expired one shows up as a 401 in the journal and
+as a workday with no nightly run. The service reads `/etc/environment`, which is
+where a lab host's `https_proxy` has to be for the service to reach
+`api.github.com`.
+
+```bash
+sudo systemctl start mtl-nightly-dispatch.service   # starts both nightlies now
+journalctl -u mtl-nightly-dispatch.service          # each start, and GitHub's answer to a failed one
+```
+
+A start missed while the host was down, or one that failed, is not retried.
+Start that day's nightly with `gh workflow run`.
