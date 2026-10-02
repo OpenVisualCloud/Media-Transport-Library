@@ -326,7 +326,9 @@ The Linux build compiles the shipped MTL components, DPDK, openh264 and FFmpeg w
 | `-fstack-clash-protection` | Stack clash |
 | `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
 | `-D_FORTIFY_SOURCE=2` | Buffer overflow checks in libc calls. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
+| `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in the C++ standard library (MtlManager, KahawaiTest) |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wimplicit-fallthrough` | Unmarked `switch` fall-through (MTL meson projects) |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
@@ -343,7 +345,7 @@ The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ff
 
 The openh264 assembly has no CET mark, so `libopenh264` has neither IBT nor SHSTK, and a process that loads it runs without CET.
 
-To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the Rocky Linux 9 image build. Under `/usr/local` it also reports other software installed there.
+To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the Rocky Linux 9 image build. Under `/usr/local` it also reports other software installed there. The `Hardening Tools` workflow repeats the check with `hardening-check` and `checksec`, two independent binary-hardening scanners.
 
 ```bash
 .github/scripts/ci/check-hardening.sh /usr/local/lib /usr/local/bin
