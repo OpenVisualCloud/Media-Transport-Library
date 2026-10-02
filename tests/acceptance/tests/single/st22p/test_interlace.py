@@ -10,7 +10,12 @@ from mtl_engine.media_files import yuv_files_interlace
 @pytest.mark.parametrize(
     "application",
     [
-        "rxtxapp",
+        pytest.param(
+            "rxtxapp",
+            marks=pytest.mark.skip(
+                reason="SVT JPEG-XS ignores interlaced; no planar interlaced media"
+            ),
+        ),
         pytest.param(
             "ffmpeg",
             marks=pytest.mark.skip(
