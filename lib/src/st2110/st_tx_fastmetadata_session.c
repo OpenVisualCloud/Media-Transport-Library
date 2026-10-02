@@ -240,21 +240,17 @@ static inline uint32_t tx_fastmetadata_pacing_time_stamp(
 static uint64_t tx_fastmetadata_pacing_required_tai(
     struct st_tx_fastmetadata_session_impl* s, enum st10_timestamp_fmt tfmt,
     uint64_t timestamp) {
-  uint64_t required_tai = 0;
-
   if (!(s->ops.flags & ST41_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (timestamp > 0xFFFFFFFF) {
-      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
-    }
-    required_tai = st10_media_clk_to_ns((uint32_t)timestamp, 90 * 1000);
-  } else {
-    required_tai = timestamp;
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
+        s->idx);
+    return 0; /* invalid timestamp, fallback to default pacing */
   }
 
-  return required_tai;
+  return timestamp;
 }
 
 static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
@@ -767,7 +763,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     bool second_field = frame->tf_meta.second_field;
     tx_fastmetadata_session_sync_pacing(impl, s, false, required_tai, second_field);
     if (ops->flags & ST41_TX_FLAG_USER_TIMESTAMP &&
-        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
+        (frame->tf_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
       pacing->rtp_time_stamp = (uint32_t)frame->tf_meta.timestamp;
     }
     frame->tf_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;

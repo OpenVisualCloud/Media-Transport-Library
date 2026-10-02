@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
          ctx.tx_audio_url);
 
     ret = pthread_create(&app[i]->frame_thread, NULL, tx_st30p_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

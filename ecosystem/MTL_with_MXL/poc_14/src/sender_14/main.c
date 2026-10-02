@@ -91,7 +91,6 @@ static int rx_frame_ready_cb(void* priv, void* frame, struct st20_rx_frame_meta*
         poc_grain_slot_t* gs = (poc_grain_slot_t*)meta->opaque;
         atomic_store_explicit(&gs->in_use, false, memory_order_release);
       }
-      st20_rx_put_framebuff(ss->rx_handle, frame);
       return -1;
     }
   }
@@ -115,7 +114,6 @@ static int rx_frame_ready_cb(void* priv, void* frame, struct st20_rx_frame_meta*
 
   if (poc_queue_push(&ss->queue, &entry) != 0) {
     atomic_fetch_add(&ss->stats.rx_drops, 1);
-    st20_rx_put_framebuff(ss->rx_handle, frame);
     return -1;
   }
 

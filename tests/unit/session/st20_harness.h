@@ -217,6 +217,16 @@ uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx);
  * hold→release transition drains the withheld refcnts. */
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold);
 
+/* Make notify_frame_ready (st20 and st22) return `ret`. A negative value refuses
+ * the frame: the harness then keeps no reference to it, as an app would not. */
+void ut20_set_notify_frame_ready_ret(ut20_test_ctx* ctx, int ret);
+
+/* Set ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME on the session. */
+void ut20_ctx_enable_incomplete_frames(ut20_test_ctx* ctx);
+
+/* Framebuffers neither held by a slot nor by the app. */
+int ut20_free_frames(const ut20_test_ctx* ctx);
+
 /* Bump stat_pkts_no_slot by `n` without touching stat_pkts_pool_empty —
  * simulates a non-back-pressure no_slot bump path (e.g. past-tmstamp
  * drop, DMA-busy drop) so tests can prove the warn line's pkts number
@@ -251,6 +261,29 @@ uint64_t ut20_stat_user_meta_err(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx);
 /* Bumped once per frame whose first pkt carried accepted ST 2110-22 boxes. */
 uint64_t ut20_stat_st22_boxes(const ut20_test_ctx* ctx);
+
+/* ── external frames ──────────────────────────────────────────────────── */
+
+/* Switch to dynamic ext frames: query_ext_frame hands out a harness buffer of the
+ * session's frame size, or a NULL address when !has_addr, with `iova`. */
+void ut20_ctx_enable_query_ext_frame(ut20_test_ctx* ctx, bool has_addr, uint64_t iova);
+
+/* Give the session a DMA device with nothing in flight. The harness pkts are below
+ * the DMA copy threshold, so it is never asked to copy. */
+void ut20_ctx_attach_idle_dma(ut20_test_ctx* ctx);
+
+/* Run the production frame allocation over dedicated ext frames of `buf_len`
+ * bytes each, release them again, and return rv_alloc_frames()'s status. */
+int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len);
+
+uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx);
+
+/* Run the production rv_init_sw() with ST20_RX_FLAG_DMA_OFFLOAD over dedicated
+ * ext frames, marked as GPU VRAM frames when `gpu_frames`, then rv_uinit_sw().
+ * Ext frames keep the GPU allocator out, so only the flag is under test.
+ * Returns how many DMA devices it requested, or rv_init_sw()'s error. The
+ * context cannot be fed packets afterwards. */
+int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames);
 
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
@@ -297,6 +330,9 @@ int ut20_total_frame_pkts(void);
 /* Live geometry: number of packets per frame for THIS context. Returns
  * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
+
+/* Framebuffer size in bytes for THIS context. */
+size_t ut20_frame_size(const ut20_test_ctx* ctx);
 
 /* true while every byte the harness keeps past the declared slot bitmaps is
  * still zero, i.e. no packet index wrote outside its bitmap. */

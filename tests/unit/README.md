@@ -15,12 +15,17 @@ asserts on production behaviour. The suite covers ST 2110-20 (video),
 ST 2110-30 (audio), ST 2110-40 (ancillary), and the ST 2110-40 pipeline. Tests
 run on any developer laptop in a fraction of a second.
 
-TX packet building/queueing, DMA, kernel-socket / AF_XDP backends, and
+TX packet building/queueing on a NIC, DMA copy engines, AF_XDP, and
 multi-process scenarios are out of scope — see
 [`tests/integration_tests/`](../integration_tests/) and
-[`tests/acceptance/`](../acceptance/) for those. TX epoch/pacing *math*
-(`session/st20_tx_harness.c`) and the ST 2110-41 packet builder's mbuf
-capacity checks (`session/st41_tx_harness.c`) are covered here.
+[`tests/acceptance/`](../acceptance/) for those. Covered here through seams:
+TX epoch/pacing *math*, frame completion, destination update and rate-limit
+lookup (`session/st20_tx_harness.c`), the ST 2110-41 packet builder and TX
+timestamps (`session/st41_tx_harness.c`), the kernel-socket TX send path over
+loopback (`datapath/mt_dp_socket_harness.c`), RX queue selection without a
+flow (`datapath/mt_queue_harness.c`), the DMA map table
+(`dma/mt_map_harness.c`), port stats locking (`dev/mt_dev_harness.c`) and
+the MtlManager IPC send (`main/mt_instance_harness.c`).
 
 ## What makes this different
 
@@ -37,7 +42,8 @@ If a test fails it's a real defect, unless a case with a wall-clock budget ran
 over it under load — an overrun that reproduces on an idle box is a defect. Only the
 eight `*Concurrency*` suites, `St20PipelineTxBlocking`, the three
 `*WakePostedBeforeWaitIsNotLost` cases of `St22PipelineRxBlocking` /
-`St22PipelineTxEncodeBlocking`, and `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
+`St22PipelineTxEncodeBlocking`, `PipelineTxWakeBlock`, and
+`FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
 ## Quick start

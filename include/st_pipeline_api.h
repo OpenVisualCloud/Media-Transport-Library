@@ -391,9 +391,12 @@ enum st22p_tx_flag {
    */
   ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
+   * Drop a ready frame instead of sending it when it is already late. Only effective
+   * together with ST22P_TX_FLAG_USER_PACING and a frame timestamp in
+   * ST10_TIMESTAMP_FMT_TAI, otherwise the flag is ignored. Checked when the transport
+   * asks for its next frame: a frame counts as late once PTP time reaches its timestamp
+   * plus one frame period. A dropped frame gets notify_frame_done with
+   * ST_FRAME_STATUS_DROPPED, then notify_frame_late with epoch_skipped 0.
    */
   ST22P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
   /**
@@ -459,9 +462,12 @@ enum st20p_tx_flag {
    */
   ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
+   * Drop a ready frame instead of sending it when it is already late. Only effective
+   * together with ST20P_TX_FLAG_USER_PACING and a frame timestamp in
+   * ST10_TIMESTAMP_FMT_TAI, otherwise the flag is ignored. Checked when the transport
+   * asks for its next frame: a frame counts as late once PTP time reaches its timestamp
+   * plus one frame period. A dropped frame gets notify_frame_done with
+   * ST_FRAME_STATUS_DROPPED, then notify_frame_late with epoch_skipped 0.
    */
   ST20P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
   /**
@@ -1923,11 +1929,10 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -1939,11 +1944,10 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -2121,11 +2125,10 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -2137,11 +2140,10 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -2306,7 +2308,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
 
 /** helper to know if it's a codestream fmt */
 static inline bool st_frame_fmt_is_codestream(enum st_frame_fmt fmt) {
-  if (fmt >= ST_FRAME_FMT_CODESTREAM_START && fmt <= ST_FRAME_FMT_CODESTREAM_END)
+  if (fmt >= ST_FRAME_FMT_CODESTREAM_START && fmt < ST_FRAME_FMT_CODESTREAM_END)
     return true;
   else
     return false;

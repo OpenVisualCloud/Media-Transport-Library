@@ -191,7 +191,7 @@ int main(int argc, char** argv) {
   app.tx_handle = tx_handle;
 
   ret = pthread_create(&app.fwd_thread, NULL, st20_fwd_st20_thread, &app);
-  if (ret < 0) {
+  if (ret) {
     err("%s, thread create fail %d\n", __func__, ret);
     ret = -EIO;
     goto error;

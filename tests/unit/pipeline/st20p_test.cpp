@@ -188,3 +188,15 @@ TEST_F(St20PipelineRxTest, BusyEqualsDroppedInvariant) {
         << "after drop " << (i + 1) << ": stat_busy and frames_dropped diverged";
   }
 }
+
+/* st20p_rx_get_fb_addr() returns the framebuffer the app receives, the
+ * same pointer get_frame() hands out in addr[0]. */
+TEST_F(St20PipelineRxTest, GetFbAddrReturnsFrameBuffer) {
+  ASSERT_EQ(inject_complete(1), 0);
+  struct st_frame* f = get_frame();
+  ASSERT_NE(f, nullptr);
+
+  EXPECT_EQ(st20p_rx_get_fb_addr(ut20p_handle(ctx_), ut20p_frame_idx(f)), f->addr[0]);
+
+  EXPECT_EQ(put_frame(f), 0);
+}

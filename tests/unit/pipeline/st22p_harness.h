@@ -83,6 +83,19 @@ int ut22p_frame_stat(const ut22p_ctx* ctx, int i);
  * put path. */
 uint64_t ut22p_stub_call_count(void);
 
+/** The pipeline handle, for calling the public st*p API directly. */
+st22p_rx_handle ut22p_handle(ut22p_ctx* ctx);
+
+/** Force ctx->lc_destroying, as a *_free() in progress sets it. */
+void ut22p_force_destroying(ut22p_ctx* ctx);
+
+/**
+ * Call st22p_rx_create() on a bare instance with one port, named in
+ * ops->port.port[0] by this call. For create paths that fail before any
+ * transport or decoder is needed.
+ */
+st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops);
+
 #ifdef __cplusplus
 }
 #endif

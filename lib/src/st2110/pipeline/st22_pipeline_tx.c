@@ -260,6 +260,14 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  bool notify = ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called;
+  if (notify) {
+    /* Before FREE: a get_frame() of the freed slot resets it for the next frame. */
+    framebuff->frame_done_cb_called = true;
+    frame->status = ST_FRAME_STATUS_COMPLETE;
+  }
+
   if (ST22P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST22P_TX_FRAME_FREE;
@@ -270,19 +278,19 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
 
-  if (ctx->ops.notify_frame_done &&
-      !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
-    frame->status = ST_FRAME_STATUS_COMPLETE;
-    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    framebuff->frame_done_cb_called = true;
-  }
+  if (notify) ctx->ops.notify_frame_done(ctx->ops.priv, frame);
 
   tx_st22p_notify_frame_available(ctx);
 
   MT_USDT_ST22P_TX_FRAME_DONE(ctx->idx, frame_idx, meta->rtp_timestamp);
 
   return ret;
+}
+
+static int tx_st22p_notify_frame_late(void* priv, uint64_t epoch_skipped) {
+  struct st22p_tx_ctx* ctx = priv;
+
+  return ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
 }
 
 static int tx_st22p_notify_event(void* priv, enum st_event event, void* args) {
@@ -520,6 +528,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.get_next_frame = tx_st22p_next_frame;
   ops_tx.notify_frame_done = tx_st22p_frame_done;
   ops_tx.notify_event = tx_st22p_notify_event;
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st22p_notify_frame_late;
   if (ops->codec != ST22_CODEC_JPEGXS) {
     ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
   }
@@ -765,6 +774,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
     timespec_add_ns(&deadline, ctx->block_timeout_ns);
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    uint32_t wake_block_cnt = ctx->wake_block_cnt;
     while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       if (ctx->block_wake_pending) {
         /* A frame done sets the wake also when no thread waits, so the wake can
@@ -775,6 +785,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
         if (framebuff) break;
         continue;
       }
+      if (ctx->wake_block_cnt != wake_block_cnt) break;
       int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                            &deadline);
       if (_ret) break;
@@ -1019,6 +1030,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
     if (!src_size) {
       err("%s(%d), get source size fail\n", __func__, idx);
+      mt_rte_free(ctx);
       return NULL;
     }
   }
@@ -1181,7 +1193,12 @@ int st22p_tx_wake_block(st22p_tx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, 0);
 
-  if (ctx->block_get) tx_st22p_block_wake(ctx);
+  if (ctx->block_get) {
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    ctx->wake_block_cnt++;
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  }
 
   MT_HANDLE_RELEASE(ctx);
   return 0;

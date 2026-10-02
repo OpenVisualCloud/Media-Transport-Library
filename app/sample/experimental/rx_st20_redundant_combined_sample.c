@@ -197,7 +197,7 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle[i];
 
     ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       goto error;
     }

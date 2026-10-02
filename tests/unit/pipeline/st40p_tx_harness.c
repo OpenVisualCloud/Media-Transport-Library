@@ -10,12 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st40_tx_create ut40p_tx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include "st2110/pipeline/st40_pipeline_tx.c"
 #pragma GCC diagnostic pop
+#undef st40_tx_create
 
 #include "common/ut_common.h"
 
@@ -100,6 +102,10 @@ void ut40p_tx_wake_block(ut40p_tx_ctx* ctx) {
   st40p_tx_wake_block(&ctx->pipeline);
 }
 
+void ut40p_tx_frame_free_wake(ut40p_tx_ctx* ctx) {
+  tx_st40p_notify_frame_available(&ctx->pipeline);
+}
+
 void ut40p_tx_force_destroying(ut40p_tx_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
@@ -154,4 +160,53 @@ int ut40p_tx_frame_stat(const ut40p_tx_ctx* ctx, int i) {
 
 uint64_t ut40p_tx_stat_frames_sent(const ut40p_tx_ctx* ctx) {
   return ctx->pipeline.stat_frames_sent;
+}
+
+static struct st40_tx_ops ut40p_tx_transport_ops;
+
+st40_tx_handle ut40p_tx_capture_create(mtl_handle mt, struct st40_tx_ops* ops) {
+  (void)mt;
+  ut40p_tx_transport_ops = *ops;
+  return NULL;
+}
+
+void ut40p_tx_set_notify_frame_late(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_late = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
+int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut40p_tx_transport_ops, 0, sizeof(ut40p_tx_transport_ops));
+  st40_tx_handle transport = ctx->pipeline.transport;
+  tx_st40p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  ctx->pipeline.transport = transport;
+  if (!ut40p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut40p_tx_transport_ops.notify_frame_late(ut40p_tx_transport_ops.priv,
+                                                  epoch_skipped);
+}
+
+st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+int ut40p_tx_fbs_init_uinit(uint16_t framebuff_cnt, uint32_t max_udw_buff_size) {
+  struct st40p_tx_ctx* p = calloc(1, sizeof(*p));
+  if (!p) return -ENOMEM;
+  p->socket_id = rte_socket_id();
+  p->framebuff_cnt = framebuff_cnt;
+  p->ops.max_udw_buff_size = max_udw_buff_size;
+
+  int ret = tx_st40p_init_fbs(p, &p->ops);
+  tx_st40p_uinit_fbs(p);
+  free(p);
+  return ret;
+}
+
+void ut40p_tx_set_notify_frame_done(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st40_frame_info* frame),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_done = cb;
+  ctx->pipeline.ops.priv = priv;
 }

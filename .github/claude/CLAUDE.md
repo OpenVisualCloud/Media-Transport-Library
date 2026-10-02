@@ -11,7 +11,8 @@ E810/E830 NICs. Supports ST2110-20 (uncompressed video), -22 (compressed/JPEG-XS
 
 Additional deliverables in-tree: sample apps (`app/`), FFmpeg/GStreamer/OBS plugins
 (`ecosystem/`), codec plugins (`plugins/`), `MtlManager` daemon (`manager/`),
-LD_PRELOAD UDP shim (`ld_preload/`), Python and Rust bindings (`python/`, `rust/`).
+Python and Rust bindings (`python/`, `rust/`). `ld_preload/` is an empty build stub; its
+LD_PRELOAD UDP shim was removed with the user-space UDP stack.
 
 ## Existing agent documentation — read this first
 
@@ -210,13 +211,14 @@ pacing, single tasklet. Adding a new ST2110-xx type means copying the video sess
 and simplifying it — don't invent a new shape.
 
 **Prefixes** (enforced): `mt_` core internals, `mtl_` public core API, `st_`/`st20_`/`st22_`/
-`st30_`/`st40_`/`st41_` media session APIs, `st20p_`/`st22p_`/`st30p_` pipeline APIs,
+`st30_`/`st40_`/`st41_` media session APIs, `st20p_`/`st22p_`/`st30p_`/`st40p_` pipeline APIs,
 `tv_`/`rv_` TX/RX video internals, `tx_audio_session_`/`rx_audio_session_` etc. for the
 simpler media types.
 
 ## Conventions that bite
 
-* C99 only in `lib/`. C++ only in `tests/`.
+* C99 in `lib/`, except C11 `<stdatomic.h>` atomics (no `c_std` is set in meson, so the
+  compiler default applies). C++ only in `tests/`.
 * Return 0 on success, negative on error; free resources in reverse allocation order.
 * `dbg()` / `info()` / `warn()` / `err()` — never `printf`.
 * DPDK allocations via `mt_rte_zmalloc()` with an explicit `socket_id` from

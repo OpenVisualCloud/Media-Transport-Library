@@ -2646,7 +2646,9 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
 
   struct mt_interface* inf = mt_if(impl, port);
   dev_inf_get_stat(inf);
+  rte_spinlock_lock(&inf->stats_lock);
   memcpy(stats, &inf->user_stats_port, sizeof(*stats));
+  rte_spinlock_unlock(&inf->stats_lock);
 
   return 0;
 }
@@ -2664,7 +2666,9 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port) {
   }
 
   struct mt_interface* inf = mt_if(impl, port);
+  rte_spinlock_lock(&inf->stats_lock);
   memset(&inf->user_stats_port, 0, sizeof(inf->user_stats_port));
+  rte_spinlock_unlock(&inf->stats_lock);
 
   return 0;
 }

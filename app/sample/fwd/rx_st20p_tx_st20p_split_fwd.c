@@ -97,6 +97,7 @@ static void* tx_st20p_fwd_thread(void* args) {
     }
 
     st20p_rx_put_frame(rx_handle, frame);
+    s->fb_fwd++;
   }
 
   return NULL;
@@ -213,7 +214,7 @@ int main(int argc, char** argv) {
   }
 
   ret = pthread_create(&app.fwd_thread, NULL, tx_st20p_fwd_thread, &app);
-  if (ret < 0) {
+  if (ret) {
     err("%s, fwd thread create fail\n", __func__);
     ret = -EIO;
     goto error;

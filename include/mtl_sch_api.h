@@ -130,10 +130,10 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
 
 /**
  * Unregister the tasklet from the bind sch. One tasklet can be unregistered at runtime
- * before mtl_sch_start.
+ * after mtl_sch_start.
  *
- * @param sch
- *   The handle to sch context.
+ * @param tasklet
+ *   The handle to the tasklet.
  * @return
  *   - 0: Success.
  *   - <0: Error code.

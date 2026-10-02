@@ -242,7 +242,7 @@ int main(int argc, char** argv) {
     app[i]->height = ops_tx.height;
     app[i]->lines_per_slice = app[i]->height / 30;
     ret = pthread_create(&app[i]->app_thread, NULL, tx_video_slice_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

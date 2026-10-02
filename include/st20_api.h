@@ -574,7 +574,7 @@ struct st20_rx_frame_meta {
   void* opaque;
   /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
   uint64_t timestamp_first_pkt;
-  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the last pkt */
   uint64_t timestamp_last_pkt;
   /** first packet time in ns to the start of current epoch */
   int64_t fpt;
@@ -1190,7 +1190,8 @@ struct st20_tx_ops {
    * The callback when lib finish the sending of one frame, frame_idx indicate the
    * done frame. It implicit means the frame ownership is transferred to app. And only
    * non-block method can be used within this callback as it run from lcore tasklet
-   * routine.
+   * routine. The frame may be re-queued from within this callback, so read meta before
+   * re-queuing it. A completed ext frame keeps its last buffer until it is re-armed.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st20_tx_frame_meta* meta);
@@ -1350,7 +1351,8 @@ struct st22_tx_ops {
    * The callback when lib finish the sending of current frame, frame_idx indicate the
    * done frame. It implicit means the frame ownership is transferred to app. And only
    * non-block method can be used within this callback as it run from lcore tasklet
-   * routine.
+   * routine. The frame may be re-queued from within this callback, so read meta before
+   * re-queuing it. A completed ext frame keeps its last buffer until it is re-armed.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st22_tx_frame_meta* meta);
@@ -1979,11 +1981,10 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -1995,11 +1996,10 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -2330,11 +2330,10 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -2346,11 +2345,10 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.

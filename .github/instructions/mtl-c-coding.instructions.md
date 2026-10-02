@@ -10,7 +10,7 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 
 ## Language
 
-- Library core (`lib/`): **C99 only**. No C++ constructs.
+- Library core (`lib/`): **C99**, plus C11 `<stdatomic.h>` atomics (`_Atomic`, `atomic_*_explicit`) already used in the handle guard and pipeline headers. Meson sets no `c_std`, so the compiler default applies. No C++ constructs.
 - Tests (`tests/`): C++ allowed (gtest framework).
 
 ## Naming Conventions
@@ -21,7 +21,7 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 | `mtl_` | Public core API | `mtl_start()`, `mtl_stop()` |
 | `st_` | ST2110 base abstractions | `st_frame_fmt_name()` |
 | `st20_`/`st22_`/`st30_`/`st40_`/`st41_` | Media session APIs | `st20_tx_create()` |
-| `st20p_`/`st22p_`/`st30p_` | Pipeline APIs | `st20p_tx_create()` |
+| `st20p_`/`st22p_`/`st30p_`/`st40p_` | Pipeline APIs | `st20p_tx_create()` |
 | `tv_`/`rv_` | TX/RX video session internals | `tv_frame_free()` |
 | `tx_audio_session_`/`rx_audio_session_` | Audio internals | |
 | `tx_ancillary_session_`/`rx_ancillary_session_` | Ancillary internals | |

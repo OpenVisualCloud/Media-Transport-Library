@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
 
     app[i]->stop = false;
     ret = pthread_create(&app[i]->decode_thread, NULL, st22_decode_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

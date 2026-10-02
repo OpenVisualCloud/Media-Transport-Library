@@ -119,9 +119,31 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
 int ut_txv_run_st22_next_frame_step(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                     uint64_t timestamp, uint64_t* frame_timestamp,
                                     uint32_t* frame_rtp_timestamp);
+/* Runs tvs_tasklet_handler() once over two sessions: the harness session in slot
+ * 0, which starts an ST22 frame and so has work, then an idle peer in slot 1
+ * whose TX ring is full. Returns the handler's MTL_TASKLET_* result, < 0 on
+ * setup failure. */
+int ut_txv_run_tasklet_with_idle_peer(ut_txv_ctx* ctx);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Drives tv_init_hw() for a one-port session whose logical port P maps to
+ * phy_port, after recording a rate-limiter training result (trained_bps) for the
+ * session's bitrate on phy_port only. The TX queue request is intercepted and
+ * failed; outputs the physical port and bytes_per_sec it carried. Returns 0 if
+ * exactly one queue was requested. */
+int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
+                                 uint64_t trained_bps, enum mtl_port* queue_port,
+                                 uint64_t* queue_bps);
+/* Toggle MTL_FLAG_RANDOM_SRC_PORT in the instance's init flags. */
+void ut_txv_set_random_src_port(ut_txv_ctx* ctx, bool enable);
+/* Drives tv_update_dst() on a one-port session with the given ops.udp_src_port and
+ * the source port st20_tx_create() chose (created_src_port). A user-supplied
+ * destination MAC keeps ARP out of it. Outputs the UDP ports now in the session's
+ * packet header template, host order. Returns 0 on success. */
+int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_src_port,
+                      uint16_t new_udp_port, uint16_t* hdr_src_port,
+                      uint16_t* hdr_dst_port);
 /* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
  * above (ptp_time_cursor, sampling_clock_rate). */
 void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
@@ -154,6 +176,27 @@ int ut_txv_mempool_free(ut_txv_ctx* ctx);
 bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
 /* Whether the pool itself still exists, independent of the session's pointer. */
 bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
+
+/* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
+enum { UT_TXV_EXT_FRAME_SIZE = 4 };
+/* Two ST_FT_FLAG_EXT frames; frame 0 holds buf, fully built and still in flight
+ * in the transmitter. Buffers are UT_TXV_EXT_FRAME_SIZE bytes. Returns 0 on success. */
+int ut_txv_ext_frames_setup(ut_txv_ctx* ctx, void* buf);
+/* st20_tx_set_ext_frame() on the session's public handle. */
+int ut_txv_set_ext_frame(ut_txv_ctx* ctx, uint16_t idx, void* buf);
+/* Releases frame 0's ext buffer the way the last mbuf free does (tv_frame_free_cb). */
+void ut_txv_ext_frame_complete(ut_txv_ctx* ctx);
+/* notify_frame_done re-arms the completed frame with buf, as st20p_tx_put_ext_frame()
+ * does. */
+void ut_txv_set_rearm_on_done(ut_txv_ctx* ctx, void* buf);
+/* notify_frame_done runs the builder once; get_next_frame hands back frame 0. */
+void ut_txv_set_build_on_done(ut_txv_ctx* ctx);
+int ut_txv_rearm_ret(const ut_txv_ctx* ctx);
+/* st20_tx_get_framebuffer() of the completed frame, read inside notify_frame_done. */
+void* ut_txv_done_framebuffer(const ut_txv_ctx* ctx);
+/* Packets on the TX ring after the builder run started from notify_frame_done. */
+unsigned int ut_txv_built_on_done(const ut_txv_ctx* ctx);
+void* ut_txv_framebuffer(ut_txv_ctx* ctx, uint16_t idx);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txv_cur_epochs(const ut_txv_ctx* ctx);
@@ -192,6 +235,9 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
 /* First log line captured by the last ut_txv_run_sessions_stat() call. */
 const char* ut_txv_stat_first_log_line(void);
+/* Count log lines whose format string contains needle, between begin and end. */
+void ut_txv_log_count_begin(const char* needle);
+int ut_txv_log_count_end(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 

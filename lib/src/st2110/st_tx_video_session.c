@@ -131,13 +131,9 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     return;
   }
 
-  tv_notify_frame_done(s, frame_idx);
+  /* release first: the app may re-arm and re-queue the frame from the callback */
   rte_atomic32_dec(&frame_info->refcnt);
-  /* clear ext frame info */
-  if (frame_info->flags & ST_FT_FLAG_EXT) {
-    frame_info->addr = NULL;
-    frame_info->iova = 0;
-  }
+  tv_notify_frame_done(s, frame_idx);
 
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
@@ -2691,11 +2687,11 @@ static int tvs_tasklet_handler(void* priv) {
 
     s->stat_build_ret_code = 0;
     if (s->st22_info)
-      pending = tv_tasklet_st22(impl, s);
+      pending += tv_tasklet_st22(impl, s);
     else if (st20_is_frame_type(s->ops.type))
-      pending = tv_tasklet_frame(impl, s);
+      pending += tv_tasklet_frame(impl, s);
     else
-      pending = tv_tasklet_rtp(impl, s);
+      pending += tv_tasklet_rtp(impl, s);
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
@@ -2755,7 +2751,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.bytes_per_sec = tv_rl_bps(s);
-    mt_pacing_train_bps_result_search(impl, i, flow.bytes_per_sec, &flow.bytes_per_sec);
+    mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec,
+                                      &flow.bytes_per_sec);
     mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
@@ -3826,8 +3823,9 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
-    s->st20_dst_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
+    if (!mt_user_random_src_port(impl))
+      s->st20_src_port[i] =
+          (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
 
     /* update hdr */
     ret = tv_init_hdr(impl, s, i);
@@ -4537,7 +4535,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   }
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
-    if (addr == s->st20_frames[i].addr) {
+    if (addr == s->st20_frames[i].addr && rte_atomic32_read(&s->st20_frames[i].refcnt)) {
       warn_once("%s(%d), buffer %p still in tansport!\n", __func__, s_idx, addr);
     }
   }
@@ -4984,6 +4982,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
   st20_ops.notify_event = ops->notify_event;
+  st20_ops.notify_frame_late = ops->notify_frame_late;
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     s = tv_mgr_attach(sch, &st20_ops, MT_ST22_HANDLE_TX_VIDEO, NULL);

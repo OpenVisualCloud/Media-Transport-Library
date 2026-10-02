@@ -298,6 +298,12 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
+static int tx_st20p_notify_frame_late(void* priv, uint64_t epoch_skipped) {
+  struct st20p_tx_ctx* ctx = priv;
+
+  return ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
+}
+
 static int tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
   struct st20p_tx_ctx* ctx = priv;
 
@@ -459,7 +465,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-  if (ops->notify_frame_late) ops_tx.notify_frame_late = ops->notify_frame_late;
+  if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st20p_notify_frame_late;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
@@ -776,12 +782,13 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
     struct timespec deadline;
     clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
     timespec_add_ns(&deadline, ctx->block_timeout_ns);
-    /* Re-attempt the real claim on every wake/timeout; there's nothing to
-     * desync since this never relies on a separate notify flag. */
+    uint32_t wake_block_cnt = ctx->wake_block_cnt;
+    /* Claim again on every wake; only a wake_block() or destroy ends the wait early. */
     while (!atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       framebuff =
           tx_st20p_claim_available(ctx, ST20P_TX_FRAME_FREE, ST20P_TX_FRAME_IN_USER);
       if (framebuff) break;
+      if (ctx->wake_block_cnt != wake_block_cnt) break;
       int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond, &ctx->block_wake_mutex,
                                            &deadline);
       if (_ret) break; /* real timeout against the fixed deadline, or error */
@@ -1306,7 +1313,7 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   ret = st20_tx_get_session_stats(ctx->transport, stats);
   if (ret < 0) goto out;
@@ -1330,7 +1337,7 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
     return -EINVAL;
   }
 
-  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
   atomic_store_explicit(&ctx->stat_frames_sent, 0, memory_order_relaxed);
   atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
@@ -1355,7 +1362,12 @@ int st20p_tx_wake_block(st20p_tx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, 0);
 
-  if (ctx->block_get) tx_st20p_block_wake(ctx);
+  if (ctx->block_get) {
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    ctx->wake_block_cnt++;
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  }
 
   MT_HANDLE_RELEASE(ctx);
   return 0;

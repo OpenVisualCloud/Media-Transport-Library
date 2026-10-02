@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     }
 
     ret = pthread_create(&app[i]->frame_thread, NULL, rx_st40p_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%u), thread create fail %d\n", __func__, i, ret);
       ret = -EIO;
       goto error;

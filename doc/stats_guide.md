@@ -11,7 +11,14 @@ st<NN>_<rx|tx>_reset_session_stats(handle);
 ```
 
 `<NN>` ∈ `20` video, `30` audio, `40` ancillary, `41` fast metadata.
-All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
+All counters are `uint64_t` and monotonic until reset. `get_session_stats` copies the
+transport counters under the per-session spinlock, which the session tasklet holds while
+updating them. Exceptions: the frame counters a pipeline overlays (`stat_frames_sent`,
+`stat_frames_dropped`, ...) are relaxed atomics read outside that lock, and RX video with a
+dedicated packet lcore updates its counters without the lock, so such a snapshot is not
+guaranteed to be consistent.
+Session callbacks may run with that spinlock held, so do not call `get_session_stats`
+or `reset_session_stats` from a callback of the same session: it deadlocks.
 
 ## RX packet processing pipeline
 
@@ -80,7 +87,6 @@ All counters are `uint64_t`, monotonic, thread-safe (per-session spinlock).
  │     no free slot          ──► stat_pkts_no_slot++          (video)          │
  │     ring full             ──► stat_pkts_rtp_ring_full++    (video RTP)      │
  │     anc enqueue fail      ──► stat_pkts_enqueue_fail++     (anc/fmd)        │
- │     audio offset overflow ──► stat_pkts_dropped++          (audio)          │
  │     no free framebuff     ──► stat_slot_get_frame_fail++   (video/audio)    │
  │                                                                             │
  │     first pkt of a new frame on this port                                   │
@@ -255,6 +261,11 @@ group leaks in — confirm via `stat_pkts_wrong_pt_dropped` / `stat_pkts_wrong_s
  │     put_frame_abort()         ──► stat_frames_dropped++                     │
  │                                   notify_frame_done(DROPPED)                │
  │     put_frame()               ──► hand frame to transport ring              │
+ │     transport asks next_frame, frame READY, DROP_WHEN_LATE + USER_PACING    │
+ │     and a TAI timestamp: cur_tai >= frame_tai + frame_period                │
+ │                               ──► stat_frames_dropped++                     │
+ │                                   notify_frame_done(DROPPED)                │
+ │                                   notify_frame_late(0)                      │
  └──────┬───────────────────────────────────────────────────────────────────────┘
         │ frame ready for transport
         ▼
@@ -298,11 +309,7 @@ group leaks in — confirm via `stat_pkts_wrong_pt_dropped` / `stat_pkts_wrong_s
  │                                                                             │
  │     all packets sent on this port ──► port[i].frames++                      │
  │                                                                             │
- │     pipeline late-drop watchdog (post-send):                                │
- │       cur_tai > frame_tai + frame_period                                    │
- │                                  ──► stat_frames_dropped++                  │
- │                                      notify_frame_done(DROPPED)             │
- │     otherwise                       ──► stat_frames_sent++                  │
+ │     pipeline frame done             ──► stat_frames_sent++                  │
  │                                          notify_frame_done(COMPLETE)        │
  └──────┬───────────────────────────────────────────────────────────────────────┘
         │
@@ -327,7 +334,7 @@ Cross-frame reorders are not tracked. Watch
 `stat_pkts_no_slot`, `stat_slot_get_frame_fail`.
 
 **Audio/Anc/FMD (ST30/40/41).** Loss uses post-redundancy `session_seq_id` →
-`stat_pkts_unrecovered` is **exact**. ST30 adds `stat_pkts_dropped`,
+`stat_pkts_unrecovered` is **exact**. ST30 adds
 `stat_pkts_len_mismatch_dropped`, `stat_slot_get_frame_fail`,
 `stat_frames_incomplete`. ST40/41 add
 `stat_pkts_wrong_interlace_dropped`, `stat_pkts_enqueue_fail`. ST20p,

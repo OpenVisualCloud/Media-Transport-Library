@@ -74,7 +74,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
     /* free the queue */
     st20_rx_put_framebuff(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
-    return ret;
+    return 0;
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
     app[i]->stop = false;
 
     ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;

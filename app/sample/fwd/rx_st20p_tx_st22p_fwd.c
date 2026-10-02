@@ -246,7 +246,7 @@ int main(int argc, char** argv) {
   st22_fwd_open_logo(&ctx, &app, ctx.logo_url);
 
   ret = pthread_create(&app.fwd_thread, NULL, st20_fwd_st22_thread, &app);
-  if (ret < 0) {
+  if (ret) {
     err("%s, thread create fail %d\n", __func__, ret);
     ret = -EIO;
     goto error;

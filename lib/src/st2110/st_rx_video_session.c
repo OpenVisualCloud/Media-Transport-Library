@@ -448,6 +448,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         rv_free_frames(s);
         return -EIO;
       }
+      if (s->ops.ext_frames[i].buf_len < size) {
+        err("%s(%d), external framebuffer %d size %" PRIu64 " < %" PRIu64 "\n", __func__,
+            idx, i, s->ops.ext_frames[i].buf_len, size);
+        rv_free_frames(s);
+        return -EIO;
+      }
       st20_frame->addr = frame;
       st20_frame->iova = frame_iova;
       st20_frame->flags = ST_FT_FLAG_EXT;
@@ -974,9 +980,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
-    if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      rv_notify_frame_ready(s, frame->addr, meta);
-    } else {
+    if (!(ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) ||
+        rv_notify_frame_ready(s, frame->addr, meta) < 0) {
       rv_put_frame(s, frame);
       slot->frame = NULL;
     }
@@ -1071,9 +1076,8 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
-    if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      st22_notify_frame_ready(s, frame->addr, meta);
-    } else {
+    if (!(ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) ||
+        st22_notify_frame_ready(s, frame->addr, meta) < 0) {
       rv_put_frame(s, frame);
       slot->frame = NULL;
     }
@@ -1280,6 +1284,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       s->port_user_stats.stat_slot_query_ext_fail++;
       err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
           __func__, s->idx, fb_size, ext_frame.buf_len);
+      rte_atomic32_dec(&frame_info->refcnt);
+      return NULL;
+    }
+    if (!ext_frame.buf_addr ||
+        (s->dma_dev && (ext_frame.buf_iova == 0 || ext_frame.buf_iova == MTL_BAD_IOVA))) {
+      s->port_user_stats.stat_slot_query_ext_fail++;
+      err("%s(%d): ext frame addr %p iova 0x%" PRIx64 " not usable\n", __func__, s->idx,
+          ext_frame.buf_addr, ext_frame.buf_iova);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
@@ -2570,7 +2582,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   /* try to request dma dev */
   if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+      !s->st20_uframe_size && !rv_is_hdr_split(s) &&
+      !rv_framebuffer_in_gpu_direct_vram(s)) {
     rv_init_dma(impl, s);
   }
 

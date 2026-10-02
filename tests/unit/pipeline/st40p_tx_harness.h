@@ -47,13 +47,13 @@ void ut40p_tx_ctx_destroy(ut40p_tx_ctx* ctx);
 void ut40p_tx_ctx_enable_blocking(ut40p_tx_ctx* ctx, uint64_t timeout_ns);
 
 /**
- * Fire the same wake used internally whenever a frame slot becomes free
- * (wraps st40p_tx_wake_block(), i.e. tx_st40p_block_wake()). Fires
- * unconditionally, whether or not anyone is currently blocked in get_frame().
- * Use this to simulate an unrelated wake independently of actually freeing a
- * slot.
+ * App wake (wraps st40p_tx_wake_block()). Ends a get_frame() blocked at the
+ * time of the call; a wake with no thread blocked is a no-op.
  */
 void ut40p_tx_wake_block(ut40p_tx_ctx* ctx);
+
+/** The wake a frame done sends (wraps tx_st40p_notify_frame_available()). */
+void ut40p_tx_frame_free_wake(ut40p_tx_ctx* ctx);
 
 /**
  * Force ctx->lc_destroying, bypassing the CAS handshake real st40p_tx_free()
@@ -92,6 +92,32 @@ int ut40p_tx_all_free(const ut40p_tx_ctx* ctx);
 int ut40p_tx_frame_stat(const ut40p_tx_ctx* ctx, int i);
 
 uint64_t ut40p_tx_stat_frames_sent(const ut40p_tx_ctx* ctx);
+
+/** Register ops.notify_frame_late (and ops.priv). */
+void ut40p_tx_set_notify_frame_late(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped);
+
+/** The pipeline handle, for calling the public st*p API directly. */
+st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx);
+
+/**
+ * Run tx_st40p_init_fbs() then tx_st40p_uinit_fbs() on a fresh ctx, the
+ * create-then-free (or create-failure) path. Returns the init result.
+ */
+int ut40p_tx_fbs_init_uinit(uint16_t framebuff_cnt, uint32_t max_udw_buff_size);
+
+/** Register ops.notify_frame_done (and ops.priv). */
+void ut40p_tx_set_notify_frame_done(ut40p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st40_frame_info* frame),
+                                    void* priv);
 
 #ifdef __cplusplus
 }

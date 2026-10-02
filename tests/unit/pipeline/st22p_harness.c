@@ -167,3 +167,23 @@ int ut22p_frame_idx(const struct st_frame* frame) {
 int ut22p_frame_stat(const ut22p_ctx* ctx, int i) {
   return (int)ctx->framebuffs[i].stat;
 }
+
+st22p_rx_handle ut22p_handle(ut22p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut22p_force_destroying(ut22p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+static struct mtl_main_impl ut22p_rx_create_impl;
+
+st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops) {
+  struct mtl_main_impl* impl = &ut22p_rx_create_impl;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  impl->inf[MTL_PORT_P].socket_id = rte_socket_id();
+  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  return st22p_rx_create(impl, ops);
+}
