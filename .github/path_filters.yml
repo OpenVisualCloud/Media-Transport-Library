@@ -212,6 +212,19 @@ base_build:
   - 'tools/readpcap/**'
   - 'tools/sch_smi_emulate/**'
 
+# hardening-tools.yml. It builds the dpdk, mtl, ffmpeg, gstreamer and plugins
+# trees with build-dependencies.sh and scans them with hardening-check and
+# checksec.
+hardening_tools:
+  - .github/path_filters.yml
+  - .github/workflows/hardening-tools.yml
+  - .github/scripts/ci/hardening-tools.sh
+  - *hash_dpdk
+  - *hash_mtl
+  - *hash_ffmpeg
+  - *hash_gstreamer
+  - *hash_plugins
+
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/ except check-hardening.sh, run
 # by every image build, so the hash_<name> filters do not apply: they hold
