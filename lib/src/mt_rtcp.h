@@ -20,6 +20,7 @@ enum mt_rtcp_drop_reason {
   MT_RTCP_DROP_FLAGS,     /* flags are not 0x80 */
   MT_RTCP_DROP_NAME,      /* nack name is not IMTL */
   MT_RTCP_DROP_LEN,       /* len field under the header or past the received bytes */
+  MT_RTCP_DROP_SSRC,      /* nack ssrc does not match the session ssrc (RFC4585) */
   MT_RTCP_DROP_MAX,
 };
 
@@ -52,6 +53,7 @@ struct mt_rtcp_tx_ops {
   uint16_t buffer_size;                      /* max number of buffered rtp packets */
   enum mtl_port port;                        /* port of rtp session */
   enum mt_rtp_payload_format payload_format; /* payload format */
+  bool ssrc_check; /* drop a nack whose ssrc does not match ssrc (RFC4585) */
 };
 
 struct mt_rtcp_rx_ops {
@@ -73,6 +75,7 @@ struct mt_rtcp_tx {
   char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
   bool active;
+  bool ssrc_check; /* drop a nack whose ssrc does not match ssrc (RFC4585) */
   enum mt_rtp_payload_format payload_format;
 
   uint16_t last_seq_num;
@@ -91,6 +94,19 @@ struct mt_rtcp_tx {
   uint32_t stat_nack_drop_reason[MT_RTCP_DROP_MAX]; /* reset by rtcp_tx_stat() */
   uint32_t nack_drop_seen[MT_RTCP_DROP_MAX];        /* since create */
   bool nack_drop_sampled;                           /* the last parse logged a sample */
+  /* cumulative since create, not reset by rtcp_tx_stat(), read by the public
+   * st20_tx_get_session_stats() through mt_rtcp_tx_read_stats() */
+  uint32_t nack_recv_seen;       /* nacks that passed every guard */
+  uint32_t retransmit_succ_seen; /* rtp packets retransmitted ok */
+};
+
+/* Cumulative tx rtcp counters since create. The windowed stat_* fields reset
+ * every rtcp_tx_stat(), so a stats getter reads these instead. */
+struct mt_rtcp_tx_stats {
+  uint64_t nack_received;     /* nacks that passed every guard */
+  uint64_t nack_drop_invalid; /* nacks dropped, all reasons */
+  uint64_t nack_drop_ssrc;    /* nacks dropped by the RFC4585 ssrc check */
+  uint64_t retransmit;        /* rtp packets retransmitted ok */
 };
 
 struct mt_rtcp_rx {
@@ -121,6 +137,7 @@ struct mt_rtcp_rx {
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* mtl,
                                      struct mt_rtcp_tx_ops* ops);
 void mt_rtcp_tx_free(struct mt_rtcp_tx* tx);
+void mt_rtcp_tx_read_stats(struct mt_rtcp_tx* tx, struct mt_rtcp_tx_stats* stats);
 
 struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* mtl,
                                      struct mt_rtcp_rx_ops* ops);

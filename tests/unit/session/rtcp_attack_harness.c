@@ -22,6 +22,7 @@
 #define mt_rtcp_rx_send_nack_packet ut_rtk_rx_send_nack_packet
 #define mt_rtcp_tx_create ut_rtk_tx_create
 #define mt_rtcp_tx_free ut_rtk_tx_free
+#define mt_rtcp_tx_read_stats ut_rtk_tx_read_stats
 #define mt_rtcp_rx_create ut_rtk_rx_create
 #define mt_rtcp_rx_free ut_rtk_rx_free
 #define mt_txq_burst ut_rtk_txq_burst
@@ -47,6 +48,7 @@ struct ut_rtk_ctx {
   unsigned int copy_avail_at_create;
   int burst_limit;
   uint32_t sent;
+  uint32_t nack_ssrc; /* ssrc written into the nack that ut_rtk_nack builds */
   uint16_t* sent_seq;
   uint16_t* sent_row_length;
 };
@@ -155,6 +157,19 @@ void ut_rtk_set_burst_limit(ut_rtk_ctx* ctx, int limit) {
   ctx->burst_limit = limit;
 }
 
+void ut_rtk_enable_ssrc_check(ut_rtk_ctx* ctx, uint32_t session_ssrc) {
+  ctx->tx.ssrc = session_ssrc;
+  ctx->tx.ssrc_check = true;
+}
+
+void ut_rtk_set_nack_ssrc(ut_rtk_ctx* ctx, uint32_t ssrc) {
+  ctx->nack_ssrc = ssrc;
+}
+
+uint32_t ut_rtk_drop_ssrc(ut_rtk_ctx* ctx) {
+  return ctx->tx.stat_nack_drop_reason[MT_RTCP_DROP_SSRC];
+}
+
 static __attribute__((noinline)) int ut_rtk_call_parse(ut_rtk_ctx* ctx, void* pkt,
                                                        size_t len) {
   ut_rtk_stack_top = (uintptr_t)__builtin_frame_address(0);
@@ -216,6 +231,7 @@ struct ut_rtk_stats ut_rtk_nack(ut_rtk_ctx* ctx, uint16_t len_field,
   rtcp->flags = 0x80;
   rtcp->ptype = MT_RTCP_PTYPE_NACK;
   rtcp->len = htons(len_field);
+  rtcp->ssrc = htonl(ctx->nack_ssrc);
   memcpy(rtcp->name, "IMTL", 4);
   for (uint32_t i = 0; i < nb_fci; i++) {
     rtcp->fci[i].start = htons(fcis[i].start);

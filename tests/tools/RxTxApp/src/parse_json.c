@@ -2184,6 +2184,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   st20p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "enable_rtcp"));
 
+  /* parse the RFC4585 nack ssrc check (tx only) */
+  st20p->nack_ssrc_check =
+      json_object_get_boolean(st_json_object_object_get(st20p_obj, "nack_ssrc_check"));
+
   st20p->user_pacing =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "user_pacing"));
 
