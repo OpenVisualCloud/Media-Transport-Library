@@ -4,7 +4,7 @@
 |---|---|
 | Status | Maintained. The picture book of the unified API: one picture per example, then the pictures of each topic, then an index of every diagram in the maintained set. Nothing here is implemented yet |
 | Date | 2026-10-02 |
-| Sources | [archive/samples/diagrams.md](archive/samples/diagrams.md), [archive/samples/README.md](archive/samples/README.md), [archive/02](archive/02-architecture.md), [archive/03](archive/03-object-model-and-lifecycle.md), [archive/04](archive/04-threading-and-execution.md), [archive/05](archive/05-memory-and-buffers.md), [archive/06](archive/06-timing-pacing-and-sync.md), [archive/07](archive/07-completions-events-and-errors.md), [archive/11](archive/11-abi-compatibility-and-migration.md), [archive/12](archive/12-familiarity-libfabric-and-rivermax.md), [archive/14](archive/14-implementation-roadmap.md), [archive/16](archive/16-kubernetes-and-crash-safety.md), [archive/LEARN.md](archive/LEARN.md), [archive/LIST-OF-CHANGES.md](archive/LIST-OF-CHANGES.md), [archive/REVISION-4.md](archive/REVISION-4.md), [archive/simplification/S6](archive/simplification/S6-minimal-alternative.md), [S7](archive/simplification/S7-samples-friction.md), [S9](archive/simplification/S9-hiding-session-headers.md), [archive/research/](archive/research/) (notes 00, 03, 04, 05, 12, 13) |
+| Folded from | samples/diagrams.md, samples/README.md, 02, 03, 04, 05, 06, 07, 11, 12, 14, 16, LEARN.md, LIST-OF-CHANGES.md, REVISION-4.md, simplification/S6, S7, S9 and research notes 00, 03, 04, 05, 12, 13 of the earlier design set ([history.md](history.md)) |
 | Headers | [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/): the names in every picture are checked against them, and the headers win |
 
 The pictures are drawn from the headers and the compiling examples in
@@ -33,7 +33,7 @@ warning-free as C99 and C++17, with gcc and clang, against the headers, by
 are declared, not defined. Every function in the pictures exists in the headers. Every
 configuration is typed (enums and defines, no strings).
 
-Personas ([archive/01 §2](archive/01-goals-and-requirements.md)): P1 simple generator or player,
+Personas ([concepts.md §1.2](concepts.md#12-who-it-is-for)): P1 simple generator or player,
 P2 framework integrator, P3 broadcast playout, P4 live capture or gateway, P5 zero-copy forwarder
 or processor, P7 libfabric- or Rivermax-familiar developer, P9 operator or NMOS integrator.
 
@@ -522,7 +522,7 @@ default in lcore mode; the direct write W2 is maintainer decision M6).
 
 ### 3.1 The shape of the API
 
-From [archive/REVISION-4.md §2](archive/REVISION-4.md), with the header names of today.
+With the header names of today.
 
 ```mermaid
 flowchart LR
@@ -547,7 +547,7 @@ sessions, tasklets, datapath, backends, and the legacy APIs beside them) is
 
 ### 3.3 Threads and the pinned cores
 
-From [archive/02 §1](archive/02-architecture.md). The rules per context are in
+The layers are [engine.md §1](engine.md#1-the-layer-picture); the rules per context are in
 [engine.md §2.2](engine.md#22-execution-contexts).
 
 ```mermaid
@@ -575,8 +575,8 @@ a lock an application thread can hold, or runs application code (R6).
 
 ### 3.4 Objects and ownership
 
-From [archive/03 §1](archive/03-object-model-and-lifecycle.md) and
-[archive/02 §3](archive/02-architecture.md), with today's objects: groups became start arrays,
+The handle rules are [contract.md](contract.md#1-the-rules-r1r8) R4, the memory objects
+[contract.md §9](contract.md#9-memory). Revision 3's objects changed: groups became start arrays,
 CQ and EQ became the session's results and events plus optional queues, and the buffer handle
 became the slot index.
 
@@ -607,7 +607,7 @@ bridge: [migration.md §6](migration.md#6-coexistence).
 
 ### 3.6 The legacy headers and where they go
 
-From [archive/simplification/S9 §2.2](archive/simplification/S9-hiding-session-headers.md),
+From the header-hiding study ([coverage.md §4.1](coverage.md#41-todays-public-header-set)),
 checked against `include/` at `545a266a`. An arrow means "includes": every installed legacy header
 reaches `st20_api.h` or `mtl_api.h`, which is why the set moves as one tier
 ([migration.md §8](migration.md#8-hiding-the-legacy-headers)).
@@ -655,7 +655,7 @@ flowchart LR
 
 ### 3.7 The shape shared with libfabric and Rivermax
 
-From [archive/12 §1](archive/12-familiarity-libfabric-and-rivermax.md); the call map is
+The concept map is [prior-art.md §5](prior-art.md#5-concept-map-for-libfabric-and-rivermax-users); the call map is
 [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax).
 
 ```mermaid
@@ -676,12 +676,11 @@ The full machine of `enum mtl_state` (CREATED, ARMED, RUNNING, DRAINING, FLUSHIN
 CLOSING, RETIRED), with what each state allows, is
 [contract.md §4.1](contract.md#41-states) and [§4.2](contract.md#42-what-each-state-allows). The
 learner's version is [concepts.md §5.3](concepts.md#53-a-sessions-life); the application's path is
-[§2.5](#25-a-sessions-life). It replaces revision 3's machine with DESTROYING
-([archive/03 §3.1](archive/03-object-model-and-lifecycle.md)).
+[§2.5](#25-a-sessions-life). It replaces revision 3's machine with DESTROYING.
 
 ### 4.2 What close does
 
-From [archive/03 §6.2](archive/03-object-model-and-lifecycle.md) and
+The rules are [contract.md §4.9](contract.md#49-close) and
 [engine.md §9](engine.md#9-close-and-error-on-a-stalled-queue). `mtl_session_close(s, timeout)`
 always consumes the handle; `mtl_session_get_state` on it answers CLOSING, then RETIRED.
 
@@ -710,10 +709,9 @@ must close first. A queue that will not release its descriptors takes the stalle
 
 ### 4.3 Starting sessions together
 
-From [archive/03 §5](archive/03-object-model-and-lifecycle.md) (groups, revision 3) and
-[archive/simplification/S7 §8.4](archive/simplification/S7-samples-friction.md); groups became an
-array start. The formulas are [timing.md §3.3](timing.md#33-the-start-formula) and
-[§7](timing.md#7-start).
+Revision 3's groups became an array start. The rules are
+[timing.md §7.1](timing.md#71-starting-sessions-together), the formulas
+[timing.md §3.3](timing.md#33-the-start-formula) and [§7](timing.md#7-start).
 
 ```mermaid
 flowchart LR
@@ -754,7 +752,7 @@ Every existing leg disabled means muted (Phase 7, later).
 
 ### 5.1 One TX unit through the layers
 
-From [archive/02 §4.1](archive/02-architecture.md), with today's calls. The slot interface and the
+With today's calls. The slot interface and the
 lease table are [engine.md §3](engine.md#3-the-slot-interface) and
 [§5](engine.md#5-lease-table-and-result-materialisation).
 
@@ -782,7 +780,8 @@ sequenceDiagram
 
 ### 5.2 One RX unit through the layers
 
-From [archive/02 §4.2](archive/02-architecture.md).
+The slot interface is [engine.md §3.2](engine.md#32-slot-states), the RX rules
+[contract.md §5.3](contract.md#53-rx).
 
 ```mermaid
 sequenceDiagram
@@ -809,12 +808,11 @@ The due time is the first arrival (earliest leg) + the unit period + `rx.flush_o
 
 TX: FREE, APP_WRITABLE, QUEUED, IN_FLIGHT, DONE; RX: FREE, RECEIVING, READY, APP_READING, HELD.
 Both machines, with the CAS that moves each transition and the mapping onto today's st20p states,
-are [engine.md §3.2](engine.md#32-slot-states). They replace revision 3's text machines in
-[archive/03 §4.1, §4.2](archive/03-object-model-and-lifecycle.md).
+are [engine.md §3.2](engine.md#32-slot-states). They replace revision 3's text machines.
 
 ### 5.4 Free, yours, MTL's: both directions
 
-From [archive/simplification/S7 §8.4](archive/simplification/S7-samples-friction.md).
+The sample study that asked for it is [coverage.md §5](coverage.md#5-sample-friction-revision-3-examples-and-what-became-of-it).
 
 ```mermaid
 stateDiagram-v2
@@ -832,8 +830,7 @@ stateDiagram-v2
 
 ### 5.5 One TX frame, step by step
 
-From [archive/LEARN.md §4](archive/LEARN.md) and
-[archive/simplification/S7 §8.4](archive/simplification/S7-samples-friction.md). The RX twin is
+The steps are [concepts.md §5.1](concepts.md#51-tx); the RX twin is
 [concepts.md §5.2](concepts.md#52-rx).
 
 ```mermaid
@@ -874,8 +871,9 @@ The armed-waiter protocol with its two fences is
 
 ### 6.2 Who makes the wake-up syscall
 
-From [archive/04 §4.1, §5](archive/04-threading-and-execution.md) and
-[engine.md §7.2](engine.md#72-the-waker).
+The rules are [engine.md §5.2](engine.md#52-the-completing-context-protocol),
+[§7.1](engine.md#71-wait-targets-and-the-armed-waiter-protocol) and
+[§7.2](engine.md#72-the-waker).
 
 ```mermaid
 flowchart TB
@@ -920,8 +918,9 @@ columns, are [engine.md §6](engine.md#6-commands-and-acknowledgements).
 
 ### 7.1 Four separate ideas
 
-From [archive/05 §1](archive/05-memory-and-buffers.md) and
-[archive/research/00 §7](archive/research/00-pr1610-design-review.md), with today's names.
+With today's names; the rules are [concepts.md §8](concepts.md#8-memory-and-zero-copy-in-one-page)
+and [contract.md §9](contract.md#9-memory), the review that asked for the split
+[research.md §12.2](research.md#122-the-maintainers-review-note-00).
 
 ```mermaid
 flowchart LR
@@ -936,8 +935,8 @@ so library and application memory run one data path. The rules are
 
 ### 7.2 Where a session's memory comes from
 
-From [archive/research/00](archive/research/00-pr1610-design-review.md) (executive
-recommendation), with today's calls.
+From the maintainer's review of PR #1610 ([research.md §12.2](research.md#122-the-maintainers-review-note-00)),
+with today's calls.
 
 ```mermaid
 flowchart LR
@@ -960,7 +959,7 @@ and per-unit RX destinations (`mtl_rx_provide`) are `MTL_LATER`.
 
 ### 7.3 Forwarding with holds
 
-From [archive/05 §5](archive/05-memory-and-buffers.md) and [ex09](sketch/examples/ex09_split_forwarder.c).
+The rules are [contract.md §9.6](contract.md#96-holds-and-forwarding); the code is [ex09](sketch/examples/ex09_split_forwarder.c).
 
 ```mermaid
 sequenceDiagram
@@ -982,8 +981,8 @@ close.
 
 ### 7.4 Mapping onto today's internals
 
-From [archive/05 §11](archive/05-memory-and-buffers.md); the slot-interface entry points are in
-[engine.md §3](engine.md#3-the-slot-interface).
+The slot-interface entry points are in [engine.md §3](engine.md#3-the-slot-interface), the
+memory changes MF1–MF10 in [§11](engine.md#11-the-engine-change-list).
 
 ```mermaid
 flowchart LR
@@ -1002,13 +1001,12 @@ The teardown order (sessions before regions before the memory) is
 ### 8.1 Two times, not one
 
 What a unit is (media time, RTP) and when it leaves (the slot, by source kind) are separate:
-[concepts.md §7.1](concepts.md#71-two-times-not-one) (from [archive/LEARN.md §6](archive/LEARN.md))
-and [§2.17](#217-media-time-and-launch-time).
+[concepts.md §7.1](concepts.md#71-two-times-not-one) and [§2.17](#217-media-time-and-launch-time).
 
 ### 8.2 Media modes
 
-From [archive/06 §4](archive/06-timing-pacing-and-sync.md) and `enum mtl_media_mode`; the rules
-are [timing.md §4](timing.md#4-media-time-on-tx) and [§5.2](timing.md#52-source-kinds-min_tx_delay_ns-and-the-slot-rule).
+From `enum mtl_media_mode`; the rules are [timing.md §4.1](timing.md#41-media-modes) and
+[§5.2](timing.md#52-source-kinds-min_tx_delay_ns-and-the-slot-rule).
 
 ```mermaid
 flowchart LR
@@ -1026,8 +1024,8 @@ the launch of one unit.
 
 ### 8.3 One video frame on the ST 2110-21 schedule
 
-From [archive/research/12 §3.3](archive/research/12-st2110-timing-standards.md) (progressive,
-gapped, sender type N, a PLAYBACK unit on the grid). The formulas are
+Progressive, gapped, sender type N, a PLAYBACK unit on the grid; the standard's terms are
+[prior-art.md §2.5](prior-art.md#25-st-2110-21-receivers-and-what-compliance-tools-measure). The formulas are
 [timing.md §5.1](timing.md#51-the-st-2110-21-model).
 
 ```text
@@ -1049,8 +1047,7 @@ the mixed-API RTP hazard of [migration.md §6.4](migration.md#64-mixed-api-rtp-h
 ### 8.4 Where the admission decision happens
 
 submit, QUEUED, pick-up (the decision), first packet, last packet, with `margin_ns`,
-`min_submit_lead_ns` and `pickup_slack_ns`: [timing.md §6.1](timing.md#61-where-the-decision-happens)
-(from [archive/06 §7.1](archive/06-timing-pacing-and-sync.md)).
+`min_submit_lead_ns` and `pickup_slack_ns`: [timing.md §6.1](timing.md#61-where-the-decision-happens).
 
 ### 8.5 Video, audio and ANC on one timeline
 
@@ -1142,14 +1139,13 @@ close the queue or close the instance (`-MTL_EDEADLK`).
 ### 10.1 The instance shutdown order
 
 The network-first sequence (kubelet, application, MTL, network and NIC, MtlManager) is
-[deployment.md §4.2](deployment.md#42-shutdown) (from
-[archive/16 §2.2](archive/16-kubernetes-and-crash-safety.md)); the one-row version for a talk is
+[deployment.md §4.2](deployment.md#42-shutdown); the one-row version for a talk is
 [presentation/slides.md, "Running in a Kubernetes pod"](presentation/slides.md#running-in-a-kubernetes-pod),
 and the application's side is [§2.13](#213-a-service-in-a-kubernetes-pod-ex11).
 
 ### 10.2 The stalled-queue path
 
-From [archive/03 §6.2](archive/03-object-model-and-lifecycle.md) and
+The rules are [contract.md §4.9](contract.md#49-close) and
 [engine.md §9](engine.md#9-close-and-error-on-a-stalled-queue). Used by close, ERROR entry, link
 loss and shutdown.
 
@@ -1232,8 +1228,8 @@ state, value[0] = applied TAI, value[1] = seq). FAILED keeps the old configurati
 
 ### 11.3 Where PEP sits in a packet (Phase 7, later)
 
-From [archive/interop/I1 §6.1](archive/interop/I1-ipmx-requirements.md); the design is
-[nmos-ipmx.md](nmos-ipmx.md) (PEP, `mtl_crypto.h`).
+The design is [nmos-ipmx.md §13](nmos-ipmx.md#13-pep-encryption-and-hdcp-mtl_cryptoh-mtl_later)
+(PEP, `mtl_crypto.h`).
 
 ```text
 | Eth 14 | IPv4 20 | UDP 8 | RTP 12, X=1 | RFC 8285 ext: 0xBEDE + len (4) + CTR Short (4) or Full (16) | payload header (clear) | payload: 16-byte slices, the last may be partial | [MAC 8, MAC modes] |
@@ -1246,7 +1242,7 @@ lines, re-checked at that commit.
 
 ### 12.1 Execution contexts today
 
-From [archive/research/03 §1](archive/research/03-scheduler-threading.md); what changes is
+From [research.md §5.1](research.md#51-execution-contexts-today); what changes is
 [engine.md §2](engine.md#2-the-pinned-core-rules).
 
 ```mermaid
@@ -1269,7 +1265,7 @@ flowchart TB
 
 ### 12.2 The blocking get and put wake-up today
 
-From [archive/research/03 §3.3](archive/research/03-scheduler-threading.md); hazard H3 in
+The hand-off is [research.md §5.5](research.md#55-hand-offs-between-app-and-library); hazard H3 in
 [engine.md §2.1](engine.md#21-what-todays-code-does) (`pipeline/st20_pipeline_tx.c:29-34`,
 `:41-43`, `:774-789`).
 
@@ -1292,7 +1288,7 @@ The unified core replaces this with the armed-waiter protocol and the waker
 
 ### 12.3 A TX video frame today
 
-From [archive/research/04 §2.1](archive/research/04-memory-buffers.md) (`struct st_frame_trans`).
+From [research.md §6.1](research.md#61-modes-and-when-mtl-stops-touching-memory) (`struct st_frame_trans`).
 
 ```mermaid
 flowchart LR
@@ -1310,7 +1306,7 @@ double-completion window SF-39 and the zeroed count SF-41 of
 
 ### 12.4 An RX video frame today
 
-From [archive/research/04 §2.2](archive/research/04-memory-buffers.md).
+From [research.md §6.1](research.md#61-modes-and-when-mtl-stops-touching-memory).
 
 ```mermaid
 stateDiagram-v2
@@ -1327,7 +1323,7 @@ frame the return is ignored (`:978`). The dynamic ext-frame query is at `:1259`.
 
 ### 12.5 The st20p TX paths today
 
-From [archive/research/04 §2.3](archive/research/04-memory-buffers.md); the pipeline states are
+From [research.md §6.1](research.md#61-modes-and-when-mtl-stops-touching-memory); the pipeline states are
 `pipeline/st20_pipeline_tx.h:11-20`, mapped onto the lease table in
 [engine.md §3.2](engine.md#32-slot-states).
 
@@ -1343,7 +1339,7 @@ converted one; the unified result is the transport outcome on every path.
 
 ### 12.6 The video TX timeline today
 
-From [archive/research/05 §3.1](archive/research/05-timing-pacing.md).
+From [research.md §7.3](research.md#73-how-tx-picks-the-epoch).
 
 ```text
   epoch N boundary = N·T_FRAME          (T = the field period if interlaced)
@@ -1358,7 +1354,7 @@ From [archive/research/05 §3.1](archive/research/05-timing-pacing.md).
 
 ### 12.7 TX queueing stages today
 
-From [archive/research/05 §7.1](archive/research/05-timing-pacing.md) (video pipeline).
+From [research.md §7.4](research.md#74-rtp-derivation) ("Latency and buffering", video pipeline).
 
 ```mermaid
 flowchart LR
@@ -1373,7 +1369,7 @@ flowchart LR
 
 ### 12.8 The legacy instance and session lifecycle
 
-From [archive/research/13 §1.1, §1.2](archive/research/13-lifecycle-errors-abi.md); the unified
+From [research.md §4.1, §4.3](research.md#41-instance); the unified
 calls that replace them are [migration.md §2](migration.md#2-call-map-per-legacy-family).
 
 ```mermaid
@@ -1400,8 +1396,7 @@ started, and a fatal error sets `active = false` (`ST_EVENT_FATAL_ERROR`, TX vid
 
 ### 13.1 Phases
 
-From [archive/14 §0](archive/14-implementation-roadmap.md) and
-[archive/LIST-OF-CHANGES.md §18](archive/LIST-OF-CHANGES.md), with the scope of
+With the scope of
 [implementation-plan.md §6](implementation-plan.md#6-m7-the-remaining-phases). Port first (D-98):
 Phases 1–6 port what MTL does today, plus the Kubernetes lifecycle.
 
@@ -1427,33 +1422,33 @@ The ST20-first branch (M0 skeleton to M6 nightly) is
 one-row delivery picture for a talk is
 [presentation/slides.md, "Delivery"](presentation/slides.md#delivery).
 
-## 14. Diagrams left in the archive
+## 14. Diagrams not carried over
 
-Every other diagram of the old set is either carried by a picture above or by another maintained
-document (see the index), or left in the archive on purpose:
+Every other diagram of the earlier set is carried by a picture above or by another maintained
+document (see the index), or was dropped on purpose:
 
-| Diagram | Where | Why it stays there |
+| Diagram | Origin | Why it was dropped, and where its content lives |
 |---|---|---|
-| layers L0–L4 (text) | [archive/02 §2](archive/02-architecture.md) | revision-3 names (`mtl_unified.h`, `mtl_simple.h`, L4); replaced by [engine.md §1](engine.md#1-the-layer-picture) |
-| handle bit layout (text) | [archive/03 §2.2](archive/03-object-model-and-lifecycle.md) | revision 3: type and generation fields in the handle; revision 4 has distinct C handle types and process-wide slots that are never freed (R4) |
-| group create, add, start (text) | [archive/03 §5](archive/03-object-model-and-lifecycle.md) | groups were replaced by start arrays ([§4.3](#43-starting-sessions-together)) |
-| results capacity (text) | [archive/07 §2.1](archive/07-completions-events-and-errors.md) | built on the completion modes NONE, EXCEPTIONS, ALL, which were rejected; the rule now is in [contract.md §6.2](contract.md#62-lossless-ordered-exactly-once) |
-| exactly-once identities, `BY_INDEX` sizing, the timing formulas (text) | [archive/07 §6](archive/07-completions-events-and-errors.md), [archive/05 §5.1](archive/05-memory-and-buffers.md), [archive/06](archive/06-timing-pacing-and-sync.md), [archive/research/12](archive/research/12-st2110-timing-standards.md) | formulas, not pictures; carried in [contract.md §6.2](contract.md#62-lossless-ordered-exactly-once), [§9.8](contract.md#98-rx-placement) and [timing.md](timing.md) §2–§11 |
-| the minimal alternative: `stream`, `mtl_get`, `mtl_put` | [archive/simplification/S6 §1](archive/simplification/S6-minimal-alternative.md) | a rejected alternative |
-| five words | [archive/LEARN.md §2](archive/LEARN.md) | superseded by "ten words", [concepts.md §2.1](concepts.md#21-ten-words) |
-| PR #1610's object model and lifecycle; the research lists of questions, policies and lifecycles | [archive/research/01 §1.1, §1.4](archive/research/01-pr1610-analysis.md), [archive/research/00](archive/research/00-pr1610-design-review.md) | they describe PR #1610's code or are lists, not pictures; the outcome is [§7.1](#71-four-separate-ideas), [§7.2](#72-where-a-sessions-memory-comes-from) and [migration.md §14](migration.md#14-where-the-code-goes-and-pr-1610) |
-| progressive `publish` chain | [archive/06 §9](archive/06-timing-pacing-and-sync.md), [archive/research/00 §12](archive/research/00-pr1610-design-review.md) | revision-3 `mtl_tx_publish`; rows are now resubmits with a larger `used` ([§2.10](#210-rows-leave-before-the-frame-is-finished-ex08)) |
-| event and completion queue shape (sq, cq, waiter word, doorbell) | [archive/research/03 §7.2](archive/research/03-scheduler-threading.md) | a research proposal, replaced by the lease table and `mtl_queue.h` ([§9.2](#92-events-and-shared-queues)) |
-| proposed session state machine | [archive/research/13 §6.1](archive/research/13-lifecycle-errors-abi.md) | superseded by [contract.md §4.1](contract.md#41-states) |
-| Rivermax object model and memory hierarchy | [archive/research/10 §1.4, §2.2](archive/research/10-rivermax.md) | another product's API; the mapping is [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax) |
-| new memory model mapped onto internals (research version) | [archive/research/04 §7](archive/research/04-memory-buffers.md) | the earlier form of [§7.4](#74-mapping-onto-todays-internals) |
+| layers L0–L4 (text) | revision 3, architecture §2 | revision-3 names (`mtl_unified.h`, `mtl_simple.h`, L4); replaced by [engine.md §1](engine.md#1-the-layer-picture) |
+| handle bit layout (text) | revision 3, object model §2.2 | type and generation fields in the handle; revision 4 has distinct C handle types and process-wide slots that are never freed (R4, [engine.md §5.7](engine.md#57-handle-table)) |
+| group create, add, start (text) | revision 3, object model §5 | groups were replaced by start arrays ([§4.3](#43-starting-sessions-together), [timing.md §7.1](timing.md#71-starting-sessions-together)) |
+| results capacity (text) | revision 3, completions §2.1 | built on the completion modes NONE, EXCEPTIONS, ALL, which were rejected; the rule now is in [contract.md §6.2](contract.md#62-lossless-ordered-exactly-once) |
+| exactly-once identities, `BY_INDEX` sizing, the timing formulas (text) | revision 3, completions §6, memory §5.1, timing; research note 12 | formulas, not pictures; carried in [contract.md §6.2](contract.md#62-lossless-ordered-exactly-once), [§9.8](contract.md#98-rx-placement) and [timing.md](timing.md) §2–§11 |
+| the minimal alternative: `stream`, `mtl_get`, `mtl_put` | study S6 §1 | a rejected alternative, [history.md §3.1](history.md#31-the-whole-api-alternatives) |
+| five words | the first tour (LEARN §2) | superseded by "ten words", [concepts.md §2.1](concepts.md#21-ten-words) |
+| PR #1610's object model and lifecycle; the research lists of questions, policies and lifecycles | research notes 00 and 01 §1.1, §1.4 | they describe PR #1610's code or are lists, not pictures ([research.md §12.1, §12.2](research.md#121-what-the-pr-is)); the outcome is [§7.1](#71-four-separate-ideas), [§7.2](#72-where-a-sessions-memory-comes-from) and [migration.md §14](migration.md#14-where-the-code-goes-and-pr-1610) |
+| progressive `publish` chain | revision 3, timing §9; research note 00 §12 | revision-3 `mtl_tx_publish`; rows are now resubmits with a larger `used` ([§2.10](#210-rows-leave-before-the-frame-is-finished-ex08), [timing.md §6.7](timing.md#67-row-units-progressive-submission)) |
+| event and completion queue shape (sq, cq, waiter word, doorbell) | research note 03 §7.2 | a research proposal, replaced by the lease table and `mtl_queue.h` ([§9.2](#92-events-and-shared-queues)) |
+| proposed session state machine | research note 13 §6.1 | superseded by [contract.md §4.1](contract.md#41-states) |
+| Rivermax object model and memory hierarchy | research note 10 §1.4, §2.2 | another product's API ([prior-art.md §4.1](prior-art.md#41-facts)); the mapping is [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax) |
+| new memory model mapped onto internals (research version) | research note 04 §7 | the earlier form of [§7.4](#74-mapping-onto-todays-internals) |
 
 ## 15. Index of every diagram
 
 Every diagram of the maintained set: the mermaid and text pictures of this page and of the other
 maintained documents, and the three tables that stand in for pictures here. Text blocks of
-[timing.md](timing.md) are formula pictures. Diagrams left in the archive are listed in
-[§14](#14-diagrams-left-in-the-archive).
+[timing.md](timing.md) are formula pictures. Diagrams not carried over are listed in
+[§14](#14-diagrams-not-carried-over).
 
 | # | Diagram | Where | Shows | Kind |
 |---|---|---|---|---|

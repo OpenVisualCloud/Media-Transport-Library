@@ -4,7 +4,7 @@
 |---|---|
 | Status | Learning document for the proposed unified API (revision 4, typed configuration D-97, port first D-98). Nothing is implemented; the headers in [sketch/](sketch/) are normative, and where this page and a header disagree, the header wins |
 | Date | 2026-10-02 |
-| Sources | [archive/LEARN.md](archive/LEARN.md), [archive/00-summary.md](archive/00-summary.md), [archive/01-goals-and-requirements.md](archive/01-goals-and-requirements.md) §1–§4, [archive/08-observability.md](archive/08-observability.md) §1, [archive/LIST-OF-CHANGES.md](archive/LIST-OF-CHANGES.md) §3, [archive/samples/diagrams.md](archive/samples/diagrams.md), [archive/samples/README.md](archive/samples/README.md), [archive/10-api-sketch.md](archive/10-api-sketch.md), [archive/REVISION-4.md](archive/REVISION-4.md) §1, §2, §9, [presentation/slides.md](presentation/slides.md), [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/), [sketch/examples/](sketch/examples/) |
+| Folded from | LEARN.md, 00-summary.md, 01-goals-and-requirements.md §1–§4, 08-observability.md §1, LIST-OF-CHANGES.md §3, samples/diagrams.md, samples/README.md, 10-api-sketch.md and REVISION-4.md §1, §2, §9 of the earlier design set ([history.md](history.md)); [presentation/slides.md](presentation/slides.md), [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/), [sketch/examples/](sketch/examples/) |
 
 This page teaches the API in one sitting: why it exists, the ten words it is built on, a first
 sender and receiver, what happens to one unit, and where to read on. It assumes no knowledge of
@@ -24,7 +24,7 @@ The design answers the three questions of the maintainer's review of PR #1610:
 
 MTL's engines (packet builders, pacing, reassembly, ST 2022-7 merge) are sound. The API around
 them leaves users unable to answer basic questions. Each point below was verified in today's
-code ([archive/research/](archive/research/)).
+code ([research.md](research.md)).
 
 | What a user cannot do today | Why |
 |---|---|
@@ -108,7 +108,7 @@ review of M10 ([decisions.md](decisions.md)) validates them.
 ### 1.4 Non-goals of the first version
 
 Several are "reserve the shape now, implement later", so they come without an ABI break.
-Details: [archive/01 §4](archive/01-goals-and-requirements.md).
+Details: [requirements.md §2.2](requirements.md#22-non-goals-of-the-first-version).
 
 | ID | Not in the first version | Where it stands |
 |---|---|---|
@@ -259,6 +259,8 @@ What to notice:
 - **One header, one typed config**: `ex_common.h` includes `mtl.h` only, and the config is enums
   and defines, no strings. Any rate without a name is a rational in `sc.video.raster.fps`.
   `mtl_flow_ipv4()` fills a flow (legacy `dip_addr[0]` and `udp_port[0]`).
+  Audio has its own typed field for packet time, `sc.audio.ptime = MTL_PTIME_1MS` (legacy
+  `ST30_PTIME_1MS` + 1); changing any default is one field or one option.
 - **Enums keep the legacy order**: legacy + 1 where 0 must mean "not set" (`MTL_FPS_59_94` is
   `ST_FPS_P59_94` + 1, `MTL_YUV422_10` is `ST20_FMT_YUV_422_10BIT` + 1), the same values where 0
   is a real default (`enum mtl_packing` is `enum st20_packing`, `enum mtl_sender_type` is
@@ -441,6 +443,27 @@ stateDiagram-v2
 The full state machine, what close does and starting sessions together:
 [diagrams.md §4.1–§4.3](diagrams.md#41-the-session-state-machine).
 
+### 5.4 Packet units
+
+With `sc.unit = MTL_UNIT_PACKETS` (`mtl_packet.h`) the verbs stay the same; a unit is a chunk of
+RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`).
+
+- **TX.** Acquire lends a chunk: plane 0 holds packet slots. Write each RTP header and payload
+  into `mtl_pkt_slot(&u, i)`, set its length in `mtl_pkt_tx_table(&u)[i].len`, set `u.used` to
+  the count and submit; the table is validated and copied at submit, and each chunk gets one
+  result. The chunk that ends a frame carries `MTL_SUBMIT_UNIT_END`.
+- **Packets per unit.** `sc.packet.packets_per_unit` is derived for video (reported in
+  `mtl_session_info.pkts_per_unit`) and required for cvideo and for generic RTP paced per unit.
+- **What MTL still does.** It writes UDP, IP and Ethernet, paces the packets by the essence's
+  wire model (video: the frame's ST 2110-21 schedule), duplicates each on both ST 2022-7 legs,
+  and rewrites only the RTP fields named in `sc.packet.set_fields` (none by default).
+- **RX.** A unit is a chunk of received packets, each with leg, sequence, gap and arrival time
+  (`mtl_pkt_rx_table(&u)`), copied in the caller by default; duplicates of the two legs are
+  removed by sequence.
+
+ST 2022-6 uses the generic RTP essence `MTL_RTP`. Example: [ex12](sketch/examples/ex12_rtp_packets.c);
+the full rules: [contract.md §13](contract.md#13-packet-units).
+
 ## 6. Results and errors you program against
 
 ### 6.1 Results
@@ -553,7 +576,8 @@ only carrier of a fact.
 | can this host take more streams? | `capacity.*`, `mtl_session_query(mt, &sc, MTL_QUERY_CHECK_CAPACITY, ...)` |
 | how many hugepages are left? | `mem.*` |
 
-Details: [archive/08 §1](archive/08-observability.md); the picture of events and shared queues:
+Every key: [contract.md §11.3](contract.md#113-key-catalogue); what today's API answers to the same
+questions: [research.md §8.2](research.md#82-questions-a-live-application-asks); the picture of events and shared queues:
 [diagrams.md §9.2](diagrams.md#92-events-and-shared-queues).
 
 ## 7. Timing in one page
@@ -799,6 +823,7 @@ The ten words of §2.1, plus:
 
 | Term | Meaning |
 |---|---|
+| activation | an IS-05 change of flows and legs, applied by `mtl_session_update` at one slot boundary |
 | arm | what a data call returning `-MTL_EAGAIN` does to the wait handle, so the next completion wakes you |
 | essence | one media type: video (-20), compressed video (-22), audio (-30), ANC (-40), fast metadata (-41), or generic RTP |
 | health | lock-free liveness and readiness flags for probes (`mtl_instance_get_health`) |
@@ -807,7 +832,9 @@ The ten words of §2.1, plus:
 | media index | k, the unit's number on its timeline: a frame, a field, or an audio sample |
 | media time (M) | the TAI instant a unit represents; RTP = `floor(M × rate)` |
 | null backend | a port named `null:<n>`: no NIC, no root; units complete on the clock |
+| packet unit | a chunk of application-built RTP packets (`MTL_UNIT_PACKETS`, RTP passthrough, §5.4) |
 | pool | a session's slots: MTL's buffers, or your memory attached |
+| profile | `session.profile`, ST 2110 or IPMX (Phase 7, later): what zero means in a few fields, and the compliance labels |
 | quiesced | after a close: no device can reach any memory, though a lease or thread still holds some |
 | region | memory MTL may DMA, refcounted and mapped into every device on the path |
 | retired | closed, with no memory, lease or device reference left |
@@ -870,6 +897,10 @@ backend will let the first code run without a NIC. The first code is the ST 2110
 | implement it | [engine.md](engine.md), [implementation-plan.md](implementation-plan.md) |
 | run it in containers or pods | [deployment.md](deployment.md) |
 | build an NMOS Node or an IPMX device (Phase 7, later) | [nmos-ipmx.md](nmos-ipmx.md) |
-| see what is decided and what is open | [decisions.md](decisions.md) |
+| decide whether to do it, see what is decided and open, and how the design got here | [decisions.md](decisions.md), [questions.md](questions.md), [history.md](history.md) |
 | present it | [presentation/slides.md](presentation/slides.md) |
-| read the original tour, the goals and every requirement by ID | [archive/LEARN.md](archive/LEARN.md), [archive/01-goals-and-requirements.md](archive/01-goals-and-requirements.md) |
+| operate MTL in production: stats, events, logs, probes | [contract.md](contract.md) §11 (stats registry), [deployment.md §4.10](deployment.md#410-health-and-probes) |
+| test it: guarantees, fault injection, the null backend | [implementation-plan.md](implementation-plan.md) §8 |
+| read the goals and every requirement by ID | [requirements.md](requirements.md) |
+| check that every legacy feature has a home | [coverage.md](coverage.md) |
+| know how today's library behaves and what the outside world does | [research.md](research.md), [prior-art.md](prior-art.md) |

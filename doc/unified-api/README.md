@@ -33,9 +33,17 @@ field-by-field copy.
 | [migration.md](migration.md) | port an application or a plugin | the call map, the field map of every legacy `ops` struct, enum tables, coexistence, hiding the legacy headers |
 | [deployment.md](deployment.md) | run it | security surfaces, containers, Kubernetes pods, crash safety, probes |
 | [nmos-ipmx.md](nmos-ipmx.md) | plan NMOS and IPMX support (Phase 7, later) | the IS-05 contract, SDP, RTCP sender reports, timing without PTP, encryption |
-| [decisions.md](decisions.md) | decide, or check what was decided | the open maintainer decisions M1–M17 and every decision D-01…D-98 |
+| [decisions.md](decisions.md) | decide, or check what was decided | the open maintainer decisions M1–M17, every decision D-01…D-98 and the open issues OI-n |
 | [presentation/slides.md](presentation/slides.md) | present it | a slide deck (Marp) |
-| [archive/](archive/README.md) | trace a rule to its research | every earlier document, study and review, unchanged |
+| [questions.md](questions.md) | see why a default was chosen | every question the design raised (Q-*), with its options, the default or answer, its status and where it is applied |
+| [requirements.md](requirements.md) | check what must hold and where it is met | goals and non-goals, every requirement catalogue (R-*, K-REQ, N-REQ, I-REQ, R-PKT) and the guarantees that test them |
+| [coverage.md](coverage.md) | check that nothing of today's API is lost | every legacy capability (U-001…U-418) with its unified home and phase, the revision-4 coverage check, hiding the session headers, sample friction |
+| [research.md](research.md) | know how today's library behaves | verified facts about `lib/` and its users with `path:line`, the consumer survey, PR #1610 |
+| [prior-art.md](prior-art.md) | see what the outside world does | ST 2110 and AES67 timing facts, libfabric, Rivermax, media-I/O APIs, Kubernetes and shutdown prior art, the bibliography |
+| [history.md](history.md) | trace how the design got here | revisions r1–r4, rejected alternatives, the simplification studies, every review finding and its outcome |
+
+The design history before this distillation is in git at commit 15a27bb6
+(`git show 15a27bb6:doc/unified-api/archive/README.md`).
 
 ## Reading the IDs
 
@@ -46,16 +54,18 @@ field-by-field copy.
 | milestone M0–M6 | the steps of this branch (written "milestone Mn"; implementation-plan.md writes them bare and says so) | [implementation-plan.md](implementation-plan.md) |
 | D-01…D-98 | decisions, proposed or awaiting a maintainer decision | [decisions.md](decisions.md) |
 | OI-n | open issues found while distilling, for the maintainer | [decisions.md](decisions.md) |
-| Q-xxx-n | the research questions behind a decision | [archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md) |
-| G-01…G-112 | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [archive/13](archive/13-guarantees-and-tests.md) |
-| R-xxx-n, NG1… | requirements and non-goals | [concepts.md](concepts.md), [archive/01](archive/01-goals-and-requirements.md) |
+| Q-xxx-n | the research questions behind a decision | [questions.md](questions.md) |
+| G-01…G-112, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
+| R-xxx-n, R-PKT-n, NG1… | requirements and non-goals | [implementation-plan.md](implementation-plan.md) §8.0, [requirements.md](requirements.md) §2–§3, [concepts.md](concepts.md) §1.4 |
 | E1–E13, R1, R2, MF1–MF10 (memory), EK1–EK21 | engine changes | [engine.md](engine.md) |
 | SF-n, SP-n, DD-n, H-K-n | defects and drift in today's code; Kubernetes hazards | [engine.md](engine.md) |
 | S0–S8 (spikes) | measurements before code | [implementation-plan.md](implementation-plan.md) §3.3 |
 | H1–H10, W0–W3, PE1–PE9 | pinned-core rules, wake-up mechanisms, packet-engine items | [engine.md](engine.md) |
-| P1–P9, GO-1…GO-9 | personas and goals | [concepts.md](concepts.md) |
-| S1–S9 (studies), K1–K3, N1, I1, C1–C5, RK, RN, RA, RV | studies and reviews | [archive/](archive/README.md) |
-| K-REQ-n, N-REQ-n, I-REQ-n, G-Nn, GI-n | Kubernetes, NMOS and IPMX requirements and gaps | [deployment.md](deployment.md), [nmos-ipmx.md](nmos-ipmx.md) |
+| P1–P9, GO-1…GO-10 | personas and goals | [concepts.md](concepts.md), [requirements.md](requirements.md) §2.1 |
+| S1–S9 (studies), K1–K3, N1, I1 | studies | [history.md](history.md) §5 (S2–S6), [coverage.md](coverage.md) (S1, S7, S9), [contract.md](contract.md) §13 (S8), [research.md](research.md) and [prior-art.md](prior-art.md) (K1–K3), [requirements.md](requirements.md) §5–§7 (K1, N1, I1) |
+| C1–C5, R2, RK-n, RN-n, RA-n, RV-n | reviews and every finding with its outcome | [history.md](history.md) §6 |
+| U-001…U-418, F-01…F-26, H-01…H-19, CUT-1…CUT-8 | legacy capabilities, sample friction, pre-hide gaps, proposed cuts | [coverage.md](coverage.md) |
+| K-REQ-n, N-REQ-n, I-REQ-n, G-Nn, GI-n | Kubernetes, NMOS and IPMX requirements and gaps | [requirements.md](requirements.md) §5–§7, [deployment.md](deployment.md), [nmos-ipmx.md](nmos-ipmx.md) |
 | Phase 0…7 | the roadmap; Phase 7 (NMOS extras, SDP, IPMX, PEP) is later | [implementation-plan.md](implementation-plan.md) §2, §6 |
 
 ## The sketch
@@ -78,6 +88,9 @@ does not block them.
 
 The design went through four revisions, a simplification pass and two addenda, with 13
 research notes on today's code and on prior art (libfabric, Rivermax, DeckLink, DPDK, VFIO,
-GStreamer, FFmpeg), the SMPTE, AMWA and VSF specifications, and twelve reviews. The
-documents above distil that material; [archive/](archive/README.md) keeps all of it, with its
-`[verified] path:line` citations pinned to `545a266a`.
+GStreamer, FFmpeg), the SMPTE, AMWA and VSF specifications, and twelve reviews. That material
+was then folded into the documents above: the normative behaviour into contract.md, timing.md
+and engine.md, and everything else, every question, requirement, legacy capability, code fact,
+outside fact and review finding, into the six reference files (questions.md to history.md),
+compressed, with its `[verified] path:line` citations pinned to `545a266a`; nothing needs the
+older text any more.

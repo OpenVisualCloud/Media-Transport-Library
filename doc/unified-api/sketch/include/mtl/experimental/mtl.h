@@ -53,7 +53,9 @@
  * R4  Handles are 64-bit values of distinct types; 0 is the null handle of every type and
  *     a closed handle is never reissued. A call with an out handle writes the null handle
  *     on failure; every close returns 0 for a null handle. A stale or foreign handle fails
- *     with -MTL_EBADF, a lease already returned with -MTL_ESTALE. Handle slots are
+ *     with -MTL_EBADF, a lease already returned with -MTL_ESTALE; the one exception is
+ *     mtl_instance_get_health on an instance consumed by close or shutdown, which returns
+ *     -MTL_ESHUTDOWN, so a probe racing the close sees "shutting down". Handle slots are
  *     process-wide and never freed, so a handle stays safe to pass after its instance is
  *     gone: on an object the instance closed (deployment.md), data calls return -MTL_ESHUTDOWN,
  *     and its close and a lease's release return 0. A buffer is named by its pool slot

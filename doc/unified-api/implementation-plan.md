@@ -4,7 +4,7 @@
 |---|---|
 | Status | Plan for the implementation branch. Nothing is implemented. The maintainer decisions M1–M17 are open ([decisions.md](decisions.md)); this plan names the ones each step needs |
 | Date | 2026-10-02 |
-| Sources | [archive/14-implementation-roadmap.md](archive/14-implementation-roadmap.md), [archive/13-guarantees-and-tests.md](archive/13-guarantees-and-tests.md), [archive/01-goals-and-requirements.md](archive/01-goals-and-requirements.md) §5–§7, [archive/00-summary.md](archive/00-summary.md), [archive/REVISION-4.md](archive/REVISION-4.md), [archive/DECISIONS.md](archive/DECISIONS.md), [archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md), [archive/11-abi-compatibility-and-migration.md](archive/11-abi-compatibility-and-migration.md), [archive/16-kubernetes-and-crash-safety.md](archive/16-kubernetes-and-crash-safety.md) §11, [archive/research/07-modes-matrix.md](archive/research/07-modes-matrix.md), [archive/simplification/S1-coverage-inventory.md](archive/simplification/S1-coverage-inventory.md), [archive/simplification/R4-coverage-check.md](archive/simplification/R4-coverage-check.md) §8, [archive/research/05-timing-pacing.md](archive/research/05-timing-pacing.md) §4–§5, [archive/kubernetes/K1-kubernetes-runtime.md](archive/kubernetes/K1-kubernetes-runtime.md) §10, [archive/side-findings.md](archive/side-findings.md) |
+| Folded from | the earlier design files 14 (roadmap), 13 (guarantees and tests), 01 §5–§7, 00-summary, 11, 16 §11; REVISION-4.md, DECISIONS.md, OPEN-QUESTIONS.md, side-findings.md; research notes 05 §4–§5 and 07; studies S1, S8 §8 and the R4 coverage check §8; the Kubernetes study K1 §10; reviews C1 (risks) and C5 (response) |
 | Baseline | `main` @ `545a266a`; the headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) (17 headers, 125 functions plus 14 under `MTL_LATER`, `mtl.h` 32) |
 
 The headers are normative. Every name in this plan is a header name; where a name of the
@@ -45,8 +45,7 @@ software time base, and keeps working (§2.2).
 
 ## 2. Where the branch sits in the phases
 
-The roadmap ([archive/14](archive/14-implementation-roadmap.md)) has Phases 0–7. The branch is
-a vertical slice through them for one essence:
+The roadmap has Phases 0–7 (§6). The branch is a vertical slice through them for one essence:
 
 | Roadmap item | In the branch | Where |
 |---|---|---|
@@ -81,12 +80,10 @@ flowchart LR
 ### 2.1 Scope map: what must be ported, and when
 
 Port first needs a list of what "today" is. Three inventories made it: the operating-mode
-catalogue ([archive/research/07](archive/research/07-modes-matrix.md)), the use-case inventory
-of every public header, 290 classed rows U-001…U-418
-([archive/simplification/S1](archive/simplification/S1-coverage-inventory.md)), and its re-check
-against the revision-4 headers
-([archive/simplification/R4-coverage-check §8](archive/simplification/R4-coverage-check.md)).
-The row-by-row tables stay there; this section is the scope map an implementer works from.
+catalogue ([research.md](research.md) §3), the use-case inventory of every public header, 290
+classed rows U-001…U-418 ([coverage.md](coverage.md) §2), and its re-check against the
+revision-4 headers ([coverage.md](coverage.md) §3.1). The row-by-row tables are there; this
+section is the scope map an implementer works from.
 The coverage gate D-87 holds: every legacy capability has a revision-4 home, a later phase, or
 an approved cut (decision M12).
 
@@ -98,7 +95,7 @@ bit layouts of the pixel groups (`mtl_format_pgroup` gives bytes and pixels only
 27 `st20_rx_user_stats` fields without a key, R-7 a session-level cookie (today `unit.cookie`
 only).
 
-**Today's surfaces** ([archive/research/07 §1](archive/research/07-modes-matrix.md)): five
+**Today's surfaces** ([research.md](research.md) §3.1): five
 media families × two directions × up to three units of work × two layers, plus `st20rc`, 20
 session and 8 pipeline create functions:
 
@@ -152,7 +149,7 @@ session and 8 pipeline create functions:
 | simulated RX loss (U-223) | `mtl_debug_inject(MTL_FAULT_DROP_PKTS)`, `MTL_FAULT_DROP_RANDOM` | M2 |
 | pcapng dump | `mtl_session_capture` | later |
 
-**Easily forgotten modes** ([archive/research/07 §7](archive/research/07-modes-matrix.md)):
+**Easily forgotten modes** ([research.md](research.md) §3.6):
 
 | # | Mode | Unified home | When |
 |---|---|---|---|
@@ -179,7 +176,7 @@ session and 8 pipeline create functions:
 | 21 | non-RFC 4175 transport and `CUSTOM8` formats | `MTL_*_NONSTD`, `MTL_APP_YUV422_CUSTOM8` | M1 |
 | 22 | debug knobs in public ops (`SIMULATE_PKT_LOSS`, `st40_tx_test_config`) | `mtl_debug_inject` (`DROP_PKTS`, `DROP_RANDOM`, `TX_MUTATE`) | M0 entry point; faults per milestone (§8.3) |
 
-**Backends** ([archive/research/07 §5.1](archive/research/07-modes-matrix.md); `caps.backend`,
+**Backends** ([research.md](research.md) §3.5, [engine.md](engine.md) §2.7; `caps.backend`,
 `enum mtl_backend` in `mtl_observe.h`). L2 and the video adapters sit on st20p, which runs on
 every backend, so no adapter is backend-specific; the table says which backend a unified job
 exercises.
@@ -267,7 +264,7 @@ D-74 (`MTL_INIT`), D-77 (results on or off), D-88 (submit consumes the lease on 
 
 ### 3.2 Code that must land first
 
-- **PR #1770** (open, 38 commits): it fixes or partly fixes about forty side findings. The ST20
+- **PR #1770** (open, not merged; 38 commits, +3208/−371 lines): it fixes or partly fixes about forty side findings. The ST20
   rows the branch depends on: SF-02 (pipeline `notify_frame_late` gets the wrong `priv`), SF-05
   (extbuf done before `refcnt`), SF-08 (builder `pending` overwritten), SF-09 (pacing train
   port index), SF-16 (`wake_block`), SF-23 (stats getters on a stale handle). Merge it, or
@@ -278,13 +275,13 @@ D-74 (`MTL_INIT`), D-77 (results on or off), D-88 (submit consumes the lease on 
 
 ### 3.3 Spikes
 
-Each spike is a throw-away branch with a measurement note
-([archive/14 §1.4](archive/14-implementation-roadmap.md)).
+Each spike is a throw-away branch with a measurement note; the full list with what each
+measures is [engine.md](engine.md) §11.1.
 
 | Spike | Question | Needed by |
 |---|---|---|
 | S0 baseline | today's tasklet iteration p99.99/max, `st20p_tx_get_frame`/`put_frame` cost, completion latency, sessions per scheduler, with `MTL_FLAG_TASKLET_TIME_MEASURE`; whether an RL session create (`rte_tm_hierarchy_commit`) disturbs live sessions on the port | M1 (the §8.4 budgets) |
-| S1 waker | wake latency and CPU for W0, W2, fixed and deadline-driven W3 at 125 µs and 1 ms | M1 (decision M6) |
+| S1 waker | CPU % and p50/p99/p99.9 wake latency for W0, W2, fixed and deadline-driven W3 at 125 µs and 1 ms unit periods, with the waiter's core idle and busy; the result also fills the stats key `info.expected_wake_latency_ns` | M1 (decision M6) |
 | S3 slot interface over st20p | cost and intrusiveness of hold, submit with `seq`, done hook, reclaim, rejected-at-pick-up; atomics per unit; reaper cost | M1 go/no-go |
 | S6 idle descriptor cleanup | rate and cost of `rte_eth_tx_done_cleanup` on an idle session; effect on pacing | M1 (G-03, close drains) |
 | S8 queue stop/start | do iavf and ice release chained external mbufs on `rte_eth_dev_tx_queue_stop`/`start` | M3 (stalled-queue destroy, G-81) |
@@ -299,7 +296,7 @@ Each spike is a throw-away branch with a measurement note
 | libmtl ABI hygiene | `lib/meson.build:151` (`shared_library('mtl', ...)` today has no `soversion`, `version` or version script) | a soname and a version script; node `MTL_INTERNAL` for the entry points `libmtl_unified` imports (the slot interface); hidden default visibility as a later step (§9) |
 | L2 core | `lib/src/unified/` (not PR #1610's `new_api/`) | instance, handles, sessions, leases, waker, options, errors, stats registry |
 | L1 adapters | `lib/src/unified/adapters/video_tx.c`, `video_rx.c` | the only adapters in the branch |
-| null backend | `lib/src/unified/adapters/null.c` (proposal) | units complete at their scheduled time on the instance clock, TX→RX loopback on the same port, no NIC, root or hugepages. [archive/11 §8](archive/11-abi-compatibility-and-migration.md) placed a null device in `lib/src/dev/`; an L1 null adapter is enough for the U tier and needs no engine change. Decide in M0 |
+| null backend | `lib/src/unified/adapters/null.c` (proposal) | units complete at their scheduled time on the instance clock, TX→RX loopback on the same port, no NIC, root or hugepages. Revision 3 placed a null device in `lib/src/dev/`; an L1 null adapter is enough for the U tier and needs no engine change. Decide in M0 (OI-46 in [decisions.md](decisions.md) §5) |
 | exact time math | `lib/src/unified/mt_time_math.[ch]` | 128-bit rational arithmetic (E2); shared later with the Phase 0.5 helper |
 | slot interface | `lib/src/st2110/pipeline/st20_pipeline_tx.c`, `st20_pipeline_rx.c` and their `.h` | new internal entry points (§5.2) |
 | meson options | `enable_unified` (boolean; builds the DSO and installs the headers), `enable_debug_api` (boolean, default false; `mtl_debug.h` returns `-MTL_ENOTSUP` without it, G-93) | in `meson_options.txt` next to `enable_unit_tests` |
@@ -549,8 +546,7 @@ The output must not change: the acceptance engine parses `app_rx_st20p_result(<n
 fps <x>` (`tests/acceptance/mtl_engine/RxTxApp.py:1200`), so the unified path prints the same
 lines from `app_rx_st20p_result` (`rx_st20p_app.c:356`).
 
-**JSON and CLI mapping** (field details: [migration.md](migration.md); depth:
-[archive/11 §R4.4–R4.7](archive/11-abi-compatibility-and-migration.md)):
+**JSON and CLI mapping** (field details: [migration.md](migration.md) §4.4–§4.7):
 
 | RxTxApp input | Today (st20p ops) | Unified |
 |---|---|---|
@@ -694,32 +690,48 @@ the `ptp` group unchanged and green.
 
 ## 6. M7+: the remaining phases
 
-The roadmap phases continue after the branch, still port first. Depth:
-[archive/14 §3](archive/14-implementation-roadmap.md). The success criteria in user terms follow
-the table.
+The roadmap phases continue after the branch, still port first. The success criteria in user
+terms follow the table.
 
 | Step | Scope | Exit (summary) |
 |---|---|---|
-| Phase 0 (the branch covers part of it) | the blocking decisions; the libmtl soname and versioned instance parameters; the headers in CI; spikes S0…S8; the test-substrate design; the external design review | the blocking decisions answered; spikes written up, §8.4 budgets confirmed; instance parameters and soname merged; headers in CI; the external review answered; the legacy gate green |
+| Phase 0 (the branch covers part of it) | the blocking decisions; the libmtl soname and versioned instance parameters; the headers in CI; spikes S0…S8; the test-substrate design; the external design review; the pacing contract document (`doc/user-pacing-timestamp-contract.md`, untracked today) committed with this design's selection rules ([timing.md](timing.md) §16.2) | the blocking decisions answered; spikes written up, §8.4 budgets confirmed; instance parameters and soname merged; headers in CI; the external review answered; the legacy gate green |
 | Phase 0.5 (independent) | legacy `st_timeline_*` helper (exact anchor math; replaces RxTxApp's `double` version, `src/rxtx_app.c:673-703`); `ST30P_TX_FLAG_USER_TIMESTAMP`; ST40P `USER_TIMESTAMP` without `USER_PACING`; the audio start rule; SF-15 | the A/V/ANC example on the legacy API with exact RTP (G-106); no mutex on the tasklet in the `BLOCK_GET` pipelines, latency no worse |
 | Engines track (rest) | E1–E13, R1, R2 beyond the ST20 parts of §7; bugfixes on for legacy users, wire changes behind legacy opt-in flags | G-99 per change |
 | Phase 1 (rest) | the reference Python wrapper (with the GIL test of §8.1); a GStreamer st20 sink prototype | the examples and the wrapper on `null:1` |
 | Phase 2 | the slot interface in st22p, st30p, st40p; adapters for cvideo, audio, anc and the st41 session; one stats schema; shared queues (`mtl_queue.h`); plugin ABI v2 (`mtl_plugin.h`) and `mtl_convert.h`; E11, E12 | G-45 for every essence; G-27 measured; go/no-go on the Phase 6 re-base |
 | Phase 2, operators | the link monitor; legs; `mtl_session_update` (FLOWS, LEGS, MEDIA, POOL) with its planned instant; capacity queries; MtlManager reconnect and pod safety (EK5); device removal and reset as states (EK14); `nicctl.sh vf_link` | G-75, G-89, G-90, G-91, G-98 |
-| Phase 2P | packet units on every essence and the generic RTP essence (decision M14), in three steps: 2P-a after Phase 2 (video, ANC, fastmeta, generic RTP; `MTL_MEDIA_AUTO`; `MTL_PKT_PACE_UNIT` and `MTL_PKT_PACE_ASAP`; chain TX, copy RX); 2P-b with Phase 3 (INDEX and TAI, `MTL_PKT_TIME_FROM_RTP`, `MTL_PKT_PACE_LAUNCH`, audio, cvideo); 2P-c with Phase 4 (`MTL_PKT_RX_LEND`, holds, `MTL_PKT_SPLIT`). Details: [archive/simplification/S8 §8](archive/simplification/S8-rtp-passthrough.md) | the RTP-level twins of §5.6; G-PKT-1…8 ([archive/S8 §8](archive/simplification/S8-rtp-passthrough.md)); the pcap replay test (`tests/tools/RxTxApp/script/loop_json/st22p_pcap.json`); the out-of-order case (`st20_digest.cpp:567`) at the U tier; the ST40 RTP fuzz target re-pointed |
+| Phase 2P | packet units on every essence and the generic RTP essence (decision M14), in the three steps 2P-a, 2P-b, 2P-c below | the RTP-level twins of §5.6; G-PKT-1…8 ([requirements.md](requirements.md) §4.5); the pcap replay test (`tests/tools/RxTxApp/script/loop_json/st22p_pcap.json`); the out-of-order case (`st20_digest.cpp:567`) at the U tier; the ST40 RTP fuzz target re-pointed |
 | Phase 3 | the rest of the timing core: created and named timelines, start arrays (one timeline, one direction, all or none), ANC and fastmeta rasters from the start, audio sample-accurate submission, ANC windows, cvideo `rate_mode` | the A/V/ANC example through a start array |
 | Phase 3, clocks and engines | time sources and the published time base (E9, S7), clock steps, RX alignment (`mtl_rx_align`); E5, E6, E7, E10, E13 | EBU LIST narrow on one NIC × pacing class |
-| Phase 4 | `mtl_mem.h`: regions, imports, attached pools, `mtl_tx_acquire_slot`, pins, holds, `MTL_SESSION_RX_BY_INDEX`, export pools; the engine fixes of the memory design; `mtl_tx_acquire_layout`, `mtl_rx_provide`, `mtl_mem_import_device` (today's features, declared under `MTL_LATER`) | FFmpeg RX zero-copy and GStreamer export-pool prototypes; the ext-frame twins |
-| Phase 5 | VF reset, recovery on a worker (R1 remainder), stalled-queue destroy on real VFs, the tasklet log ring, new USDT probes, RX link offset and presentation (the rest of E8), the fault matrix at the I tier with `nicctl.sh vf_link` and `vf_reset` | §8.3 rows marked P at I |
+| Phase 4 | `mtl_mem.h`: regions, imports, attached pools, `mtl_tx_acquire_slot`, pins, holds, `MTL_SESSION_RX_BY_INDEX`, export pools; the engine fixes of the memory design; `mtl_tx_acquire_layout`, `mtl_rx_provide`, `mtl_mem_import_device` (today's features, declared under `MTL_LATER`) | FFmpeg RX zero-copy and GStreamer export-pool prototypes; the MXL POC on imported memory; ext-frame twins |
+| Phase 5 | VF reset, recovery and auto-detect re-init on library workers with the quiesce handshake (R1 remainder; [engine.md](engine.md) §2.2 WK, §10), stalled-queue destroy on real VFs, the tasklet log ring, new USDT probes, RX link offset and presentation (the rest of E8), the fault matrix at the I tier with `nicctl.sh vf_link` and `vf_reset` | §8.3 rows marked P at I |
 | Phase 6 | row units (progressive), `REPEAT_LAST`, runtime `mtl_port_open` and a capacity reservation object, FFmpeg and GStreamer plugin rewrites, the legacy pipeline functions re-based on L2, the ABI freeze (`MTL_1.0`), the hiding stages F, F+1, F+2 (decision M15) | G-51 for `MTL_1.0`; plugins on the new API pass the acceptance smoke suite |
 | Kubernetes items | EK1–EK21 in the engines track; `mtl_instance_close` in Phase 1 (the branch); `mtl_time_set_reference` in Phases 1–2 (a pod tells MTL that the node lost its grandmaster); CPU arbitration without SysV, `runtime_dir`, pinned threads, read-only time (EK6, EK7, EK10, EK12, EK13); health for probes (`mtl_instance_get_health`) | [deployment.md](deployment.md) |
 | Phase 7, later | the NMOS contract extras and `mtl_sdp.h`; IPMX timing (`MTL_TIME_SOURCE_FREERUN`, `MTL_MEDIA_SENDER`) and `mtl_rtcp.h`; the IPMX profile; PEP (`mtl_crypto.h`) after a cost spike | [nmos-ipmx.md](nmos-ipmx.md) |
 
-Phase 0.5 is the first user-visible result: one engineer can ship it 6–10 weeks after decision
-M3 is answered, independent of the branch and in parallel with Phase 0.
+Phase 2P steps:
 
-Each phase is done when a user can do something they recognise
-([archive/01 §7](archive/01-goals-and-requirements.md)):
+| Step | Scope | Exit |
+|---|---|---|
+| 2P-a (after Phase 2) | video, ANC, fastmeta and generic RTP packet units; `MTL_MEDIA_AUTO`; `MTL_PKT_PACE_UNIT` and `MTL_PKT_PACE_ASAP`; chain TX and copy RX; stamping (`packet.set_fields`) and `MTL_PKT_TX_VALIDATE`; ST 2022-7; the engine fixes PE1–PE8 ([engine.md](engine.md) §11) | RxTxApp `"type": "rtp"` and the two low-level samples ported; the ST41 acceptance tests pass on the unified path; G-PKT-1…8 at the U tier |
+| 2P-b (with Phase 3) | `MTL_MEDIA_INDEX` and `MTL_MEDIA_TAI` with `MTL_PKT_TIME_FROM_RTP`, `MTL_PKT_PACE_LAUNCH`, audio and cvideo packet units, start arrays | the pcap replay test at the I tier; a 2022-6 stream accepted by a third-party receiver or analyser |
+| 2P-c (with Phase 4) | `MTL_PKT_RX_LEND`, holds between packet sessions, `MTL_PKT_SPLIT`, imported regions | a zero-copy 1:1 gateway whose path counters show no copies |
+
+Why 2P and not Phase 6: hiding the session headers needs it before the ABI freeze, and it reuses
+the Phase 1–2 machinery (lease table, legs, flows). Most of its 4–7 EM is chunk ingest in five TX
+engines and one RX ring discipline, not new pacing. `*_TYPE_RTP_LEVEL` and
+`*_get_mbuf`/`*_put_mbuf` are deprecated under the usual policy once 2P-a ships.
+
+Phase 0.5 is the first user-visible result: one engineer can ship it 6–10 weeks after decision
+M3 is answered, independent of the branch and in parallel with Phase 0. It also validates the
+timing model with real users before [timing.md](timing.md) is frozen, and is small on purpose, so
+the first artefact does not wait for the plan's size to be accepted. Its SF-15 item salvages
+PR #1610's `lib/src/new_api/mt_session_event.c` (106 lines: a value-backed ring plus an eventfd): an
+armed bit and a non-blocking wake written only when a waiter is armed replace the pipelines'
+tasklet mutex and condition variable, merged with credit to the PR #1610 authors.
+
+Each phase is done when a user can do something they recognise:
 
 | Step | Done when a user can |
 |---|---|
@@ -784,8 +796,8 @@ its own wait targets), SF-14 (`update_destination` under the spinlock; Phase 2).
 
 ### 8.0 Requirements and the guarantees that close them
 
-The requirements of the first revision ([archive/01 §5](archive/01-goals-and-requirements.md))
-in revision-4 wording. Levels: MUST is a v1 blocker; SHOULD is v1 unless it costs a phase; MAY
+The requirements of the first revision in revision-4 wording (their sources and the
+cross-check against the first wording: [requirements.md](requirements.md) §3). Levels: MUST is a v1 blocker; SHOULD is v1 unless it costs a phase; MAY
 reserves the shape. IDs are stable. "When" names the milestone of this branch, or the phase that
 closes the requirement. The rule text of each requirement lives in [contract.md](contract.md),
 [timing.md](timing.md) or [engine.md](engine.md).
@@ -884,12 +896,19 @@ blocks its milestone) or **BE** (best effort until the named evidence exists). A
 without a test is not promised. A milestone or phase is done only when every MUST requirement
 in its scope (§8.0) has a contract test at the cheapest tier that can observe it. A red P test
 blocks the exit; a BE guarantee never does, and its row says what evidence would make it P.
-Today 24 unit-test files `#include` production `.c` files; the U tier avoids that, and the UB
-tier targets the slot interface, a stable internal API.
+Why U over the null backend: review C5 found 37 of 67 guarantees resting on UB, the most
+brittle tier; at `545a266a` 24 unit-test files `#include` production `.c` files and 60 commits
+touched them in 2026 (C5 counted 20 and 43). So guarantees that are properties of the unified
+core alone (G-04, G-30, G-49, G-57, G-64 and most later ones) are U over `null:1` and need no
+engine internals. Properties of the engine boundary stay UB, because that is where PR #1610
+failed (its lost timing metadata, R7 in [research.md](research.md) §12.3), but UB targets the slot
+interface, a stable internal API, so harness churn follows interface changes, not every
+refactor.
 
 Test isolation: the U tier initialises EAL once (`--no-huge --no-pci`, as
 `tests/unit/common/ut_common.c:25-31` does) and keeps one long-lived null-backend instance;
-NoCtx cases stay one process each; a case that leaves a debug fault set fails.
+NoCtx cases stay one process each; debug-API fault state is per object and the fixture clears it
+after each case, so a case that leaves a debug fault set fails.
 
 Bindings: when the Python wrapper lands (Phase 1, after the branch), its suite includes a GIL
 check on `null:1`: a WT call blocked in one Python thread (`mtl_rx_dequeue` with a 1 s timeout)
@@ -898,8 +917,9 @@ call.
 
 ### 8.2 Guarantees in the branch
 
-Revision-4 wording; the notes behind each method are in
-[archive/13](archive/13-guarantees-and-tests.md). "M" is the milestone whose exit needs it.
+Revision-4 wording; the notes behind each method, and the text of the later-phase guarantees,
+are in [requirements.md](requirements.md) §4.2–§4.4 and [timing.md](timing.md) §16.1. "M" is the
+milestone whose exit needs it.
 
 | ID | Guarantee | Tier | M | How |
 |---|---|---|---|---|
@@ -941,7 +961,7 @@ Revision-4 wording; the notes behind each method are in
 | G-71 | the null handle fails with `-MTL_EBADF`, except every close, which returns 0 | U | M0 | the null handle to every function, table-driven over the headers |
 | G-72 | `mtl_tx_reap` writes `min(rec_size, native)` per record at pitch `rec_size` | U | M3a | record sizes larger and smaller than the library's, with `MTL_INIT` hoisted out of the loop |
 | G-73 | a zero-filled input struct (`MTL_INIT`) is the default configuration | B, U | M0 | a zero-filled struct opens with the documented defaults; a lint lists every field whose zero means something else |
-| G-74 | headers and examples compile (`check.sh`) | B | M0 | `check.sh` in CI, also with `-pedantic` and clang, plus a compile-only Windows job |
+| G-74 | headers and examples compile (`check.sh`) | B | M0 | `check.sh` in CI, also with `-pedantic` and clang, plus a compile-only Windows job; proposed: add `-Wconversion -Wsign-conversion -Wcast-qual` (every header was clean with them once; `-Wcast-qual` caught `mtl_pkt_tx_table()` returning a writable table from a `const struct mtl_unit*`, RV-44) |
 | G-76 | RX `media_index` is the exact inverse of the TX rule (video, epoch timeline) | U, UB | M3b | a sender on the grid at every video rate (1001 families, fields) across the 2^32 wrap, and a sender with a phase below one period, which maps to the slot it falls in; checked against the oracle |
 | G-77 | closing a shared instance's reference that is not the last only drops it (returns 0); the last one shuts down; a CLOSING session keeps its handle readable and its `MTL_EVENT_SESSION_RETIRED` deliverable | U | M0, M1 | open `MTL_INSTANCE_SHARED` twice, close in both orders with a session in CLOSING, read events until RETIRED; a differing second open is `-MTL_EEXIST` (`INSTANCE_MISMATCH`) |
 | G-80 | every command is acked; a missing ack puts the session in ERROR with `CMD_TIMEOUT` | U, UB | M1 | a TX unit waiting 1 s for its launch: stop is immediate and the unit `FLUSHED`; RX with no packets; with `MTL_INSTANCE_TASKLET_SLEEP`; a stalled scheduler |
@@ -989,8 +1009,7 @@ Faults are injected with `mtl_debug_inject(obj, fault, &p)` in builds with
 `-Denable_debug_api=true`, at the U and UB tiers. The I-tier steps run from
 `.github/scripts/gtest.sh`. Today `script/nicctl.sh` offers `bind_kernel`, `create_vf`,
 `create_kvf`, `create_tvf`, `disable_vf`, `bind_pmd` and `list`; `vf_link` (Phase 2) and
-`vf_reset` (Phase 5) are new. Every G-01 and G-31 test runs under these faults. Depth:
-[archive/13 §6](archive/13-guarantees-and-tests.md).
+`vf_reset` (Phase 5) are new. Every G-01 and G-31 test runs under these faults.
 
 | Fault | U/UB injection | I-tier step | Expected | Tested in |
 |---|---|---|---|---|
@@ -1004,8 +1023,8 @@ Faults are injected with `mtl_debug_inject(obj, fault, &p)` in builds with
 | time step | `MTL_FAULT_TIME_STEP` (`p.step_ns`), `mtl_test_clock_advance` | `phc_ctl <if> adj Δ` on the lab host | the late policy applies; no permanent drop; the timeline step policy (G-62) from Phase 3 | M3b (U); I BE, Phase 5 |
 | time source lost | `MTL_FAULT_TIME_LOST` | stop `ptp4l` on the lab host | liveness unchanged, readiness `MTL_HEALTH_TIME_UNLOCKED` (G-109); `MTL_EVENT_TIME_STATE` to HOLDOVER (G-54) | M3a (U, health); G-54 Phase 5 (UB); I BE |
 | link down on one 2022-7 leg | `MTL_FAULT_LEG_DOWN` (`p.leg`); `MTL_FAULT_LEG_UP` restores | new `nicctl.sh vf_link <vf_bdf> down\|up` (PF side: `ip link set <pf> vf <n> state disable\|enable`) | `MTL_EVENT_LEG_STATE` (oper down); units flow on the other leg, results `ON_TIME` | M3a (U, liveness only, G-109); Phase 2 (U, UB, I) |
-| link down on the only leg | `MTL_FAULT_LEG_DOWN` | as above | `MTL_TX_DROPPED` with `LINK_DOWN`; the session stays RUNNING | Phase 2 (U, UB, I) |
-| VF reset | `MTL_FAULT_PORT_RESET` on `MTL_OBJ_OF_PORT(mt, p)` | new `nicctl.sh vf_reset <vf_bdf>` (`/sys/bus/pci/devices/<bdf>/reset`) | `MTL_EVENT_PORT_RESET`, sessions `MTL_EVENT_RECOVERY`; gap units `MTL_TX_FAILED` with `PORT_RESET` | Phase 2 (UB, EK14); I BE until Phase 5 |
+| link down on the only leg | `MTL_FAULT_LEG_DOWN` | as above | `MTL_TX_DROPPED` with `LINK_DOWN`; the session stays RUNNING (Q-LIFE-7) | Phase 2 (U, UB, I) |
+| VF reset | `MTL_FAULT_PORT_RESET` on `MTL_OBJ_OF_PORT(mt, p)` | new `nicctl.sh vf_reset <vf_bdf>` (`/sys/bus/pci/devices/<bdf>/reset`) | `MTL_EVENT_PORT_RESET`, sessions `MTL_EVENT_RECOVERY`; gap units `MTL_TX_FAILED` with `PORT_RESET` (Q-LIFE-10; the gap-unit status is open, OI-13 in [decisions.md](decisions.md) §5) | Phase 2 (UB, EK14); I BE until Phase 5 |
 | device gone | `MTL_FAULT_PORT_RESET` with `p.unrecoverable = 1` | `nicctl.sh disable_vf` | `MTL_EVENT_PORT_REMOVED`; ERROR with `DEVICE_GONE` (or a degraded leg); `-MTL_ENODEV`; start fails until resources can be re-reserved | Phase 2 (U) |
 | MtlManager dies | `MTL_FAULT_MANAGER_LOST` | `gtest.sh` kills MtlManager, runs creates, restarts it | `MTL_EVENT_MANAGER_LOST`, health `MTL_HEALTH_MANAGER_LOST`; running sessions continue (G-110); a create that needs an lcore gets `-MTL_EAGAIN` with `MANAGER_LOST` (G-98) | M3a (U, G-110); Phase 2 (G-98, U and I) |
 | process killed | none | a NoCtx case kills its child with SIGKILL mid-stream, then re-opens the VF | open succeeds without manual cleanup (G-112) | M5 wave 4 (I) |
@@ -1013,17 +1032,22 @@ Faults are injected with `mtl_debug_inject(obj, fault, &p)` in builds with
 
 ### 8.4 Performance budgets
 
-Initial budgets, confirmed or revised by S0 before M1 ([archive/13 §8](archive/13-guarantees-and-tests.md)):
+Budgets are on tails, not means, because tails damage pacing (review C1 #9). Revision 2 set
+every gate "by measurement in Phase 1", so Phase 1 could not fail its own gate; hence initial
+numbers now. S0 measures today's baseline with `MTL_FLAG_TASKLET_TIME_MEASURE`
+(`include/mtl_api.h:449`) on the reference machine and confirms or revises them before M1; a
+revision is recorded in [decisions.md](decisions.md).
 
 | Metric | Budget | Measured by |
 |---|---|---|
 | tasklet iteration per scheduler, same load as legacy | p99.99 ≤ legacy + 2 %, max ≤ legacy + 5 % | `MTL_FLAG_TASKLET_TIME_MEASURE`, I, 10 min |
-| DP call cost without conversion (acquire, submit, reap, dequeue) | p50 ≤ 150 ns, p99 ≤ 1 µs | U micro-benchmark on `null:1` |
-| completion latency | ≤ the value reported in `mtl_session_get_info` + 10 % | UB, I |
+| DP call cost without conversion (acquire, submit, reap, dequeue) | p50 ≤ 150 ns, p99 ≤ 1 µs | U micro-benchmark on `null:1`, plus an I spot check; DPC calls reported separately |
+| completion latency (last packet handed, or last mbuf freed, until the result is visible) | ≤ the reported `completion_latency_ns` (`mtl_buffer_requirements`, key `info.completion_latency_ns`) + 10 % | UB, I |
 | waker CPU | ≤ 2 % of one core at 100 armed sessions | S1, then I |
 | W2 wake latency | p99 ≤ 10 µs | S1 |
-| W3 wake latency | p99 ≤ unit period / 10 for units ≥ 1 ms | S1 |
+| W3 wake latency | p99 ≤ unit period / 10 for units ≥ 1 ms; below 1 ms W2 is recommended (decision M6) | S1 |
 | sessions per scheduler at 1080p59.94 | unchanged versus legacy | I |
+| `mtl_queue_reap` on a shared queue (Phase 2) | cost proportional to the members with work, not to the member count ([contract.md](contract.md) §10.3) | U micro-benchmark on `null:1` |
 | ST 2110-21 narrow compliance under stress | no regression versus legacy, for TSC and RL pacing, with a stats reader in a tight loop and 64 armed waiters (timing parser with NIC timestamps) | I; measured in M1, gating M6 |
 
 ### 8.5 The legacy gate
@@ -1057,8 +1081,8 @@ Expected values are computed from the anchor with exact arithmetic, every packet
 (not only packet 0), and anchors are never inferred from the capture. The method comes from
 `doc/user-pacing-timestamp-contract.md` (a separate draft, not part of this baseline), whose selection rules this design
 replaces in places; the contract needs that update before an engine change alters the wire.
-The comparison table is in [timing.md](timing.md); depth in
-[archive/13 §7](archive/13-guarantees-and-tests.md).
+The comparison table, with the question behind each difference, is in [timing.md](timing.md)
+§16.2.
 
 ## 9. Risks
 
@@ -1085,11 +1109,17 @@ The comparison table is in [timing.md](timing.md); depth in
 | CI runner capacity: the I tier needs NIC runners; fault steps (link down, VF reset, manager kill) disrupt other jobs on a shared NIC runner; the M tier is lab-only | M5–M6, Phase 2 on | the null-backend tiers run on ordinary runners; NIC jobs nightly; a dedicated or serialised runner for fault steps from Phase 2; M-tier runs per phase exit, not per PR |
 | the plan is not staffed at its size | all | Phase 0.5 and the engines track pay legacy users on their own; "stop after Phase 2" is a coherent product |
 | scope creep (other essences, memory, NMOS) | all | the non-goals of §1; port first |
+| syscalls on tasklets on the kernel-socket and AF_XDP backends, and a PHC read per time read with built-in PTP | M1 (Phases 1–5) | G-39 scoped per backend ([engine.md](engine.md) §2.3); the published time base for every source (S7) |
+| event producers include tasklets and preemptible threads; one multi-producer ring would make a tasklet spin behind a preempted thread | M3a | per-source pending state for tasklets, one ring per non-pinned producer class ([engine.md](engine.md) §7.5) |
+| destination updates do not reach the kernel-socket GSO address or the RTCP header (SF-36, SF-37) | Phase 2 | a queue swap at the boundary; the RTCP header updated with the template ([engine.md](engine.md) §6) |
+| live-capture users hit infeasible timing (L, JT-NM windows) | Phase 3 | source kinds; `MTL_EVENT_TIMING_INFEASIBLE` with the shortfall and a suggested delay (`shortfall_ns`, `suggested_min_tx_delay_ns` in `mtl_session_get_status`, keys `tx.shortfall_ns`, `tx.suggested_min_tx_delay_ns`); the `mtl_session_get_info` values |
+| two APIs to maintain during the transition | Phases 1–6 | engines first (fixes land once); legacy frozen at the freeze; the committed Phase 6 re-base; the deprecation policy ([deployment.md](deployment.md) §7) |
+| private downstream users depend on behaviour not visible in-tree | Phase 0 | the external review and questionnaire (Q-MIG-1, decision M10) before the headers freeze |
 
 ## 10. Effort
 
 One engineer-month (EM) is about 1.0–1.5 kLOC of library code landed with unit tests in this
-codebase ([archive/14 §4](archive/14-implementation-roadmap.md)). The branch figures are
+codebase (review C5's unit, accepted as order of magnitude). The branch figures are
 **estimates, not reviewed**.
 
 | Milestone | EM |
@@ -1113,24 +1143,44 @@ Phase 3 4–6, Phase 4 6–10, Phase 5 4–7, Phase 6 11–18: ≈ 59–92 EM wi
 without it), that is 3.3–5.1 years at 1.5 FTE or 20–31 months at 3 FTE, plus EK1–EK21 (4–6) and
 MtlManager pod safety (1–2). The branch covers most of Phase 1 for video, part of Phase 0, of
 the engines track and of Phase 3. Phase 7 is outside the total: NMOS contract and `mtl_sdp.h`
-2–3 EM, IPMX timing and RTCP 4–6, PEP 2–4. Staffing scenarios and the release and deprecation
-policy: [archive/14 §4, §7](archive/14-implementation-roadmap.md).
+2–3 EM, IPMX timing and RTCP 4–6, PEP 2–4. The release and deprecation policy is in
+[deployment.md](deployment.md) §7.
 
-## 11. Left in the archive
+The velocity behind the EM figures, re-checked at `545a266a`: 610 commits in 2026; 133 commits
+touching `lib/` + `include/` in the last six months (≈ 22 a month, +8.5 k/−10.2 k lines by
+`git log --shortstat`; C5 had +7.3 k/−9.2 k over a slightly different window); one author wrote
+74 of the 133. Per phase against C5's ≈ 50–75 EM for revision 2:
 
-- spike details and the staffing table: [archive/14 §1.4, §4](archive/14-implementation-roadmap.md);
-- the Phase 1–6 exit lists in revision-3 names: [archive/14 §3, §5](archive/14-implementation-roadmap.md);
+| Phase | C5 EM | Revision 3 EM | Why |
+|---|---|---|---|
+| 0 | 2–3 | 3–5 | + instance parameters, libmtl soname, S0, S7, substrate design, external review |
+| 0.5 | — | 1.5–2.5 | new |
+| engines track | inside 3 | 6–10 | E1–E10 moved out of Phase 3; legacy flags and the legacy gate; E11, E12 from Phase 2 |
+| 1 | 8–12 | 11–16 | + null backend, test clock, debug inject, RX deadline hook, W2, Python wrapper, stalled-queue close |
+| 2 | 6–9 | 7–10 | + link monitor, legs, atomic update, capacity, reconfigure, manager reconnect |
+| 3 | 9–14 | 4–6 | timing core only; engine work moved to the engines track |
+| 4 | 5–8 | 6–10 | + per-acquire layouts, hold counts |
+| 5 | 5–8 | 4–7 | − link monitor |
+| 6 | 12–20 | 11–18 | the re-base is committed |
+
+Staffing, without packet mode:
+
+| Staffing | Whole plan | Phase 0.5 | Legacy users served (Phases 0, 0.5, engines) | "Stop after Phase 2" |
+|---|---|---|---|---|
+| 1.5 FTE (about today's library throughput) | 3.1–4.7 years | 6–10 weeks after decision M3, one engineer, parallel to Phase 0 | 7–12 months | 1.6–2.4 years |
+| 3 FTE dedicated | 18–28 months | the same | 4–6 months | 10–15 months |
+
+## 11. Where the detail lives
+
+- what each spike measures: [engine.md](engine.md) §11.1;
 - the goals, non-goals and personas of the first revision, and each requirement's sources:
-  [archive/01](archive/01-goals-and-requirements.md);
-- the notes behind every guarantee's test method, and the oracle comparison with the contract
-  document: [archive/13](archive/13-guarantees-and-tests.md);
-- the row-by-row inventory (S1 §2, 290 rows), its revision-4 re-check, the session-only
-  features (S9 §3) and the feature × media matrix of today:
-  [archive/simplification/S1](archive/simplification/S1-coverage-inventory.md),
-  [archive/simplification/R4-coverage-check](archive/simplification/R4-coverage-check.md),
-  [archive/research/07 §3](archive/research/07-modes-matrix.md);
-- the open items Phase 7 inherits from the IPMX verification:
-  [archive/reviews/RV-verification.md](archive/reviews/RV-verification.md);
-- the session-header feature inventory behind the "no twin" table:
-  [archive/simplification/S9-hiding-session-headers.md](archive/simplification/S9-hiding-session-headers.md);
-- why the plan was re-sequenced (review C5, not in the repository): [archive/reviews/C5-response.md](archive/reviews/C5-response.md).
+  [requirements.md](requirements.md) §2–§3;
+- the notes behind every guarantee's test method: [requirements.md](requirements.md) §4.2–§4.4,
+  [timing.md](timing.md) §16.1; the oracle compared with the contract document: [timing.md](timing.md)
+  §16.2;
+- the row-by-row inventory (290 rows), its revision-4 re-check and the session-only features
+  behind the "no twin" table: [coverage.md](coverage.md) §2, §3, §4.2; the feature × media matrix
+  of today: [research.md](research.md) §3.3;
+- the open items Phase 7 inherits from the IPMX verification: [nmos-ipmx.md](nmos-ipmx.md) §16,
+  [history.md](history.md) §6.11;
+- why the plan was re-sequenced (review C5): [history.md](history.md) §6.5.

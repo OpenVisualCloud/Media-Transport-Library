@@ -4,14 +4,14 @@
 |---|---|
 | Status | Maintained. Seventeen maintainer decisions (M1–M17) are open; nothing is **Accepted** yet. Every other decision is a **Proposed default** that stands unless the maintainer objects |
 | Date | 2026-10-02 |
-| Sources | [archive/DECISIONS.md](archive/DECISIONS.md), [archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md), [archive/REVISION-4.md §3, §5, §8, §9](archive/REVISION-4.md), [archive/14-implementation-roadmap.md §3.7](archive/14-implementation-roadmap.md) |
+| Folded from | DECISIONS.md, OPEN-QUESTIONS.md, REVISION-4.md §3, §5, §8, §9 and 14-implementation-roadmap.md §3.7 of the earlier design set ([history.md](history.md)) |
 
 This file replaces `DECISIONS.md` and `OPEN-QUESTIONS.md` for daily use. It holds every
 decision of the design (D-01…D-98) in one line each, the open maintainer decisions with an
 answer line, the proposed defaults that matter for the ST 2110-20 port, and the open issues
-for the implementation (OI-1…OI-47). The full
-questions, with options, research references and review history, stay in
-[archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md).
+for the implementation (OI-1…OI-58). The full questions, with options, research references
+and status, are in [questions.md](questions.md); the reviews and the outcome of every finding
+are in [history.md](history.md) §6.
 
 ## 1. How to use this file
 
@@ -40,11 +40,11 @@ questions, with options, research references and review history, stay in
   (ST20 RX), milestone M3 (results, events, stats), milestone M4 (RxTxApp), milestone M5
   (gtests), milestone M6 (nightly).
 
-**Question IDs.** `Q-xxx-n` are the question IDs of
-[archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md); each M# names the questions it
-decides. `Q-K8S-1…11` are in [archive/16 §13](archive/16-kubernetes-and-crash-safety.md),
-`Q-NI-1…10` in [archive/17 §7](archive/17-nmos-and-ipmx.md), `Q-PKT-1…9` in
-[archive/simplification/S8 §9](archive/simplification/S8-rtp-passthrough.md).
+**Question IDs.** `Q-xxx-n` are the question IDs of [questions.md](questions.md), one row
+each by family (§3–§17 there); each M# names the questions it decides. `Q-K8S-1…11` are in
+[questions.md §16](questions.md#16-kubernetes-and-crash-safety-q-k8s-q-k3-under-m16),
+`Q-NI-1…10` in [§17](questions.md#17-nmos-and-ipmx-q-ni-q-nmos-q-i-under-m17-phase-7-later),
+`Q-PKT-1…9` in [§14](questions.md#14-rtp-passthrough-q-pkt-under-m14).
 
 ## 2. Open maintainer decisions
 
@@ -87,7 +87,7 @@ application memory, and a new internal session core (L2) over today's engines.
 
 - **Options:** (a) confirm all five; (b) change one (name it), which changes most documents;
   (c) the incremental alternative on the legacy API, ≈ 6–9 EM, 4–6 EM of it shared with this
-  plan ([archive/02 §2.3](archive/02-architecture.md)).
+  plan ([research.md §2.6](research.md#26-the-incremental-path-over-the-pipelines-costed)).
 - **What (c) cannot reach:** one verb set and one metadata struct for every essence (four
   exchange models and twelve metadata structs are the legacy ABI); `struct_size` on the ops
   structs (it needs a `*_create2` per family); removing the tasklet callbacks (they can be made
@@ -259,27 +259,31 @@ header freezes, and which sequencing and staffing does the plan follow? (Q-MIG-1
 **Question.** Accept the revision-4 simplification as one package (D-71…D-80, D-84, D-85,
 D-88). It reverses rules that earlier reviews set:
 
-| Earlier rule | Revision 4 |
-|---|---|
-| every knob a typed field | typed core fields; named options (`mtl_options.h`) for the long tail |
-| an exported `*_init()` per struct | `MTL_INIT(&s)` |
-| distinct buffer and lease handles | slots by index (`unit.slot`); leases stay typed (`mtl_lease_h`) |
-| completion modes NONE / EXCEPTIONS / ALL | results on or off: always for application memory, `MTL_SESSION_RESULTS` for library pools |
-| separate CQ and EQ objects, an instance EQ, user posts | one queue type (`mtl_queue.h`); events per session |
-| group objects | `mtl_session_start` / `mtl_session_stop` over an array |
-| fixed stats structs | a registry of named values (`mtl_stat_*`) |
-| `-MTL_EAGAIN` for timeout 0, `-MTL_ETIMEDOUT` for an expired data wait | `-MTL_EAGAIN` for both; a miss arms the wait handle |
-| a failed submit leaves the lease with the caller | the slot returns to the pool (except `-MTL_EAGAIN`) |
-| destroy, force flag and waiting for retirement | `mtl_session_close(s, timeout)` |
-| `mtl_call_seq()` | the errno contract of `mtl_last_error()` |
+| Earlier rule | Revision 4 | Why it is safe |
+|---|---|---|
+| every knob a typed field | typed core fields; named options (`mtl_options.h`) for the long tail | option keys are enum constants, validated at create with the key named in `mtl_last_error`, and listable (`mtl_option_list`) for framework properties |
+| an exported `*_init()` per struct | `MTL_INIT(&s)` | fixes an out-of-bounds write the per-struct form has across library versions |
+| distinct buffer and lease handles | slots by index (`unit.slot`); leases stay typed (`mtl_lease_h`) | the review C5 blocker was "misuse compiles"; an index still cannot be passed as a `mtl_lease_h` |
+| completion modes NONE / EXCEPTIONS / ALL | results on or off: always for application memory, `MTL_SESSION_RESULTS` for library pools | EXCEPTIONS saved bandwidth, not safety; lateness stays in counters and events |
+| separate CQ and EQ objects, an instance EQ, user posts | one queue type (`mtl_queue.h`); events per session | one wait object per framework element; user posts are not an MTL feature today |
+| group objects | `mtl_session_start` / `mtl_session_stop` over an array | a start array is one timeline and one direction, all or none (D-78), without seven functions and a state enum for it |
+| fixed stats structs | a registry of named values (`mtl_stat_*`) | counters stay cumulative and typed by descriptor; a new counter needs no struct change, and keys resolve once (`mtl_stat_find`) for a bulk DP read |
+| `-MTL_EAGAIN` for timeout 0, `-MTL_ETIMEDOUT` for an expired data wait | `-MTL_EAGAIN` for both; a miss arms the wait handle | every example loop handled them alike (S7 F-06) |
+| a failed submit leaves the lease with the caller | the slot returns to the pool (except `-MTL_EAGAIN`) | seven examples carried a release branch, and a missed one leaked the pool (S7 F-05) |
+| destroy, force flag and waiting for retirement | `mtl_session_close(s, timeout)` | one call, null-safe; it returns 1 while the application still holds leases |
+| `mtl_call_seq()` | the errno contract of `mtl_last_error()` | one call less on every failure path |
+| `time_source = AUTO` may start the built-in PTP client | only when named (D-85) | no surprise PTP client |
 
 - **Options:** (a) accept the package; (b) accept it but keep one revision-3 rule (name it);
-  (c) keep revision 3.
+  (c) keep revision 3. Under (b), keeping the revision-3 `mtl_buffer_h` (distinct buffer and
+  lease handles, D-07 as written) is possible: add `mtl_session_attach` and keep the buffer API
+  too, about +9 functions and +3 structs over D-76. With D-76 a slot is a `uint32_t` and the
+  lease stays `mtl_lease_h`, so swapping them is still a compile error.
 - **Recommendation:** (a).
 - **Blocks:** milestones M0–M3 (the header set they implement). Shapes milestones M4 and M5.
 - **Decisions waiting:** D-71, D-72, D-73, D-74, D-76, D-77, D-79, D-80, D-84, D-85, D-88.
-- **Detail:** [archive/REVISION-4.md §5](archive/REVISION-4.md),
-  [archive/simplification/](archive/simplification/) S2–S7.
+- **Detail:** [history.md](history.md) §5 (the studies S2–S6 and what was taken) and §6.7
+  (the header review); [coverage.md](coverage.md) §5 (S7, sample friction).
 
 **Your answer:**
 
@@ -309,7 +313,7 @@ used by an in-tree consumer beyond tests, a sample or RxTxApp. (Q-R4-2)
   `uframe_pg_callback` paths and the user-scheduler gtests are ported, left on the legacy API,
   or deleted. Shapes the nightly suite list (milestone M6).
 - **Decisions waiting:** D-87.
-- **Detail:** [archive/simplification/R4-coverage-check.md](archive/simplification/R4-coverage-check.md).
+- **Detail:** [coverage.md](coverage.md) §3.2 (regressions R-1…R-10) and §4.5 (cuts CUT-1…CUT-8).
 
 **Your answer:**
 
@@ -349,7 +353,9 @@ mode verbatim by default. (Q-R4-3)
 - **Blocks:** shapes milestones M4 and M5: the RTP-level ST20 modes of RxTxApp and the
   RTP-level ST20 gtests stay on the legacy API until packet mode is ported.
 - **Decisions waiting:** D-82.
-- **Detail:** [archive/simplification/S8-rtp-passthrough.md](archive/simplification/S8-rtp-passthrough.md).
+- **Detail:** [contract.md §13](contract.md#13-packet-units); the questions in
+  [questions.md §14](questions.md#14-rtp-passthrough-q-pkt-under-m14); R-PKT and G-PKT in
+  [requirements.md](requirements.md) §3.3 and §4.5.
 
 **Your answer:**
 
@@ -369,7 +375,8 @@ and `mtl_convert.h` land before F. (Q-R4-5)
 - **Blocks:** shapes milestone M0 (stage 0) and milestones M4 and M5 (legacy tests keep
   testing the engine through an internal dependency).
 - **Decisions waiting:** D-83.
-- **Detail:** [archive/simplification/S9-hiding-session-headers.md](archive/simplification/S9-hiding-session-headers.md).
+- **Detail:** [migration.md](migration.md) §8–§9; [coverage.md](coverage.md) §4 (the inventory
+  behind hiding).
 
 **Your answer:**
 
@@ -397,10 +404,11 @@ and `mtl_convert.h` land before F. (Q-R4-5)
 - **Blocks:** milestone M0 (instance open and close, handle slots, R8). Shapes milestone M3
   (health) and the shutdown cases of milestone M5.
 - **Decisions waiting:** D-89, D-90, D-91, D-92.
-- **Detail:** [deployment.md](deployment.md), [archive/16](archive/16-kubernetes-and-crash-safety.md).
+- **Detail:** [deployment.md](deployment.md).
 
-The sub-questions ([archive/16 §13](archive/16-kubernetes-and-crash-safety.md)); accepting
-M16 accepts each recommendation:
+The sub-questions (with their options in
+[questions.md §16](questions.md#16-kubernetes-and-crash-safety-q-k8s-q-k3-under-m16));
+accepting M16 accepts each recommendation:
 
 | ID | Question | Recommendation |
 |---|---|---|
@@ -434,13 +442,15 @@ today's destination and source change is Phase 7; the declarations are under `MT
 - **Decisions waiting:** D-93, D-94, D-95, D-96.
 - **Detail:** [nmos-ipmx.md](nmos-ipmx.md).
 
-The sub-questions ([archive/17 §7](archive/17-nmos-and-ipmx.md)); under D-98 every "v1" of
-the archive reads "Phase 7, declared under `MTL_LATER`":
+The sub-questions (with their options in
+[questions.md §17](questions.md#17-nmos-and-ipmx-q-ni-q-nmos-q-i-under-m17-phase-7-later) and
+[nmos-ipmx.md](nmos-ipmx.md) §16); under D-98 every "v1" of the original questions reads
+"Phase 7, declared under `MTL_LATER`":
 
 | ID | Question | Recommendation |
 |---|---|---|
 | Q-NI-1 | Ship `mtl_sdp.h` (render and parse), replacing Q-MODE-6's "SDP values only" | yes (Phase 7) |
-| Q-NI-2 | Ship `mtl_rtcp.h`; IPMX cannot be met without sender reports | yes, Phase 7 with timing without PTP (the archive's "phase 3" predates D-98) |
+| Q-NI-2 | Ship `mtl_rtcp.h`; IPMX cannot be met without sender reports | yes, Phase 7 with timing without PTP (the original "phase 3" predates D-98) |
 | Q-NI-3 | `mtl_crypto.h` now, or after a cost spike | the header as a proposal; implementation after the spike |
 | Q-NI-4 | Rename the NACK options `rtcp.*` to `rtx.*` (`MTL_OPT_RTX`, `rtx.enable`) | yes; the legacy names stay in the bridge |
 | Q-NI-5 | Mute (every leg disabled) instead of a scheduled stop | yes |
@@ -458,11 +468,11 @@ the archive reads "Phase 7, declared under `MTL_LATER`":
 
 Names are the revision-4 header names. "r4 shape" means a later decision changed the form
 and the row states the current form. **Where** names the maintained document that
-specifies it. **Answers** names the question of
-[archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md) the decision answers (its options and
-research are there), with the study (S1–S9, K1–K3, N1, I1) in brackets; "C5 §x" is a finding
-of the adversarial user review C5 (not in the repository; its findings and answers are in [archive/reviews/C5-response.md](archive/reviews/C5-response.md)); "—" is a review
-finding without a question, or the maintainer's direction.
+specifies it. **Answers** names the question of [questions.md](questions.md) the decision
+answers (its options and research are there), with the study (S1–S9, K1–K3, N1, I1) in
+brackets; "C5 §x" is a finding of the adversarial user review C5 (not in the repository; its
+findings and answers are in [history.md §6.5](history.md#65-c5--adversarial-user-and-feasibility-review-and-its-response));
+"—" is a review finding without a question, or the maintainer's direction.
 
 | ID | Decision | Status | Where | Answers |
 |---|---|---|---|---|
@@ -557,9 +567,8 @@ finding without a question, or the maintainer's direction.
 ### 3.2 Why: prior art
 
 The defaults that M1, M3 and M7 rest on come from other media and I/O APIs. Details:
-[archive/research/11 §10–§11](archive/research/11-media-io-prior-art.md),
-[archive/research/09 §10](archive/research/09-libfabric.md),
-[archive/research/10 §12](archive/research/10-rivermax.md).
+[prior-art.md](prior-art.md) §6.2 (media I/O patterns), §3.2 (libfabric's pain points), §4.2
+(what Rivermax users find alien).
 
 | Rule | Decision | Taken from | Rejected |
 |---|---|---|---|
@@ -576,8 +585,8 @@ The defaults that M1, M3 and M7 rest on come from other media and I/O APIs. Deta
 
 ### 3.3 Superseded
 
-Only the replacement is in force; the original text is in
-[archive/DECISIONS.md](archive/DECISIONS.md).
+Only the replacement is in force; the superseded wording is in
+[history.md §6.12](history.md#612-superseded-decisions).
 
 - D-12 (timelines with a group object and lazy anchors) by D-78.
 - D-20 (stats structs, cumulative counters) by D-80.
@@ -599,7 +608,8 @@ return codes by D-88; Q-MODE-6's "SDP values only" by D-94.
 
 These are the proposed defaults that milestones M0–M6 implement or test for ST 2110-20. They
 stand unless the maintainer objects in §6. Names are the header names; the full question,
-options and research are under the Q-ID in [archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md).
+options and status are in the row of the Q-ID in [questions.md](questions.md), its research
+references in §18 there.
 
 | Q-ID | Proposed default | Where |
 |---|---|---|
@@ -655,21 +665,22 @@ options and research are under the Q-ID in [archive/OPEN-QUESTIONS.md](archive/O
 
 The other proposed defaults (audio, ANC, ST 2110-22, memory imports and GPUs, timecode,
 groups of essences, out-of-process stats, SDP, Rivermax naming) are not on the ST20 path.
-They keep their text and answer lines in [archive/OPEN-QUESTIONS.md](archive/OPEN-QUESTIONS.md);
-their decisions are in §3.1.
+Their questions and options are in [questions.md](questions.md) and their decisions in §3.1;
+an objection goes to §6.
 
 ## 5. Open issues for the implementation
 
 Points the distillation found where two documents, or a document and a header, disagree, or
 where a rule is missing. None is decided here. Where the headers were changed on 2026-10-02
 the recommendation is the header's text, to be confirmed. Answer in the last column; an
-answered issue becomes a D-xx row (§3.1) or a fix of the named document.
+answered issue becomes a D-xx row (§3.1) or a fix of the named document. An issue the documents
+resolved since keeps its row, marked **Closed** with the place of the fix; IDs are never reused.
 
 ### 5.1 Instance, lifecycle, time sources
 
 | ID | Issue | Options | Recommendation | Milestone | Your answer |
 |---|---|---|---|---|---|
-| OI-1 | Shared instance: archive/03 §7.2 has a merge table; `mtl_instance_open` (`mtl.h`) fails a later open with differing ports, lcores, time source or options with `-MTL_EEXIST` (`INSTANCE_MISMATCH`) | (a) the header; (b) the merge table | (a); D-44 and Q-LIFE-2 follow it | milestone M0 | |
+| OI-1 | Shared instance: revision 3 had a merge table ([history.md §4.2](history.md#42-its-instance-and-its-defaults)); `mtl_instance_open` (`mtl.h`) fails a later open with differing ports, lcores, time source or options with `-MTL_EEXIST` (`INSTANCE_MISMATCH`) | (a) the header; (b) the merge table | (a); D-44 and Q-LIFE-2 follow it | milestone M0 | |
 | OI-2 | Bridged instance before the legacy `mtl_start()`: today sessions can be created first and no tasklet runs until it (`dev/mt_dev.c:2113-2125`) | (a) create any time, start before `mtl_start()` is `-MTL_EBUSY` (`WRONG_STATE`); (b) the unified start starts it | (a); RxTxApp and KahawaiTest start it (or `MTL_FLAG_DEV_AUTO_START_STOP`) first | milestones M0, M4, M5 | |
 | OI-3 | Legacy teardown: `mt_sch_mrg_uinit` releases lcores before it frees active schedulers (`mt_sch.c:1022-1030`); `mtl_uninit` with live sessions self-deadlocks (SP-01). EK1 fixes the unified order | (a) fix the legacy order too, as a bugfix (D-24); (b) unified only | (a) | milestone M0 | |
 | OI-4 | EK6 removes the SysV lcore table: the legacy `mtl_lcore_shm_*` calls, `doc/shm_lcore.md`, `docker/README.md` (`ipc: host`, `/tmp/kahawai_lcore.lock`) and the `mtl_lcore_shm` tool lose it | (a) the calls report nothing and go at the freeze; docs move to `MTL_CPUARB_LOCKS` with a shared `instance.runtime_dir`; (b) keep the table for legacy until the freeze | (a), with M16 | milestone M0 | |
@@ -677,22 +688,22 @@ answered issue becomes a D-xx row (§3.1) or a fix of the named document.
 | OI-6 | `MTL_TIME_SOURCE_PTP_BUILTIN` on a VF: one text refused it (`CLOCK_NOT_OWNED`); today it runs in software mode (`mt_ptp.c:1390-1393`) for RxTxApp `--ptp` and the nightly pytest `ptp` group | (a) as today: disciplines MTL's own time base, never the VF's PHC (header); (b) refuse, as a listed behaviour change | (a) (port first, D-98) | milestones M4, M6 | |
 | OI-7 | Which configurations are "a PHC MTL does not own" (`CLOCK_NOT_OWNED`, 614): on a PF today's client always steers the PHC, and MTL cannot see a node ptp4l on it ([deployment.md §4.8](deployment.md#48-time-in-a-pod)) | (a) `PTP_BUILTIN` with `time.phc_trust` = `MTL_PHC_TRUST_YES`; (b) never on a PF | (a) | milestone M0 | |
 | OI-8 | Phase of `mtl_time_set_reference()`: nmos-ipmx.md said Phase 7; pods need it to report a lost grandmaster | (a) Phases 1–2, with the pod time rules (header list of 2026-10-02); (b) Phase 7 | (a) | milestones M0–M3 | |
-| OI-9 | The waker's `SCHED_FIFO` priority had no option key (archive/15 §4); the header now has `MTL_OPT_WAKER_PRIORITY` (`instance.waker_priority`, 1–99, needs `CAP_SYS_NICE`) | (a) keep the key, failure reported, never fatal; (b) drop the promise | (a) | milestone M1 | |
+| OI-9 | The waker's `SCHED_FIFO` priority had no option key in revision 3; the header now has `MTL_OPT_WAKER_PRIORITY` (`instance.waker_priority`, 1–99, needs `CAP_SYS_NICE`) | (a) keep the key, failure reported, never fatal; (b) drop the promise | (a) | milestone M1 | |
 | OI-10 | Code of a missed control-plane deadline: prose said `-MTL_ETIMEDOUT` for "stop, close"; `mtl_session_close` returns 0 or 1, `mtl_instance_close` 0, 1 or `-MTL_EIO` | (a) only a DRAIN stop that missed its deadline (header); (b) close too | (a) | milestone M1 | |
-| OI-11 | Generated session names: archive/09 and contract.md `<essence>_<tx or rx>_<n>`, archive/08 `<essence>-<dir>-<n>` | (a) underscores; (b) hyphens | (a); state it at `mtl_session_config.name` | milestones M1, M3 (G-88) | |
-| OI-12 | Codes per call: the header gives `-MTL_EBADF` for a closed handle and R4's rule, not the state × call table (contract.md §4.2; an update in DRAINING or FLUSHING is `-MTL_EBUSY`) or the code matrix of archive/07 §5.3 | (a) each function's comment lists its codes; (b) contract.md is normative, the header points there | (b), with a G-49 test from the table | milestone M1 | |
-| OI-13 | Gap units of a recovered port reset: contract.md (from archive/16) `MTL_TX_FAILED`, `PORT_RESET`; archive/03 and Q-LIFE-10 `MTL_TX_DROPPED`, `RECOVERY` | (a) FAILED / `PORT_RESET`; (b) DROPPED / `RECOVERY` | (a); then fix Q-LIFE-10 | milestones M3, M5 | |
+| OI-11 | Generated session names: contract.md and one revision-3 text `<essence>_<tx or rx>_<n>`, another (observability) `<essence>-<dir>-<n>` | (a) underscores; (b) hyphens | (a); state it at `mtl_session_config.name` | milestones M1, M3 (G-88) | |
+| OI-12 | Codes per call: the header gives `-MTL_EBADF` for a closed handle and R4's rule, not the state × call table (contract.md §4.2; an update in DRAINING or FLUSHING is `-MTL_EBUSY`) or revision 3's code matrix | (a) each function's comment lists its codes; (b) contract.md is normative, the header points there | (b), with a G-49 test from the table | milestone M1 | |
+| OI-13 | Gap units of a recovered port reset: contract.md §2.6 and §4.10 (from the crash-safety design, deployment.md §4.6) `MTL_TX_FAILED`, `PORT_RESET`; revision 3 and Q-LIFE-10 `MTL_TX_DROPPED`, `RECOVERY` | (a) FAILED / `PORT_RESET`; (b) DROPPED / `RECOVERY` | (a); then fix Q-LIFE-10 | milestones M3, M5 | |
 
 ### 5.2 Data path, results, memory
 
 | ID | Issue | Options | Recommendation | Milestone | Your answer |
 |---|---|---|---|---|---|
 | OI-14 | DP and syscalls: R6 said "no syscall", but a data call drains the armed wait handle with a `read()`; the header now allows exactly that non-blocking read (R2) | (a) the header; busy-loop threads never make it; (b) drain on the waker only | (a); debug-build syscall checks allow that read | milestone M1 | |
-| OI-15 | Failed submit of a packet unit (`PKT_COUNT`) or codestream (`CODESTREAM_OVERSIZE`): S8 and archive G-66 keep the lease with the caller; `mtl_tx_submit` (D-88) returns the slot to the pool | (a) the header, restate G-66 and S8; (b) keep the lease for these two | (a) | none (2P, ST 2110-22) | |
-| OI-16 | Guarantees in revision-3 terms (archive/13): G-02 (lease kept after a rejected submit), G-11 (`mtl_mem_destroy` `-EBUSY`), G-70 (`-MTL_ETIMEDOUT`, `call_seq`), G-72 (CQ/EQ readers), G-77 (instance release, EQs), G-87 (reconfigure, groups) | (a) restate each in revision-4 terms in implementation-plan.md §8.2; (b) drop and replace | (a) | milestones M0, M1, M3 | |
-| OI-17 | `MTL_SESSION_EXPORT_POOL` implies only `MTL_SESSION_RESULTS` (`mtl.h`); D-50 and archive/11 §6.2 say exported pools need `MTL_SESSION_MT_SUBMIT` | (a) it implies MT_SUBMIT too; (b) create without MT_SUBMIT fails `-MTL_EINVAL`; (c) neither, fix D-50 | (a); state it in the header | none (framework pools) | |
-| OI-18 | Results ring full: archive/04 §4.1 keeps a done slot until a result entry frees; the header sizes the ring at `pool_count` and reserves an entry at acquire, so a result never waits | (a) the header (G-04); (b) archive/04 | (a); restate engine.md | milestone M3 | |
-| OI-19 | Latency fields: archive/04 puts the expected completion and wake latency (`expected_wake_latency_ns`, from S1) in session info; only `mtl_buffer_requirements.completion_latency_ns` exists | (a) add both to `struct mtl_session_info`; (b) wake latency as an `info.*` stats key | (b), keeping the info size | milestone M3 | |
+| OI-15 | Failed submit of a packet unit (`PKT_COUNT`) or codestream (`CODESTREAM_OVERSIZE`): S8 and revision 3's G-66 (requirements.md §4.3 still says so) keep the lease with the caller; `mtl_tx_submit` (D-88) returns the slot to the pool | (a) the header, restate G-66 and S8; (b) keep the lease for these two | (a) | none (2P, ST 2110-22) | |
+| OI-16 | Guarantees in revision-3 terms: G-02 (lease kept after a rejected submit), G-11 (`-EBUSY`), G-70 (`call_seq`), G-72 (CQ/EQ readers), G-77 (EQs), G-87 (groups) | (a) restate each in revision-4 terms; (b) drop and replace | **Closed:** (a) applied: G-02, G-70, G-72, G-77 in implementation-plan.md §8.2, G-11, G-87 in requirements.md §4.2 | milestones M0, M1, M3 | |
+| OI-17 | `MTL_SESSION_EXPORT_POOL` implies only `MTL_SESSION_RESULTS` (`mtl.h`); D-50 and revision 3 say exported pools need `MTL_SESSION_MT_SUBMIT`; migration.md §12.4 tells the application to set it, since it is not implied | (a) it implies MT_SUBMIT too; (b) create without MT_SUBMIT fails `-MTL_EINVAL`; (c) neither, fix D-50 | (a); state it in the header | none (framework pools) | |
+| OI-18 | Results ring full: revision 3 kept a done slot until a result entry freed; the header sizes the ring at `pool_count` and reserves an entry at acquire, so a result never waits | (a) the header (G-04); (b) revision 3 | **Closed:** (a) applied: engine.md §5.4 states the header rule | milestone M3 | |
+| OI-19 | Latency fields: revision 3 put the expected completion and wake latency (from S1) in session info; only `mtl_buffer_requirements.completion_latency_ns` existed | (a) add both to `struct mtl_session_info`; (b) `info.*` stats keys | **Closed:** (b) applied: contract.md §11.3 has `info.completion_latency_ns` and `info.expected_wake_latency_ns` | milestone M3 | |
 | OI-20 | Moving-cursor TX (D-56): no header has revision 3's `MTL_POOL_DYNAMIC` or `mtl_tx_acquire_dynamic`; `mtl_tx_acquire_layout` is under `MTL_LATER`; early source release has no symbol | (a) `mtl_tx_acquire_layout` replaces the dynamic pool, early release added in Phase 4; (b) restore the dynamic pool | (a) | none (Phase 4) | |
 | OI-21 | Import access: deployment.md §1.1 says the mapping uses the matching direction; DPDK maps every region read-write (DPDK 26.07 `lib/eal/linux/eal_vfio.c:1442-1443`) | (a) `MTL_MEM_READ`/`MTL_MEM_WRITE` are a contract check at attach (`ACCESS_MISMATCH`), a read-only CPU mapping is copy only; (b) direction-limited mappings (a DPDK patch) | (a) for v1 | none (Phase 4) | |
 | OI-22 | Imports in PA mode (`instance.allow_noiommu`): `mtl_mem_import` and DMA behaviour unstated | (a) copy only (`direct` 0), `-MTL_ENOTSUP` with `MTL_SESSION_REQUIRE_DIRECT`; (b) import fails `-MTL_ENOTSUP` | (a) | none (Phase 4) | |
@@ -702,8 +713,8 @@ answered issue becomes a D-xx row (§3.1) or a fix of the named document.
 
 | ID | Issue | Options | Recommendation | Milestone | Your answer |
 |---|---|---|---|---|---|
-| OI-24 | Discard and ready RX units: contract.md §4.5 keeps them dequeuable; archive/03 §3.4 discards them; `mtl_session_discard` is silent | (a) they stay; (b) discarded and counted (`rx.units_flushed`), so the first dequeue after a seek is a new unit; stop and ERROR keep them | (b), for framework flushes (GStreamer FLUSH_STOP) | milestones M2, M4 | |
-| OI-25 | Zero fill of attached RX pools: header and contract.md cover library pools; archive/05 §8 leaves attached pools unfilled; S4 P8 fills every pool | (a) library pools only, attached pools use `mtl_rx_get_missing()`; (b) every pool, `MTL_SESSION_RX_NO_FILL` opts out | (a) (D-37); align the `MTL_SESSION_RX_NO_FILL` comment | milestone M2 | |
+| OI-24 | Discard and ready RX units: contract.md §4.5 keeps them dequeuable; revision 3 discarded them; `mtl_session_discard` is silent | (a) they stay; (b) discarded and counted (`rx.units_flushed`), so the first dequeue after a seek is a new unit; stop and ERROR keep them | (b), for framework flushes (GStreamer FLUSH_STOP) | milestones M2, M4 | |
+| OI-25 | Zero fill of attached RX pools: header and contract.md cover library pools; revision 3 (D-37) left attached pools unfilled; S4 P8 fills every pool | (a) library pools only, attached pools use `mtl_rx_get_missing()`; (b) every pool, `MTL_SESSION_RX_NO_FILL` opts out | (a) (D-37); align the `MTL_SESSION_RX_NO_FILL` comment | milestone M2 | |
 | OI-26 | Source of missing ranges: the packet bitmap belongs to the reassembly slot and is cleared at reuse (`st_rx_video_session.c:1298-1299`), so zero fill and `mtl_rx_get_missing()` have no data | (a) copy the bitmap into the lease table at the RX hook (≈ 540 B at 1080p); (b) zero-fill the whole frame before reuse | (a); until then `mtl_rx_get_missing()` is `-MTL_ENOTSUP` | milestone M2 | |
 | OI-27 | `rx.threads` = 2 with two legs or rows units: today's engine rejects it (`st_rx_video_session.c:2642-2668`); the header now says so | (a) an explicit 2 fails `-MTL_ENOTSUP`, auto stays 1; (b) silently 1 | (a) (no silent downgrade, D-19) | milestone M2 | |
 | OI-28 | Per-packet conversion: `rx.convert_per_packet` (`ST20P_RX_FLAG_PKT_CONVERT`) runs library code on the RX tasklet and disables DMA; contract.md said conversion is never on a tasklet | (a) the stated exception (header); (b) not ported, its twin goes to the M12 list | (a) | milestones M2, M5 | |
@@ -713,18 +724,39 @@ answered issue becomes a D-xx row (§3.1) or a fix of the named document.
 
 | ID | Issue | Options | Recommendation | Milestone | Your answer |
 |---|---|---|---|---|---|
-| OI-30 | Rounding of `mtl_index_at` / `mtl_epoch_index_at`: the header rounds down (the unit containing t; the first at or after is k or k + 1); archive/06 §10.7, §15 and `st_timeline_index_at` used ceil | (a) the header, the Phase 0.5 helper alike; (b) ceil | (a) | milestone M3 (M3b) | |
-| OI-31 | `MTL_STEP_DEFAULT` keeps media times on the epoch and re-anchors every created timeline; archive/06 keeps timelines anchored at a TAI instant | (a) the header; (b) TAI-anchored timelines keep | (a), revisited with created timelines | none (Phase 3) | |
+| OI-30 | Rounding of `mtl_index_at` / `mtl_epoch_index_at`: the header rounds down (the unit containing t; the first at or after is k or k + 1); revision 3 and its `st_timeline_index_at` helper used ceil | (a) the header, the Phase 0.5 helper alike; (b) ceil | (a) | milestone M3 (M3b) | |
+| OI-31 | `MTL_STEP_DEFAULT` keeps media times on the epoch and re-anchors every created timeline; revision 3 kept timelines anchored at a TAI instant | (a) the header; (b) TAI-anchored timelines keep | (a), revisited with created timelines; `MTL_AT_TAI` timelines are OI-52 | none (Phase 3) | |
 | OI-32 | Audio packet time that is not whole samples: `MTL_PTIME_80US` at 48 kHz is 3.84 samples; today packets go every 80 µs (`st_fmt.c:1111-1112`) with 4 samples each (`:1172-1173`) | (a) reject the pair (`-MTL_EINVAL`); (b) 4 samples paced at 4 / Fs, granted ptime reported; (c) today's behaviour | (b), so RTP and pacing agree (D-41) | none (audio) | |
-| OI-33 | Source kind of a processor: ex10 uses `MTL_SOURCE_GATEWAY` with `min_tx_delay_ns` = the budget; archive/06 §10.8 uses CAPTURE; the header calls GATEWAY "line by line: SDI to IP" | (a) GATEWAY; (b) CAPTURE (late units raise `MTL_EVENT_TIMING_INFEASIBLE`) | (b); applied in ex10 and timing.md (object to reverse) | none | |
-| OI-34 | Archive/06 statuses missing from the headers: RELOCKED, REPEATED, TIMELINE_CONFIG_MISMATCH, RX_TIMELINE_LAZY, JTNM_DEFAULT_WINDOW_EXCEEDED, an RX_DISCONTINUITY event; DISCONTINUITY and NON_COMPLIANT exist only as submit, unit and info flags | (a) add each with the phase of its feature; (b) drop them | (a); check RELOCKED for RX relock (Q-TIME-27) | milestone M3 | |
-| OI-35 | G-86, a non-aligned audio forward gap: archive/13 counts the skipped samples in `samples_dropped`; timing.md §8 pads with silence (`samples_padded`) | (a) pad gaps, drop overlaps (timing.md); (b) archive/13 | (a); restate G-86 | none (audio) | |
+| OI-33 | Source kind of a processor: ex10 uses `MTL_SOURCE_GATEWAY` with `min_tx_delay_ns` = the budget; revision 3 used CAPTURE; the header calls GATEWAY "line by line: SDI to IP" | (a) GATEWAY; (b) CAPTURE (late units raise `MTL_EVENT_TIMING_INFEASIBLE`) | (b); applied in ex10 and timing.md (object to reverse) | none | |
+| OI-34 | Revision-3 statuses, flags and reasons missing from the headers (the items are listed below the table); DISCONTINUITY and NON_COMPLIANT exist only as submit, unit and info flags | (a) add each with the phase of its feature; (b) drop them | (a), except the RX_DISCONTINUITY event: (b); check RELOCKED for RX relock (Q-TIME-27) | milestone M3 | |
+| OI-35 | G-86, a non-aligned audio forward gap: revision 3's G-86 note counted the skipped samples in `samples_dropped`; timing.md §8 pads with silence (`samples_padded`) | (a) pad gaps, drop overlaps (timing.md); (b) revision 3 | **Closed:** (a) applied: G-86 is restated in timing.md §16.1 | none (audio) | |
+
+The items of OI-34:
+
+- RELOCKED, REPEATED, TIMELINE_CONFIG_MISMATCH, RX_TIMELINE_LAZY, JTNM_DEFAULT_WINDOW_EXCEEDED
+  (timing.md §4, §6).
+- `RTP_OFF_GRID`, the info flag for an AUTO or INDEX `media_time_offset_ns` that is not a
+  multiple of the index period, so the session's RTP is not on `N·P`; `mtl.h` has only
+  `MTL_INFO_NON_COMPLIANT` and `MTL_INFO_MEDIACLK_SENDER`.
+- `INCOMPLETE_BY_DUE`, revision 3's RX timing flag: the unit was force-completed at its due
+  time, not by a DRAIN stop or a discard; `MTL_RX_INCOMPLETE` does not say which.
+- The off-grid timing state (timing.md §4.3): a LOCKED_PHASE relock and `MTL_OFF_GRID_DROP` set
+  `MTL_STATUS_TIMING_WARNING`, but `status.timing_reason` has no value for it (403–406;
+  `OFF_GRID` 505 is a TX result reason), and no gauge reports snap error or phase drift (only the
+  per-result `snap_error_ns`). Options: reuse 505 or add a 4xx reason (for example
+  `OFF_GRID_PHASE`); a `tx.snap_error_ns` and `tx.phase_drift_ns` gauge, or per result only.
+- The reason of a start array whose ANC or grid-fastmeta session sets `anc.video` or
+  `fastmeta.video` to another rate or raster than the first video session's (`-MTL_EINVAL`,
+  timing.md §7.1): `START_SET_MIXED` (222), `GRID_MISMATCH` (225) or a new 2xx reason.
+- An RX_DISCONTINUITY event. Study S5 (P7) removed it on purpose: the per-unit
+  `MTL_UNITF_DISCONTINUITY` flag is lossless and already the getter of record (every RX session
+  has unit records), and `rx.discontinuities` counts them. So option (b) for this item.
 
 ### 5.5 Headers
 
 | ID | Issue | Options | Recommendation | Milestone | Your answer |
 |---|---|---|---|---|---|
-| OI-36 | Generator source of `mtl_reasons.h` and `mtl_options.h`: they named revision-3 tables in archive/07 §5.4 and archive/09 §9 | (a) the tables in contract.md §8.3 and §12 are the source; (b) the headers are the source and the tables are generated from them | (a), applied: the header comments now name contract.md | milestone M0 | |
+| OI-36 | Generator source of `mtl_reasons.h` and `mtl_options.h`: they named revision-3 tables (of the error and the media-mode designs) | (a) the tables in contract.md §8.3 and §12 are the source; (b) the headers are the source and the tables are generated from them | (a), applied: the header comments now name contract.md | milestone M0 | |
 | OI-37 | Review leftovers RV-49, RV-50: `MTL_US`/`MTL_MS`/`MTL_SEC` take integers (`MTL_MS(1.5)` truncates); `mtl_mem_alloc`'s `void** va` is not `MTL_ADDR`; opposite defaults of `MTL_SESSION_MT_SUBMIT` and `MTL_SESSION_SINGLE_READER` | (a) keep all three, documented; (b) change them | `MTL_ADDR` for `va`; keep the macros and the defaults | milestone M0 | |
 | OI-38 | Error codes of the environment reasons 600–614: the header names the reasons but not the code each returns from `mtl_instance_open` (contract.md §8.4 proposes them, and `-MTL_EINVAL` for `PORT_NOT_OPEN`) | (a) contract.md's table; (b) one code for all (`-MTL_ENODEV` or `-MTL_EINVAL`) | (a), and fix them in the header comments | milestone M0 | |
 | OI-39 | `MTL_SUBMIT_NOT_BEFORE` / `MTL_SUBMIT_EXACT` on audio and fastmeta before those essences get launch control | (a) `-MTL_ENOTSUP` until their phase; (b) ignored | (a) | none (Phase 3) | |
@@ -734,8 +766,26 @@ answered issue becomes a D-xx row (§3.1) or a fix of the named document.
 | OI-43 | OBS passes `lcores` and queue counts per source, FFmpeg sets migrate and separate-lcore flags: a second element's shared open then fails with `INSTANCE_MISMATCH` | (a) the plugins leave them zero; (b) these settings become session keys or a mergeable class | (b) for queue counts and migrate (session keys exist), (a) for `lcores` | Phase 6 (plugin rewrites) | |
 | OI-44 | Rounding of nanosecond ties in the epoch math (Q-TIME-15): the code rounds ties down (`st_muldiv_u64_round_closest`); the design wanted the later ns | (a) pin today's behaviour; (b) round ties up | (a), pinned by a unit test in the legacy gate | milestone M3 (M3b) | |
 | OI-45 | TX hang detection for ANC and fastmeta: today none (no `fatal_error` in those sessions) | (a) the video path's detection for them; (b) none, documented | (a) | none (Phase 5) | |
-| OI-46 | Where the null backend lives: an L2 adapter (`lib/src/unified/adapters/null.c`) or a device in `lib/src/dev/` | (a) the adapter: no engine change, enough for the U tier; (b) a device: also exercises the engine | (a) for milestone M0, (b) later for UB tests | milestone M0 | |
+| OI-46 | Where the null backend lives: an L1 adapter (`lib/src/unified/adapters/null.c`, the proposal of implementation-plan.md §4 and migration.md §14) or a device in `lib/src/dev/` | (a) the adapter: no engine change, enough for the U tier; (b) a device: also exercises the engine | (a) for milestone M0, (b) later for UB tests | milestone M0 | |
 | OI-47 | `MTL_PORTS` grammar (contract.md §2.1, proposed): gateways, IPv6, interface names, `env:` ports with `=ip/prefix`, and what happens when `p` names ports too | (a) the proposed grammar; (b) a different one | (a) | milestone M0 | |
+
+### 5.6 Found in the last audit
+
+The same columns, with the document that raised the issue.
+
+| ID | Issue | Options | Recommendation | Raised in | Milestone | Your answer |
+|---|---|---|---|---|---|---|
+| OI-48 | `instance.cpu_arbitration` auto picks `MTL_CPUARB_MANAGER` whenever the MtlManager socket is present; a pod mounts it for AF_XDP only, then gets manager CPU arbitration in its exclusive cpuset, against K-REQ-8 (RK-28) | (a) auto = none in an exclusive cpuset, the manager grants AF_XDP queues only; (b) keep it, pods set `MTL_CPUARB_NONE` | (a) | deployment.md §4.7 | milestone M0 | |
+| OI-49 | A second `mtl_instance_open` on the same port set without `MTL_INSTANCE_SHARED` has no defined return; revision 3 allowed one instance per port set per process | (a) `-MTL_EEXIST` (`INSTANCE_MISMATCH`); (b) `-MTL_EBUSY`; (c) allow it | (a) | contract.md §2.3 | milestone M0 | |
+| OI-50 | Migration is kept (Q-THR-6, `MTL_OPT_MIGRATE`), but `info.sched_index` is a constant key and no event reports a move; revision 3 had `SESSION_MIGRATED` (scheduler index, busy %) | (a) an event plus `sched_index` as a gauge; (b) a gauge only; (c) drop migration | (a) | contract.md §11 | none (migration off by default) | |
+| OI-51 | G-41 says every state event has a getter; `MTL_EVENT_RX_TIMEBASE_SUSPECT` has none (no `MTL_STATUS_*` flag, no `rx.*` key), so it is lost after `MTL_EVENT_OVERFLOW` | (a) a getter: study S5's `MTL_STATUS_TIMEBASE_SUSPECT` or an `rx.` gauge; (b) a notice, exempt in G-41 | (a), the status flag | contract.md §10.1 | milestone M3 | |
+| OI-52 | `MTL_AT_TAI` timelines: the step policy re-anchors them (OI-31), yet RX sessions and other processes bind them and rely on T0; and T0 is fixed at create while the default grid (`{0, 0}`) is known only at start | (a) never re-anchor AT_TAI; (b) fix T0 at the first start; (c) require an explicit grid for AT_TAI | (a) and (b) | timing.md §3.1, §4 | none (Phase 3) | |
+| OI-53 | `enum mtl_stat_unit` has no identifier unit for `time.grandmaster_id`, `port.mac` and `info.ts_refclk.gm_identity{leg}` (EUI-64; a MAC in the low 48 bits), and no enum names the `instance.manager` values | (a) add `MTL_SU_ID` and an enum of manager states; (b) report them as `MTL_SU_ENUM` or raw `u64`, documented | (a) | contract.md §11 | milestones M1, M3 | |
+| OI-54 | G-83 and G-87 name reason codes that `mtl_reasons.h` does not have (`HOLD_MISMATCH`, `RECONFIGURE_INCOMPATIBLE`) | (a) add the two codes; (b) reword the guarantees to existing codes (`HOLD_REQUIRED` 219, `LAYOUT_MISMATCH` 212, `GRID_MISMATCH` 225) | (b) | implementation-plan.md §8.2, requirements.md §4.2 | milestone M3 | |
+| OI-55 | Interlace detection is a typed field for video (`video.detect`, `enum mtl_detect`) but an option for ANC (`MTL_OPT_ANC_RX_DETECT`), coverage check residual I-9r | (a) a typed field for both; (b) an option for both | (a) | coverage.md §3.3, §3.4 | none (ANC, Phase 5) | |
+| OI-56 | Result of a muted TX unit (every existing leg disabled): `legs_disabled` (`mtl.h`) retires it at its slot and counts it only in `tx.units_muted`; no header names its status and reason (RN-32) | (a) `MTL_TX_DROPPED` with `LEG_DISABLED`, counted only as muted; (b) a status of its own (`MTL_TX_MUTED`); (c) no result, as for suppressed outcomes | (a) | contract.md §6.3 | none (Phase 7) | |
+| OI-57 | R2 defines timeout 0 and `MTL_FOREVER` (−1) only; a timeout below −1 is undefined (review C3 P1-6) | (a) `-MTL_EINVAL`; (b) treat it as `MTL_FOREVER`; (c) treat it as 0 | (a) | contract.md §1 | milestone M0 | |
+| OI-58 | Default late policy of an `MTL_MEDIA_SENDER` session: the `tx.late_policy` comment (key 100) names AUTO (RESLOT) and INDEX/TAI (DROP) only; the IPMX study gave SENDER a bounded SEND_LATE within `tx.late_tolerance_ns`, then DROP (`WOULD_OVERLAP`) | (a) add "SENDER: SEND_LATE" to the key 100 comment; (b) SENDER defaults to DROP like INDEX/TAI | (a) | nmos-ipmx.md §12 | none (Phase 7) | |
 
 ## 6. Objections to proposed defaults
 

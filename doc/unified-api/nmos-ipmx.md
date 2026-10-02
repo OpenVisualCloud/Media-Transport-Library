@@ -4,7 +4,7 @@
 |---|---|
 | Status | Design kept for a later phase. **Phase 7, later** (D-98), except the atomic `mtl_session_update` with its planned instant and per-leg enable, which are **Phase 2**. Awaiting maintainer decision M17 ([decisions.md](decisions.md)) |
 | Date | 2026-10-02 |
-| Sources | [archive/17-nmos-and-ipmx.md](archive/17-nmos-and-ipmx.md) (primary), [archive/interop/N1-nmos-requirements.md](archive/interop/N1-nmos-requirements.md), [archive/interop/I1-ipmx-requirements.md](archive/interop/I1-ipmx-requirements.md), [archive/reviews/RN-nmos-ipmx-review.md](archive/reviews/RN-nmos-ipmx-review.md), [archive/reviews/RKNA-response.md](archive/reviews/RKNA-response.md), [archive/reviews/RV-verification.md](archive/reviews/RV-verification.md) |
+| Folded from | the archived note 17 (NMOS and IPMX, primary); the interop studies N1 (NMOS requirements) and I1 (IPMX requirements), whose requirement rows are now [requirements.md](requirements.md) §6, §7; the reviews RN, RKNA and RV (now [history.md](history.md) §6.9–§6.11) |
 | Headers | `mtl.h` (update contract, legs, status), [mtl_sdp.h](sketch/include/mtl/experimental/mtl_sdp.h), [mtl_rtcp.h](sketch/include/mtl/experimental/mtl_rtcp.h), [mtl_crypto.h](sketch/include/mtl/experimental/mtl_crypto.h), `mtl_options.h` (113, 201–213, 1000–1039, 2040), `mtl_sync.h`, `mtl_format.h`, `mtl_queue.h` (events 26–30), `mtl_packet.h` |
 
 NMOS (AMWA IS-04, IS-05 and the BCPs) is how an ST 2110 device is found, connected and monitored.
@@ -47,6 +47,9 @@ One Node is one MTL instance; the NMOS APIs use a management interface, not an M
 Sender or Receiver is one session named by its UUID (`sc.name`, 64 B, kept across
 `MTL_UPDATE_MEDIA`), created at boot with every leg reserved and disabled, started, and so muted
 (Phase 7). Activations are then boundary updates: nothing is allocated, and scheduled timing is exact.
+Node `clocks[0]` is the one instance timescale: each leg's PHC is compensated into it, and the
+per-port `time.*` keys feed sync health. Node `interfaces[i]` is MTL port i (`mtl_port_get_spec()`,
+`mac`).
 
 ### 2.1 Which specifications need MTL
 
@@ -55,9 +58,9 @@ Sender or Receiver is one session named by its UUID (`sc.name`, 64 B, kept acros
 | IS-04 Discovery and Registration 1.3 | Flow, Sender, Receiver and Node attributes only the transport knows; change notifications to bump `version` (§3) |
 | IS-05 Connection Management 1.1 | per-leg RTP transport parameters, `master_enable`, immediate and scheduled activation, `activation_time`, SDP (§4, §5) |
 | IS-08 Audio Channel Mapping | units per media index; the map is the Node's (§6) |
-| IS-09 System Parameters | `time.ptp_domain` and `time.ptp_announce_timeout` at start for the built-in client |
+| IS-09 System Parameters | `global.json` requires `ptp.domain_number` (0–127) and `ptp.announce_receipt_timeout` (2–10), read at Node start: `time.ptp_domain` and `time.ptp_announce_timeout` (2209) at start for the built-in client; with ptp4l (`MTL_TIME_SOURCE_PHC`) both are ptp4l's configuration |
 | IS-11 Stream Compatibility | reconfigure (`MTL_UPDATE_MEDIA` in STOPPED), mute, detect what a receiver gets (`MTL_DETECT_ON`, `MTL_EVENT_RX_FORMAT`) |
-| IS-12 / MS-05-02 monitoring | the device model is the Node's; its monitors read MTL state through BCP-008 (§7); `statusReportingDelay` 3 s is Node policy |
+| IS-12 / MS-05-02 monitoring | the device model is the Node's: `NcStatusMonitor` (`overallStatus`, `statusReportingDelay`, default 3 s), `NcReceiverMonitor` and `NcSenderMonitor` (Control Feature Sets `monitoring/models`) are Node objects whose values come from MTL through BCP-008 (§7); the delay is Node policy |
 | BCP-004-01 / -02 capabilities | `mtl_session_query` for "can MTL receive or send X"; never a stream outside the advertised caps |
 | BCP-006-01 JPEG XS | profile, level, sublevel, colour, bit rate with and without RTP overhead, packetisation mode, TP (§3) |
 | BCP-008-01 / -02 status monitoring | link, connection, synchronisation and stream status; lost, late and error counters (§7) |
@@ -66,44 +69,68 @@ Sender or Receiver is one session named by its UUID (`sc.name`, 64 B, kept acros
 IPMX (VSF TR-10) makes NMOS mandatory (TR-10-8), so every row above is also an IPMX requirement.
 The parts that ask something of the transport:
 
-| TR-10 part | Needs from the transport |
-|---|---|
-| -1 System Timing | with and without PTP, free-running internal clock, BMCA, IPMX CMAX and VRX, async and sync sources, sender reports with the Info Block on port + 1, inline processors, receiver timing and link offset |
-| -2 Uncompressed Video, -3 PCM, -4 ANC, -12 AES3 | ST 2110-20/-30/-40/-31 subsets; receivers take YCbCr 4:2:2/10 and RGB 4:4:4/8; 48 kHz L16/L24; the per-essence Media Info Blocks |
-| -5 HDCP, -13 PEP | an IV-counter RTP header extension in every packet, the payload encrypted, RTP header and payload header in clear |
-| -6 FEC | optional ST 2022-5 Profile A on ports + 2 and + 4 (not adopted) |
-| -7 VBR compressed, -11 CBR compressed, -15 codecs | ST 2110-22 payload; CMAX from the maximum rate; JPEG XS High444.12, H.264 and H.265 packetisation |
-| -8 NMOS | the table above, plus `ext_link_offset_delay` |
-| -9 Device Behaviour | sender report + SDES CNAME; frame interval ≤ 2 ms peak to peak over 2 s; DHCP, DSCP AF42/AF41/EF, IGMPv3 SSM and IGMPv2, in-band control |
-| -10 InfoFrames | ST 2110-41 on port + 3 with the video's RTP, sent before the video's first packet |
-| -14 USB, -16 HDR | USB is outside MTL; the HDR Media Info Block may change per field |
+| TR-10 part | Edition (VSF list, 2026-10-01) | Needs from the transport |
+|---|---|---|
+| -0 Overview | 2026-07-07 Final, informative | the Media Info Block (MIB) registry (§5): 0x0001 video, 0x0002 PCM, 0x0003 CBR compressed, 0x0004 AES3, 0x0005 VBR compressed, 0x0006 HDR, 0x0008 JPEG XS, 0x0009 H.265, 0x000A H.264, 0x0010 HKEP, 0x0011 PEP |
+| -1 System Timing | 2024-02-23 Final | with and without PTP, free-running internal clock, BMCA, IPMX CMAX and VRX, async and sync sources, sender reports with the Info Block on port + 1, inline processors, receiver timing and link offset |
+| -2 Uncompressed Video | 2024-02-23 Final | ST 2110-20 subset; receivers take YCbCr 4:2:2/10 and RGB 4:4:4/8. MIB 0x0001: sampling, depth, packing, interlace, PAR, range, colorimetry, TCS, size, rate (22/10-bit rational), measured pixel clock, htotal, vtotal |
+| -3 PCM, -4 ANC, -12 AES3 | -3 2024-02-23 Final; -4 2023-04-14 Draft; -12 2023-08-30 Draft | ST 2110-30/-40/-31 subsets. Audio: 48 kHz L16/L24 MUST, 44.1 kHz (L16) and 96 kHz (L24) SHOULD. ANC reports carry the Info Block, no MIB |
+| -5 HDCP, -13 PEP | 2026-02-17 v2 Final (both) | an IV-counter RTP header extension in every packet, the payload encrypted, RTP header and payload header in clear; the HDCP extension comes first; ANC is not encrypted. PEP keys are derived from pre-shared keys plus parameters in SDP and IS-05 (TR-10-13 §3, §13; BCP-005-03), not exchanged through IS-10 |
+| -6 FEC | 2023-08-07 Draft | optional ST 2022-5 Profile A on ports + 2 and + 4 (not adopted): column FEC L = 2, D = 16 above 32 packets/ms, 1 × 1 below, partial matrices at frame end and on timeout |
+| -7 VBR compressed, -11 CBR compressed | -7 2024-11-22 Draft; -11 2024-02-23 Final | ST 2110-22 payload; CMAX from the maximum rate; no VRX for VBR; MIB 0x0003 has the 0x0001 layout |
+| -15 codecs | Part 1 (JPEG XS) 2026-09-22 Final; Parts 2, 3 (H.265, H.264) 2026-06-04 Draft | JPEG XS High444.12, sublevels above 4 bpp allowed, MIB 0x0008 (T, P, Ppih, Plev) after 0x0003; H.265 and H.264: BCP-006-03 / -02 limits, no PACI, `TP=2110TPW` (no gapped mode), HRD and SEI rules |
+| -8 NMOS | 2026-01-06 Final | the table above, plus `ext_link_offset_delay` |
+| -9 Device Behaviour | 2025-05-13 v2 Draft (the PQCR baseline) | sender report + SDES CNAME; frame interval ≤ 2 ms peak to peak over 2 s; DHCP, DSCP AF42/AF41/EF, IGMPv3 SSM and IGMPv2, in-band control |
+| -10 InfoFrames | 2024-10-07 Draft | ST 2110-41 on port + 3 with the video's RTP, sent before the video's first packet |
+| -14 USB, -16 HDR | -14 2026-04-07 Draft; -16 2025-11-18 Draft | USB is outside MTL (-14 also uses PEP's CMAC-AAD modes on TCP messages); MIB 0x0006 follows the colorimetry MIB, may change per field, and its N bit says "for the next field" |
 
-Compliance is AIMS PQCR v1.1: baseline TR-10-1, -8 and -9, with HDCP, InfoFrames, PEP, USB and HDR
+The parts are -4 ANC, -9 device behaviour, -10 InfoFrames and -14 USB (earlier notes named them
+otherwise). Compliance is AIMS PQCR v1.1 (August 2026): baseline TR-10-1, -8 and -9, with HDCP, InfoFrames, PEP, USB and HDR
 optional and tested when declared; SDP, NMOS and RTCP must describe the same stream. The test plan
 is TR-10 TP-1: §13.3 checks the sender reports (port, DSCP, RTP/NTP pairing, Info Block, schedule,
-order) and §13.5 checks CMAX, VRX and the 2 ms frame interval. Details:
-[archive/interop/N1 §2](archive/interop/N1-nmos-requirements.md),
-[archive/interop/I1 §2](archive/interop/I1-ipmx-requirements.md).
+order) and §13.5 checks CMAX, VRX and the 2 ms frame interval. The AIMS profiles: uncompressed
+(senders RGB 8-bit 4:4:4 or YCbCr 10-bit 4:2:2, receivers both; resolution and frame rate "Undefined /
+Any"), PCM, JPEG XS, HEVC. Specification URLs: [prior-art.md](prior-art.md) §9.
 
 ## 3. IS-04: values only the transport knows
 
 | IS-04 attribute | From |
 |---|---|
-| Flow `frame_width`, `frame_height`, `interlace_mode`, `grain_rate`, `components` | `mtl_session_get_config()`: `video.raster`, `video.format` |
+| Flow `media_type` (registered: `video/raw`, `video/jxsv`, `video/H264`, `audio/L24`, `audio/L16`, `video/smpte291`) | `essence` and the format |
+| Flow `frame_width`, `frame_height`, `interlace_mode`, `grain_rate` | `mtl_session_get_config()`: `video.raster` (rate, size, scan) |
+| Flow (video/raw) `components[]` (name, width, height, bit_depth; required by `flow_video_raw.json`) | `video.format` and the raster: `mtl_format_names().sdp`, `mtl_format_pgroup()` |
+| Flow (coded) `profile`, `level`, `sublevel`, `bit_rate` (BCP-006-01 MUST) | profile, level and sublevel from the application or the codec plugin; codestream rate from the granted `codestream_bytes` (`mtl_session_get_info()`) × rate, or `info.payload_kbps` |
+| Flow (data) `DID_SDID[]` (optional) | the application's on TX; RX: the observed set `anc.did_sdid_seen` |
 | Flow `colorspace`, `transfer_characteristic`; SDP `colorimetry`, `TCS`, `RANGE` | `video.colorimetry`, `tcs`, `range` (also in `mtl_cvideo_config`). 0 is UNSPECIFIED, SDR, NARROW. UNSPECIFIED is still rendered, because ST 2110-20 §7.2 requires the parameter. FULLPROTECT with BT2100 is `-MTL_EINVAL` |
 | Flow audio `sample_rate`, `bit_depth`, channels | `audio.*` |
 | Sender `transport`, per-leg addresses and ports, `source_port` | `mtl_session_info.leg[]` (granted values) |
+| Sender and Receiver `interface_bindings` (one per leg; the same interface twice when both legs use it) | the Node's name of port `info.leg[i].port` |
+| Sender and Receiver `subscription.active` (MUST be true exactly when configured to send or receive) | the Node's `master_enable` (§4.2) |
+| Sender `manifest_href` (SHOULD serve the SDP; MAY be 404 while inactive) | `mtl_sdp_render()` (§5); the Sender `version` MUST change when the SDP does |
 | Sender `bit_rate` (BCP-004-02, kbps rounded up) | `info.wire_kbps{leg}`, `info.payload_kbps` |
-| Node `clocks`: `ref_type`, `gmid`, `locked`, `traceable` | `time.*` stats: gauges, since a grandmaster can change. The built-in PTP client fills them |
+| Node `clocks[]`: `ptp` {`name`, `ref_type`, `traceable`, `version` = `IEEE1588-2008`, `gmid`, `locked`}, all required (`clock_ptp.json`), or `internal` | `time.*` stats: gauges, since a grandmaster can change. The built-in PTP client fills them |
 | the same with ptp4l (PHC, CLOCK_TAI and USER sources) | the application calls `mtl_time_set_reference()`: `struct mtl_time_reference` (40 B) with `gmid[8]`, `domain`, `traceable`, `clock_class`, `clock_accuracy`, `locked`. With `time.phc_trust` detect, `locked` tells MTL the node lost its grandmaster |
-| Node `interfaces`: `port_id` (MAC), `name`; `chassis_id` | `mtl_port_get_spec()`: `mac` (output only, ignored on input), `name`; `instance.port_count`. LLDP is deferred: `chassis_id = null` is allowed |
+| Node `interfaces[]`: `name`, `port_id` (MUST be a MAC), `chassis_id`, `attached_network_device`; `node.json` asks for ARP at a minimum, "and ideally LLDP" | `mtl_port_get_spec()`: `mac` (output only, ignored on input), `name`; `instance.port_count`; built-in ARP. LLDP is deferred: `chassis_id = null` is allowed |
 | BCP-006-01 (ST 2110-22 JPEG XS) Sender `bit_rate`, `packet_transmission_mode`, `st2110_21_sender_type` | `info.wire_kbps` (RTP overhead included), the ST 2110-22 packing, `cvideo.sender_type` |
-| Device or Sender `version` bump | `MTL_EVENT_GRANDMASTER`, `MTL_EVENT_PORT_ADDRESS`, `MTL_EVENT_PACING_CHANGED`, `MTL_EVENT_RTCP_INFO`, `MTL_EVENT_UPDATE` |
+| every resource's `version`: a TAI `<s>:<ns>` updated on every change; IS-05: incremented on every activation, also of the same parameters | `mtl_time_now()`; the bump of a Device or Sender on `MTL_EVENT_GRANDMASTER`, `MTL_EVENT_PORT_ADDRESS`, `MTL_EVENT_PACING_CHANGED`, `MTL_EVENT_RTCP_INFO`, `MTL_EVENT_UPDATE` |
 
 BCP-004-02 forbids a stream that does not match the advertised caps: a Node sets
 `caps.pacing_required = 1`, or re-publishes on `MTL_EVENT_PACING_CHANGED` (C-N14). IS-11 and
 BCP-004-01 constraint sets use `mtl_session_query(MTL_QUERY_CHECK_CAPACITY)` before a format is
-advertised.
+advertised. A BCP-004-01 receiver lists `constraint_sets` (any one satisfied means compatible) over
+the Capabilities register: `media_type`, `grain_rate`, `frame_width`, `frame_height`,
+`interlace_mode`, `colorspace`, `transfer_characteristic`, `color_sampling`, `component_depth`,
+`channel_count`, `sample_rate`, `sample_depth`, `bit_rate`, `profile`, `level`, `sublevel`,
+`event_type`, and the transport caps `packet_time`, `max_packet_time`, `st2110_21_sender_type`,
+`packet_transmission_mode`, `bit_rate`, `hkep`, `privacy`, `usb_class`. It MUST bump its IS-04 `caps.version`
+when its capabilities change, capacity included. The transport's answer is one dry run per candidate
+set; no enumeration call is needed, since the formats are a closed enum that `mtl_format_names()`
+iterates.
+
+BCP-006-01 (JPEG XS): the Flow MUST carry `video/jxsv`, `components`, `profile`, `level`, `sublevel`
+and the codestream `bit_rate`; the Sender MUST carry `bit_rate` "including the RTP transport
+overhead", `packet_transmission_mode` for slice mode, and `st2110_21_sender_type` if ST 2110-22
+compliant; the SDP follows RFC 9134 (§5).
 
 ## 4. IS-05: the activation contract
 
@@ -139,7 +166,49 @@ match the later event. The `mtl.h` comment is normative:
   serialises the updates of one session and reads the seq after the call. A pending update fails
   with `TIME_STEP` if the time base steps, and the Node re-schedules it.
 
+What IS-05 itself requires, and how the contract meets it:
+
+- A PATCH with no activation, or one cancelling a scheduled activation, returns 200.
+  `activate_immediate` returns 200 "only once the new transport parameters have been applied", with
+  `activation_time` the actual TAI instant; a scheduled one returns 202 with the instant it "will
+  actually transition", which may differ (frame boundary, end of GOP): `planned_tai_ns`.
+- "On activation all instances of `auto` must be resolved ... If ... `auto` cannot be resolved, the
+  active transport parameters must not change": the all-or-nothing rule.
+- Scheduled activations exist to synchronise salvos and are "not intended ... for scheduling
+  activations far in the future". On an error between scheduling and activation, `/active` SHOULD
+  reflect reality (`master_enable = false` if the sender stopped).
+- Packet loss MUST NOT be reported through `/active`: that is BCP-008's job (§7).
+- ST 2022-7: a request carries as many legs as the constraints, an unchanged leg as `{}`. A two-leg
+  receiver given a one-leg SDP SHOULD set leg 2 `rtp_enabled = false`; a one-leg receiver given a
+  2022-7 SDP SHOULD join the first leg. The first SDP stream is path 1 (leg 0). Of the RFC 7104 forms
+  (separate destinations: two m-lines, `a=group:DUP`; separate sources: one m-line, two sources,
+  `a=ssrc-group:DUP`; temporal redundancy: same source and destination, `duplication-delay`),
+  ST 2110-10 §8.5 forbids the third, so a Node constrains it out.
+- A receiver PATCH with an SDP SHOULD use its media information; where the SDP and the
+  `transport_params` of the same PATCH disagree, the parameters win.
+- Constraints are per leg; `auto` must be supported where the schema allows it, and senders and
+  receivers SHOULD offer an enum of interface addresses. Constraints MTL implies: interfaces are
+  ports (one IPv4 address each, IPv6 reserved), legs on distinct ports by default, no FEC, RTCP only
+  under IPMX.
+
 ### 4.2 IS-05 to MTL
+
+Endpoints MUST support the core parameter set and MAY support the multicast, FEC and RTCP sets, each
+all or nothing. Sender core: `source_ip`, `destination_ip`, `source_port`, `destination_port`,
+`rtp_enabled`. Receiver core: `source_ip`, `interface_ip`, `destination_port`, `rtp_enabled`, plus
+`multicast_ip` if it can do multicast. There is one parameter object per leg (two with ST 2022-7).
+
+| IS-05, per leg | `auto` in the schema | MTL |
+|---|---|---|
+| TX `source_ip` | the sender picks its interface | `flows[i].port`; a port owns one address (`mtl_port_get_spec()`, `sip`) |
+| TX `destination_ip` | the sender picks a group (MADCAP, ZMAAP, ...) | `flows[i].ip`; allocating it is the Node's job |
+| TX `source_port` | 5004 | `flows[i].udp_src_port`; granted in `info.leg[i].udp_src_port` |
+| TX and RX `destination_port` | 5004 | `flows[i].udp_port` |
+| RX `multicast_ip` (null = unicast) | — | `flows[i].ip` = the group; unicast: the `mtl_flow` rule (G-N23) |
+| RX `source_ip` (unicast source or SSM filter; null = any) | — | `flows[i].source_filter` |
+| RX `interface_ip` | multicast: the receiver chooses; unicast: the controller supplies it | `flows[i].port`; the Node maps the address to a port by `sip` (`mtl_port_find()` looks up by name) |
+| `fec_*`, `rtcp_*` | — | FEC omitted (G-N21). `rtcp_*` only under IPMX, constrained to the fixed ports (+1 reports, +2 and +4 FEC, +3 InfoFrames) and the values in use (§4.4); only `rtcp_destination_port` maps, to `rtcp.dst_port` (Q-I-11) |
+| `ext_*` | — | `ext_link_offset_delay`, `ext_privacy_*`, `ext_infoframe_enabled` (rows below) |
 
 | IS-05 | MTL | Phase |
 |---|---|---|
@@ -152,11 +221,11 @@ match the later event. The `mtl.h` comment is normative:
 | validating staged parameters | `MTL_UPDATE_DRY_RUN`: validates and plans (`planned_tai_ns` filled), reserves and posts nothing, leaves the status untouched. A later update can still fail with `-MTL_ENOSPC` | 7 |
 | `master_enable = false` | every existing leg's bit in `legs_disabled`: **muted**. The session stays RUNNING. TX units retire at their slots, counted in `tx.units_muted`, not `tx.units_dropped` (which BCP-008 reads as unhealthy). No sender reports. RX leaves its groups. `MTL_STATUS_MUTED` is set. A scheduled disable is an ordinary scheduled update | 7 |
 | a receiver created before any connection; a two-leg receiver given a one-leg SDP | a **reserved leg**: its `legs_disabled` bit set and its flow all zero. Enabling it needs an address in the same update (`FLOWS \| LEGS`). The set of existing legs is fixed at create and changes only in STOPPED (G-N4, C-N4). `mtl_sdp_parse()` reserves the legs an SDP lacks | 7 |
-| IPMX `ext_link_offset_delay` (µs, or `auto`) | `rx.link_offset_ns` = value × 1000 in the update's options; `auto` = `MTL_LINK_OFFSET_AUTO`; the min/max constraints from `rx.link_offset_min_ns` / `_max_ns`, reported only while active | 7 |
-| IPMX `ext_privacy_*` | `crypto.*` options in the update; the key through `mtl_crypto_set_key()` before `when`. A receiver with an unknown `key_id` fails the activation (BCP-005-03) | 7 |
+| IPMX `ext_link_offset_delay` (µs, or `auto`) | `rx.link_offset_ns` = value × 1000 in the update's options; `auto` = `MTL_LINK_OFFSET_AUTO`; the min/max constraints from `rx.link_offset_min_ns` / `_max_ns`, reported only while active; the value reads 0 while inactive | 7 |
+| IPMX `ext_privacy_*` | `crypto.*` options in the update; the key through `mtl_crypto_set_key()` before `when`. The values are fixed at an activation with `master_enable` true. A receiver with an unknown `key_id` fails the activation (BCP-005-03) | 7 |
 | IPMX `ext_infoframe_enabled` | the legs of the `tx.precede` session (the ST 2110-41 InfoFrame stream, port + 3) | 7 |
 | IPMX `hkep` Sender attribute (BCP-005-02); FEC on ports + 2 and + 4 | outside MTL (HKEP over TCP); FEC is not adopted | — |
-| a new `interface_ip` (another port) | port change while RUNNING, made before break: the new queue and rule are reserved first; `-MTL_ENOSPC` if they cannot be, `-MTL_EBUSY` (`PORT_CHANGE_NEEDS_STOP`) on a backend that cannot (G-N5, C-N3) | 7 |
+| a new `interface_ip` (another port) | port change while RUNNING, made before break: the new queue and rule are reserved first; `-MTL_ENOSPC` if they cannot be, `-MTL_EBUSY` (`PORT_CHANGE_NEEDS_STOP`) on a backend that cannot (G-N5, C-N3). On such a backend the Node advertises one `interface_ip` per leg, so a controller never asks for it **[inferred]** | 7 |
 | both legs on one interface | allowed with an explicit `flows[1].port = 1` (port index 0 + 1). ST 2110-10's rule that source and destination differ still holds | 7 |
 | a new SDP with colorimetry, TCS or range changed | `MTL_UPDATE_MEDIA` while running, at the same `when`, when no conversion uses them | 7 |
 | a new SDP with any other format change, at a time | two sessions swap at the instant (§4.5). An RX `MTL_UPDATE_MEDIA` at a unit boundary is later (G-N6) | later |
@@ -168,11 +237,42 @@ stays for format changes.
 
 ### 4.3 Answering the controller
 
-Scheduled: call the update, read `update_seq`, answer 202 with `planned_tai_ns`; on
-`MTL_EVENT_UPDATE` APPLIED for that seq, commit `/active`, bump the version and take the BCP-008
-baseline. Immediate: wait for the event (or poll the status), then answer 200 with
-`update_applied_tai_ns`. An immediate activation applies within one unit period plus the command
-acknowledgement (`instance.cmd_ack_timeout_ns`, 100 ms).
+The PATCH handler, on parameters already merged into the staged set:
+
+1. `mtl_session_get_config()`; if a transport file came, `mtl_sdp_parse()` it (the parameters win
+   over the SDP). Per leg, resolve `auto` (Node policy) into `flows[i]` and set bit i of
+   `legs_disabled` to !(`master_enable` && `rtp_enabled[i]`). Pass the R options again:
+   `mtl_session_get_config()` returns none.
+2. If the media differs, take the format-change path (§4.5); else `parts = MTL_UPDATE_FLOWS |
+   MTL_UPDATE_LEGS`.
+3. No activation (staging only): 200, after an optional `MTL_UPDATE_DRY_RUN` whose failure answers
+   400. A null activation cancelling a scheduled one: `mtl_session_update(s, NULL, 0, NULL, NULL)`,
+   then 200; `-MTL_EBUSY` means it will still apply, which the Node reports.
+4. `when`: NULL (immediate), `{.kind = MTL_AT_TAI, .value = tai}` (absolute), or `mtl_time_now()`
+   plus the offset (relative). `mtl_session_update(s, &sc, parts | MTL_UPDATE_REAPPLY, when,
+   &planned)`; a failure answers 500 with `/active` unchanged. Read `status.update_seq`.
+5. Scheduled: answer 202 with `planned`. Immediate: wait for `MTL_EVENT_UPDATE` of that seq (or poll
+   the status; timeout 1 s), then answer 200 with `update_applied_tai_ns`. An immediate activation
+   applies within one unit period plus the command acknowledgement (`instance.cmd_ack_timeout_ns`,
+   100 ms).
+6. On APPLIED (both cases): commit `/active` with the granted values (`info.leg[i].udp_src_port`,
+   the port's `sip`, the group), regenerate the SDP, bump the IS-04 `version`, take the BCP-008
+   baseline. On FAILED `/active` keeps the old values; if the session went to ERROR,
+   `active.master_enable = false`.
+
+**Timing.** TX `planned_tai_ns` is t rounded up to the next frame or field boundary (≤ 16.7 ms at
+59.94p), and every leg switches on the same unit; RX switches by the media time derived from RTP,
+exact to the unit. IS-05 sets no accuracy figure; a controller compares `activation_time` across
+devices, which is why the boundary actually used is reported. Joins and ARP for the new flows start
+at the call, so a Node calls `mtl_session_update()` as soon as the PATCH arrives, and bounds the
+double bandwidth with `rx.join_lead_ns` (§4.4).
+
+**How the AMWA suite checks it.** The nmos-testing suite (`IS05Utils._check_perform_activation`,
+`Config.py`) reads `/active` once (`maxTries = 1`) right after an immediate activation, and up to
+three times, `API_PROCESSING_TIMEOUT` (1 s) apart, after a scheduled one. It runs against Nodes that
+usually send and receive no essence, so the update must reach APPLIED with no unit in flight (RN-1).
+Unicast activations go to `UNICAST_STREAM_TARGET` 192.0.2.1 (RN-2), and absolute activations must
+land within `MAX_TIME_SYNC_OFFSET` (0.1 s; RN-27).
 
 ### 4.4 Details that make a salvo land together
 
@@ -192,12 +292,36 @@ Without the Phase 7 extras a Node still works:
 
 - `master_enable = false`: stop the session; re-enable starts it, with `AT_TAI` when scheduled.
 - Re-activation: an update with the same flows; IGMP is not re-sent.
-- Format change (IS-11, new SDP): stop, `MTL_UPDATE_MEDIA | FLOWS | LEGS`, start. For a scheduled RX
-  change, the **A/B swap**: create a second session named `<uuid>.b`, start it with `AT_TAI t` (RX
-  delivers units with media time at or after t), stop the old one at t and close it after. A
-  TX format change is simpler: stop, update, start at the activation time.
+- Format change (IS-11, new SDP), immediate: `mtl_session_stop(&s, 1, MTL_STOP_FLUSH, MTL_MS(100))`,
+  `mtl_session_update(s, &sc, MTL_UPDATE_MEDIA | MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS, NULL, NULL)`,
+  `mtl_session_start(&s, 1, NULL, NULL)`; identity, stats and the monitor survive; answer 200. A TX
+  format change at a time is the same, started at the activation time.
+- Scheduled RX format change at t, the **A/B swap**: name the new configuration `<uuid>.b` and
+  `mtl_session_create()` it (a `-MTL_ENOSPC` with its reason answers 500: both sessions need capacity
+  until t); `mtl_session_start(&nb, 1, &(struct mtl_when){.kind = MTL_AT_TAI, .value = t}, NULL)` (RX
+  delivers units with media time ≥ t); answer 202 with `activation_time` = t; at t (a Node timer,
+  Q-NMOS-10) mute or stop the old session, swap the handles, and `mtl_session_close(old, MTL_MS(200))`.
+- Without reserved legs, a Node can also create the session at the first activation and close it on
+  `master_enable = false`. It works, but every activation then costs a create (allocations, rules,
+  queues), and a scheduled one must create early and start with `when`.
 
-Boot, PATCH and swap recipes: [archive N1 §5](archive/interop/N1-nmos-requirements.md).
+### 4.6 Boot (Phase 7 form)
+
+1. `mtl_instance_open()`; read `instance.port_count`; per port, `mtl_port_get_spec()` gives
+   `interfaces[p]` (`name`, `port_id` = `mac`, `chassis_id` = null); `clocks[0]` from
+   `time.grandmaster_id`, `time.state` and `time.gm_traceable`. Create one queue subscribed to port,
+   time and session events.
+2. Per Sender or Receiver: `MTL_INIT(&sc)`, direction, essence, the essence member with
+   `colorimetry`, `tcs`, `range`; `sc.name` = the UUID; every leg reserved and disabled (`flows[i]`
+   all zero, `legs_disabled` = 0x1 or 0x3); option `caps.pacing_required = 1` (BCP-004-02).
+   `mtl_session_create()`, `mtl_queue_bind(q, s, MTL_BIND_EVENTS)`, `mtl_session_start(&s, 1, NULL,
+   NULL)`: RUNNING and muted, nothing on the wire.
+3. Publish the IS-04 resources with `subscription.active = false` and `version` = now. Flow:
+   `grain_rate` = the raster rate, `frame_*` = the raster, `interlace_mode` = the scan, `colorspace`
+   = the colorimetry, `components` from `mtl_format_names()` (`sdp`), `bit_rate` =
+   `info.payload_kbps`. Sender: `interface_bindings[i]` = the name of port `info.leg[i].port`,
+   `bit_rate` = `info.wire_kbps`, `st2110_21_sender_type` = `info.sender_type`, `manifest_href` →
+   `mtl_sdp_render()`.
 
 ## 5. SDP helper: `mtl_sdp.h` (`MTL_LATER`)
 
@@ -221,11 +345,37 @@ public calls only (D-94, replacing Q-MODE-6).
 It returns the length written (without the NUL), `-MTL_ENOSPC` if `cap` is short, or `-MTL_EBUSY`
 (`WRONG_STATE`) while a value it needs is unknown (an ANC raster before start). The `o=` version
 changes on every activation, grandmaster change and Info Block change; a sender re-renders on
-`MTL_EVENT_GRANDMASTER` and `MTL_EVENT_RTCP_INFO`.
+`MTL_EVENT_GRANDMASTER` and `MTL_EVENT_RTCP_INFO`, so a change of clock source changes SDP, NMOS
+and the reports together (TR-10-9 §12).
+
+What it writes, and where each value comes from (the render specification; parse reads the same
+lines):
+
+| SDP element | Rule | Value |
+|---|---|---|
+| `c=`, `m=<media> <port> RTP/AVP <pt>` per leg; `a=source-filter: incl` | RFC 4566, RFC 4570; ST 2110-10 §8.4 SHOULD | `flows[i].ip`, `udp_port`, `info.leg[i].payload_type`; the source is the port's `sip` |
+| `a=group:DUP <mid1> <mid2>`, `a=mid:` | ST 2110-10 §8.5; RFC 7104 | two legs, two m-lines |
+| `a=ts-refclk:ptp=IEEE1588-2008:<gmid>:<domain>`, or `:traceable`, or `localmac=<mac>` | ST 2110-10 §8.2 MUST; `traceable` only when the grandmaster's `timeTraceable` is set and `clockAccuracy` ≤ 250 ns (0x22) | `info.ts_refclk.*`, `time.grandmaster_id`, `time.ptp_domain`, `time.gm_traceable`, `time.gm_clock_accuracy`; localmac: `info.leg[i].src_mac` |
+| `a=mediaclk:direct=0`, or `sender` | ST 2110-10 §8.3 MUST, offset zero | TX: implied by RTP = floor(M × rate), `sender` for `MTL_MEDIA_SENDER`; RX: `rx.mediaclk`, `rx.rtp_offset` |
+| `TSMODE`, `TSDELAY` | ST 2110-10 §8.7 SHOULD | `info.tsmode`, `info.tsdelay_ns` |
+| `MAXUDP` | ST 2110-10 §8.6, required above the standard UDP size | `info.max_udp_bytes` |
+| video `raw/90000`; fmtp `sampling`, `depth`, `width`, `height`, `exactframerate`, `colorimetry`, `PM`, `SSN` | ST 2110-20 §7.1–7.2, required | `video.format` → `mtl_format_names()` `sdp`; the raster; packing GPM and GPM_SL → `2110GPM`, BPM → `2110BPM`; colorimetry; SSN from colorimetry and TCS |
+| fmtp `interlace`, `segmented`, `TCS`, `RANGE`, `PAR` | ST 2110-20 §7.3, when not the default | `video.raster.scan`, `video.tcs`, `video.range`; PAR in `fmtp_extra` |
+| fmtp `TP`, `TROFF`, `CMAX` | ST 2110-21 §8.1: TP required; TROFF required when not TRODEFAULT (§6.2); CMAX optional | `info.sender_type`, `info.troffset_ns`, `info.troffset_default`, `info.cmax` |
+| ST 2110-22 `jxsv/90000`, `packetmode`, `transmode`, `profile`, `level`, `sublevel`, `b=AS` | RFC 9134, BCP-006-01; `interlace`, `segmented` as appropriate | `cvideo.*`, the packing; profile, level, sublevel in `fmtp_extra`; `b=AS` from `info.wire_kbps` |
+| audio `L24/48000/<ch>`, `L16`, `AM824`; `a=ptime`; `channel-order=SMPTE2110.(...)` | ST 2110-30, -31 | `audio.format`, `sample_rate`, `channels`, `ptime`; `meta.channel_order` |
+| ANC `smpte291/90000`; `DID_SDID`, `VPID_Code`, `exactframerate`, `TM`, `SSN` | ST 2110-40:2023 | `anc.video.fps` (0 until start when taken from a start, so render is `-MTL_EBUSY` until then), `info.anc_tm`; DID_SDID and VPID in `fmtp_extra` |
+| fast metadata (ST 2110-41) | rate and DIT in the SDP | `fastmeta.*`; no NMOS media type (Q-NMOS-6) |
+| ST 2022-6 `SMPTE2022-6/27000000` | — | the RTP essence's encoding and clock rate |
+
+IPMX Nodes also write lines the helper does not produce: `measuredpixclk`, `htotal`, `vtotal`,
+`measuredsamplerate` (only as `fmtp_extra` text, §16), `a=hkep`, `FECPROFILE=profile-a` and `b=AS`
+for TR-10-7 VBR; `a=privacy` and `a=infoframe` are the open RN-17 item (§16).
 
 **`mtl_sdp_parse(sdp, len, &sc, &meta)`** (CP) fills a configuration for a receiver:
 
-- flows, payload types, source filters and the essence member;
+- flows (a leg per m-line, or per source of an `a=ssrc-group:DUP`), payload types and their check,
+  source filters and the essence member;
 - legs from `a=group:DUP`, as two m-lines or one m-line with two source filters. Legs beyond those
   parsed are zeroed and reserved, so a one-leg SDP never leaves a stale second leg;
 - `rx.rtp_offset`, `rx.mediaclk` and the `crypto.*` options into `meta.options` (at most 8), for the
@@ -239,32 +389,68 @@ naming it. `struct mtl_sdp_meta` is 608 B with fixed string arrays, copied and N
 
 ## 6. IS-08 and IS-11
 
-IS-08 channel maps are applied by the Node at a media index in its own code; MTL keeps no map state,
-and `mtl_audio_remap()` (`mtl_convert.h`) is `MTL_LATER`. IS-11 and BCP-004-01 (sink capabilities,
-EDID) are Node logic over `mtl_session_query()`; on a constraint violation the Node mutes the sender.
+IS-08 channel maps (capability flags `reordering` and `block_size`; activations may be scheduled)
+are applied by the Node in its own code, at the media index of the activation instant
+(`mtl_index_at()`). MTL keeps no map state, and `mtl_audio_remap()` (`mtl_convert.h`) is
+`MTL_LATER`: a remap in MTL's copy path would save one copy in RX to TX gateways (G-N22).
+
+IS-11 and BCP-004-01 (sink capabilities, EDID) are Node logic over `mtl_session_query()`. A
+Sender's active constraints start empty; when they are violated "the Sender MUST become inactive. An
+inactive Sender in this state MUST NOT allow activations": the Node mutes the sender. Sender states
+are `unconstrained`, `constrained`, `active_constraints_violation`, `no_essence`, `awaiting_essence`;
+receiver states `compliant_stream`, `non_compliant_stream` (SHOULD become inactive) and `unknown`
+(no transport file). EDID is the Node's.
 
 ## 7. BCP-008 monitoring
 
-BCP-008-01 (receiver) and -02 (sender) define link, connection or transmission, sync and stream
-status. The Node lists the schema once (`mtl_stat_list`), reads every value each 100–250 ms with
+BCP-008-01 (receiver) and -02 (sender) both require IS-12 and MS-05-02. Their domains and states:
+`linkStatus` (AllUp, SomeDown, AllDown); receiver `connectionStatus` and sender `transmissionStatus`
+(Inactive, Healthy, PartiallyHealthy, Unhealthy); `externalSynchronizationStatus` (NotUsed, Healthy,
+PartiallyHealthy, Unhealthy) with `synchronizationSourceId`; receiver `streamStatus`, sender
+`essenceStatus`; transition counters. Methods: `GetLostPacketCounters`, `GetLatePacketCounters`
+(receiver), `GetTransmissionErrorCounters` (sender). Counters and messages reset on every activation
+by default (`autoResetCountersAndMessages`). A 3 s `statusReportingDelay` holds back moves to a
+healthier state, never to a worse one; deactivation goes straight to Inactive. "Late packets are
+packets that arrived but arrived too late to be usable by presentation time"; an implementation that
+cannot count them one by one "MUST at the very least increment every time the presentation is
+affected". A change of synchronisation source MUST cause a temporary PartiallyHealthy.
+
+The Node lists the schema once (`mtl_stat_list`), reads every value each 100–250 ms with
 `mtl_stat_read()` (DP, one snapshot), and reacts to events. Hysteresis, reporting delay and status
 messages are Node policy (Q-NMOS-9).
 
 | BCP-008 property | Computed from |
 |---|---|
-| `linkStatus` | `port.link_up` of each enabled leg's port; `MTL_EVENT_PORT_LINK`, `MTL_EVENT_LEG_STATE` |
+| `linkStatus` | `port.link_up` of each enabled leg's port; `MTL_EVENT_PORT_LINK`, `MTL_EVENT_LEG_STATE`; the message names the interfaces of the legs that are down |
 | `connectionStatus` (RX) | Healthy: `MTL_STATUS_RX_SIGNAL` and no new incomplete or redundancy-used units. PartiallyHealthy: Δ`rx.units_used_redundancy` or Δ`leg.pkts_lost{leg}` with complete units. Unhealthy: no signal, `JOIN_FAILED`, Δ`rx.units_incomplete_*`, Δ`rx.pkts_lost_est`, late packets |
 | `GetLostPacketCounters` | `leg.pkts_lost{leg}`, `rx.pkts_lost_est`, minus the baseline |
 | `GetLatePacketCounters` | `rx.pkts_stale`, `rx.units_stale`, `leg.pkts_late{leg}`, `rx.units_late_presentation` |
 | `streamStatus` | Δ`rx.pkts_rejected{cause}`, `MTL_STATUS_FORMAT_CHANGED`, `rx.detected.*`; optional `tp.*` with `rx.timing_parser` |
 | `transmissionStatus` | PartiallyHealthy: Δ`tx.units_late`, `MTL_STATUS_PACING_DOWNGRADED`, `MTL_STATUS_TIMING_WARNING`, one leg `WAITING_NEIGHBOUR`, Δ`leg.pkts_skipped`. Unhealthy: Δ`tx.units_dropped{reason}`, Δ`tx.units_failed`, every leg waiting, ERROR, Δ`port.tx_errors`. `tx.units_muted` is not an error |
+| `GetTransmissionErrorCounters` | `tx.units_dropped{reason}`, `tx.units_late`, `tx.units_failed`, `leg.pkts_skipped{leg}`, `port.tx_errors`, `tx.build_overrun`, minus the baseline |
 | `essenceStatus` | `MTL_EVENT_TX_UNDERRUN`, Δ`tx.slots_empty`; content checks are the application's |
 | `externalSynchronizationStatus`, `synchronizationSourceId` | per port `time.state`, `time.grandmaster_id`, `MTL_EVENT_TIME_STATE`, `MTL_EVENT_GRANDMASTER`; NotUsed when `rx.mediaclk` follows the sender |
 | `overallStatus` | the least healthy domain; Inactive from the Node's `master_enable` |
 
-The keys the addenda add (G-N11, G-N13, G-N15, G-N16, G-N19, `tx.units_muted`) are listed in
-[archive/08-observability.md §R4.5](archive/08-observability.md); `anc.did_sdid_seen` holds up to
-16 DID/SDID pairs, and `info.ts_refclk.*{leg}` become gauges (C-N9).
+**The monitor**, one per session. On `MTL_EVENT_UPDATE` APPLIED, with auto-reset: read every value
+as the baseline, clear messages and transition counters, set every domain Healthy and hold it until
+t + `statusReportingDelay`. Each tick (100–250 ms, and on every event): while the Node's
+`master_enable` is false every domain is Inactive or NotUsed at once. Link: the count of enabled legs
+whose port has `port.link_up` 0 gives AllUp, SomeDown or AllDown. Sync: per leg port, `time.state`
+LOCKED on all is Healthy, on some PartiallyHealthy, on none Unhealthy, an internal clock NotUsed;
+`MTL_EVENT_GRANDMASTER` gives PartiallyHealthy for one reporting delay. Then delta = current − last;
+worse states apply at once, better ones after the delay has held.
+
+**The keys NMOS adds** (Phase 7; the registry is [contract.md](contract.md) §11.3):
+
+- `leg.pkts_late{leg}`, `rx.units_late_presentation`: late packets and late units (G-N16);
+- `info.wire_kbps{leg}`, `info.payload_kbps` (kbps rounded up), `info.max_udp_bytes` (its input is
+  `session.max_udp_payload`), `info.troffset_default` (G-N15);
+- `anc.did_sdid_seen`: up to 16 DID/SDID pairs (G-N19);
+- `time.gm_traceable`, `time.gm_clock_class`, `time.gm_clock_accuracy`, `time.gm_priority1`, and
+  `info.ts_refclk.*{leg}`, all gauges because a grandmaster can change at runtime (G-N11, C-N9);
+- `instance.port_count` (G-N13);
+- `tx.units_muted`, so a muted sender does not look unhealthy (it is not `tx.units_dropped`).
 
 ## 8. NMOS in a pod
 
@@ -313,9 +499,15 @@ at `rtcp.dst_port`, with the leg's DSCP and TTL, on the TR-10-1 schedule:
 - audio: one before the first packet, then every int(10 ms / ptime) packets;
 - none while the session is muted.
 
-A control thread prepares a template; the tasklet only stamps it (NTP = the unit's media time, RTP,
-counts): about 100 ns per frame **[inferred]**. Under rate-limit pacing the report takes one slot in
-the shaped queue and is not a media packet for VRX.
+A control thread prepares the compound packet into one of two template buffers and publishes it
+with a release store. When the tasklet takes unit k it copies the template into an mbuf, stamps NTP
+(from M), RTP and the packet and octet counts, and enqueues it ahead of the unit's first packet on
+the same queue, so the TR-10-1 order holds by queue order: about 100 ns per frame **[inferred]**.
+Under rate-limit pacing the report takes one packet slot (≈ 1 µs at 1080p) in the shaped queue and
+is not a media packet for VRX. Each ST 2022-7 leg sends its own copy. The library checks only the
+32-bit alignment of application blocks and that report, Info Block and SDES fit one datagram; it
+never interprets blocks it did not build. A TX session does not listen on port +1 for reports (only
+the NACK retransmission does).
 
 **The Info Block.** The library writes its own fields: ts-refclk from the time state and mediaclk
 from the media mode, unless the application sets them (`MTL_RTCP_REFCLK_APP`,
@@ -362,7 +554,11 @@ Q-I-8), keeps the latest per leg, and maps each unit's RTP onto the sender's clo
   rate-limit shaping. A Node activates both with the same `when` (GI-14).
 - **Link offset while active.** `rx.link_offset_ns` (203, R) changes at the next unit, or at an
   update's boundary. `MTL_LINK_OFFSET_AUTO` takes the measured minimum. The gauges
-  `rx.link_offset_min_ns` and `rx.link_offset_max_ns` give IS-05's constraints (GI-13, C-I7).
+  `rx.link_offset_min_ns` (a high percentile of unit complete − media time, plus delivery) and
+  `rx.link_offset_max_ns` (pool depth × unit period − one unit) give IS-05's constraints (GI-13,
+  C-I7).
+- **Measured rates.** `tx.f2f_pp_ns` is max − min of the first-packet intervals over 2 s (TR-10-9
+  §11.2); `rx.sender_rate_ppb` compares RTP with arrival time over a window (GI-17).
 - **In-band control** (TR-10-9 §18–19): DHCP is `port.dhcp`; on a DPDK port TCP and mDNS need
   `port.virtio_user` with 224.0.0.251 forwarded (Q-I-9); in a pod the primary network carries them.
 
@@ -375,11 +571,13 @@ HDMI input at its own rate) has an RTP clock that follows the source, the SDP sa
 
 R5 says what a time is: ns on the instance clock, TAI while the time base is locked,
 `MTL_TIMEF_ESTIMATED` when not, `MTL_UNITF_SENDER_TIME` for an RX value on another device's clock
-(C-I1). Time sources in general: [timing.md](timing.md).
+(C-I1). Time sources in general: [timing.md](timing.md); which time source, media mode and source
+kind each IPMX case uses (playout with or without PTP, genlocked capture, HDMI capture, inline
+processor), and why SENDER mode exists: [timing.md](timing.md) §13.
 
 | Piece | Design |
 |---|---|
-| a clock that runs free without stepping | `MTL_TIME_SOURCE_FREERUN`: seeded once from the system clock, never stepped, ESTIMATED. Its time state is `MTL_TIME_FREERUN`, which health counts as ready. `SYSTEM_TAI` follows NTP steps and stays for other uses |
+| a clock that runs free without stepping | `MTL_TIME_SOURCE_FREERUN`: seeded once from `CLOCK_REALTIME` plus the UTC offset, then runs on the TSC or an undisciplined PHC, never stepped, ESTIMATED. Its time state is `MTL_TIME_FREERUN`, which health counts as ready. `SYSTEM_TAI` follows NTP steps and stays for other uses |
 | staying close to the controller's clock | `time.freerun_slew_ppm` (2230, R): FREERUN follows `CLOCK_TAI` by frequency only, bounded, never stepping; 0 = never. A 10 ppm crystal drifts about 0.86 s a day **[inferred]**, past the 0.1 s the IS-05 test suite allows for absolute activations. A Node can also convert IS-05 times with `mtl_time_convert()` |
 | switching between free run and PTP while running | AUTO re-evaluated while running (below); `time.fallback` (2208: HOLDOVER or FREERUN, default FREERUN) |
 | async sources | `MTL_MEDIA_SENDER`: RTP follows the source, the one exception to D-09's RTP = floor(M × rate) (C-I2) |
@@ -389,7 +587,11 @@ R5 says what a time is: ns on the instance clock, TAI while the time base is loc
 a better source when one appears. The step posts `MTL_EVENT_TIME_STATE` and `MTL_EVENT_TIME_STEP`,
 and the Info Block's ts-refclk changes from `localmac=` to `ptp=`. When the source is lost, AUTO
 holds over and then, by `time.fallback`, runs free without a step. Sessions on the epoch timeline
-follow their step policy; pending updates fail with `TIME_STEP`. In a pod AUTO's order ends in
+follow their step policy; pending updates fail with `TIME_STEP`. When AUTO locks to a new
+grandmaster the internal clock steps: SENDER sessions keep their RTP (it follows the source) and
+their report NTP values jump; INDEX and AUTO sessions on the epoch timeline move their RTP to the
+PTP grid, which receivers see as a discontinuity. The Info Block version increments and
+`MTL_EVENT_RTCP_INFO` tells the application to update SDP and NMOS (TR-10-9 §12, PQCR §4.1.1). In a pod AUTO's order ends in
 FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error.
 
 **SENDER mode** (`mtl.h`, `enum mtl_media_mode`). `unit.media_tai_ns` is the source's own sampling
@@ -404,13 +606,47 @@ instant, read on the instance clock and never snapped:
 - The sender report carries M. `MTL_INFO_MEDIACLK_SENDER` is set in the session info.
 - `MTL_AT_INDEX`, `RX_BY_INDEX`, `tx.precede` targets and `mtl_index_at()` are `-MTL_EINVAL` on such
   a session, because its indices are not on a grid.
+- An inline processor (`MTL_SUBMIT_SENDER_TIME`) also copies the input's ts-refclk and mediaclk into
+  its own Info Block with `MTL_RTCP_REFCLK_APP` and `MTL_RTCP_MEDIACLK_APP`, so the output report keeps
+  the input's time domain (TR-10-1 §9).
+- Late policy (proposed): bounded SEND_LATE within `tx.late_tolerance_ns`, then DROP. Open: the
+  `tx.late_policy` comment in `mtl_options.h` names defaults only for AUTO, INDEX and TAI; the SENDER
+  default must be stated there (see decisions.md §5).
 
 Without this mode, an async source at +50 ppm on a 59.94 session would drop a frame every 5.6
-minutes under NEAREST snapping. NEAREST stays the default for sync sources (C-I3). A worked example
-with exact numbers (async HDMI without PTP, video and audio, report contents, receiver math):
-[archive I1 §5.3](archive/interop/I1-ipmx-requirements.md).
+minutes under NEAREST snapping. NEAREST stays the default for sync sources (C-I3).
 
-**Receivers.** Units of one sender align through its clock even without PTP: `mtl_rx_align()` works
+**Worked example: async HDMI, no PTP.** 1080p59.94 video and 48 kHz audio from one HDMI input, no
+grandmaster, `MTL_TIME_SOURCE_FREERUN`, `MTL_MEDIA_SENDER`, `MTL_SOURCE_CAPTURE`; the video source is
+50 ppm fast, the audio clock measures 47 952 Hz (TR-10-3 §12's example).
+
+1. First VSYNC on the internal clock: M0 = 1 700 000 000.123 456 789 s; RTP0 = floor(M0 × 90 000)
+   mod 2^32 = 153 000 000 011 111 mod 2^32 = 380 025 703.
+2. Frame k: RTP = RTP0 + floor(k × 1501.5) = 380 025 703, 380 027 204, 380 028 706, 380 030 207
+   (TP-1 §13.3 expects increments of 1501.5), whatever the VSYNC timing.
+3. VSYNCs come every 16.683 333 ms / (1 + 50 ppm) = 16 682 499.2 ns: M1 = …140 139 288 ns, M2 =
+   …156 821 787 ns; the application submits `media_tai_ns` = Mk.
+4. The report for frame 1, before its first packet: NTP MSW 1 700 000 000 (seconds, low 32 bits),
+   LSW 140 139 288 (ns, the PTP truncated format, not an NTP fraction), RTP 380 027 204, the counts;
+   Info Block ts-refclk `localmac=<port MAC>`, mediaclk `sender`; MIB 0x0001 with `measuredpixclk`
+   148 359 066 Hz (148.5 MHz × 1000/1001 × (1 + 50 ppm)), htotal 2200, vtotal 1125; SDES CNAME.
+5. The first packet leaves at Mk + `min_tx_delay_ns`, then the IPMX gapped schedule at TRS = TFRAME ×
+   (1080/1125) / Npkts.
+6. Report 600: RTP 380 926 603, NTP 1 700 000 010.132 956 314. A receiver computes ΔRTP / ΔNTP =
+   900 900 / 10.009 499 525 s = 90 004.5 Hz: +50 ppm against the sender's internal clock.
+7. Audio, 125 µs ptime (6 samples): first sample at M0 + 2 ms, RTP0 = floor(that × 48 000) mod 2^32 =
+   4 211 316 613; a report every 80 packets, RTP +480, NTP +480 / 47 952 s = +10 010 010 ns
+   (…125 456 789, …135 466 799, …145 476 809); the MIB says 48 000 Hz nominal, `measuredsamplerate`
+   47 952.
+
+A PTP-locked sync sender at that instant stamps floor(N × TFRAME × 90 000) = 380 024 949 at grid
+frame N = 101 898 101 905: the async sender is 754 ticks (8.4 ms) off the grid, which
+`mediaclk:sender` makes legal.
+
+**Receivers.** The IPMX VRX is 2 × CMAX packets (32 for HD, TR-10-1 Appendix A) and starts half
+full, so a receiver needs no grid and no TAI; MTL's slot reassembly already works on arrival. The
+method (TR-10-9 §11.1): the reports when ts-refclk is `localmac=` or a PTP clock the receiver is not
+locked to; PTP plus the reports when both share the grandmaster. Units of one sender align through its clock even without PTP: `mtl_rx_align()` works
 on `media_tai_ns`, including SENDER_TIME values of one sender. Units of different senders need a
 common clock. `rx.mediaclk = MTL_MEDIACLK_AUTO` compares the Info Block's ts-refclk with the
 instance's own grandmaster and uses the reports when they differ (I-REQ-68).
@@ -426,7 +662,27 @@ of a frame, field, slice or audio packet and on every non-A/V packet, Short othe
 writes and parses the extensions, keeps the counters, sizes packets for them (8 B, 20 B on the
 first, 8 B more with MAC modes: about 0.7 % more packets at 1200 B), and sends one ciphertext on
 both ST 2022-7 legs; RTCP stays clear. Key provisioning (PSK, KDF, ECDH, a fresh key generator per
-boot, the IS-05 parameters) stays with the application (Q-I-10).
+boot, the IS-05 parameters) stays with the application (Q-I-10). The packet layout is
+[diagrams.md](diagrams.md) §11.3.
+
+**Counters and sizing.** The payload header stays clear: RFC 4175's extended sequence number and
+SRDs, RFC 9134's 4 bytes, RFC 8331's header; audio has none. Packet i of a unit gets ctr_i = the
+counter of its first slice, and ctr_(i+1) = ctr_i + ceil(len_i / 16) **[inferred: every slice
+counts, partial ones included; Q-I-12]**. The Full extension carries key_version and the 64-bit
+ctr; the Short one the low 24 bits (a gap below 2^24). Sizing subtracts the extension (8 B, 20 B on
+the first packet), and 8 B more with MAC modes, from the 1460 B Standard UDP Size Limit. HDCP
+(TR-10-5 §14) uses the same structure with its own Full and Short IV counters (frz, streamCtr,
+inputCtr); PEP can encrypt an HDCP stream in place, reusing inputCtr (TR-10-13 §20.4).
+
+| Function | Library | Application or NMOS layer |
+|---|---|---|
+| PSK storage and provisioning, key_id, KDF (CMAC, HMAC-SHA-512/256), ECDH, iv and key_generator choice | no | yes (TR-10-13 §12, §17; BCP-005-03) |
+| `a=privacy`, `a=extmap`, IS-05 `ext_privacy_*` | values from the `crypto.*` options, rendered by `mtl_sdp.h` | writes the NMOS side |
+| PEP MIB 0x0011 | built from the `crypto.*` options | — |
+| install keys at an activation, rotate at a boundary | `mtl_crypto_set_key(..., when)` | decides when (IS-05 activation, RTP_KV schedule) |
+| write and parse the CTR extensions, counters, payload sizing | yes | no |
+| AES-CTR (and CMAC) over payloads | yes, off the tasklet | or the application encrypts itself with packet units |
+| HDCP: AKE, HKEP over TCP, session key, lc128 | no (licensed secrets) | vendor code; a cipher plugin later, or packet units |
 
 **Configuration** is options, none of them secret. The R keys let an IS-05 activation to another
 encrypted sender change them at its boundary, and the SDP helper renders and parses them:
@@ -440,35 +696,58 @@ encrypted sender change them at its boundary, and the SDP helper renders and par
 - C: `crypto.workers` (1020, cipher threads; 0 = in the caller), `crypto.in_place` (1028, TX may
   overwrite attached memory with ciphertext).
 
-**Where the cipher runs:** never on a tasklet; in the caller at submit and dequeue (both become DPC)
-or on `crypto.workers` threads. The time it adds moves `min_submit_lead_ns` (in `mtl_session_info`). AES-128-CTR with AES-NI costs 0.03–0.10 of a core for 1080p59.94 and
-0.12–0.50 for 2160p60 **[inferred: a spike measures it]**.
+**Where the cipher runs:** never on a tasklet (AES over a 5 MB frame is milliseconds of one core);
+in the caller at submit and dequeue (both become DPC) or on `crypto.workers` threads. The time it
+adds moves `min_submit_lead_ns` (in `mtl_session_info`).
 
-**Memory:** library pools encrypt in place. Attached application memory takes a copy unless
-`crypto.in_place`; MAC modes always copy; `unit.hold` (RX to TX zero copy) takes the copy path.
-`MTL_SESSION_REQUIRE_DIRECT` with a copy fails at create.
+| Path | TX | RX |
+|---|---|---|
+| frame and row units, library pool | in the caller during `mtl_tx_submit` (DPC), in place, per packet region; rows per submitted range | the tasklet lands ciphertext and stores each packet's ctr in the slot's packet table (8 B per packet); `mtl_rx_dequeue` decrypts in place in the caller (DPC), then zero-fills gaps; rows in `mtl_rx_wait_rows` |
+| attached application memory | a copy to a library shadow slot while encrypting, unless `crypto.in_place`; `MTL_SESSION_REQUIRE_DIRECT` without it fails at create | as library pools: ciphertext sits in the application's slot until dequeue |
+| `unit.hold` (RX to TX zero copy) | the copy path (in place would corrupt the shared RX slot) | — |
+| packet units | per packet at submit (DPC); or the application encrypts and writes its own extension with `packet.set_fields` verbatim | `MTL_PKT_RX_LEND` and the application decrypts, or the library decrypts at dequeue |
+| MAC modes | a MAC per packet, so payload regions no longer match the frame: always the copy path | the 8 MAC bytes interleave with pixels: packets go through a staging copy; a failed MAC counts in `rx.crypto_auth_fail` and the packet is lost |
+| offload | `crypto.workers` threads encrypt between submit and pick-up, adding their time to `min_submit_lead_ns` | the same for decrypt before delivery |
+
+**Cost** **[inferred unless noted]**; the spike measures cycles per byte with DPDK's ipsec-mb or
+OpenSSL on the target CPUs before defaults are fixed:
+
+| Item | Cost |
+|---|---|
+| AES-128-CTR with AES-NI / VAES | ≈ 1 / ≈ 0.3 cycle per byte per core |
+| 1080p59.94 YCbCr 4:2:2 10-bit (5.18 MB per frame, 311 MB/s) **[computed]** | 0.03–0.10 of a 3 GHz core, TX or RX |
+| 2160p60 YCbCr 4:2:2 10-bit (1.24 GB/s) / RGB 8-bit (1.49 GB/s) **[computed]** | 0.12–0.50 of a core |
+| CMAC-64 modes | about the same again, serial within a packet (multi-buffer across packets) |
+| tasklet, TX | the extension write per packet (2 stores into the header mbuf); sizing at create |
+| tasklet, RX | the extension parse (+1 branch) and an 8 B ctr store per packet |
+| wire | +8 B per packet (≈ 0.7 % at 1200 B), +20 B once per frame |
 
 **Keys** are never options, because options are readable (C-I9). The one call is
 `mtl_crypto_set_key(s, key_version, key, key_bytes, when)` (CP; 16 or 32 bytes, copied):
 
 - TX uses the key from the first unit at or after `when` (NULL = the next unit). RX applies it to
   units whose media time is at or after `when` (the update rule), keeps it beside the current key,
-  and picks per packet by the extension's key version (RTP_KV).
+  and picks per packet by the `dynamic_key_version` of the Full extension (RTP_KV).
+- RTP_KV: `key_version` may increase by one at a frame, field or GOP boundary (audio: a packet), and
+  the counter restarts at 0 (TR-10-13 §20.3). `mtl_crypto_set_key(s, v + 1, key, 16, &when)` with
+  `MTL_AT_INDEX` gives an exact unit boundary: the tasklet switches with the unit and the caller-side
+  cipher picks the key by unit index, so no lock is shared.
 - The counter restarts at 0 only for key bytes this session never used. Re-installing a used key
   continues its counter, so no IV and counter pair repeats under one key (TR-10-13 §15).
 - An RX packet with an unknown key version counts in `rx.crypto_unknown_key{version}` and posts
   `MTL_EVENT_KEY_NEEDED` (30).
-- `key` NULL zeroises every key. Keys live in locked, non-dumpable memory, are zeroised on replace
-  and close, are never readable back, and never reach logs, stats or captures.
+- `key` NULL zeroises every key. Keys live in locked, non-dumpable memory (`mlock`,
+  `MADV_DONTDUMP`), are zeroised on replace and close, are never readable back, and never reach logs,
+  stats or captures (captures record ciphertext).
 - A TX unit without a key is DROPPED (`NO_KEY`, counted in `tx.units_no_key`), never sent in clear.
   An RX packet that fails authentication is a lost packet (`rx.crypto_auth_fail`).
 
-**HDCP** keys are licensed secrets that an open-source library should not hold. HDCP streams use
+**HDCP** keys are licensed secrets that an open-source library should not hold: HDCP 2.3's cipher is
+AES-128 in counter mode too, so the data path would fit it **[inferred]**, but its session key and
+lc128 fall under the DCP licence robustness rules. HDCP streams use
 packet units, with the vendor's code encrypting and writing the HDCP extension. An HDCP receiver
 also uses packet units, because frame units deliver ciphertext pixels and no extension values
 (streamCtr). A vendor cipher plugin is later (GI-11, Q-I-4).
-
-Packet layout, who does what, cost table: [archive I1 §6](archive/interop/I1-ipmx-requirements.md).
 
 ## 14. Gap dispositions
 
@@ -524,6 +803,13 @@ Packet layout, who does what, cost table: [archive I1 §6](archive/interop/I1-ip
 | GI-16 profile | adopted | `session.profile`, `instance.profile` | 7 |
 | GI-17 keys | adopted | `tx.f2f_pp_ns`, `rx.sender_rate_ppb`, `rx.rtcp_info_version`, `rx.crypto_auth_fail` | 7 |
 
+Data-path cost per gap: GI-1 O(1) from a template, ≈ 100 ns per frame; GI-2 none (a template swap);
+GI-3 none on the system queue, ≈ 50 ns per report on a session queue; GI-4, GI-5, GI-6 (computed at
+create), GI-7, GI-8, GI-12 and GI-16 none; GI-9 one branch per packet; GI-10 8 or 20 B of extension
+per packet written on the tasklet; GI-13 gauges from existing per-unit times; GI-14 one enqueue per
+frame on the video tasklet; GI-15 XOR into two accumulators per packet, ≈ 1 % of a core at 1080p60
+**[inferred]**; GI-17 counters on existing paths. None changes a pinned-core rule.
+
 ### 14.3 Conflicts
 
 Every conflict of N1 §6 and I1 §7 is resolved:
@@ -542,7 +828,7 @@ Every conflict of N1 §6 and I1 §7 is resolved:
 ## 15. Requirement index
 
 "v1": met by the ported API (Phases 1–6); "later": beyond the Phase 7 design; "outside MTL": the
-Node or application. Full rows: [N1 §3](archive/interop/N1-nmos-requirements.md), [I1 §3](archive/interop/I1-ipmx-requirements.md).
+Node or application. Full rows: [requirements.md](requirements.md) §6 (N-REQ) and §7 (I-REQ).
 
 ### 15.1 NMOS (N-REQ-1…60)
 
@@ -629,6 +915,9 @@ unless the VSF needs a distinct TP; RX REAPPLY without a leave ([decisions.md](d
 | RN-29 ts-refclk | `ts_refclk[64]` holds the 64-byte wire field with no room for the NUL: say NUL-padded, or limit to 63 |
 | RN-30 profile table | EF for PTP, and DHCP DNS and domain for in-band discovery, are missing |
 | RN-9, RN-15 | the call returns no seq (the Node serialises updates); PAR stays in `fmtp_extra` |
+| RN §5 jxsv | ST 2110-22 `sampling` and `depth` have no source when `cvideo.app_format` is 0 (the application gives the codestream); they come only through `fmtp_extra` |
+| RN §5 parse TP | parse does not map `TP=` to `video.sender_type`, so an RX cannot check the sender type it receives **[inferred]** |
+| RN §5 ANC | ST 2110-40 `DID_SDID` and `VPID_Code` render and parse only as `fmtp_extra` text; the interlace field order (`interlaced_tff` / `_bff`) has no field in `mtl_raster`, so RX detection cannot report it |
 
 Since the verification, the headers resolved: render while muted (the legs as configured),
 `mtl_index_at()` on SENDER sessions (`-MTL_EINVAL`) and their `media_index` (k), a `when` before T0

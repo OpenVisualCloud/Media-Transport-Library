@@ -105,7 +105,7 @@ Five essences + generic RTP · frames, rows or packets · one struct, `mtl_unit`
 
 Rare knobs became **named options**: absent unless set, listable by name.
 
-<!-- Nine studies plus two reviews; archive/REVISION-4.md has the numbers and the trade-offs. Typed configuration (D-97) removed the spec-string parsers; mtl.h has 32 functions. 14 more are declared under MTL_LATER for later phases: SDP, RTCP and PEP (Phase 7), and a few advanced helpers. -->
+<!-- Nine studies plus two reviews; history.md §1 and §1.1 have the numbers and the trade-offs. Typed configuration (D-97) removed the spec-string parsers; mtl.h has 32 functions. 14 more are declared under MTL_LATER for later phases: SDP, RTCP and PEP (Phase 7), and a few advanced helpers. -->
 
 ---
 

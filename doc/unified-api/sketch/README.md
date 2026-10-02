@@ -5,7 +5,7 @@
 | Status | Normative design sketch, experimental revision 0.2. Nothing is implemented |
 | Date | 2026-10-02 |
 | Reads with | [examples.md](../examples.md) (every example, generated from here), [concepts.md](../concepts.md), [contract.md](../contract.md), [diagrams.md](../diagrams.md) |
-| Previous | revision 3's single header is archived in [archive/r3-sketch/](../archive/r3-sketch/) |
+| Previous | revision 3's single header: what it looked like and what replaced it, [history.md §4](../history.md#4-what-revision-3-looked-like) |
 
 This directory holds the normative header set of the proposed unified MTL API and the worked
 examples as files that compile. In milestone M0 of the
@@ -47,6 +47,11 @@ It then checks that:
 
 It prints the function count per header and per call class, and exits non-zero on any
 failure. The examples only have to compile; they are never linked.
+
+Not in `check.sh` yet: every header with `-Wconversion -Wsign-conversion -Wcast-qual` (clean on
+2026-10-02, with and without `-DMTL_LATER`). The R4 header review ran it once; `-Wcast-qual` is
+what caught `mtl_pkt_tx_table()` returning a writable table from a `const struct mtl_unit*`
+(RV-44), so it is worth adding.
 
 ## Rules for changing the sketch
 

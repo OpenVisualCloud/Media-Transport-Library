@@ -129,6 +129,11 @@ One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch
 
 `MTL_INIT`, typed handles and options work unchanged; an RAII guard releases a lease that was not submitted.
 
+The second function is a test bench that needs no NIC: an instance on `null:1` with the test clock (`mtl_test_clock`, `mtl_test_clock_advance`), a capacity dry
+run (`mtl_session_query` with `MTL_QUERY_CHECK_CAPACITY`, `-MTL_ENOSPC` with a `CAPACITY_*` reason), a start at a TAI instant (`struct mtl_when` with `MTL_AT_TAI`),
+results and events on a shared queue (`mtl_queue_bind`), full timing records read by size (`struct mtl_tx_result_full`; the NIC launch time only when `MTL_TXF_OBSERVED_LEG0` is set),
+a library dispatch thread (`mtl_queue_dispatch_start`), and an injected loss of the time source (`mtl_debug_inject`, debug builds).
+
 @@EXAMPLE examples_cpp.cpp@@
 
 ## 17. An st20p program side by side
