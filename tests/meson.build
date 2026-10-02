@@ -14,7 +14,8 @@ cpp_c = meson.get_compiler('cpp')
 if not is_windows
   add_project_arguments(cpp_c.get_supported_arguments(['-fstack-protector-strong',
     '-fstack-clash-protection', '-fcf-protection=full']),
-    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'cpp')
+    '-Wformat', '-Wformat-security', '-Werror=format-security',
+    '-Wimplicit-fallthrough', '-D_GLIBCXX_ASSERTIONS', language : 'cpp')
   # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CXXFLAGS already set, asking the
   # compiler itself: meson >= 1.11 runs its checks with -U_FORTIFY_SOURCE
   fortify = run_command(cpp_c.cmd_array(), get_option('cpp_args'), '-O2', '-dM', '-E', '-x', 'c++', '/dev/null',
