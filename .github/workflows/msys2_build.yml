@@ -57,7 +57,7 @@ jobs:
             dlfcn:p
 
       - name: Checkout IMTL code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
@@ -66,7 +66,7 @@ jobs:
         run: task ci:msys2 -- npcap
 
       - name: Checkout mman-win32 code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: 'alitrack/mman-win32'
           ref: master
@@ -95,7 +95,7 @@ jobs:
 
       - name: Checkout DPDK code
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: 'DPDK/dpdk'
           ref: v${{matrix.dpdk}}
