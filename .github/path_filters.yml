@@ -190,6 +190,23 @@ unit_tests:
   - *libmtl
   - *unit_sources
 
+# fuzz_tests.yml. It builds DPDK, then fuzz.sh builds the root meson project
+# with the fuzz targets; fuzz.sh calls meson, not build.sh. Each harness
+# includes a production .c file and links libmtl, and that file calls other
+# files of libmtl, so each file of libmtl can change a target.
+fuzz_tests:
+  - .github/path_filters.yml
+  - .github/workflows/fuzz_tests.yml
+  - .github/scripts/ci/fuzz.sh
+  - Taskfile.yml
+  - *hash_dpdk
+  - meson.build
+  - meson_options.txt
+  - VERSION
+  - 'include/**'
+  - 'lib/**'
+  - 'tests/fuzz/**'
+
 # base_build.yml: release, eBPF/XDP, and release with fuzzing (clang).
 # setup_environment.sh builds DPDK, MTL, GPU Direct, the FFmpeg, GStreamer and
 # OBS plugins, the Python and Rust bindings, and the tools. It does not build

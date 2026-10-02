@@ -1,4 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file st22_rx_frame_fuzz.c
+ *
+ * Sends each input as one packet to rv_handle_st22_pkt(), the RX path of an
+ * ST 2110-22 session of the type ST20_TYPE_FRAME_LEVEL (1920x1080 codestream).
+ *
+ * The input is a full packet that starts with the Ethernet header. The harness ignores
+ * an input shorter than struct st22_rfc9134_video_hdr (58 bytes), and an input larger
+ * than the 2048-byte data room of one mbuf.
+ */
+
 #include <rte_atomic.h>
 #include <rte_eal.h>
 #include <rte_ether.h>

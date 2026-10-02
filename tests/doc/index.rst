@@ -4,7 +4,8 @@ MTL Test Suite
 
 Welcome to the Media Transport Library (MTL) Test Suite documentation.
 
-This documentation covers both Python-based validation tests (pytest) and C++ integration tests (gtest).
+This documentation covers Python-based validation tests (pytest), C++ integration tests (gtest),
+and libFuzzer harnesses (fuzz).
 
 .. toctree::
    :maxdepth: 2
@@ -12,6 +13,7 @@ This documentation covers both Python-based validation tests (pytest) and C++ in
 
    pytest/index
    gtest/index
+   fuzz/index
 
 Overview
 ========
@@ -39,6 +41,15 @@ Low-level unit and integration tests:
 * Component testing
 * API validation  
 * Performance measurements
+
+Fuzz Tests (libFuzzer)
+----------------------
+
+Random packets for the RX parsers, with AddressSanitizer:
+
+* **Targets**: made from ``tests/fuzz/meson.build`` and the harness comments
+* **CI**: ``fuzz_tests.yml`` runs each target for a pull request that changes
+  the library or the harnesses, and each night on ``main``
 
 Getting Started
 ===============

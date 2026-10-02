@@ -1,6 +1,6 @@
 # MTL Test Documentation
 
-Sphinx documentation for MTL test suite (pytest and gtest).
+Sphinx documentation for MTL test suite (pytest, gtest and fuzz).
 
 ## Prerequisites
 
@@ -34,11 +34,15 @@ make text
 doc/
 ├── conf.py              # Sphinx config
 ├── index.rst           # Main index
+├── _ext/               # Local Sphinx extensions
+│   └── fuzz_targets.py # Makes the fuzz target list
 ├── pytest/             # Python tests
 │   ├── index.rst
 │   ├── kernel_socket.rst
 │   └── common.rst
-└── gtest/              # C++ tests
+├── gtest/              # C++ tests
+│   └── index.rst
+└── fuzz/               # libFuzzer harnesses
     └── index.rst
 ```
 
@@ -87,6 +91,23 @@ void test_function(int param1);
 Generate XML:
 ```bash
 cd tests/integration_tests && doxygen Doxyfile
+```
+
+### Fuzz Targets
+
+The `fuzz-targets` directive in `fuzz/index.rst` reads the `fuzz_targets` list
+of `tests/fuzz/meson.build`. For each target, it shows the first `/** */`
+comment of the harness. The first paragraph of the comment goes to the summary
+table. To document a new harness, add it to `fuzz_targets` and start its source
+with a file comment:
+```c
+/**
+ * @file my_rx_fuzz.c
+ *
+ * Sends each input as one packet to my_rx_handle_pkt().
+ *
+ * Details: input limits, session type, log level.
+ */
 ```
 
 ## View

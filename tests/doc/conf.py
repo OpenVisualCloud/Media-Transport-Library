@@ -21,6 +21,7 @@ release = "24.11"
 sys.path.insert(0, os.path.abspath("../acceptance"))
 sys.path.insert(0, os.path.abspath("../acceptance/tests"))
 sys.path.insert(0, os.path.abspath("../acceptance/common"))
+sys.path.insert(0, os.path.abspath("_ext"))
 
 extensions = [
     "sphinx.ext.autodoc",  # Auto-generate documentation from docstrings
@@ -31,6 +32,7 @@ extensions = [
     "sphinx.ext.coverage",  # Collect documentation coverage stats
     "sphinx.ext.autosummary",  # Generate autodoc summaries
     "breathe",  # Bridge between Doxygen and Sphinx for C++ docs
+    "fuzz_targets",  # List the fuzz targets of tests/fuzz/meson.build
 ]
 
 # Breathe configuration for C++ (gtest) documentation
@@ -62,8 +64,9 @@ autodoc_default_options = {
     "exclude-members": "__weakref__",
 }
 autodoc_typehints = "description"
+# pytest is not mocked: a mocked decorator such as pytest.mark.nightly replaces
+# the test function with a mock, and autodoc then skips the function.
 autodoc_mock_imports = [
-    "pytest",
     "pytest_mfd_config",
     "pytest_mfd_logging",
     "mfd_connect",
