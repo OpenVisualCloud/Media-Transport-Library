@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "st_api.h"
+#include "st20_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -151,6 +151,28 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
+/* Put the session in the start-of-stream format-detect state rv_attach() enters
+ * for ST20_RX_FLAG_AUTO_DETECT (`auto_detect`, with a notify_detected that records
+ * the meta) or the timing parser: no frames or slots yet, the detect handler
+ * installed. Detection success allocates them via rv_init_sw(). */
+void ut20_ctx_enable_format_detect(ut20_test_ctx* ctx, bool auto_detect,
+                                   bool timing_parser);
+bool ut20_format_detected(const ut20_test_ctx* ctx);
+int ut20_detected_pkts_per_frame(const ut20_test_ctx* ctx);
+int ut20_detect_notify_cnt(const ut20_test_ctx* ctx);
+/* Meta passed to the last notify_detected call. */
+const struct st20_detect_meta* ut20_detect_notified_meta(const ut20_test_ctx* ctx);
+
+/* Enable the 10 s timing-parser stat, as ST20_RX_FLAG_TIMING_PARSER_STAT would. */
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx);
+/* Fold one frame's timing-parser result into the 10 s stat rv_tp_stat() logs.
+ * Requires a prior ut20_ctx_enable_timing_parser_stat(). */
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max);
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port);
+
 /* Park a software PTP correction in the port's no_timesync_delta accumulator --
  * what a real no-timesync port (any VF) holds once PTP has synced. It must never
  * reach a HW RX timestamp. */
@@ -173,12 +195,12 @@ void ut20_ctx_set_rx_burst(ut20_test_ctx* ctx, uint16_t succ_burst_cnt, bool con
  * whenever the test asserts on per-port `err_packets` or per-port
  * `packets`, since those counters live in the wrapper and not the
  * per-packet handler.
- * `pt`/`ssrc` are sent on the wire (use the session-configured values
+ * `pt`/`ssrc`/`marker` are sent on the wire (use the session-configured values
  * to test the happy path; pass mismatched values to test error paths). */
 int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
                               uint16_t line_num, uint16_t line_offset,
                               uint16_t line_length, enum mtl_session_port port,
-                              uint8_t pt, uint32_t ssrc);
+                              uint8_t pt, uint32_t ssrc, bool marker);
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port);
 

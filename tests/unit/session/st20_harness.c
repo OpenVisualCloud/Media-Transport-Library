@@ -70,6 +70,9 @@ struct ut20_test_ctx {
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
+  bool format_detect;
+  struct st20_detect_meta detected_meta;
+  int detect_notify_cnt;
 };
 
 #include "session/st20_harness.h"
@@ -216,6 +219,7 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
 
 void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->format_detect) rv_uinit_sw(&ctx->impl, &ctx->session);
   /* ASan is preloaded in this suite, so the tp allocation must be released. */
   rv_tp_uinit(&ctx->session);
   /* Drain any held refcnts so destroy-while-holding is safe. */
@@ -237,7 +241,7 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx) {
 
 static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t line_num,
                                              uint16_t line_offset, uint16_t line_length,
-                                             uint8_t pt, uint32_t ssrc) {
+                                             uint8_t pt, uint32_t ssrc, bool marker) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
   if (!m) return NULL;
 
@@ -258,7 +262,7 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t
   rtp->base.version = 2;
   rtp->base.payload_type = pt;
   rtp->base.ssrc = htonl(ssrc);
-  rtp->base.marker = 0;
+  rtp->base.marker = marker ? 1 : 0;
   rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
   rtp->base.tmstamp = htonl(ts);
   rtp->seq_number_ext = htons((uint16_t)(seq >> 16));
@@ -274,7 +278,7 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t
 
 static struct rte_mbuf* make_video_mbuf(uint32_t seq, uint32_t ts, uint16_t line_num,
                                         uint16_t line_offset, uint16_t line_length) {
-  return make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, 0);
+  return make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, 0, false);
 }
 
 static struct rte_mbuf* make_video_continuation_mbuf(uint32_t seq, uint32_t ts,
@@ -570,7 +574,7 @@ int ut20_feed_pkt_pt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t lin
                      uint16_t line_offset, uint16_t line_length,
                      enum mtl_session_port port, uint8_t pt) {
   struct rte_mbuf* m =
-      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, pt, 0);
+      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, pt, 0, false);
   if (!m) return -1;
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
@@ -581,7 +585,7 @@ int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t l
                        uint16_t line_offset, uint16_t line_length,
                        enum mtl_session_port port, uint32_t ssrc) {
   struct rte_mbuf* m =
-      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, ssrc);
+      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, 0, ssrc, false);
   if (!m) return -1;
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
@@ -591,9 +595,9 @@ int ut20_feed_pkt_ssrc(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t l
 int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
                               uint16_t line_num, uint16_t line_offset,
                               uint16_t line_length, enum mtl_session_port port,
-                              uint8_t pt, uint32_t ssrc) {
+                              uint8_t pt, uint32_t ssrc, bool marker) {
   struct rte_mbuf* m =
-      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, pt, ssrc);
+      make_video_mbuf_full(seq, ts, line_num, line_offset, line_length, pt, ssrc, marker);
   if (!m) return -1;
   struct rte_mbuf* mbufs[1] = {m};
   int rc = rv_handle_mbuf(&ctx->session.priv[port], mbufs, 1);
@@ -607,7 +611,8 @@ int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
   return ut20_feed_pkt_via_wrapper(ctx, seq, ts, ln, lo, ll, port,
-                                   ctx->session.ops.payload_type, ctx->session.ops.ssrc);
+                                   ctx->session.ops.payload_type, ctx->session.ops.ssrc,
+                                   false);
 }
 
 /* ── config setters ───────────────────────────────────────────────────── */
@@ -656,6 +661,78 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
   ctx->ptp_storage.last_sync_ts = 0;
   ctx->impl.ptp[phy] = &ctx->ptp_storage;
   ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+}
+
+static int ut20_notify_detected(void* priv, const struct st20_detect_meta* meta,
+                                struct st20_detect_reply* reply) {
+  ut20_test_ctx* ctx = priv;
+  (void)reply;
+  ctx->detected_meta = *meta;
+  ctx->detect_notify_cnt++;
+  return 0;
+}
+
+void ut20_ctx_enable_format_detect(ut20_test_ctx* ctx, bool auto_detect,
+                                   bool timing_parser) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+
+  if (auto_detect) {
+    s->ops.flags |= ST20_RX_FLAG_AUTO_DETECT;
+    s->ops.notify_detected = ut20_notify_detected;
+  }
+
+  s->st20_frames = NULL;
+  s->st20_frames_cnt = 0;
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) s->slots[i].frame_bitmap = NULL;
+  s->enable_timing_parser = timing_parser;
+  s->enable_timing_parser_meta = timing_parser;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+  ctx->format_detect = true;
+  rv_detector_init(s);
+  rv_init_pkt_handler(s);
+}
+
+bool ut20_format_detected(const ut20_test_ctx* ctx) {
+  return ctx->session.detector.status == ST20_DETECT_STAT_SUCCESS;
+}
+
+int ut20_detected_pkts_per_frame(const ut20_test_ctx* ctx) {
+  return ctx->session.detector.pkt_per_frame;
+}
+
+int ut20_detect_notify_cnt(const ut20_test_ctx* ctx) {
+  return ctx->detect_notify_cnt;
+}
+
+const struct st20_detect_meta* ut20_detect_notified_meta(const ut20_test_ctx* ctx) {
+  return &ctx->detected_meta;
+}
+
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx) {
+  ctx->session.enable_timing_parser_stat = true;
+}
+
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rv_tp_slot slot;
+
+  rv_tp_slot_init(&slot);
+  slot.meta.vrx_min = vrx_min;
+  slot.meta.vrx_max = vrx_max;
+  slot.meta.ipt_min = ipt_min;
+  slot.meta.ipt_max = ipt_max;
+  slot.meta.pkts_cnt = 1;
+  rv_tp_slot_parse_result(s, port, &slot, false);
+}
+
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.vrx_max;
+}
+
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.ipt_max;
 }
 
 void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {

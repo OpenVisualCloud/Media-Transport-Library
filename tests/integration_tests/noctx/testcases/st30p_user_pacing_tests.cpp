@@ -7,8 +7,6 @@
  * See README.md, "Test catalogue".
  */
 
-#include <cstdlib>
-#include <fstream>
 #include <string>
 
 #include "core/constants.hpp"
@@ -19,30 +17,6 @@
 static_assert(kSt30pRxToleranceNs == 40 * NS_PER_US, "comments quote +-40 us");
 static_assert(kSt30pFirstBufferRxToleranceNs == 80 * NS_PER_US, "comments quote 80 us");
 static_assert(kSt30pUserPacingStartBuffers == 60, "comments quote 600 ms");
-
-namespace {
-/* Empty if this process runs in an isolated cgroup v2 cpuset partition, else why not. */
-std::string exclusivePartitionError() {
-  std::string path;
-  std::ifstream cgroup("/proc/self/cgroup");
-  for (std::string line; std::getline(cgroup, line);)
-    if (line.rfind("0::", 0) == 0) path = line.substr(3);
-
-  std::string partition;
-  std::ifstream state("/sys/fs/cgroup" + path + "/cpuset.cpus.partition");
-  if (!std::getline(state, partition)) partition = "<absent>";
-  if (partition == "isolated") return "";
-
-  const char* isolation = getenv("MTL_CPU_ISOLATION");
-  return "st30p_user_pacing (software TSC paced audio, +-40 us) needs an exclusive CPU "
-         "partition: cgroup " +
-         path + ", partition '" + partition +
-         "', MTL_CPU_ISOLATION=" + (isolation ? isolation : "unset") +
-         "; run via tests/integration_tests/noctx/run.sh "
-         "(tests/tools/isolate/isolate.sh) on a host that allows it; see "
-         "tests/tools/isolate/README.md";
-}
-}  // namespace
 
 /* st30p_default_timestamps
  * Config:    mtl_init() with FakePtpClockNow and INFO log, DEV_AUTO_START_STOP as on
@@ -100,7 +74,8 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
   initStrictPacingContext();
   if (IsSkipped() || HasFatalFailure()) return;
 
-  const std::string isolation_error = exclusivePartitionError();
+  const std::string isolation_error =
+      exclusivePartitionError("st30p_user_pacing (software TSC paced audio, +-40 us)");
   if (!isolation_error.empty()) FAIL() << isolation_error;
 
   constexpr uint32_t kTxFlags = ST30P_TX_FLAG_USER_PACING;

@@ -66,7 +66,8 @@ TEST_F(St20RxErrPacketsTest, GoodPacketsNotCountedAsErr) {
 TEST_F(St20RxErrPacketsTest, WrongPtCountedAsErr) {
   /* pt=200 differs from session pt=96 */
   ut20_feed_pkt_via_wrapper(ctx_, /*seq=*/0, /*ts=*/1000, /*line=*/0, /*off=*/0,
-                            /*len=*/40, MTL_SESSION_PORT_P, /*pt=*/200, /*ssrc=*/0xDEAD);
+                            /*len=*/40, MTL_SESSION_PORT_P, /*pt=*/200, /*ssrc=*/0xDEAD,
+                            /*marker=*/false);
 
   EXPECT_EQ(ut20_stat_wrong_pt(ctx_), 1u);
   EXPECT_EQ(err_p(), 1u) << "wrong-PT packet must bump err_packets[P]";
@@ -77,7 +78,7 @@ TEST_F(St20RxErrPacketsTest, WrongPtCountedAsErr) {
 /* Wrong SSRC: -EINVAL → err_packets++ AND wrong_ssrc++. */
 TEST_F(St20RxErrPacketsTest, WrongSsrcCountedAsErr) {
   ut20_feed_pkt_via_wrapper(ctx_, 0, 1000, 0, 0, 40, MTL_SESSION_PORT_P, /*pt=*/96,
-                            /*ssrc=*/0xBAD);
+                            /*ssrc=*/0xBAD, /*marker=*/false);
 
   EXPECT_EQ(ut20_stat_wrong_ssrc(ctx_), 1u);
   EXPECT_EQ(err_p(), 1u);
@@ -89,13 +90,14 @@ TEST_F(St20RxErrPacketsTest, WrongSsrcCountedAsErr) {
 TEST_F(St20RxErrPacketsTest, ErrPacketsEqualsSumOfReasons) {
   /* feed assorted bad packets on primary */
   ut20_feed_pkt_via_wrapper(ctx_, 0, 1000, 0, 0, 40, MTL_SESSION_PORT_P, /*pt=*/200,
-                            0xDEAD); /* wrong PT */
+                            0xDEAD, /*marker=*/false); /* wrong PT */
   ut20_feed_pkt_via_wrapper(ctx_, 1, 1000, 0, 0, 40, MTL_SESSION_PORT_P, /*pt=*/200,
-                            0xDEAD); /* wrong PT */
+                            0xDEAD, /*marker=*/false); /* wrong PT */
   ut20_feed_pkt_via_wrapper(ctx_, 2, 1000, 0, 0, 40, MTL_SESSION_PORT_P, 96,
-                            /*ssrc=*/0xBAD); /* wrong SSRC */
+                            /*ssrc=*/0xBAD, /*marker=*/false); /* wrong SSRC */
   ut20_feed_pkt_via_wrapper(ctx_, 3, 1000, /*line=*/9999, /*off=*/0, /*len=*/40,
-                            MTL_SESSION_PORT_P, 96, 0xDEAD); /* offset out of frame */
+                            MTL_SESSION_PORT_P, 96, 0xDEAD,
+                            /*marker=*/false); /* offset out of frame */
 
   uint64_t reasons = ut20_stat_wrong_pt(ctx_) + ut20_stat_wrong_ssrc(ctx_) +
                      ut20_stat_wrong_interlace(ctx_) + ut20_stat_offset_dropped(ctx_) +
@@ -110,7 +112,7 @@ TEST_F(St20RxErrPacketsTest, ErrPacketsEqualsSumOfReasons) {
 TEST_F(St20RxErrPacketsTest, MixedBurstOnlyBadCounted) {
   ut20_feed_frame_pkt_via_wrapper(ctx_, 0, 1000, MTL_SESSION_PORT_P);
   ut20_feed_pkt_via_wrapper(ctx_, 99, 1000, 0, 0, 40, MTL_SESSION_PORT_P, /*pt=*/200,
-                            0xDEAD);
+                            0xDEAD, /*marker=*/false);
   ut20_feed_frame_pkt_via_wrapper(ctx_, 1, 1000, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(err_p(), 1u) << "only the wrong-PT packet may be counted as error";

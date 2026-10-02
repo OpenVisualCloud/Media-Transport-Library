@@ -16,13 +16,17 @@
 #include <linux/ptp_clock.h>
 #include <linux/sockios.h>
 #include <net/if.h>
+#include <pthread.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +48,50 @@ constexpr const char* kStrictTopology =
     "the RX port, and NIC RX timestamps delivered: ";
 constexpr int kPhcReadAttempts = 3;
 constexpr int kPtpMappingSamples = 4;
+constexpr int64_t kPhcFollowIntervalNs = 10 * NS_PER_MS;
+constexpr int64_t kPhcFollowMaxSlopePpb = 100 * 1000;
+
+/* PhcFollowingClock::now() - CLOCK_MONOTONIC_RAW is base_offset_ns at base_mono_ns and
+ * changes by slope_ppb; a seqlock, so readers spin while the writer is mid-update. */
+struct PhcFollowingOffset {
+  std::atomic<uint32_t> seq{0};
+  std::atomic<uint64_t> base_mono_ns{0};
+  std::atomic<int64_t> base_offset_ns{0};
+  std::atomic<int64_t> slope_ppb{0};
+};
+PhcFollowingOffset g_phc_offset;
+
+int64_t phcOffsetAt(uint64_t mono_ns) {
+  uint32_t seq;
+  uint64_t base_mono_ns;
+  int64_t base_offset_ns, slope_ppb;
+  do {
+    seq = g_phc_offset.seq.load(std::memory_order_acquire);
+    base_mono_ns = g_phc_offset.base_mono_ns.load(std::memory_order_relaxed);
+    base_offset_ns = g_phc_offset.base_offset_ns.load(std::memory_order_relaxed);
+    slope_ppb = g_phc_offset.slope_ppb.load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+  } while ((seq & 1) || seq != g_phc_offset.seq.load(std::memory_order_relaxed));
+  return base_offset_ns +
+         static_cast<int64_t>(mono_ns - base_mono_ns) * slope_ppb / (int64_t)NS_PER_S;
+}
+
+/* Only the follower thread writes, or the test thread while it does not run. */
+void setPhcOffset(uint64_t base_mono_ns, int64_t base_offset_ns, int64_t slope_ppb) {
+  const uint32_t seq = g_phc_offset.seq.load(std::memory_order_relaxed);
+  g_phc_offset.seq.store(seq + 1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
+  g_phc_offset.base_mono_ns.store(base_mono_ns, std::memory_order_relaxed);
+  g_phc_offset.base_offset_ns.store(base_offset_ns, std::memory_order_relaxed);
+  g_phc_offset.slope_ppb.store(slope_ppb, std::memory_order_relaxed);
+  g_phc_offset.seq.store(seq + 2, std::memory_order_release);
+}
+
+uint64_t monotonicRawNs() {
+  timespec mono;
+  clock_gettime(CLOCK_MONOTONIC_RAW, &mono);
+  return static_cast<uint64_t>(mono.tv_sec) * NS_PER_S + mono.tv_nsec;
+}
 
 uint32_t expectedBpmPackets(const St20pHandler* handler) {
   const auto& ops = handler->sessionsOpsTx;
@@ -273,6 +321,110 @@ std::string strictPacingTopologyError(const char* tx_port, const char* rx_port) 
 bool strictPacingRequired() {
   const char* required = getenv("NOCTX_REQUIRE_STRICT");
   return required && !strcmp(required, "1");
+}
+
+std::string sharedPhcError(const char* port_a, const char* port_b) {
+  const int a = openPortPhc(port_a), b = openPortPhc(port_b);
+  struct stat stat_a, stat_b;
+  const bool shared = a >= 0 && b >= 0 && !fstat(a, &stat_a) && !fstat(b, &stat_b) &&
+                      stat_a.st_rdev == stat_b.st_rdev;
+  if (a >= 0) close(a);
+  if (b >= 0) close(b);
+  if (shared) return "";
+  return std::string(kStrictTopology) + "RX " + port_a + " and RX " + port_b +
+         " must timestamp on one PHC";
+}
+
+PhcFollowingClock::~PhcFollowingClock() {
+  stop();
+  if (fd >= 0) close(fd);
+}
+
+std::string PhcFollowingClock::open(const char* port, int64_t ptp_minus_phc) {
+  ptp_minus_phc_ns = ptp_minus_phc;
+  fd = openPortPhc(port);
+  if (fd < 0) return std::string("no PHC found for ") + port;
+  uint64_t phc_ns, mono_ns, uncertainty_ns;
+  const std::string why = readPhc(fd, &phc_ns, &mono_ns, &uncertainty_ns);
+  if (!why.empty()) return std::string("cannot read the PHC of ") + port + ": " + why;
+  setPhcOffset(mono_ns, static_cast<int64_t>(phc_ns - mono_ns) + ptp_minus_phc_ns, 0);
+  return "";
+}
+
+std::string PhcFollowingClock::follow() {
+  const int cpu = sched_getcpu();
+  if (cpu < 0) return std::string("sched_getcpu: ") + strerror(errno);
+  follow_mono_ns = monotonicRawNs();
+  std::promise<int> pinned;
+  std::future<int> pin_ret = pinned.get_future();
+  thread = std::thread(&PhcFollowingClock::run, this, cpu, std::move(pinned));
+  const int ret = pin_ret.get();
+  if (ret)
+    return "cannot pin the PHC follower to CPU " + std::to_string(cpu) + ": " +
+           strerror(ret);
+  return "";
+}
+
+void PhcFollowingClock::stop() {
+  stopping.store(true, std::memory_order_relaxed);
+  if (!thread.joinable()) return;
+  thread.join();
+  stop_mono_ns = monotonicRawNs();
+  setPhcOffset(stop_mono_ns, phcOffsetAt(stop_mono_ns), 0);
+  fprintf(stderr,
+          "NoCtx PHC follower: %llu reads in %.1f s, %llu failed, lag max %llu ns, gap "
+          "max %.1f ms\n",
+          (unsigned long long)reads, (double)(stop_mono_ns - follow_mono_ns) / NS_PER_S,
+          (unsigned long long)failed_reads, (unsigned long long)max_lag_ns,
+          (double)max_gap_ns / NS_PER_MS);
+}
+
+uint64_t PhcFollowingClock::now(void* /*priv*/) {
+  const uint64_t mono_ns = monotonicRawNs();
+  return mono_ns + phcOffsetAt(mono_ns);
+}
+
+std::string PhcFollowingClock::healthError() const {
+  const uint64_t slots = (stop_mono_ns - follow_mono_ns) / kPhcFollowIntervalNs;
+  if (max_lag_ns <= kPhcFollowMaxLagNs && max_gap_ns <= kPhcFollowMaxGapNs &&
+      reads >= kPhcFollowMinReadShare * slots)
+    return "";
+  return "MTL's PTP time did not follow the RX PHC: " + std::to_string(reads) +
+         " reads in " + std::to_string(slots) + " 10 ms slots, " +
+         std::to_string(failed_reads) + " failed, lag max " + std::to_string(max_lag_ns) +
+         " ns, gap max " + std::to_string(max_gap_ns) +
+         " ns; the PHC was stepped or drifts > 100 ppm, its reads failed, or the "
+         "follower thread was starved";
+}
+
+void PhcFollowingClock::run(int cpu, std::promise<int> pinned) {
+  cpu_set_t cpus;
+  CPU_ZERO(&cpus);
+  CPU_SET(cpu, &cpus);
+  const int pin_ret = pthread_setaffinity_np(pthread_self(), sizeof(cpus), &cpus);
+  pinned.set_value(pin_ret);
+  if (pin_ret) return;
+  const auto interval = std::chrono::nanoseconds(kPhcFollowIntervalNs);
+  auto next = std::chrono::steady_clock::now();
+  while (!stopping.load(std::memory_order_relaxed)) {
+    next = std::max(next + interval, std::chrono::steady_clock::now());
+    std::this_thread::sleep_until(next);
+    uint64_t phc_ns, mono_ns, uncertainty_ns;
+    if (!readPhc(fd, &phc_ns, &mono_ns, &uncertainty_ns).empty()) {
+      failed_reads++;
+      continue;
+    }
+    if (last_read_mono_ns) max_gap_ns = std::max(max_gap_ns, mono_ns - last_read_mono_ns);
+    last_read_mono_ns = mono_ns;
+    reads++;
+    const int64_t offset = phcOffsetAt(mono_ns);
+    const int64_t lag =
+        static_cast<int64_t>(phc_ns - mono_ns) + ptp_minus_phc_ns - offset;
+    max_lag_ns = std::max(max_lag_ns, static_cast<uint64_t>(std::llabs(lag)));
+    const int64_t max_lag = kPhcFollowMaxSlopePpb * kPhcFollowIntervalNs / NS_PER_S;
+    const int64_t slew = std::max(-max_lag, std::min(lag, max_lag));
+    setPhcOffset(mono_ns, offset, slew * (int64_t)NS_PER_S / kPhcFollowIntervalNs);
+  }
 }
 
 RxTime monotonicRawToPtp(mtl_handle mt, const RxTime& rx) {
@@ -591,4 +743,42 @@ void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
   EXPECT_EQ(f->second_field, (idx_rx & 1) != 0)
       << "field " << idx_rx << " has the wrong first/second-field identity";
   St20pUserPacingOracle::rxTestFrameModifier(frame, frame_size);
+}
+
+St20pVrxRecorder::St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc)
+    : FrameTestStrategy(parentHandler, false, true), ptp_minus_phc_ns(ptp_minus_phc) {
+}
+
+void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+  auto* f = static_cast<st_frame*>(frame);
+  auto* handler = static_cast<St20pHandler*>(parent);
+  if (!first_rx_ns) first_rx_ns = f->receive_timestamp;
+  const uint64_t t = f->receive_timestamp - first_rx_ns;
+  if (t < (uint64_t)kSt20pVrxWarmupS * NS_PER_S ||
+      t >= (uint64_t)(kSt20pVrxWarmupS + kSt20pVrxWindowS) * NS_PER_S)
+    return;
+  delivery_ns.push_back(static_cast<int64_t>(mtl_ptp_read_time(handler->ctx->handle) -
+                                             f->receive_timestamp));
+
+  /* The parser's epochs come from its packet times: on the PHC they lag the TX epochs,
+   * and so the RTP, by ptp_minus_phc_ns; software times are PTP times and do not. */
+  const double frame_ticks = VIDEO_CLOCK_HZ / st_frame_rate(handler->sessionsOpsRx.fps);
+  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
+  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
+    const st20_rx_tp_meta* tp = f->tp[port];
+    if (!tp || !tp->pkts_cnt) continue;
+    if (std::fabs(tp->rtp_offset) < frame_ticks) {
+      sw_rx_frames[port]++;
+      continue;
+    }
+    if (std::fabs(tp->rtp_offset - shift_ticks) >= frame_ticks / 2) {
+      off_band_frames[port]++;
+      continue;
+    }
+    vrx_min[port].push_back(tp->vrx_min);
+    const uint32_t missing =
+        f->pkts_total > tp->pkts_cnt ? f->pkts_total - tp->pkts_cnt : 0;
+    max_missing_pkts[port] = std::max(max_missing_pkts[port], missing);
+    if (missing > kSt20pVrxMaxLegLagPkts) partial_frames[port]++;
+  }
 }

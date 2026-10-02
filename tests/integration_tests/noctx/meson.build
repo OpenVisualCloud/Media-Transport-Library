@@ -23,4 +23,5 @@ noctx_sources = files(
     'testcases/st40p_auto_detect_tests.cpp',
     'testcases/st40p_user_pacing_tests.cpp',
     'testcases/queues.cpp',
+    'testcases/st20p_vrx_margin_tests.cpp',
 )

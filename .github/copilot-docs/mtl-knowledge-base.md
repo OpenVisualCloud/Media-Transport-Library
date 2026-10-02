@@ -391,9 +391,69 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
 
 ### Warm-Up Padding
-In RL mode, at target − `warm_pkts`·`trs`, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` pads (`mt_build_pad()`, no RTP header) to start the shaper, then `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late.
+At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_init_pacing()` planned the port: `rl_drain` ≠ 0, which stays 0 otherwise.
+- A plan needs both inputs:
+  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of one NORMAL pad at that port's own measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`). A user `ops.pad_interval` or the static table gives none; `pacing->pad_interval` keeps only the last port's pi.
+  - `rl_credit` = `rl_drain`·B/S, the pads the full burst bucket B sends at line rate. `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
+- With a plan, `video_trs_rl_pre_arm()` queues pads the shaper finishes draining at the target and packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
+- The pads cover `(target − now) + rl_credit` in whole NORMAL pads, rounded up by one pad. Measured on E810 and E830 VF TX: each NORMAL pad drains exactly `rl_drain`, but the shaper does not resolve shorter packets (S/2, S/4, S/8 pads cost ~0.2–0.7 µs each, not a share of `rl_drain`), so sub-pad trims would launch packet 0 early.
+- The model puts the launch in [target, target + `rl_drain`) and is never early. Measured on hardware, the launch can be up to ~2.7 µs ahead of the model, which the ~3.8 µs NIC TX latency covers, so first-packet latency stayed ≥ 0. Shaper wire overhead or a bucket that needs a whole packet of tokens (credit B − S) only makes it later.
+- Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
+- The user-meta packet (`st20_frame_tx_start()`, sys queue) leaves when packet 0 is queued, up to `warm_pkts`·`trs` ahead of it, but after the previous frame's last packet; RX matches it by RTP timestamp and the timing parser skips it.
+- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `rl_credit` deep over what is queued, so a stall only shrinks the rest and keeps the one-pad bound.
+- A stall is a delay between two bursts long enough that the queue drained and the bucket refilled (the drain end fell behind TSC − `rl_credit`); resetting the drain end then counts `stat_trans_recalculate_warmup`.
+- Refused NORMAL pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. Ports without a plan keep one pad per burst and per retry.
+- Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
-- `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads needed; no pads are sent.
+- `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
+
+### RL Pacing Limits
+Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their own `reactive`/`tr_offset` (`tv_init_pacing()`), same reasoning.
+- **Frame budget.** Packets span `reactive`·T = 1080/1125·T at `trs` each. From the previous frame's last packet to the next target is `frame_idle_time` + `tr_offset` = (2 + 43)/1125·T, 0.67 ms at 59.94.
+- **Warm-up window** [target − `warm_pkts`·`trs`, target], with `warm_pkts` = min(0.8·`tr_offset`/`trs`, 128).
+  - Uncapped, the window is 34.4/1125·T. It opens ~10/1125·T (~150 µs at 60p) after the previous frame's last packet left the NIC.
+  - That margin is what lets `video_trs_rl_pre_arm()` treat the queue as empty and the bucket as full: its drain starts at TSC − `rl_credit`.
+  - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
+- **Ring bound on a plan.** `tv_init_pacing()` keeps a plan only if (`warm_pkts`·`trs` + `rl_credit`)/`rl_drain` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 512, the window plus `rl_credit` must fit in 255 pad drains (256 less the round-up pad), which leaves ~251 for the window.
+- **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
+
+**Tolerance at each point** (scheduler lateness, or a tasklet stall):
+
+| Point | With a plan | Without a plan |
+|---|---|---|
+| Reaching WAIT_WARMUP's pre-arm | Anywhere in the window: packet 0 still lands in [target, target + `rl_drain`). At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
+| Between pad bursts | A stall that ends before target only shrinks the remaining pads (`stat_trans_recalculate_warmup`). | — |
+| Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`·`trs` drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
+
+| Format | `trs` | `tr_offset` | `warm_pkts` | Window | 512-ring body | Ring-capped window: 512 / 2048 |
+|---|---|---|---|---|---|---|
+| 1080p29.97 | 7.78 µs | 1.27 ms | 128 | 1.0 ms | 4.0 ms | same (cap not binding) |
+| 1080p59.94 | 3.89 µs | 0.64 ms | 128 | 0.50 ms | 2.0 ms | same |
+| 1080p119.88 | 1.95 µs | 0.32 ms | 128 | 0.25 ms | 1.0 ms | same |
+| 2160p29.97 | 1.95 µs | 1.27 ms | 128 | 0.25 ms | 1.0 ms | 251 → 0.49 ms / 524 → 1.0 ms |
+| 2160p59.94 | 0.97 µs | 0.64 ms | 128 | 0.12 ms | 0.50 ms | 251 → 0.24 ms / 524 → 0.51 ms |
+| 2160p119.88 | 0.49 µs | 0.32 ms | 128 | 62 µs | 0.25 ms | 251 → 0.12 ms / 524 → 0.26 ms |
+
+- **Longer pad trains.** Measured 2160p59.94, E830 VF TX, isolated, rx_timing parser, `rl_drain` 965 ns:
+
+  | `warm_pkts` | `nb_tx_desc` | Latency avg | Latency min |
+  |---|---|---|---|
+  | 128 | 512 | 3824 ns | 3032 ns |
+  | 128 | 2048 | 3848 ns | 3288 ns |
+  | 256 | 2048 | 3817 ns | 3288 ns |
+  | 512 | 2048 | 3700 ns | 2776 ns |
+
+  All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
+- **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs ⌈n/32⌉ `tx_burst` calls.
+- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
+- **No plan, so the #1622 behavior.** This happens with:
+  - a user `ops.pad_interval` or the static pad table;
+  - a DPDK ice PF without the `rl_burst_size` devarg;
+  - drivers other than iavf and ice;
+  - a window that fails the half-ring check, for example with a small `nb_tx_desc`.
+- **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
+  - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
+  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
@@ -494,7 +554,7 @@ Actual sequence in `rv_attach()`:
 
 Tasklet is per-manager (not per-session), registered in `st_rx_video_sessions_sch_init`.
 
-Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detect mode enabled.
+Alternative path (frame-type, non-ST22): `rv_detector_init()` instead of `rv_init_sw()` when auto-detect or the timing parser is enabled; `rv_init_sw()` runs on detection. With or without the parser, a sampling round whose fps or packet count disagrees re-inits the detector and resamples (the timing parser needs `pkt_per_frame`); only the first such round per session warns.
 
 ### RX Packet Handlers (set by `rv_init_pkt_handler`)
 - `rv_handle_rtp_pkt` — standard frame mode
@@ -780,6 +840,20 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 - **Symptoms** at `mtl_uninit()`, after a passing test: SIGSEGV during `mt_dev_if_uinit`, or `EAL: PANIC in eal_intr_thread_main(): Error adding fd N epoll_ctl, Bad file descriptor` in `rte_eal_cleanup()`.
 - **Fix**: `patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.patch`; root cause, evidence, reproducers and upstream status in the [.md next to it](../../patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md).
 - **Verify**: `UnitTest --gtest_filter='EalIntrCallback.*:DpdkIavfPatch.*'`; `DpdkIavfPatch.*` fails when the loaded iavf PMD lacks the patch.
+
+### iavf Per-Queue Rate Limits Outlive the Process
+- **Defect (ice PF)**: RL pacing on an iavf VF puts every TX queue on a TM shaper (`ST_DEFAULT_RL_BPS` 1 Gb/s, then each session's rate). The ice PF saves each queue's rate and re-applies it whenever any later process enables the queue, across VF resets, until the VF is destroyed. Neither iavf close nor MTL uninit clears it.
+- **Symptom**: a later non-RL process on the same VFs has sessions capped at a constant ~134 MB/s on some queues: 1080p at 27.8 fps whatever the target, 4K at 7.0 fps.
+- **Fix**: `dev_tx_queues_clear_rl()` commits all TX queues on a shaper with peak 0. The PF maps peak 0 to its unlimited default and drops the saved rate; a link-rate peak would be saved and replayed instead, and fails where the VF has a `max_tx_rate`. Best effort: a failure only warns.
+  - `dev_if_init_pacing()` runs it for every non-RL way that reaches its end, for the shared TX queue path, and after an AUTO RL init that failed past the TM root. Not for AUTO on a driver without TM, nor when the RL root init itself fails.
+    - There `dev_rl_drop_hierarchy()` first deletes the nodes RL left and resets MTL's shaper table. It cannot free RL's profiles: 26.07 iavf node delete never drops the reference node add took, so profile delete answers "profile in use" until `iavf_tm_conf_uninit()` at close.
+    - The clear therefore uses its own profile ID, `MT_TM_NO_RL_PROFILE_ID` (`ST_SHAPER_PROFILE_ID` + `MT_MAX_RL_ITEMS`), outside `dev_rl_shaper_add()`'s range.
+  - With the MTL-patched ice PF (`patches/ice_drv/2.6.7/0001-ice-support-VF-runtime-rate-limit-queue-reconfigurat.patch`; `0001-vf-support-kahawai-runtime-rl-queue.patch` in 2.6.6 and older) the rates change at the commit. Stock OOT ice only stores them at `VIRTCHNL_OP_CONFIG_QUEUE_BW` and applies them at the next `CONFIG_VSI_QUEUES`, so the clear takes effect one process later.
+- **Guard (DPDK 26.07 on)**: without PF-granted QoS, iavf never allocates `qos_cap` nor initializes the `tm_conf` lists. `iavf_tm_node_add` and `iavf_tm_capabilities_get` dereference `qos_cap` (the `iavf_tm_node_add` SIGSEGV with the stock kernel ice), and `iavf_shaper_profile_add` inserts into the uninitialized list.
+  - Only 26.07's `iavf_hierarchy_commit` checks `VIRTCHNL_VF_OFFLOAD_QOS` before anything else, so an empty commit runs first and `IAVF_NOT_SUPPORTED` (-64) skips the clear; a PF without QoS cannot hold queue rates.
+  - Before 26.07 the clear is compiled out (`MT_IAVF_TM_QOS_PROBE`) and logs that rates may remain: `patches/dpdk/{25.03..26.03}/0002-net-iavf-refine-queue-rate-limit-configure.patch` makes commit read `qos_cap->num_elem` first, and unpatched commit returns the not-stopped error before the QoS check.
+  - The probe logs one benign iavf ERR per port: `Please stop port first` (PF granted QoS) or `VF queue tc mapping is not supported` (it did not).
+- **Verify**: `UnitTest --gtest_filter='*MtDevTxRl*'` (the clear cases skip before DPDK 26.07). On hardware: an RL run, then `--pacing_way tsc` on the same VFs; `St20_tx.mix_s3` and `St20p.digest_user_meta_s2` must pass.
 
 ### mbuf Lifecycle
 
