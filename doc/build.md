@@ -345,7 +345,7 @@ The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ff
 
 The openh264 assembly has no CET mark, so `libopenh264` has neither IBT nor SHSTK, and a process that loads it runs without CET.
 
-To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the Rocky Linux 9 image build. Under `/usr/local` it also reports other software installed there.
+To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the Rocky Linux 9 image build. Under `/usr/local` it also reports other software installed there. The `Hardening Tools` workflow repeats the check with `hardening-check` and `checksec`, two independent binary-hardening scanners.
 
 ```bash
 .github/scripts/ci/check-hardening.sh /usr/local/lib /usr/local/bin
