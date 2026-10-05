@@ -44,12 +44,43 @@ tasks:
   ci:cache-keys:
     desc: Emit exact dependency cache keys for the current runner
     cmds:
-      - bash {{.CI_SCRIPTS}}/cache-keys.sh
+      - |
+        set -euo pipefail
+        v=stash-v3
+        jpegxs_cc=$(bash {{.CI_SCRIPTS}}/compiler-identity.sh producer)
+        {
+          echo "dpdk_key=${v}-dpdk-${HASH_DPDK:?}"
+          echo "mtl_key=${v}-mtl-${HASH_MTL:?}"
+          echo "jpegxs_key=${v}-jpegxs-$(uname -m)-${jpegxs_cc}-${HASH_JPEGXS:?}"
+          echo "ffmpeg_key=${v}-ffmpeg-${HASH_FFMPEG:?}"
+          echo "gstreamer_key=${v}-gstreamer-${HASH_GSTREAMER:?}"
+          echo "plugins_key=${v}-plugins-${HASH_PLUGINS:?}"
+          echo "ice_key=${v}-ice-${HASH_ICE:?}-$(uname -r)-$(uname -m)"
+        } >>"${GITHUB_OUTPUT:-/dev/stdout}"
 
   ci:evaluate-caches:
     desc: Validate restored caches and export build-miss state
+    silent: true
     cmds:
-      - bash {{.CI_SCRIPTS}}/evaluate-caches.sh
+      - |
+        set -euo pipefail
+        any_miss=0
+        for c in dpdk mtl jpegxs ffmpeg gstreamer plugins ice; do
+          hit=CACHE_HIT_${c^^} miss=1 state=MISS
+          if [ "${!hit:-}" = true ]; then
+            bash {{.CI_SCRIPTS}}/validate-cache.sh "$c" || {
+              echo "::error::$c cache is invalid at its immutable exact key" >&2
+              echo "::error::Bump stash-v in the ci:cache-keys task of Taskfile.yml to rebuild under a new key" >&2
+              exit 1
+            }
+            miss=0 state=HIT
+          fi
+          [ "$miss" = 0 ] || any_miss=1
+          echo "CI_BUILD_${c^^}=$miss" >>"$GITHUB_ENV"
+          echo "${c}_miss=$miss" >>"$GITHUB_OUTPUT"
+          echo "::notice::$c=$state"
+        done
+        echo "any_miss=$any_miss" >>"$GITHUB_OUTPUT"
 
   ci:validate-cache:
     desc: Structurally validate one restored dependency cache
@@ -74,14 +105,18 @@ tasks:
       - bash {{.CI_SCRIPTS}}/validate-ice.sh
 
   ci:activate-ice:
-    desc: Load the cached ICE module, or leave it alone if already loaded
+    desc: Reload the ICE driver from the cached module
     cmds:
       - bash {{.CI_SCRIPTS}}/activate-ice.sh
 
   ci:ice-required:
     desc: Report whether this job's NIC needs the Kahawai ICE driver
     cmds:
-      - bash {{.CI_SCRIPTS}}/ice-required.sh {{.CLI_ARGS}}
+      - |
+        nic="{{.CLI_ARGS}}"
+        case "${nic:-${NIC:-}}" in i225 | i226) required=false ;; *) required=true ;; esac
+        echo "$required"
+        [ -z "${GITHUB_OUTPUT:-}" ] || echo "required=$required" >>"$GITHUB_OUTPUT"
 
   ci:bind-test-ports:
     desc: Bind one PF's trusted VFs and two DMA channels to vfio-pci for the gtest suite
@@ -96,7 +131,11 @@ tasks:
   ci:validate-dependencies:
     desc: Validate every dependency -- host prerequisites and all install trees
     cmds:
-      - bash {{.CI_SCRIPTS}}/validate-dependencies.sh
+      - bash {{.EBPF_SCRIPT}} --check build
+      - for: [dpdk, mtl, jpegxs, ffmpeg, gstreamer, plugins]
+        task: ci:validate-cache
+        vars: {COMPONENT: '{{.ITEM}}'}
+      - '[ "$({{.TASK_EXE}} --silent ci:ice-required)" != true ] || {{.TASK_EXE}} ci:validate-cache COMPONENT=ice'
 
   ci:pytest-setup:
     desc: Prepare acceptance-test dependencies, session, NIC, or configuration
@@ -157,6 +196,15 @@ tasks:
     cmds:
       - sudo -E {{.TASKFILE_DIR}}/.github/scripts/gtest.sh
 
+  ci:run-metadata:
+    desc: Write workflow run RUN_ID's date, number, branch and URL to GITHUB_OUTPUT
+    set: [pipefail]
+    cmds:
+      - >-
+        gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+        --jq '"run_date=\(.created_at)", "run_id=\(.id)", "run_number=\(.run_number)", "branch=\(.head_branch // "")", "run_url=\(.html_url)"'
+        | tee -a "$GITHUB_OUTPUT"
+
   ci:workflow:
     desc: Run one workflow orchestration helper
     cmds:
@@ -164,14 +212,18 @@ tasks:
 
   ci:build-action:
     desc: Build MTL locally and optionally on a remote host
+    set: [pipefail]
     cmds:
-      - bash {{.CI_SCRIPTS}}/build-action.sh
-
-  ci:msys2:
-    desc: Run one Windows MSYS2 build operation
-    dir: '{{.TASKFILE_DIR}}'
-    cmds:
-      - bash .github/scripts/ci/msys2.sh {{.CLI_ARGS}}
+      - bash .github/scripts/setup_environment.sh
+      - |
+        if [[ -n ${REMOTE_HOST:-} ]]; then
+          env_file=${REMOTE_ENV_FILE:-~/.mtl_build_env}
+          [[ $env_file != "~"* ]] || env_file=$HOME${env_file#\~}
+          {
+            [[ -f $env_file ]] && cat "$env_file" || echo "::warning::No env file at $env_file; using defaults" >&2
+            cat .github/scripts/remote_build.sh
+          } | ssh -o StrictHostKeyChecking=no "$REMOTE_HOST" bash -s -- "${REMOTE_MTL_PATH:-}" "${REMOTE_BRANCH#refs/heads/}"
+        fi
 
   ci:configure-host:
     desc: Configure cached dependency paths and plugin registry on a test host
