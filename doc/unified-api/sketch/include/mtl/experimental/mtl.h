@@ -56,13 +56,14 @@
  *     never causes a wake-up syscall. A completing tasklet never makes the syscall itself:
  *     its scheduler signals once per loop. -MTL_EAGAIN sets only code and reason in
  *     mtl_last_error(). -MTL_ETIMEDOUT is for control-plane deadlines (stop).
- * R3  Input structs start with uint32_t struct_size. MTL_INIT(&s) zero-fills and sets it;
- *     a zero-filled struct is the default configuration. The library reads
- *     min(struct_size, known); unknown non-zero bytes are -MTL_EINVAL. Output structs carry
- *     no struct_size: the library fills them up to the size argument and zeroes what it
- *     does not know. A struct the library writes and reads back (mtl_unit) uses its own
- *     struct_size. Every pointer in an input struct is read during the call and deep-copied
- *     (strings included); the caller may free it on return. Embedded structs are fixed size.
+ * R3  Input structs start with uint32_t struct_size. MTL_INIT(&s) zero-fills a struct and
+ *     sets its struct_size; zero in every other field is the default (struct_size 0 is
+ *     -MTL_EINVAL). The library reads min(struct_size, known); unknown non-zero bytes are
+ *     -MTL_EINVAL. Output structs carry no struct_size: the library fills them up to the
+ *     size argument and zeroes what it does not know. A struct the library writes and reads
+ *     back (mtl_unit) uses its own struct_size. Every pointer in an input struct is read
+ *     during the call and deep-copied (strings included); the caller may free it on return.
+ *     Embedded structs are fixed size.
  * R4  Handles are 64-bit values of distinct types; 0 is the null handle of every type and
  *     a closed handle is never reissued. A call with an out handle writes the null handle
  *     on failure. Close is idempotent: it returns 1 while the object retires and 0 once it
@@ -743,7 +744,7 @@ enum mtl_packing { /* enum st20_packing: the same values and default */
   MTL_PACKING_GPM = 1,
   MTL_PACKING_GPM_SL = 2,
 };
-/* ST 2110-21. Under the IPMX profile N uses the TR-10-1 CMAX and VRX (TP=2110TPN). */
+/* ST 2110-21. Under the IPMX profile N keeps its CMAX and adds the IPMX VRX (TP=2110TPN). */
 enum mtl_sender_type { /* enum st21_pacing: the same values */
   MTL_SENDER_N = 0,  /* ST21_PACING_NARROW: the gapped schedule, defined only for the
                         rasters of ST 2110-21 §6.3.1 (BT.656, BT.1543, BT.1847, BT.709 and
@@ -831,7 +832,9 @@ struct mtl_audio_config {
   uint32_t channels;           /* required */
   uint32_t ptime;              /* enum mtl_ptime (legacy st30_ptime); 0 = 1 ms */
   uint32_t unit_samples;       /* RX unit, TX pool capacity; 0 = 10 ms in whole packets */
-  /* audio media indices count samples: unit.media_index is the unit's first sample */
+  /* audio media indices count samples: unit.media_index is the unit's first sample.
+     Plane 0 holds the samples as on the wire: interleaved by channel, each sample in
+     network byte order (big-endian; AM824: the 4-byte subframes); MTL never swaps them */
   uint32_t reserved0;
   uint64_t reserved[13];
 };
@@ -932,7 +935,7 @@ struct mtl_packet_config {
                                            left out. Attached pools are never zero-filled:
                                            the unit is MTL_RX_INCOMPLETE and
                                            mtl_rx_get_detail counts the loss */
-#define MTL_SESSION_MT_SUBMIT 0x40u     /* several threads acquire and submit */
+#define MTL_SESSION_MT_SUBMIT 0x40u     /* several threads submit (acquire is MP-safe) */
 /* TX: the session admits MTL_SUBMIT_EXACT units (exact launch is a property of the
    transport session); the other units of such a session start at their slot's first-packet
    time. Without it, MTL_SUBMIT_EXACT is -MTL_EINVAL. */
@@ -1130,12 +1133,16 @@ MTL_API_CP int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t mod
    the first slot at or after `when`; RX: units with media time at or after it, or by
    local arrival time for unlocked clocks; audio: a packet boundary, so a salvo lands
    within one packet time). -MTL_EBUSY (WRONG_STATE) while an earlier update is pending.
+   sc NULL with parts 0 cancels a pending update (IS-05 activation mode null): 0
+   cancelled, 1 none pending, -MTL_EBUSY (UPDATE_COMMITTING) when it will still apply
+   (Phase 7; -MTL_ENOTSUP until then).
    A pending update fails (TIME_STEP) if the time base steps. Returns once the change is
    posted; planned_tai_ns (may be NULL) receives the media time of the boundary, and
    status.update_* and MTL_EVENT_UPDATE report when it applied. In CREATED and STOPPED it
    applies during the call and planned = applied = now. update_seq counts posted updates.
    CP. (MS5) */
-MTL_API_CP int mtl_session_update(mtl_session_h s, const struct mtl_session_config* sc,
+MTL_API_CP int mtl_session_update(mtl_session_h s,
+                                  const struct mtl_session_config* MTL_NULLABLE sc,
                                   uint64_t parts, const struct mtl_when* MTL_NULLABLE when,
                                   int64_t* MTL_NULLABLE planned_tai_ns);
 
@@ -1381,7 +1388,8 @@ MTL_API_DPC int mtl_tx_submit(mtl_session_h s, const struct mtl_unit* u);
 
 /* RX: a received unit, in delivery order. Missing packets read as zero (library pools)
    and `status` says so. WT; DPC for packet units without MTL_PKT_RX_LEND (mtl_packet.h),
-   which copy the packets in the caller. (MS1) */
+   which copy the packets in the caller, and when video.app_format converts, because the
+   conversion runs in the caller's dequeue. (MS1) */
 MTL_API_WT int mtl_rx_dequeue(mtl_session_h s, struct mtl_unit* u, int64_t timeout_ns);
 
 /* Returns a lease to s. TX: an acquired, unsubmitted one, with no result (a submitted one

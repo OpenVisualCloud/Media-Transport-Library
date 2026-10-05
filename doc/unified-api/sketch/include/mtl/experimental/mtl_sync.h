@@ -97,7 +97,9 @@ MTL_API_AS int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_t c
 struct mtl_slot_hint {
   uint32_t queued; /* units queued ahead */
   uint32_t reserved;
-  int64_t next_media_index;       /* the smallest feasible index after the last submitted */
+  int64_t next_media_index;       /* the smallest feasible index at or after the end of
+                                     the last submitted unit (audio: its first sample +
+                                     its samples) */
   int64_t next_media_tai_ns;      /* its media time */
   int64_t submit_deadline_tai_ns; /* submit before this */
 };

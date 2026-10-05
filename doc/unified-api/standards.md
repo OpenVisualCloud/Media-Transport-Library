@@ -372,7 +372,7 @@ are offered (TX, RX, the RX timing parser).
 | frame rate signalled as `a=framerate` or `exactframerate` (integer, or the reduced ratio such as `30000/1001`) | -22 §7.4 Table 4 |
 
 - **"VBR" is not a -22 mode**: a stream whose byte or packet count varies per frame is not ST 2110-22 compliant (§4);
-  IPMX TR-10-7 defines VBR compressed separately ([nmos-ipmx.md §2.1](nmos-ipmx.md#21-which-specifications-need-mtl)).
+  IPMX TR-10-7 defines VBR compressed separately ([nmos-ipmx.md §9.1](nmos-ipmx.md#91-which-specifications-need-mtl)).
   -22 says nothing about fields: constant per frame is the rule, and constant per field (MTL's CBR) satisfies it.
 - MTL sets `vrx = 0` and `warm_pkts = 0` for ST22 and recomputes `trs` from each frame's packet count. The CBR and VBR_MAX
   rate modes are [timing.md §5.3](timing.md#53-derived-launch-per-essence).
@@ -887,16 +887,16 @@ times, not TAI (§5.5.4).
 ## 14. VSF TR-10 (IPMX) and AMWA NMOS
 
 What each NMOS specification and each TR-10 part asks of the transport, with editions as listed on 2026-10-01, is
-[nmos-ipmx.md §2.1](nmos-ipmx.md#21-which-specifications-need-mtl); the IPMX timing without PTP, CMAX, VRX and sender
-reports are nmos-ipmx.md §9–§12. The facts the timing model takes from them:
+[nmos-ipmx.md §9.1](nmos-ipmx.md#91-which-specifications-need-mtl); the IPMX timing without PTP, CMAX, VRX and sender
+reports are nmos-ipmx.md §16–§19. The facts the timing model takes from them:
 
 | Fact | Reference |
 |---|---|
 | the receiver link offset is a controllable attribute through the management API, used to give several receivers one playout time | TR-10-1 §11.2 |
 | the NMOS attribute that carries it is `ext_link_offset_delay` | TR-10-8 |
-| IPMX allows a Type N sender with its own CMAX and VRX and signals `TP=2110TPN`; there is no separate IPMX sender type | TR-10-1 (nmos-ipmx.md §9) |
+| IPMX has no separate sender type: a Type N sender keeps its Type N CMAX, which is within the IPMX ceiling (the Type W value), adds the IPMX VRX check and signals `TP=2110TPN` | TR-10-1 §8.1 (nmos-ipmx.md §16) |
 | inline processors keep the input's timing (a MUST) | TR-10-1 §9 |
-| IS-05 activation: immediate and scheduled (`activation_time`) on the clock, `master_enable`, per-leg RTP transport parameters | IS-05 v1.2.0 Behaviour (nmos-ipmx.md §4) |
+| IS-05 activation: immediate and scheduled (`activation_time`) on the clock, `master_enable`, per-leg RTP transport parameters | IS-05 v1.2.0 Behaviour (nmos-ipmx.md §11) |
 | a file timestamp snaps to the closest media rate tick; priming samples sit before the zero point | MS-04 v1.0.0, timing explanation, example 5 |
 
 The source URLs are §16.
@@ -1026,7 +1026,7 @@ semantics; per-leg observed times; an RX common link offset per group.
 | RFC 8285 (header extensions), RFC 6184 (H.264), RFC 7798 (H.265), RFC 3640 (MPEG-4 audio) | not read | nmos-ipmx.md, packet units |
 | VSF TR-03 | 2015-11-12, <https://static.vsf.tv/download/technical_recommendations/VSF_TR-03_2015-11-12.pdf> | §3, §13 |
 | VSF TR-10-1 (IPMX system timing) | 2024-02-23, <https://static.vsf.tv/download/technical_recommendations/VSF_TR-10-1_2024-02-23.pdf> | §14; nmos-ipmx.md |
-| VSF TR-10-0, -2 … -16 (IPMX parts) | editions and status of every part as listed 2026-10-01 in [nmos-ipmx.md §2.1](nmos-ipmx.md#21-which-specifications-need-mtl) (-9 v2 Draft 2025-05-13 is the PQCR baseline), at <https://vsf.tv/technical-recommendations/> (texts `static.vsf.tv/download/technical_recommendations/VSF_TR-10-*.pdf`); TR-10 TP-1 (2026-07-31) | nmos-ipmx.md |
+| VSF TR-10-0, -2 … -16 (IPMX parts) | editions and status of every part as listed 2026-10-01 in [nmos-ipmx.md §9.1](nmos-ipmx.md#91-which-specifications-need-mtl) (-9 v2 Draft 2025-05-13 is the PQCR baseline), at <https://vsf.tv/technical-recommendations/> (texts `static.vsf.tv/download/technical_recommendations/VSF_TR-10-*.pdf`); TR-10 TP-1 (2026-07-31) | nmos-ipmx.md |
 | AIMS IPMX PQCR v1.1 and profiles | <https://ipmx.io/technical-information/> | nmos-ipmx.md |
 | HDCP 2.3 | via TR-10-5; not read | nmos-ipmx.md |
 | AMWA IS-04 | v1.3.3, <https://specs.amwa.tv/is-04/releases/v1.3.3/> (schemas `…/APIs/schemas/`, `…/docs/Behaviour_-_Nodes.html`) | nmos-ipmx.md |

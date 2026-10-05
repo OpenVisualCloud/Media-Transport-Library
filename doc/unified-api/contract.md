@@ -47,7 +47,7 @@ The top of `mtl.h` carries eight rules that every call follows. They are stated 
   yet (a flag, enum value, update part, `when` kind, wait mask, option key or port prefix) is
   `-MTL_ENOTSUP` with reason `NOT_IMPLEMENTED`, and `mtl_last_error().field` names it. An unknown
   value is `-MTL_EINVAL`. An output field not computed yet is zero with its VALID flag clear.
-- A call that succeeds never writes `mtl_last_error()` (errno semantics, §8.2).
+- A call that succeeds never writes `mtl_last_error()` (errno semantics, §8.2). A helper of `mtl_util.h` that detects a failure itself (a bound, a malformed payload) returns its code without setting it, so a program prints the reason and the field of `mtl_last_error()` only when its `code` equals the code it got.
 - Codes are Linux errno values on every OS, one meaning each (§8.1). Programs compare with `MTL_E*`, never with `errno.h`.
 
 ### R2 Timeouts and "nothing now"
@@ -66,7 +66,7 @@ The top of `mtl.h` carries eight rules that every call follows. They are stated 
 ### R3 Structs
 
 - Input structs start with `uint32_t struct_size`. `MTL_INIT(&s)` zero-fills and sets it through the inline `mtl_struct_init(p, size)`; bindings do the same in their own language (zero-fill, then the first `uint32_t` = the size).
-- A zero-filled struct is the default configuration: no input field has a non-zero default (G-73).
+- Zero in every field but `struct_size` is the default: no input field has a non-zero default (G-73).
 - The library reads `min(struct_size, known)`. Non-zero bytes beyond what it knows are `-MTL_EINVAL` (`NONZERO_TAIL`); unknown flag bits are `-MTL_EINVAL` (`UNKNOWN_BITS`) (G-33, G-51).
 - `struct_size` 0, or below the first published size, is `-MTL_EINVAL` (`NONZERO_TAIL`): a zero-initialised struct from a binding (SWIG `new_*()`, Rust `Default`) must never silently mean "all defaults"; it goes through `MTL_INIT`, `mtl_struct_init()` or the binding's equivalent.
 - Output structs carry no `struct_size`. The library fills them up to the `size` argument and zeroes what it does not know.
@@ -451,6 +451,10 @@ unresolved.
   than rounded. 0 is TROFFSET 0: the read schedule starts at N × TFRAME. The first packet still
   respects VRX0 ≤ floor(TROFFSET / TRS) ([engine.md](engine.md)). `info.troffset_ns` reports the
   value in use.
+- **Audio samples.** Plane 0 of an audio unit holds the samples as on the wire: interleaved by
+  channel, each sample in network byte order (big-endian; L16 two bytes, L24 three, AM824 the
+  4-byte subframes). MTL copies the bytes into the packets and out of them and never swaps them,
+  as today's engine does (`st_tx_audio_session.c:496`, `:530`; `st_rx_audio_session.c:510`).
 - **Audio.** `MTL_AM824` counts AES3 subframes in `channels`, two per AES3 signal, so an odd count
   is `-MTL_EINVAL` (ST 2110-31 §6.1). `MTL_PTIME_80US` is the ST 2110-31 0.08 packet time: 4 samples
   at 48 kHz (8 at 96 kHz), a packet every 83⅓ µs (ST 2110-31 Table 1; the legacy engine sends one
@@ -476,10 +480,10 @@ unresolved.
 | `MTL_SESSION_RX_BY_INDEX` | RX slot = media index mod `pool_count` (§9.8) |
 | `MTL_SESSION_RX_LATEST` | RX: a full pool reclaims the oldest unread unit |
 | `MTL_SESSION_RX_NO_FILL` | RX, library pools: do not zero what lost packets left out. Attached pools are never zero-filled (§9.8) |
-| `MTL_SESSION_MT_SUBMIT` | several threads acquire and submit |
+| `MTL_SESSION_MT_SUBMIT` | several threads submit (acquire is MP-safe without it) |
 | `MTL_SESSION_EXACT_LAUNCH` | TX: the session admits `MTL_SUBMIT_EXACT` units; its other units start at their slot's first-packet time. Without it, `MTL_SUBMIT_EXACT` is `-MTL_EINVAL` (§5.2) |
 
-A framework pool that lends slots to its elements sets `MTL_SESSION_RESULTS | MTL_SESSION_MT_SUBMIT`. Reaps and dequeues are MP-safe on every session: each data call counts itself in flight, and stop and close always drain that count.
+A framework pool whose slots several threads submit sets `MTL_SESSION_MT_SUBMIT`; one whose only submitter is the sink's `render` needs neither it nor results ([migration.md](migration.md) §12.4). Reaps and dequeues are MP-safe on every session: each data call counts itself in flight, and stop and close always drain that count.
 
 ### 3.5 Query and info
 
@@ -701,6 +705,9 @@ The contract:
 - RX prepares the new rules beside the old ones and removes the old ones after the switch; joins go out at the call (Phase 7: at `max(call, when − rx.join_lead_ns)`).
 - A port change while running is made before break (Phase 7), or `-MTL_EBUSY` (`PORT_CHANGE_NEEDS_STOP`) on a backend that cannot, and on every backend until then: stop, update, start.
 - An update while an earlier one is pending is `-MTL_EBUSY` (`WRONG_STATE`).
+- **Cancel.** `sc` NULL with `parts` 0 cancels a pending update (IS-05 activation mode null): it
+  returns 0 when it cancelled one, 1 when none was pending, and `-MTL_EBUSY` (`UPDATE_COMMITTING`)
+  when the update will still apply. Phase 7; `-MTL_ENOTSUP` until then.
 - A pending update fails (`TIME_STEP`) if the time base steps.
 - The call returns once the change is posted. `planned_tai_ns` (may be NULL) receives the media time of the boundary. In CREATED and STOPPED it applies during the call and planned = applied = now.
 - `status.update_state` (`enum mtl_update_state`: NONE, PENDING, APPLIED, FAILED with `update_reason`), `status.update_seq` (+1 per posted update; read it after the call to match events), `status.update_applied_tai_ns` (INT64_MIN until applied) and `MTL_EVENT_UPDATE` report when it applied.
@@ -783,6 +790,13 @@ One `struct mtl_unit` is what acquire and dequeue lend and what submit reads.
 - Per-use fields: TX inputs, zeroed by acquire; RX outputs. `used`, `flags`, `rtp`, `media_index`, `media_tai_ns`, `cookie`, `hold`, `launch_tai_ns`, and RX `status`, `missed_before`.
 - **TX acquire resets the meta area**: it writes an `MTL_META_NONE` header at the start of the slot's meta area (frame and row units), so a slot never carries the previous use's records (§9.9).
 - **As a template** (`mtl_tx_write`, `mtl_tx_send_slot`) a unit contributes `media_index`, `media_tai_ns`, `cookie`, `hold`, `launch_tai_ns`, `meta` and the TX bits of `flags` (0–31, `MTL_SUBMIT_MASK`); every other field is ignored. A received unit is a valid template.
+- **`mtl_tx_write` returns the bytes it accepted**, or the first call's error when it accepted
+  none. Inside one call each unit after the first takes the next index of `mtl_tx_next_slot`.
+  After a partial write (fewer bytes than asked, for example when acquire timed out on a full
+  pool), call it again with the rest and `how.media_index` (or `media_tai_ns`) set to
+  `next_media_index` (`next_media_tai_ns`) of `mtl_tx_next_slot`: the first index at or after the
+  end of the last submitted unit (for audio its first sample plus its samples), so the stream stays
+  contiguous.
 
 **Units per essence**:
 

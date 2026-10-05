@@ -37,10 +37,12 @@ approval), done (approved), cut.
 | B1 | todo | | | | |
 | B2 | todo | | | | |
 | A2a | todo | | | | |
-| CI1 | todo | | | | |
+| CI1a | todo | | | | |
 | I1 | todo | | | | |
 | R1 | todo | | | | |
+| CI1b | todo | | | | |
 | P1 | todo | | | | |
+| SA1 | todo | | | | |
 | A2b (stretch) | todo | | | | |
 | B3 (stretch) | todo | | | | |
 | X (stretch) | todo | | | | |
@@ -58,6 +60,18 @@ approval), done (approved), cut.
 
 Batch them; ask at a checkpoint, not between. Each question: the options, a recommendation, and
 an answer line.
+
+For checkpoint 1 (day 5), from the open issues of [decisions.md](decisions.md) §5.6 that MS1
+needs; the options and the recommendation are in each item:
+
+| Question | Needed by | Answer |
+|---|---|---|
+| OI-63: several threads on one session (futex for WT calls, eventfd for handles) | C0, C1b | |
+| OI-64: later-milestone declarations (`MTL_SINCE(n)` with `unavailable`) | H1a | |
+| OI-70, the MS1 part: `mtl_interrupt` target mask width, `MTL_RETIRING` for close, a cookie without results | C0, A2a | |
+| OI-71: interlaced rasters above 60 frames per second rejected | B1 | |
+| OI-72: what a bridged instance reports and accepts | A1 | |
+| OI-74: the definition of `latency_min_ns`, `latency_max_ns` | A2a | |
 
 ## 4. Measurements
 

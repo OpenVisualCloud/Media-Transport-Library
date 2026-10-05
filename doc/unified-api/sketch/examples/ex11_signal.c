@@ -1,7 +1,7 @@
 /* ex11 — a service in a Kubernetes pod. SIGTERM interrupts every data wait (async-signal
    safe); the main thread then shuts the instance down within what is left of the grace
    period, network first, and leaves a one-line report for `kubectl describe`. A second
-   signal cuts the shutdown short. Probes read one lock-free call. */
+   signal cuts the shutdown short. Probes read one lock-free call. Needs: MS3. */
 #define _POSIX_C_SOURCE 200809L
 #include <mtl/experimental/mtl_observe.h>
 #include <signal.h>

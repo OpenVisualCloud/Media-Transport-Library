@@ -1,5 +1,6 @@
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
-   Defaults it relies on: media mode AUTO (the next slot of the SMPTE epoch), results off.
+   Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
+   results off. Needs: MS1.
  */
 #include "ex_common.h"
 
@@ -32,7 +33,7 @@ int main(void) {
     }
     if (ret == 0) {
       render(u.plane[0].addr, u.plane[0].stride, k++);
-      ret = mtl_tx_submit(s, &u); /* the next slot on the wire */
+      ret = mtl_tx_submit(s, &u); /* sent at the next frame time */
     }
   }
 

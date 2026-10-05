@@ -2,8 +2,8 @@
    with the input's media time. Output sessions use media_mode TAI with min_tx_delay_ns =
    the pipeline budget: one frame period (RX completion) + processing + the pick-up lead,
    so the delay is fixed and, for a compliant input, every output RTP equals the input
-   RTP. A received unit is a valid send
-   template: its RX-only flags are ignored. */
+   RTP. A received unit is a valid send template: its RX-only flags are ignored. Needs:
+   MS4a (process_video alone: MS1). */
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"

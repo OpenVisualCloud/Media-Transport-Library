@@ -55,7 +55,7 @@ while (running) {
   if (r == -MTL_EAGAIN) continue;              /* nothing free yet */
   if (r < 0) break;                            /* stopped, closed or failed */
   render(u.plane[0].addr, u.plane[0].stride);
-  mtl_tx_submit(s, &u);                        /* the next slot on the wire */
+  mtl_tx_submit(s, &u);                        /* sent at the next frame time */
 }
 mtl_session_close(s, MTL_SEC(1));              /* drain, clean up */
 mtl_instance_close(mt, MTL_SEC(1));            /* network first, bounded */
@@ -368,17 +368,18 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 | Week | Tasks |
 |---|---|
 | 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1a headers to `include/mtl/experimental/`, H1b the API shell in libmtl, C0 the core's header |
-| 2 | C1a handles, states, close; C1b slot table, descriptor ring, results, deferred wake; A1 instance; E1 engine fixes |
-| 3 | C2 null binding and test clock, B1 video TX binding, B2 video RX binding, A2a session and data calls, CI1 |
-| 4 | I1 `UnifiedSt20p` gtests, R1 RxTxApp on the new API, P1 acceptance smoke set; stretch A2b, B3, X |
+| 2 | C1a handles, states, close; C1b slot table, descriptor ring, results, deferred wake; A1 instance; E1 engine fixes; the gtest and RxTxApp copies |
+| 3 | C2 null binding and test clock, B1 video TX binding, B2 video RX binding, A2a session and data calls, CI1a run options |
+| 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, CI1b baseline entries, P1 acceptance smoke set, SA1 samples; stretch A2b, B3, X |
 
 - one signed-off commit per task, at most 1.5 k changed lines with its tests; the maintainer
   reviews and pushes
-- exit: SHA-256 equal across the two APIs in both directions, one and two legs; `UnifiedSt20p`
-  green next to legacy `St20p`; the acceptance smoke set passes on both builds; the legacy gate
-  unchanged; ex01, ex02, ex03 and ex05 run on `null:1`
+- exit: SHA-256 equal across the two APIs in both directions, one and two legs; `St20p*` green in
+  `UnifiedKahawaiTest` next to `KahawaiTest`; the acceptance smoke set passes on `rxtxapp` and
+  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02, ex03 and ex05 run on `null:1`; the
+  samples call every function of the MS1 node
 
-<!-- Critical path: P0 → H1a → H1b → A1 → A2a → R1 → P1, with C0 → C1a → C1b → B1/B2 → A2a beside it. Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
+<!-- Critical path: P0 → H1a → H1b → A1 → A2a → R1 and I1 → CI1b → P1, with C0 → C1a → C1b → B1/B2 → A2a beside it; SA1 after A2a gates exit criterion 8. Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
 
 ---
 
@@ -388,7 +389,7 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 |---|---|---|
 | 0–4 | `mtl-developer` | read the design, write the failing test, implement, build green |
 | 5 | `mtl-reviewer` | adversarial review of the saved diff |
-| 6 | `mtl-system-admin` | KahawaiTest on real VFs, for data-plane changes |
+| 6 | `mtl-system-admin` | `KahawaiTest` and `UnifiedKahawaiTest` on real VFs (`run_gtest` `binary`), for data-plane changes |
 | every milestone | the legacy gate | legacy KahawaiTest and acceptance unchanged |
 
 One commit per task, at most 1.5 k changed lines with its tests; the headers in `sketch/` are

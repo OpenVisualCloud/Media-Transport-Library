@@ -41,17 +41,17 @@ or processor, P7 libfabric- or Rivermax-familiar developer, P9 operator or NMOS 
 | [ex01_tx_video.c](sketch/examples/ex01_tx_video.c) | P1 | the smallest sender: ports from `MTL_PORTS`, a typed config, `mtl_session_open`, acquire → draw → submit, close | `mtl.h` | MS1 | [2.1](#21-send-video-ex01), [2.3](#23-one-frames-life) | [examples §3](examples.md#3-send-video-smallest-program) |
 | [ex02_rx_video.c](sketch/examples/ex02_rx_video.c) | P1 | a receiver on two ST 2022-7 legs; lost packets read as zero (library pools, from MS2) | `mtl.h` | MS1 | [2.2](#22-receive-video-on-two-networks-ex02) | [examples §4](examples.md#4-receive-video-on-two-st-2022-7-legs) |
 | [ex03_event_loop.c](sketch/examples/ex03_event_loop.c) | P2, P7 | a sender in the application's own epoll loop, a result per frame | `mtl.h` | MS1 | [2.4](#24-in-your-own-event-loop-ex03) | [examples §5](examples.md#5-a-sender-in-the-applications-epoll-loop) |
-| [ex04_zero_copy_tx.c](sketch/examples/ex04_zero_copy_tx.c) | P2, P5 | a framework's pool attached in one call; surface i = slot i; close returns 0 when the memory is free | `mtl_mem.h` | MS2 | [2.6](#26-zero-copy-from-a-frameworks-pool-ex04) | [examples §6](examples.md#6-zero-copy-from-a-frameworks-pool) |
+| [ex04_zero_copy_tx.c](sketch/examples/ex04_zero_copy_tx.c) | P2, P5 | a framework's pool attached in one call; surface i = slot i; close returns 0 when the memory is free | `mtl_mem.h` | MS2b | [2.6](#26-zero-copy-from-a-frameworks-pool-ex04) | [examples §6](examples.md#6-zero-copy-from-a-frameworks-pool) |
 | [ex05_rx_to_framework.c](sketch/examples/ex05_rx_to_framework.c) | P2 | received frames lent to a framework, released on any thread; GStreamer `unlock` | `mtl.h` | MS1 | [2.7](#27-received-frames-handed-to-a-framework-ex05) | [examples §7](examples.md#7-received-frames-lent-to-a-framework) |
-| [ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c) | P5 | frame k lands in MXL grain k mod 8 | `mtl_mem.h` | MS2 | [2.8](#28-into-an-mxl-ring-by-frame-number-ex06) | [examples §8](examples.md#8-receive-into-an-mxl-ring-by-frame-number) |
+| [ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c) | P5 | frame k lands in MXL grain k mod 8 | `mtl_mem.h` | MS2b | [2.8](#28-into-an-mxl-ring-by-frame-number-ex06) | [examples §8](examples.md#8-receive-into-an-mxl-ring-by-frame-number) |
 | [ex07_av_anc_playout.c](sketch/examples/ex07_av_anc_playout.c) | P3 | video, audio and captions from one file, started together with `MTL_WHEN_ORIGIN`, exact RTP | `mtl_util.h` | MS6 | [2.9](#29-video-audio-and-captions-from-one-file-ex07), [2.17](#217-media-time-and-launch-time) | [examples §9](examples.md#9-video-audio-and-captions-from-one-file) |
 | [ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c) | P4 | rows leave before the frame is finished (SDI-to-IP gateway) | `mtl_sync.h` | MS3 (rows MS2a, INDEX and the slot hint MS3) | [2.10](#210-rows-leave-before-the-frame-is-finished-ex08) | [examples §10](examples.md#10-rows-that-leave-before-the-frame-is-finished) |
-| [ex09_split_forwarder.c](sketch/examples/ex09_split_forwarder.c) | P5 | one 4K frame in, four HD streams out, no copy | `mtl_util.h` (includes `mtl_mem.h`) | MS2 | [2.11](#211-one-4k-frame-in-four-hd-streams-out-no-copy-ex09) | [examples §11](examples.md#11-one-4k-frame-in-four-hd-streams-out-no-copy) |
-| [ex10_processor.c](sketch/examples/ex10_processor.c) | P5 | a processor that keeps the input's media time and RTP | `mtl_util.h` | MS4 | [2.12](#212-a-processor-that-keeps-the-inputs-timing-ex10) | [examples §12](examples.md#12-a-processor-that-keeps-the-inputs-timing) |
+| [ex09_split_forwarder.c](sketch/examples/ex09_split_forwarder.c) | P5 | one 4K frame in, four HD streams out, no copy | `mtl_util.h` (includes `mtl_mem.h`) | MS2b | [2.11](#211-one-4k-frame-in-four-hd-streams-out-no-copy-ex09) | [examples §11](examples.md#11-one-4k-frame-in-four-hd-streams-out-no-copy) |
+| [ex10_processor.c](sketch/examples/ex10_processor.c) | P5 | a processor that keeps the input's media time and RTP | `mtl_util.h` | MS4a (`process_video`: MS1) | [2.12](#212-a-processor-that-keeps-the-inputs-timing-ex10) | [examples §12](examples.md#12-a-processor-that-keeps-the-inputs-timing) |
 | [ex11_signal.c](sketch/examples/ex11_signal.c) | P9, any service | a service in a Kubernetes pod: SIGTERM, probes from health, a bounded network-first shutdown with a report | `mtl_observe.h` | MS3 | [2.13](#213-a-service-in-a-kubernetes-pod-ex11) | [examples §13](examples.md#13-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown) |
 | [ex12_rtp_packets.c](sketch/examples/ex12_rtp_packets.c) | P5, P7 | RTP passthrough: app-built packets, library pacing, both legs; RX packet chunks | `mtl_packet.h` | MS5 | [2.14](#214-rtp-passthrough-you-build-the-packets-ex12) | [examples §14](examples.md#14-rtp-passthrough-the-application-builds-the-packets) |
 | [ex13_nmos_switch.c](sketch/examples/ex13_nmos_switch.c) | P9 | one IS-05 PATCH as one update: destinations and `rtp_enabled` on both legs at one instant; the planned instant (the 202 response) and the applied one (in `/active`) | `mtl.h` | MS5; mute (every leg disabled) is Phase 7 | [2.15](#215-an-is-05-activation-at-one-instant-ex13) | [examples §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant) |
-| [examples_cpp.cpp](sketch/examples/examples_cpp.cpp) | P2 (bindings) | the same API from C++17: `MTL_INIT`, an option, an RAII lease guard, a stride-safe result read | `mtl.h`, `mtl_options.h` | MS1 | [2.16](#216-the-same-api-from-c-examples_cppcpp) | [examples §16](examples.md#16-the-same-api-from-c) |
+| [examples_cpp.cpp](sketch/examples/examples_cpp.cpp) | P2 (bindings) | the same API from C++17: `MTL_INIT`, an option, an RAII lease guard, a stride-safe result read | `mtl.h`, `mtl_options.h` | MS5 (`cpp_sender`: MS1) | [2.16](#216-the-same-api-from-c-examples_cppcpp) | [examples §16](examples.md#16-the-same-api-from-c) |
 | [ex_common.h](sketch/examples/ex_common.h) | all | `ex_fail()`: the code, reason, field and detail of a failure | `mtl.h` | MS1 | [2.20](#220-what-a-return-code-tells-you) | [examples §2](examples.md#2-shared-by-the-examples) |
 | (no file) | P1, P2 | an st20p program side by side with the unified calls | — | — | — | [examples §17](examples.md#17-an-st20p-program-side-by-side) |
 
@@ -219,13 +219,14 @@ flowchart LR
 
 A received frame stays valid until it is released, on whatever thread drops it. GStreamer `unlock`
 and `unlock_stop` map to `mtl_session_interrupt(s, 1)` and `(s, 0)`: the blocked dequeue returns
-`-MTL_ECANCELED` at once. `-MTL_ESHUTDOWN` means the element stopped or closed the session; close
+`-MTL_ECANCELED` at once, and `create` returns FLUSHING without waiting for `unlock_stop`, which
+runs on another thread. `-MTL_ESHUTDOWN` means the element stopped or closed the session; close
 returns 1 while downstream still holds buffers, the session retires on the last release, and a
 later close returns 0.
 
 ### 2.8 Into an MXL ring by frame number (ex06)
 
-[ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c), [examples §8](examples.md#8-receive-into-an-mxl-ring-by-frame-number). MS2.
+[ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c), [examples §8](examples.md#8-receive-into-an-mxl-ring-by-frame-number). MS2b.
 
 ```mermaid
 flowchart LR
@@ -417,7 +418,7 @@ false the Node sets every leg in `legs_disabled`: the session is muted (`MTL_STA
 stays RUNNING (Phase 7). A status whose `update_seq` moved on, or whose `update_state` is
 `MTL_UPDATE_STATE_FAILED`, means this activation did not apply. The
 update states are in [§11.2](#112-update-states); the contract in
-[nmos-ipmx.md §4](nmos-ipmx.md#4-is-05-the-activation-contract).
+[nmos-ipmx.md §11](nmos-ipmx.md#11-is-05-the-activation-contract).
 
 ### 2.16 The same API from C++ (examples_cpp.cpp)
 
@@ -1315,7 +1316,7 @@ What holds after each kind of ending (close, shutdown, abort, exit, SIGKILL, for
 ### 11.1 One IS-05 activation
 
 [§2.15](#215-an-is-05-activation-at-one-instant-ex13); the contract is
-[nmos-ipmx.md §4](nmos-ipmx.md#4-is-05-the-activation-contract).
+[nmos-ipmx.md §11](nmos-ipmx.md#11-is-05-the-activation-contract).
 
 ### 11.2 Update states
 
@@ -1338,7 +1339,7 @@ the dry run, are Phase 7.
 
 ### 11.3 Where PEP sits in a packet (Phase 7, later)
 
-The design is [nmos-ipmx.md §13](nmos-ipmx.md#13-pep-encryption-and-hdcp-mtl_ipmxh-mtl_later)
+The design is [nmos-ipmx.md §20](nmos-ipmx.md#20-pep-encryption-and-hdcp-mtl_ipmxh-mtl_later)
 (PEP, `mtl_crypto_set_key` in `mtl_ipmx.h`).
 
 ```text

@@ -1,7 +1,7 @@
 /* ex06 — receive into an MXL ring: unit k lands in grain k mod GRAINS, so the reader
    finds frame k at a known place. The ring is the session's pool (app memory). Every
    session runs on the SMPTE epoch: k counts frames since 1970 TAI, the same in every
-   process. */
+   process. Needs: MS2b. */
 #include <mtl/experimental/mtl_mem.h>
 
 #include "ex_common.h"
@@ -50,5 +50,8 @@ int mxl_bridge(mtl_instance_h mt) {
   }
 
   if (ret < 0) ex_fail("mxl", ret);
-  return mtl_session_close(s, MTL_SEC(1));
+  /* 1: still retiring; poll until 0, then MXL may reuse the ring */
+  while (mtl_session_close(s, MTL_SEC(1)) == 1) {
+  }
+  return ret;
 }

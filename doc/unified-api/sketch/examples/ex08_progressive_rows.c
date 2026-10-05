@@ -2,7 +2,7 @@
    rest of the frame is still arriving. Session: a video TX config with sc.unit =
    MTL_UNIT_ROWS, sc.media_mode = MTL_MEDIA_INDEX and the option tx.troffset_ns, so the
    frame leaves in the frame period it is captured in. Each submit of the same lease
-   publishes rows. */
+   publishes rows. Needs: MS3 (rows units MS2a; INDEX and mtl_tx_next_slot MS3). */
 #include <mtl/experimental/mtl_sync.h>
 
 #include "ex_common.h"

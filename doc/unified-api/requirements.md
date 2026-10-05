@@ -198,7 +198,7 @@ the fault matrix [§8.3](implementation-plan.md#83-fault-injection), the budgets
 
 | Guarantees | Stated in |
 |---|---|
-| G-01…G-09, G-19, G-20, G-26, G-28…G-33, G-40…G-43, G-46, G-47, G-49…G-53, G-56, G-57, G-64, G-65, G-70…G-74, G-76, G-77, G-80…G-82, G-85, G-88, G-92…G-95, G-99, G-103, G-107…G-113; G-34, G-54, G-97 | [implementation-plan.md §8.2](implementation-plan.md#82-guarantees-of-ms1ms3); further clauses §4.4 |
+| G-01…G-09, G-19, G-20, G-26, G-28…G-33, G-40…G-43, G-46, G-47, G-49…G-53, G-56, G-57, G-64, G-65, G-70…G-74, G-76, G-77, G-80…G-82, G-85, G-88, G-92…G-95, G-99, G-103, G-107…G-114; G-34, G-54, G-97 | [implementation-plan.md §8.2](implementation-plan.md#82-guarantees-of-ms1ms3); further clauses §4.4 |
 | G-17…G-28, G-53, G-59, G-61…G-63, G-66…G-68, G-75, G-76, G-82, G-85, G-86, G-94, G-104…G-106 | [timing.md §16.1](timing.md#161-guarantees); methods it does not give §4.3 |
 | G-10…G-16, G-35…G-39, G-44, G-45, G-48, G-55, G-58, G-60, G-78, G-83, G-84, G-87, G-89…G-91, G-96, G-98, G-100…G-102 | §4.2 (the rules in [contract.md](contract.md) carry the G-ID) |
 | G-PKT-1…7 | §4.5 |
@@ -274,12 +274,13 @@ essences follow at MS4.
 - **G-60** U; P; MS2. `mtl_tx_acquire_slot` leases exactly the named slot;
   `MTL_SESSION_RX_BY_INDEX` places unit k in slot k mod `pool_count`. Test: named acquires over
   every slot; an RX index sweep.
-- **G-78** U; P; MS2. Export pool: a framework pool over acquire, submit and `mtl_tx_release`
-  (`MTL_SESSION_RESULTS | MTL_SESSION_MT_SUBMIT`) recycles every wrapper exactly once. An
-  unsubmitted buffer's release releases its lease; a submitted one returns only through its result
-  (`mtl_tx_release` on it is `-MTL_ESTALE` and changes nothing); `set_active(FALSE)` is
-  `mtl_session_stop(MTL_STOP_FLUSH)` and delivers every result. Test: the GstBufferPool state
-  machine replayed on `null:1`, including release before the result.
+- **G-78** U; P; MS2. Export pool: a framework pool with one wrapper per slot, over
+  `mtl_tx_acquire_slot`, submit and `mtl_tx_release`, recycles every wrapper exactly once, with
+  neither `MTL_SESSION_RESULTS` nor `MTL_SESSION_MT_SUBMIT` (migration.md §12.4). An unsubmitted
+  buffer's release releases its lease (`mtl_tx_release` on a submitted one is `-MTL_ESTALE` and
+  changes nothing); a slot is leased again only after its wrapper came back and the slot has left;
+  `set_active(FALSE)` is `mtl_session_stop(MTL_STOP_FLUSH)`. Test: the GstBufferPool state machine
+  replayed on `null:1`, including a buffer kept as the last sample.
 - **G-83** U, UB; P; MS2. An RX lease held by N TX units (`unit.hold`) returns to free exactly once,
   when its hold count reaches 0 **and** the application released it, in any order; the N TX units
   may be in flight together; MTL never writes a slot that is held or being read; a TX unit whose
@@ -556,8 +557,8 @@ Each entry: level; part; when; test.
 ## 6. NMOS: N-REQ-1…60
 
 What MTL must give an AMWA NMOS Node so that the Node can be conformant. The design is
-[nmos-ipmx.md](nmos-ipmx.md): §3 IS-04 values, §4 IS-05 activation, §5 SDP, §6 IS-08 and IS-11,
-§7 BCP-008; "How met" names the main symbols only. Phase 7 tests come with the code; NMOS
+[nmos-ipmx.md](nmos-ipmx.md): §3 names and explains each feature, §10 IS-04 values, §11 IS-05
+activation, §12 SDP, §13 IS-08 and IS-11, §14 BCP-008; "How met" names the main symbols only. Phase 7 tests come with the code; NMOS
 conformance itself is tested on the Node with the AMWA nmos-testing suite.
 
 | ID | Requirement (source) | Pri | Part | How met | When |
@@ -574,7 +575,7 @@ conformance itself is tested on the Node with the AMWA nmos-testing suite.
 | N-REQ-10 | PTP grandmaster identity and domain per port (ST 2110-10 §8.2; IS-04 `clock_ptp.json` `gmid`) | MUST | API | `time.grandmaster_id`, `time.ptp_domain`; `info.ts_refclk.*{leg}` | v1; `ts_refclk` 7 |
 | N-REQ-11 | lock state and traceability (IS-04 `locked`, `traceable`; ST 2110-10 §8.2) | MUST | API | `time.state` (G-54); `time.gm_*` gauges | v1; `gm_*` 7 |
 | N-REQ-12 | the time metadata also when ptp4l and phc2sys discipline the PHC (ST 2110-10 §8.2) | MUST | API | `mtl_time_set_reference()` with `struct mtl_time_reference`, read by the application through pmc | MS2 |
-| N-REQ-13 | signal grandmaster changes (BCP-008 `synchronizationSourceId`; Sender `version`) | SHOULD | API | `MTL_EVENT_GRANDMASTER`; polling `time.grandmaster_id` meanwhile | MS3; IS-04 7 |
+| N-REQ-13 | signal grandmaster changes (BCP-008 `synchronizationSourceId`; Sender `version`) | MUST for BCP-008, else SHOULD | API | `MTL_EVENT_GRANDMASTER`; polling `time.grandmaster_id` meanwhile | MS3; IS-04 7 |
 | N-REQ-14 | each port's MAC and the port count (IS-04 `interfaces[].port_id`) | MUST | API | `mtl_port_spec.mac` from `mtl_port_get_spec()`, `instance.port_count` | 7 |
 | N-REQ-15 | LLDP on DPDK-owned ports (IS-04 `attached_network_device`) | MAY | none | not adopted: `chassis_id = null` is allowed | later |
 | N-REQ-16 | answer ARP on media ports (IS-04 `node.json`) | MUST | engine | built-in ARP | v1 |
@@ -600,7 +601,7 @@ conformance itself is tested on the Node with the AMWA nmos-testing suite.
 | N-REQ-36 | resolve `auto` transport parameters and report them (IS-05 `/active`) | MUST | API | the Node resolves and sets the source port; MTL reports granted values | v1 |
 | N-REQ-37 | the instance TAI clock for versions and relative activations (IS-04 `version`) | MUST | API | `mtl_time_now()` | v1 |
 | N-REQ-38 | apply SDP `mediaclk:direct=<offset>` and `mediaclk:sender` at an activation (ST 2110-10 §8.3) | SHOULD | API | `rx.rtp_offset`, `rx.mediaclk` are R options applied at the update's boundary | 7 |
-| N-REQ-39 | generate a complete ST 2110 SDP (ST 2110-10 §8.1; IS-05 `/transportfile`) | SHOULD (MUST for the Node) | API | `mtl_sdp_render()` (`mtl_ipmx.h`); open items in [nmos-ipmx.md §16](nmos-ipmx.md#16-open-items-for-phase-7) | 7 |
+| N-REQ-39 | generate a complete ST 2110 SDP (ST 2110-10 §8.1; IS-05 `/transportfile`) | SHOULD (MUST for the Node) | API | `mtl_sdp_render()` (`mtl_ipmx.h`); open items in [nmos-ipmx.md §23](nmos-ipmx.md#23-open-items-for-phase-7) | 7 |
 | N-REQ-40 | parse an SDP into a session configuration (IS-05 `transport_file`) | SHOULD | API | `mtl_sdp_parse()`; legs beyond those parsed are zero and disabled | 7 |
 | N-REQ-41 | per-port link state and its changes (BCP-008 `linkStatus`) | MUST | API, engine | `port.link_up`, `MTL_EVENT_PORT_LINK`, `MTL_EVENT_LEG_STATE`; the link monitor (G-91) | MS5 |
 | N-REQ-42 | RX arrival, loss per leg and after the 2022-7 merge, redundancy use (BCP-008-01) | MUST | API | `MTL_STATUS_RX_SIGNAL`, `leg.pkts_lost{leg}`, `rx.pkts_lost_est`, `rx.units_used_redundancy` (G-42) | v1 |
@@ -611,7 +612,7 @@ conformance itself is tested on the Node with the AMWA nmos-testing suite.
 | N-REQ-47 | the PTP state per port (BCP-008 `externalSynchronizationStatus`) | MUST | API | `time.state`, `time.offset_ns` per port; `MTL_EVENT_TIME_STATE` (G-54) | MS3 (events); MS6 (G-54) |
 | N-REQ-48 | cheap, consistent counters at any time (BCP-008: the Node keeps a baseline) | MUST | API | `mtl_stat_read()` (DP, one snapshot); counters never reset (G-40, G-42) | MS2 (MS1 with A2b) |
 | N-REQ-49 | a stable identity across reconfiguration, a 36-character UUID as name (BCP-008) | MUST | API | `sc.name` (64 B, unique), kept by `MTL_UPDATE_MEDIA` (G-88, G-87) | MS1 |
-| N-REQ-50 | dry-run any candidate configuration with capacity (BCP-004-01/-02; IS-11) | MUST | API | `mtl_session_query(…, MTL_QUERY_CHECK_CAPACITY, …)` (G-89) | MS5 |
+| N-REQ-50 | dry-run any candidate configuration with capacity (BCP-004-01/-02; IS-11) | MUST | API | `mtl_session_query(…, MTL_QUERY_CHECK_CAPACITY, …)` (G-89) | query MS1; capacity MS5 |
 | N-REQ-51 | never degrade a published sender type or pacing silently (BCP-004-02) | MUST | API | `caps.pacing` with `MTL_REQ_REQUIRE`, `MTL_EVENT_PACING_CHANGED` (G-26, G-34) | v1 |
 | N-REQ-52 | reconfigure a sender's format keeping its identity (IS-11) | MUST | API | `MTL_UPDATE_MEDIA` in CREATED or STOPPED (G-87) | MS5 |
 | N-REQ-53 | mute a sender on a constraint violation (IS-11 "MUST become inactive") | MUST | none | Node policy over the mute of N-REQ-25 | 7 |
@@ -625,9 +626,9 @@ conformance itself is tested on the Node with the AMWA nmos-testing suite.
 
 ## 7. IPMX: I-REQ-1…76
 
-What VSF IPMX (TR-10) needs from MTL. The design is [nmos-ipmx.md](nmos-ipmx.md): §9 the profile
-(`session.profile = MTL_PROFILE_IPMX`), §10 RTCP sender reports, §11 wire details, §12 timing
-without PTP, §13 PEP and HDCP; open items [§16](nmos-ipmx.md#16-open-items-for-phase-7) (marked
+What VSF IPMX (TR-10) needs from MTL. The design is [nmos-ipmx.md](nmos-ipmx.md): §16 the profile
+(`session.profile = MTL_PROFILE_IPMX`), §17 RTCP sender reports, §18 wire details, §19 timing
+without PTP, §20 PEP and HDCP; open items [§23](nmos-ipmx.md#23-open-items-for-phase-7) (marked
 "open" below). Everything IPMX-specific is Phase 7, except TX sender reports (MS5), FREERUN
 (MS6), DSCP (with the bindings) and any frame rate (MS4); no IPMX row has a contract test yet
 except through a core guarantee.
@@ -639,7 +640,7 @@ except through a core guarantee.
 | I-REQ-3 | PTP present: the internal clock synchronised to it (TR-10-1 §7.2) | MUST | engine | `MTL_TIME_SOURCE_PHC`, `_PTP_BUILTIN`; runtime switch by AUTO, holdover, `time.fallback` | v1; switch 7 |
 | I-REQ-4 | BMCA per ST 2059-2 (§5.2 in the 2015 edition), `slaveOnly` by default (TR-10-1 §7.2) | MUST | none | ptp4l; the built-in client takes the first Announce (`mt_ptp.c:1036-1047`), has no announce timeout or domain filter, follows two-step masters only ([standards.md §13.3](standards.md#133-mtls-built-in-ptp-client-against-st-2059-2)): non-compliant under the profile | — |
 | I-REQ-5 | a PTP leader BMCA can elect (TR-10-1 §7.2) | SHOULD | none | ptp4l | — |
-| I-REQ-6 | narrow video sender, CMAX = max(16, int(Npkts / (21600 · TFRAME))) (TR-10-1 §8.1) | MUST | engine | the profile gives `MTL_SENDER_N` this CMAX; no separate IPMX sender type | 7 |
+| I-REQ-6 | video bursts within the IPMX CMAX ceiling max(16, int(Npkts / (21600 · TFRAME))), the ST 2110-21 Type W value (TR-10-1 §8.1) | MUST | engine | `MTL_SENDER_N` keeps its Type N CMAX, which is within the ceiling, and signals `TP=2110TPN`; no separate IPMX sender type | 7 |
 | I-REQ-7 | the IPMX VRX (TR-10-1 §8.1) | MUST | engine | the profile plus `video.vtotal`, `video.htotal` | 7 |
 | I-REQ-8 | audio timing per AES67 §7.5; 125 µs for low latency (TR-10-1 §8.2) | MUST | API | `audio.ptime = MTL_PTIME_125US` | v1 |
 | I-REQ-9 | async and sync source media (TR-10-1 §8.3) | MUST | API, engine | sync: `MTL_MEDIA_AUTO`, `_INDEX`, `_TAI`; async: `MTL_MEDIA_SENDER` | v1; async 7 |
@@ -660,7 +661,7 @@ except through a core guarantee.
 | I-REQ-24 | inline processors keep the input's timing (TR-10-1 §9) | MUST | API | `MTL_SUBMIT_SENDER_TIME`; zero copy through `unit.hold` | 7 |
 | I-REQ-25 | SDP with `IPMX`, measured values, ts-refclk, mediaclk (TR-10-1 §10) | MUST | API | `mtl_sdp_render()` under the profile; open: measured values only as `fmtp_extra` | 7 |
 | I-REQ-26 | baseband receivers recover async timing frequency-locked (TR-10-1 §11.1) | SHOULD | API | `mtl_rtcp_read()`, `rx.sender_rate_ppb`; the output clock is the application's | 7 |
-| I-REQ-27 | link offset controllable while active (TR-10-1 §11.2; TR-10-8 §8) | MUST if supported | API | `rx.link_offset_ns` (R), `MTL_LINK_OFFSET_AUTO`, `rx.link_offset_min_ns`, `_max_ns` | 7 |
+| I-REQ-27 | link offset controllable while active (TR-10-1 §11.2; TR-10-8 §8) | MUST (TR-10-8 §8 sets no condition) | API | `rx.link_offset_ns` (R), `MTL_LINK_OFFSET_AUTO`, `rx.link_offset_min_ns`, `_max_ns` | 7 |
 | I-REQ-28 | UDP destination port even, > 1024, default 5004 (TR-10-2 §7; TR-10-9 §17) | MUST | none | the application's; checked under the profile | 7 (check) |
 | I-REQ-29 | UDP size within the limit, extensions included (TR-10-2 §7) | MUST | API | `session.max_udp_payload`; PEP sizes after its extensions | v1; 7 |
 | I-REQ-30 | receivers take YCbCr 4:2:2 10-bit and RGB 4:4:4 8-bit (TR-10-2 §8) | MUST | API | `MTL_YUV422_10`, `MTL_RGB_8` | v1 |
@@ -701,7 +702,7 @@ except through a core guarantee.
 | I-REQ-65 | IGMPv3 SSM and IGMPv2, version selectable (TR-10-9 §17) | MUST | engine | `port.igmp_version` (v2 checks the source filter in software; K-REQ-20); today v3 only (`mt_mcast.c:215`) | v1; v2 7 |
 | I-REQ-66 | address ranges; default group 239.S.C.D (TR-10-9 §17) | MUST | none | the application's | — |
 | I-REQ-67 | frame-to-frame interval ≤ 2 ms over 2 s (TR-10-9 §11.2) | MUST | engine | pacing (G-27); gauge `tx.f2f_pp_ns` | v1; gauge 7 |
-| I-REQ-68 | receivers pick the sync method from ts-refclk and mediaclk (TR-10-9 §11) | MUST | API | `rx.mediaclk` DIRECT, SENDER (G-67); `_AUTO` | v1; AUTO 7 |
+| I-REQ-68 | receivers pick the sync method from ts-refclk and mediaclk (TR-10-9 §11) | MUST | API | `rx.mediaclk` DIRECT, SENDER (G-67); `_AUTO` | 7 (the key is under `MTL_LATER`; until then RX follows `mediaclk:direct` only) |
 | I-REQ-69 | streams on one reference clock aligned by timestamps (TR-10-9 §13) | MUST | API | `mtl_rx_align()` on `media_tai_ns` (G-76) | MS6; 7 |
 | I-REQ-70 | watch PTP and update the clock source description (TR-10-9 §12) | SHOULD | API | `MTL_EVENT_TIME_STATE` (G-54); the Info Block follows | v1; 7 |
 | I-REQ-71 | in-band NMOS and HKEP on the media port (TR-10-9 §18–19) | MUST if both bands | API | `port.virtio_user` with 224.0.0.251 forwarded, or kernel backends; open: verify with a controller | v1 |
@@ -712,7 +713,7 @@ except through a core guarantee.
 | I-REQ-76 | HDR MIB 0x0006, per field (TR-10-16 §7) | MAY | API | a unit's `MTL_META_RTCP_MIB` record, no version change | 7 |
 
 Open IPMX MUSTs: I-REQ-25, -43, -58 and -64. I-REQ-4 is met only with ptp4l. The NMOS and IPMX
-conflicts and their resolutions are [nmos-ipmx.md §14.3](nmos-ipmx.md#143-conflicts).
+conflicts and their resolutions are [nmos-ipmx.md §21.3](nmos-ipmx.md#213-conflicts).
 
 ## 8. RTP-level use cases behind GO-10
 

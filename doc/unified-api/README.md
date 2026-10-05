@@ -27,16 +27,16 @@ The work is done by a main session that plans and integrates, and by the reposit
 diff (Gate 5), `mtl-system-admin` runs KahawaiTest on VFs (Gate 6); pytest runs from the main
 session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/agents/`.
 
-**Read first, in this order** (about 18 k tokens in all, at 4 bytes a token):
+**Read first, in this order** (about 23 k tokens in all, at 4 bytes a token):
 
 1. this README §1 and [ms1-status.md](ms1-status.md) (where the work stands);
-2. [implementation-plan.md](implementation-plan.md) §1.2, §1.3, §2.1, §2.2, §3, §4, §5.1, §5.2,
-   §5.6, §5.8: milestones, non-goals, the architecture, prerequisites, where the code goes, and
-   MS1 with its tasks, the reading list per task, the gates, the exit criteria and how the work
-   runs;
+2. [implementation-plan.md](implementation-plan.md) §1.1, §1.2, §1.3, §2.1, §2.2, §3, §4, §5.1,
+   §5.2, §5.6, §5.8: the assumptions A1–A10, milestones, non-goals, the architecture,
+   prerequisites, where the code goes, and MS1 with its tasks, the reading list per task, the
+   gates, the exit criteria and how the work runs;
 3. [engine.md](engine.md) §1, §2.2, §2.4, §3: the layers, the pinned-core rules, the core, the
    bindings and the slot table;
-4. [`mtl.h`](sketch/include/mtl/experimental/mtl.h) lines 1–108: the top comment with the rules
+4. [`mtl.h`](sketch/include/mtl/experimental/mtl.h) lines 1–109: the top comment with the rules
    R1–R8 every call follows.
 
 engine.md §4 (where each MS1 task starts in `lib/`), the plan's scope map (§2.3), test pool
@@ -57,8 +57,13 @@ agent reads. Do not load whole documents into one context; the large ones are re
   bugfixes.
 - The acceptance engine parses log lines that libmtl and RxTxApp print; the unified path prints
   them byte-identical (D-110).
-- Commits stay under about 1.5 k changed lines, tests first, each through `mtl-reviewer`; the
-  maintainer reviews three to four a week, so ask at the checkpoints of §5.2 and not between.
+- `tests/integration_tests/` (`KahawaiTest`) and `tests/tools/RxTxApp/` are frozen: new-API tests
+  go into their copies, `UnifiedKahawaiTest` and `UnifiedRxTxApp`, and both stacks run until the
+  legacy API is removed; then the pipeline-level cases and the legacy RxTxApp are deleted, and the
+  session-level cases stay as the engine's internal test (implementation-plan.md §4.1).
+- Commits stay under about 1.5 k changed lines (mechanical copies and deletions exempt), tests
+  first, each through `mtl-reviewer`; the maintainer reviews three to four a week, so ask at the
+  checkpoints of §5.2 and not between.
 - `standards/` at the repository root holds the maintainer's copies of the SMPTE standards: read
   them to check a rule, cite clauses in the documents, never commit or quote them (they are
   copyrighted); [standards.md](standards.md) is the place for the facts the code must meet.
@@ -95,7 +100,7 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [requirements.md](requirements.md) | maintainers | goals, non-goals, personas, the requirement catalogues (R-*, R-PKT, K-REQ, N-REQ, I-REQ) and the guarantee texts of later milestones |
 | [decisions.md](decisions.md) | maintainers | one line of rationale per design decision D-xx, the defaults for ST20, the open implementation issues OI-n |
 | [deployment.md](deployment.md) | operators | security surfaces, containers, Kubernetes, crash safety, probes, hugepages, Windows, release and deprecation policy |
-| [nmos-ipmx.md](nmos-ipmx.md) | Phase 7 | the IS-05 contract, SDP, RTCP sender reports, timing without PTP, encryption |
+| [nmos-ipmx.md](nmos-ipmx.md) | NMOS and IPMX products; Phase 7 | NMOS and IPMX in brief, every feature MTL provides for them (name, purpose, API, milestone), the open-source NMOS stacks, the integration, a demo plan; the Phase 7 design: the IS-05 contract, SDP, RTCP sender reports, timing without PTP, encryption |
 | [diagrams.md](diagrams.md) | everyone | a picture per example and per topic, with an index |
 | [presentation/slides.md](presentation/slides.md) | presenters | a talk on the design and the plan (Marp) |
 | [sketch/](sketch/README.md) | everyone | the normative headers, the compiling examples, `check.sh` |
@@ -105,11 +110,11 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | ID | Means | Defined in |
 |---|---|---|
 | MS1…MS7, Phase 7 | milestones | [implementation-plan.md](implementation-plan.md) §1.2 |
-| P0, S0, T1, H1a, H1b, C0, C1a, C1b, A1, C2, E1, B1, B2, A2a, A2b, CI1, I1, R1, P1, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
+| P0, S0, T1, H1a, H1b, C0, C1a, C1b, A1, C2, E1, B1, B2, A2a, A2b, CI1a, CI1b, I1, R1, P1, SA1, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
 | R1–R8 | the rules every call follows | `mtl.h`, [contract.md](contract.md) §1 |
-| D-01…D-137 | design decisions and their reason | [decisions.md](decisions.md) §2 |
+| D-01…D-138 | design decisions and their reason | [decisions.md](decisions.md) §2 |
 | OI-n | open implementation issues, each with its rule and milestone | [decisions.md](decisions.md) §5 |
-| G-01…G-113, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
+| G-01…G-114, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
 | R-xxx-n, R-PKT-n, K-REQ-n, N-REQ-n, I-REQ-n | requirements | [requirements.md](requirements.md) |
 | GO-n, NG-n, P1–P9 | goals, non-goals, personas | [requirements.md](requirements.md) §2 |
 | E1–E13, R1, R2, MF1–MF10, EK1–EK21, PE1–PE9 | engine changes | [engine.md](engine.md) §11 |
@@ -117,11 +122,14 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | H1–H10, W0–W3 | pinned-core hazards, wake-up mechanisms | [engine.md](engine.md) §2, §7 |
 | S0, S1, S4–S8 | measurements (spikes) | [engine.md](engine.md) §11.1, [implementation-plan.md](implementation-plan.md) §3.3 |
 | U-001…U-419, H-01…H-19, CUT-n | legacy capabilities, pre-hide gaps, the cut list | [coverage.md](coverage.md) |
+| NM-*, IX-* | the NMOS and IPMX features MTL provides | [nmos-ipmx.md](nmos-ipmx.md) §3 |
+| NX-n | proposals that make the NMOS integration easier | [nmos-ipmx.md](nmos-ipmx.md) §6 |
+| G-Nn, GI-n, C-Nn, C-In | NMOS and IPMX gap dispositions and conflicts | [nmos-ipmx.md](nmos-ipmx.md) §21 |
 | ex01…ex13 | the examples | [examples.md](examples.md) |
 
 Some letters are reused: R1 and R2 are contract rules and also engine items (R1 also a task), H1
 is a pinned-core hazard while H1a and H1b are tasks, E1 is a task and an engine change, S0 a task
-and a spike. The document in the third column settles which one a text means.
+and a spike, and G-Nn is an NMOS gap, not a guarantee G-xx. The document in the third column settles which one a text means.
 
 ## 4. The sketch
 

@@ -21,21 +21,25 @@ Set by the maintainer; every choice below follows from them.
 | # | Assumption | Consequence |
 |---|---|---|
 | A1 | AI agents (Claude Opus 5.5) write the code and the tests | effort is no longer the limit; the maintainer's review is (§10) |
-| A2 | something works within one month | MS1 is a usable vertical slice: ST 2110-20 frames TX and RX on the new API, a test pool, RxTxApp and acceptance on it (§5) |
+| A2 | something works within one month | MS1 is a usable vertical slice: ST 2110-20 frames TX and RX on the new API, a test pool, a new-API RxTxApp and acceptance on it (§5) |
 | A3 | every feature of today's API stays, except the capabilities D-112 removes ([coverage.md](coverage.md)) | no other cut (D-112) |
 | A4 | slice mode is required (users exist) | rows units are in MS2a (D-101) |
 | A5 | the decisions of [decisions.md](decisions.md) and the accepted resolutions of the open issues hold | their end states hold; where MS1 ships an interim (no command acks; libmtl without a soname, an `MTL_LEGACY` node or hidden internals) the milestone that reaches the end state is named (D-103, D-108) |
 | A6 | elegant means small | one core under every API (D-99), one library with version nodes (D-23), the export list that `sketch/check.sh` prints (D-104), no layer that exists only for the transition |
+| A7 | the current API keeps its validation while the new one gets its own, side by side | the legacy integration gtests (`KahawaiTest`, NoCtx) and RxTxApp are **frozen**; copies rewritten on the new API build to `UnifiedKahawaiTest` and `UnifiedRxTxApp`; the scripts run either or both (§4.1, D-109, D-110) |
+| A8 | the FFmpeg and GStreamer plugins are rewritten completely on the new API | rewritten in place, path by path, with no legacy copy; from a path's rewrite its acceptance tests validate the new API (§4.1) |
+| A9 | the double validation is temporary | at hiding stage F+2 (D-83) the frozen pipeline-level cases, the legacy RxTxApp and their script options are deleted; the session-level cases of `KahawaiTest` (`St20_tx`, `St20_rx` and the other suites over the session API) stay as the engine's internal test on `mtl_internal_dep` (the D-24 gate); the new ones remain |
+| A10 | the samples show the new API only, and all of it | the legacy samples are not kept: new samples in `app/sample/` replace them and together call every exported function (§4.2, D-138, G-114) |
 
 ### 1.2 The milestones
 
 | Milestone | Scope | Calendar [I] |
 |---|---|---|
-| **MS1** ST 2110-20 frames | the core, the video and null bindings, the API shell inside libmtl for ST20 frames TX and RX, a test pool at four tiers, RxTxApp `st20p` on the new API, the acceptance smoke set (§5) | weeks 1–4 |
+| **MS1** ST 2110-20 frames | the core, the video and null bindings, the API shell inside libmtl for ST20 frames TX and RX, a test pool at four tiers, `UnifiedKahawaiTest` and `UnifiedRxTxApp` for `st20p` beside the frozen legacy ones, the acceptance smoke set on both apps (§5) | weeks 1–4 |
 | **MS2a** ST 2110-20 rows and completeness | the nightly with the legacy comparison (§6.9); the W3 contingency check (spike S1); the `tick` with command acks, discard; **rows (slice)**; RX zero fill of library pools, due time and `MTL_SESSION_RX_LATEST`; the direct open of PCI ports and `native_af_xdp:`; `mtl_log_set_sink`; the MS1 stretch tasks that did not land (§6.1) | month 2 |
 | **MS2b** video memory and the st20p re-base | attach, by index, per-acquire layouts, holds, split-forward, converter plugins; then, last, st20p re-based on the core once the nightly comparison has burned in (§6.1) | month 3 |
 | **MS3** timing and observability | the ST20 timing subset (INDEX, start at TAI or index, `mtl_tx_next_slot`, RX `media_index`, E1, E2, E3 reporting); events, the stats registry's per-scheduler blocks, health; the libmtl soname, the `MTL_LEGACY` node and hidden internals; debug call-class checks; the FFmpeg plugin's st20p path on the new API (§6.2) | month 4 |
-| **MS4a** audio, ANC and A/V sync | audio (st30p re-based), ANC (st40p re-based), fastmeta (st41 frames), A/V sync on the epoch; any frame rate; DSCP on their bindings; RxTxApp kinds and their gtests (§6.3) | month 5 |
+| **MS4a** audio, ANC and A/V sync | audio (st30p re-based), ANC (st40p re-based), fastmeta (st41 frames), A/V sync on the epoch; any frame rate; DSCP on their bindings; their `UnifiedRxTxApp` kinds and `UnifiedKahawaiTest` cases (§6.3) | month 5 |
 | **MS4b** compressed video and plugins | cvideo (st22p re-based; codec plugins on the transform state), plugin ABI v2, `mtl_convert` (§6.3) | month 6 |
 | **MS5** packets and operators | packet units on every essence over today's RTP paths (one shared chunk expander, PE1–PE8), the generic `MTL_RTP` essence and ST 2022-6 (PE7); `mtl_session_update` (flows, legs, media, pool) at a boundary; RTCP sender reports on TX (their names leave `MTL_LATER`); the link monitor, capacity query, manager reconnect (§6.4) | month 7 |
 | **MS6** synchronisation and the ecosystem | start arrays, ANC and fastmeta following their video, sample-accurate audio, E5–E13, the published time base with FREERUN (E9; its name leaves `MTL_LATER`); recovery on library workers; the GStreamer, OBS, Python and Rust ports and the rest of the FFmpeg plugin (§6.5) | months 8–9 |
@@ -208,9 +212,9 @@ which backend a unified job exercises.
 
 | Backend | Today | Unified jobs |
 |---|---|---|
-| DPDK PMD (PCI BDF), VF and PF | RL (ice PF, iavf VF), TSC, TSC_NARROW, TSN (E830 PF), PTP; zero copy if the NIC has multi-seg; flow director or shared RSS; queue-hang recovery only here | MS1 through the bridge: `UnifiedSt20p` and the pytest `st20p` smoke set; MS2a: the direct open, the other ST20 ports and the nightly |
-| kernel socket (`kernel:`) | TSC only, single segment, no flow steering, still needs hugepages | MS1: `UnifiedSt20p` on `kernel:lo` (§5.3); MS2a: the nightly `unified_st20p_kernel_loopback` |
-| native AF_XDP (`native_af_xdp:`) | RL through `tx_maxrate` on ice, else TSC; copies every segment into UMEM | direct open from MS2a; no unified job in MS1–MS2b; the pytest `xdp` group stays legacy until the matrix gets `api: unified` beyond `st20p` |
+| DPDK PMD (PCI BDF), VF and PF | RL (ice PF, iavf VF), TSC, TSC_NARROW, TSN (E830 PF), PTP; zero copy if the NIC has multi-seg; flow director or shared RSS; queue-hang recovery only here | MS1 through the bridge: `UnifiedKahawaiTest` `St20p*` and the pytest `st20p` smoke set on `UnifiedRxTxApp`; MS2a: the direct open, the other ST20 ports and the nightly |
+| kernel socket (`kernel:`) | TSC only, single segment, no flow steering, still needs hugepages | MS1: `UnifiedKahawaiTest` `St20p*` on `kernel:lo` (§5.3); MS2a: the nightly `unified_st20p_kernel_loopback` |
+| native AF_XDP (`native_af_xdp:`) | RL through `tx_maxrate` on ice, else TSC; copies every segment into UMEM | direct open from MS2a; no unified job in MS1–MS2b; the pytest `xdp` group runs on `UnifiedRxTxApp` once its kinds are ported |
 | DPDK AF_XDP, DPDK AF_PACKET | experimental | removed (D-112, U-095) |
 | null (`null:<n>`) | none | new in MS1: the U tier |
 | Windows (NetUIO) | no MtlManager, no kernel socket, no AF_XDP | a compile-only CI job for the headers (G-74) |
@@ -236,8 +240,9 @@ which backend a unified job exercises.
 
 ### 2.4 Time sources
 
-- A bridged instance (RxTxApp, KahawaiTest) keeps the legacy time base: `MTL_FLAG_PTP_ENABLE`,
-  `ptp_get_time_fn`, or the default. Unified sessions on it read that time.
+- A bridged instance (`UnifiedKahawaiTest` and `UnifiedRxTxApp` on VFs until MS2a, §4.1) keeps the
+  legacy time base: `MTL_FLAG_PTP_ENABLE`, `ptp_get_time_fn`, or the default. Unified sessions on
+  it read that time.
 - `mtl_instance_open` takes `time_source`. In MS1 `MTL_TIME_SOURCE_AUTO` chooses once, at open:
   `CLOCK_TAI` if it is valid, else `SYSTEM_TAI` (a vDSO read). A NIC PHC (one syscall per read)
   joins AUTO in MS6 with the published time base (E9), and so does FREERUN; re-evaluation while
@@ -246,9 +251,9 @@ which backend a unified job exercises.
   disciplines MTL's own software time base (`ptp->no_timesync`, `mt_ptp.c:1390-1393`) and never the
   VF's PHC. `MTL_REASON_CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own
   (OI-7). On a direct open it needs the PCI open of MS2a; in MS1 it is reached through the bridge.
-- So RxTxApp `--ptp`, the NoCtx PTP cases and the nightly-pytest `ptp` group
-  (`.github/workflows/nightly-pytest.yml:40`, `tests/acceptance/tests/single/ptp/`) keep passing,
-  before and after the RxTxApp default switches to the unified path (MS2a, §6.9). The legacy gate
+- So `--ptp`, the NoCtx PTP cases and the nightly-pytest `ptp` group
+  (`.github/workflows/nightly-pytest.yml:40`, `tests/acceptance/tests/single/ptp/`) pass on both
+  apps and both binaries. The legacy gate
   runs the `tests/unit/ptp/` suite, which pins the software time base (§8.5).
 - `ptp_get_time_fn` maps to `MTL_TIME_SOURCE_USER` + `mtl_time_set_reference` with `MTL_TIMEREF_USER_PAIR` ([migration.md](migration.md)).
 
@@ -313,7 +318,7 @@ OI-60):
 | Spike | Question | Needed by |
 |---|---|---|
 | S0 baseline | tasklet iteration avg and max per scheduler (`MTL_FLAG_TASKLET_TIME_MEASURE`, printed by `mt_sch.c:466-468`; RxTxApp `--tasklet_time`), RL and TSC, at the ST20 loads of the test pool | MS1 week 1 (the §8.4 budgets); E1 before it merges |
-| S1 waker | the cost to pacing of the deferred eventfd writes in the scheduler loop at 100 armed sessions, and their wake latency; the latency of W3 if it has to be built | MS2a (the W3 contingency check) |
+| S1 waker | the cost to pacing of the deferred eventfd writes in the scheduler loop with 64 or more armed sessions per scheduler, and their wake latency; the latency of W3 if it has to be built. If the writes harm pacing at that scale, W3 is built, and the shared queues (`mtl_queue_*`) are reconsidered for MS6 (OI-66) | MS2a (the W3 contingency check) |
 | S6 idle cleanup | rate and cost of `rte_eth_tx_done_cleanup` on an idle session | MS1 task E1 |
 | S8 queue stop and start | do iavf and ice release chained external mbufs on `rte_eth_dev_tx_queue_stop`/`start` | MS3 (the stalled-queue close, attached memory after recovery) |
 
@@ -329,10 +334,137 @@ OI-60):
 | libmtl ABI | `lib/meson.build:151` has no soname or version script today | H1b: a version script with only the unified node, every other symbol exported as today; MS3: the soname, `MTL_LEGACY` and `local: *` after an `nm` audit; MS7 deprecates the legacy symbols, which leave `MTL_LEGACY` from F+2 ([migration.md](migration.md) §7.2; D-83, D-108) |
 | meson | `enable_unified` (default **true**, so CI catches breakage; there is no ABI promise before the freeze), `enable_debug_api` (default false; `./build.sh unit` sets it true) | in `meson_options.txt` |
 | unit tests | U: `tests/unit/unified/` → `UnifiedUnitTest`, which links libmtl and runs on `null:1`. UB: they `#include` production `.c` files, so they build into `UnitTest` (`mtl_internal_dep`) next to the harness they use (`tests/unit/session/`, `tests/unit/pipeline/`) | built and run by `./build.sh unit` |
-| integration tests | `tests/integration_tests/unified/` (`UnifiedSt20p`) | part of `KahawaiTest` |
-| RxTxApp | `tests/tools/RxTxApp/src/unified/` | `--api legacy\|unified`, build option `default_api`, set by `build.sh` from `MTL_RXTXAPP_DEFAULT_API` (D-110) |
+| integration tests | `tests/unified_integration_tests/` → the `UnifiedKahawaiTest` binary | the harness and the ported suites of `tests/integration_tests/`, copied and rewritten on the new API (§4.1); `tests/integration_tests/` stays frozen as `KahawaiTest` |
+| RxTxApp | `tests/tools/UnifiedRxTxApp/` → `UnifiedRxTxApp`, installed beside `RxTxApp` | the framework and the ported kinds of `tests/tools/RxTxApp/`, copied and rewritten on the new API, with the same CLI and JSON; `tests/tools/RxTxApp/` stays frozen (§4.1, D-110) |
+| samples | `app/sample/`, on the new API only | §4.2: they replace the legacy samples and together call every exported function (G-114) |
+| acceptance | `tests/acceptance/mtl_engine/`: a `UnifiedRxTxApp` adapter beside `RxTxApp`; the `application` fixture (`conftest.py:1404`) gains `rxtxapp_unified` | `--app rxtxapp\|rxtxapp_unified\|all` (default `all`) selects (§4.1) |
 | doc test | `doc/unified-api/sketch/check.sh` reads the headers from `include/` after task H1a | in CI through `.github/path_filters.yml`; it prints the function counts per header, per call class and per milestone tag, which no document repeats |
 | status ledger | `doc/unified-api/ms1-status.md` | §5.8 |
+
+### 4.1 Two validation stacks
+
+Until the legacy API is removed, each API is validated by its own suites (A7–A9).
+
+| | Legacy API (frozen) | New API |
+|---|---|---|
+| integration gtests | `tests/integration_tests/` → `KahawaiTest`, its NoCtx cases | `tests/unified_integration_tests/` → `UnifiedKahawaiTest`, its NoCtx cases |
+| RxTxApp | `tests/tools/RxTxApp/` → `RxTxApp` | `tests/tools/UnifiedRxTxApp/` → `UnifiedRxTxApp` |
+| acceptance | the application `rxtxapp` | the application `rxtxapp_unified`; FFmpeg and GStreamer from their rewrite |
+| unit | `UnitTest` | `UnifiedUnitTest`; the UB cases stay in `UnitTest` (§8.1) |
+
+**Frozen** means that the legacy test cases and the legacy RxTxApp's code get no new case, no
+rewrite and no deletion. The changes allowed are the run option of the table below, what keeps
+them building against libmtl, what a legacy bugfix needs (D-24), and the agent rules of P0
+(the `tests/integration_tests/CLAUDE.md` change and a new `tests/tools/RxTxApp/CLAUDE.md`), each
+approved by the maintainer; `mtl-reviewer` treats any other diff in `tests/integration_tests/`
+and `tests/tools/RxTxApp/` as a BLOCKER (P0). So the frozen suites check the legacy API as users
+see it, also after the pipelines become wrappers on the core (st20p MS2b, the others MS4).
+
+**The copies.** Each new tree starts as a copy, in one mechanical commit: `UnifiedKahawaiTest`
+copies the harness (`tests.cpp`, `tests.hpp`, `test_util.*`, meson) and the st20p files,
+`UnifiedRxTxApp` the RxTxApp framework (args, JSON parser, app core) and the st20p files. Other
+suites and kinds enter when they are ported, rewritten on the new API in the milestone that ports
+them:
+
+- `UnifiedKahawaiTest` keeps the suite and case names of the cases it ports
+  (`St20p.digest_1080p_s1` in both binaries), so one `--gtest_filter` selects the twins in both
+  and the nightly pairs them by name (§6.9). A suite not yet ported is not in the binary. Its own
+  cases have new names: `St20p.tx_idle_last_result`, `St20p.close_while_streaming`, the suite
+  `Cross`.
+- `UnifiedRxTxApp` keeps RxTxApp's CLI, JSON schema and output lines, so the pytest configs and
+  parsers serve both (D-110). A JSON kind not yet ported is refused at start ("kind <x> is not on
+  the unified API yet"), and the `rxtxapp_unified` adapter skips those tests with that reason.
+- Both use the new API only, with two exceptions. On VFs before MS2a they bring the instance up
+  through the bridge (one legacy `mtl_init` wrapped by `mtl_instance_from_legacy`, §2.4), because
+  `mtl_instance_open` opens PCI ports from MS2a. The suite `Cross` uses the legacy API on purpose,
+  as the peer of a unified session in the same process, so it keeps the bridge after MS2a, as the
+  `legacy_bridge` sample does (§4.2).
+
+**Running either or both.** One option in each place that starts them:
+
+| Where | Option | Default |
+|---|---|---|
+| `build.sh` | builds and installs both binaries and both apps (the new ones with `enable_unified`) | both |
+| `.github/scripts/gtest.sh` | `--api legacy\|unified\|both` (env `MTL_TEST_API`); `UNIFIED_TEST_BINARY` beside `KAHAWAI_TEST_BINARY` | `both` |
+| `tests/integration_tests/noctx/run.sh`, `run_pf.sh` | `--api legacy\|unified` selects the binary | `legacy` |
+| MCP `run_gtest`, `run_noctx_tests`, `run_noctx_pf_tests` | `binary`: `legacy` or `unified` (P0) | `legacy` |
+| pytest | `--app rxtxapp\|rxtxapp_unified\|all`, a filter on the params of the `application` fixture | `all` |
+
+**FFmpeg and GStreamer** are rewritten in place (A8): a path's rewrite replaces its legacy code,
+its acceptance tests then run the new API, and the legacy pipelines are validated by the frozen
+suites alone. The FFmpeg plugin's st20p path is rewritten in MS3, the rest of FFmpeg and
+GStreamer in MS6 (§6.2, §6.5). From then the cross-app tests (`tests/single/cross_app/`) pair a
+new-API plugin with either RxTxApp.
+
+**Removal** (A9). At hiding stage F+2 the frozen pipeline-level cases of `KahawaiTest` and its
+NoCtx cases, the legacy RxTxApp, the `rxtxapp` application and the `--api` and `binary` options
+are deleted; the new binary and app may then take the legacy names. The session-level cases of
+`KahawaiTest` (`St20_tx`, `St20_rx` and the other suites over the session API) stay: they are the
+engine's internal test on `mtl_internal_dep` and the D-24 gate ([migration.md](migration.md)
+§8.3, §11.2; [coverage.md](coverage.md)).
+
+**Cost.** While both exist, the integration tests and RxTxApp are kept twice [I: about 7 k lines
+of RxTxApp framework and 1.8 k of gtest harness copied in MS1, with the st20p files, then every
+ported suite and kind]. The copies are mechanical commits, outside the 1.5 k cap; the rewrites are
+ordinary tasks.
+
+### 4.2 Samples
+
+`app/sample/` holds samples on the new API only (A10). Each is a complete program; it expands
+the example of [examples.md](examples.md) that shows its pattern, where there is one, and replaces
+the legacy samples in the last column of the table. In MS1 the samples run on `null:1` in CI, and
+the TX → RX pair (`tx_video` to `rx_video`) on `kernel:lo`; they run on VFs from MS2a, when
+`mtl_instance_open` opens PCI ports. `legacy_bridge` calls the legacy `mtl_init`, so it runs on
+`kernel:lo`, not on `null:1`, and it keeps the bridge after MS2a. A
+legacy sample is deleted in the commit that adds its replacement, and the links to it
+(`doc/design.md`, `doc/dma.md`, `doc/gpu.md`, `doc/doxygen/programmers_guide.md`,
+`app/sample/README.md`) move to the new sample in the same commit. Legacy samples whose feature
+is cut (D-112), `ext_frame/rx_st20p_hdr_split_gpu_direct.c` (CUT-1), go in MS1, and so do
+`sample_test.sh` and `redundant_sample_test.sh`, which CI's sample run replaces.
+
+**Coverage** (G-114). Together the samples call every function the node exports, except the
+functions of `mtl_debug.h`. The samples call the typed inline wrappers (`mtl_session_close`,
+`mtl_tx_reap`), not the exported verbs by name, so the check in CI reads the undefined symbols of
+the sample objects (`nm -u`) and compares them with the node's export list
+(`lib/src/unified/exports.list`): a function exported without a calling sample fails the build.
+A sample enters `app/sample/meson.build` in the milestone that exports its functions. CI runs
+every built sample for 10 s on `null:1` (`legacy_bridge` on `kernel:lo`); from MS2a the nightly
+runs the TX and RX pairs on VFs.
+
+**Shared code.** One small `app/sample/common.c` with `common.h`, written anew: ports and
+addresses from program arguments or `MTL_PORTS`, SIGINT and SIGTERM to `mtl_interrupt`, a test
+pattern and a file source. The legacy `sample_util.*` is deleted with the last legacy sample.
+
+| Sample | Shows | Example | Milestone | Replaces |
+|---|---|---|---|---|
+| `tx_video`, `rx_video` | the first sender and receiver: config, library pool, acquire and submit, dequeue and release, results, two legs (ST 2022-7), conversion to an application format, DSCP | ex01, ex02 | MS1 | `tx_st20_pipeline_sample.c`, `rx_st20_pipeline_sample.c`, `legacy/tx_video_sample.c`, `legacy/rx_video_sample.c`, `experimental/rx_st20_redundant_combined_sample.c` |
+| `event_loop` | many sessions in one thread: wait handles, `mtl_wait`, interrupt targets; events from MS3 | ex03 | MS1 | — |
+| `rx_to_framework` | holds and out-of-order release into a framework's buffers | ex05 | MS1 | — |
+| `shutdown` | SIGTERM, `mtl_interrupt` from a signal handler, stop with DRAIN and FLUSH, close | ex11 | MS1 | — |
+| `legacy_bridge` | `mtl_instance_from_legacy`: a unified session in a legacy program, the porting path | — | MS1 | — |
+| `cpp` | the headers from C++ | `examples_cpp.cpp` | MS2a | — |
+| `rx_timing_parser` | the RX timing parser and its stats; RX DMA offload (`MTL_OPT_DMA`) | — | MS2a, or MS1 with B3 | `rx_st20p_timing_parser_sample.c`, `dma/dma_sample.c` (its user DMA engine is cut, CUT-5) |
+| `tx_rows`, `rx_rows` | slice mode: rows units, `mtl_rx_wait_rows`; INDEX and the slot hint from MS3 | ex08 | MS2a, MS3 | `low_level/tx_slice_video_sample.c`, `low_level/rx_slice_video_sample.c` |
+| `stats` | the stats registry, `mtl_rx_get_detail`, `mtl_port_get_spec`, the session listing, the log sink; health from MS3 | — | MS2a, or MS1 with A2b; MS3 | — |
+| `tx_zero_copy`, `rx_provide` | attached and imported memory, per-acquire layouts, `mtl_rx_provide` | ex04 | MS2b | `ext_frame/tx_st20_pipeline_ext_frame_sample.c`, `ext_frame/rx_st20_pipeline_dyn_ext_frame_sample.c`, `ext_frame/tx_video_split_sample.c` |
+| `split_forward`, `merge_forward` | one RX into four TX tiles and four RX into one TX, over pool regions and holds | ex09 | MS2b | `fwd/rx_st20_tx_st20_split_fwd.c`, `fwd/rx_st20p_tx_st20p_split_fwd.c`, `fwd/rx_st20p_tx_st20p_merge_fwd.c`, `legacy/rx_st20_tx_st20_fwd.c` |
+| `processor` | RX, processing and TX within a latency budget (`min_tx_delay_ns`), a converter, a downscale; to ST 2110-22 from MS4b | ex10 | MS2b, MS4b | `fwd/rx_st20p_tx_st20p_fwd.c`, `fwd/rx_st20p_tx_st20p_downsample_fwd.c`, `fwd/rx_st20p_tx_st20p_downsample_merge_fwd.c`, `fwd/rx_st20p_tx_st22p_fwd.c` |
+| `mxl_ring` | an MXL ring as an attached pool, `MTL_SESSION_RX_BY_INDEX` | ex06 | MS2b | — |
+| `tx_timed`, `rx_detect` | media modes INDEX and TAI, `mtl_tx_next_slot`, a start at an instant; format detection | — | MS3 | `rx_st20p_auto_detect_sample.c` |
+| `tx_audio`, `rx_audio` | ST 2110-30: `mtl_tx_write`, sample counts | — | MS4a | `tx_st30_pipeline_sample.c`, `rx_st30_pipeline_sample.c` |
+| `tx_anc`, `rx_anc`, `tx_fastmeta`, `rx_fastmeta` | ST 2110-40 and -41 units | — | MS4a | `tx_st40_pipeline_sample.c`, `rx_st40_pipeline_sample.c` |
+| `tx_cvideo`, `rx_cvideo` | ST 2110-22 with a codec plugin | — | MS4b | `tx_st22_pipeline_sample.c`, `rx_st22_pipeline_sample.c`, `legacy/tx_st22_video_sample.c`, `legacy/rx_st22_video_sample.c` |
+| `convert`, `capture` | `mtl_convert`, a converter plugin, `mtl_session_capture` (pcapng) | — | MS4b | — |
+| `tx_rtp`, `rx_rtp` | packet units, the generic RTP essence | ex12 | MS5 | `low_level/tx_rtp_video_sample.c`, `low_level/rx_rtp_video_sample.c` |
+| `switch` | `mtl_session_update` at a TAI instant, legs on and off (the IS-05 pattern) | ex13 | MS5 | — |
+| `av_anc_playout` | audio, video and ANC started together by one start array, with exact RTP | ex07 | MS6 | — |
+| `rx_device_memory` | `mtl_mem_open` with `MTL_MEM_DEVICE` (GPU memory) | — | MS6 | `gpu_direct/tx_st20_pipeline_gpu_direct.c`, `gpu_direct/rx_st20_pipeline_gpu_direct.c` |
+
+Beside `app/sample/`: the MSVC project `app/sample/msvc/` builds `tx_video` and `rx_video` from
+MS2a, with the compile-only Windows CI (U-103); `app/v4l2_to_ip` moves to video TX over an
+attached pool (MS2b, [migration.md](migration.md) §11.6); `app/perf` and `app/tools/convert_app`
+time and drive `mtl_convert` instead of the per-pair converters (MS4b); `app/tools/lcore_shmem_mgr`
+is a MtlManager tool and stays.
 
 ## 5. MS1: ST 2110-20 frames in a month
 
@@ -405,12 +537,12 @@ does not land moves to MS2a (A2b, B3) or MS3 (X, with E2).
 ### 5.2 Tasks
 
 Each task is one commit on the work branch (§5.8), ≤ 1.5 k changed lines with its tests
-(mechanical moves exempt), owned by `mtl-developer` for Gates 0–4 (P0 and S0: the main session), reviewed by `mtl-reviewer`
+(mechanical copies, moves and deletions exempt), owned by `mtl-developer` for Gates 0–4 (P0 and S0: the main session), reviewed by `mtl-reviewer`
 (Gate 5), and run on VFs by `mtl-system-admin` where marked (Gate 6). Sizes are estimates [I].
 
 | # | Task | Depends on | Size | Gate 6 | Exit |
 |---|---|---|---|---|---|
-| P0 | tooling, owned by the main session (detail below): `run_gtest` gains `pacing_way`, `kernel:lo` and whitelisted arguments; the agent definitions, skills and instructions follow | — | 200 | `run_gtest(gtest_filter='St20p*', pacing_way='tsc')`, `run_gtest(p_port='kernel:lo', r_port='kernel:lo', gtest_filter='St20p*')` | both runs green; each config diff approved; the session restarted |
+| P0 | tooling, main session (below): `run_gtest` `pacing_way`, `kernel:lo`, extra arguments; `binary` on the three MCP test tools; frozen-tree rules; `CLAUDE.md` files; acceptance rules for `UnifiedRxTxApp` | — | 300 | `run_gtest(gtest_filter='St20p*', pacing_way='tsc')`, the same on `kernel:lo` | both runs green; each config diff approved; the session restarted |
 | S0 | baseline measurement, owned by the main session (detail below): RxTxApp `--tasklet_time`, RL and TSC | — | — | — | the SCH avg and max lines per pacing class in ms1-status §4; the §8.4 MS1 budgets confirmed, or a revision asked for as a D-row |
 | T1 | PR #1610's legacy st20p parity tests on main's harness: the 9 TX cases of `a693810c` and the 4 RX cases of `f23158c1` (legacy-internals.md §12.1) | — | 600 test | — | they pin today's behaviour and pass; Gate 2: each test fails with the line it pins reverted locally |
 | H1a | the headers to `include/mtl/experimental/`, moved verbatim (`./format-coding.sh` leaves them unchanged), with every path that names them (detail below); the G-73 field lint; a CI job, path filters | P0 | 150 new, 3.6 k moved | — | `check.sh` green over `include/` locally; `actionlint` and `.github/scripts/ci/check-path-filters.py` pass; CI is confirmed on the maintainer's pull request |
@@ -424,10 +556,12 @@ Each task is one commit on the work branch (§5.8), ≤ 1.5 k changed lines with
 | B1 | the video TX binding: frames, one and two legs, interlace, the slot decision (§5.1), DSCP, in-caller conversion, `MTL_SUBMIT_SRC_PLANES`, the log lines (D-110) | C1b, E1 | 900 + 400 UB | legacy `St20*` (the builders' TOS) | UB through a harness like `tests/unit/session/st20_tx_harness.c`: G-08, G-20, `submit_carries_meta`, `slot_decision`, the log lines byte-identical |
 | B2 | the video RX binding: `query_ext_frame` slots, the incomplete policy, one and two legs, the log lines | C1b, E1 | 700 + 300 UB | — | UB: `rx_hold_release`, `rx_order_pub_seq`, `rx_incomplete_status`, two legs |
 | A2a | the API shell, part 2: session calls, data path, reap, wait, `get_info`, `get_status` | A1, C2, B1, B2 | 1.1 k + 700 | — | U: G-31, G-46, G-47, G-88, G-103, G-107, G-70 (dequeue), the public-API forms of G-01, G-49 and G-71; ex01, ex02, ex03 and ex05 run on `null:1` |
-| CI1 | CI: `gtest.sh` baseline entries `UnifiedSt20p*` and a `kernel:lo` case; a debug + ASan unit job; `MTL_RXTXAPP_DEFAULT_API` → `-Ddefault_api`, with `--reconfigure` | H1b; I1 for the gtest entries | 200 | — | the jobs run on a pull request of the maintainer's |
-| I1 | `UnifiedSt20p`: the fixture wraps the global instance (`tests.hpp:97`, after `tests.cpp:805`), the ported cases and the cross cases of §5.3, `kernel:lo`; written in week 2, committed after A2a | A2a | 1.3 k | yes | green next to legacy `St20p*` in one run, default pacing and `--pacing_way tsc` |
-| R1 | RxTxApp `src/unified/` for `st20p` TX and RX, `--api`, `default_api`, SIGTERM → `mtl_interrupt`; written in weeks 2–3, committed after A2a | A2a | 1.0 k | — | local loopback JSON runs with `--api unified`; output lines identical |
-| P1 | acceptance: the smoke set (§5.5) on a unified-default build and on a legacy build | R1, CI1 | — | main session runs pytest | the same pass list on both |
+| CI1a | the run options of §4.1 (`build.sh`, `gtest.sh --api`, `noctx/run.sh`, `run_pf.sh`); written and committed in week 3 | H1b | 150 | — | each option selects its binary or app; without `UnifiedKahawaiTest`, `gtest.sh --api both` runs the legacy entries unchanged |
+| CI1b | the baseline entries `St20p*` on `UnifiedKahawaiTest` with a `kernel:lo` case; the debug + ASan unit job; in week 4 | I1, R1 | 100 | — | the jobs run on a pull request of the maintainer's; `gtest.sh --api both` runs `St20p*` in both binaries |
+| I1 | `UnifiedKahawaiTest` (§4.1): the copy of §4.1 (week 2, no dependency), its instance through the bridge (`tests.cpp:805`), the `St20p` cases of §5.3, the suite `Cross`, `kernel:lo`; the rewrite after A2a | A2a | 4.2 k copied + 1.3 k | yes | `St20p*` green through `run_gtest` with `binary=legacy` and `=unified` (Gate 6), and through `gtest.sh --api both` in CI once CI1b lands |
+| R1 | `UnifiedRxTxApp` (§4.1, §5.4): the copy of §4.1 (week 2, no dependency), then `st20p` TX and RX on the new API, the other kinds refused, SIGTERM → `mtl_interrupt`; the rewrite after A2a | A2a | 8 k copied + 1.0 k | — | the local loopback JSON runs on `UnifiedRxTxApp` with the output lines of `RxTxApp` |
+| P1 | acceptance: the `rxtxapp_unified` adapter (a subclass of the `RxTxApp` adapter with its executable and the skip of kinds not yet ported) and the `--app` option of §4.1; then the smoke set (§5.5) on both apps | R1, CI1b | 300 | main session runs pytest | the same pass list on both apps |
+| SA1 | samples (§4.2): `tx_video`, `rx_video`, `event_loop`, `rx_to_framework`, `shutdown`, `legacy_bridge`, `common.c`/`.h`, README; the G-114 check in CI; the legacy samples they replace and those of cut features deleted with their doc links | A2a | 900 | — | each sample runs 10 s in CI on `null:1` (`legacy_bridge` on `kernel:lo`), `tx_video` to `rx_video` on `kernel:lo`; G-114 green |
 | A2b | stretch: stats, `mtl_rx_get_detail`, `mtl_port_get_spec`, `mtl_instance_list_sessions`; A2b retags these six functions (MS1) in the header: `mtl_stat_list`, `mtl_stat_find`, `mtl_stat_read`, `mtl_rx_get_detail`, `mtl_port_get_spec`, `mtl_instance_list_sessions` | A2a | 600 + 300 | — | U: G-42, the G-88 listing; RxTxApp's stats lines |
 | B3 | stretch: RX DMA, two RX threads, the RX timing parser, per-packet conversion, `MTL_SUBMIT_EXACT` | B1, B2 | 800 + 300 UB | yes | G-26 (the binding's checks); `digest_1080p_packet_convert_s2` ported |
 | X | stretch: E2, exact `floor` RTP, for core sessions only | — | 400 | yes | the oracle unit tests; legacy rounding tests unchanged |
@@ -443,8 +577,25 @@ Each task is one commit on the work branch (§5.8), ≤ 1.5 k changed lines with
     `--pacing_way`, `--level`, `--rss_mode`, `--iova_mode`, `--multi_src_port`, `--p_sip`;
     `kernel:lo` ports, which need `--p_sip` (`.github/scripts/gtest.sh:376`) and a `kernel:<if>`
     branch in `_validate_bdf`;
-  - `mtl-developer` may edit `tests/tools/RxTxApp/`, `.github/`, `build.sh`, `meson_options.txt`,
-    `doc/unified-api/`;
+  - `mtl-developer` may edit `tests/tools/UnifiedRxTxApp/`, `tests/unified_integration_tests/`,
+    `tests/acceptance/mtl_engine/` and `tests/acceptance/conftest.py` (the new application only,
+    P1), `.github/`, `build.sh`, `meson_options.txt`, `doc/unified-api/`;
+  - the frozen trees of §4.1 in the agent rules, `tests/integration_tests/CLAUDE.md` and a new
+    `tests/tools/RxTxApp/CLAUDE.md`: `mtl-reviewer` treats a diff there as a BLOCKER unless it is
+    the run option, a build fix or a legacy bugfix the maintainer approved. These two `CLAUDE.md`
+    edits are themselves allowed edits to the frozen trees (§4.1);
+  - a new `tests/unified_integration_tests/CLAUDE.md`, which imports
+    `.github/instructions/mtl-gtest.instructions.md` as `tests/integration_tests/CLAUDE.md` does
+    and names `UnifiedKahawaiTest` and `binary=unified`;
+  - the rule "never edit `conftest.py`, `common/` or `mtl_engine/`"
+    (`.github/instructions/mtl-acceptance-tests.instructions.md:44`) is lifted for P1's new
+    application only: the `rxtxapp_unified` adapter and its entry in the `application` fixture;
+  - the `.local_install` checks report `UnifiedRxTxApp` beside `MtlManager` and `RxTxApp`
+    (`.github/scripts/acceptance_setup_base.sh:117-121`,
+    `.github/scripts/lib/mtl_acceptance_discover.sh:153`, `:161`), and require it once R1 installs
+    it;
+  - `run_gtest`, `run_noctx_tests` and `run_noctx_pf_tests` gain `binary` (`legacy` or `unified`,
+    §4.1);
   - the `mtl-build` skill item of [legacy-internals.md](legacy-internals.md) §12.1;
   - a KB routing row for the reviewer: `lib/src/st2110/core/`, `lib/src/unified/` and
     `include/mtl/experimental/` → engine.md §1–§3, §5, §7 and contract.md §1, in
@@ -486,7 +637,7 @@ Every task also reads §1 and §2 of this plan, the header it implements, its ro
 §8.2 rows of the G-ids in its exit. For C0, C1a and C1b there is no public header: the header is
 `st_core.h` and the contract sections listed; for A1 it is the `---- Instance` section of
 `mtl.h` and `mtl_legacy.h`. Section numbers are those of the documents in this
-directory. Where PR #1610 has code for a task (P0, T1, C1a, C1b, B1, B2, A2a, R1, A2b, B3), the
+directory. Where PR #1610 has code for a task (P0, T1, C1a, C1b, B1, B2, A2a, R1, SA1, A2b, B3), the
 agent also reads that task's row of [legacy-internals.md](legacy-internals.md) §12.1 and the rules
 of §12.2, and opens the PR's code with `git show pr1610:<path>`: about 1.1 kLOC is worth adapting,
 the rest is a checklist or a trap.
@@ -509,10 +660,12 @@ the rest is a checklist or a trap.
 | A2a | contract.md §3.5, §4, §5, §6, §7 | the core header of C0; `examples/ex01_tx_video.c`, `ex02_rx_video.c` and the other examples of its exit |
 | A2b | contract.md §11; engine.md §2.8; `mtl_observe.h` | `lib/src/mt_stat.c`; the stats calls of `tests/tools/RxTxApp/src/rx_st20p_app.c` |
 | B3 | engine.md §4.5; contract.md §9.7, §9.8; timing.md §5.4, §6.1; migration.md §4.5, §4.7; legacy-internals.md §3.6 | `st_rx_video_session.c` (DMA, threads), `st_rx_timing_parser.c`, `st20_pipeline_rx.c` (per-packet conversion) |
-| CI1 | §5.3, §6.9; `.github/instructions/mtl-gtest.instructions.md` | `.github/scripts/gtest.sh` (`generate_test_cases()`), `.github/workflows/`, `build.sh` |
-| I1 | §5.3; `.github/instructions/mtl-gtest.instructions.md` | `tests/integration_tests/st20p_test.cpp`, `tests.hpp`, `tests.cpp` |
-| R1 | §5.4; migration.md §4.4, §4.5, §11.1 | `tests/tools/RxTxApp/src/tx_st20p_app.c`, `rx_st20p_app.c`, `rxtx_app.c`, `args.c` |
-| P1 | §5.5; `.github/instructions/mtl-acceptance-*.instructions.md` | `tests/acceptance/mtl_engine/rxtxapp.py` (`validate_results`) |
+| CI1a | §4.1; `.github/instructions/mtl-gtest.instructions.md` | `.github/scripts/gtest.sh` (`KAHAWAI_TEST_BINARY`), `tests/integration_tests/noctx/run.sh`, `run_pf.sh`, `build.sh` |
+| CI1b | §5.3, §6.9; `.github/instructions/mtl-gtest.instructions.md` | `.github/scripts/gtest.sh` (`generate_test_cases()`), `.github/workflows/`, `build.sh` (`unit`) |
+| I1 | §4.1, §5.3; `.github/instructions/mtl-gtest.instructions.md` | `tests/integration_tests/st20p_test.cpp`, `tests.hpp`, `tests.cpp`, `meson.build`; `tests/meson.build` |
+| R1 | §4.1, §5.4; migration.md §4.4, §4.5, §11.1 | `tests/tools/RxTxApp/src/tx_st20p_app.c`, `rx_st20p_app.c`, `rxtx_app.c`, `args.c`, `parse_json.c`, `meson.build` |
+| P1 | §4.1, §5.5; `.github/instructions/mtl-acceptance-*.instructions.md` | `tests/acceptance/conftest.py:1404` (`application`), `mtl_engine/RxTxApp.py`, `mtl_engine/rxtxapp.py` (`validate_results`), `mtl_engine/const.py:30-31` |
+| SA1 | §4.2; examples.md (ex01, ex02, ex03, ex05, ex11); concepts.md | `app/sample/meson.build`, `app/meson.build`, `app/sample/sample_util.c` (what it offers today), `app/sample/README.md`, and the documents that link samples (§4.2) |
 | X | timing.md §3.5, §4.2, §16; §8.6 of this plan | `tests/unit/session/st20_tx/rtp_timestamp_rounding_test.cpp` |
 
 **Order and calendar** [I]:
@@ -520,19 +673,19 @@ the rest is a checklist or a trap.
 | Week | Written | Committed and approved | Checkpoint |
 |---|---|---|---|
 | 1 (days 1–5) | P0 (day 1), S0, T1, H1a, H1b, C0 | P0, T1, H1a, H1b | day 5: C0 approved (checkpoint 1), H1a and H1b committed and approved |
-| 2 (days 6–10) | C1a, C1b, A1, E1; I1 drafted | C0, C1a, C1b, A1 | day 10: C1a, C1b and A1 committed and approved |
-| 3 (days 11–15) | C2, B1, B2, A2a, CI1; R1 drafted | E1, C2, B1, B2, A2a | day 15: first unified frame on a VF (I1's cross TX case) |
-| 4 (days 16–20) | I1, R1, P1, fixes; A2b, B3, X if the gates allow | CI1, I1, R1 | day 17: feature freeze; the exit run (§5.6) on days 18–20 |
+| 2 (days 6–10) | C1a, C1b, A1, E1; the I1 and R1 copies; I1 drafted | C0, C1a, C1b, A1; the I1 and R1 copies | day 10: C1a, C1b and A1 committed and approved |
+| 3 (days 11–15) | C2, B1, B2, A2a, CI1a; R1 drafted | E1, C2, B1, B2, A2a, CI1a | day 15: first unified frame on a VF (I1's cross TX case) |
+| 4 (days 16–20) | I1, R1, CI1b, P1, SA1, fixes; A2b, B3, X if the gates allow | I1, R1, CI1b, P1, SA1 | day 17: feature freeze; the exit run (§5.6) on days 18–20 |
 
-Critical path: P0 → H1a → H1b → A1 → A2a → R1 → P1, with C0 → C1a → C1b → B1/B2 → A2a beside
-it.
+Critical path: P0 → H1a → H1b → A1 → A2a → R1 and I1 → CI1b → P1, with C0 → C1a → C1b → B1/B2 →
+A2a beside it; SA1 after A2a gates exit criterion 8.
 
 **Gates.** Each is checked on its day by the main session against the ledger:
 
 | Day | Gate | If missed |
 |---|---|---|
 | 5 | C0 approved; H1a and H1b committed and approved | stop core coding and resolve the blocker first |
-| 10 | C1a, C1b and A1 committed and approved | cut B3, A2b and X; I1's non-cross cases move to MS2a |
+| 10 | C1a, C1b and A1 committed and approved | cut B3, A2b and X; I1's non-cross cases move to MS2a; SA1 keeps `tx_video` and `rx_video`; G-114 then covers the functions they call, and the uncovered rest is listed in ms1-status §3 |
 | 15 | first unified frame on a VF (I1's cross TX case) | P1 shrinks to `kernel_lo_st20p` plus `test_fps` p29 |
 | 17 | feature freeze | after it, only fixes for the exit criteria land |
 
@@ -575,38 +728,42 @@ AUTO + `NOT_BEFORE`, TAI nearest and its DROPPED reasons), `recovery_verdict`,
 `rx_hold_release`, `rx_order_pub_seq`, `rx_incomplete_status`, `rtp_epoch_default` (G-20 with
 today's rounding).
 
-**I, KahawaiTest `UnifiedSt20p`, ported from `St20p` with the same case names:**
+**I, `UnifiedKahawaiTest`, the `St20p` cases rewritten from `KahawaiTest` with the same names (§4.1):**
 `tx_create_free_single`, `rx_create_free_single`, `tx_create_expect_fail`,
 `rx_create_expect_fail`, `tx_create_expect_fail_fb_cnt`, `rx_create_expect_fail_fb_cnt`,
 `digest_1080p_s1`, `digest_1080i_s2`, `digest_user_meta_s2`, `tx_put_frame_abort`; the new
 cases `tx_idle_last_result` (G-03) and `close_while_streaming` (G-107 on the real engine); and
-three cross-API cases, `cross_tx_unified_rx_legacy_1080p`, `cross_tx_legacy_rx_unified_1080p`
-and the two-leg `cross_redundant_tx_unified_rx_legacy_1080p`. In the two cases with a legacy
+the suite `Cross` of three cross-API cases, `tx_unified_rx_legacy_1080p`,
+`tx_legacy_rx_unified_1080p` and the two-leg `redundant_tx_unified_rx_legacy_1080p`. In the two cases with a legacy
 receiver the legacy RX timing parser is on and asserts an RTP offset in [−1, 59] ticks and a
 latency in [0, 1 ms]. The digest helper also checks the RTP: consecutive deltas equal the frame
 period (1501 and 1502 alternating at 59.94), sequence numbers continuous, no packet lost. The
 same filter runs on `kernel:lo` through the existing `st20p_kernel_loopback` case of
-`.github/scripts/gtest.sh` and the case CI1 adds. If the day-10 gate is missed, only the cross
+`.github/scripts/gtest.sh` and the case CI1b adds. If the day-10 gate is missed, only the cross
 cases and the `_single` create cases stay in MS1.
 
 **A, the acceptance smoke set (§5.5).**
 
-Nothing legacy is deleted in MS1: the legacy pipelines are still what FFmpeg and GStreamer use.
-The deletion rule for later is D-109.
+Nothing legacy changes in MS1: `KahawaiTest` and RxTxApp are frozen and keep running (§4.1), and
+the legacy pipelines are still what FFmpeg and GStreamer use. Legacy validation ends with the
+legacy API (D-109).
 
 ### 5.4 RxTxApp on the new API
 
-RxTxApp keeps its one `mtl_init` (`src/rxtx_app.c:451`) and wraps it with
-`mtl_instance_from_legacy`, so the kinds that stay legacy run in the same process. MS1 ports
+`UnifiedRxTxApp` is a copy of RxTxApp (§4.1). Until MS2a it keeps the one `mtl_init` of the copy
+(`src/rxtx_app.c:451`) and wraps it with `mtl_instance_from_legacy`; from MS2a it opens the
+instance with `mtl_instance_open`. Every session it creates is on the new API, and a kind not yet
+ported is refused. MS1 ports
 the JSON `"st20p"` arrays (`parse_json.c:2865` TX, `:3310` RX); MS2a ports `"video"` with
 `"type": "frame"` and `"slice"`; `"rtp"` waits for packet units (MS5).
 
-- New files `src/unified/tx_st20p_unified.c`, `rx_st20p_unified.c` and their header mirror the
-  public functions of `tx_st20p_app.c` and `rx_st20p_app.c`; the dispatch is at
-  `st_app_tx_st20p_sessions_init` / `st_app_rx_st20p_sessions_init` (`rxtx_app.c:534`, `:597`) and
-  the stat, result and completion calls; the wrapper closes before `mtl_uninit`.
-- Selection: `--api legacy|unified` (`args.c`), default from the build option `default_api`. No
-  change to `tests/acceptance/mtl_engine/` in MS1 (D-110).
+- In the copy, `tx_st20p_app.c` and `rx_st20p_app.c` are rewritten on the new API behind the same
+  public functions; the dispatch stays at `st_app_tx_st20p_sessions_init` /
+  `st_app_rx_st20p_sessions_init` (`rxtx_app.c:534`, `:597`), with the stat, result and completion
+  calls; the wrapper closes before `mtl_uninit`. The other kinds' files are not in the copy; they
+  enter, rewritten, in their milestones.
+- Selection: the executable. The pytest framework runs it as the application `rxtxapp_unified`
+  (P1, D-110).
 - **The output must not change.** The acceptance engine counts `app_rx_st20p_result(<n>), OK`
   lines (`rx_st20p_app.c:356-371`), and it greps lines that **libmtl** prints:
   `st20p_tx_create(<n>), transport fmt …, input fmt: …` (`st20_pipeline_tx.c:1175`) and the RX twin
@@ -633,7 +790,7 @@ The JSON and CLI mapping (field details: [migration.md](migration.md) §4.4–§
 | `enable_rtcp` | `*_FLAG_ENABLE_RTCP` | `MTL_OPT_RTX = 1` |
 | `user_pacing` | `USER_PACING` + `frame->timestamp` | `sc.media_mode = MTL_MEDIA_TAI`, `unit.media_tai_ns` from `st_app_user_time()` (MS1) |
 | `exact_user_pacing` | `EXACT_USER_PACING` | `MTL_SESSION_EXACT_LAUNCH` at create, `MTL_SUBMIT_EXACT` + `unit.launch_tai_ns` per unit (B3, else MS2a) |
-| `user_timestamp` | `USER_TIMESTAMP` | `unit.media_tai_ns` (TAI): the RTP of the nearest slot; an RTP off the slot grid is `MTL_SUBMIT_RTP_TS` (MS3) |
+| `user_timestamp` | `USER_TIMESTAMP` | `MTL_SUBMIT_RTP_TS` + `unit.rtp` = the user's TAI in ticks, rounded to nearest, with TAI media mode (MS3): byte-identical legacy RTP; until then `unit.media_tai_ns` (TAI), the snapped RTP of the nearest frame time |
 | `drop_when_late` | `DROP_WHEN_LATE` | `MTL_OPT_LATE_POLICY = MTL_LATE_DROP` |
 | `display`, `measure_latency`, URLs, `user_time_offset` | application side | unchanged |
 | `--pacing_way` | `mtl_init_params.pacing` | `MTL_OPT_PACING` on each session (values in [migration.md](migration.md)) |
@@ -648,12 +805,13 @@ The JSON and CLI mapping (field details: [migration.md](migration.md) §4.4–§
 | `notify_event` | callback | `mtl_session_read_events` in the session thread (MS3; VSYNC as `MTL_EVENT_EPOCH_TICK`) |
 | RX wire counters after the result line | `st20p_rx_get_session_stats` (`rx_st20p_app.c:379`) | `mtl_stat_get` keys (A2b, else MS2a; until then the unified app skips these diagnostic lines) |
 | RX DMA, multi-thread, timing parser | RX flags | `MTL_OPT_DMA`, `MTL_OPT_RX_THREADS = 2` (one leg only), `MTL_OPT_RX_TIMING_PARSER` (B3, else MS2a) |
-| `--hdr_split` | `HDR_SPLIT` | removed (D-112); the option is dropped from RxTxApp at release R+1 of the hiding |
+| `--hdr_split` | `HDR_SPLIT` | removed (D-112); not in `UnifiedRxTxApp` |
 
 ### 5.5 The acceptance smoke set
 
-The RxTxApp parameterisations only (`-k rxtxapp`); the FFmpeg and GStreamer variants keep
-running on the legacy API as part of the legacy gate.
+The RxTxApp parameterisations, run on both applications (`--app all`): `rxtxapp_unified` must pass
+what `rxtxapp` passes. The FFmpeg and GStreamer variants keep running on the legacy API until
+their rewrite (§4.1).
 
 | Test | Why |
 |---|---|
@@ -664,7 +822,7 @@ running on the legacy API as part of the legacy gate.
 | `tests/single/st20p/test_interlace.py` | the field path |
 | `tests/single/st20p/test_multisession.py` | several sessions on one instance |
 
-Stretch for MS1: all of `tests/single/st20p/` with the same pass list as the legacy build.
+Stretch for MS1: all of `tests/single/st20p/` with the same pass list as on `rxtxapp`.
 `test_drop_when_late.py` belongs to MS1 only if the drop-when-late mapping holds (B1); the `ptp`
 subcase of `test_pacing_way.py` and `test_redundant.py` follow the time-source and two-leg work
 of B1 and B2 and may slip to MS2a.
@@ -675,17 +833,18 @@ of B1 and B2 and may slip to MS2a.
    the node's exports equal the functions tagged MS1 (G-51); `check.sh` runs in CI.
 2. **Unit:** `./build.sh unit` green, with the U cases and the UB cases of §5.3 and T1's parity
    tests, also in the debug + ASan job.
-3. **Integration:** `UnifiedSt20p` green on E810 at mandatory level, with default pacing and with
-   `--pacing_way tsc`, in the same run as legacy `St20p`; cross-API SHA-256 in both directions at
+3. **Integration:** `St20p*` green in `UnifiedKahawaiTest` on E810 at mandatory level, with default
+   pacing and with `--pacing_way tsc`, in the same `gtest.sh --api both` run as `KahawaiTest`; cross-API SHA-256 in both directions at
    1080p59.94 and 1080i59.94, and with two legs; the same filter on `kernel:lo`.
-4. **Acceptance:** the smoke set passes on the unified-default build with the same list as the
-   legacy build.
-5. **Legacy gate** (§8.5): unchanged.
+4. **Acceptance:** the smoke set passes on `rxtxapp_unified` with the same list as on `rxtxapp`.
+5. **Legacy gate** (§8.5): unchanged, and the frozen trees have no diff but the run options.
 6. **Performance:** tasklet iteration avg and max within the §8.4 budgets against S0 (best
    effort in MS1, a gate from MS2a).
 7. **Process:** every task has an `mtl-reviewer` APPROVE, its Gate 6 run where marked, and its
    row in the ledger.
-8. **Examples:** ex01, ex02, ex03 and ex05 run on `null:1`.
+8. **Examples and samples:** ex01, ex02, ex03 and ex05 run on `null:1`; the samples of SA1 run in CI
+   on `null:1` (`legacy_bridge` on `kernel:lo`) and `tx_video` to `rx_video` on `kernel:lo`; every
+   function of the MS1 node but those of `mtl_debug.h` is called by one of them (G-114).
 
 ### 5.7 Risks of MS1
 
@@ -698,6 +857,7 @@ of B1 and B2 and may slip to MS2a.
 | a stop waits up to 1 s for a unit's launch (`st_video_transmitter.c:188-191`) | accepted in MS1; the `tick` and command acks of MS2a bound it (D-103) |
 | two APIs in one process: teardown order | the wrapper closes before `mtl_uninit` (SP-01); U and I tests of the bridge |
 | review capacity | tasks ≤ 1.5 k lines, `mtl-reviewer` first, the WIP limits of §5.8; the gates of §5.2 cut stretch work first |
+| MS1 has about 20 commits against 12–16 review slots | the two copies are mechanical; SA1 beyond `tx_video`/`rx_video` and I1's non-cross cases are the first to slip to MS2a |
 
 ### 5.8 How MS1 runs
 
@@ -722,17 +882,21 @@ of B1 and B2 and may slip to MS2a.
 
 ## 6. MS2–MS7
 
-Each milestone ends with its exit criteria, the legacy gate green, and the review gates of the
-repository. The detail of each item is in §2.3, §8 and the design documents; the engine items
+Each milestone ends with its exit criteria, the legacy gate green, its samples of §4.2 in
+`app/sample/` with G-114 green, and the review gates of the repository. The detail of each item is in §2.3, §8 and the design documents; the engine items
 are in [engine.md](engine.md) §11.
 
 ### 6.1 MS2: ST 2110-20 complete
 
 **MS2a: rows, completeness and the nightly.**
 
-- **The nightly:** the unified gtest and pytest cases with the legacy comparison (§6.9); RxTxApp's
-  default switches to `unified` for the ported kinds once it is green.
-- **Waking:** spike S1 on the deferred wake; W3 only if S1 shows harm to pacing.
+- **The nightly:** both binaries and both applications with the comparison of twins (§6.9);
+  `UnifiedKahawaiTest` and `UnifiedRxTxApp` switch from the bridge to `mtl_instance_open` on PCI
+  ports; the suite `Cross` and the `legacy_bridge` sample keep the bridge. The samples' TX and RX
+  pairs run on VFs.
+- **Waking:** spike S1 on the deferred wake with 64 or more armed sessions per scheduler; W3
+  only if S1 shows harm to pacing, and then the shared queues (`mtl_queue_*`) are reconsidered for
+  MS6 (OI-66).
 - **Commands:** the `tick` hook in each video tasklet handler with `ctl`/`ack` (D-103): TX in
   `tvs_tasklet_handler` (the builder; the transmitter calls nothing), RX in
   `rvs_pkt_rx_tasklet_handler`; `CMD_TIMEOUT`; `mtl_session_discard`; the "last packet handed" hook
@@ -774,7 +938,7 @@ are in [engine.md](engine.md) §11.
 
 Exit: every ST20 legacy capability of §2.3 has a unified path except packet units (MS5) and the
 timing subset of MS3; the legacy st20p suites green on the core; ex04, ex06, ex09 run (ex08
-needs `MTL_MEDIA_INDEX`, MS3); the `ptp` group green with the RxTxApp default switched.
+needs `MTL_MEDIA_INDEX`, MS3); the `ptp` group green on both applications.
 
 ### 6.2 MS3: timing and observability
 
@@ -790,7 +954,8 @@ needs `MTL_MEDIA_INDEX`, MS3); the `ptp` group green with the RxTxApp default sw
 - **ABI hygiene:** after an `nm` audit of the users of leaked symbols: the libmtl soname, the
   `MTL_LEGACY` node for the legacy headers' functions, then `local: *` (hidden internals) as a
   separate step; call-class enforcement in debug builds (D-05); the fork rule of R8.
-- **FFmpeg:** the plugin's st20p path on the new API, next to its legacy path.
+- **FFmpeg:** the plugin's st20p path rewritten on the new API, replacing its legacy path (A8);
+  its acceptance tests then run the new API.
 - **Tests:** gtest waves 3b, 3c and 4 (NoCtx) of §6.8; ex08 and ex11 run.
 
 ### 6.3 MS4: every essence
@@ -801,12 +966,12 @@ skipping), RX header extensions on these essences (RXHDR), fastmeta (a frame bin
 from the RTP ring); A/V sync on the epoch timeline; any frame rate (an engine table change;
 until then a rational outside the table is `-MTL_ENOTSUP`); DSCP on these bindings; the essence
 members of `mtl_session_config`; RxTxApp kinds `st30p`, `st40p`, `"ancillary"`,
-`"fastmetadata"` with `"type": "frame"`; their gtests replaced per D-109; their acceptance
-directories through `--api`.
+`"fastmetadata"` with `"type": "frame"` in `UnifiedRxTxApp`; their suites copied into
+`UnifiedKahawaiTest` (D-109); their acceptance directories on both applications.
 
 **MS4b**: cvideo (st22p re-based; ST 2110-22 codec plugins on the transform state, the
 `video.*` keys apply; E10: ST22 CBR and the synchronous oversize check), plugin ABI v2 with `mtl_plugin_open`, `mtl_convert`, `mtl_session_capture`
-(pcapng); RxTxApp `st22p`.
+(pcapng); `UnifiedRxTxApp` `st22p`.
 Exit: G-45 (one verb sequence for every essence × direction).
 
 ### 6.4 MS5: packets and operators
@@ -819,7 +984,7 @@ size from the MTU (PE7; 2022-6 cannot be sent today, its 1396–1456 B packets e
 2022-8 §6 requires for 2022-6 (the 2022-6 part of E5 moves into MS5 with PE7). `mtl_session_update` with FLOWS, LEGS,
 MEDIA and POOL at a boundary (the prepared header swap of D-103; the RTP sequence seed of OI-62),
 RTCP sender reports on TX (driven by options, the library builds the Info Block; their names leave `MTL_LATER`), the link
-monitor, leg admin state, `MTL_QUERY_CHECK_CAPACITY`, MtlManager reconnect. RxTxApp
+monitor, leg admin state, `MTL_QUERY_CHECK_CAPACITY`, MtlManager reconnect. `UnifiedRxTxApp`
 `"type": "rtp"`, the 61 RTP-level gtest sites, the st41 acceptance tests and pcap replay on the
 unified path. Exit: G-PKT-1…7, the update gtests ported, a 2022-6 stream accepted by a
 third-party receiver.
@@ -830,8 +995,9 @@ Start arrays (`mtl_session_start` over n sessions with `MTL_WHEN_ORIGIN`: media 
 started session is the start's T0), ANC and fastmeta following the first video of their start
 array (its raster and slot delay), sample-accurate audio, E5, E9 (the published time base, a PHC
 as time source, FREERUN, whose name leaves `MTL_LATER`), E13, clock steps (media times are kept); recovery and auto-detect
-re-init on library workers; the GStreamer, OBS, Python (with the GIL test) and Rust ports, the
-rest of the FFmpeg plugin, and the plugin owners' review of them. Exit: the A/V/ANC example
+re-init on library workers; GStreamer and the rest of the FFmpeg plugin rewritten on the new
+API in place (A8), the OBS, Python (with the GIL test) and Rust ports, and the plugin owners'
+review of them. Exit: the A/V/ANC example
 through one start array with exact RTP; the plugins on the new API pass the acceptance smoke
 suite.
 
@@ -841,7 +1007,10 @@ The external review with at least three named consumers (the FFmpeg and GStreame
 owners, the MXL team, the external engine team) and the private-user questionnaire, before the
 header freezes; the `MTL_1.0` freeze (G-51 for `MTL_1.0`); the hiding stages F, F+1 and F+2
 (D-83) with the deprecation policy of [deployment.md](deployment.md) §7. Exit: the legacy headers carry the
-deprecation warning, and every in-tree consumer builds without `MTL_LEGACY_API`.
+deprecation warning, and every in-tree consumer builds without `MTL_LEGACY_API`, except the
+frozen trees, on `mtl_legacy_dep`. The frozen suites and the legacy RxTxApp run until stage F+2
+removes the legacy API; then the pipeline-level cases and the legacy RxTxApp are deleted, and the
+session-level cases stay as the engine's internal test (§4.1, A9).
 
 ### 6.7 Phase 7
 
@@ -854,7 +1023,9 @@ sender reports (MS5) have theirs.
 
 ### 6.8 The ST20 gtest port waves
 
-A port **replaces** its legacy case after the comparison window (D-109). Wave 1 and the
+A port is a **copy** of its legacy case, rewritten in `UnifiedKahawaiTest` with the same name;
+the legacy case stays, frozen: a pipeline-level case until the legacy API is removed, a
+session-level case for good, as the engine's internal test (D-109, §4.1). Wave 1 and the
 `St20p` part of wave 2a are MS1 (§5.3); waves 2a (rest) and 2b are MS2a, 2c and 3a MS2b; 3b,
 3c and 4 are MS3.
 
@@ -884,23 +1055,25 @@ Cases with a later milestone:
 
 ### 6.9 The nightly (MS2a)
 
-The comparison runs only during the window of D-109, per suite; after it the
-legacy pipeline cases are deleted and the unified cases are the suite.
+The comparison runs as long as both APIs exist (D-109).
 
 **gtest nightly** (`.github/scripts/gtest.sh`, `generate_test_cases()`):
 
-- new cases next to the legacy ones, same ports and options: `unified_st2110_20_tx`
-  (`UnifiedSt20_tx*`), `unified_st2110_20_rx` (`UnifiedSt20_rx*`, two shards like the legacy one),
-  `unified_st2110_20p` (`UnifiedSt20p*`); in the nightly block the pacing variants
-  `unified_st20p_auto_pacing_pa`, `_va`, `unified_st20p_tsc_pacing` (`UnifiedSt20p*:-*ext*`),
-  `unified_st20p_kernel_loopback` (`kernel:lo`) and the unified NoCtx cases through `noctx/run.sh`;
+- every entry of `generate_test_cases()` runs in each binary that `--api` selects (§4.1), with
+  the same filter, ports and options; the unified runs are named with a `unified_` prefix:
+  `unified_st2110_20_tx` (`St20_tx*`), `unified_st2110_20_rx` (`St20_rx*`, two shards like the
+  legacy one), `unified_st2110_20p` (`St20p*`); in the nightly block the pacing variants
+  `unified_st20p_auto_pacing_pa`, `_va`, `unified_st20p_tsc_pacing` (`St20p*:-*ext*`),
+  `unified_st20p_kernel_loopback` (`kernel:lo`) and the unified NoCtx cases through
+  `noctx/run.sh --api unified`; a suite not yet ported is skipped in `UnifiedKahawaiTest`;
 - the baseline block (pull requests) has only `unified_st2110_20p` and the `kernel:lo` case that
-  CI1 adds in MS1; the rest is nightly only;
+  CI1b adds in MS1; the rest is nightly only;
 - `nightly-gtest.yml` uploads `${TMP_FOLDER}/gtest_*.xml` with `gtest.log`; today only `gtest.log`
   is uploaded, although `gtest.sh` writes the XML.
 
 **Comparison with the legacy run.** A compare step after `task ci:gtest-nightly` pairs each
-`Unified<Suite>.<case>` with `<Suite>.<case>` from the JUnit XML of the same runner and night:
+`<Suite>.<case>` of `UnifiedKahawaiTest` with the same name in `KahawaiTest`, from the JUnit XML of
+the same runner and night:
 
 | Legacy | Unified | Verdict |
 |---|---|---|
@@ -921,14 +1094,15 @@ runs the legacy side with `ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH` and
 with E2 on, RTP may differ by one tick at 1001 rates and is checked against the oracle instead
 (G-99).
 
-**pytest nightly** (`nightly-pytest.yml`): the `st20p` directory of the matrix gains an
-`api: unified` variant through RxTxApp `--api` (D-110), or the reviewed `test_config.yaml` key if a side-by-side matrix is wanted; reports are combined as today,
-and the same pair rule applies per test ID. The `ptp` directory runs RxTxApp `--ptp` on VFs; it
-keeps passing when the RxTxApp default switches (§2.4).
+**pytest nightly** (`nightly-pytest.yml`): every directory runs with `--app all`, so each test ID
+exists once per application (`application = rxtxapp` and `= rxtxapp_unified`); reports are
+combined as today and grouped by application, and the same pair rule applies per test ID. Tests
+of a kind `UnifiedRxTxApp` does not have yet are skipped there with their reason. The `ptp`
+directory runs `--ptp` on VFs on both applications (§2.4).
 
 Exit: two weeks of nightlies with the compare step blocking and green; the compliance gate of
-§8.4 green; the RxTxApp default switched to `unified` for the ported kinds; the legacy cases and
-the `ptp` group unchanged and green.
+§8.4 green; both applications in every nightly directory with their ported kinds; the frozen
+cases and the `ptp` group unchanged and green.
 
 ### 6.10 The Kubernetes track
 
@@ -973,8 +1147,8 @@ its own wait targets, and the legacy pipelines get the fix when they are re-base
 
 ## 8. Test plan and guarantees
 
-A behaviour without a test is not promised. §5.3 lists what MS1 tests; the comparison of §6.9
-replaces legacy cases by their ports (D-109).
+A behaviour without a test is not promised. §5.3 lists what MS1 tests; the legacy suites stay
+frozen beside their copies on the new API, and §6.9 compares the twins (D-109, §4.1).
 
 ### 8.0 Requirements and the guarantees that close them
 
@@ -1068,8 +1242,8 @@ lifecycle part MS1 and MS3 build is G-107…G-112.
 | B build | CI | headers, `check.sh`, `readelf`, `nm` |
 | U unit | `tests/unit/unified/` (`UnifiedUnitTest`) | nothing: the core over the null backend and the test clock, one long-lived instance per binary |
 | UB unit at the engine boundary | `tests/unit/session/`, `tests/unit/pipeline/` (`UnitTest`) | the real engine driven through the bindings, without a NIC |
-| I integration | `KahawaiTest` (ported cases), NoCtx | VFs, hugepages, root |
-| A acceptance | `tests/acceptance/` | RxTxApp end-to-end |
+| I integration | `UnifiedKahawaiTest` and its NoCtx cases; `KahawaiTest` frozen beside it (§4.1) | VFs, hugepages, root |
+| A acceptance | `tests/acceptance/` | `UnifiedRxTxApp` beside the frozen RxTxApp; FFmpeg and GStreamer from their rewrite |
 | M measurement | lab with HW timestamps, EBU LIST | accuracy claims per NIC × pacing class |
 
 A guarantee is **P** (promised: evidence exists or is funded in the named milestone; a red P
@@ -1140,7 +1314,7 @@ exit needs it.
 | G-70 | each `MTL_E*` code has one meaning; RX dequeue with nothing ready returns `-MTL_EAGAIN` in CREATED, ARMED, RUNNING and STOPPED, never `-MTL_ESHUTDOWN` | U | MS1 | each code from its triggering call and state, including dequeue on a session never started |
 | G-71 | the null handle fails with `-MTL_EBADF`, except every close, which returns 0 | U | MS1 | the null handle to every function, table-driven over the headers |
 | G-72 | `mtl_reap` writes `min(rec_size, native)` per record at pitch `rec_size`; the typed wrappers pass `sizeof(*r)` | U | MS1 | record sizes larger and smaller than the library's, with `MTL_INIT` hoisted out of the loop |
-| G-73 | a zero-filled input struct (`MTL_INIT`) is the default configuration | B, U | MS1 | a zero-filled struct opens with the documented defaults; a lint lists every field whose zero means something else |
+| G-73 | an input struct from `MTL_INIT` (zero in every field but `struct_size`) is the default configuration | B, U | MS1 | a zero-filled struct opens with the documented defaults; a lint lists every field whose zero means something else |
 | G-74 | headers and examples compile (`check.sh`) | B | MS1 | `check.sh` in CI, also with `-pedantic` and clang, plus a compile-only Windows job; candidate flags `-Wconversion -Wsign-conversion -Wcast-qual` (`-Wcast-qual` catches an accessor such as `mtl_pkt_tx_table()` returning a writable table from a `const struct mtl_unit*`) |
 | G-76 | RX `media_index` is the exact inverse of the TX rule (video, epoch timeline) | U, UB | MS3 | a sender on the grid at every video rate (1001 families, fields) across the 2^32 wrap, and a sender with a phase below one period, which maps to the slot it falls in; checked against the oracle |
 | G-77 | closing a shared instance's reference that is not the last only drops it (returns 0); the last one shuts down; a CLOSING session stays readable through `mtl_session_get_status` | U | MS1 (exclusive open); MS2a (SHARED) | MS1: a second open without SHARED is `-MTL_EEXIST` (OI-49); close polls with a session in CLOSING. MS2a: two SHARED opens, closed in both orders |
@@ -1162,6 +1336,7 @@ exit needs it.
 | G-111 | the AS calls (`mtl_instance_interrupt`, `mtl_instance_abort`) are safe at any time, during and after close, and never write a recycled descriptor; in a forked child every call but close fails with `-MTL_EBADF` (`FORKED`) | U | MS1 (the AS calls), MS3 (the fork rule) | a signal storm of the AS calls across open, close and re-open; `fork()`, then each function in the child |
 | G-112 | re-open: after a close, `mtl_instance_open` works again in the same process (EAL stays initialised); after a SIGKILL mid-stream, a new process opens the same VF without manual cleanup | U, I | MS1 (U), MS3 (I, wave 4) | 200 open and close cycles on `null:1` under ASan; a NoCtx case kills its child mid-stream and re-opens the VF |
 | G-113 | rows: a TX rows unit re-submitted with a growing `used` sends each row once it is ready, never beyond `used`; RX reports rows in order through `mtl_rx_wait_rows`; a complete rows unit equals the frame unit | UB, I | MS2a | the slice cases of `st20_digest.cpp` ported: rows released in steps, SHA-256 of the received frame, no packet of a row before its submit |
+| G-114 | the samples call every function the node exports (`mtl_debug.h` exempt), and every essence and direction has a TX and an RX sample once it is on the new API | B | MS1, each later milestone | a CI check compares `lib/src/unified/exports.list` with `nm -u` of the sample objects (they call the typed inline wrappers); every built sample runs 10 s on `null:1` (`legacy_bridge`: `kernel:lo`) |
 
 G-45 (the same verb sequence for every essence × direction) holds for video only until MS4b.
 G-39 (no syscall, no app-holdable lock and no allocation on the tasklet side of the PMD
@@ -1224,7 +1399,7 @@ the tail that damages pacing.
 | tasklet iteration per scheduler, same load as legacy | avg ≤ legacy + 2 %, max ≤ legacy + 5 % | `MTL_FLAG_TASKLET_TIME_MEASURE` (RxTxApp `--tasklet_time`), I, 10 min |
 | DP call cost without conversion (acquire, submit, reap, dequeue) | p50 ≤ 150 ns, p99 ≤ 1 µs | U micro-benchmark on `null:1` (the descriptor ring's gate in C1b), plus an I spot check; DPC calls reported separately |
 | completion latency (last packet handed, or last mbuf freed, until the result is visible) | ≤ the reported `completion_latency_ns` (`mtl_buffer_requirements`, key `info.completion_latency_ns`) + 10 % | UB, I |
-| deferred wake cost | the eventfd writes of the scheduler loop at 100 armed sessions stay inside the tasklet iteration budget above | S1, then I |
+| deferred wake cost | the eventfd writes of the scheduler loop with 64 or more armed sessions per scheduler stay inside the tasklet iteration budget above | S1, then I |
 | W2 wake latency | p99 ≤ 10 µs | S1 |
 | W3 wake latency, only if W3 is built | p99 ≤ unit period / 10 for units ≥ 1 ms | S1 |
 | sessions per scheduler at 1080p59.94 | unchanged versus legacy | I |
@@ -1234,8 +1409,8 @@ the tail that damages pacing.
 
 Every milestone and every engine change passes:
 
-- the legacy KahawaiTest suite (mandatory level, default pacing and `--pacing_way tsc`, as
-  `gtest.sh` runs it) and the acceptance smoke suite with legacy defaults;
+- the frozen `KahawaiTest` suite (mandatory level, default pacing and `--pacing_way tsc`, as
+  `gtest.sh --api legacy` runs it) and the acceptance smoke suite on `--app rxtxapp`;
 - `./build.sh unit`, including the unit tests that pin today's wire behaviour. E1, E2 and E3
   change the code they pin; with the legacy opt-in flags off they stay green unchanged, and flag-on
   behaviour gets new tests:
@@ -1253,8 +1428,9 @@ Every milestone and every engine change passes:
   | `tests/unit/ptp/` | the built-in PTP client, including the software time base of a port without timesync (`no_timesync`) |
 
 - a pcap diff against the pre-change baseline for wire-visible changes (G-99);
-- from MS2a, when the RxTxApp default switches, the nightly-pytest `ptp` group, which runs
-  built-in PTP on VFs (§2.4).
+- at every milestone, the nightly-pytest `ptp` group on the application `rxtxapp`, which runs
+  built-in PTP on VFs (§2.4);
+- until each plugin's rewrite, the FFmpeg and GStreamer acceptance tests on the legacy plugin.
 
 ### 8.6 The timing oracle
 
@@ -1279,7 +1455,7 @@ The comparison table, with the question behind each difference, is in [timing.md
 | one instance, two APIs: teardown order, SP-01, behaviour before `mtl_start()` | MS1 | the wrapper closes first; bridge tests at U and I; RxTxApp already calls `mtl_start` before it creates sessions (`rxtx_app.c:480`, `:534`); OI-2 |
 | the `MTL_LEGACY` node and `local: *` break consumers of leaked internal symbols | MS3 | MS1 leaves every symbol libmtl exports today exported; an `nm` audit first, the soname and `MTL_LEGACY` next, `local: *` as its own change |
 | header churn while tasks run against the headers | MS1–MS3 | header changes batched weekly, and each one only after the maintainer's yes (§5.8) |
-| the comparison window lengthens the nightly | MS2a | ported cases in their own shards; the pull-request baseline grows by two cases |
+| running both binaries and both applications lengthens the nightly | MS2a | ported cases in their own shards; the pull-request baseline grows by two cases (CI1b) |
 | wire defaults differ between the APIs by design (epoch RTP, incomplete delivery) | MS1–MS2a | the comparison sets the equivalent legacy flags (§6.9) |
 | a ported feature regresses: built-in PTP on a VF | MS1–MS2a | `PTP_BUILTIN` on a VF keeps the software time base (§2.4); `tests/unit/ptp/` in the legacy gate, the `ptp` group from MS2a |
 | review load: one maintainer reviews AI-written code at a high rate | all | tasks ≤ 1.5 k lines, `mtl-reviewer` before the maintainer, the WIP limits and the gates of §5.2 and §5.8; CODEOWNERS with a second reviewer for `lib/src/st2110/core/` |
@@ -1313,8 +1489,10 @@ writing. The calendar of §1.2 assumes:
 
 What keeps the total small beyond the agents' speed: one core under every API with the
 pipelines as wrappers on it and no re-base at the end (D-99), one library with version nodes
-(D-23), ports that replace the legacy cases instead of twins (D-109), and exports that grow
-with the code, so a later milestone adds functions to the node and never changes one (D-106).
+(D-23), and exports that grow with the code, so a later milestone adds functions to the node and
+never changes one (D-106). The two validation stacks (§4.1) cost the other way: the integration
+tests and RxTxApp exist twice until the legacy API is removed. Their copies are mechanical, but
+every fix to a ported test is made once, in the new tree, since the legacy one is frozen.
 
 ## 11. Where the detail lives
 
@@ -1330,6 +1508,6 @@ with the code, so a later milestone adds functions to the node and never changes
   session headers: [coverage.md](coverage.md); the feature × media matrix of today:
   [legacy-internals.md](legacy-internals.md);
 - the function counts per header, per call class and per milestone: `sketch/check.sh`;
-- the open items Phase 7 inherits from the IPMX verification: [nmos-ipmx.md](nmos-ipmx.md) §16;
+- the open items Phase 7 inherits from the IPMX verification: [nmos-ipmx.md](nmos-ipmx.md) §23;
 - the decisions this plan rests on (D-99…D-112): [decisions.md](decisions.md);
 - the state of MS1: `doc/unified-api/ms1-status.md` (§5.8).

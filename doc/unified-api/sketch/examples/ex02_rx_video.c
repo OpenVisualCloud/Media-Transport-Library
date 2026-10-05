@@ -1,4 +1,5 @@
-/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. */
+/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1
+   (media_index is valid from MS3). */
 #include "ex_common.h"
 
 void show(const void* addr, uint32_t stride, int complete, int64_t media_index);
@@ -35,6 +36,6 @@ int rx_video(mtl_instance_h mt) {
   }
 
   if (ret < 0) ex_fail("rx", ret);
-  mtl_session_close(s, 0);
+  mtl_session_close(s, 0); /* 1 = still retiring, not a failure: it ends on its own */
   return ret;
 }

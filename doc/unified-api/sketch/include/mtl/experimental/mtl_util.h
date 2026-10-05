@@ -51,7 +51,9 @@ static inline void mtl_unit_from_template(struct mtl_unit* u, const struct mtl_u
    into plane 0 (splitting at the unit's capacity, rows x row_bytes), and submit, the first
    unit with the template fields of `how` (NULL = AUTO), each later one at the media time
    mtl_tx_next_slot() gives, so audio advances by the samples sent. Returns the bytes
-   accepted, or the first call's error when none was. WT. */
+   accepted, or the first call's error when none was. A partial write returns the bytes
+   accepted; to continue, call again with the rest and `how` = the next index
+   (next_media_index and next_media_tai_ns of mtl_tx_next_slot). WT. */
 static inline int mtl_tx_write(mtl_session_h s, const void* data, size_t bytes,
                                const struct mtl_unit* MTL_NULLABLE how, int64_t timeout_ns) {
   const uint8_t* src = (const uint8_t*)data;

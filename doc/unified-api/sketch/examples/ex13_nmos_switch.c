@@ -4,7 +4,7 @@
    when it did (the 200 response of an immediate one, or /active of a scheduled one).
    master_enable stays the Node's own state: with every leg disabled the session is muted
    but RUNNING, so a disable can be scheduled too (muting is Phase 7; until then
-   master_enable false is a stop). */
+   master_enable false is a stop). Needs: MS5. */
 #include <string.h>
 
 #include "ex_common.h"

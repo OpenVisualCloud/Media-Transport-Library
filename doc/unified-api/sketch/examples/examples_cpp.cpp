@@ -1,7 +1,8 @@
 // examples_cpp.cpp — the core API from C++17: MTL_INIT, typed handles, options, an RAII
 // lease guard and a typed result read; then a test bench on the null backend: a capacity
 // dry run, a start at a TAI instant, the full timing record, the test clock, an injected
-// fault and the instance's events. Bindings follow the same pattern.
+// fault and the instance's events. Bindings follow the same pattern. Needs: MS5 (the
+// capacity check; cpp_sender alone: MS1).
 #include <mtl/experimental/mtl.h>
 #include <mtl/experimental/mtl_debug.h>
 #include <mtl/experimental/mtl_events.h>

@@ -585,8 +585,9 @@ The EK rows of this table land in MS3, E9 in MS6 (§11).
 2. **MS1, in task order:** H1a and H1b (the header move, the API shell inside libmtl with its
    version node), C0 (checkpoint 1), C1a and C1b, A1, then C2 as the U-tier substrate on
    `null:1`; E1 (S0's data before the merge); B1 and B2 on top of E1, with UB tests that drive the
-   real engine through the bindings; A2a, CI1, I1, R1, P1; A2b, B3 and X as stretch. The task
-   table, the gates and the calendar are [implementation-plan.md](implementation-plan.md) §5.
+   real engine through the bindings; A2a, CI1a, the I1 and R1 rewrites, CI1b, P1, SA1; A2b, B3
+   and X as stretch. The task table, the gates and the calendar are
+   [implementation-plan.md](implementation-plan.md) §5.
 3. **MS2:** rows through `query_frame_lines_ready` with the TRUNCATE code and `tx.troffset_ns`,
    and `notify_slice_ready` (§4.14); attached memory, by-index and latest RX (OI-59 (a)) with MF2,
    MF3, MF9 and E11; the `tick` with `ctl`/`ack` and the RX due time (E8); the packet bitmap and
@@ -976,7 +977,7 @@ PMD reference publish; `sh_info` is written only at frame setup.
 |---|---|---|
 | `mtl_tx_acquire`, `mtl_tx_acquire_slot` | MP-safe (CAS on the slot word, CAS on `resv`) | — |
 | `mtl_release` (`mtl_tx_release`, `mtl_rx_release`) | MP-safe (CAS, or hold-count change), any thread, any order | — |
-| `mtl_tx_submit` (and the inline `mtl_tx_write`, `mtl_tx_send_slot`) | one submitting context at a time | `MTL_SESSION_MT_SUBMIT`: CAS on the submission tail. A framework pool that hands slots to several threads sets it together with `MTL_SESSION_RESULTS` |
+| `mtl_tx_submit` (and the inline `mtl_tx_write`, `mtl_tx_send_slot`) | one submitting context at a time | `MTL_SESSION_MT_SUBMIT`: CAS on the submission tail, for several submitting threads (an exported pool whose only submitter is `render` does not need it) |
 | `mtl_reap`, `mtl_rx_dequeue` | MP-safe under the reaper lock | — |
 | waits | several waiters per target | — |
 
@@ -1592,7 +1593,7 @@ configuration.
 | Spike | Question | Gates |
 |---|---|---|
 | S0 | today's tasklet iteration p99.99/max, call costs, completion latency, sessions per scheduler (`MTL_FLAG_TASKLET_TIME_MEASURE`; RxTxApp `--tasklet_time`, RL and TSC, average and maximum) | the performance budgets (implementation-plan.md §8.4); the scheduler-iteration term of the pick-up lead (§4.13); run by the main session in MS1 week 1, its data needed before task E1 merges |
-| S1 | the cost of the deferred wake writes on a pinned core (scheduler iteration time and packet timing with many armed sessions, at 125 µs and 1 ms unit periods), and wake latency (p50/p99/p99.9) and CPU % for W0, W2-deferred and W3, waiter awake and in C6 | whether W3 is built (checked in MS2, D-102); `info.expected_wake_latency_ns` |
+| S1 | the cost of the deferred wake writes on a pinned core (iteration time and packet timing with 64 or more armed sessions per scheduler, at 125 µs and 1 ms unit periods); wake latency (p50/p99/p99.9) and CPU % for W0, W2-deferred and W3, waiter awake and in C6 | whether W3 is built (MS2a, D-102), and then the shared queues are reconsidered for MS6 (OI-66); `info.expected_wake_latency_ns` |
 | S4 | explicit `rte_dev_dma_map` per device on E810 VF/PF with VFIO; PA mode; memfd pinning; page-alignment behaviour | MF2, regions (MS2; contract.md §9.2, deployment.md §1.1) |
 | S5 | TSC-at-`tx_burst` vs HW TX timestamp; what TSN launch gives | E4 (MS3); `MTL_TXR_SENT_HW` |
 | S6 | rate and cost of `rte_eth_tx_done_cleanup` while idle; effect on pacing; iavf/ice `tx_rs_thresh`/`tx_free_thresh`; TSQ behaviour | idle cleanup (its smallest form in MS1 task E1, the measured rate before MS2); `completion_latency_ns` |

@@ -594,8 +594,8 @@ Today MTL sends nothing when the app has no ANC frame (`st_tx_ancillary_session.
 
 ### 6.5 The slot hint
 
-`mtl_tx_next_slot(s, &hint, size)` (DP, MS3) fills `struct mtl_slot_hint` (32 B): `queued`, `next_media_index`, `next_media_tai_ns`, `submit_deadline_tai_ns`. One formula for AUTO, joiners and INDEX producers, the admission test itself: `next_media_index` = the smallest k after the last submitted with
-`M(k) − min_submit_lead_ns ≥ now`. For AUTO it is the slot the unit would get; for a joiner the first index it can still make. It is OpenXR's `predictedDisplayTime` and CoreAudio's `inOutputTime`: the producer learns its slot
+`mtl_tx_next_slot(s, &hint, size)` (DP, MS3) fills `struct mtl_slot_hint` (32 B): `queued`, `next_media_index`, `next_media_tai_ns`, `submit_deadline_tai_ns`. One formula for AUTO, joiners and INDEX producers, the admission test itself: `next_media_index` = the smallest k at or after the end of the last submitted unit (for audio,
+its first sample plus its samples) with `M(k) − min_submit_lead_ns ≥ now`. For AUTO it is the slot the unit would get; for a joiner the first index it can still make. It is OpenXR's `predictedDisplayTime` and CoreAudio's `inOutputTime`: the producer learns its slot
 before it renders, which removes the fixed phase lock a downstream engine measured (≈ 27 ms). The per-slot tick `MTL_EVENT_EPOCH_TICK` is opt-in (`session.epoch_tick`); it replaces `ST_EVENT_VSYNC`.
 
 ### 6.6 Result timing fields
@@ -706,6 +706,9 @@ feasible epoch index with its `tx.index_offset` and L_v.
 - **Only `MTL_SUBMIT_DISCONTINUITY` re-phases** (and an RTP override off the output grid). The carry is zero-padded (`samples_inserted`). If the new index d is not a multiple of S, packet p covers `[d + p·S, d + (p+1)·S)`. RTP stays `floor(M × Fs)` of each packet's first sample. While RUNNING, forward only.
 - **Sample-accurate start.** A session started at S sends its first packet at s0, the smallest multiple of S whose `M(s0) ≥ S`; earlier samples are `FLUSHED/BEFORE_START`.
 - **Copy path.** `mtl_tx_write(s, data, bytes, &how, timeout)` (`mtl_util.h`) takes an arbitrary byte run for audio, ANC and fastmeta, with the `media_index` of `how`; it acquires, splits and submits internally. The sample count follows from the bytes (`unit.used` is bytes for audio).
+  It returns the bytes accepted; after a partial write the caller continues with the rest at
+  `next_media_index` of `mtl_tx_next_slot`, the first sample past the last submitted unit
+  ([contract.md §5.1](contract.md#51-the-unit)).
 - **1001 cadence** (helper, later): samples in frame k = `floor((k+1)·x) − floor(k·x)`; on the epoch grid 59.94 gives 800, 801, 801, 801, 801 repeating, 29.97 gives 1601, 1602, 1601, 1602, 1602. The often-quoted 1602/1601/… is the ST 272/299 embedding cadence on the ST 318 sequence. 2110 audio has no per-frame unit. The alternative is a pinned ST 299 five-frame phase instead of
   the epoch formula. Dolby E carried over ST 2110-31 needs frame-aligned audio, which is why the helper is wanted.
 
@@ -1077,7 +1080,7 @@ k   += max(1, round((M − M_prev) / period)) per unit       (a missed VSYNC ski
 launch = M + min_tx_delay_ns on the nominal-period schedule;  an overlapping unit is DROPPED/WOULD_OVERLAP
 ```
 
-`MTL_AT_INDEX`, `MTL_SESSION_RX_BY_INDEX` and `tx.precede` targets are `-MTL_EINVAL` on such a session; `MTL_INFO_MEDIACLK_SENDER` is set in the info. From Phase 7, AUTO's order in a pod ends in FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error. Details: [nmos-ipmx.md](nmos-ipmx.md) §12.
+`MTL_AT_INDEX`, `MTL_SESSION_RX_BY_INDEX` and `tx.precede` targets are `-MTL_EINVAL` on such a session; `MTL_INFO_MEDIACLK_SENDER` is set in the info. From Phase 7, AUTO's order in a pod ends in FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error. Details: [nmos-ipmx.md](nmos-ipmx.md) §19.
 
 ## 14. The legacy timing surface
 
@@ -1085,7 +1088,7 @@ launch = M + min_tx_delay_ns on the nominal-period schedule;  an overlapping uni
 
 | Today | Unified |
 |---|---|
-| `*_FLAG_USER_TIMESTAMP` + `timestamp`/`tfmt` | `media_mode = TAI` (or INDEX) |
+| `*_FLAG_USER_TIMESTAMP` + `timestamp`/`tfmt` | `MTL_SUBMIT_RTP_TS` with `u.rtp` = the user's TAI in media-clock ticks, rounded to nearest, and `media_mode = TAI` (MS3): byte-identical legacy RTP. `u.media_tai_ns` alone in TAI mode when the snapped, floored RTP is fine. Library pacing no longer slips a late frame: INDEX and TAI drop late units, AUTO reslots (§6.2) |
 | `*_FLAG_USER_PACING` (TAI, snapped to the nearest epoch) | `media_mode = TAI` with derived launch; the "send at t" reading is `MTL_SUBMIT_NOT_BEFORE`. The legacy shim keeps nearest-epoch; migrated apps' TX moves by TROFFSET − VRX0·TRS (604–619 µs at 1080p59.94) |
 | `*_FLAG_EXACT_USER_PACING` (a session flag) | `MTL_SUBMIT_EXACT` on a session created with `MTL_SESSION_EXACT_LAUNCH` (non-compliant) |
 | `rtp_timestamp_delta_us` | `tx.rtp_trim_ns` (ns, the launch fixed; MS3) for the compliance trim; `tx.index_offset` for lip-sync; `MTL_SUBMIT_RTP_TS` for verbatim copies |

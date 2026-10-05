@@ -1661,9 +1661,10 @@ GitHub issues of the repository (`OpenVisualCloud/Media-Transport-Library`) by t
 
 | Theme | Issues |
 |---|---|
-| user pacing and timestamps | #1211 (RTP offset with USER_PACING; "pass both TAI and RTP"), #1185 (st30 ts rounded to the packet), #1170 ("any timestamp, with discontinuity"), #1208, #1337 (wrong `rtp_timestamp` in frame_done), #1325, #1318 |
+| user pacing and timestamps | #1653 (timing: the largest cluster of external reports), #1211 (RTP offset with USER_PACING; "pass both TAI and RTP"), #1185 (st30 ts rounded to the packet), #1170 ("any timestamp, with discontinuity"), #1208, #1337 (wrong `rtp_timestamp` in frame_done), #1325, #1318 |
 | late frames | #1276 (a 100 ms pause → unrecoverable "error user timestamp"), #1424, #1357 (DROP_WHEN_LATE dropped the wrong frame, or never), #1370 (8 sessions not recovering), #1378; users ask for drop, send as soon as possible, or shift |
 | blocking | #1678 (`get_frame` returned after about 500 ns instead of 1 s) |
+| lock contention on pinned cores | #1622 (UHD performance), #1620 (audio and ANC sessions lose packets when another stream connects or disconnects) |
 | ext-frame completion | #1147 (`notify_frame_done` called twice) |
 | stats | #1305 (st30p/st40 stats incomplete), #1157 (err_packets with 2022-7), #1560 (video lost_packets stuck) |
 | lifecycle | #1341 (open: init after uninit fails; a long-running encoder reconfigured over HTTP), #1139 (stop/start loses signal), #870 (last frames lost at close; asked for "wait until flushed"), #1620 (open: other audio/ANC sessions lose packets on connect/disconnect) |
@@ -1834,16 +1835,19 @@ it as a checklist and write new code; "avoid" lists the defects above.
     (`tests/tools/RxTxApp/src/tx_st20p_app.c:235-356`, `rx_st20p_app.c:212-330`), the frame
     loops (`tx:51-95`, `rx:67-138`), io_stat (`tx:211-232`, `rx:187-210`), the wire-stats block
     `rx:359-421`
-  - avoid: replacing the legacy files in place (R1 adds `src/unified/` and `--api`); the output
+  - avoid: replacing the legacy files in place (R1 makes a separate `UnifiedRxTxApp`, and the
+    legacy RxTxApp stays frozen); the output
     drift of §12.2 rule 10
 - **A2b**
   - study: io_stats and pcap passthrough `tx.c:672-684`, `rx.c:635-654`
 - **B3**
   - adapt: the DMA, multi-thread and timing-parser flags `rx.c:776-789`
+- **SA1**
+  - study: only the wiring `app/sample/meson.build:53-57`, `app/meson.build:444-470`
+  - avoid: the samples `app/sample/new_api/*`, which carry D2 and D3; the new samples expand the
+    sketch examples (A2a runs those on `null:1`)
 
-S0, C2, CI1, I1, P1 and X have nothing to take. `app/sample/new_api/*` carries D2 and D3 (A2a's
-targets are the sketch examples on `null:1`; only the wiring `app/sample/meson.build:53-57`,
-`app/meson.build:444-470` is worth a look), and `doc/new_API/*` is superseded
+S0, C2, CI1a, CI1b, I1, P1 and X have nothing to take. `doc/new_API/*` is superseded
 (`GRACEFUL_SHUTDOWN.md` describes a guard the code does not have, R9).
 
 **U and UB test ideas** (`tests/unit/new_api/`, rewritten on the new harnesses):

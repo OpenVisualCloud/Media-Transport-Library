@@ -1,7 +1,7 @@
 /* ex03 — a sender in the application's own epoll loop, reading a result per frame.
    s: a started TX session created with MTL_SESSION_RESULTS in sc.flags. A data call that
    finds nothing returns -MTL_EAGAIN and arms the wait handle, so the loop is "drain until
-   -MTL_EAGAIN, then sleep in epoll". */
+   -MTL_EAGAIN, then sleep in epoll". Needs: MS1. */
 #include <sys/epoll.h>
 #include <unistd.h>
 

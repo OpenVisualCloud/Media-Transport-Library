@@ -1,6 +1,6 @@
 /* ex04 — zero-copy TX from a framework's pool: N surfaces in one page-aligned arena are
    the session's slots. App memory always produces results, so a surface goes back to the
-   framework only when its result says the NIC is done with it. */
+   framework only when its result says the NIC is done with it. Needs: MS2b. */
 #include <mtl/experimental/mtl_mem.h>
 
 #include "ex_common.h"
@@ -8,7 +8,8 @@
 #define N 4
 extern void* arena; /* the framework's pool: N surfaces, page aligned */
 extern uint64_t arena_len;
-int next_framework_frame(uint32_t* surface, uint64_t* id); /* 0 = one ready */
+/* 0 = a frame is ready within timeout_ns; the thread sleeps meanwhile */
+int next_framework_frame(uint32_t* surface, uint64_t* id, int64_t timeout_ns);
 void framework_frame_done(uint64_t id);
 
 /* Gives the surfaces whose frames have left back to the framework; 0 or an error. */
@@ -51,7 +52,7 @@ int zero_copy_tx(mtl_instance_h mt) {
     uint32_t i;
     uint64_t id;
     ret = reap(s);
-    if (ret < 0 || next_framework_frame(&i, &id) != 0) continue;
+    if (ret < 0 || next_framework_frame(&i, &id, MTL_MS(20)) != 0) continue;
     ret = mtl_tx_acquire_slot(s, i, &u, MTL_MS(20)); /* exactly surface i */
     if (ret == 0) {
       u.cookie = id;
@@ -66,5 +67,9 @@ int zero_copy_tx(mtl_instance_h mt) {
   mtl_session_stop(&s, 1, MTL_STOP_DRAIN,
                    MTL_SEC(1)); /* every accepted unit gets a result */
   reap(s);
-  return mtl_session_close(s, MTL_SEC(1)); /* 0: retired, the arena may be freed */
+  /* 1: still retiring, the NIC may still read a surface; poll until 0, then the arena
+     may be freed */
+  while (mtl_session_close(s, MTL_SEC(1)) == 1) {
+  }
+  return ret;
 }

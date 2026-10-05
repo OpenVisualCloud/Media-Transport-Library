@@ -1,6 +1,7 @@
 /* ex12 — RTP passthrough: the application builds the RTP packets, MTL adds
    UDP/IP/Ethernet, paces them on the ST 2110-21 schedule, and sends every packet on both
-   ST 2022-7 legs. The same verbs as frames; a unit is a chunk of packet slots. */
+   ST 2022-7 legs. The same verbs as frames; a unit is a chunk of packet slots. Needs:
+   MS5. */
 #include <mtl/experimental/mtl_packet.h>
 
 #include "ex_common.h"

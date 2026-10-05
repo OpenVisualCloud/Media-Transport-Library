@@ -1,6 +1,7 @@
 /* ex09 — zero-copy 1 -> 4 forwarder: each 2160p frame received feeds four 1080p senders,
    one per quadrant. Every TX pool lies over the RX pool (any stride >= row_bytes is
-   direct), and each TX unit holds the RX unit it reads until its own result. */
+   direct), and each TX unit holds the RX unit it reads until its own result. Needs:
+   MS2b. */
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
@@ -51,9 +52,12 @@ int split_forward(mtl_session_h rx, mtl_session_h* tx) {
     if (ret < 0) break;
     how.media_tai_ns = in.media_tai_ns; /* derived RTP = input RTP if it was compliant */
     how.hold = in.lease;                /* the RX slot stays until each TX unit is sent */
-    for (uint32_t q = 0; (in.flags & MTL_UNITF_TAI_VALID) && q < QUADS; q++)
-      mtl_tx_send_slot(tx[q], in.slot, &how, 0); /* -MTL_EAGAIN: still in flight, drop */
-    ret = mtl_rx_release(rx, in.lease); /* the slot is free once every hold completed */
+    for (uint32_t q = 0; ret >= 0 && (in.flags & MTL_UNITF_TAI_VALID) && q < QUADS; q++) {
+      int r = mtl_tx_send_slot(tx[q], in.slot, &how, 0);
+      if (r < 0 && r != -MTL_EAGAIN) ret = r; /* -MTL_EAGAIN: still in flight, drop it */
+    }
+    int r = mtl_rx_release(rx, in.lease); /* the slot is free once every hold completed */
+    if (ret >= 0) ret = r;
   }
 
   if (ret < 0) ex_fail("forward", ret);
