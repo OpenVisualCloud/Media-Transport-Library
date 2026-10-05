@@ -69,10 +69,42 @@ jobs:
         with:
           egress-policy: audit
 
+      # Two commits: on a pull request, the merge commit and its base.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
       - name: Build Release
         run: sudo -E .github/scripts/setup_environment.sh
+
+      # The checks of .clang-tidy, on the C and C++ lines a pull request adds or
+      # changes, with the compile commands of the build above. The scan must
+      # fail on a macro planted in a commit on top, or a green run proves
+      # nothing; the commit is dropped again.
+      - name: clang-tidy
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          scan() {
+            .github/scripts/ci/clang-tidy-changed.py clang-tidy-14 "$1" | .github/scripts/ci/changed-lines.py "$1"
+          }
+          printf '\n#define MT_PLANTED_SUM(a, b) a + b\n' >>lib/src/mt_util.c
+          line=$(wc -l <lib/src/mt_util.c)
+          git -c user.name=ci -c user.email=ci@localhost commit -q -am "clang-tidy control"
+          if scan HEAD^1 >"${RUNNER_TEMP}/control.txt"; then
+            echo "::error::the clang-tidy scan passed a planted macro"
+            exit 1
+          fi
+          git reset -q --hard HEAD^1
+          if ! grep -q "^lib/src/mt_util.c:${line}:[0-9]*: warning: .*\[bugprone-macro-parentheses\]" "${RUNNER_TEMP}/control.txt"; then
+            echo "::error::the clang-tidy scan failed, but not on the planted macro"
+            cat "${RUNNER_TEMP}/control.txt"
+            exit 1
+          fi
+          if ! scan HEAD^1 >"${RUNNER_TEMP}/new.txt"; then
+            sed 's/^\([^:]*\):\([0-9]*\):\([0-9]*\): \(.*\)$/::error file=\1,line=\2,col=\3::\4/' "${RUNNER_TEMP}/new.txt"
+            exit 1
+          fi
 
       - name: Build the Rust no_std example
         run: bash .github/scripts/ci/build-rust-example.sh

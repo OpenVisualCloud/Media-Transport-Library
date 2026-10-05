@@ -1,0 +1,19 @@
+# clang-tidy checks for MTL's C and C++, the ones the secure coding rules map
+# to; Base Build runs them on the lines a pull request changes. Each check also
+# applies to the C++ code: the C++-only ones (modernize-*) never fire on C.
+Checks: >
+  -*,
+  bugprone-assert-side-effect,
+  bugprone-implicit-widening-of-multiplication-result,
+  bugprone-macro-parentheses,
+  bugprone-narrowing-conversions,
+  bugprone-signed-char-misuse,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memory-comparison,
+  cert-err33-c,
+  modernize-deprecated-headers,
+  modernize-make-shared,
+  modernize-make-unique,
+  modernize-replace-auto-ptr,
+  modernize-use-nullptr,
+  readability-non-const-parameter

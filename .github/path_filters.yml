@@ -197,6 +197,9 @@ unit_tests:
 base_build:
   - .github/path_filters.yml
   - .github/workflows/base_build.yml
+  - .clang-tidy
+  - .github/scripts/ci/changed-lines.py
+  - .github/scripts/ci/clang-tidy-changed.py
   - .github/scripts/ci/build-rust-example.sh
   - *hash_dpdk
   - *hash_mtl
