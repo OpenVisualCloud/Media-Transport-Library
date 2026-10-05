@@ -3,7 +3,7 @@
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_interlace
+from mtl_engine.media_files import yuv_files_interlace_422p10le
 
 
 @pytest.mark.nightly
@@ -25,9 +25,9 @@ from mtl_engine.media_files import yuv_files_interlace
 )
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_interlace.values()),
+    list(yuv_files_interlace_422p10le.values()),
     indirect=["media_file"],
-    ids=list(yuv_files_interlace.keys()),
+    ids=list(yuv_files_interlace_422p10le.keys()),
 )
 def test_st22p_interlace(
     application,
