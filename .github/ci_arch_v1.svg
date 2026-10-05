@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1940" height="1890" viewBox="0 0 1940 1890" role="img" aria-labelledby="t d">
+<title id="t">MTL CI/CD architecture</title>
+<desc id="d">A pull request starts the linter, the build and the gtest and smoke tests. The build waits for the linter, computes the source SHA-256 and uploads the artifacts to the GitHub stash. Each bare metal host computes the same hash, downloads the artifacts, validates the build and runs the tests. The nightly runs do the same on two hosts, wait for both tests, write a report and create a release candidate.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1940" height="1890" fill="#ffffff"/>
+<path d="M239.0 480.0 L300.0 480.0 L300.0 76.0 L560.0 76.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M580.0 76.0 L558.0 88.1 L558.0 63.9 Z" fill="#1F271B"/>
+<path d="M300.0 266.0 L560.0 266.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M580.0 266.0 L558.0 278.1 L558.0 253.9 Z" fill="#1F271B"/>
+<path d="M135.0 532.0 L135.0 700.0 L425.0 700.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M445.0 700.0 L423.0 712.1 L423.0 687.9 Z" fill="#1F271B"/>
+<path d="M720.0 112.0 L720.0 210.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M720.0 230.0 L707.9 208.0 L732.1 208.0 Z" fill="#1F271B"/>
+<path d="M650.0 470.0 L680.0 470.0 L680.0 322.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M680.0 302.0 L692.1 324.0 L667.9 324.0 Z" fill="#1F271B"/>
+<path d="M540.0 560.0 L540.0 640.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M540.0 660.0 L527.9 638.0 L552.1 638.0 Z" fill="#1F271B"/>
+<path d="M830.0 302.0 L830.0 700.0 L765.0 700.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M745.0 700.0 L767.0 687.9 L767.0 712.1 Z" fill="#1F271B"/>
+<path d="M860.0 266.0 L982.5 266.0 L982.5 350.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M982.5 370.0 L970.4 348.0 L994.6 348.0 Z" fill="#1F271B"/>
+<path d="M982.5 446.0 L982.5 486.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M982.5 506.0 L970.4 484.0 L994.6 484.0 Z" fill="#1F271B"/>
+<path d="M450.0 886.0 L450.0 916.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M450.0 936.0 L437.9 914.0 L462.1 914.0 Z" fill="#1F271B"/>
+<path d="M450.0 1012.0 L450.0 1090.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M450.0 1110.0 L437.9 1088.0 L462.1 1088.0 Z" fill="#1F271B"/>
+<path d="M450.0 1186.0 L450.0 1220.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M450.0 1240.0 L437.9 1218.0 L462.1 1218.0 Z" fill="#1F271B"/>
+<path d="M450.0 1410.0 L450.0 1450.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M450.0 1470.0 L437.9 1448.0 L462.1 1448.0 Z" fill="#1F271B"/>
+<path d="M740.0 886.0 L740.0 916.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M740.0 936.0 L727.9 914.0 L752.1 914.0 Z" fill="#1F271B"/>
+<path d="M740.0 1012.0 L740.0 1090.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M740.0 1110.0 L727.9 1088.0 L752.1 1088.0 Z" fill="#1F271B"/>
+<path d="M740.0 1186.0 L740.0 1220.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M740.0 1240.0 L727.9 1218.0 L752.1 1218.0 Z" fill="#1F271B"/>
+<path d="M740.0 1410.0 L740.0 1450.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M740.0 1470.0 L727.9 1448.0 L752.1 1448.0 Z" fill="#1F271B"/>
+<path d="M1500.0 886.0 L1500.0 916.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 936.0 L1487.9 914.0 L1512.1 914.0 Z" fill="#1F271B"/>
+<path d="M1500.0 1012.0 L1500.0 1090.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 1110.0 L1487.9 1088.0 L1512.1 1088.0 Z" fill="#1F271B"/>
+<path d="M1500.0 1186.0 L1500.0 1220.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 1240.0 L1487.9 1218.0 L1512.1 1218.0 Z" fill="#1F271B"/>
+<path d="M1500.0 1410.0 L1500.0 1450.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 1470.0 L1487.9 1448.0 L1512.1 1448.0 Z" fill="#1F271B"/>
+<path d="M1770.0 886.0 L1770.0 916.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 936.0 L1757.9 914.0 L1782.1 914.0 Z" fill="#1F271B"/>
+<path d="M1770.0 1012.0 L1770.0 1090.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 1110.0 L1757.9 1088.0 L1782.1 1088.0 Z" fill="#1F271B"/>
+<path d="M1770.0 1186.0 L1770.0 1220.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 1240.0 L1757.9 1218.0 L1782.1 1218.0 Z" fill="#1F271B"/>
+<path d="M1770.0 1410.0 L1770.0 1450.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 1470.0 L1757.9 1448.0 L1782.1 1448.0 Z" fill="#1F271B"/>
+<path d="M595.0 740.0 L595.0 760.0 L450.0 760.0 L450.0 770.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M450.0 790.0 L437.9 768.0 L462.1 768.0 Z" fill="#1F271B"/>
+<path d="M595.0 760.0 L740.0 760.0 L740.0 770.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M740.0 790.0 L727.9 768.0 L752.1 768.0 Z" fill="#1F271B"/>
+<path d="M1635.0 636.0 L1635.0 720.0 L1500.0 720.0 L1500.0 770.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 790.0 L1487.9 768.0 L1512.1 768.0 Z" fill="#1F271B"/>
+<path d="M1635.0 720.0 L1770.0 720.0 L1770.0 770.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 790.0 L1757.9 768.0 L1782.1 768.0 Z" fill="#1F271B"/>
+<path d="M330.0 1310.0 L140.0 1310.0 L140.0 1424.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M140.0 1444.0 L127.9 1422.0 L152.1 1422.0 Z" fill="#1F271B"/>
+<path d="M266.0 1505.0 L310.0 1505.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M330.0 1505.0 L308.0 1517.1 L308.0 1492.9 Z" fill="#1F271B"/>
+<path d="M246.0 1505.0 L268.0 1492.9 L268.0 1517.1 Z" fill="#1F271B"/>
+<path d="M860.0 1160.0 L1020.0 1160.0 L1020.0 1220.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1020.0 1240.0 L1007.9 1218.0 L1032.1 1218.0 Z" fill="#1F271B"/>
+<path d="M920.0 1282.0 L880.0 1282.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M860.0 1282.0 L882.0 1269.9 L882.0 1294.1 Z" fill="#1F271B"/>
+<path d="M1380.0 1310.0 L1240.0 1310.0 L1240.0 1424.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1240.0 1444.0 L1227.9 1422.0 L1252.1 1422.0 Z" fill="#1F271B"/>
+<path d="M1500.0 1540.0 L1500.0 1600.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1500.0 1620.0 L1487.9 1598.0 L1512.1 1598.0 Z" fill="#1F271B"/>
+<path d="M1770.0 1540.0 L1770.0 1600.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1770.0 1620.0 L1757.9 1598.0 L1782.1 1598.0 Z" fill="#1F271B"/>
+<path d="M1635.0 1692.0 L1635.0 1740.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1635.0 1760.0 L1622.9 1738.0 L1647.1 1738.0 Z" fill="#1F271B"/>
+<path d="M1080.0 544.0 L1152.0 544.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M1170.0 544.0 L1150.0 555.0 L1150.0 533.0 Z" fill="#1F271B"/>
+<path d="M1215.0 704.0 L1215.0 1060.0 L510.0 1060.0 L510.0 1084.0" fill="none" stroke="#ffffff" stroke-width="16" stroke-linejoin="round"/>
+<path d="M1215.0 704.0 L1215.0 1060.0 L510.0 1060.0 L510.0 1092.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M510.0 1110.0 L499.0 1090.0 L521.0 1090.0 Z" fill="#1F271B"/>
+<path d="M800.0 1060.0 L800.0 1092.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M800.0 1110.0 L789.0 1090.0 L811.0 1090.0 Z" fill="#1F271B"/>
+<path d="M1345.0 704.0 L1345.0 1060.0 L1710.0 1060.0 L1710.0 1084.0" fill="none" stroke="#ffffff" stroke-width="16" stroke-linejoin="round"/>
+<path d="M1345.0 704.0 L1345.0 1060.0 L1710.0 1060.0 L1710.0 1092.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M1710.0 1110.0 L1699.0 1090.0 L1721.0 1090.0 Z" fill="#1F271B"/>
+<path d="M1440.0 1060.0 L1440.0 1092.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M1440.0 1110.0 L1429.0 1090.0 L1451.0 1090.0 Z" fill="#1F271B"/>
+<path d="M135.0 428.0 A38.4 38.4 0 0 1 195.8 440.2 A27.7 27.7 0 0 1 228.2 471.0 A22.8 22.8 0 0 1 216.9 506.0 A33.8 33.8 0 0 1 167.4 528.9 A40.1 40.1 0 0 1 102.6 528.9 A33.8 33.8 0 0 1 53.1 506.0 A22.8 22.8 0 0 1 41.8 471.0 A27.7 27.7 0 0 1 74.2 440.2 A38.4 38.4 0 0 1 135.0 428.0 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="135.0" y="485.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">PR trigger</text>
+<rect x="580" y="40" width="280" height="72" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="720.0" y="81.9" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Linter</text>
+<rect x="580" y="230" width="280" height="72" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="720.0" y="271.9" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Build</text>
+<circle cx="300" cy="266" r="7" fill="#1F271B"/>
+<path d="M540 380.0 L650.0 470 L540 560.0 L430.0 470 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="540.0" y="448.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">Smoke</text>
+<text x="540.0" y="474.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">path</text>
+<text x="540.0" y="500.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">filter</text>
+<rect x="445" y="660" width="300" height="80" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="595.0" y="705.9" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Gtest / smoke</text>
+<rect x="885" y="370" width="195" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="982.5" y="399.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Checks the</text>
+<text x="982.5" y="425.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">source SHA-256</text>
+<rect x="885" y="506" width="195" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="982.5" y="535.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Uploads to</text>
+<text x="982.5" y="561.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">GitHub stash</text>
+<path d="M1170 406 A130.0 26 0 0 1 1430 406 V684 A130.0 26 0 0 1 1170 684 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<path d="M1170 406 A130.0 26 0 0 0 1430 406" fill="none" stroke="#1F271B" stroke-width="3"/>
+<text x="1300.0" y="492.4" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">GitHub stash</text>
+<text x="1300.0" y="523.6" font-size="10" fill="#1F271B" text-anchor="middle"></text>
+<text x="1300.0" y="536.6" font-size="20" fill="#1F271B" text-anchor="middle">MTL artifact</text>
+<text x="1300.0" y="562.6" font-size="20" fill="#1F271B" text-anchor="middle">Test artifact</text>
+<text x="1300.0" y="588.6" font-size="20" fill="#1F271B" text-anchor="middle">FFmpeg artifact</text>
+<text x="1300.0" y="614.6" font-size="20" fill="#1F271B" text-anchor="middle">GStreamer artifact</text>
+<text x="1300.0" y="640.6" font-size="20" fill="#1F271B" text-anchor="middle">DPDK artifact</text>
+<rect x="1470" y="560" width="330" height="76" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1635.0" y="603.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Nightly / gtest nightly</text>
+<path d="M338.0 806 L354.0 790 L578.0 790 L562.0 806 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<path d="M562.0 806 L578.0 790 L578.0 870 L562.0 886 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="338.0" y="806" width="224" height="80" rx="0" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="450.0" y="837.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">Bare metal</text>
+<text x="450.0" y="863.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">host</text>
+<rect x="330.0" y="936" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="450.0" y="965.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Checks the</text>
+<text x="450.0" y="991.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">source SHA-256</text>
+<rect x="330.0" y="1110" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="450.0" y="1139.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Downloads</text>
+<text x="450.0" y="1165.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">artifacts</text>
+<rect x="330.0" y="1240" width="240" height="170" rx="16" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="450.0" y="1283.1" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Validate build</text>
+<text x="450.0" y="1309.1" font-size="18" fill="#1F271B" text-anchor="middle">Sets the artifacts</text>
+<text x="450.0" y="1332.5" font-size="18" fill="#1F271B" text-anchor="middle">in correct places,</text>
+<text x="450.0" y="1355.9" font-size="18" fill="#1F271B" text-anchor="middle">checks or builds the</text>
+<text x="450.0" y="1379.3" font-size="18" fill="#1F271B" text-anchor="middle">ICE driver if needed</text>
+<rect x="330.0" y="1470" width="240" height="70" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="450.0" y="1510.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Tests</text>
+<path d="M628.0 806 L644.0 790 L868.0 790 L852.0 806 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<path d="M852.0 806 L868.0 790 L868.0 870 L852.0 886 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="628.0" y="806" width="224" height="80" rx="0" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="740.0" y="837.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">Bare metal</text>
+<text x="740.0" y="863.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">host</text>
+<rect x="620.0" y="936" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="740.0" y="965.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Checks the</text>
+<text x="740.0" y="991.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">source SHA-256</text>
+<rect x="620.0" y="1110" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="740.0" y="1139.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Downloads</text>
+<text x="740.0" y="1165.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">artifacts</text>
+<rect x="620.0" y="1240" width="240" height="170" rx="16" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="740.0" y="1283.1" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Validate build</text>
+<text x="740.0" y="1309.1" font-size="18" fill="#1F271B" text-anchor="middle">Sets the artifacts</text>
+<text x="740.0" y="1332.5" font-size="18" fill="#1F271B" text-anchor="middle">in correct places,</text>
+<text x="740.0" y="1355.9" font-size="18" fill="#1F271B" text-anchor="middle">checks or builds the</text>
+<text x="740.0" y="1379.3" font-size="18" fill="#1F271B" text-anchor="middle">ICE driver if needed</text>
+<rect x="620.0" y="1470" width="240" height="70" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="740.0" y="1510.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Tests</text>
+<path d="M1388.0 806 L1404.0 790 L1628.0 790 L1612.0 806 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<path d="M1612.0 806 L1628.0 790 L1628.0 870 L1612.0 886 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="1388.0" y="806" width="224" height="80" rx="0" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="837.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">Bare metal</text>
+<text x="1500.0" y="863.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">host</text>
+<rect x="1380.0" y="936" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="965.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Checks the</text>
+<text x="1500.0" y="991.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">source SHA-256</text>
+<rect x="1380.0" y="1110" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="1139.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Downloads</text>
+<text x="1500.0" y="1165.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">artifacts</text>
+<rect x="1380.0" y="1240" width="240" height="170" rx="16" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="1283.1" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Validate build</text>
+<text x="1500.0" y="1309.1" font-size="18" fill="#1F271B" text-anchor="middle">Sets the artifacts</text>
+<text x="1500.0" y="1332.5" font-size="18" fill="#1F271B" text-anchor="middle">in correct places,</text>
+<text x="1500.0" y="1355.9" font-size="18" fill="#1F271B" text-anchor="middle">checks or builds the</text>
+<text x="1500.0" y="1379.3" font-size="18" fill="#1F271B" text-anchor="middle">ICE driver if needed</text>
+<rect x="1380.0" y="1470" width="240" height="70" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="1510.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Tests</text>
+<path d="M1658.0 806 L1674.0 790 L1898.0 790 L1882.0 806 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<path d="M1882.0 806 L1898.0 790 L1898.0 870 L1882.0 886 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="1658.0" y="806" width="224" height="80" rx="0" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="837.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">Bare metal</text>
+<text x="1770.0" y="863.9" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">host</text>
+<rect x="1650.0" y="936" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="965.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Checks the</text>
+<text x="1770.0" y="991.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">source SHA-256</text>
+<rect x="1650.0" y="1110" width="240" height="76" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="1139.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Downloads</text>
+<text x="1770.0" y="1165.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">artifacts</text>
+<rect x="1650.0" y="1240" width="240" height="170" rx="16" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="1283.1" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Validate build</text>
+<text x="1770.0" y="1309.1" font-size="18" fill="#1F271B" text-anchor="middle">Sets the artifacts</text>
+<text x="1770.0" y="1332.5" font-size="18" fill="#1F271B" text-anchor="middle">in correct places,</text>
+<text x="1770.0" y="1355.9" font-size="18" fill="#1F271B" text-anchor="middle">checks or builds the</text>
+<text x="1770.0" y="1379.3" font-size="18" fill="#1F271B" text-anchor="middle">ICE driver if needed</text>
+<rect x="1650.0" y="1470" width="240" height="70" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="1510.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Tests</text>
+<circle cx="595.0" cy="760" r="7" fill="#1F271B"/>
+<circle cx="1635.0" cy="720" r="7" fill="#1F271B"/>
+<path d="M50 1460 L66 1444 L246 1444 L230 1460 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round" stroke-dasharray="12 8"/>
+<path d="M230 1460 L246 1444 L246 1534 L230 1550 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round" stroke-dasharray="12 8"/>
+<rect x="50" y="1460" width="180" height="90" rx="0" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="140.0" y="1496.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Shadow</text>
+<text x="140.0" y="1522.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">host</text>
+<rect x="920" y="1240" width="200" height="84" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="1020.0" y="1273.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Andrzejos</text>
+<text x="1020.0" y="1299.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">-- JPEGA</text>
+<path d="M1150 1460 L1166 1444 L1346 1444 L1330 1460 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round" stroke-dasharray="12 8"/>
+<path d="M1330 1460 L1346 1444 L1346 1534 L1330 1550 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round" stroke-dasharray="12 8"/>
+<rect x="1150" y="1460" width="180" height="90" rx="0" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="1240.0" y="1496.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Shadow</text>
+<text x="1240.0" y="1522.9" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">host</text>
+<rect x="1440" y="1620" width="390" height="72" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="1635.0" y="1661.9" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Report</text>
+<rect x="1495" y="1760" width="280" height="84" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="1635.0" y="1793.1" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Create release</text>
+<text x="1635.0" y="1821.7" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">candidate</text>
+<rect x="678.8" y="152" width="82.4" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="720.0" y="177.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">waits</text>
+<rect x="638.8" y="361" width="82.4" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="680.0" y="386.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">waits</text>
+<text x="1125.0" y="528.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Upload</text>
+<rect x="943.7" y="1041" width="112.6" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1000.0" y="1066.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Download</text>
+<rect x="1548.7" y="1041" width="112.6" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1605.0" y="1066.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Download</text>
+<text x="156.0" y="1360.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="start">If needs</text>
+<text x="156.0" y="1384.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="start">and exists</text>
+<rect x="1273.8" y="1291" width="72.3" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1310.0" y="1316.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Sets</text>
+<rect x="1458.8" y="1561" width="82.4" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1500.0" y="1586.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">waits</text>
+<rect x="1728.8" y="1561" width="82.4" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1770.0" y="1586.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">waits</text>
+</g>
+</svg>

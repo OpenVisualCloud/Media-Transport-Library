@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1320" viewBox="0 0 1100 1320" role="img" aria-labelledby="t d">
+<title id="t">AF_XDP socket, its four rings and the UMEM</title>
+<desc id="d">The AF_XDP socket is bound to one NIC hardware queue. The TX app puts descriptors in the TX ring and takes them back from the Completion ring. The RX app takes descriptors from the RX ring and gives free frames back in the Fill ring. Each descriptor points to a frame in the UMEM.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1100" height="1320" fill="#ffffff"/>
+<rect x="330.0" y="30" width="440" height="140" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="550.0" y="107.3" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP socket</text>
+<text x="800.0" y="109.0" font-size="26" font-weight="700" fill="#1F271B" text-anchor="start">hw queue</text>
+<circle cx="220" cy="360" r="150" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="220" cy="360" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="220.0" y="350.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">TX</text>
+<text x="220.0" y="386.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="880" cy="360" r="150" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="880" cy="360" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="880.0" y="350.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">RX</text>
+<text x="880.0" y="386.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<rect x="70.0" y="590" width="300" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="220.0" y="646.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">TX app</text>
+<rect x="730.0" y="590" width="300" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="880.0" y="646.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">RX app</text>
+<circle cx="220" cy="920" r="150" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="220" cy="920" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="220.0" y="910.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Completion</text>
+<text x="220.0" y="946.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="880" cy="920" r="150" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="880" cy="920" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="880.0" y="910.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Fill</text>
+<text x="880.0" y="946.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<path d="M220.0 770.0 L220.0 712.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M220.0 690.0 L233.2 714.0 L206.8 714.0 Z" fill="#1F271B"/>
+<path d="M220.0 590.0 L220.0 532.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M220.0 510.0 L233.2 534.0 L206.8 534.0 Z" fill="#1F271B"/>
+<path d="M880.0 510.0 L880.0 568.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M880.0 590.0 L866.8 566.0 L893.2 566.0 Z" fill="#1F271B"/>
+<path d="M880.0 690.0 L880.0 748.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M880.0 770.0 L866.8 746.0 L893.2 746.0 Z" fill="#1F271B"/>
+<ellipse cx="550.0" cy="830" rx="170" ry="80" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="550.0" y="820.8" font-size="26" font-weight="700" fill="#1F271B" text-anchor="middle">xdp_desc:</text>
+<text x="550.0" y="854.6" font-size="24" fill="#1F271B" text-anchor="middle">index, addr, len</text>
+<rect x="110" y="1140" width="880" height="150" rx="6" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<rect x="450.0" y="1140" width="150" height="46" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="520.0" y="1252.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="end">UMEM</text>
+<text x="580.0" y="1252.0" font-size="30" fill="#1F271B" text-anchor="start">2048B * 2^n</text>
+<path d="M550.0 910 C500.0 940 525.0 1000 525.0 1118" fill="none" stroke="#1F271B" stroke-width="5"/>
+<path d="M525.0 1140.0 L511.8 1116.0 L538.2 1116.0 Z" fill="#1F271B"/>
+</g>
+</svg>

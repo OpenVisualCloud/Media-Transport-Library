@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="830" viewBox="0 0 1320 830" role="img" aria-labelledby="t d">
+<title id="t">Desktop streaming with MTL (asynchronous playback)</title>
+<desc id="d">The sending device, an Intel NUC with i225 Ethernet at IP 192.168.100.32/24, streams its own desktop to multicast 239.168.85.20. A 2.5GbE link connects it to a 10GbE switch, and a 2.5GbE link connects the switch to the receiving device, an Intel SDM based PC with i225 Ethernet at IP 192.168.100.30/24.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1320" height="830" fill="#ffffff"/>
+<text x="179.0" y="40.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Sending Device</text>
+<text x="1157.0" y="40.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Receiving Device</text>
+<path d="M336.0 68.0 L968.0 68.0 L968.0 52.0 L996.0 96.0 L968.0 140.0 L968.0 124.0 L336.0 124.0 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="652.0" y="104.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Desktop streaming to multicast 239.168.85.20</text>
+<path d="M322 250 H545.0" stroke="#1F271B" stroke-width="5"/>
+<path d="M775.0 250 H1014" stroke="#1F271B" stroke-width="5"/>
+<rect x="262" y="58" width="60" height="232" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="277" y="84" width="30" height="8" rx="2" fill="#1F271B"/>
+<rect x="277" y="102" width="30" height="8" rx="2" fill="#1F271B"/>
+<circle cx="292.0" cy="260" r="8" fill="none" stroke="#1F271B" stroke-width="3"/>
+<rect x="36" y="80" width="216" height="180" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<rect x="50" y="94" width="188" height="152" rx="4" fill="#145C9E"/>
+<rect x="130.0" y="260" width="28" height="24" fill="#1F271B"/>
+<rect x="84.0" y="282" width="120" height="10" rx="4" fill="#1F271B"/>
+<rect x="26" y="304" width="236" height="40" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<rect x="40" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="67" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="94" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="121" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="148" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="175" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="202" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="229" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="40" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="67" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="94" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="121" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="148" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="175" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="202" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="229" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1240" y="58" width="60" height="232" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1255" y="84" width="30" height="8" rx="2" fill="#1F271B"/>
+<rect x="1255" y="102" width="30" height="8" rx="2" fill="#1F271B"/>
+<circle cx="1270.0" cy="260" r="8" fill="none" stroke="#1F271B" stroke-width="3"/>
+<rect x="1014" y="80" width="216" height="180" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<rect x="1028" y="94" width="188" height="152" rx="4" fill="#145C9E"/>
+<rect x="1108.0" y="260" width="28" height="24" fill="#1F271B"/>
+<rect x="1062.0" y="282" width="120" height="10" rx="4" fill="#1F271B"/>
+<rect x="1004" y="304" width="236" height="40" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<rect x="1018" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1045" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1072" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1099" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1126" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1153" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1180" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1207" y="312" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1018" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1045" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1072" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1099" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1126" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1153" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1180" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="1207" y="325" width="18" height="8" rx="2" fill="#1F271B"/>
+<rect x="545.0" y="190.0" width="230" height="120" rx="18" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<path d="M590.0 226.0 L709.0 226.0" fill="none" stroke="#ffffff" stroke-width="9" stroke-linejoin="round"/>
+<path d="M735.0 226.0 L707.0 241.4 L707.0 210.6 Z" fill="#ffffff"/>
+<path d="M730.0 274.0 L611.0 274.0" fill="none" stroke="#ffffff" stroke-width="9" stroke-linejoin="round"/>
+<path d="M585.0 274.0 L613.0 258.6 L613.0 289.4 Z" fill="#ffffff"/>
+<rect x="362.1" y="231" width="142.9" height="38" rx="19" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="433.5" y="256.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">2.5GbE link</text>
+<rect x="823.1" y="231" width="142.9" height="38" rx="19" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="894.5" y="256.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">2.5GbE link</text>
+<text x="660.0" y="350.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">10GbE Switch</text>
+<text x="144.0" y="379.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Intel® NUC</text>
+<text x="144.0" y="408.0" font-size="20" fill="#1F271B" text-anchor="middle">(with i225 ethernet)</text>
+<text x="144.0" y="434.0" font-size="20" fill="#1F271B" text-anchor="middle">IP: 192.168.100.32/24</text>
+<text x="1122.0" y="379.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Intel® SDM based PC</text>
+<text x="1122.0" y="408.0" font-size="20" fill="#1F271B" text-anchor="middle">(with i225 ethernet)</text>
+<text x="1122.0" y="434.0" font-size="20" fill="#1F271B" text-anchor="middle">IP: 192.168.100.30/24</text>
+<rect x="48.0" y="500" width="392" height="210" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M48.0 550 V508 Q48.0 500 56.0 500 H432.0 Q440.0 500 440.0 508 V550 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="66.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Sender</text>
+<circle cx="70.0" cy="579.4" r="5" fill="#1F271B"/>
+<text x="86.0" y="586.0" font-size="20" fill="#1F271B" text-anchor="start">Intel NUC11TNKi5</text>
+<circle cx="70.0" cy="611.4" r="5" fill="#1F271B"/>
+<text x="86.0" y="618.0" font-size="20" fill="#1F271B" text-anchor="start">NIC: i225-LM</text>
+<circle cx="70.0" cy="643.4" r="5" fill="#1F271B"/>
+<text x="86.0" y="650.0" font-size="20" fill="#1F271B" text-anchor="start">Captures its own desktop</text>
+<text x="86.0" y="676.0" font-size="20" fill="#1F271B" text-anchor="start">with FFmpeg x11grab</text>
+<rect x="464.0" y="500" width="392" height="210" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M464.0 550 V508 Q464.0 500 472.0 500 H848.0 Q856.0 500 856.0 508 V550 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="482.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Network</text>
+<circle cx="486.0" cy="579.4" r="5" fill="#1F271B"/>
+<text x="502.0" y="586.0" font-size="20" fill="#1F271B" text-anchor="start">10GbE switch</text>
+<circle cx="486.0" cy="611.4" r="5" fill="#1F271B"/>
+<text x="502.0" y="618.0" font-size="20" fill="#1F271B" text-anchor="start">Cat6/7 cables</text>
+<circle cx="486.0" cy="643.4" r="5" fill="#1F271B"/>
+<text x="502.0" y="650.0" font-size="20" fill="#1F271B" text-anchor="start">2.5GbE link to each device</text>
+<rect x="880.0" y="500" width="392" height="210" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M880.0 550 V508 Q880.0 500 888.0 500 H1264.0 Q1272.0 500 1272.0 508 V550 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="898.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Receiver</text>
+<circle cx="902.0" cy="579.4" r="5" fill="#1F271B"/>
+<text x="918.0" y="586.0" font-size="20" fill="#1F271B" text-anchor="start">Intel SDM devkit</text>
+<circle cx="902.0" cy="611.4" r="5" fill="#1F271B"/>
+<text x="918.0" y="618.0" font-size="20" fill="#1F271B" text-anchor="start">NIC: i225-LMvP</text>
+<circle cx="902.0" cy="643.4" r="5" fill="#1F271B"/>
+<text x="918.0" y="650.0" font-size="20" fill="#1F271B" text-anchor="start">Shows the stream in</text>
+<text x="918.0" y="676.0" font-size="20" fill="#1F271B" text-anchor="start">an SDL2 window</text>
+<rect x="48.0" y="734" width="1224" height="64" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="660.0" y="771.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Stream: 1280x720, 30 fps, RGB24, UDP port 20000</text>
+</g>
+</svg>
