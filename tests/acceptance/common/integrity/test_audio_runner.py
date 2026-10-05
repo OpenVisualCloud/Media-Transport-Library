@@ -5,7 +5,7 @@
 # Media Communications Mesh
 
 import logging
-import subprocess
+import subprocess  # nosec B404 # runs the integrity script on its own temp files
 import sys
 import tempfile
 from pathlib import Path

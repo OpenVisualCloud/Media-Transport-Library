@@ -2,7 +2,7 @@
 import logging
 import os
 import pathlib
-import subprocess
+import subprocess  # nosec B404 # runs the in-tree fuzz targets via argv, no shell
 
 import pytest
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO

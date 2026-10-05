@@ -5,7 +5,7 @@ import logging
 import os
 import secrets
 import string
-import subprocess
+import subprocess  # nosec B404 # only its exception classes are used here
 import threading
 import time
 
