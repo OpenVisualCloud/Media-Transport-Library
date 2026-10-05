@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Media Transport Library (MTL) — a software SMPTE ST 2110 stack for high-throughput,
 low-latency media over IP. C99 library core built on DPDK, with hardware pacing on Intel
 E810/E830 NICs. Supports ST2110-20 (uncompressed video), -22 (compressed/JPEG-XS),
--30 (audio), -40 (ancillary), -41 (fast metadata), plus ST2022-7 redundancy.
+-30 (audio), -40 (ancillary), -41 (fast metadata, an opt-in mode of the -40 sessions), plus
+ST2022-7 redundancy.
 
 Additional deliverables in-tree: sample apps (`app/`), FFmpeg/GStreamer/OBS plugins
 (`ecosystem/`), codec plugins (`plugins/`), `MtlManager` daemon (`manager/`),
@@ -213,7 +214,7 @@ pacing, single tasklet. Adding a new ST2110-xx type means copying the video sess
 and simplifying it — don't invent a new shape.
 
 **Prefixes** (enforced): `mt_` core internals, `mtl_` public core API, `st_`/`st20_`/`st22_`/
-`st30_`/`st40_`/`st41_` media session APIs, `st20p_`/`st22p_`/`st30p_`/`st40p_` pipeline APIs,
+`st30_`/`st40_` media session APIs, `st20p_`/`st22p_`/`st30p_`/`st40p_` pipeline APIs,
 `tv_`/`rv_` TX/RX video internals, `tx_audio_session_`/`rx_audio_session_` etc. for the
 simpler media types.
 

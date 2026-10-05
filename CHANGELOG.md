@@ -13,6 +13,11 @@
 * TX pipelines: add late-frame drop, and a late-frame check in st20p
 * st40p: add interlace auto-detection on RX; add st40p support to RxTxApp
 * st40: add RFC 8331 encode and decode helpers
+* st40: carry ST 2110-41 fast metadata as an opt-in of the ST40 sessions (`ST40_TX_FLAG_FAST_METADATA`, `ST40_RX_FLAG_FAST_METADATA`) and remove the separate `st41_*` API and `st41_api.h`
+  * Breaking: `st_tx_sessions_queue_cnt()` and `st_rx_sessions_queue_cnt()` drop their st41 argument
+  * Breaking (ABI): `struct st_var_info` drops `st41_tx_sessions_cnt` and `st41_rx_sessions_cnt`, so applications reading it must be rebuilt
+  * Fast metadata follows ST 2110-41: the marker bit is 0, an empty frame is sent as a zero-item packet, and TX create rejects a reserved Data Item Type (0x300000-0x3FEFFF) or a static payload type (1-95)
+* st40: `st40_rx_get_mbuf()` takes `len` from the UDP header, so it no longer counts Ethernet padding
 * Stats: add per-port RX stats with reorder and duplicate counters, and frame-level counters
 * RTCP: bound NACK parsing and retransmit work; count invalid RTCP packets per drop reason
 * FFmpeg: add 12-bit and UYVY pixel formats, PTP AVOptions, and p2-p7 NIC AVOptions

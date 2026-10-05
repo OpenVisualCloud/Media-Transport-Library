@@ -20,8 +20,8 @@ multi-process scenarios are out of scope — see
 [`tests/integration_tests/`](../integration_tests/) and
 [`tests/acceptance/`](../acceptance/) for those. Covered here through seams:
 TX epoch/pacing *math*, frame completion, destination update and rate-limit
-lookup (`session/st20_tx_harness.c`), the ST 2110-41 packet builder and TX
-timestamps (`session/st41_tx_harness.c`), the kernel-socket TX send path over
+lookup (`session/st20_tx_harness.c`), the ST 2110-40 packet builders, including
+the fast metadata mode (`session/st40_tx_harness.c`), the kernel-socket TX send path over
 loopback (`datapath/mt_dp_socket_harness.c`), RX queue selection without a
 flow (`datapath/mt_queue_harness.c`), the DMA map table
 (`dma/mt_map_harness.c`), port stats locking (`dev/mt_dev_harness.c`) and

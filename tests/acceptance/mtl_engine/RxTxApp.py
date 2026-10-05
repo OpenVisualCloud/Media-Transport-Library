@@ -465,50 +465,6 @@ def add_st40p_sessions(
     return config
 
 
-def add_st41_sessions(
-    config: dict,
-    no_chain: bool,
-    nic_port_list: list,
-    test_mode: str,
-    payload_type: str,
-    type_: str,
-    fastmetadata_data_item_type: str,
-    fastmetadata_k_bit: str,
-    fastmetadata_fps: str,
-    fastmetadata_url: str,
-) -> dict:
-    config = set_tx_no_chain(config, no_chain)
-    config = add_interfaces(
-        config=config, nic_port_list=nic_port_list, test_mode=test_mode
-    )
-    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st41_session)
-    config["tx_sessions"][0]["fastmetadata"].append(tx_session)
-    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st41_session)
-    config["rx_sessions"][0]["fastmetadata"].append(rx_session)
-
-    config["tx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
-    config["tx_sessions"][0]["fastmetadata"][0]["type"] = type_
-    config["tx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_data_item_type"
-    ] = fastmetadata_data_item_type
-    config["tx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_k_bit"
-    ] = fastmetadata_k_bit
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_fps"] = fastmetadata_fps
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
-
-    config["rx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
-    config["rx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_data_item_type"
-    ] = fastmetadata_data_item_type
-    config["rx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_k_bit"
-    ] = fastmetadata_k_bit
-    config["rx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
-
-    return config
-
-
 # Global variable to store timestamp for consistent logging
 _log_timestamp = None
 
@@ -708,16 +664,6 @@ def execute_test(
             config=config,
             output=output,
             session_type="anc",
-            fail_on_error=fail_on_error,
-            host=host,
-            build=build,
-        )
-
-    if len(config["tx_sessions"][0]["fastmetadata"]) > 0:
-        passed = passed and check_rx_output(
-            config=config,
-            output=output,
-            session_type="fastmetadata",
             fail_on_error=fail_on_error,
             host=host,
             build=build,
@@ -1641,16 +1587,6 @@ def _build_summary_block(
             "st30p: "
             f"fmt={st30p.get('audio_format', '')} ch={st30p.get('audio_channel', '')} "
             f"fs={st30p.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
-        )
-
-    if config["tx_sessions"][0].get("fastmetadata"):
-        fmd = config["tx_sessions"][0]["fastmetadata"][0]
-        replicas = fmd.get("replicas", 1)
-        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_fastmetadata_result"))
-        lines.append(
-            "fastmetadata: "
-            f"type={fmd.get('type', '')} fps={fmd.get('fastmetadata_fps', '')} "
-            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("st22p"):

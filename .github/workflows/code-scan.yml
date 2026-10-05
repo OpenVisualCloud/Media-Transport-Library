@@ -121,6 +121,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           version: 14
+          # The sources only. compile_commands.json has no entry for a header,
+          # so clang-tidy cannot check a header on its own.
+          extensions: c,cpp,cc,cxx
           style: ''
           tidy-checks: ''
           database: .

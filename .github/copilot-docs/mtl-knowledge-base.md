@@ -14,7 +14,7 @@ SMPTE ST 2110 media transport over IP. DPDK-based with HW pacing (Intel E810). S
 - ST2110-22 (compressed video / JPEG-XS)
 - ST2110-30 (audio)
 - ST2110-40 (ancillary data)
-- ST2110-41 (fast metadata)
+- ST2110-41 (fast metadata), as an opt-in mode of the ST2110-40 sessions
 
 ### Two-World Pattern (Data Plane / Control Plane Split)
 - **Data plane**: DPDK hugepage memory, spinlocks, lock-free rings, zero-copy, polling tasklets. Hot path — never blocks.
@@ -37,7 +37,7 @@ Pipeline wraps session: `st20p_tx_create()` calls `st20_tx_create()` internally.
 | Prefix | Component |
 |--------|-----------|
 | `mt_` | Core library (non-media) |
-| `st_` / `st20_` / `st22_` / `st30_` / `st40_` / `st41_` | Media session APIs |
+| `st_` / `st20_` / `st22_` / `st30_` / `st40_` | Media session APIs |
 | `st20p_` / `st22p_` / `st30p_` / `st40p_` | Pipeline APIs |
 | `tv_` | TX video session internals |
 | `rv_` | RX video session internals |
@@ -45,7 +45,6 @@ Pipeline wraps session: `st20p_tx_create()` calls `st20_tx_create()` internally.
 | `rx_audio_session_` | RX audio internals |
 | `tx_ancillary_session_` | TX ancillary internals |
 | `rx_ancillary_session_` | RX ancillary internals |
-| `tx_fastmetadata_` / `rx_fastmetadata_` | ST2110-41 internals |
 
 ### Video Complexity vs Audio/Ancillary/Fast-Metadata
 
@@ -673,7 +672,20 @@ Same lifecycle pattern as video, simplified:
 - No assembly complexity (1-8 packets per frame)
 - Low scheduler quota
 - Shared queue friendly
-- ST2110-41: payload type 115, header 58 bytes, API in `st41_api.h`
+- ST2110-41 fast metadata is not a separate session type: an ST40 session opts in with
+  `ST40_TX_FLAG_FAST_METADATA` / `ST40_RX_FLAG_FAST_METADATA` (`st40_api.h`). The mode swaps
+  only the RTP payload format: `struct st40_fmd_rtp_hdr` (22-bit DIT, K-bit, 9-bit word length,
+  no extended seq), header 58 bytes, default payload type 115, marker always 0, one zero-padded
+  data item per frame from `st40_frame.data`/`data_size`. `data_size` 0 sends a zero-item
+  packet (bare 12-byte RTP header), since a Data Item Length of 0 is illegal. TX create rejects
+  the reserved DITs 0x300000-0x3FEFFF and payload types 1-95. Pacing, redundancy and stats are
+  the ST40 ones; RTP_LEVEL packets sharing a timestamp go out back to back, so more than 4 per
+  timestamp breaks the ST 2110-41 §7 network compatibility model.
+  RX in this mode is RTP_LEVEL only and must leave the payload untouched — the RFC 8331 F-bit
+  parse and in-place byte swap would corrupt it. `st40_rx_get_mbuf()` takes `len` from the UDP
+  header, because the 54-byte zero-item frame is padded to 60 on the wire.
+  Spec conflict: Annex A says segment words = DIL - 2, but §5.4 makes DIL count the words after
+  the DIT/K/DIL word; the Annex A integration test follows §5.4 (DIL - 1 segment words).
 - ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`
 
 ### Manager Pattern
@@ -921,7 +933,7 @@ For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, config
 For invoking pytest itself and triaging failures, use `.github/instructions/mtl-acceptance-tests.instructions.md` — it auto-attaches when working under `tests/acceptance/`.
 
 ### RxTxApp (`tests/tools/RxTxApp/`)
-Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary, 180 fast-metadata (each direction).
+Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary (fast metadata included) (each direction).
 
 JSON config directories: `loop_json/`, `audio_json/`, `native_af_xdp_json/`, `kernel_socket_json/`, `rss_json/`, `redundant_json/`
 

@@ -1821,7 +1821,7 @@ struct st20_rx_user_stats {
    *
    * @note ABI move + rename: previously `st_rx_port_stats::incomplete_frames`
    *       (sat in the common per-port struct, but was always 0 for
-   *       ST30/ST40/ST41). Migration: replace
+   *       ST30/ST40). Migration: replace
    *       `common.port[i].incomplete_frames` with
    *       `frames_partial[i]` (ST20 / ST22 only).
    */

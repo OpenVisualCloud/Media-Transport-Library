@@ -73,18 +73,21 @@ int ut40_init(void) {
   return 0;
 }
 
+static void ut40_rx_ops_with_rtp_callback(struct st40_rx_ops* ops) {
+  memset(ops, 0, sizeof(*ops));
+  ops->num_port = 1;
+  ops->ip_addr[0][0] = 239;
+  ops->ip_addr[0][1] = 1;
+  ops->ip_addr[0][2] = 1;
+  ops->ip_addr[0][3] = 1;
+  ops->rtp_ring_size = UT_RING_SIZE;
+  ops->notify_rtp_ready = ut_notify_rtp_ready;
+}
+
 int ut40_ops_check_zero_init_with_rtp_callback(void) {
   struct st40_rx_ops ops;
 
-  memset(&ops, 0, sizeof(ops));
-  ops.num_port = 1;
-  ops.ip_addr[0][0] = 239;
-  ops.ip_addr[0][1] = 1;
-  ops.ip_addr[0][2] = 1;
-  ops.ip_addr[0][3] = 1;
-  ops.rtp_ring_size = UT_RING_SIZE;
-  ops.notify_rtp_ready = ut_notify_rtp_ready;
-
+  ut40_rx_ops_with_rtp_callback(&ops);
   return rx_ancillary_ops_check(&ops);
 }
 
@@ -251,6 +254,56 @@ void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc) {
 
 void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable) {
   ctx->session.interlace_auto = enable;
+}
+
+bool ut40_ctx_interlaced(const ut_test_ctx* ctx) {
+  return ctx->session.ops.interlaced;
+}
+
+void ut40_ctx_set_fmd(ut_test_ctx* ctx) {
+  ctx->session.ops.flags |= ST40_RX_FLAG_FAST_METADATA;
+}
+
+int ut40_feed_rtp_bytes(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                        enum mtl_session_port port) {
+  return ut40_feed_rtp_bytes_padded(ctx, rtp, len, 0, port);
+}
+
+int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                               uint16_t eth_pad, enum mtl_session_port port) {
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  if (!m) return -ENOMEM;
+  if (rte_pktmbuf_tailroom(m) < sizeof(struct mt_udp_hdr) + len + eth_pad) {
+    rte_pktmbuf_free(m);
+    return -ENOSPC;
+  }
+
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+  uint8_t* payload = (uint8_t*)&hdr[1];
+  memset(hdr, 0, sizeof(*hdr));
+  hdr->udp.dgram_len = htons(sizeof(hdr->udp) + len);
+  memcpy(payload, rtp, len);
+  memset(payload + len, 0, eth_pad);
+  m->data_len = sizeof(*hdr) + len + eth_pad;
+  m->pkt_len = m->data_len;
+
+  int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
+int ut40_ring_dequeue_rtp(ut_test_ctx* ctx, uint8_t* out, uint16_t cap) {
+  struct st_rx_ancillary_session_handle_impl handle = {.type = MT_HANDLE_RX_ANC,
+                                                       .impl = &ctx->session};
+  void* usrptr = NULL;
+  uint16_t len = 0;
+
+  void* mbuf = st40_rx_get_mbuf(&handle, &usrptr, &len);
+  if (!mbuf) return -ENOENT;
+  int ret = len <= cap ? len : -ENOSPC;
+  if (ret >= 0) memcpy(out, usrptr, len);
+  st40_rx_put_mbuf(&handle, mbuf);
+  return ret;
 }
 
 void ut40_ctx_enable_hw_timestamp(ut_test_ctx* ctx, enum mtl_session_port port) {
@@ -726,4 +779,17 @@ int ut40_ring_dequeue_markers(int* out_count, bool* out_has_marker) {
     rte_pktmbuf_free(pkt);
   }
   return 0;
+}
+
+int ut40_ops_check(enum st40_type type, uint32_t flags) {
+  struct st40_rx_ops ops;
+
+  ut40_rx_ops_with_rtp_callback(&ops);
+  ops.type = type;
+  ops.flags = flags;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_size = 1024;
+  ops.notify_frame_ready = ut_notify_frame_ready;
+
+  return rx_ancillary_ops_check(&ops);
 }

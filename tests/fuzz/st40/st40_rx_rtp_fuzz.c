@@ -38,7 +38,6 @@
 #undef MTL_HAS_USDT
 #include "st2110/st_rx_ancillary_session.c"
 #include "st40_api.h"
-#include "st41_api.h"
 #include "st_api.h"
 
 extern int mt_set_log_global_level(enum mtl_log_level level);

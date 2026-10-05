@@ -24,7 +24,6 @@ config_empty = {
             "audio": [],
             "ancillary": [],
             "st40p": [],
-            "fastmetadata": [],
         },
     ],
     "rx_sessions": [
@@ -38,7 +37,6 @@ config_empty = {
             "audio": [],
             "ancillary": [],
             "st40p": [],
-            "fastmetadata": [],
         },
     ],
 }
@@ -290,28 +288,6 @@ config_rx_ancillary_session = {
     "replicas": 1,
     "payload_type": 113,
     "start_port": 40000,
-}
-
-# st41
-
-config_tx_st41_session = {
-    "replicas": 1,
-    "start_port": 40000,
-    "payload_type": 115,
-    "type": "frame",
-    "fastmetadata_data_item_type": 1234567,
-    "fastmetadata_k_bit": 0,
-    "fastmetadata_fps": "p59",
-    "fastmetadata_url": "",
-}
-
-config_rx_st41_session = {
-    "replicas": 1,
-    "payload_type": 115,
-    "start_port": 40000,
-    "fastmetadata_data_item_type": 1234567,
-    "fastmetadata_k_bit": 0,
-    "fastmetadata_url": "",
 }
 
 # st40p (ancillary pipeline API)
