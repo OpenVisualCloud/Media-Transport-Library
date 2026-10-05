@@ -4,79 +4,37 @@
 
 set -euo pipefail
 
+die() {
+	echo "JPEG XS $*" >&2
+	exit 1
+}
+has() {
+	[ -n "$(find . -name "$1" -type "$2" -print -quit)" ] || die "bundle lacks $1 (type $2)"
+}
+
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # shellcheck disable=SC1091
 . "${root_dir}/versions.env"
-bundle=${JPEGXS_ROOT:-"${root_dir}/.local_install/jpegxs"}
-manifest="${bundle}/manifest.sha256"
+cd "${JPEGXS_ROOT:-${root_dir}/.local_install/jpegxs}"
 
-test -s "${bundle}/bundle.env" || {
-	echo "JPEG XS bundle metadata is missing" >&2
-	exit 1
-}
-test -s "$manifest" || {
-	echo "JPEG XS bundle manifest is missing" >&2
-	exit 1
-}
-test -f "${bundle}/symlinks.manifest" || {
-	echo "JPEG XS symlink manifest is missing" >&2
-	exit 1
-}
-
-(cd "$bundle" && sha256sum --quiet -c manifest.sha256)
-(cd "$bundle" && find . -type l -printf '%p=%l\n' | LC_ALL=C sort | cmp -s - symlinks.manifest) || {
-	echo "JPEG XS symlink topology does not match its manifest" >&2
-	exit 1
-}
-find "$bundle" -name 'libSvtJpegxs.so*' -type f -print -quit | grep -q . || {
-	echo "JPEG XS runtime library is missing" >&2
-	exit 1
-}
-find "$bundle" -name 'libSvtJpegxs.so*' -type l -print -quit | grep -q . || {
-	echo "JPEG XS runtime symlinks are missing" >&2
-	exit 1
-}
-pc_file=$(find "$bundle" -name SvtJpegxs.pc -type f -print -quit)
-test -n "$pc_file" || {
-	echo "JPEG XS pkg-config metadata is missing" >&2
-	exit 1
-}
+sha256sum --quiet -c manifest.sha256 || die "files do not match manifest.sha256"
+find . -type l -printf '%p=%l\n' | LC_ALL=C sort | cmp -s - symlinks.manifest || die "symlinks do not match symlinks.manifest"
+has 'libSvtJpegxs.so*' f
+has 'libSvtJpegxs.so*' l
+has libst_plugin_st22_svt_jpeg_xs.so f
+pc_file=$(find . -name SvtJpegxs.pc -type f -print -quit)
+[ -n "$pc_file" ] || die "bundle lacks SvtJpegxs.pc"
 # shellcheck disable=SC2016
-grep -Fq '${pcfiledir}' "$pc_file" || {
-	echo "JPEG XS pkg-config prefix is not relocatable" >&2
-	exit 1
-}
-grep -q "^architecture=$(uname -m)$" "${bundle}/bundle.env" || {
-	echo "JPEG XS architecture does not match this host" >&2
-	exit 1
-}
-grep -q '^schema=1$' "${bundle}/bundle.env" || {
-	echo "JPEG XS bundle schema is incompatible" >&2
-	exit 1
-}
-grep -q "^svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}$" "${bundle}/bundle.env" || {
-	echo "JPEG XS source revision does not match this checkout" >&2
-	exit 1
-}
-expected_source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" | sed -n 's/^jpegxs=//p')}
-grep -q "^source_hash=${expected_source_hash}$" "${bundle}/bundle.env" || {
-	echo "JPEG XS source hash does not match this checkout" >&2
-	exit 1
-}
-expected_compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)}
-grep -q "^compiler_sha256=${expected_compiler_sha256}$" "${bundle}/bundle.env" || {
-	echo "JPEG XS compiler identity does not match this cache key" >&2
-	exit 1
-}
-find "$bundle" -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit | grep -q . || {
-	echo "JPEG XS MTL bridge plugin is missing" >&2
-	exit 1
-}
+grep -Fq '${pcfiledir}' "$pc_file" || die "pkg-config prefix is not relocatable"
+PKG_CONFIG_PATH=$(dirname "$pc_file") pkg-config --exists SvtJpegxs || die "pkg-config cannot resolve SvtJpegxs"
 
-pkg_dir=$(dirname "$pc_file")
-PKG_CONFIG_PATH="$pkg_dir" pkg-config --exists SvtJpegxs || {
-	echo "JPEG XS pkg-config entry cannot be resolved" >&2
-	exit 1
-}
+source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" -o /dev/stdout | sed -n 's/^jpegxs=//p')}
+# An empty hash would match an empty source_hash line and prove nothing.
+[ -n "$source_hash" ] || die "source hash of this checkout is empty"
+compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)}
+for line in schema=1 "architecture=$(uname -m)" "svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}" \
+	"source_hash=${source_hash}" "compiler_sha256=${compiler_sha256}"; do
+	grep -qxF "$line" bundle.env || die "bundle.env lacks ${line}"
+done
 
 echo "JPEG XS bundle: valid"

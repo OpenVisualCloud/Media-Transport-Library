@@ -80,7 +80,11 @@ jobs:
         run: sudo ldconfig
 
       - name: Build the Rust no_std example
-        run: bash .github/scripts/ci/build-rust-example.sh
+        working-directory: rust/imtl-sys
+        run: |
+          . ../../versions.env
+          sudo -E cargo update home --precise "${RUST_HOOK_CARGO_VER:?}"
+          sudo -E cargo build --example no_std
 
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

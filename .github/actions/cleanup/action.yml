@@ -5,4 +5,8 @@ runs:
   steps:
     - name: Cleanup processes
       shell: bash
-      run: bash "$GITHUB_ACTION_PATH/../../scripts/ci/cleanup.sh"
+      run: |
+        sudo killall -SIGKILL gtest.sh KahawaiTest ffmpeg gst-launch-1.0 RxTxApp || true
+        sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng || true
+        sleep 2
+        sudo "$GITHUB_ACTION_PATH/../../../tests/tools/isolate/isolate.sh" --sweep

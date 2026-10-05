@@ -8,6 +8,35 @@ The Media Transport Library needs rate limit patches that the E810/E830 driver d
 
 > **Note:** After a reboot, Ubuntu can upgrade to a new kernel version. If the kernel changes, rebuild the driver for the new kernel.
 
+### Build with the script
+
+`script/build_drivers.sh` does Sections 1.1 to 1.4 for you:
+
+1. It downloads the driver version of `versions.env`, from the Intel download mirror or, as a fallback, from GitHub.
+2. It applies the patches of that version and builds the driver.
+3. It installs the driver with `make install`, which also installs the DDP package and refreshes the boot image.
+4. It reloads the driver: `rmmod irdma`, `rmmod ice`, then `modprobe ice`.
+
+The driver build needs the Linux kernel headers: on Ubuntu, `install_dependencies.sh ice` installs them.
+The reload fails while a VF of the `ice` module exists, so disable the VFs on every E800-series PF before the build, one command per PF.
+
+```bash
+cd $mtl_source_code
+./script/install_dependencies.sh ice
+sudo ./script/nicctl.sh disable_vf 0000:af:00.0
+./script/build_drivers.sh --driver ice
+```
+
+Run `build_drivers.sh` as your own user: it uses `sudo` for the steps that need root.
+It skips the build when the patched driver of that version is already installed for the running kernel.
+After a kernel upgrade, run it again: the new kernel has no patched driver yet, so the script builds one.
+Use `--force` to build and reload the driver again anyway.
+
+Then check the result with [Section 1.5](#15-verify-both-the-driver-and-ddp-version), and create the VFs again with `sudo ./script/nicctl.sh create_vf 0000:af:00.0`.
+Replace the BDFs with the ones in your setup.
+
+The sections below are the manual way to do the same steps.
+
 ### 1.1. Download the Driver Source Code
 
 `versions.env` in the Media Transport Library source tree holds the driver version to use. Read the file to set `ICE_VER` and `ICE_DMID`, then download the source code.

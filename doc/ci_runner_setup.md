@@ -144,8 +144,8 @@ pre-check: the iavf implementation reads the same pointer in its first
 instructions.
 
 So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
-"$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
-already the cached one).
+"$TASK_BIN" ci:activate-ice`, which reloads the driver from the cached
+module every time).
 
 After driver activation, verify that each expected PF has a kernel netdev and
 that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).

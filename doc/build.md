@@ -4,11 +4,53 @@ Building the Media Transport Library requires three parts: building the DPDK lib
 
 Please note that the DPDK dependency remains necessary when utilizing the XDP/kernel socket data path backend. We leverage numerous DPDK APIs, including those for CPU, memory, queues, and mbufs, to construct a highly efficient network processing implementation.
 
+## Build with the scripts
+
+The scripts of the Media Transport Library source tree do the steps of this guide for you. Each one
+reads the versions to use from `versions.env`, and `-h` shows its options. Run them as your own user:
+they use `sudo` for the steps that need root.
+
+| Step | Script | Manual steps |
+| --- | --- | --- |
+| Build packages (Ubuntu only) | `./script/install_dependencies.sh` | [1. Prerequisites](#1-prerequisites) |
+| DPDK with the MTL patches | `./script/build_dpdk.sh` | [2. DPDK build and install](#2-dpdk-build-and-install) |
+| ICE driver for E810/E830 (`--driver ice`), or IGC for I226-V (`--driver igc`) | `./script/build_drivers.sh` | [E800 Series Driver Guide](e800_series_drivers.md) |
+| eBPF/XDP: libxdp and libbpf (optional) | `./script/build_ebpf_xdp.sh` | [XDP Guide](xdp.md#building-guide) |
+| MTL, the sample apps, the tests, the manager | `./build.sh` | [3. Build Media Transport Library and app](#3-build-media-transport-library-and-app) |
+
+For example, on Ubuntu with an E810 card:
+
+```bash
+git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+cd Media-Transport-Library
+./script/install_dependencies.sh ice
+./script/build_dpdk.sh
+./script/build_drivers.sh --driver ice
+sudo ldconfig
+./build.sh
+```
+
+The scripts do not refresh the linker cache, so run `sudo ldconfig` after they install DPDK into
+`/usr/local`. Without it, the DPDK drivers fail to load at runtime.
+
+`install_dependencies.sh` always installs the packages of the MTL build. Name a component to also
+install its packages: `ice` for the ICE driver build, `ebpf_xdp` for `build_ebpf_xdp.sh`, `ffmpeg`,
+`gstreamer` or `jpegxs` for a plugin. `-h` lists them all.
+
+`build_dpdk.sh` and `build_drivers.sh` skip a component that is already installed in the right
+version. Give `-f` to `build_dpdk.sh`, or `--force` to `build_drivers.sh`, to build it again.
+
+The sections below are the manual way. Use them on an operating system that the scripts do not
+support, or when you want to change a step.
+
 ## 1. Prerequisites
 
 ### 1.1. Install the build dependency from OS software store
 
 #### 1.1.1. Ubuntu/Debian
+
+On Ubuntu, `./script/install_dependencies.sh` installs the build packages for you. It installs
+`pyelftools` and `ninja` with `pip`, past the protection described below.
 
 ```bash
 sudo apt-get update
@@ -132,6 +174,16 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
+`./script/build_dpdk.sh` does steps 2.1 to 2.3 for you. It downloads the DPDK version of
+`versions.env`, applies the patches of that version, then builds and installs DPDK. Use
+`-v <version>` to build another version. Run `sudo ldconfig` after it.
+
+```bash
+cd $mtl_source_code
+./script/build_dpdk.sh
+sudo ldconfig
+```
+
 ### 2.1. Get the DPDK source code
 
 `versions.env` in the Media Transport Library source tree holds the DPDK version to use. Read the file to set `DPDK_VER`, then check out that version.
@@ -189,6 +241,18 @@ cd $mtl_source_code
 ./build.sh
 ```
 
+`./build.sh debug` makes a debug build with AddressSanitizer, and `./build.sh debugonly` a debug
+build without it.
+
+Scripts for the optional parts, after `./build.sh`:
+
+| Part | Script |
+| --- | --- |
+| The sample apps of `app/` alone | `./script/build_app.sh` |
+| ST 2110-22 avcodec plugin | `./script/build_st22_avcodec_plugin.sh` |
+| OBS Studio plugin | `./script/build_obs_plugin.sh` |
+| Python binding | `./script/build_python.sh` |
+
 ### 3.1. Build flow for Intel I226-V (igc)
 
 Intel I226-V can be used with MTL, but the setup is different from Intel E810-focused
@@ -197,8 +261,9 @@ environments:
 * Use the in-tree Linux `igc` driver for normal host networking and PTP validation.
 * Use DPDK `igc` PMD if you plan to run MTL with DPDK backend.
 
-The script skips this step when the `igc` module is already installed. Otherwise, it
-installs the running kernel's module package from the configured OS repository.
+`./script/build_drivers.sh --driver igc` sets up the `igc` driver. The script skips this step
+when the `igc` module is already installed. Otherwise, it installs the running kernel's module
+package from the configured OS repository.
 
 ### 3.2. I226-V (`igc` PMD) notes from DPDK driver guidance
 
