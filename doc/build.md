@@ -318,7 +318,7 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the shipped MTL components, DPDK, openh264 and FFmpeg with the hardening options below. The `meson.build` of each MTL component sets them, `script/build_dpdk.sh` passes them to DPDK, and `ecosystem/ffmpeg_plugin/build.sh` passes them to openh264 and FFmpeg. SVT-JPEG-XS and the libbpf and libxdp from `script/build_ebpf_xdp.sh` keep their own build flags.
+The Linux build compiles the shipped MTL components, DPDK, openh264, FFmpeg, libbpf and libxdp with the hardening options below. The `meson.build` of each MTL component sets them, `script/build_dpdk.sh` passes them to DPDK, `ecosystem/ffmpeg_plugin/build.sh` to openh264 and FFmpeg, and `script/build_ebpf_xdp.sh` to libbpf and libxdp. SVT-JPEG-XS keeps its own build flags.
 
 | Option | Protection |
 | --- | --- |
