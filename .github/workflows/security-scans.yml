@@ -1,0 +1,94 @@
+name: Security Scans
+
+# Source and dependency checks that need no build: cargo-audit over the Rust
+# lock files. New advisories appear without a change here, so it also runs
+# every week.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pinned release of https://github.com/rustsec/rustsec. It publishes no
+  # checksum, so this is the sha256 of the download.
+  CARGO_AUDIT_VERSION: 0.22.2
+  CARGO_AUDIT_SHA256: 7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+
+jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      cargo_audit: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || steps.filter.outputs.cargo_audit == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
+        with:
+          filters: .github/path_filters.yml
+
+  cargo-audit:
+    needs: changes
+    if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-audit
+        run: |
+          name="cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}"
+          curl -fsSLo cargo-audit.tgz "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz"
+          echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum -c -
+          tar -xzf cargo-audit.tgz "${name}/cargo-audit"
+          sudo install "${name}/cargo-audit" /usr/local/bin/
+
+      # cargo-audit must report the advisory of a lock file that has one, or a
+      # green run below proves nothing. smallvec 1.6.0 has RUSTSEC-2021-0003.
+      - name: Negative control
+        run: |
+          printf 'version = 3\n\n[[package]]\nname = "smallvec"\nversion = "1.6.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' >"${RUNNER_TEMP}/vulnerable.lock"
+          if out=$(cargo-audit audit -f "${RUNNER_TEMP}/vulnerable.lock" 2>&1); then
+            echo "::error::cargo-audit passed a lock file with a known advisory"
+            exit 1
+          fi
+          if ! grep -q 'RUSTSEC-2021-0003' <<<"$out"; then
+            echo "::error::cargo-audit failed without reporting RUSTSEC-2021-0003"
+            exit 1
+          fi
+
+      # rust/ commits no Cargo.lock, so audit the versions a build resolves today.
+      - name: cargo-audit
+        run: |
+          cargo-audit audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
+          (cd rust && cargo generate-lockfile)
+          cargo-audit audit -f rust/Cargo.lock

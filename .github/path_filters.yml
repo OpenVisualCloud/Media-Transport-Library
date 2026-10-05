@@ -252,3 +252,13 @@ docker_compose:
   - .github/workflows/docker_build.yml
   - docker/docker-compose.yml
   - docker/docker-compose.xdp.yml
+
+# security-scans.yml, cargo-audit. It audits the Rust lock files, and the
+# manifests of rust/, which commits none.
+cargo_audit:
+  - .github/path_filters.yml
+  - .github/workflows/security-scans.yml
+  - rust/Cargo.toml
+  - rust/imtl-sys/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.lock
