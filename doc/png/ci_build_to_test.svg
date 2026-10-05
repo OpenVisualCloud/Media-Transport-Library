@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="690" viewBox="0 0 1400 690" role="img" aria-labelledby="t d">
+<title id="t">How a pull request reaches the NIC hosts</title>
+<desc id="d">Build runs once on the DPDK host and saves the dependency caches. The PR gate of smoke-tests and gtest-bare-metal waits for that Build. Each NIC host then restores the same caches, binds its ports and runs the tests.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1400" height="690" fill="#DCC7BE"/>
+<rect x="14" y="14" width="1372" height="662" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">How a pull request reaches the NIC hosts</text>
+<rect x="50.0" y="120.0" width="230.0" height="110.0" rx="8" fill="#1F271B"/>
+<text x="165.0" y="150.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Pull request</text>
+<text x="165.0" y="176.0" font-size="14" fill="#ffffff" text-anchor="middle">new commit pushed</text>
+<rect x="350.0" y="120.0" width="330.0" height="170.0" rx="8" fill="#145C9E"/>
+<text x="515.0" y="150.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Build workflow</text>
+<text x="515.0" y="176.0" font-size="14" fill="#ffffff" text-anchor="middle">Wait for Linter</text>
+<text x="515.0" y="197.0" font-size="14" fill="#ffffff" text-anchor="middle">task ci:cache-keys</text>
+<text x="515.0" y="218.0" font-size="14" fill="#ffffff" text-anchor="middle">restore, build the misses,</text>
+<text x="515.0" y="239.0" font-size="14" fill="#ffffff" text-anchor="middle">validate, save</text>
+<rect x="760.0" y="120.0" width="300.0" height="170.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="910.0" y="150.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Dependency caches</text>
+<text x="910.0" y="176.0" font-size="14" fill="#1F271B" text-anchor="middle">DPDK, MTL, JPEG XS,</text>
+<text x="910.0" y="197.0" font-size="14" fill="#1F271B" text-anchor="middle">FFmpeg, GStreamer,</text>
+<text x="910.0" y="218.0" font-size="14" fill="#1F271B" text-anchor="middle">plugins, ICE driver</text>
+<rect x="350.0" y="380.0" width="330.0" height="150.0" rx="8" fill="#0B4F6C"/>
+<text x="515.0" y="410.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">PR Gate</text>
+<text x="515.0" y="436.0" font-size="14" fill="#ffffff" text-anchor="middle">of smoke-tests and gtest</text>
+<text x="515.0" y="457.0" font-size="14" fill="#ffffff" text-anchor="middle">changed? then wait</text>
+<text x="515.0" y="478.0" font-size="14" fill="#ffffff" text-anchor="middle">for this commit's Build</text>
+<rect x="760.0" y="380.0" width="300.0" height="190.0" rx="8" fill="#145C9E"/>
+<text x="910.0" y="410.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Test leg per NIC</text>
+<text x="910.0" y="436.0" font-size="14" fill="#ffffff" text-anchor="middle">validate-host: restore</text>
+<text x="910.0" y="457.0" font-size="14" fill="#ffffff" text-anchor="middle">the caches, load ICE,</text>
+<text x="910.0" y="478.0" font-size="14" fill="#ffffff" text-anchor="middle">bind ports, run pytest</text>
+<text x="910.0" y="499.0" font-size="14" fill="#ffffff" text-anchor="middle">or gtest, upload report</text>
+<rect x="1130.0" y="380.0" width="220.0" height="150.0" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="2.5"/>
+<text x="1240.0" y="410.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Result check</text>
+<text x="1240.0" y="436.0" font-size="14" fill="#1F271B" text-anchor="middle">one status for</text>
+<text x="1240.0" y="457.0" font-size="14" fill="#1F271B" text-anchor="middle">branch protection</text>
+<path d="M280.0 175.0 L336.0 175.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M350.0 175.0 L336.0 182.0 L336.0 168.0 Z" fill="#1F271B"/>
+<path d="M165.0 230.0 L165.0 455.0 L336.0 455.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M350.0 455.0 L336.0 462.0 L336.0 448.0 Z" fill="#1F271B"/>
+<path d="M680.0 205.0 L746.0 205.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M760.0 205.0 L746.0 212.0 L746.0 198.0 Z" fill="#1F271B"/>
+<text x="720.0" y="195.0" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">save</text>
+<path d="M515.0 380.0 L515.0 304.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="9 6"/>
+<path d="M515.0 290.0 L522.0 304.0 L508.0 304.0 Z" fill="#1F271B"/>
+<text x="580.0" y="340.0" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">waits for</text>
+<path d="M680.0 455.0 L746.0 455.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M760.0 455.0 L746.0 462.0 L746.0 448.0 Z" fill="#1F271B"/>
+<path d="M910.0 290.0 L910.0 366.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M910.0 380.0 L903.0 366.0 L917.0 366.0 Z" fill="#1F271B"/>
+<text x="960.0" y="340.0" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">restore</text>
+<path d="M1060.0 455.0 L1116.0 455.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1130.0 455.0 L1116.0 462.0 L1116.0 448.0 Z" fill="#1F271B"/>
+<rect x="50.0" y="624.0" width="26.0" height="18.0" rx="4" fill="#0B4F6C"/>
+<text x="84.0" y="638.0" font-size="14" fill="#1F271B" text-anchor="start">GitHub-hosted runner</text>
+<rect x="248.0" y="624.0" width="26.0" height="18.0" rx="4" fill="#145C9E"/>
+<text x="282.0" y="638.0" font-size="14" fill="#1F271B" text-anchor="start">Self-hosted runner (NIC host)</text>
+<rect x="514.4" y="624.0" width="26.0" height="18.0" rx="4" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="548.4" y="638.0" font-size="14" fill="#1F271B" text-anchor="start">Result check</text>
+<rect x="651.6" y="624.0" width="26.0" height="18.0" rx="4" fill="#DCC7BE" stroke="#1F271B" stroke-width="2"/>
+<text x="685.6" y="638.0" font-size="14" fill="#1F271B" text-anchor="start">Shared cache (actions/cache)</text>
+</g>
+</svg>

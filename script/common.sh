@@ -12,7 +12,7 @@ if [ -f "$VERSIONS_ENV_PATH" ]; then
 	# shellcheck disable=SC1090
 	. "$VERSIONS_ENV_PATH"
 else
-	echo -e "${RED}Error: versions.env file not found at $VERSIONS_ENV_PATH.${NC}"
+	echo "ERROR: versions.env file not found at $VERSIONS_ENV_PATH." >&2
 	exit 1
 fi
 
@@ -40,7 +40,7 @@ function log_message() {
 	local HEADER="${type}: "
 	local FOOTER=""
 	# case $(echo $type | tr '[:upper:]' '[:lower:]') in
-	if [ -z "${DISABLE_COLOR_PRINT}" ]; then
+	if [ -z "${DISABLE_COLOR_PRINT:-}" ]; then
 		FOOTER='\e[0m'
 		case "${type}" in
 		ERROR) HEADER="${REGULAR}${RED}${type}:  ${BOLD}${RED}" ;;
@@ -156,26 +156,63 @@ function command_exists {
 	command -v "$@" >/dev/null 2>&1
 }
 
+# Runs the command as root. Each argument stays one argument, so a path with
+# a space is safe. Stdin goes to the command, so "... | as_root tee FILE" works.
 function as_root() {
-	CMD_TO_EVALUATE="$*"
-	CURRENT_USER_ID="$(id -u)"
-	EFECTIVE_USER_ID="${EUID:-$CURRENT_USER_ID}"
-	AS_ROOT="/bin/bash -c"
+	local effective_user_id="${EUID:-$(id -u)}"
 
-	if [ "${EFECTIVE_USER_ID}" -ne 0 ]; then
-		if command_exists sudo; then
-			AS_ROOT="sudo -E /bin/bash -c"
-		elif command_exists su; then
-			AS_ROOT="su -c"
-		else
-			log_error "This command must be run as root [EUID=0] ${CMD_TO_EVALUATE[*]}."
-			log_error "- current [EUID=${EFECTIVE_USER_ID}]."
-			log_error "- 'sudo' nor 'su' commands were found in PATH."
-			log_error "Re-run the script as sudo or install sudo pkg."
-			exit 1
-		fi
+	if [ "${effective_user_id}" -eq 0 ]; then
+		"$@"
+	elif command_exists sudo; then
+		sudo -E "$@"
+	elif command_exists su; then
+		su -c "$(printf '%q ' "$@")"
+	else
+		log_error "This command must be run as root [EUID=0]: $*"
+		log_error "- current [EUID=${effective_user_id}]."
+		log_error "- 'sudo' nor 'su' commands were found in PATH."
+		log_error "Re-run the script as sudo or install sudo pkg."
+		exit 1
 	fi
-	$AS_ROOT "${CMD_TO_EVALUATE[*]}"
+}
+
+# Usage: require_commands <command>[:<package>]...
+# Logs the package of each command that is not in PATH, and returns 1 if one
+# is missing. A script calls it before it downloads or deletes anything.
+function require_commands() {
+	local item missing=()
+
+	for item in "$@"; do
+		command_exists "${item%%:*}" || missing+=("${item#*:}")
+	done
+	[ "${#missing[@]}" -eq 0 ] && return 0
+	log_error "Required packages are missing:"
+	printf '  %s\n' "${missing[@]}" >&2
+	return 1
+}
+
+# Usage: require_pkg_config <module>[:<package>]...
+# Logs the package of each pkg-config module that is not installed, and
+# returns 1 if one is missing.
+function require_pkg_config() {
+	local item missing=()
+
+	require_commands pkg-config:pkg-config || return 1
+	for item in "$@"; do
+		pkg-config --exists "${item%%:*}" || missing+=("${item#*:}")
+	done
+	[ "${#missing[@]}" -eq 0 ] && return 0
+	log_error "Required packages are missing:"
+	printf '  %s\n' "${missing[@]}" >&2
+	return 1
+}
+
+# Usage: require_root [<what>]
+# Returns 1 with an error when the shell does not run as root.
+function require_root() {
+	[ "${EUID:-$(id -u)}" -eq 0 ] && return 0
+	log_error "${1:-${script_name:-This script}} needs root. Run it with sudo."
+	return 1
 }
 
 function github_api_call() {
@@ -185,7 +222,7 @@ function github_api_call() {
 	INPUT_OWNER=$(echo "${url#"${GITHUB_API_URL}/repos/"}" | cut -f1 -d'/')
 	INPUT_REPO=$(echo "${url#"${GITHUB_API_URL}/repos/"}" | cut -f2 -d'/')
 	API_SUBPATH="${url#"${GITHUB_API_URL}/repos/${INPUT_OWNER}/${INPUT_REPO}/"}"
-	if [ -z "${INPUT_GITHUB_TOKEN}" ]; then
+	if [ -z "${INPUT_GITHUB_TOKEN:-}" ]; then
 		echo >&2 "Set the INPUT_GITHUB_TOKEN env variable first."
 		return
 	fi
@@ -211,7 +248,7 @@ function github_api_call() {
 }
 
 function print_logo() {
-	if [[ -z "$blue_code" ]]; then
+	if [[ -z "${blue_code:-}" ]]; then
 		local blue_code=(26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45)
 	fi
 	local IFS
@@ -353,7 +390,7 @@ function git_download_strip_unpack() {
 	version="${2}"
 	dest_dir="${3}"
 	filename="$(get_filename "${version}")"
-	[ -n "${GITHUB_CREDENTIALS}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
+	[ -n "${GITHUB_CREDENTIALS:-}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
 
 	mkdir -p "${dest_dir}"
 	curl -Lf "https://${creds}github.com/${name}/archive/${version}.tar.gz" -o "${dest_dir}/${filename}.tar.gz"
@@ -369,7 +406,7 @@ function wget_download_strip_unpack() {
 	local source_url="${1}"
 	local dest_dir="${2}"
 	filename="$(get_filename "${source_url}")"
-	[ -n "${GITHUB_CREDENTIALS}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
+	[ -n "${GITHUB_CREDENTIALS:-}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
 
 	mkdir -p "${dest_dir}"
 	curl -Lf "${source_url}" -o "${dest_dir}/${filename}.tar.gz"
@@ -381,7 +418,7 @@ function wget_download_strip_unpack() {
 #	PM="$(setup_package_manager)" && \
 #	$PM install python3
 function setup_package_manager() {
-	TIBER_USE_PM="${PM:-$1}"
+	TIBER_USE_PM="${PM:-${1:-}}"
 	if [[ -x "$(command -v "$TIBER_USE_PM")" ]]; then
 		export PM="${TIBER_USE_PM}"
 	elif [[ -x "$(command -v yum)" ]]; then
@@ -495,7 +532,7 @@ function install_packages() {
 # FFMPEG_VER taken from environment or forced by 1st parameter
 # Exports FFMPEG_DIR and FFMPEG_VER
 function lib_setup_ffmpeg_dir_and_version() {
-	FFMPEG_VER="${1:-$FFMPEG_VER}"
+	FFMPEG_VER="${1:-${FFMPEG_VER:-${FFMPEG_VERSION:-}}}"
 	FFMPEG_7_0_DIR="${FFMPEG_7_0_DIR:-ffmpeg-7-0}"
 	FFMPEG_6_1_DIR="${FFMPEG_6_1_DIR:-ffmpeg-6-1}"
 

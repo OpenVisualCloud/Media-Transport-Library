@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="324" viewBox="0 0 1000 324" role="img" aria-labelledby="t d">
+<title id="t">Coverity Build: static analysis</title>
+<desc id="d">Each night DPDK and MTL are built under Coverity and the results are uploaded.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1000" height="324" fill="#DCC7BE"/>
+<rect x="14" y="14" width="972" height="296" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">Coverity Build: static analysis</text>
+<rect x="50.0" y="112.0" width="250.0" height="100.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="175.0" y="139.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Runs on</text>
+<text x="175.0" y="168.0" font-size="15" fill="#1F271B" text-anchor="middle">Nightly 00:00 UTC</text>
+<text x="175.0" y="198.0" font-size="15" fill="#1F271B" text-anchor="middle">By hand (Run workflow)</text>
+<path d="M300.0 162.0 L376.0 162.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M390.0 162.0 L376.0 169.0 L376.0 155.0 Z" fill="#1F271B"/>
+<rect x="390.0" y="110.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="540.0" y="149.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Coverity</text>
+<text x="540.0" y="173.0" font-size="14" fill="#ffffff" text-anchor="middle">build DPDK, scan ./build.sh with</text>
+<text x="540.0" y="192.0" font-size="14" fill="#ffffff" text-anchor="middle">Coverity, upload</text>
+<rect x="50.0" y="258.0" width="26.0" height="18.0" rx="4" fill="#0B4F6C"/>
+<text x="84.0" y="272.0" font-size="14" fill="#1F271B" text-anchor="start">GitHub-hosted runner</text>
+</g>
+</svg>

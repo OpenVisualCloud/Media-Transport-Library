@@ -201,4 +201,13 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash .github/scripts/ci/lint-commit-messages.sh
+        run: |
+          commits=$(git rev-list "${BASE_SHA:?}..${HEAD_SHA:?}")
+          rc=0
+          for sha in $commits; do
+            echo "=== $(git log -1 --format='%h %s' "$sha") ==="
+            git log -1 --format=%B "$sha" >"$RUNNER_TEMP/commit-msg"
+            pre-commit run --hook-stage commit-msg \
+              --commit-msg-filename "$RUNNER_TEMP/commit-msg" gitlint || rc=1
+          done
+          exit "$rc"

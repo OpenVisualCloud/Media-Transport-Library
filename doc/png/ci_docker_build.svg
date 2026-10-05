@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="584" viewBox="0 0 1520 584" role="img" aria-labelledby="t d">
+<title id="t">Docker Build: images and Compose files</title>
+<desc id="d">When the Docker inputs change, the MTL image builds for four distributions, the MtlManager image builds, and the Compose files are validated.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1520" height="584" fill="#DCC7BE"/>
+<rect x="14" y="14" width="1492" height="556" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">Docker Build: images and Compose files</text>
+<rect x="50.0" y="227.0" width="250.0" height="130.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="175.0" y="254.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Runs on</text>
+<text x="175.0" y="283.0" font-size="15" fill="#1F271B" text-anchor="middle">Pull request</text>
+<text x="175.0" y="313.0" font-size="15" fill="#1F271B" text-anchor="middle">Push to main / maint-*</text>
+<text x="175.0" y="343.0" font-size="15" fill="#1F271B" text-anchor="middle">By hand (Run workflow)</text>
+<path d="M300.0 292.0 L376.0 292.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M390.0 292.0 L376.0 299.0 L376.0 285.0 Z" fill="#1F271B"/>
+<path d="M690.0 292.0 L735.0 292.0 L735.0 162.0 L766.0 162.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M780.0 162.0 L766.0 169.0 L766.0 155.0 Z" fill="#1F271B"/>
+<path d="M690.0 292.0 L766.0 292.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M780.0 292.0 L766.0 299.0 L766.0 285.0 Z" fill="#1F271B"/>
+<path d="M690.0 292.0 L735.0 292.0 L735.0 422.0 L766.0 422.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M780.0 422.0 L766.0 429.0 L766.0 415.0 Z" fill="#1F271B"/>
+<path d="M1080.0 162.0 L1125.0 162.0 L1125.0 292.0 L1156.0 292.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1170.0 292.0 L1156.0 299.0 L1156.0 285.0 Z" fill="#1F271B"/>
+<path d="M1080.0 292.0 L1156.0 292.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1170.0 292.0 L1156.0 299.0 L1156.0 285.0 Z" fill="#1F271B"/>
+<path d="M1080.0 422.0 L1125.0 422.0 L1125.0 292.0 L1156.0 292.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1170.0 292.0 L1156.0 299.0 L1156.0 285.0 Z" fill="#1F271B"/>
+<rect x="390.0" y="240.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="540.0" y="279.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Detect changes</text>
+<text x="540.0" y="303.0" font-size="14" fill="#ffffff" text-anchor="middle">path filters docker_build,</text>
+<text x="540.0" y="322.0" font-size="14" fill="#ffffff" text-anchor="middle">manager_build, docker_compose</text>
+<rect x="780.0" y="110.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="930.0" y="158.5" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">MTL image</text>
+<text x="930.0" y="182.5" font-size="14" fill="#ffffff" text-anchor="middle">Ubuntu 22, 24, 26 and Rocky 9</text>
+<rect x="1030.8" y="97.0" width="39.2" height="26.0" rx="13" fill="#1F271B"/>
+<text x="1050.4" y="115.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">x4</text>
+<rect x="780.0" y="240.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="930.0" y="288.5" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Manager image</text>
+<text x="930.0" y="312.5" font-size="14" fill="#ffffff" text-anchor="middle">MtlManager container</text>
+<rect x="780.0" y="370.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="930.0" y="418.5" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Compose validate</text>
+<text x="930.0" y="442.5" font-size="14" fill="#ffffff" text-anchor="middle">default and AF_XDP compose files</text>
+<rect x="1170.0" y="240.0" width="300.0" height="104.0" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="2.5"/>
+<text x="1320.0" y="288.5" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">docker-build-result</text>
+<text x="1320.0" y="312.5" font-size="14" fill="#1F271B" text-anchor="middle">one status for branch protection</text>
+<rect x="50.0" y="518.0" width="26.0" height="18.0" rx="4" fill="#0B4F6C"/>
+<text x="84.0" y="532.0" font-size="14" fill="#1F271B" text-anchor="start">GitHub-hosted runner</text>
+<rect x="248.0" y="518.0" width="26.0" height="18.0" rx="4" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="282.0" y="532.0" font-size="14" fill="#1F271B" text-anchor="start">Result check</text>
+</g>
+</svg>

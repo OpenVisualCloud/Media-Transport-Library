@@ -90,6 +90,7 @@ Development and Testing
    doc/acceptance_quickstart.md
    doc/acceptance-design.md
    doc/ci_runner_setup.md
+   doc/ci_workflows.md
    doc/cicd_setup_proposition.md
 
 Doxygen

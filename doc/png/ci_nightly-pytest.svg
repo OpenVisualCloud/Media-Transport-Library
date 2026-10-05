@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="346" viewBox="0 0 1520 346" role="img" aria-labelledby="t d">
+<title id="t">nightly-pytest: every acceptance suite each weekday</title>
+<desc id="d">Calls Build, then runs each of 14 pytest suite directories on each of the 3 NIC hosts, 42 legs. A last job merges the reports into one.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1520" height="346" fill="#DCC7BE"/>
+<rect x="14" y="14" width="1492" height="318" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">nightly-pytest: every acceptance suite each weekday</text>
+<rect x="50.0" y="112.0" width="250.0" height="100.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="175.0" y="139.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Runs on</text>
+<text x="175.0" y="168.0" font-size="15" fill="#1F271B" text-anchor="middle">Mon-Fri 18:07 UTC</text>
+<text x="175.0" y="198.0" font-size="15" fill="#1F271B" text-anchor="middle">By hand (Run workflow)</text>
+<path d="M300.0 162.0 L376.0 162.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M390.0 162.0 L376.0 169.0 L376.0 155.0 Z" fill="#1F271B"/>
+<path d="M690.0 162.0 L766.0 162.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M780.0 162.0 L766.0 169.0 L766.0 155.0 Z" fill="#1F271B"/>
+<path d="M1080.0 162.0 L1156.0 162.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1170.0 162.0 L1156.0 169.0 L1156.0 155.0 Z" fill="#1F271B"/>
+<rect x="390.0" y="110.0" width="300.0" height="104.0" rx="8" fill="#CBB9A8"/>
+<text x="540.0" y="149.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Build</text>
+<text x="540.0" y="173.0" font-size="14" fill="#1F271B" text-anchor="middle">the Build workflow, as a called</text>
+<text x="540.0" y="192.0" font-size="14" fill="#1F271B" text-anchor="middle">workflow</text>
+<rect x="780.0" y="110.0" width="300.0" height="104.0" rx="8" fill="#145C9E"/>
+<text x="930.0" y="158.5" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Run pytest</text>
+<text x="930.0" y="182.5" font-size="14" fill="#ffffff" text-anchor="middle">one suite directory on one NIC host</text>
+<rect x="927.6" y="97.0" width="142.4" height="26.0" rx="13" fill="#1F271B"/>
+<text x="998.8" y="115.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">3 NIC x 14 dir</text>
+<rect x="1170.0" y="110.0" width="300.0" height="104.0" rx="8" fill="#0B4F6C"/>
+<text x="1320.0" y="158.5" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Aggregate reports</text>
+<text x="1320.0" y="182.5" font-size="14" fill="#ffffff" text-anchor="middle">task ci:report -- combine-pytest</text>
+<rect x="50.0" y="258.0" width="26.0" height="18.0" rx="4" fill="#0B4F6C"/>
+<text x="84.0" y="272.0" font-size="14" fill="#1F271B" text-anchor="start">GitHub-hosted runner</text>
+<rect x="248.0" y="258.0" width="26.0" height="18.0" rx="4" fill="#145C9E"/>
+<text x="282.0" y="272.0" font-size="14" fill="#1F271B" text-anchor="start">Self-hosted runner (NIC host)</text>
+<rect x="514.4" y="258.0" width="26.0" height="18.0" rx="4" fill="#CBB9A8"/>
+<text x="548.4" y="272.0" font-size="14" fill="#1F271B" text-anchor="start">Runs another workflow</text>
+<text x="50.0" y="310.0" font-size="15" fill="#1F271B" text-anchor="start">Suites: cross_app, st40p, gstreamer, kernel_socket, ptp, rss_mode, rx_timing, st20p, st22p, st30p, st41, udp, virtio_user, xdp.</text>
+</g>
+</svg>

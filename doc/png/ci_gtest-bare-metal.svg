@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="372" viewBox="0 0 1520 372" role="img" aria-labelledby="t d">
+<title id="t">gtest-bare-metal: KahawaiTest on real VFs</title>
+<desc id="d">After the PR gate, the integration gtest suite runs on the E810, E830 and E835 hosts. Each leg restores the Build caches, loads the ICE driver, binds the test VFs to vfio-pci and runs gtest.sh.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1520" height="372" fill="#DCC7BE"/>
+<rect x="14" y="14" width="1492" height="344" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">gtest-bare-metal: KahawaiTest on real VFs</text>
+<rect x="50.0" y="110.0" width="250.0" height="130.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="175.0" y="137.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Runs on</text>
+<text x="175.0" y="166.0" font-size="15" fill="#1F271B" text-anchor="middle">Pull request</text>
+<text x="175.0" y="196.0" font-size="15" fill="#1F271B" text-anchor="middle">Push to main / maint-*</text>
+<text x="175.0" y="226.0" font-size="15" fill="#1F271B" text-anchor="middle">By hand (Run workflow)</text>
+<path d="M300.0 175.0 L376.0 175.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M390.0 175.0 L376.0 182.0 L376.0 168.0 Z" fill="#1F271B"/>
+<path d="M690.0 175.0 L766.0 175.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M780.0 175.0 L766.0 182.0 L766.0 168.0 Z" fill="#1F271B"/>
+<path d="M1080.0 175.0 L1156.0 175.0" fill="none" stroke="#1F271B" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M1170.0 175.0 L1156.0 182.0 L1156.0 168.0 Z" fill="#1F271B"/>
+<rect x="390.0" y="123.0" width="300.0" height="104.0" rx="8" fill="#CBB9A8"/>
+<text x="540.0" y="171.5" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">PR Gate</text>
+<text x="540.0" y="195.5" font-size="14" fill="#1F271B" text-anchor="middle">changed? then wait for Build</text>
+<rect x="780.0" y="123.0" width="300.0" height="104.0" rx="8" fill="#145C9E"/>
+<text x="930.0" y="162.0" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">Run gtest</text>
+<text x="930.0" y="186.0" font-size="14" fill="#ffffff" text-anchor="middle">restore caches, task</text>
+<text x="930.0" y="205.0" font-size="14" fill="#ffffff" text-anchor="middle">ci:bind-test-ports, gtest.sh</text>
+<rect x="996.4" y="110.0" width="73.6" height="26.0" rx="13" fill="#1F271B"/>
+<text x="1033.2" y="128.0" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">x3 NIC</text>
+<rect x="1170.0" y="123.0" width="300.0" height="104.0" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="2.5"/>
+<text x="1320.0" y="171.5" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">gtest-result</text>
+<text x="1320.0" y="195.5" font-size="14" fill="#1F271B" text-anchor="middle">one status for branch protection</text>
+<rect x="50.0" y="284.0" width="26.0" height="18.0" rx="4" fill="#145C9E"/>
+<text x="84.0" y="298.0" font-size="14" fill="#1F271B" text-anchor="start">Self-hosted runner (NIC host)</text>
+<rect x="316.4" y="284.0" width="26.0" height="18.0" rx="4" fill="#CBB9A8"/>
+<text x="350.4" y="298.0" font-size="14" fill="#1F271B" text-anchor="start">Runs another workflow</text>
+<rect x="522.0" y="284.0" width="26.0" height="18.0" rx="4" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="556.0" y="298.0" font-size="14" fill="#1F271B" text-anchor="start">Result check</text>
+<text x="50.0" y="336.0" font-size="15" fill="#1F271B" text-anchor="start">Runs only in OpenVisualCloud/Media-Transport-Library: forks have no bare-metal runners.</text>
+</g>
+</svg>

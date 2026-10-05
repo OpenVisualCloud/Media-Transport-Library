@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="746" viewBox="0 0 1400 746" role="img" aria-labelledby="t d">
+<title id="t">Which workflow runs when</title>
+<desc id="d">Pull requests run the linter, builds, unit, fuzz, smoke and gtest workflows. Pushes to main add the scorecard and documentation publish. Nightly runs add Coverity, Trivy, perf, gtest and pytest. Some workflows run only by hand.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect x="0" y="0" width="1400" height="746" fill="#DCC7BE"/>
+<rect x="14" y="14" width="1372" height="718" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="2"/>
+<text x="50.0" y="66.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="start">Which workflow runs when</text>
+<rect x="50.0" y="110.0" width="240.0" height="106.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="170.0" y="161.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Pull request</text>
+<text x="170.0" y="182.0" font-size="13" fill="#1F271B" text-anchor="middle">every push to a PR</text>
+<rect x="320.0" y="110.0" width="88.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="364.0" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Linter</text>
+<rect x="422.0" y="110.0" width="124.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="484.0" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Base Build</text>
+<rect x="560.0" y="110.0" width="79.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="599.5" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Build</text>
+<rect x="653.0" y="110.0" width="124.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="715.0" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Unit Tests</text>
+<rect x="791.0" y="110.0" width="124.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="853.0" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Fuzz Tests</text>
+<rect x="929.0" y="110.0" width="142.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="1000.0" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Docker Build</text>
+<rect x="1085.0" y="110.0" width="151.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="1160.5" y="139.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Documentation</text>
+<rect x="320.0" y="170.0" width="187.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="413.5" y="199.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Dependency Review</text>
+<rect x="521.0" y="170.0" width="79.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="560.5" y="199.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Trivy</text>
+<rect x="614.0" y="170.0" width="133.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="680.5" y="199.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">smoke-tests</text>
+<rect x="761.0" y="170.0" width="178.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="850.0" y="199.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">gtest-bare-metal</text>
+<rect x="50.0" y="238.0" width="240.0" height="106.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="170.0" y="289.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Push to main</text>
+<text x="170.0" y="310.0" font-size="13" fill="#1F271B" text-anchor="middle">after a merge</text>
+<rect x="320.0" y="238.0" width="124.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="382.0" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Base Build</text>
+<rect x="458.0" y="238.0" width="79.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="497.5" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Build</text>
+<rect x="551.0" y="238.0" width="124.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="613.0" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Unit Tests</text>
+<rect x="689.0" y="238.0" width="142.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="760.0" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Docker Build</text>
+<rect x="845.0" y="238.0" width="241.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="965.5" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Documentation + publish</text>
+<rect x="1100.0" y="238.0" width="115.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="1157.5" y="267.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Scorecard</text>
+<rect x="320.0" y="298.0" width="133.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="386.5" y="327.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">smoke-tests</text>
+<rect x="467.0" y="298.0" width="178.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="556.0" y="327.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">gtest-bare-metal</text>
+<rect x="50.0" y="366.0" width="240.0" height="106.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="170.0" y="417.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">Schedule</text>
+<text x="170.0" y="438.0" font-size="13" fill="#1F271B" text-anchor="middle">times in UTC</text>
+<rect x="320.0" y="366.0" width="160.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="400.0" y="395.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Coverity 00:00</text>
+<rect x="494.0" y="366.0" width="205.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="596.5" y="395.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Trivy 00:00 + 23:00</text>
+<rect x="713.0" y="366.0" width="178.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="802.0" y="395.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Fuzz Tests 01:43</text>
+<rect x="905.0" y="366.0" width="187.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="998.5" y="395.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">perf-pytest 22:00</text>
+<rect x="320.0" y="426.0" width="277.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="458.5" y="455.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">nightly-gtest Mon-Fri 18:07</text>
+<rect x="611.0" y="426.0" width="286.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="754.0" y="455.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">nightly-pytest Mon-Fri 18:07</text>
+<rect x="911.0" y="426.0" width="205.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="1013.5" y="455.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Scorecard Tue 07:20</text>
+<rect x="50.0" y="494.0" width="240.0" height="64.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="170.0" y="524.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">After nightlies</text>
+<text x="170.0" y="545.0" font-size="13" fill="#1F271B" text-anchor="middle">workflow_run</text>
+<rect x="320.0" y="503.0" width="241.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="440.5" y="532.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Nightly Combined Report</text>
+<rect x="50.0" y="580.0" width="240.0" height="64.0" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="2.5"/>
+<text x="170.0" y="610.0" font-size="17" font-weight="700" fill="#1F271B" text-anchor="middle">By hand only</text>
+<text x="170.0" y="631.0" font-size="13" fill="#1F271B" text-anchor="middle">Actions &gt; Run workflow</text>
+<rect x="320.0" y="589.0" width="151.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="395.5" y="618.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">custom-pytest</text>
+<rect x="485.0" y="589.0" width="178.0" height="46.0" rx="23" fill="#145C9E"/>
+<text x="574.0" y="618.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Provision runner</text>
+<rect x="677.0" y="589.0" width="205.0" height="46.0" rx="23" fill="#0B4F6C"/>
+<text x="779.5" y="618.0" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">Windows MSYS2 build</text>
+<rect x="50.0" y="682.0" width="26.0" height="18.0" rx="4" fill="#0B4F6C"/>
+<text x="84.0" y="696.0" font-size="14" fill="#1F271B" text-anchor="start">GitHub-hosted runner</text>
+<rect x="248.0" y="682.0" width="26.0" height="18.0" rx="4" fill="#145C9E"/>
+<text x="282.0" y="696.0" font-size="14" fill="#1F271B" text-anchor="start">Self-hosted runner (NIC host)</text>
+</g>
+</svg>
