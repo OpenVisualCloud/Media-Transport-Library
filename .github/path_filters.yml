@@ -225,6 +225,16 @@ hardening_tools:
   - *hash_gstreamer
   - *hash_plugins
 
+# security-scans.yml, cargo-audit. It audits the Rust lock files, and the
+# manifests of rust/, which commits none.
+cargo_audit:
+  - .github/path_filters.yml
+  - .github/workflows/security-scans.yml
+  - rust/Cargo.toml
+  - rust/imtl-sys/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.lock
+
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/ except check-hardening.sh, run
 # by every image build, so the hash_<name> filters do not apply: they hold
