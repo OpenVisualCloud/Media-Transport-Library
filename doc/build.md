@@ -325,13 +325,13 @@ The Linux build compiles the shipped MTL components, DPDK, openh264 and FFmpeg w
 | `-fstack-protector-strong` | Stack buffer overflow canary |
 | `-fstack-clash-protection` | Stack clash |
 | `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
-| `-D_FORTIFY_SOURCE=2` | Buffer overflow checks in libc calls. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
+| `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34; with an older toolchain the build uses 2. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
 
-For a manual DPDK build, pass them to `meson setup`, and add `-D_FORTIFY_SOURCE=2` to `c_args` if `echo | cc -O2 -dM -E - | grep _FORTIFY_SOURCE` prints nothing:
+For a manual DPDK build, pass them to `meson setup`, and add `-D_FORTIFY_SOURCE=3` to `c_args` if `echo | cc -O2 -dM -E - | grep _FORTIFY_SOURCE` prints nothing (`=2` with gcc older than 12):
 
 ```bash
 meson setup build -Db_pie=true \

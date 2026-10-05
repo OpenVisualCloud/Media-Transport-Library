@@ -61,7 +61,12 @@ done
 # already sets (Ubuntu 24.04: 3).
 hardening_cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security"
 if ! echo | gcc -O2 -dM -E - | grep -q _FORTIFY_SOURCE; then
-	hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+	# 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+	if echo "#include <string.h>" | gcc -O2 -D_FORTIFY_SOURCE=3 -dM -E -x c - 2>/dev/null | grep -q "__USE_FORTIFY_LEVEL 3"; then
+		hardening_cflags+=" -D_FORTIFY_SOURCE=3"
+	else
+		hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+	fi
 fi
 hardening_ldflags="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
 

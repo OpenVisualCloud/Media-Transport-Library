@@ -113,7 +113,12 @@ if [ "$sourced" -eq 0 ]; then
 	# CFLAGS, so pass them through; keep the _FORTIFY_SOURCE level the compiler sets.
 	hardening_cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security"
 	if ! echo | "${CC:-cc}" -O2 -dM -E - | grep -q _FORTIFY_SOURCE; then
-		hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+		# 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+		if echo "#include <string.h>" | "${CC:-cc}" -O2 -D_FORTIFY_SOURCE=3 -dM -E -x c - 2>/dev/null | grep -q "__USE_FORTIFY_LEVEL 3"; then
+			hardening_cflags+=" -D_FORTIFY_SOURCE=3"
+		else
+			hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+		fi
 	fi
 	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Db_pie=true -Dc_args="${CFLAGS:+$CFLAGS }${hardening_cflags}" \
 		-Dc_link_args="${LDFLAGS:+$LDFLAGS }-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
