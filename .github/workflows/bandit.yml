@@ -37,6 +37,9 @@ jobs:
   bandit:
     name: Bandit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -52,12 +55,64 @@ jobs:
           python-version: '3.12'
 
       - name: Install Bandit
-        run: python -m pip install "bandit==${BANDIT_VERSION}"
+        run: python -m pip install "bandit[sarif]==${BANDIT_VERSION}"
 
       # Bandit's default --exclude lists ".git" and matches it as a substring,
       # so it drops everything under .github/, even files named on the command
       # line. -x '' replaces that list; the input is already exactly the
-      # tracked files. Run the same command locally.
+      # tracked files. The reports come before the scan so that they exist
+      # when it fails; --exit-zero leaves failing to "Run Bandit".
+      - name: Write Bandit reports
+        run: |
+          for format in json html sarif; do
+            git ls-files -z -- '*.py' |
+              xargs -0 bandit -q -c "$BANDIT_CONFIG" -x '' --exit-zero \
+                -f "$format" -o "bandit.$format"
+          done
+
+      - name: Summarize Bandit results
+        run: |
+          jq -r '
+            "### Bandit", "",
+            "| Files scanned | Lines of code | Findings | Reviewed `# nosec <ID>` | Blanket `# nosec` lines | Files skipped |",
+            "|---:|---:|---:|---:|---:|---:|",
+            "| \([.metrics | keys[] | select(. != "_totals")] - [.errors[].filename] | length) | \(.metrics._totals.loc) | \(.results | length) | \(.metrics._totals.skipped_tests) | \(.metrics._totals.nosec) | \(.errors | length) |",
+            if .results == [] then empty else
+              "", "| Test | Severity | Confidence | Location | Issue |", "|---|---|---|---|---|",
+              (.results[] | "| [\(.test_id)](\(.more_info)) | \(.issue_severity) | \(.issue_confidence) | `\(.filename | ltrimstr("./")):\(.line_number)` | \(.issue_text) |")
+            end,
+            if .errors == [] then empty else
+              "", "Skipped files:", (.errors[] | "- `\(.filename | ltrimstr("./"))`: \(.reason)")
+            end,
+            "", "HTML, JSON and SARIF reports: the `bandit-report` artifact of this run."
+          ' bandit.json >> "$GITHUB_STEP_SUMMARY"
+
+      # Both uploads only report: a failed upload must not decide the check or
+      # stop the scan below from running.
+      - name: Upload Bandit reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        continue-on-error: true
+        with:
+          name: bandit-report
+          path: |
+            bandit.html
+            bandit.json
+            bandit.sarif
+
+      # A pull request from a fork gets a read-only token, so it cannot upload.
+      # Dependabot's token is raised by the job permissions above.
+      - name: Upload Bandit results to code scanning
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        continue-on-error: true
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      # The console report, and the step that fails on any finding. Run the
+      # same command locally.
       - name: Run Bandit
         run: |
           git ls-files -z -- '*.py' |
@@ -67,7 +122,5 @@ jobs:
       # 0. Its JSON report lists such files under "errors"; require it empty.
       - name: Check that Bandit scanned every file
         run: |
-          git ls-files -z -- '*.py' |
-            xargs -0 bandit -q -c "$BANDIT_CONFIG" -x '' -f json -o bandit.json
           jq -r '.errors[] | "skipped \(.filename): \(.reason)"' bandit.json
           jq -e '.errors == []' bandit.json > /dev/null
