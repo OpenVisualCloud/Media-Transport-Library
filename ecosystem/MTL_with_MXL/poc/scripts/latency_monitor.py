@@ -19,7 +19,7 @@ import datetime
 import json
 import os
 import signal
-import subprocess
+import subprocess  # nosec B404 # fixed diagnostic commands, no external input
 import time
 from collections import deque
 from pathlib import Path

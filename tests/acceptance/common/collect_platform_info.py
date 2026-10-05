@@ -514,7 +514,7 @@ def collect_platform_info(host) -> Dict[str, Any]:
 if __name__ == "__main__":
     import argparse
     import json
-    import subprocess
+    import subprocess  # nosec B404 # interpolates only local sysfs and lspci output
 
     class _LocalHost:
         name = "localhost"

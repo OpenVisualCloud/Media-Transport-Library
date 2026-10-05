@@ -3,7 +3,7 @@
 
 import logging
 import os
-import subprocess
+import subprocess  # nosec B404 # runs commands the test suite builds from its config
 import threading
 import time
 from queue import Queue

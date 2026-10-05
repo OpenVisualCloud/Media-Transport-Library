@@ -32,7 +32,7 @@ import argparse
 import os
 import re
 import socket
-import subprocess
+import subprocess  # nosec B404 # runs ip and ethtool via argv lists, no shell
 import sys
 import time
 import urllib.error
@@ -215,7 +215,8 @@ def influx_push(lines_body: str, url: str, token: str, org: str, bucket: str):
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        # main() exits unless INFLUXDB_URL is http:// or https://
+        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
             _ = resp.read()
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")[:200]

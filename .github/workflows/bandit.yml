@@ -1,0 +1,73 @@
+---
+name: Bandit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  BANDIT_VERSION: 1.9.4
+  BANDIT_CONFIG: .github/linters/bandit.config
+
+jobs:
+  # Security scan of every tracked Python file with the Bandit test set in
+  # BANDIT_CONFIG. Why this is not a pre-commit hook: doc/coding_standard.md
+  # section 4.
+  #
+  # Any finding fails the job. Fix the code, or review it and mark the flagged
+  # line `# nosec <ID>`, with the review result after a second '#' or on the
+  # line above:
+  #   import subprocess  # nosec B404 # <what the review found>
+  # Never write the reason straight after the ID: Bandit reads every word up to
+  # the next '#' as a test ID or name, so the reason can silence other tests.
+  bandit:
+    name: Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit
+        run: python -m pip install "bandit==${BANDIT_VERSION}"
+
+      # Bandit's default --exclude lists ".git" and matches it as a substring,
+      # so it drops everything under .github/, even files named on the command
+      # line. -x '' replaces that list; the input is already exactly the
+      # tracked files. Run the same command locally.
+      - name: Run Bandit
+        run: |
+          git ls-files -z -- '*.py' |
+            xargs -0 bandit -c "$BANDIT_CONFIG" -x ''
+
+      # A file Bandit cannot parse or scan is skipped, and the run still exits
+      # 0. Its JSON report lists such files under "errors"; require it empty.
+      - name: Check that Bandit scanned every file
+        run: |
+          git ls-files -z -- '*.py' |
+            xargs -0 bandit -q -c "$BANDIT_CONFIG" -x '' -f json -o bandit.json
+          jq -r '.errors[] | "skipped \(.filename): \(.reason)"' bandit.json
+          jq -e '.errors == []' bandit.json > /dev/null

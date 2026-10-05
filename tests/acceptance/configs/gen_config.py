@@ -3,7 +3,7 @@
 # Copyright(c) 2026 Intel Corporation
 
 import argparse
-import subprocess
+import subprocess  # nosec B404 # runs lspci via an argv list, no shell
 
 import yaml
 

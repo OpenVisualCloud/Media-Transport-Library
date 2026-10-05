@@ -7,7 +7,7 @@ The rules are in the header of .github/path_filters.yml. Exit 1 on a fault.
 """
 
 import re
-import subprocess
+import subprocess  # nosec B404 # runs git ls-files via an argv list, no shell
 import sys
 from pathlib import Path
 
