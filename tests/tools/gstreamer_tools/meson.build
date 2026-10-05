@@ -25,14 +25,19 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
-plugin_c_args = [
+plugin_c_args = cc.get_supported_arguments([
   '-Wno-redundant-decls',
   '-Wno-discarded-qualifiers',
   '-Wno-declaration-after-statement',
   '-Wno-missing-prototypes',
   '-Wno-missing-declarations',
   '-Wno-stringop-truncation'
-]
+])
+
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  plugin_c_args += ['-Werror']
+endif
 
 gst_dep = dependency('gstreamer-1.0', version : '>=1.19', required : true)
 gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : true)
