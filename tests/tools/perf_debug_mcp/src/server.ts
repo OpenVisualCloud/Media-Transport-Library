@@ -1301,9 +1301,9 @@ export function createServer(): McpServer {
   server.tool(
     "mtl_usdt_list_probes",
     "Discovery tool: list all USDT probes available in the installed libmtl.so. " +
-    "Groups probes by provider (sys, ptp, st20, st20p, st22, st22p, st30, st30p, st40, st40p, st41). " +
+    "Groups probes by provider (sys, ptp, st20, st20p, st22, st22p, st30, st30p, st40, st40p). " +
     "Call this first to verify USDT support is available before using other mtl_usdt_* tools. " +
-    "82 probes across 11 providers on a standard MTL build. Requires bpftrace and root.",
+    "78 probes across 10 providers on a standard MTL build. Requires bpftrace and root.",
     mtlUsdtProbesSchema.shape,
     async (params) => {
       const result = await mtlUsdtProbes(params);

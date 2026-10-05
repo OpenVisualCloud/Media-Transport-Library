@@ -568,8 +568,6 @@ To offer significant flexibility in switch/forward scenarios, it is advantageous
   st30_rx_update_source
   st40_tx_update_destination
   st40_rx_update_source
-  st41_tx_update_destination
-  st41_rx_update_source
   st20p_tx_update_destination
   st20p_rx_update_source
   st22p_tx_update_destination

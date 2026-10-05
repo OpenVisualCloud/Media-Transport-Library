@@ -79,6 +79,27 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * ancillary payloads across multiple RTP packets in a frame.
  */
 #define ST40_TX_FLAG_SPLIT_ANC_BY_PKT (MTL_BIT32(8))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * The session sends SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC.
+ * payload_type must be 0 (the 115 default) or dynamic, 96-127.
+ * For ST40_TYPE_FRAME_LEVEL, st40_frame.data/data_size carry one data item of at
+ * most 1436 bytes (meta[]/meta_num are ignored), sent as one RTP packet per frame
+ * with marker 0, with the Data Item Type and K-bit taken from fmd_dit/fmd_k_bit. A
+ * larger item is not sent; the frame is handed back through notify_frame_done. An
+ * empty frame (data_size 0) is sent as a zero-item packet, the RTP header alone.
+ * ST 2110-41 requires a packet at least every 500 ms, so keep frames flowing.
+ * For ST40_TYPE_RTP_LEVEL, the app builds struct st40_fmd_rtp_hdr packets in
+ * network order and the lib sends them as built: it only rewrites the RTP
+ * timestamp, with no byte swap and no F-bit handling. The app must build them
+ * conformant (marker 0, items word aligned, no Data Item Length of 0) and put at
+ * most 4 packets on one RTP timestamp: the lib sends those back to back, and more
+ * breaks the ST 2110-41 network compatibility model at frame rates.
+ * st40_tx_put_mbuf caps a packet at MTL_PKT_MAX_RTP_BYTES (1352), so an RTP level
+ * data item is at most 1336 bytes, not the 1436 of frame level.
+ * Not compatible with ST40_TX_FLAG_SPLIT_ANC_BY_PKT.
+ */
+#define ST40_TX_FLAG_FAST_METADATA (MTL_BIT32(9))
 
 /**
  * DEBUG / test-only mutation pattern for st40 TX.
@@ -127,6 +148,14 @@ struct st40_tx_test_config {
  * RTP F bits and ignores the initial `interlaced` value once detection completes.
  */
 #define ST40_RX_FLAG_DISABLE_AUTO_DETECT (MTL_BIT32(2))
+/**
+ * Flag bit in flags of struct st40_rx_ops.
+ * The session receives SMPTE ST 2110-41 fast metadata (struct st40_fmd_rtp_hdr)
+ * instead of RFC 8331 ANC. ST40_TYPE_RTP_LEVEL only. The RTP packet is delivered
+ * untouched, in network byte order: no F-bit parsing, interlace detection or
+ * F-bit based drop.
+ */
+#define ST40_RX_FLAG_FAST_METADATA (MTL_BIT32(3))
 
 /**
  * Session type of st2110-40(ancillary) streaming
@@ -180,6 +209,48 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
       uint32_t reserved : 22;
     } first_hdr_chunk;
     uint32_t swapped_first_hdr_chunk;
+  };
+});
+#endif
+
+/**
+ * A structure describing a SMPTE ST 2110-41 (fast metadata) rtp header, used with
+ * ST40_TX_FLAG_FAST_METADATA / ST40_RX_FLAG_FAST_METADATA. The data item follows,
+ * zero-padded to a 32-bit boundary. On the wire the second word is in network
+ * order, convert swapped_fmd_hdr_chunk with htonl/ntohl.
+ */
+#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st40_fmd_rtp_hdr {
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
+  union {
+    struct {
+      /** Data Item Length, in 32-bit words of the padded data item */
+      uint32_t data_item_length : 9;
+      /** Data Item K-bit */
+      uint32_t data_item_k_bit : 1;
+      /** Data Item Type */
+      uint32_t data_item_type : 22;
+    } fmd_hdr_chunk;
+    /** Handle to make operating on fmd_hdr_chunk buffer easier */
+    uint32_t swapped_fmd_hdr_chunk;
+  };
+});
+#else
+MTL_PACK(struct st40_fmd_rtp_hdr {
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
+  union {
+    struct {
+      /** Data Item Type */
+      uint32_t data_item_type : 22;
+      /** Data Item K-bit */
+      uint32_t data_item_k_bit : 1;
+      /** Data Item Length, in 32-bit words of the padded data item */
+      uint32_t data_item_length : 9;
+    } fmd_hdr_chunk;
+    /** Handle to make operating on fmd_hdr_chunk buffer easier */
+    uint32_t swapped_fmd_hdr_chunk;
   };
 });
 #endif
@@ -420,6 +491,14 @@ struct st40_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+
+  /**
+   * Optional, only with ST40_TX_FLAG_FAST_METADATA. 22-bit Data Item Type, the
+   * reserved 0x300000-0x3FEFFF is rejected.
+   */
+  uint32_t fmd_dit;
+  /** Optional, only with ST40_TX_FLAG_FAST_METADATA. Data Item K-bit, 0 or 1 */
+  uint8_t fmd_k_bit;
 };
 
 /**
@@ -756,7 +835,8 @@ int st40_rx_free(st40_rx_handle handle);
  * @param usrptr
  *   *usrptr will be point to the user data(rtp) area inside the mbuf.
  * @param len
- *   The length of the rtp packet, include both the header and payload.
+ *   The length of the rtp packet, include both the header and payload, taken from the
+ *   UDP header so any Ethernet padding is left out.
  * @return
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.

@@ -566,7 +566,7 @@ log "═════════════════════════
 # Warn about NFS upfront, before slow stages run.
 if [[ "$STAGE_NFS" == "0" ]]; then
 	warn "STAGE_NFS=0 — most pytest cases under tests/single/ will SKIP."
-	warn "Without /mnt/media populated, st20p/st22p/st30p/st40p/st41/ffmpeg/gstreamer/"
+	warn "Without /mnt/media populated, st20p/st22p/st30p/st40p/ffmpeg/gstreamer/"
 	warn "kernel_socket/ptp/rss_mode/virtio_user tests cannot run."
 fi
 

@@ -15,7 +15,6 @@
 #include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
 #include <mtl/st40_pipeline_api.h>
-#include <mtl/st41_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pcap.h>
 #include <pthread.h>
@@ -43,9 +42,12 @@
 #define ST_APP_MAX_TX_ANC_SESSIONS (180)
 #define ST_APP_MAX_RX_ANC_SESSIONS (180)
 
-/* FMD = Fast Metadata (ST2110-41) */
-#define ST_APP_MAX_TX_FMD_SESSIONS (180)
-#define ST_APP_MAX_RX_FMD_SESSIONS (180)
+/* ST 2110-41 data item size, fits one packet at frame and RTP level, multiple of 4 */
+#define ST_APP_FMD_CHUNK_BYTES (1024)
+/* ST 2110-41: the 1460 bytes UDP size limit minus the UDP header */
+#define ST_APP_FMD_MAX_RTP_BYTES (1452)
+/* ST 2110-41: a sender sends a packet at least every 500 ms */
+#define ST_APP_FMD_MAX_GAP_NS (500 * (uint64_t)NS_PER_MS)
 
 #define ST_APP_MAX_LCORES (32)
 
@@ -236,6 +238,9 @@ struct st_app_tx_anc_session {
   bool st40_pcap_input;
   bool st40_rtp_input;
   uint8_t st40_payload_type;
+  bool st40_fmd;
+  uint32_t st40_fmd_dit;
+  uint8_t st40_fmd_k_bit;
   uint8_t* st40_source_begin;
   uint8_t* st40_source_end;
   uint8_t* st40_frame_cursor; /* cursor to current frame */
@@ -245,38 +250,6 @@ struct st_app_tx_anc_session {
   pthread_mutex_t st40_wake_mutex;
   uint32_t st40_rtp_tmstamp;
   uint32_t st40_seq_id;
-};
-
-struct st_app_tx_fmd_session {
-  int idx;
-  st41_tx_handle handle;
-
-  uint16_t framebuff_cnt;
-
-  uint16_t framebuff_producer_idx;
-  uint16_t framebuff_consumer_idx;
-  struct st_tx_frame* framebuffs;
-
-  uint32_t st41_frame_done_cnt;
-  uint32_t st41_packet_done_cnt;
-
-  char st41_source_url[ST_APP_URL_MAX_LEN + 1];
-  int st41_source_fd;
-  pcap_t* st41_pcap;
-  bool st41_pcap_input;
-  bool st41_rtp_input;
-  uint8_t st41_payload_type;
-  uint32_t st41_dit;
-  uint32_t st41_k_bit;
-  uint8_t* st41_source_begin;
-  uint8_t* st41_source_end;
-  uint8_t* st41_frame_cursor; /* cursor to current frame */
-  pthread_t st41_app_thread;
-  bool st41_app_thread_stop;
-  pthread_cond_t st41_wake_cond;
-  pthread_mutex_t st41_wake_mutex;
-  uint32_t st41_rtp_tmstamp;
-  uint32_t st41_seq_id;
 };
 
 struct st_app_rx_video_session {
@@ -375,36 +348,19 @@ struct st_app_rx_anc_session {
   pthread_mutex_t st40_wake_mutex;
   bool st40_app_thread_stop;
 
-  /* stat */
-  int stat_frame_total_received;
-  int stat_pkt_invalid; /* RTP packets rejected on parity / checksum error */
-  uint64_t stat_frame_first_rx_time;
-};
-
-struct st_app_rx_fmd_session {
-  int idx;
-  st41_rx_handle handle;
-
-  /* Reference file handling */
-  char st41_ref_url[ST_APP_URL_MAX_LEN + 1];
-  int st41_ref_fd;
-  uint8_t* st41_ref_begin;
-  uint8_t* st41_ref_end;
-  uint8_t* st41_ref_cursor;
-
-  pthread_t st41_app_thread;
-  pthread_cond_t st41_wake_cond;
-  pthread_mutex_t st41_wake_mutex;
-  bool st41_app_thread_stop;
-
-  /* Expected values */
-  uint32_t st41_dit;
-  uint32_t st41_k_bit;
-
-  uint32_t errors_count;
+  bool st40_fmd;
+  int st40_fmd_dit;   /* -1: not checked */
+  int st40_fmd_k_bit; /* -1: not checked */
+  uint8_t* st40_fmd_ref;
+  size_t st40_fmd_ref_size;
+  int64_t st40_fmd_ref_next; /* offset of the chunk expected next, -1 until synced */
+  uint16_t st40_fmd_last_seq;
+  uint64_t st40_fmd_last_rx_time;
+  uint64_t st40_fmd_max_gap_ns;
 
   /* stat */
   int stat_frame_total_received;
+  int stat_pkt_invalid; /* RTP packets that failed validation */
   uint64_t stat_frame_first_rx_time;
 };
 
@@ -769,12 +725,6 @@ struct st_app_context {
   int tx_anc_rtp_ring_size; /* the ring size for tx anc rtp type */
   bool tx_anc_dedicate_queue;
 
-  struct st_app_tx_fmd_session* tx_fmd_sessions;
-  char tx_fmd_url[ST_APP_URL_MAX_LEN];
-  int tx_fmd_session_cnt;
-  int tx_fmd_rtp_ring_size; /* the ring size for tx fmd rtp type */
-  bool tx_fmd_dedicate_queue;
-
   char tx_st22p_url[ST_APP_URL_MAX_LEN]; /* send st22p content url*/
   struct st_app_tx_st22p_session* tx_st22p_sessions;
   int tx_st22p_session_cnt;
@@ -808,9 +758,6 @@ struct st_app_context {
 
   struct st_app_rx_anc_session* rx_anc_sessions;
   int rx_anc_session_cnt;
-
-  struct st_app_rx_fmd_session* rx_fmd_sessions;
-  int rx_fmd_session_cnt;
 
   struct st_app_rx_st22p_session* rx_st22p_sessions;
   int rx_st22p_session_cnt;

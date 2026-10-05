@@ -741,12 +741,6 @@ anc_files = dict(
     },
 )
 
-st41_files = dict(
-    st41_p29_long_file={
-        "filename": "st41_long_test.txt",
-    },
-)
-
 gstreamer_formats = dict(
     v210={
         "filename": "gstreamer_v210_1920x1080_60hz.yuv",

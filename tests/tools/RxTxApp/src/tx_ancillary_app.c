@@ -92,6 +92,24 @@ static void app_tx_anc_build_frame(struct st_app_tx_anc_session* s,
     s->st40_frame_cursor = s->st40_source_begin;
 }
 
+/* RX resyncs its reference compare on these ST_APP_FMD_CHUNK_BYTES boundaries */
+static uint16_t app_tx_anc_fmd_next_chunk(struct st_app_tx_anc_session* s,
+                                          uint8_t** chunk) {
+  uint16_t size =
+      ST_MIN(ST_APP_FMD_CHUNK_BYTES, s->st40_source_end - s->st40_frame_cursor);
+  *chunk = s->st40_frame_cursor;
+  s->st40_frame_cursor += size;
+  if (s->st40_frame_cursor == s->st40_source_end)
+    s->st40_frame_cursor = s->st40_source_begin;
+  return size;
+}
+
+static void app_tx_anc_build_fmd_frame(struct st_app_tx_anc_session* s,
+                                       struct st40_frame* dst) {
+  dst->data_size = app_tx_anc_fmd_next_chunk(s, &dst->data);
+  dst->meta_num = 0;
+}
+
 static void* app_tx_anc_frame_thread(void* arg) {
   struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
@@ -113,7 +131,10 @@ static void* app_tx_anc_frame_thread(void* arg) {
     st_pthread_mutex_unlock(&s->st40_wake_mutex);
 
     struct st40_frame* frame_addr = st40_tx_get_framebuffer(s->handle, producer_idx);
-    app_tx_anc_build_frame(s, frame_addr);
+    if (s->st40_fmd)
+      app_tx_anc_build_fmd_frame(s, frame_addr);
+    else
+      app_tx_anc_build_frame(s, frame_addr);
 
     st_pthread_mutex_lock(&s->st40_wake_mutex);
     framebuff->size = sizeof(*frame_addr);
@@ -242,6 +263,31 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
     s->st40_frame_cursor = s->st40_source_begin;
 }
 
+static void app_tx_anc_build_fmd_rtp(struct st_app_tx_anc_session* s, void* usrptr,
+                                     uint16_t* mbuf_len) {
+  struct st40_fmd_rtp_hdr* hdr = (struct st40_fmd_rtp_hdr*)usrptr;
+  uint8_t* payload = (uint8_t*)&hdr[1];
+  uint8_t* chunk;
+  uint16_t size = app_tx_anc_fmd_next_chunk(s, &chunk);
+  uint16_t padded_size = (size + 3) & ~3;
+
+  memset(hdr, 0, sizeof(*hdr));
+  hdr->base.version = 2;
+  hdr->base.payload_type = s->st40_payload_type;
+  hdr->base.seq_number = htons((uint16_t)s->st40_seq_id);
+  hdr->base.tmstamp = s->st40_rtp_tmstamp;
+  hdr->base.ssrc = htonl(0x88888888 + s->idx);
+  s->st40_seq_id++;
+  s->st40_rtp_tmstamp++;
+  hdr->fmd_hdr_chunk.data_item_length = padded_size / 4;
+  hdr->fmd_hdr_chunk.data_item_k_bit = s->st40_fmd_k_bit;
+  hdr->fmd_hdr_chunk.data_item_type = s->st40_fmd_dit;
+  hdr->swapped_fmd_hdr_chunk = htonl(hdr->swapped_fmd_hdr_chunk);
+  memcpy(payload, chunk, size);
+  memset(payload + size, 0, padded_size - size);
+  *mbuf_len = sizeof(*hdr) + padded_size;
+}
+
 static void* app_tx_anc_rtp_thread(void* arg) {
   struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
@@ -268,7 +314,10 @@ static void* app_tx_anc_rtp_thread(void* arg) {
     }
 
     /* build the rtp pkt */
-    app_tx_anc_build_rtp(s, usrptr, &mbuf_len);
+    if (s->st40_fmd)
+      app_tx_anc_build_fmd_rtp(s, usrptr, &mbuf_len);
+    else
+      app_tx_anc_build_rtp(s, usrptr, &mbuf_len);
 
     st40_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
@@ -476,6 +525,12 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   if (anc && anc->exact_user_pacing) ops.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (anc && anc->enable_rtcp) ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
   if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
+  s->st40_fmd = anc && anc->info.fast_metadata;
+  if (s->st40_fmd) {
+    ops.flags |= ST40_TX_FLAG_FAST_METADATA;
+    ops.fmd_dit = s->st40_fmd_dit = anc->info.fmd_dit;
+    ops.fmd_k_bit = s->st40_fmd_k_bit = anc->info.fmd_k_bit;
+  }
 
   handle = st40_tx_create(ctx->st, &ops);
   if (!handle) {

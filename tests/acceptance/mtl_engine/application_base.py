@@ -553,6 +553,21 @@ class Application(ABC):
             f"was {self.last_return_code}"
         )
 
+    def assert_rejected(self, marker: str) -> None:
+        """Assert the run failed, and failed with MTL's ``marker`` error.
+
+        For cases that feed MTL a setting it must refuse. The marker keeps an
+        unrelated failure, e.g. a port that never came up, from passing.
+        """
+        assert self.last_return_code not in (
+            0,
+            None,
+        ), f"MTL accepted a setting it should reject with '{marker}'"
+        assert marker in (self.last_output or ""), (
+            f"run failed without the '{marker}' error; return code was "
+            f"{self.last_return_code}"
+        )
+
     def assert_rx_timing_compliance(
         self, expected_sessions: int = 1
     ) -> dict[tuple[int, int], dict[str, int]]:

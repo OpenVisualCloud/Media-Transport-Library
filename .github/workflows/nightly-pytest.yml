@@ -34,6 +34,7 @@ jobs:
           - e835
         dir:
           - cross_app
+          - st40
           - st40p
           - gstreamer
           - kernel_socket
@@ -43,7 +44,6 @@ jobs:
           - st20p
           - st22p
           - st30p
-          - st41
           - udp
           - virtio_user
           - xdp
