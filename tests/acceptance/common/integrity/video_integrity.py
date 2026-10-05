@@ -7,7 +7,7 @@ import hashlib
 import logging
 import multiprocessing
 import re
-import subprocess
+import subprocess  # nosec B404 # runs ffmpeg via an argv list, no shell
 import sys
 import time
 from pathlib import Path

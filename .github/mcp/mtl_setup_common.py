@@ -18,7 +18,7 @@ This module defines no `@mcp.tool()`s itself; it is not an MCP server.
 from __future__ import annotations
 
 import re
-import subprocess
+import subprocess  # nosec B404 # callers pass argv lists or fixed, validated commands
 from datetime import datetime
 from pathlib import Path
 from typing import Any
