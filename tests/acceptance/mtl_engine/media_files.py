@@ -562,6 +562,46 @@ yuv_files_interlace = dict(
     },
 )
 
+# yuv_files_interlace as planar, for the JPEG XS encoder, which takes planar input
+# only. Each file is its RFC 4175 twin converted field by field, bit-exact:
+#   gst-launch-1.0 filesrc location=<twin> ! rawvideoparse format=uyvp width=<width>
+#   height=<height / 2> ! videoconvert dither=none ! video/x-raw,format=I422_10LE
+#   ! filesink location=<filename>
+yuv_files_interlace_422p10le = dict(
+    Crosswalk_480p={
+        "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 720,
+        "height": 480,
+        "fps": "60",
+    },
+    ParkJoy_576p={
+        "filename": "ParkJoy_720x576_interlace_10bit_50Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 720,
+        "height": 576,
+        "fps": "50",
+    },
+    Crosswalk_1080p={
+        "filename": "Netflix_Crosswalk_1920x1080_interlace_10bit_60Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 1920,
+        "height": 1080,
+        "fps": "60",
+    },
+    ParkJoy_1080p={
+        "filename": "ParkJoy_1920x1080_interlace_10bit_50Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 1920,
+        "height": 1080,
+        "fps": "50",
+    },
+)
+
 yuv_files_422rfc10 = dict(
     Penguin_720p={
         "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
