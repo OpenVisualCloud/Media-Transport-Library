@@ -214,7 +214,7 @@ base_build:
 
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/ except check-hardening.sh, run
-# by the rocky9 build, so the hash_<name> filters do not apply: they hold
+# by every image build, so the hash_<name> filters do not apply: they hold
 # .github/scripts/setup_environment.sh. Each image builds DPDK, runs build.sh
 # and the unit suite, and copies script/ into the image.
 docker_build:
