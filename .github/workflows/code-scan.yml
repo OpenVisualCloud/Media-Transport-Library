@@ -1,0 +1,184 @@
+name: Code scan
+
+# Static analysis, one job per scan. Each job runs when the files it reads
+# change; a manual run picks the scans and their options. A scan that reads
+# what the Build workflow built takes its gate from pr-gate.yml, which waits
+# for Build. code-scan-result is the one check name that branch protection
+# needs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clang_tidy:
+        description: clang-tidy on the C and C++ lines changed since clang_tidy_base
+        type: boolean
+        default: true
+      clang_tidy_base:
+        description: The ref clang-tidy compares with, from its merge base. The commit needs the Build workflow's caches, which every push to main makes
+        type: string
+        default: origin/main
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+jobs:
+  # clang-tidy checks the lines that a pull request changes, or on demand the
+  # lines changed since a chosen base
+  pr-gate:
+    if: ${{ github.event_name == 'pull_request' || inputs.clang_tidy }}
+    uses: ./.github/workflows/pr-gate.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: read
+    with:
+      filter: clang_tidy
+
+  # The checks of .clang-tidy on the C and C++ lines that a pull request adds
+  # or changes. DPDK and MTL are the Build workflow's caches; the job only
+  # configures the meson projects, for their compile commands.
+  clang-tidy:
+    needs: pr-gate
+    if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # A pull request needs two commits, the merge commit and its base; a
+      # manual run needs the history back to the chosen base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
+
+      - name: Compute source checksums
+        id: sums
+        uses: ./.github/actions/source-checksums
+
+      - name: Compute exact cache keys
+        id: keys
+        env:
+          HASH_DPDK: ${{ steps.sums.outputs.dpdk }}
+          HASH_MTL: ${{ steps.sums.outputs.mtl }}
+          HASH_JPEGXS: ${{ steps.sums.outputs.jpegxs }}
+          HASH_ICE: ${{ steps.sums.outputs.ice }}
+          HASH_FFMPEG: ${{ steps.sums.outputs.ffmpeg }}
+          HASH_GSTREAMER: ${{ steps.sums.outputs.gstreamer }}
+          HASH_PLUGINS: ${{ steps.sums.outputs.plugins }}
+        run: task ci:cache-keys
+
+      - name: 'stash: Restore DPDK cache'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
+          fail-on-cache-miss: true
+
+      - name: 'stash: Restore MTL cache'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.mtl_key }}
+          path: .local_install/mtl
+          fail-on-cache-miss: true
+
+      # The packages that Base Build installs for these projects, without its
+      # builds; outside the checkout, which Level Zero's source would land in.
+      - name: Install the build dependencies
+        working-directory: ${{ runner.temp }}
+        env:
+          SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 1
+          ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
+          ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
+        run: |
+          source "${GITHUB_WORKSPACE}/.github/scripts/setup_environment.sh"
+          setup_ubuntu_install_dependencies
+          sudo apt-get install -y --no-install-recommends libgmock-dev
+
+      - name: Configure the meson projects
+        run: .github/scripts/ci/clang-tidy-configure.sh
+
+      # The scan must fail on a macro planted in a commit on top, or a green
+      # run proves nothing; the commit is dropped again. shell: bash sets
+      # pipefail, so a file that clang-tidy can't process fails the scan.
+      - name: clang-tidy control
+        shell: bash
+        run: |
+          printf '\n#define MT_PLANTED_SUM(a, b) a + b\n' >>lib/src/mt_util.c
+          line=$(wc -l <lib/src/mt_util.c)
+          git -c user.name=ci -c user.email=ci@localhost commit -q -am "clang-tidy control"
+          if .github/scripts/ci/clang-tidy-changed.py clang-tidy-14 HEAD^1 | .github/scripts/ci/changed-lines.py HEAD^1 >"${RUNNER_TEMP}/control.txt"; then
+            echo "::error::the clang-tidy scan passed a planted macro"
+            exit 1
+          fi
+          git reset -q --hard HEAD^1
+          if ! grep -q "^lib/src/mt_util.c:${line}:[0-9]*: warning: .*\[bugprone-macro-parentheses\]" "${RUNNER_TEMP}/control.txt"; then
+            echo "::error::the clang-tidy scan failed, but not on the planted macro"
+            cat "${RUNNER_TEMP}/control.txt"
+            exit 1
+          fi
+
+      - name: Choose the base of the scan
+        id: base
+        env:
+          BASE_REF: ${{ inputs.clang_tidy_base }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then
+            echo "sha=$(git rev-parse HEAD^1)" >>"${GITHUB_OUTPUT}"
+          else
+            echo "sha=$(git merge-base "${BASE_REF}" HEAD)" >>"${GITHUB_OUTPUT}"
+          fi
+
+      - name: clang-tidy
+        id: scan
+        shell: bash
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          if ! .github/scripts/ci/clang-tidy-changed.py clang-tidy-14 "${BASE}" | .github/scripts/ci/changed-lines.py "${BASE}" >"${RUNNER_TEMP}/findings.txt"; then
+            sed 's/^\([^:]*\):\([0-9]*\):\([0-9]*\): \(.*\)$/::error file=\1,line=\2,col=\3::\4/' "${RUNNER_TEMP}/findings.txt"
+            exit 1
+          fi
+
+      # Whether the scan passed or failed. No finding uploads an empty
+      # analysis, so the code scanning check reports every scanned pull request.
+      - name: Convert the findings to SARIF
+        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
+        run: .github/scripts/ci/clang-tidy-sarif.py <"${RUNNER_TEMP}/findings.txt" >"${RUNNER_TEMP}/clang-tidy.sarif"
+
+      # A fork's pull request has a token that can't write security events.
+      - name: Upload the findings to code scanning
+        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: ${{ runner.temp }}/clang-tidy.sarif
+          category: clang-tidy
+
+  code-scan-result:
+    name: code-scan-result
+    needs: [pr-gate, clang-tidy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All scans ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: A scan failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
