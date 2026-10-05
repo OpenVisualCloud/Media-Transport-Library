@@ -19,7 +19,7 @@ int open_packet_tx(mtl_instance_h mt, mtl_session_h* s) {
   mtl_flow_ipv4(&sc.flows[1], 239, 168, 86, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.packet.packets_per_unit = PKTS_PER_FRAME;
   sc.packet.set_fields =
@@ -46,7 +46,7 @@ int send_frame(mtl_session_h s, int64_t frame) {
 }
 
 /* RX of a session with unit = MTL_UNIT_PACKETS: chunks of received packets, duplicates of
-   the two legs already removed by sequence number. */
+   the two legs already removed by RTP timestamp and sequence number. */
 int receive_packets(mtl_session_h s) {
   struct mtl_unit u;
   MTL_INIT(&u);

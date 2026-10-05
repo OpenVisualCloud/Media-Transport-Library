@@ -2,20 +2,19 @@
 
 | | |
 |---|---|
-| Status | Design, nothing implemented. The Kubernetes part is one package awaiting maintainer decision M16 ([decisions.md](decisions.md)); its engine work is in Phases 1–6 (D-98) |
+| Status | The operator's document: security, containers, Kubernetes pods and crash safety. The Kubernetes rules are decisions D-89–D-92; the instance open and close land in MS1, health and the shutdown report in MS3 ([implementation-plan.md](implementation-plan.md) §6.2), and the engine fixes EK1–EK21 on the Kubernetes track beside the milestones, done by the MS3 exit (§6.10 there) |
 | Date | 2026-10-02 |
-| Folded from | the archived notes 15 (security and deployment) and 16 (Kubernetes and crash safety); the Kubernetes research notes K1 (runtime facts, now [prior-art.md](prior-art.md) §7), K2 (code audit, now [research.md](research.md) §4.2, §9 and [engine.md](engine.md) §12.3) and K3 (shutdown prior art, now [prior-art.md](prior-art.md) §8); the reviews RK and RKNA (now [history.md](history.md) §6.8) |
-| Headers | `mtl.h` (R4, R8, `mtl_instance_open`, `mtl_instance_close`, `mtl_instance_abort`, `env:` ports), `mtl_observe.h` (health, shutdown), `mtl_options.h` 401, 2010, 2020–2027, 2029, 2110, 2123–2125, 2203, 2207, `mtl_reasons.h` 10–12, 104, 112–115, 520, 600–614, `mtl_queue.h` events 23–25 |
+| Headers | `mtl.h` (R4, R8, `mtl_instance_open`, `mtl_instance_close`, `mtl_instance_abort`, `env:` ports), `mtl_observe.h` (health, shutdown), `mtl_options.h` 400, 2010, 2020–2027, 2110, 2123–2125, 2203, 2207, `mtl_reasons.h` 10, 11, 104, 112–115, 520, 600–614, `mtl_events.h` events 23–25 |
 | Baseline | `main` @ `545a266a`, DPDK 26.07 |
 
 MTL runs with privileges most libraries never get. It owns NIC queues through VFIO, pins memory and
-maps it for device DMA, runs busy-loop threads on dedicated CPUs, and may talk to a root daemon. This
+maps it for device DMA, runs polling tasklet schedulers on dedicated CPUs, and may talk to a root daemon. This
 document says what each of those surfaces exposes, what the design does about it, and what stays the
 deployer's job; then how MTL runs on bare metal, in containers and in Kubernetes pods, and what holds
 after every way a process can end.
 
-Marks from the research notes: **[verified]** = the source line or document was read; **[inferred]** =
-reasoning, not re-checked: a hypothesis to test. Paths without a prefix are under `lib/src/`.
+Evidence labels: **[verified]** = the source line or document was read; **[inferred]** = reasoning,
+not re-checked: a hypothesis to test. Paths without a prefix are under `lib/src/`.
 
 ## 1. Threat model and surfaces
 
@@ -27,7 +26,7 @@ reach memory, devices or CPUs it did not ask for.
 |---|---|---|---|
 | imported memory mapped into the IOMMU (`mtl_mem_import`) | yes | the NIC reads or writes memory the application did not mean to share; DMA into freed memory | §1.1 |
 | wait handles (eventfd, Windows event `HANDLE`) | yes | descriptor leaks across `fork`/`exec`; an application draining the library's eventfd loses wake-ups | §1.2 |
-| waker and worker threads, affinity | yes | starvation of other threads; landing on a scheduler CPU | §1.3 |
+| worker threads, affinity | yes | starvation of other threads; landing on a scheduler CPU | §1.3 |
 | handle table | yes | handle confusion across sessions | §1.4 |
 | null backend, test clock, fault injection | yes | a fake clock or fault injection in a production process | §1.5 |
 | MtlManager socket | existing | any local user steering CPUs, XDP maps and flows | §1.6 |
@@ -56,22 +55,24 @@ files, pinned host memory), pins it and maps it into every port and DMA engine a
   slot, in-flight unit or DMA references the region; otherwise it returns 1 and
   `MTL_EVENT_REGION_RELEASED` reports the end. The application must not `munmap`, free or truncate the
   memory before that: the device could DMA into pages the kernel has reused, a device-level
-  use-after-free the library cannot detect. Teardown order: wait for `MTL_EVENT_SESSION_RETIRED`, then
-  close the region.
+  use-after-free the library cannot detect. Teardown order: close each session until
+  `mtl_session_close` returns 0, then close the region.
 - **Shared memory is shared.** Every process mapping a `memfd` or shmem region can change it while a TX
   unit is in flight, and sees what the NIC writes on RX: the sharer's choice, not a library bug. Seal
   `memfd` regions with `F_SEAL_SHRINK | F_SEAL_GROW` before import. Regular files are copy only
   (`MTL_BACKING_FILE`, `direct` 0 in `mtl_mem_get_info`); hugetlbfs files are direct.
 - **PA mode** (no IOMMU, `--iova-mode=pa`) protects nothing: the device reaches any physical address.
   It is the port stat `caps.iova_mode`, and open refuses it unless `instance.allow_noiommu` (§4.11).
+  With the option set, imports are copy only (`direct` 0), and a session with
+  `MTL_SESSION_REQUIRE_DIRECT` over one fails with `-MTL_ENOTSUP`.
 - **Budget.** Imports use IOMMU mappings and memseg entries; `caps.max_regions` and `-MTL_ENOSPC`
   (`REGION_BUDGET`) stop one process exhausting them. Pinning counts against `RLIMIT_MEMLOCK`; a failed
   pin is a clean `-MTL_ENOMEM`, never a partial mapping.
 
 ### 1.2 Wait handles
 
-`mtl_session_get_wait_handle` and `mtl_queue_get_wait_handle` return an `intptr_t`: a Linux eventfd
-(poll for `POLLIN`) or a Windows auto-reset event `HANDLE`.
+`mtl_get_wait_handle` (`mtl_session_get_wait_handle`, `mtl_instance_get_wait_handle`) returns an
+`intptr_t`: a Linux eventfd (poll for `POLLIN`) or a Windows auto-reset event `HANDLE`.
 
 The library **owns** it: the application may poll or wait on it, never read, write or close it. Data
 calls drain it (R2), so an application that reads it steals a wake-up. It is close-on-exec and
@@ -80,11 +81,10 @@ spurious wake-up, which every wait loop tolerates.
 
 ### 1.3 Threads, priorities and affinity
 
-- The waker (`session.waker`, `MTL_WAKER_THREAD`) runs at normal priority (`SCHED_OTHER`) by default.
-  `instance.waker_priority` (`MTL_OPT_WAKER_PRIORITY`, 2029) gives it a `SCHED_FIFO` priority, 1–99,
-  which needs `CAP_SYS_NICE`; failing to get it is reported, never fatal. The waker never spins: it
-  sleeps to the next due time, at most 1 ms with nothing due, so a real-time priority cannot starve the
-  host.
+- No library thread asks for a real-time priority: the workers, the admin thread and the log-sink
+  thread run `SCHED_OTHER`. The wake-up writes of the deferred wake run on each scheduler's own CPU,
+  after its tasklets, so waking needs no thread of its own; a waker thread (W3) is built only if
+  spike S1 shows that those writes harm pacing (D-102).
 - Affinity is explicit: every non-scheduler thread runs on `instance.main_lcore`, never on a scheduler
   CPU, never with the creating thread's affinity (§4.7). `MTL_INSTANCE_TASKLET_THREAD` (no dedicated
   CPUs) makes schedulers preemptible pthreads, still pinned one per CPU and registered with
@@ -104,7 +104,7 @@ spurious wake-up, which every wait loop tolerates.
 | Piece | Built | Why |
 |---|---|---|
 | null backend (port `null:<n>`) | always | touches no device and no clock; needed by bindings and doc tests on release builds |
-| test clock (`mtl_test_clock`, `mtl_test_clock_advance`, `mtl_debug.h`) | only with `-Denable_debug_api=true` | a fake clock re-times every session of the instance |
+| test clock (the faults `MTL_FAULT_TEST_CLOCK` and `MTL_FAULT_CLOCK_ADVANCE` of `mtl_debug_inject`, `mtl_debug.h`) | only with `-Denable_debug_api=true` | a fake clock re-times every session of the instance |
 | fault injection (`mtl_debug_inject`, `mtl_debug.h`) | only with `-Denable_debug_api=true`; never in release packages | forces ERROR, drops packets, fakes link and manager loss |
 
 The meson option is independent of `buildtype` (`./build.sh debug` does not set it); it replaces
@@ -135,16 +135,16 @@ group (for example `mtl`), `SO_PEERCRED` identity, grants owned per client, SIGP
 ## 2. Processes and instances
 
 - **One EAL per process** (`--in-memory`): no secondary processes, no session shared between processes.
-- **At most one instance per port set.** One EAL per process means one instance per port set. Open: a
-  second `mtl_instance_open` of a port the process already has open, without `MTL_INSTANCE_SHARED`, has
-  no defined return in `mtl.h`, which names only the shared case (see decisions.md §5).
+- **At most one instance per port set.** One EAL per process means one instance per port set. A
+  second `mtl_instance_open` of a port the process already has open, without `MTL_INSTANCE_SHARED`,
+  fails with `-MTL_EEXIST` (`INSTANCE_MISMATCH`) (OI-49).
 - **One shared instance per process.** `MTL_INSTANCE_SHARED` gives the components of one process (a
   GStreamer element, an FFmpeg device, the application) one refcounted instance. Each open returns its
   own reference handle. A later open that names ports, lcores, time source or options that differ from
   the live instance fails with `-MTL_EEXIST` (`INSTANCE_MISMATCH`), so no component silently
   reconfigures another's instance.
-- **Separate processes share time, not state.** One process per essence aligns through the epoch
-  timeline (the null timeline handle) and the index helpers ([timing.md](timing.md)). CPUs between
+- **Separate processes share time, not state.** One process per essence aligns through the SMPTE
+  epoch, on which every session runs, and `mtl_epoch_index_at` ([timing.md](timing.md)). CPUs between
   processes come from the affinity mask, OFD locks or MtlManager (§4.7).
 - **Re-open in the same process.** After a close that returned 0 or 1, open works again on the same
   ports and a subset of the first open's CPUs (EAL keeps its first arguments), as a GStreamer pipeline
@@ -163,7 +163,7 @@ MTL's own software time base, as today, and never the VF's PHC (§4.8). `time.ph
 `/dev/vfio/vfio`); hugepages (with `--in-memory` the resource is enough, no hugetlbfs mount
 **[inferred for MTL]**; DPDK still reads `/sys/kernel/mm/hugepages`); `RLIMIT_MEMLOCK` large enough for
 pools and imports, or an effective `CAP_IPC_LOCK` (§4.11); `CAP_SYS_NICE` on multi-socket hosts
-(§4.14) and for `instance.waker_priority` (§1.3); the MtlManager socket, bind-mounted with a group the
+(§4.14); the MtlManager socket, bind-mounted with a group the
 container user is in, only for AF_XDP on shared netdevs; `MTL_INSTANCE_TASKLET_THREAD` where CPUs are not dedicated. The null backend needs none
 of this and is the recommended way to run an application's own CI in an ordinary container.
 
@@ -208,7 +208,7 @@ The facts the design rests on:
 | an XSK binds in its socket's network namespace (`xsk.c:1645`) and needs `CAP_NET_RAW` there (`xsk.c:2196`) | MtlManager cannot resolve a pod's ifindex | [verified] |
 | Media Communications Mesh's MTL DaemonSets run `privileged: true`, as root, with hostPath `/dev/vfio` and a hard-coded VF | today's practice is set-up C | [verified] |
 
-More facts and their sources: [prior-art.md](prior-art.md) §7. All twenty requirements K-REQ-1…20
+More facts and their sources: [standards.md](standards.md). All twenty requirements K-REQ-1…20
 are met by this design, several through the engine fixes EK1–EK21 ([engine.md](engine.md)) and the
 node settings of §4.14; the map is [requirements.md](requirements.md) §5.
 
@@ -226,13 +226,13 @@ int mtl_instance_shutdown(mtl_instance_h mt, uint64_t flags, int64_t timeout_ns,
   (`references_left` > 0). `MTL_SHUTDOWN_ALL_REFERENCES` shuts down the shared instance for every
   component of the process. The application that owns `main()` uses it on SIGTERM; a plugin never
   does. The other components' handles then get `-MTL_ESHUTDOWN`, and their close returns 0.
-- **Objects closed by the instance.** Sessions, queues and timelines still open are closed by it,
-  sessions in reverse attach order (a session over another session's pool before the owner).
+- **Objects closed by the instance.** Sessions and regions still open are closed by it, sessions
+  in reverse attach order (a session over another session's pool before the owner).
   Because handle slots are never freed (R4), their handles stay safe: data calls return
   `-MTL_ESHUTDOWN` (reason `INSTANCE_SHUTDOWN`), blocked waits wake with it, `mtl_session_close` returns
   0, and `mtl_rx_release`/`mtl_tx_release` of an earlier lease return 0.
-- **Not from a library thread.** From a queue dispatch callback, the log sink or a codec thread the
-  call returns `-MTL_EDEADLK` and does not consume `mt`: the shutdown joins those threads.
+- **Not from a library thread.** From the log-sink callback or a codec thread the call returns
+  `-MTL_EDEADLK` and does not consume `mt`: the shutdown joins those threads.
 - **Timeouts.** 0 means abort semantics (no drain). `MTL_FOREVER` still bounds each step by its own
   budget.
 - **Instance close flushes queued TX units.** To send them, close the sessions first:
@@ -252,7 +252,7 @@ sequenceDiagram
     M->>M: 0. refuse new data calls, wait for those inside one
     M->>N: 1. TX finishes the unit on the wire, flushes the rest
     M->>N: 2. RX sends a leave on every leg
-    M->>M: 3. deliver pending results, join dispatch, log and codec threads
+    M->>M: 3. discard unread results, join the log-sink and codec threads
     M->>N: 4. stop schedulers, queues and ports
     M->>G: 5. return grants by closing the connection
     M->>M: 6. free memory not under a lease
@@ -263,11 +263,11 @@ sequenceDiagram
 
 | Step | What | Bounded by | Typical time |
 |---|---|---|---|
-| 0 | New data calls return `-MTL_ESHUTDOWN`; health shows `SHUTTING_DOWN`, so readiness fails. Threads already inside a data call are waited for through each session's in-flight counter. A `MTL_SESSION_SINGLE_READER` session has no counter, so the application joins that thread first (ex11 does). | the deadline | µs; a UHD conversion in the caller: ms |
+| 0 | New data calls return `-MTL_ESHUTDOWN`; health shows `SHUTTING_DOWN`, so readiness fails. Threads already inside a data call are waited for through each session's in-flight counter. | the deadline | µs; a UHD conversion in the caller: ms |
 | 1 | TX: the unit whose first packet left is sent to its end at its pace, with its normal result: the wire never carries a partial unit. Rows units end by `tx.rows_late` (STALL as TRUNCATE). Queued units: `MTL_TX_FLUSHED`, reason `CLOSE`. `MTL_SHUTDOWN_DRAIN` sends every queued unit instead, until the deadline minus what steps 2–6 need. | the deadline | one unit (16.7 ms at 59.94p) |
 | 2 | RX: an IGMP/MLD leave on every leg before the queues close; incomplete units are discarded and counted. | never waits on the network | one packet per group |
-| 3 | Pending results and terminal events go to the dispatch callbacks, so a framework that frees buffers on results sees every one. Then queue dispatch, the log sink and codec threads are joined. Leftovers: `results_discarded`, `threads_unjoined`. | the deadline | ms |
-| 4 | Schedulers stop, then queues and ports. Flows go, AF_XDP sockets close, imported regions leave the IOMMU: only here, after the queues stopped, because unmapping a region that a device not yet quiesced can reach must never happen. A queue that will not complete runs the stalled-queue steps ([engine.md](engine.md)); a port reset starts only if the budget left covers `caps.reset_budget_ns`, else the queue is quarantined. | the deadline | ms; a stuck rate-limit queue: up to the reset budget |
+| 3 | Results no reader took are discarded and counted (`results_discarded`), so a framework that frees buffers on results reaps before it shuts down. Then the log-sink and codec threads are joined; one stuck in foreign code counts in `threads_unjoined`. | the deadline | ms |
+| 4 | Schedulers stop, then queues and ports; flows go, AF_XDP sockets close, regions leave the IOMMU only after the queues stopped. A stuck queue runs the stalled-queue steps ([engine.md](engine.md)): a port reset if the budget left covers `caps.reset_budget_ns`, else quarantine. | the deadline | ms; a stuck rate-limit queue: up to the reset budget |
 | 5 | MtlManager grants (CPUs, queues, flows, XDP references) are returned by closing the connection, after step 4: a grant returned while still in use is the double booking in today's `mtl_uninit`, where `mt_sch_mrg_uinit` releases the lcores before it frees the schedulers still polling them (`mt_sch.c:1022-1030`). | socket close | µs |
 | 6 | Library pools are freed, except slots under a lease the application still holds. | — | ms |
 
@@ -288,13 +288,13 @@ sequenceDiagram
   `MTL_SHUTDOWN_DRAIN` the drain is one unit, so the default 30 s is generous. Size the margin for the
   reset, not the drain: four queued 59.94 Hz units are 67 ms, but a stalled rate-limit queue holds its
   units until the port reset, so `caps.reset_budget_ns` sets the margin.
-- **`preStop`** is for work that must happen before SIGTERM, such as NMOS IS-04 unregistration (Phase 7,
-  later; [nmos-ipmx.md](nmos-ipmx.md)). Its time comes out of the same grace period. MTL teardown never
+- **`preStop`** is for work that must happen before SIGTERM, such as NMOS IS-04 unregistration
+  ([nmos-ipmx.md](nmos-ipmx.md)). Its time comes out of the same grace period. MTL teardown never
   belongs there.
-- **Why not more.** No shutdown thread in MTL: the application's main thread runs the shutdown, and
-  the process exits right after it returns. No step its remaining budget cannot cover (reported and
-  skipped, never extended). Rejected: folding shutdown into close with a thread-local report, because
-  the flags and the report need a call.
+- **No more than that.** No shutdown thread in MTL: the application's main thread runs the shutdown,
+  and the process exits right after it returns. No step runs that its remaining budget cannot cover
+  (reported and skipped, never extended). Shutdown is a call of its own, not close with a
+  thread-local report, because the flags and the report need a call.
 
 ### 4.3 Outcomes and the report
 
@@ -328,8 +328,8 @@ step (`reason` names the first that did not finish; `ports_unquiesced` is a bit 
   handler, and its telemetry socket registers an `atexit` (`telemetry.c:610-652` **[verified]**), off by
   default (`instance.telemetry`).
 - **AS calls at any time.** A handler may call `mtl_instance_interrupt(mt, 1)`, `mtl_instance_abort(mt)`,
-  `mtl_session_interrupt(s, 1)` and `mtl_queue_interrupt(q, 1)` at any time, also during and after
-  close. Their state lives in the never-freed handle slot: the AS path increments an in-flight counter,
+  `mtl_session_interrupt(s, 1)` and `mtl_interrupt` with `MTL_INTR_ON` at any time, also during and
+  after close. Their state lives in the never-freed handle slot: the AS path increments an in-flight counter,
   checks `closed`, writes the eventfd and decrements; close sets `closed` and waits for the counter
   before closing the eventfd, so a late signal never writes into a recycled descriptor (in ex11 that
   descriptor number could have been `/dev/termination-log`).
@@ -368,8 +368,7 @@ not recover, while the process runs. Owners: **K** kernel, **L** library, **M** 
 | library pools (hugepages, `--in-memory`) | freed, slot by slot as leases return | freed by the kernel; with an IOMMU, pinned pages outlive the DMA | not freed under a lease | L / K |
 | imported regions | unmapped from the device before `mtl_mem_close` returns 0 | IOMMU unmap after DMA is off; the memory dies with the process | the removed port's mapping goes with its VFIO descriptor | L / K |
 | **no-IOMMU mode** | as (a) | **no guarantee: DMA may hit freed pages** | **no guarantee** | refused unless `instance.allow_noiommu` |
-| queues (`mtl_queue`), wait handles | results delivered, dispatch joined, eventfds closed | closed by the kernel | stay; deliver `PORT_REMOVED` | L / K |
-| timelines | closed with the instance | process-local, gone | unaffected; the time source may degrade (`TIME_STATE`) | L |
+| wait handles (eventfds) | closed once the last async-signal-safe caller left | closed by the kernel | stay; the instance's handle delivers `PORT_REMOVED` | L / K |
 | codec plugins | `stop` called; threads joined or counted unjoined | gone | sessions ERROR; plugin stopped as in (a) | L / A |
 | CPUs, Guaranteed pod | nothing to release: the cpuset is the lease | nothing | — | O |
 | CPUs, MtlManager | returned on socket close, after the schedulers stopped | returned at socket EOF | — | M / K |
@@ -385,7 +384,7 @@ not recover, while the process runs. Owners: **K** kernel, **L** library, **M** 
 **Residual effects of a SIGKILL**, with owner and duration:
 
 1. Stale IGMP membership for the switch's group membership interval (about 260 s). Operators enable an
-   IGMP querier and fast-leave on media VLANs; later, MtlManager sends leaves for a dead client (SF-K3-7).
+   IGMP querier and fast-leave on media VLANs; later, MtlManager sends leaves for a dead client.
    Only the kernel-socket backend leaves correctly after SIGKILL, at socket close **[inferred]**.
 2. A partial frame on the wire; receivers count it as incomplete.
 3. XDP state while MtlManager is down, until it restarts and reconciles; an AF_XDP queue's
@@ -421,18 +420,17 @@ sending on its other 2022-7 leg is not restarted. Removal handling needs no `ins
 | Topic | Rule |
 |---|---|
 | which CPUs | `lcores` NULL: the opening thread's `sched_getaffinity()`, which is the pod's cpuset under the CPU manager. An explicit `lcores` naming a CPU outside the mask fails with `-MTL_EINVAL`, reason `CPU_NOT_ALLOWED`, before EAL starts. Lcore numbers reported to the application are CPU IDs. |
-| arbitration between processes | `instance.cpu_arbitration` (`MTL_CPUARB_NONE`, `_LOCKS`, `_MANAGER`); absent = auto: MtlManager if its socket is present, else one OFD lock per CPU in `instance.runtime_dir` when set, else none (the affinity mask is the lease). In a pod that mounts the socket: see below. SysV table, `kill(pid, 0)` and "manager optional" removed (EK6). |
-| pinning | every scheduler is pinned to one CPU, `TASKLET_THREAD` included. `instance.main_lcore` is the CPU of EAL's main lcore and of every non-scheduler thread: by default the first CPU of the mask (EAL's default; K1 suggested the last), never given a scheduler. The caller's threads and memory policy are never changed (EK13). Placement: the `sched.lcore` stat and the one-line open log. |
+| arbitration between processes | `instance.cpu_arbitration` (`MTL_CPUARB_NONE`, `_LOCKS`, `_MANAGER`); absent = auto: none inside an exclusive cpuset (below); else MtlManager if its socket is present, else one OFD lock per CPU in `instance.runtime_dir` when set, else none (the affinity mask is the lease). SysV table, `kill(pid, 0)` and "manager optional" removed (EK6). |
+| pinning | every scheduler is pinned to one CPU, `TASKLET_THREAD` included. `instance.main_lcore` is the CPU of EAL's main lcore and of every non-scheduler thread: by default the first CPU of the mask (EAL's default), never given a scheduler. The caller's threads and memory policy are never changed (EK13). Placement: the `sched.lcore` stat and the one-line open log. |
 | busy polling under a quota | open reads the CFS quota (`cpu.max`) and flags it only when quota ÷ period is below the CPUs of the mask (a Guaranteed pod is fine). A shared cpuset is not visible from inside **[inferred]**; a non-integer CPU request always gives one. `instance.cpu_shared`: `MTL_CPU_SHARED_WARN` (default), `_REFUSE` (reason `CPU_SHARED`), `_SLEEP` (idle schedulers sleep). |
 | SMT | a scheduler whose SMT sibling is outside the mask (so shared with another pod) is logged once. The kubelet's `full-pcpus-only` policy option prevents this. |
 | NUMA | MTL cannot fix a mismatch inside a pod; `info.numa_mismatch` only reports it (§5). Run media pods under the Topology Manager policy `single-numa-node`, so the VF, the exclusive CPUs and the hugepages share a node. |
 | IRQs | kernel-socket and AF_XDP pods depend on IRQ and softirq placement, which a pod cannot set: keep IRQs off their CPUs (`globallyDisableIrqLoadBalancing`, or on OpenShift the `cpu-load-balancing.crio.io`, `cpu-quota.crio.io` and `irq-load-balancing.crio.io` annotations set to `disable`). |
 
-**Auto arbitration in a pod.** A pod mounts the MtlManager socket only for AF_XDP grants, but auto
-then picks the manager for CPUs too, inside the pod's exclusive cpuset, which K-REQ-8 forbids. Until
-that is decided, set `MTL_CPUARB_NONE` in such pods. Open (RK-28): auto becomes none inside an
-exclusive cpuset, the manager then granting only AF_XDP queues, or it stays as `mtl_options.h` says
-and the documentation tells pods to set none (see decisions.md §5).
+**Auto arbitration in a pod.** A pod mounts the MtlManager socket only for AF_XDP grants; manager CPU
+arbitration inside the pod's exclusive cpuset would break K-REQ-8. So inside an exclusive cpuset auto
+is none, even with the socket mounted: the affinity mask is the lease, and the manager grants only
+AF_XDP queues, never CPUs. Setting `MTL_CPUARB_NONE` explicitly is the same.
 
 **The OFD lock protocol.** `MTL_CPUARB_LOCKS` takes a non-blocking `F_OFD_SETLK` write lock on byte
 n of `<runtime_dir>/lcore.lock` for host CPU n (CPU numbers in a pod are host numbers), file mode 0660
@@ -448,7 +446,7 @@ namespace look dead).
 
 | Source | In a pod |
 |---|---|
-| `MTL_TIME_SOURCE_AUTO` (default) | the VF's PHC, read only, when a node daemon disciplines it; else `CLOCK_TAI` when the kernel's TAI offset is set; else `SYSTEM_TAI` (`CLOCK_REALTIME` plus the UTC offset, ESTIMATED). AUTO chooses once, at open. From Phase 7 the last step is `FREERUN` and AUTO is re-evaluated while running ([timing.md](timing.md) §13, [nmos-ipmx.md](nmos-ipmx.md)). |
+| `MTL_TIME_SOURCE_AUTO` (default) | `CLOCK_TAI` when the kernel's TAI offset is set; else `SYSTEM_TAI` (`CLOCK_REALTIME` plus the UTC offset, ESTIMATED). From MS6 the VF's PHC comes first, read only, when a node daemon disciplines it (E9). AUTO chooses once, at open; from Phase 7 it is re-evaluated while running and falls back to `FREERUN` without a step ([timing.md](timing.md) §13). |
 | `_PHC`, `_CLOCK_TAI`, `_USER` | as named; read only. `CLOCK_TAI` is rejected while the kernel offset is 0. |
 | `_PTP_BUILTIN` | only when named, never by AUTO. On a PF that MTL owns it disciplines the PHC. On a VF it runs as today in software mode (`ptp->no_timesync`, `mt_ptp.c:1390-1393`): it disciplines MTL's own software time base, never the VF's PHC. `CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own. |
 | built-in phc2sys (`time.phc2sys`) | steers the node's `CLOCK_REALTIME`: never in a pod; restores the frequency at close. |
@@ -468,15 +466,16 @@ is preferred where one exists.
 - **`MTL_PHC_TRUST_YES`**: trust the node; **`MTL_PHC_TRUST_NO`**: never use the PHC.
 
 The application can pass the grandmaster and clock class, read from the PTP operator's events or
-`pmc`, with `mtl_time_set_reference()`. `time.phc_trust` and `mtl_time_set_reference()` therefore
-arrive with the pod time rules, in Phases 1–2 with the instance; only their IS-04 use is Phase 7
-([nmos-ipmx.md](nmos-ipmx.md)). No source needs `CAP_SYS_TIME` or `/dev/ptp*` write access. The
-state is in `time.*` stats, `mtl_health.time_state`, `time_error_ns` and `MTL_EVENT_TIME_STATE`.
+`pmc`, with `mtl_time_set_reference()`. `mtl_time_set_reference()` (MS2) and `time.phc_trust`
+therefore come with the pod time rules, not with NMOS; only their IS-04 use is Phase 7
+([nmos-ipmx.md](nmos-ipmx.md)). No source needs `CAP_SYS_TIME` or `/dev/ptp*`
+write access. The state is in `time.*` stats, `mtl_health.time_state`, `time_error_ns` and
+`MTL_EVENT_TIME_STATE`.
 
-Open: which configurations count as "a PHC MTL does not own" for `CLOCK_NOT_OWNED`. On a VF the
-built-in client never steers a PHC, and on a PF today's client always steers it; MTL cannot see a node
-ptp4l on the same PF. One candidate: `PTP_BUILTIN` together with `time.phc_trust` `MTL_PHC_TRUST_YES`,
-where the operator says a node daemon disciplines the PHC.
+**A PHC MTL does not own** (`CLOCK_NOT_OWNED`, 614, OI-7): `PTP_BUILTIN` together with
+`time.phc_trust` = `MTL_PHC_TRUST_YES`, where the operator says a node daemon disciplines the PHC.
+MTL cannot see a node ptp4l on the same PF, so without that option the built-in client on a PF
+steers the PHC as today; on a VF it never steers a PHC.
 
 ### 4.9 Fail-fast open
 
@@ -484,19 +483,19 @@ Open runs every check that needs no device before it touches one. A misconfigure
 with one reason and a one-line `mtl_last_error()` detail the application writes to its termination
 message, so a CrashLoopBackOff is diagnosable from `kubectl describe`.
 
-| Check | Reason on failure |
-|---|---|
-| each `env:VAR[#n]` port resolves (not in a set-uid process, where `env:` and `MTL_PORTS` are `-MTL_EINVAL`) | `PORT_ENV_UNSET` (608) |
-| the device node exists in the container (`/dev/vfio/N`), the process's user can open it, the device is bound to vfio-pci | `DEVICE_NODE_MISSING` (601), `DRIVER_MISMATCH` (602), `CAPABILITY_MISSING` (605) naming "/dev/vfio/N not writable" |
-| an IOMMU is present (not no-IOMMU, not PA mode), unless `instance.allow_noiommu` | `NO_IOMMU` (600) |
-| hugepages within the **cgroup** hugetlb limit and the free pages | `HUGEPAGES_LIMIT` (603) |
-| `RLIMIT_MEMLOCK` covers the pools, or `CAP_IPC_LOCK` is **effective** | `MEMLOCK_LIMIT` (604), naming which is missing |
-| the capabilities the backend needs (§4.14), in the effective set | `CAPABILITY_MISSING` (605), naming it |
-| the CPUs (§4.7) | `CPU_NOT_ALLOWED` (606), `CPU_SHARED` (607) |
-| `instance.runtime_dir`, when set, exists and is writable | `RUNTIME_DIR` (609) |
-| MtlManager, when the configuration needs it (AF_XDP on a shared netdev) | `MANAGER_REQUIRED` (610) |
-| AF_XDP: the socket or map from the node agent (`port.xsk_map`) | `XSK_UNAVAILABLE` (611) |
-| the named time source can be read; `PTP_BUILTIN` is not asked to steer a PHC MTL does not own (§4.8) | `TIME_SOURCE_UNAVAILABLE` (613), `CLOCK_NOT_OWNED` (614) |
+| Check | Reason on failure | Code |
+|---|---|---|
+| each `env:VAR[#n]` port resolves (not in a set-uid process, where `env:` and `MTL_PORTS` are `-MTL_EINVAL`) | `PORT_ENV_UNSET` (608) | `-MTL_EINVAL` |
+| the device node exists in the container (`/dev/vfio/N`), the process's user can open it, the device is bound to vfio-pci | `DEVICE_NODE_MISSING` (601), `DRIVER_MISMATCH` (602), `CAPABILITY_MISSING` (605) naming "/dev/vfio/N not writable" | `-MTL_ENODEV` (601, 602), `-MTL_ENOTSUP` (605) |
+| an IOMMU is present (not no-IOMMU, not PA mode), unless `instance.allow_noiommu` | `NO_IOMMU` (600) | `-MTL_ENOTSUP` |
+| hugepages within the **cgroup** hugetlb limit and the free pages | `HUGEPAGES_LIMIT` (603) | `-MTL_ENOMEM` |
+| `RLIMIT_MEMLOCK` covers the pools, or `CAP_IPC_LOCK` is **effective** | `MEMLOCK_LIMIT` (604), naming which is missing | `-MTL_ENOMEM` |
+| the capabilities the backend needs (§4.14), in the effective set | `CAPABILITY_MISSING` (605), naming it | `-MTL_ENOTSUP` |
+| the CPUs (§4.7) | `CPU_NOT_ALLOWED` (606), `CPU_SHARED` (607) | `-MTL_EINVAL` (606), `-MTL_ENOSPC` (607, with `MTL_CPU_SHARED_REFUSE`) |
+| `instance.runtime_dir`, when set, exists and is writable | `RUNTIME_DIR` (609) | `-MTL_EINVAL` |
+| MtlManager, when the configuration needs it (AF_XDP on a shared netdev) | `MANAGER_REQUIRED` (610) | `-MTL_ENOTSUP` |
+| AF_XDP: the socket or map from the node agent (`port.xsk_map`) | `XSK_UNAVAILABLE` (611) | `-MTL_ENODEV` |
+| the named time source can be read; `PTP_BUILTIN` is not asked to steer a PHC MTL does not own (§4.8) | `TIME_SOURCE_UNAVAILABLE` (613), `CLOCK_NOT_OWNED` (614) | `-MTL_ENOTSUP` (613), `-MTL_EINVAL` (614) |
 
 There is no preflight flag (rejected: an init container has its own CPUs, hugepage limit and memlock,
 so it would check the wrong container). Node-level checks (IOMMU, VFs, drivers) belong in a node tool
@@ -509,7 +508,7 @@ never silently and never inside a join:
 
 | Request | When | Failure |
 |---|---|---|
-| `port.promiscuous` (2110), or any other port setting that needs promiscuous or all-multicast, on a VF the probe found untrusted | open, after the probe | reason `VF_UNTRUSTED` (612). Today `rte_eth_promiscuous_enable` is called and its result ignored (`dev/mt_dev.c:1292-1296`), so an untrusted VF stays filtered without a word |
+| `port.promiscuous` (2110), or any other port setting that needs promiscuous or all-multicast, on a VF the probe found untrusted | open, after the probe | `-MTL_ENOTSUP`, reason `VF_UNTRUSTED` (612). Today `rte_eth_promiscuous_enable` is called and its result ignored (`dev/mt_dev.c:1292-1296`), so an untrusted VF stays filtered without a word |
 | one multicast group past the VF's filter budget (about 16 on an untrusted E810 VF, §4.1) | session create, or `mtl_session_update` with `MTL_UPDATE_FLOWS` | `-MTL_ENOSPC`, reason `MCAST_FILTERS` (115) |
 
 MTL never sets the VF MAC (`mac` in `mtl_port_spec` is output only); the PF and the CNI own it.
@@ -522,9 +521,12 @@ before lock waits for `MTL_EVENT_TIME_STATE` LOCKED; units sent before lock carr
 plugin put in that variable. Use **one resource per ST 2022-7 network** (red and blue), so each leg's VF
 comes from its own PF: with one resource for both legs there is no such guarantee, and `#0`/`#1` follow
 the plugin's order, not the leg order. The address comes from the configuration (`sip`) or from
-`MTL_PORTS` as `env:…#0=10.1.0.5/24`, so one image runs on any node. A Multus network-status reader,
-`mtl_port_specs_from_network_status` (`mtl_util.h`), is `MTL_LATER` (`-MTL_EAGAIN` until the
-annotation is there).
+`MTL_PORTS` as `env:…#0=10.1.0.5/24`, so one image runs on any node. MTL ships no Multus reader;
+the recipe is short: mount the pod annotations with the downward API, read
+`k8s.v1.cni.cncf.io/network-status`, and for each network of the leg order fill one
+`mtl_port_spec` with `name` = its `device-info.pci.pci-address`, `sip` = its first `ips` entry and
+`prefix_len` from the network's IPAM configuration (the annotation carries none); while the file
+or a network's entry is missing (Multus writes it, the kubelet refreshes it), retry.
 
 ### 4.10 Health and probes
 
@@ -593,7 +595,7 @@ sets no bit unless the admin worker needs that mutex (then `WORKER_STALLED`). Wi
   the pools (`mem.memlock_limit_bytes`), `mtl_mem_import` against each import.
 - **No-IOMMU is refused** unless `instance.allow_noiommu = 1`. In no-IOMMU mode nothing is pinned, and
   at exit `exit_mm` runs before `exit_files`, so anonymous hugepages can go back to the pool while the VF
-  can still DMA until its descriptor closes **[inferred; spike SF-K3-6]**: the NIC may write into pages
+  can still DMA until its descriptor closes **[inferred; a spike checks it]**: the NIC may write into pages
   the kernel gave to someone else. With an IOMMU, pages are unpinned only after DMA is off
   **[inferred]**. With the option set, open logs a warning naming the risk. Such pods are privileged and
   node-trusting: `/dev/vfio/noiommu-N` needs `privileged`, `IPC_LOCK` and `SYS_RAWIO` **[verified]**
@@ -645,13 +647,14 @@ Native XDP depends on the NIC driver; a manager that cannot attach native falls 
 `/sys/class/net/<if>/queues/tx-1/tx_maxrate` at init (`dev/mt_af_xdp.c:277-292`), the rate at queue
 get (`:867-874`), 0 at put (`:889-892`) **[verified]**. An unprivileged pod mounts `/sys` read only, so
 the probe fails and rate pacing on AF_XDP is unavailable: the session runs `MTL_PACING_SW` with
-`MTL_STATUS_PACING_DOWNGRADED`, or fails when `caps.pacing_required` is set. With EK19 and no
+`MTL_STATUS_PACING_DOWNGRADED`, or fails at create when `caps.pacing` carries `MTL_REQ_REQUIRE`. With EK19 and no
 MtlManager nobody sets the rate.
 
-Open: whether the node agent that hands over `port.xsk_map` also sets and resets the queue rate on
-MTL's behalf. That needs a rate request in the agent protocol (MtlManager's, or a contract for other
-agents); without it, AF_XDP in an unprivileged pod has software pacing only. Intel's AF_XDP device plugin is unmaintained;
-the fork is `redhat-et/afxdp-plugins-for-kubernetes` **[verified]**.
+**Who sets the rate in a pod** (OI-23): MtlManager, when it is the node agent that hands over
+`port.xsk_map`, sets and resets the queue rate on MTL's behalf through a rate request in its
+protocol (EK5). With any other node agent, AF_XDP in an unprivileged pod has software pacing only.
+Intel's AF_XDP device plugin is unmaintained; the fork is
+`redhat-et/afxdp-plugins-for-kubernetes` **[verified]**.
 
 ### 4.14 Files and privileges
 
@@ -775,34 +778,27 @@ What the audit found, with the engine fix that removes it ([engine.md](engine.md
 | — | no ethdev RMV, RESET or RECOVERY callback | grep of `lib/src` | EK14 |
 | — | DPDK's VFIO and memfd descriptors without close-on-exec | DPDK `eal_vfio.c:367`, `:379`, `:1297`; `eal_memalloc.c:224-247` | EK15 |
 
-Two claims from the research notes were corrected in review: manager-less native AF_XDP with libxdp
-loading its own program (K3 F-6) is unreachable at HEAD, because native AF_XDP needs MtlManager; and
-`mtl_abort` is a plain atomic store (`mt_main.c:747-757`), so it is already AS-safe. The inventory per
-backend, the threads and the time to ready are [research.md](research.md) §4.2 and §9; the H-K rows
-with their engine fixes, [engine.md](engine.md) §12.3.
+Two facts that are easy to get wrong: manager-less native AF_XDP with libxdp loading its own
+program is unreachable at HEAD, because native AF_XDP needs MtlManager (`dev/mt_af_xdp.c:727-733`);
+and `mtl_abort` is a plain atomic store (`mt_main.c:747-757`), so it is already AS-safe. The
+inventory per backend, the threads and the time to ready: [legacy-internals.md](legacy-internals.md);
+the H-K rows with their severity: [engine.md](engine.md) §12.3.
 
-### 4.17 Why this shape (prior art)
+### 4.17 Open points
 
-Each rule follows existing practice. Anchor everything outside the process on a descriptor the kernel
-closes (uverbs file close, VFIO release, AF_XDP UMEM, OFD locks). One deadline, two stages (gRPC
-`GracefulStop`/`Stop`, Envoy drain, systemd `TimeoutStopSec`, DOCA's stopping state). Report "device
-quiesced" apart from "memory released" (`vkDeviceWaitIdle`, io_uring deferred unpin). Device loss is a
-state (uverbs disassociate, `VK_ERROR_DEVICE_LOST`, DPDK `INTR_RMV`). Lock-free heartbeats and a library
-that never kills (VPP barrier timeout, OVS RCU warnings, systemd watchdog). The fork rule
-(`ibv_fork_init`, `MADV_DONTFORK`). Reconcile at start (EAL backing files, VFIO reset at enable,
-`libxdp_clean_references`). The patterns P-1…P-12 and their sources: [prior-art.md](prior-art.md) §8.2.
+Every rule above is decided (D-89–D-92). What remains is measurement and one behaviour change to
+announce:
 
-### 4.18 Open points
+- **No-IOMMU users** must set `instance.allow_noiommu`, since open refuses no-IOMMU without it
+  (§4.11); the legacy API only warns. The release notes say so.
+- **The PHC agreement bound** of `time.phc_trust` detect (§4.8) is set by a spike before the
+  default is fixed.
+- **The no-IOMMU exit order** (§4.11: hugepages back to the pool before the VF's descriptor closes)
+  is **[inferred]** and needs a test on a no-IOMMU host.
+- `instance.cpu_shared` defaults to `MTL_CPU_SHARED_WARN`; the health detail shows a shared CPU
+  (§4.7).
 
-M16 ([decisions.md](decisions.md)) packages eleven questions, Q-K8S-1…11; each recommendation is what
-this document describes and stands unless the maintainer objects. Three carry a condition: refusing
-no-IOMMU (Q-K8S-6) changes behaviour for existing no-IOMMU users, who must set the option; the PHC
-agreement test (Q-K8S-8) waits for a spike on its bound; `instance.cpu_shared` defaults to WARN in v1
-(Q-K8S-9). Three points of this document are open and outside M16: the scope of `CLOCK_NOT_OWNED` (§4.8), who
-sets the AF_XDP queue rate in an unprivileged pod (§4.13), and auto CPU arbitration in a pod that
-mounts the MtlManager socket (RK-28, §4.7; see decisions.md §5). The review RK (43 findings) is
-applied except RK-28, which is applied only in part; the dispositions of every finding are
-[history.md](history.md) §6.8, the requirement coverage K-REQ-1…20 [requirements.md](requirements.md) §5.
+The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 
 ## 5. Hugepage budgeting
 
@@ -827,7 +823,7 @@ applied except RK-28, which is applied only in part; the dispositions of every f
 
 ## 6. Windows
 
-- **Stance (proposed answer to Q-ABI-6).** The unified headers are one ABI on every OS. A wait handle is
+- **Stance.** The unified headers are one ABI on every OS (D-43). A wait handle is
   an auto-reset event `HANDLE` in the same `intptr_t`; error codes are `MTL_E*` constants equal to the
   Linux errno values on every OS, also where the UCRT lacks the name (`ESHUTDOWN`, `ESTALE`) or gives
   it another value, so Windows code compares against `MTL_E*` only; values ≥ 1000 are reserved for
@@ -840,9 +836,10 @@ applied except RK-28, which is applied only in part; the dispositions of every f
 
 Tags follow `vYY.MM` (v25.02, v25.12-rc1, v26.01; PR #1768 prepares v26.09).
 
-- Until the ABI freeze the unified API ships only as `libmtl_unified.so.0.<rev>`. Its soname changes on
-  every incompatible change, so `ld.so` rejects stale binaries. There is no compatibility promise and no
-  deprecation period for it.
+- Until the ABI freeze the unified API ships inside libmtl, in the symbol version node
+  `MTL_UNIFIED_EXPERIMENTAL_<rev>`, renamed on every incompatible change, so `ld.so` rejects a binary
+  linked against an older node. There is no compatibility promise and no deprecation period for it.
+  libmtl itself gets a soname and the `MTL_LEGACY` node in MS3.
 - At the ABI freeze it moves to `MTL_1.0`, and the legacy APIs it replaces are marked deprecated (a
   `MTL_LEGACY_DEPRECATED` attribute and the release notes).
 - A deprecated legacy API is removed **no earlier than two `vYY.MM` releases** after the one that

@@ -15,15 +15,16 @@ A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, an
 
 ### 1.1 The rules every call follows
 
-- **Returns.** 0 or a count or mask on success, a negative `MTL_E*` (Linux errno values on every OS) on failure. `mtl_last_error()` adds the reason and the name of the field or option at fault.
-- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN` and arms its wait handle, so a loop drains until `-MTL_EAGAIN` and then sleeps in `epoll`. `-MTL_ETIMEDOUT` is only for a DRAIN stop
+- **Returns.** 0 or a count or mask on success, a negative `MTL_E*` (Linux errno values on every OS) on failure. `mtl_last_error()` adds the reason and the name of the field or option at fault; a call that succeeds never overwrites it.
+  A function exists from the milestone that implements it (the tag at the end of its comment); a known flag, enum value or option key not implemented yet is `-MTL_ENOTSUP` with reason `NOT_IMPLEMENTED`.
+- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN` and arms its target (with timeout 0 only if it is in the wait handle's mask, R2), so a loop drains until `-MTL_EAGAIN` and then sleeps in `epoll`. `-MTL_ETIMEDOUT` is only for a DRAIN stop
   that missed its deadline; closes return 0 or 1 (`mtl_instance_close` also `-MTL_EIO` when a port
   could not be stopped).
-- **Submit** hands the unit over; on failure the slot goes back to the pool without a result (only `-MTL_EAGAIN` from a busy-loop thread leaves it yours). **Close** drains, destroys and waits for retirement in one call, and accepts a null handle.
+- **Submit** hands the unit over; on failure the slot goes back to the pool without a result (except `-MTL_EBADF` and `-MTL_ESTALE`, which change nothing), so no loop needs a release on the failure path. **Close** drains, destroys and waits for retirement in one call; it returns 1 while the object still retires, calling it again polls, and it accepts a null handle.
 - **Structs.** Input structs start with `struct_size`; `MTL_INIT(&s)` zero-fills them and sets it, and a zero-filled struct is the default. Output structs are filled up to the size the caller passes.
-- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease.
+- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease. Verbs several objects share (close, interrupt, wait, wait handle, reap, read events) are one exported function over `struct mtl_object` each, called through typed inline wrappers such as `mtl_session_close` and `mtl_tx_reap`.
 - **Times** are `int64_t` TAI nanoseconds, valid only when their flag says so.
-- **Call classes.** CP may block; DP is O(1) and never takes a lock a pinned core takes; DPC does work in the caller (copy, conversion); WT waits; AS is async-signal-safe. No application code runs on a pinned core; only the dispatch and log-sink threads (and codec plugins) call your functions.
+- **Call classes.** CP may block; DP is O(1) and never takes a lock a pinned core takes; DPC does work in the caller (copy, conversion); WT waits; AS is async-signal-safe. No application code runs on a pinned core; only the log-sink thread (and codec plugins) call your functions.
 - **Options.** Every tuning knob is a key in `mtl_options.h`: absent means the default, present is literal.
 
 ### 1.2 The three structs a program uses
@@ -32,12 +33,12 @@ A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, an
 
 | Struct | Fields most programs touch |
 |---|---|
-| `mtl_session_config` | `direction`, `essence`, `flows[0]` (and `flows[1]` for ST 2022-7), the essence member (`video.raster`, `video.format`, `audio.format`, ...), sometimes `flags`, `pool_count`, `media_mode`, `source_kind`, `timeline` |
+| `mtl_session_config` | `direction`, `essence`, `flows[0]` (and `flows[1]` for ST 2022-7), the essence member (`video.raster`, `video.format`, `audio.format`, ...), sometimes `flags`, `pool_count`, `media_mode`, `min_tx_delay_ns`, `ssrc`, `payload_type` |
 | `mtl_unit` | out: `lease`, `slot`, `plane[]`, `meta`; TX in: `used`, `flags`, `media_index` or `media_tai_ns`, `cookie`, `hold`; RX out: `status`, `used`, `media_index`, `media_tai_ns`, `rtp` |
 | `mtl_tx_result` | `status`, `reason`, `cookie`, `media_index`, `margin_ns`, `sent_tai_ns`, `rtp` |
 
 Every field is typed: enums and defines, no strings. Where a legacy enum exists the new one
-keeps its order, with `+ 1` where 0 must mean "not set" (`MTL_FPS_59_94` is `ST_FPS_P59_94 +
+keeps its order, with `+ 1` where 0 must mean "not set" (`MTL_FPS_59_94`, the input of `mtl_fps_rational()`, is `ST_FPS_P59_94 +
 1`, `MTL_YUV422_10` is `ST20_FMT_YUV_422_10BIT + 1`) and the same values where 0 is a real
 default (`enum mtl_sender_type` is `enum st21_pacing`, `enum mtl_packing` is `enum
 st20_packing`), so porting a legacy `ops` struct is a field-by-field copy ([migration.md](migration.md)).
@@ -55,13 +56,13 @@ A complete program: open an instance (its ports come from `MTL_PORTS` when the p
 
 ## 4. Receive video on two ST 2022-7 legs
 
-Two flows are two legs. A frame with lost packets is still delivered, with `status = MTL_RX_INCOMPLETE` and the gaps read as zero; `media_index` says which frame it is.
+Two flows are two legs. A frame with lost packets is still delivered, with `status = MTL_RX_INCOMPLETE` and the gaps read as zero (library pools, from MS2); `media_index` says which frame it is.
 
 @@EXAMPLE ex02_rx_video.c@@
 
 ## 5. A sender in the application's epoll loop
 
-Every data call that finds nothing arms the wait handle, so the loop drains (results, then free slots) until `-MTL_EAGAIN` and sleeps in `epoll`. The slot is acquired before the source frame is taken, so no frame is taken without a place to go. Results come back in submission order with the cookie of each unit.
+Every data call that finds nothing arms its target, here always in the wait handle's mask (R2), so the loop drains (results, then free slots) until `-MTL_EAGAIN` and sleeps in `epoll`. The slot is acquired before the source frame is taken, so no frame is taken without a place to go. Results come back in submission order with the cookie of each unit.
 
 @@EXAMPLE ex03_event_loop.c@@
 
@@ -79,13 +80,14 @@ Dequeue on the streaming thread, release on any thread in any order. `mtl_sessio
 
 ## 8. Receive into an MXL ring by frame number
 
-With `MTL_SESSION_RX_BY_INDEX`, frame k lands in slot k mod N. The default timeline is the SMPTE epoch, so every process computes the same k for the same frame.
+With `MTL_SESSION_RX_BY_INDEX`, frame k lands in slot k mod N. Every session runs on the SMPTE epoch, so every process computes the same k for the same frame.
 
 @@EXAMPLE ex06_mxl_ring.c@@
 
 ## 9. Video, audio and captions from one file
 
-Three sessions on one timeline started in one call: all of them or none. Each unit says which frame or sample it is (`media_index`), so every RTP timestamp is exact and captions for frame k carry video frame k's timestamp. The ANC session takes its raster from the video it starts with; audio uses the copy path.
+Three sessions started in one call, all of them or none, with `MTL_WHEN_ORIGIN`: media index 0 of each is the start's T0, so the file's frame and sample counts are media indices as they are.
+Each unit says which frame or sample it is (`media_index`), so every RTP timestamp is exact and captions for frame k carry video frame k's timestamp. The ANC session takes its raster and slot delay from the first video of its start; audio uses the copy path.
 
 @@EXAMPLE ex07_av_anc_playout.c@@
 
@@ -121,7 +123,8 @@ The output units carry the input's media time, so a compliant input keeps its RT
 
 ## 15. NMOS IS-05: switch destinations at one instant
 
-One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch together on every leg at one instant, all or nothing, at the slot boundary whether media flows or not. The call returns the instant it will switch on; `status.update_*` and `MTL_EVENT_UPDATE` say when it did. Disabling every leg mutes the session without stopping it ([nmos-ipmx.md](nmos-ipmx.md)).
+One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch together on every leg at one instant, all or nothing, at the slot boundary whether media flows or not.
+The update reads only the members its parts name, so the Node passes its own copy of the configuration. The call returns the instant it will switch on, or `-MTL_EBUSY` while an earlier activation is pending; `status.update_*` and `MTL_EVENT_UPDATE` say when it did. Disabling every leg mutes the session without stopping it; muting is Phase 7, and until then `master_enable` false is a stop ([nmos-ipmx.md](nmos-ipmx.md)).
 
 @@EXAMPLE ex13_nmos_switch.c@@
 
@@ -129,16 +132,15 @@ One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch
 
 `MTL_INIT`, typed handles and options work unchanged; an RAII guard releases a lease that was not submitted.
 
-The second function is a test bench that needs no NIC: an instance on `null:1` with the test clock (`mtl_test_clock`, `mtl_test_clock_advance`), a capacity dry
+The second function is a test bench that needs no NIC: an instance on `null:1` with the test clock (the faults `MTL_FAULT_TEST_CLOCK` and `MTL_FAULT_CLOCK_ADVANCE` of `mtl_debug_inject`; each advance completes the units that fell due, on the caller's thread), a capacity dry
 run (`mtl_session_query` with `MTL_QUERY_CHECK_CAPACITY`, `-MTL_ENOSPC` with a `CAPACITY_*` reason), a start at a TAI instant (`struct mtl_when` with `MTL_AT_TAI`),
-results and events on a shared queue (`mtl_queue_bind`), full timing records read by size (`struct mtl_tx_result_full`; the NIC launch time only when `MTL_TXF_OBSERVED_LEG0` is set),
-a library dispatch thread (`mtl_queue_dispatch_start`), and an injected loss of the time source (`mtl_debug_inject`, debug builds).
+full timing records (`mtl_tx_reap_full`; the NIC launch time only when `MTL_TXF_OBSERVED_LEG0` is set), an injected loss of the time source (`mtl_debug_inject`, debug builds), and the instance's events (`mtl_instance_read_events`).
 
 @@EXAMPLE examples_cpp.cpp@@
 
 ## 17. An st20p program side by side
 
-| st20p today | Revision 4 |
+| st20p today | Unified API |
 |---|---|
 | `mtl_init(&mtl_init_params)` | `mtl_instance_open(&params, &mt)`; `MTL_INSTANCE_SHARED` for plugins sharing one instance |
 | `st20p_tx_create(mt, &ops)` returns a handle or NULL | `mtl_session_open(mt, &sc, &s)` (or `create` + `start`) returns an `MTL_E*` code; `mtl_last_error()` names the field |
@@ -158,4 +160,4 @@ a library dispatch thread (`mtl_queue_dispatch_start`), and an injected loss of 
 | `ST20_TYPE_SLICE_LEVEL` | `unit = MTL_UNIT_ROWS` (example 10) |
 | `ST_EVENT_VSYNC` | `MTL_EVENT_EPOCH_TICK` with the option `session.epoch_tick` |
 | `ST20P_TX_FLAG_*` tuning bits, `mtl_init_params` tuning fields | option keys `MTL_OPT_*` (`mtl_options.h`) in the config's `options` array |
-| interlaced `ops.fps` (the field rate) | `raster.rate` (or `raster.fps`) is the frame rate |
+| `ops.fps` | `raster.fps = mtl_fps_rational(MTL_FPS_59_94)`: a rational only; interlaced, it is the frame rate (legacy `ops.fps` counts fields) |

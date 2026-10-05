@@ -17,7 +17,7 @@ int rx_video(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[1], 239, 168, 86, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   int ret = mtl_session_open(mt, &sc, &s);
 

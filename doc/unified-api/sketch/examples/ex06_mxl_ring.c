@@ -1,6 +1,6 @@
 /* ex06 — receive into an MXL ring: unit k lands in grain k mod GRAINS, so the reader
-   finds frame k at a known place. The ring is the session's pool (app memory). The
-   default timeline is the SMPTE epoch: k counts frames since 1970 TAI, the same in every
+   finds frame k at a known place. The ring is the session's pool (app memory). Every
+   session runs on the SMPTE epoch: k counts frames since 1970 TAI, the same in every
    process. */
 #include <mtl/experimental/mtl_mem.h>
 
@@ -26,7 +26,7 @@ int mxl_bridge(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.flags = MTL_SESSION_POOL_ATTACHED | MTL_SESSION_RX_BY_INDEX | MTL_SESSION_RX_LATEST;
   sc.pool_count = GRAINS;

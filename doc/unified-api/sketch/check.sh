@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Doc test for the unified API sketch (doc/unified-api/sketch/README.md), revision 4.
+# Doc test for the unified API sketch (doc/unified-api/sketch/README.md).
 # Every header and example must compile warning-free as C99 (-Wpadded, -pedantic for the
 # headers) and C++17, with gcc and, when present, clang. Lints: size checks, the include
-# layering, the naming rule of S8, and the examples copied verbatim into examples.md.
-# Prints the function count per header and per call class.
+# layering, the packet-mode naming rule, the milestone tag of every exported function, and
+# the examples copied verbatim into examples.md. Prints the exported functions per header,
+# per call class and per milestone, and the number of frozen names: the one place the
+# documents take these counts from.
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 inc="$here/include"
@@ -94,7 +96,8 @@ for h in "${headers[@]}"; do
 done
 
 # Lint 2: layering. mtl.h includes only <stddef.h> and <stdint.h>; mtl_reasons.h includes
-# nothing; every other header includes at least one sibling and nothing else.
+# nothing; every other header includes at least one sibling and nothing else, except that
+# mtl_util.h (inline helpers only) may include <string.h> for memcpy.
 if grep -E '^#include' "$hdr/mtl.h" | grep -vqE '<stddef.h>|<stdint.h>'; then
 	echo "FAIL: mtl.h includes more than <stddef.h> and <stdint.h>"
 	fail=1
@@ -109,14 +112,16 @@ for h in "${headers[@]}"; do
 		echo "FAIL: $h includes no sibling mtl header"
 		fail=1
 	fi
-	if grep -E '^#include' "$hdr/$h" | grep -vqE '^#include "mtl(_[a-z]+)?\.h"$'; then
+	allowed='^#include "mtl(_[a-z]+)?\.h"$'
+	[ "$h" = mtl_util.h ] && allowed="$allowed|^#include <string\.h>\$"
+	if grep -E '^#include' "$hdr/$h" | grep -vqE "$allowed"; then
 		echo "FAIL: $h includes something other than a sibling mtl header"
 		fail=1
 	fi
 done
 
 # Lint 3: no identifier contains "passthrough" (packet mode is MTL_UNIT_PACKETS, the
-# timestamp override MTL_SUBMIT_RTP_TS; S8 §4.1).
+# timestamp override MTL_SUBMIT_RTP_TS).
 if cat "$hdr"/*.h "$here"/examples/* 2>/dev/null | grep -qiE '(_passthrough|passthrough_)'; then
 	echo "FAIL: an identifier contains 'passthrough'"
 	fail=1
@@ -137,9 +142,9 @@ fi
 # are counted separately.
 count() { # file, mode(api|later)
 	awk -v mode="$2" '
-    /^#if defined\(MTL_LATER\)/ {later = 1}
-    later && /^#endif/ {later = 0}
-    /^MTL_API_(CP|DP|DPC|WT|AS) / { if ((mode == "later") == (later == 1)) n++ }
+    /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
+    /^#endif/ { if (later == depth) later = 0; depth-- }
+    /^MTL_API_(CP|DP|DPC|WT|AS) / { if ((mode == "later") == (later > 0)) n++ }
     END {print n + 0}' "$1"
 }
 total=0
@@ -153,10 +158,57 @@ done
 printf '%-16s %4d functions (0.2 surface), %d reserved for later (MTL_LATER)\n' "total" "$total" "$later"
 for c in CP DP DPC WT AS; do
 	printf '  MTL_API_%-4s %4d\n' "$c" "$(cat "$hdr"/*.h | awk -v c="$c" '
-    /^#if defined\(MTL_LATER\)/ {later = 1}
-    later && /^#endif/ {later = 0}
+    /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
+    /^#endif/ { if (later == depth) later = 0; depth-- }
     !later && $1 == "MTL_API_" c {n++} END {print n + 0}')"
 done
+
+# Lint 5: the comment above every exported function ends with its milestone tag: (MS1) to
+# (MS7) outside MTL_LATER, (Phase 7) or (later) inside it. A declaration takes the tag of
+# the comment that ends closest above it, with only a typedef or its continuation between.
+tags="$(cd "$hdr" && awk '
+    FNR == 1 { depth = 0; later = 0; tag = "" }
+    /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
+    /^#endif/ { if (later == depth) later = 0; depth-- }
+    match($0, /\((MS[1-7]|Phase 7|later)\) \*\/$/) { tag = substr($0, RSTART + 1, RLENGTH - 5); next }
+    /^MTL_API_(CP|DP|DPC|WT|AS) / {
+      name = $0; sub(/\(.*/, "", name); sub(/.*[ *]/, "", name)
+      ok = tag != "" && ((later > 0) == (tag == "Phase 7" || tag == "later"))
+      printf "%s\t%s\t%s\t%s\n", (ok ? "ok" : "bad"), (tag == "" ? "none" : tag), name, FILENAME
+      tag = ""; next
+    }
+    /^(#define|#if|#endif|struct |enum |static inline|MTL_SIZE_CHECK|\})/ || /^[ \t]*$/ { tag = "" }
+  ' ./*.h)"
+while IFS=$'\t' read -r ok tag name file; do
+	if [ "$ok" != ok ]; then
+		echo "FAIL: $name ($file) has milestone tag '$tag'"
+		fail=1
+	fi
+done <<<"$tags"
+printf 'functions per milestone:'
+for m in MS1 MS2 MS3 MS4 MS5 MS6 MS7 "Phase 7" later; do
+	printf ' %s %d,' "$m" "$(printf '%s\n' "$tags" | awk -F'\t' -v m="$m" '$2 == m {n++} END {print n + 0}')"
+done
+printf ' (Phase 7 and later: MTL_LATER)\n'
+
+# Frozen names: what the ABI freeze fixes, outside MTL_LATER and without mtl_debug.h (no ABI
+# promise). The headers are preprocessed against empty C library headers, so only their
+# own declarations remain, without comments and without the MTL_LATER blocks.
+fake="$(mktemp -d)"
+printf '#define UINTPTR_MAX 0xFFFFFFFFFFFFFFFFu\n' >"$fake/stdint.h"
+: >"$fake/stddef.h"
+: >"$fake/string.h"
+frozen_src="$(for h in "${headers[@]}"; do [ "$h" = mtl_debug.h ] || echo "#include <mtl/experimental/$h>"; done)"
+pp="$(echo "$frozen_src" | gcc -E -P -nostdinc -I "$fake" -I "$inc" -x c - | tr '\n' ' ')"
+n_macros="$(echo "$frozen_src" | gcc -E -dM -nostdinc -I "$fake" -I "$inc" -x c - |
+	awk '{ name = $2; sub(/\(.*/, "", name) } name ~ /^(MTL|mtl)_/ && name !~ /^MTL_EXPERIMENTAL_.*_H$/ {n++} END {print n + 0}')"
+rm -rf "$fake"
+n_enums="$(echo "$pp" | grep -oE 'enum [a-z0-9_]* ?\{[^}]*\}' | grep -oE 'MTL_[A-Z0-9_]+ *=' | sort -u | wc -l)"
+n_structs="$(echo "$pp" | grep -oE 'struct mtl_[a-z0-9_]+ \{' | sort -u | wc -l)"
+n_inline="$(echo "$pp" | grep -oE 'static inline [^(;{]*\(' | sed -E 's/.*[ *]([a-z0-9_]+) *\($/\1/' | sort -u | wc -l)"
+n_exported="$(printf '%s\n' "$tags" | awk -F'\t' '$2 ~ /^MS/ {n++} END {print n + 0}')"
+printf 'frozen names: %d (exported functions %d, inline functions %d, enum constants %d, macros %d, structs %d)\n' \
+	"$((n_exported + n_inline + n_enums + n_macros + n_structs))" "$n_exported" "$n_inline" "$n_enums" "$n_macros" "$n_structs"
 
 if [ "$fail" -ne 0 ]; then
 	echo "check.sh: FAILED ($ran compile runs)"

@@ -1,5 +1,5 @@
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
-   Defaults it relies on: media mode AUTO, source PLAYBACK, epoch timeline, results off.
+   Defaults it relies on: media mode AUTO (the next slot of the SMPTE epoch), results off.
  */
 #include "ex_common.h"
 
@@ -18,7 +18,7 @@ int main(void) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
 
   int ret = mtl_instance_open(NULL, &mt); /* ports from MTL_PORTS, e.g. "null:1" */

@@ -8,7 +8,8 @@
 #define QUADS 4
 
 /* rx: a created 2160p RX session (library pool). tx[q]: created 1080p TX sessions with
-   MTL_SESSION_POOL_ATTACHED, media_mode TAI, source_kind CAPTURE. */
+   MTL_SESSION_POOL_ATTACHED, media_mode TAI and min_tx_delay_ns = one frame period plus
+   the pick-up lead (a frame exists only once it is received). */
 static int attach_quadrants(mtl_session_h rx, const mtl_session_h* tx) {
   struct mtl_session_info ri;
   struct mtl_unit slot0;
@@ -37,8 +38,8 @@ int split_forward(mtl_session_h rx, mtl_session_h* tx) {
   MTL_INIT(&in);
   MTL_INIT(&how);
   int ret = attach_quadrants(rx, tx);
-  if (ret >= 0)
-    ret = mtl_session_start(tx, QUADS, NULL, NULL); /* one direction per start */
+  for (uint32_t q = 0; ret >= 0 && q < QUADS; q++)
+    ret = mtl_session_start(&tx[q], 1, NULL, NULL); /* one each: start arrays are MS6 */
   if (ret >= 0) ret = mtl_session_start(&rx, 1, NULL, NULL);
 
   while (ret >= 0 && g_running) {

@@ -1,7 +1,8 @@
 /* ex08 — low-latency progressive TX (SDI-to-IP gateway): the first rows leave while the
    rest of the frame is still arriving. Session: a video TX config with sc.unit =
-   MTL_UNIT_ROWS, sc.source_kind = MTL_SOURCE_GATEWAY and sc.media_mode = MTL_MEDIA_INDEX.
-   Each submit of the same lease publishes rows. */
+   MTL_UNIT_ROWS, sc.media_mode = MTL_MEDIA_INDEX and the option tx.troffset_ns, so the
+   frame leaves in the frame period it is captured in. Each submit of the same lease
+   publishes rows. */
 #include <mtl/experimental/mtl_sync.h>
 
 #include "ex_common.h"
@@ -22,7 +23,9 @@ int send_one_frame(mtl_session_h s) {
     uint32_t next = done + STEP < u.plane[0].rows ? done + STEP : u.plane[0].rows;
     render_rows(&u, done, next);
     u.used = next; /* rows [0, next) are final; used == rows ends the frame */
-    ret = mtl_tx_submit(s, &u); /* on failure the frame ends here, with what was sent */
+    /* a failed first submit returns the slot; a later failure ends the frame where its
+       rows stopped (tx.rows_late) */
+    ret = mtl_tx_submit(s, &u);
     if (ret < 0) return ex_fail("submit", ret);
     done = next;
   }

@@ -5,20 +5,28 @@
 | Status | Normative design sketch, experimental revision 0.2. Nothing is implemented |
 | Date | 2026-10-02 |
 | Reads with | [examples.md](../examples.md) (every example, generated from here), [concepts.md](../concepts.md), [contract.md](../contract.md), [diagrams.md](../diagrams.md) |
-| Previous | revision 3's single header: what it looked like and what replaced it, [history.md §4](../history.md#4-what-revision-3-looked-like) |
 
-This directory holds the normative header set of the proposed unified MTL API and the worked
-examples as files that compile. In milestone M0 of the
-[implementation plan](../implementation-plan.md) the headers move to `include/mtl/experimental/`.
+This directory holds the normative header set of the unified MTL API and the worked examples as
+files that compile. In task H1a of MS1 ([implementation plan §5.2](../implementation-plan.md#52-tasks))
+the headers move to `include/mtl/experimental/`, and `check.sh` runs in CI.
 
 | Path | What |
 |---|---|
-| `include/mtl/experimental/mtl.h` | the core: everything a sender or receiver with MTL's buffers needs (32 functions) |
-| `include/mtl/experimental/mtl_*.h` | 16 optional headers, each with one job ([examples.md §1](../examples.md)) |
+| `include/mtl/experimental/mtl.h` | the main header: everything a sender or receiver with MTL's buffers needs |
+| `include/mtl/experimental/mtl_*.h` | the optional headers, each with one job ([examples.md §1](../examples.md)) |
 | `examples/ex01_*.c` … `examples/ex13_*.c`, `examples/examples_cpp.cpp`, `examples/ex_common.h` | the examples |
 | `examples.md.in` | the prose of [examples.md](../examples.md), with `@@EXAMPLE <file>@@` and `@@HEADER_TABLE@@` markers |
-| `gen_api_doc.py` | writes [examples.md](../examples.md) from the template: every example copied verbatim, the header table counted from the headers |
-| `check.sh` | the doc test |
+| `gen_api_doc.py` | writes [examples.md](../examples.md) from the template: every example copied verbatim, the header table from the headers |
+| `check.sh` | the doc test, and the one source of the counts: exported functions per header, per call class and per milestone, and the number of frozen names |
+
+## The headers and the library
+
+There is one library, libmtl, with the unified functions in their own symbol version node
+([migration.md §7.2](../migration.md#72-the-unified-library)).
+
+The sketch holds the whole design. The comment of every exported function ends with its milestone
+tag, `(MS1)` to `(MS7)`: the function is exported from that milestone on. The installed header
+declares the whole design, so a function not yet exported fails at link time. A function tagged `(Phase 7)` or `(later)` is declared only under `MTL_LATER`.
 
 ## Running the check
 
@@ -29,7 +37,7 @@ python3 doc/unified-api/sketch/gen_api_doc.py   # after changing an example, a h
 
 `check.sh` compiles:
 
-- every header alone: plain, with `-DMTL_LATER` for the later-phase declarations, and as a
+- every header alone: plain, with `-DMTL_LATER` for the declarations of later milestones, and as a
   binding generator sees it;
 - all headers together in one file, in both orders, and as C++;
 - the legacy headers and the new ones together, when a configured build tree
@@ -41,28 +49,49 @@ python3 doc/unified-api/sketch/gen_api_doc.py   # after changing an example, a h
 It then checks that:
 
 - every public struct has a size check;
-- `mtl.h` includes only the C library, and every other header only its siblings;
+- `mtl.h` includes only the C library, and every other header only its siblings (`mtl_util.h`,
+  inline only, may also include `<string.h>`);
 - no identifier says "passthrough" (packet mode is `MTL_UNIT_PACKETS`);
+- the comment above every exported function ends with a milestone tag: `(MS1)` to `(MS7)`
+  outside `MTL_LATER`, `(Phase 7)` or `(later)` inside it;
 - `examples.md` shows every example verbatim.
 
-It prints the function count per header and per call class, and exits non-zero on any
-failure. The examples only have to compile; they are never linked.
+It prints the exported functions per header, per call class and per milestone, and the number
+of frozen names (exported functions, inline functions, enum constants, macros and structs outside
+`MTL_LATER`, without `mtl_debug.h`), and exits non-zero on any failure. The examples only have to
+compile; they are never linked. Documents do not repeat these counts; they point here.
 
 Not in `check.sh` yet: every header with `-Wconversion -Wsign-conversion -Wcast-qual` (clean on
-2026-10-02, with and without `-DMTL_LATER`). The R4 header review ran it once; `-Wcast-qual` is
-what caught `mtl_pkt_tx_table()` returning a writable table from a `const struct mtl_unit*`
-(RV-44), so it is worth adding.
+2026-10-02, with and without `-DMTL_LATER`). It is worth adding: `-Wcast-qual` catches an inline
+helper that returns a writable pointer from a `const struct mtl_unit*`.
 
 ## Rules for changing the sketch
 
 - **Header wins over prose.** If a document and a header disagree about a name, a type, a
   layout or a call class, the header is right and the document is fixed. A design change that
   adds or renames a symbol is complete only when it is in a header and `check.sh` passes.
-- **`MTL_LATER`.** Functions of later phases, and the types only those functions use, are
-  declared under `#if defined(MTL_LATER)`. Enum values, flags, option keys, events and struct
-  fields that the always-present headers carry are declared unconditionally, so the ABI freeze
-  reserves them and a later phase adds code, not layout changes.
+- **Milestone tags.** Every exported function's comment ends with the milestone that implements
+  it; the milestone of a feature has its one home in the U-row of [coverage.md](../coverage.md),
+  and the tag follows it.
+- **`MTL_LATER`.** Everything of Phase 7 (functions, types, enum values, flags, option keys,
+  events, reasons) and the features out of v1 (shared queues, created timelines, the locked
+  phase snap) are declared under `#if defined(MTL_LATER)`, with their values kept. A Phase 7 name
+  leaves `MTL_LATER` in the milestone that implements it (the RTCP sender-report keys in MS5,
+  `MTL_TIME_SOURCE_FREERUN` in MS6, as their comments say). Every other value (enum values,
+  flags, option keys, port prefixes, `when` kinds, wait masks, update parts) is declared
+  unconditionally, so the freeze reserves it and a later milestone adds code, not layout.
+- **Not implemented yet** is `-MTL_ENOTSUP` with reason `NOT_IMPLEMENTED` for a known value of
+  an exported call, and `-MTL_EINVAL` for an unknown value (mtl.h R1). A function that is not
+  implemented is not exported.
 - **Values follow the legacy enums** (D-97): legacy + 1 where 0 must mean "not set", the same
   values where 0 is a real default.
 - **Sizes are checked.** Every public struct has `MTL_SIZE_CHECK`; padding is explicit
-  (`-Wpadded`).
+  (`-Wpadded`). Each essence member of `mtl_session_config` is 128 bytes, so an essence can grow
+  inside its own member.
+- **Export only what needs the library.** A function built only on public calls is `static
+  inline` and exports no symbol (`mtl_session_open`, `mtl_stat_get`, `mtl_time_convert`,
+  `mtl_flow_parse`, `mtl_util.h`). A verb several objects share is one exported function over
+  `struct mtl_object` (`mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_get_wait_handle`,
+  `mtl_reap`, `mtl_read_events`; `mtl_release` over a lease), with `static inline` typed wrappers
+  that keep each object's own name and pass the record size (`mtl_tx_reap`, `mtl_tx_reap_full`,
+  `mtl_session_read_events`).

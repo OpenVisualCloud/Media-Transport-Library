@@ -16,7 +16,7 @@ static int drain(mtl_session_h s) {
   struct mtl_unit u;
   int n;
   MTL_INIT(&u);
-  while ((n = mtl_tx_reap(s, r, sizeof(r[0]), 16, 0)) > 0) /* in submission order */
+  while ((n = mtl_tx_reap(s, r, 16, 0)) > 0) /* in submission order */
     for (int i = 0; i < n; i++)
       source_frame_done(r[i].cookie, r[i].status, r[i].margin_ns);
   if (n != -MTL_EAGAIN) return n;

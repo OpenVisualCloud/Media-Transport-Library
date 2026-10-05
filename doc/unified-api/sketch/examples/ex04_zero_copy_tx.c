@@ -15,7 +15,7 @@ void framework_frame_done(uint64_t id);
 static int reap(mtl_session_h s) {
   struct mtl_tx_result r[8];
   int n;
-  while ((n = mtl_tx_reap(s, r, sizeof(r[0]), 8, 0)) > 0)
+  while ((n = mtl_tx_reap(s, r, 8, 0)) > 0)
     for (int i = 0; i < n; i++) framework_frame_done(r[i].cookie);
   return n == -MTL_EAGAIN ? 0 : n;
 }
@@ -35,7 +35,7 @@ int zero_copy_tx(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 21, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.flags = MTL_SESSION_POOL_ATTACHED | MTL_SESSION_REQUIRE_DIRECT; /* never a copy */
   sc.pool_count = N;

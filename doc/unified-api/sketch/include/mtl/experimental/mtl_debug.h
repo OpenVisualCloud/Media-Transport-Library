@@ -1,15 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  */
-/* A hand-formatted design sketch: formatted when it moves to include/ (milestone M0). */
+/* Hand-formatted: clang-format stays off so the milestone tags keep their place
+   (check.sh lint 5). */
 /* clang-format off */
 /*
  * mtl_debug.h - test and debug API of the unified MTL API, revision 0.2.
  *
  * Built only with -Denable_debug_api=true; a release library returns -MTL_ENOTSUP from
  * every function here. Not part of any ABI promise. With the null backend (port spec
- * "null:<n>": no NIC, no root, no hugepages) and the test clock below, every horizon,
- * late-policy and state-machine rule is deterministic in unit tests and bindings.
+ * "null:<n>": no NIC, no root, no hugepages; mtl.h) and the test clock (the faults
+ * TEST_CLOCK and CLOCK_ADVANCE), every horizon, late-policy and state-machine rule is
+ * deterministic in unit tests and bindings: under the test clock the completions that
+ * fall due run synchronously inside CLOCK_ADVANCE, on the caller's thread, in media-time
+ * order, so the results, events and RX units they produce are ready when it returns.
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_DEBUG_H
@@ -20,12 +24,6 @@
 #if defined(__cplusplus)
 extern "C" {
 #endif
-
-/* The time base runs at `rate` from base_tai_ns, or only advances by
-   mtl_test_clock_advance() when rate is {0, 0}. CP. */
-MTL_API_CP int mtl_test_clock(mtl_instance_h mt, int64_t base_tai_ns,
-                              struct mtl_rational rate);
-MTL_API_CP int mtl_test_clock_advance(mtl_instance_h mt, int64_t ns);
 
 enum mtl_fault {
   MTL_FAULT_LEG_DOWN = 1, /* session: leg goes oper down */
@@ -40,6 +38,10 @@ enum mtl_fault {
   MTL_FAULT_TX_MUTATE = 10,    /* session TX: mutate library-built packets */
   MTL_FAULT_DROP_RANDOM = 11,  /* session: drop packets at random, per leg (legacy
                                   rtcp.sim_loss_rate, burst_loss_max) */
+  /* instance: the time base becomes a test clock that runs at `rate` from base_tai_ns, or
+     only advances by CLOCK_ADVANCE when rate is {0, 0} */
+  MTL_FAULT_TEST_CLOCK = 12,
+  MTL_FAULT_CLOCK_ADVANCE = 13, /* instance: advance the test clock by step_ns */
 };
 enum mtl_tx_mutation {
   MTL_TX_MUTATE_NO_MARKER = 1,
@@ -58,16 +60,18 @@ struct mtl_fault_params {
   uint32_t unit_count;  /* TX_MUTATE: units to mutate; 0 = once */
   uint32_t paced_pkts;  /* TX_MUTATE PACED */
   uint32_t paced_gap_ns;
-  int64_t step_ns;       /* TIME_STEP */
+  int64_t step_ns;       /* TIME_STEP, CLOCK_ADVANCE */
   uint32_t unrecoverable; /* PORT_RESET: the device does not come back */
   uint32_t drop_ppm;      /* DROP_RANDOM: drops per million packets; bursts up to drop_count */
+  int64_t base_tai_ns;      /* TEST_CLOCK */
+  struct mtl_rational rate; /* TEST_CLOCK */
   uint64_t reserved[3];
 };
-/* Applies the fault once, or until its inverse (LEG_UP). p may be NULL. CP. */
+/* Applies the fault once, or until its inverse (LEG_UP). p may be NULL. CP. (MS1) */
 MTL_API_CP int mtl_debug_inject(struct mtl_object obj, uint32_t fault,
                                 const struct mtl_fault_params* MTL_NULLABLE p);
 
-MTL_SIZE_CHECK(mtl_fault_params, 80);
+MTL_SIZE_CHECK(mtl_fault_params, 104);
 
 #if defined(__cplusplus)
 }

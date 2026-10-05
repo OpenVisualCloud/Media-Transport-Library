@@ -1,13 +1,12 @@
 // examples_cpp.cpp — the core API from C++17: MTL_INIT, typed handles, options, an RAII
-// lease guard and a stride-safe result read; then a test bench on the null backend: a
-// capacity dry run, a start at a TAI instant, a shared queue read by a library thread,
-// the full timing record, the test clock and an injected fault. Bindings follow the same
-// pattern.
+// lease guard and a typed result read; then a test bench on the null backend: a capacity
+// dry run, a start at a TAI instant, the full timing record, the test clock, an injected
+// fault and the instance's events. Bindings follow the same pattern.
 #include <mtl/experimental/mtl.h>
 #include <mtl/experimental/mtl_debug.h>
+#include <mtl/experimental/mtl_events.h>
 #include <mtl/experimental/mtl_observe.h>
 #include <mtl/experimental/mtl_options.h>
-#include <mtl/experimental/mtl_queue.h>
 
 #include <array>
 #include <cstdio>
@@ -16,8 +15,8 @@ extern volatile int g_running;
 
 namespace {
 
-// Releases an acquired TX lease unless it was handed to submit (which keeps it only on
-// -MTL_EAGAIN).
+// Releases an acquired TX lease unless it was handed to submit (which consumes it, also
+// on failure).
 class TxLease {
  public:
   explicit TxLease(mtl_session_h s) : s_(s) {
@@ -34,9 +33,8 @@ class TxLease {
     return ret;
   }
   int submit() {
-    int ret = mtl_tx_submit(s_, &u_);
-    held_ = ret == -MTL_EAGAIN;
-    return ret;
+    held_ = false;
+    return mtl_tx_submit(s_, &u_);
   }
   mtl_unit& unit() {
     return u_;
@@ -64,16 +62,24 @@ void video_tx_config(mtl_session_config* sc) {
   sc->flows[0].udp_port = 20000;
 }
 
-// Runs on the queue's library thread, never on a tasklet: every TX result and event of
-// the sessions bound to the queue, plus the instance events it subscribed to.
-void on_queue(void* user, const mtl_tx_result* r, const mtl_event* ev) {
-  (void)user;
-  if (r && r->status != MTL_TX_ON_TIME)
-    std::printf("unit %llu: %s\n", static_cast<unsigned long long>(r->seq),
-                mtl_reason_name(r->reason));
-  if (ev)
-    std::printf("%s: event %u, %s\n", ev->origin_name, ev->type,
-                mtl_reason_name(ev->reason));
+// Prints the pending events of the instance (ports, time, schedulers, health) without
+// waiting; the same loop reads a session's with mtl_session_read_events.
+void print_instance_events(mtl_instance_h mt) {
+  std::array<mtl_event, 8> ev{};
+  int n;
+  while ((n = mtl_instance_read_events(mt, ev.data(), static_cast<uint32_t>(ev.size()),
+                                       0)) > 0)
+    for (int i = 0; i < n; i++)
+      std::printf("%s: event %u, %s\n", ev[i].origin_name, ev[i].type,
+                  mtl_reason_name(ev[i].reason));
+}
+
+// Moves the test clock (mtl_debug.h) by ns.
+int advance(mtl_instance_h mt, int64_t ns) {
+  mtl_fault_params f;
+  MTL_INIT(&f);
+  f.step_ns = ns;
+  return mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_CLOCK_ADVANCE, &f);
 }
 
 }  // namespace
@@ -83,7 +89,7 @@ int cpp_sender(mtl_instance_h mt) {
   video_tx_config(&sc);
   // a tuning knob: options are absent unless set, and absent means the default
   const std::array<mtl_option, 1> opts{
-      {{MTL_OPT_LATE_POLICY, 0, MTL_LATE_SEND_LATE, nullptr}}};
+      {{MTL_OPT_LATE_POLICY, 0, MTL_LATE_DROP, nullptr}}};
   sc.options = opts.data();
   sc.option_count = static_cast<uint32_t>(opts.size());
 
@@ -99,7 +105,7 @@ int cpp_sender(mtl_instance_h mt) {
     }
     if (ret == 0) ret = lease.submit();
     std::array<mtl_tx_result, 8> r{};
-    int n = mtl_tx_reap(s, r.data(), sizeof(r[0]), static_cast<uint32_t>(r.size()), 0);
+    int n = mtl_tx_reap(s, r.data(), static_cast<uint32_t>(r.size()), 0);
     for (int i = 0; i < n; i++)
       if (r[i].status != MTL_TX_ON_TIME)
         std::printf("unit %llu: %s\n", static_cast<unsigned long long>(r[i].seq),
@@ -121,7 +127,9 @@ int cpp_test_bench() {
   mtl_instance_h mt = MTL_NULL(mtl_instance_h);
   int ret = mtl_instance_open(&p, &mt);
   if (ret < 0) return ret;
-  ret = mtl_test_clock(mt, 0, mtl_rational{0, 0});
+  mtl_fault_params clock;  // rate {0, 0}: the clock moves only by CLOCK_ADVANCE
+  MTL_INIT(&clock);
+  ret = mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_TEST_CLOCK, &clock);
 
   // the dry run of create: grants, and with CHECK_CAPACITY also the free capacity
   mtl_session_config sc;
@@ -136,51 +144,43 @@ int cpp_test_bench() {
     std::printf("no room: %s\n", mtl_reason_name(e.reason));  // a CAPACITY_* reason
   }
 
-  // results and events of the session, and the instance's time events, on one queue
   mtl_session_h s = MTL_NULL(mtl_session_h);
-  mtl_queue_h q = MTL_NULL(mtl_queue_h);
-  mtl_queue_config qc;
-  MTL_INIT(&qc);
-  qc.subscribe = MTL_SUB_TIME;
   if (ret >= 0) ret = mtl_session_create(mt, &sc, &s);
-  if (ret >= 0) ret = mtl_queue_create(mt, &qc, &q);
-  if (ret >= 0) ret = mtl_queue_bind(q, s, MTL_BIND_RESULTS | MTL_BIND_EVENTS);
 
   // start at an instant: 100 ms from now on the instance clock
   int64_t now = 0;
-  if (ret >= 0) ret = mtl_time_now(mt, &now);
+  if (ret >= 0) ret = mtl_time_now(mt, &now, nullptr, nullptr);
   mtl_when when{};
   when.kind = MTL_AT_TAI;
   when.value = now + MTL_MS(100);
   if (ret >= 0) ret = mtl_session_start(&s, 1, &when, nullptr);
+  // each advance completes, on this thread, every unit that fell due (mtl_debug.h)
   for (int i = 0; ret >= 0 && i < 3; i++) {
     TxLease lease(s);
     ret = lease.acquire(0);
     if (ret == 0) ret = lease.submit();
-    if (ret >= 0) ret = mtl_test_clock_advance(mt, MTL_MS(50));
+    if (ret >= 0) ret = advance(mt, MTL_MS(50));
   }
 
-  // the full timing record: pass its size; the NIC launch time is valid only when flagged
+  // the full timing record; the NIC launch time is valid only when flagged
   std::array<mtl_tx_result_full, 4> full{};
-  int n = ret < 0 ? 0
-                  : mtl_queue_reap(q, full.data(), sizeof(full[0]),
-                                   static_cast<uint32_t>(full.size()), 0);
+  int n = ret < 0
+              ? 0
+              : mtl_tx_reap_full(s, full.data(), static_cast<uint32_t>(full.size()), 0);
   for (int i = 0; i < n; i++)
     if (full[i].detail_flags & MTL_TXF_OBSERVED_LEG0)
       std::printf("launch error %lld ns\n",
                   static_cast<long long>(full[i].observed_first_tai_ns[0] -
                                          full[i].scheduled_tai_ns));
 
-  // from here a library thread reads the queue; then the time source is lost on purpose
-  if (ret >= 0) ret = mtl_queue_dispatch_start(q, on_queue, nullptr);
+  // the time source is lost on purpose: the instance posts MTL_EVENT_TIME_STATE
   mtl_fault_params f;
   MTL_INIT(&f);
   if (ret >= 0) ret = mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_TIME_LOST, &f);
-  if (ret >= 0) ret = mtl_test_clock_advance(mt, MTL_SEC(1));
-  mtl_queue_dispatch_stop(q);
+  if (ret >= 0) ret = advance(mt, MTL_SEC(1));
+  if (ret >= 0) print_instance_events(mt);
 
   mtl_session_close(s, MTL_SEC(1));
-  mtl_queue_close(q);
   mtl_instance_close(mt, MTL_SEC(1));
   return ret;
 }

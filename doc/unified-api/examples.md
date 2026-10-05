@@ -11,39 +11,37 @@
 
 A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, and adds one job.
 
-| Header | Job | Functions |
-|---|---|---|
-| [`mtl.h`](sketch/include/mtl/experimental/mtl.h) | instance, session config and lifecycle, the unit, TX and RX verbs, results, waiting, errors | 32 |
-| [`mtl_mem.h`](sketch/include/mtl/experimental/mtl_mem.h) | regions, attached pools, named slots, IOVA; the requirements struct | 12 (+3 later) |
-| [`mtl_sync.h`](sketch/include/mtl/experimental/mtl_sync.h) | timelines, index arithmetic, slot hint, RX row waits, clocks, the time reference | 15 |
-| [`mtl_queue.h`](sketch/include/mtl/experimental/mtl_queue.h) | events, shared queues, dispatcher | 12 (+1 later) |
-| [`mtl_packet.h`](sketch/include/mtl/experimental/mtl_packet.h) | packet tables, RTP and payload header layouts for `MTL_UNIT_PACKETS` | inline only |
-| [`mtl_observe.h`](sketch/include/mtl/experimental/mtl_observe.h) | stats registry, full results, RX detail and timing, enumeration, ports, logging, capture, health, shutdown | 16 |
-| [`mtl_options.h`](sketch/include/mtl/experimental/mtl_options.h) | option keys and their value enums; set, reset, get, list, find | 6 |
-| [`mtl_reasons.h`](sketch/include/mtl/experimental/mtl_reasons.h) | the reason codes | 0 |
-| [`mtl_format.h`](sketch/include/mtl/experimental/mtl_format.h) | application pixel formats, colorimetry, names, sizes, pixel groups, codecs, bandwidth | 10 |
-| [`mtl_util.h`](sketch/include/mtl/experimental/mtl_util.h) | copy path, one-call slot send, unit copies, ANC and RFC 8331 helpers | 11 (+3 later) |
-| [`mtl_plugin.h`](sketch/include/mtl/experimental/mtl_plugin.h) | codec and converter plugin ABI v2 | 3 |
-| [`mtl_convert.h`](sketch/include/mtl/experimental/mtl_convert.h) | standalone colour and AM824 conversion | 3 (+1 later) |
-| [`mtl_legacy.h`](sketch/include/mtl/experimental/mtl_legacy.h) | bridge to a legacy `mtl_handle` | 2 |
-| [`mtl_debug.h`](sketch/include/mtl/experimental/mtl_debug.h) | test clock, fault injection (debug builds) | 3 |
-| [`mtl_sdp.h`](sketch/include/mtl/experimental/mtl_sdp.h) | SDP render and parse (Phase 7: NMOS) | 0 (+2 later) |
-| [`mtl_rtcp.h`](sketch/include/mtl/experimental/mtl_rtcp.h) | RTCP sender reports and the IPMX Info Block (Phase 7: IPMX) | 0 (+3 later) |
-| [`mtl_crypto.h`](sketch/include/mtl/experimental/mtl_crypto.h) | IPMX payload encryption (Phase 7: IPMX) | 0 (+1 later) |
+| Header | Job |
+|---|---|
+| [`mtl.h`](sketch/include/mtl/experimental/mtl.h) | instance, session config and lifecycle, the unit, TX and RX verbs, results, waiting, errors; the object verbs (close, interrupt, wait, reap, release) |
+| [`mtl_mem.h`](sketch/include/mtl/experimental/mtl_mem.h) | regions, attached pools, named slots; the requirements struct |
+| [`mtl_sync.h`](sketch/include/mtl/experimental/mtl_sync.h) | epoch index arithmetic, media clock ticks, slot hint, row deadlines and RX row waits, A/V alignment, clocks, the time reference |
+| [`mtl_events.h`](sketch/include/mtl/experimental/mtl_events.h) | the events of a session and of an instance |
+| [`mtl_packet.h`](sketch/include/mtl/experimental/mtl_packet.h) | packet tables, RTP and payload header layouts for `MTL_UNIT_PACKETS` |
+| [`mtl_observe.h`](sketch/include/mtl/experimental/mtl_observe.h) | stats registry, full results, RX detail and timing, enumeration, ports, logging, capture, health, shutdown |
+| [`mtl_options.h`](sketch/include/mtl/experimental/mtl_options.h) | option keys and their value enums; set, reset, get, list, find |
+| [`mtl_reasons.h`](sketch/include/mtl/experimental/mtl_reasons.h) | the reason codes |
+| [`mtl_format.h`](sketch/include/mtl/experimental/mtl_format.h) | application formats, colorimetry, format descriptions; standalone colour and audio conversion |
+| [`mtl_util.h`](sketch/include/mtl/experimental/mtl_util.h) | inline helpers: copy path, one-call slot send, unit and plane copies, meta records, ANC and RFC 8331 |
+| [`mtl_plugin.h`](sketch/include/mtl/experimental/mtl_plugin.h) | codec and converter plugin ABI v2 |
+| [`mtl_legacy.h`](sketch/include/mtl/experimental/mtl_legacy.h) | bridge from a legacy `mtl_handle` |
+| [`mtl_debug.h`](sketch/include/mtl/experimental/mtl_debug.h) | fault injection and the test clock (debug builds) |
+| [`mtl_ipmx.h`](sketch/include/mtl/experimental/mtl_ipmx.h) | RTCP sender reports and the Info Block, SDP, payload encryption (Phase 7, under `MTL_LATER`) |
 
-125 exported functions in total, 14 more reserved for later phases (`MTL_LATER`).
+[`sketch/check.sh`](sketch/check.sh) prints the exported functions per header, per call class and per milestone, and the number of frozen names.
 
 ### 1.1 The rules every call follows
 
-- **Returns.** 0 or a count or mask on success, a negative `MTL_E*` (Linux errno values on every OS) on failure. `mtl_last_error()` adds the reason and the name of the field or option at fault.
-- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN` and arms its wait handle, so a loop drains until `-MTL_EAGAIN` and then sleeps in `epoll`. `-MTL_ETIMEDOUT` is only for a DRAIN stop
+- **Returns.** 0 or a count or mask on success, a negative `MTL_E*` (Linux errno values on every OS) on failure. `mtl_last_error()` adds the reason and the name of the field or option at fault; a call that succeeds never overwrites it.
+  A function exists from the milestone that implements it (the tag at the end of its comment); a known flag, enum value or option key not implemented yet is `-MTL_ENOTSUP` with reason `NOT_IMPLEMENTED`.
+- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN` and arms its target (with timeout 0 only if it is in the wait handle's mask, R2), so a loop drains until `-MTL_EAGAIN` and then sleeps in `epoll`. `-MTL_ETIMEDOUT` is only for a DRAIN stop
   that missed its deadline; closes return 0 or 1 (`mtl_instance_close` also `-MTL_EIO` when a port
   could not be stopped).
-- **Submit** hands the unit over; on failure the slot goes back to the pool without a result (only `-MTL_EAGAIN` from a busy-loop thread leaves it yours). **Close** drains, destroys and waits for retirement in one call, and accepts a null handle.
+- **Submit** hands the unit over; on failure the slot goes back to the pool without a result (except `-MTL_EBADF` and `-MTL_ESTALE`, which change nothing), so no loop needs a release on the failure path. **Close** drains, destroys and waits for retirement in one call; it returns 1 while the object still retires, calling it again polls, and it accepts a null handle.
 - **Structs.** Input structs start with `struct_size`; `MTL_INIT(&s)` zero-fills them and sets it, and a zero-filled struct is the default. Output structs are filled up to the size the caller passes.
-- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease.
+- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease. Verbs several objects share (close, interrupt, wait, wait handle, reap, read events) are one exported function over `struct mtl_object` each, called through typed inline wrappers such as `mtl_session_close` and `mtl_tx_reap`.
 - **Times** are `int64_t` TAI nanoseconds, valid only when their flag says so.
-- **Call classes.** CP may block; DP is O(1) and never takes a lock a pinned core takes; DPC does work in the caller (copy, conversion); WT waits; AS is async-signal-safe. No application code runs on a pinned core; only the dispatch and log-sink threads (and codec plugins) call your functions.
+- **Call classes.** CP may block; DP is O(1) and never takes a lock a pinned core takes; DPC does work in the caller (copy, conversion); WT waits; AS is async-signal-safe. No application code runs on a pinned core; only the log-sink thread (and codec plugins) call your functions.
 - **Options.** Every tuning knob is a key in `mtl_options.h`: absent means the default, present is literal.
 
 ### 1.2 The three structs a program uses
@@ -52,12 +50,12 @@ A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, an
 
 | Struct | Fields most programs touch |
 |---|---|
-| `mtl_session_config` | `direction`, `essence`, `flows[0]` (and `flows[1]` for ST 2022-7), the essence member (`video.raster`, `video.format`, `audio.format`, ...), sometimes `flags`, `pool_count`, `media_mode`, `source_kind`, `timeline` |
+| `mtl_session_config` | `direction`, `essence`, `flows[0]` (and `flows[1]` for ST 2022-7), the essence member (`video.raster`, `video.format`, `audio.format`, ...), sometimes `flags`, `pool_count`, `media_mode`, `min_tx_delay_ns`, `ssrc`, `payload_type` |
 | `mtl_unit` | out: `lease`, `slot`, `plane[]`, `meta`; TX in: `used`, `flags`, `media_index` or `media_tai_ns`, `cookie`, `hold`; RX out: `status`, `used`, `media_index`, `media_tai_ns`, `rtp` |
 | `mtl_tx_result` | `status`, `reason`, `cookie`, `media_index`, `margin_ns`, `sent_tai_ns`, `rtp` |
 
 Every field is typed: enums and defines, no strings. Where a legacy enum exists the new one
-keeps its order, with `+ 1` where 0 must mean "not set" (`MTL_FPS_59_94` is `ST_FPS_P59_94 +
+keeps its order, with `+ 1` where 0 must mean "not set" (`MTL_FPS_59_94`, the input of `mtl_fps_rational()`, is `ST_FPS_P59_94 +
 1`, `MTL_YUV422_10` is `ST20_FMT_YUV_422_10BIT + 1`) and the same values where 0 is a real
 default (`enum mtl_sender_type` is `enum st21_pacing`, `enum mtl_packing` is `enum
 st20_packing`), so porting a legacy `ops` struct is a field-by-field copy ([migration.md](migration.md)).
@@ -96,7 +94,7 @@ A complete program: open an instance (its ports come from `MTL_PORTS` when the p
 
 ```c
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
-   Defaults it relies on: media mode AUTO, source PLAYBACK, epoch timeline, results off.
+   Defaults it relies on: media mode AUTO (the next slot of the SMPTE epoch), results off.
  */
 #include "ex_common.h"
 
@@ -115,7 +113,7 @@ int main(void) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
 
   int ret = mtl_instance_open(NULL, &mt); /* ports from MTL_PORTS, e.g. "null:1" */
@@ -142,7 +140,7 @@ int main(void) {
 
 ## 4. Receive video on two ST 2022-7 legs
 
-Two flows are two legs. A frame with lost packets is still delivered, with `status = MTL_RX_INCOMPLETE` and the gaps read as zero; `media_index` says which frame it is.
+Two flows are two legs. A frame with lost packets is still delivered, with `status = MTL_RX_INCOMPLETE` and the gaps read as zero (library pools, from MS2); `media_index` says which frame it is.
 
 ```c
 /* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. */
@@ -164,7 +162,7 @@ int rx_video(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[1], 239, 168, 86, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   int ret = mtl_session_open(mt, &sc, &s);
 
@@ -189,7 +187,7 @@ int rx_video(mtl_instance_h mt) {
 
 ## 5. A sender in the application's epoll loop
 
-Every data call that finds nothing arms the wait handle, so the loop drains (results, then free slots) until `-MTL_EAGAIN` and sleeps in `epoll`. The slot is acquired before the source frame is taken, so no frame is taken without a place to go. Results come back in submission order with the cookie of each unit.
+Every data call that finds nothing arms its target, here always in the wait handle's mask (R2), so the loop drains (results, then free slots) until `-MTL_EAGAIN` and sleeps in `epoll`. The slot is acquired before the source frame is taken, so no frame is taken without a place to go. Results come back in submission order with the cookie of each unit.
 
 ```c
 /* ex03 — a sender in the application's own epoll loop, reading a result per frame.
@@ -210,7 +208,7 @@ static int drain(mtl_session_h s) {
   struct mtl_unit u;
   int n;
   MTL_INIT(&u);
-  while ((n = mtl_tx_reap(s, r, sizeof(r[0]), 16, 0)) > 0) /* in submission order */
+  while ((n = mtl_tx_reap(s, r, 16, 0)) > 0) /* in submission order */
     for (int i = 0; i < n; i++)
       source_frame_done(r[i].cookie, r[i].status, r[i].margin_ns);
   if (n != -MTL_EAGAIN) return n;
@@ -266,7 +264,7 @@ void framework_frame_done(uint64_t id);
 static int reap(mtl_session_h s) {
   struct mtl_tx_result r[8];
   int n;
-  while ((n = mtl_tx_reap(s, r, sizeof(r[0]), 8, 0)) > 0)
+  while ((n = mtl_tx_reap(s, r, 8, 0)) > 0)
     for (int i = 0; i < n; i++) framework_frame_done(r[i].cookie);
   return n == -MTL_EAGAIN ? 0 : n;
 }
@@ -286,7 +284,7 @@ int zero_copy_tx(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 21, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.flags = MTL_SESSION_POOL_ATTACHED | MTL_SESSION_REQUIRE_DIRECT; /* never a copy */
   sc.pool_count = N;
@@ -365,12 +363,12 @@ int rx_stop(mtl_session_h s) {
 
 ## 8. Receive into an MXL ring by frame number
 
-With `MTL_SESSION_RX_BY_INDEX`, frame k lands in slot k mod N. The default timeline is the SMPTE epoch, so every process computes the same k for the same frame.
+With `MTL_SESSION_RX_BY_INDEX`, frame k lands in slot k mod N. Every session runs on the SMPTE epoch, so every process computes the same k for the same frame.
 
 ```c
 /* ex06 — receive into an MXL ring: unit k lands in grain k mod GRAINS, so the reader
-   finds frame k at a known place. The ring is the session's pool (app memory). The
-   default timeline is the SMPTE epoch: k counts frames since 1970 TAI, the same in every
+   finds frame k at a known place. The ring is the session's pool (app memory). Every
+   session runs on the SMPTE epoch: k counts frames since 1970 TAI, the same in every
    process. */
 #include <mtl/experimental/mtl_mem.h>
 
@@ -396,7 +394,7 @@ int mxl_bridge(mtl_instance_h mt) {
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.flags = MTL_SESSION_POOL_ATTACHED | MTL_SESSION_RX_BY_INDEX | MTL_SESSION_RX_LATEST;
   sc.pool_count = GRAINS;
@@ -426,13 +424,14 @@ int mxl_bridge(mtl_instance_h mt) {
 
 ## 9. Video, audio and captions from one file
 
-Three sessions on one timeline started in one call: all of them or none. Each unit says which frame or sample it is (`media_index`), so every RTP timestamp is exact and captions for frame k carry video frame k's timestamp. The ANC session takes its raster from the video it starts with; audio uses the copy path.
+Three sessions started in one call, all of them or none, with `MTL_WHEN_ORIGIN`: media index 0 of each is the start's T0, so the file's frame and sample counts are media indices as they are.
+Each unit says which frame or sample it is (`media_index`), so every RTP timestamp is exact and captions for frame k carry video frame k's timestamp. The ANC session takes its raster and slot delay from the first video of its start; audio uses the copy path.
 
 ```c
 /* ex07 — video, audio and captions from one file, in sync by construction: three sessions
-   on one timeline, started together; each unit says which frame or sample it is, so every
-   RTP timestamp is exact and ANC frame k carries video frame k's timestamp. */
-#include <mtl/experimental/mtl_sync.h>
+   started together with MTL_WHEN_ORIGIN, so the file's frame 0 and sample 0 are at the
+   start's T0; each unit says which frame or sample it is, so every RTP timestamp is exact
+   and ANC frame k carries video frame k's timestamp. */
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
@@ -446,43 +445,39 @@ void decode_into(struct mtl_unit* u, const void* data, size_t size);
 /* writes captions for frame pts as ANC: a meta header + packets, and the UDW run */
 size_t captions_for(int64_t pts, void* meta, void* udw);
 
-/* One TX session of the file on the shared timeline; port: the UDP port of its flow. */
-static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_timeline_h tl,
-                   mtl_session_h* s) {
+/* One TX session of the file; port: the UDP port of its flow. */
+static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_session_h* s) {
   struct mtl_session_config sc;
   MTL_INIT(&sc);
   sc.direction = MTL_TX;
   sc.essence = essence;
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, port);
-  sc.timeline = tl;
   sc.media_mode = MTL_MEDIA_INDEX; /* unit.media_index = frame or first sample */
   if (essence == MTL_VIDEO) {
     sc.video.raster.width = 1920;
     sc.video.raster.height = 1080;
-    sc.video.raster.rate = FILE_FPS;
+    sc.video.raster.fps = mtl_fps_rational(FILE_FPS);
     sc.video.format = MTL_YUV422_10;
   } else if (essence == MTL_AUDIO) {
     sc.audio.format = MTL_PCM24;
     sc.audio.sample_rate = 48000;
     sc.audio.channels = 2;
-  } /* ANC: its raster comes from the video it starts with */
+  } /* ANC: raster and slot delay come from the first video of its start */
   return mtl_session_create(mt, &sc, s);
 }
 
 int av_anc_playout(mtl_instance_h mt) {
   mtl_session_h s[3] = {MTL_NULL(mtl_session_h), MTL_NULL(mtl_session_h),
                         MTL_NULL(mtl_session_h)};
-  mtl_timeline_h tl;
-  struct mtl_timeline_config tc;
+  /* T0: the first feasible instant; media index 0 of all three is T0 */
+  const struct mtl_when origin = {.kind = MTL_NOW, .flags = MTL_WHEN_ORIGIN};
   struct mtl_unit u;
-  MTL_INIT(&tc); /* anchor AT_START: T0 is chosen when the sessions start */
   MTL_INIT(&u);
 
-  int ret = mtl_timeline_create(mt, &tc, &tl);
-  if (ret >= 0) ret = open_tx(mt, MTL_VIDEO, 20000, tl, &s[VIDEO]);
-  if (ret >= 0) ret = open_tx(mt, MTL_AUDIO, 30000, tl, &s[AUDIO]);
-  if (ret >= 0) ret = open_tx(mt, MTL_ANC, 40000, tl, &s[CAPTIONS]);
-  if (ret >= 0) ret = mtl_session_start(s, 3, NULL, NULL); /* all three or none */
+  int ret = open_tx(mt, MTL_VIDEO, 20000, &s[VIDEO]);
+  if (ret >= 0) ret = open_tx(mt, MTL_AUDIO, 30000, &s[AUDIO]);
+  if (ret >= 0) ret = open_tx(mt, MTL_ANC, 40000, &s[CAPTIONS]);
+  if (ret >= 0) ret = mtl_session_start(s, 3, &origin, NULL); /* all three or none */
 
   int st;
   int64_t pts;
@@ -513,7 +508,6 @@ int av_anc_playout(mtl_instance_h mt) {
   if (ret < 0) ex_fail("playout", ret);
   mtl_session_stop(s, 3, MTL_STOP_DRAIN, MTL_SEC(2)); /* all three finish together */
   for (int i = 0; i < 3; i++) mtl_session_close(s[i], 0);
-  mtl_timeline_close(tl);
   return ret;
 }
 ```
@@ -525,8 +519,9 @@ For gateways: each submit of the same lease with a larger `used` publishes more 
 ```c
 /* ex08 — low-latency progressive TX (SDI-to-IP gateway): the first rows leave while the
    rest of the frame is still arriving. Session: a video TX config with sc.unit =
-   MTL_UNIT_ROWS, sc.source_kind = MTL_SOURCE_GATEWAY and sc.media_mode = MTL_MEDIA_INDEX.
-   Each submit of the same lease publishes rows. */
+   MTL_UNIT_ROWS, sc.media_mode = MTL_MEDIA_INDEX and the option tx.troffset_ns, so the
+   frame leaves in the frame period it is captured in. Each submit of the same lease
+   publishes rows. */
 #include <mtl/experimental/mtl_sync.h>
 
 #include "ex_common.h"
@@ -547,7 +542,9 @@ int send_one_frame(mtl_session_h s) {
     uint32_t next = done + STEP < u.plane[0].rows ? done + STEP : u.plane[0].rows;
     render_rows(&u, done, next);
     u.used = next; /* rows [0, next) are final; used == rows ends the frame */
-    ret = mtl_tx_submit(s, &u); /* on failure the frame ends here, with what was sent */
+    /* a failed first submit returns the slot; a later failure ends the frame where its
+       rows stopped (tx.rows_late) */
+    ret = mtl_tx_submit(s, &u);
     if (ret < 0) return ex_fail("submit", ret);
     done = next;
   }
@@ -570,7 +567,8 @@ Each TX pool lies over the RX pool, offset to its quadrant, with the RX stride. 
 #define QUADS 4
 
 /* rx: a created 2160p RX session (library pool). tx[q]: created 1080p TX sessions with
-   MTL_SESSION_POOL_ATTACHED, media_mode TAI, source_kind CAPTURE. */
+   MTL_SESSION_POOL_ATTACHED, media_mode TAI and min_tx_delay_ns = one frame period plus
+   the pick-up lead (a frame exists only once it is received). */
 static int attach_quadrants(mtl_session_h rx, const mtl_session_h* tx) {
   struct mtl_session_info ri;
   struct mtl_unit slot0;
@@ -599,8 +597,8 @@ int split_forward(mtl_session_h rx, mtl_session_h* tx) {
   MTL_INIT(&in);
   MTL_INIT(&how);
   int ret = attach_quadrants(rx, tx);
-  if (ret >= 0)
-    ret = mtl_session_start(tx, QUADS, NULL, NULL); /* one direction per start */
+  for (uint32_t q = 0; ret >= 0 && q < QUADS; q++)
+    ret = mtl_session_start(&tx[q], 1, NULL, NULL); /* one each: start arrays are MS6 */
   if (ret >= 0) ret = mtl_session_start(&rx, 1, NULL, NULL);
 
   while (ret >= 0 && g_running) {
@@ -630,9 +628,10 @@ The output units carry the input's media time, so a compliant input keeps its RT
 
 ```c
 /* ex10 — a time-preserving processor: video, audio and ANC in, transformed, out, each
-   with the input's media time. Output sessions use media_mode TAI and source_kind CAPTURE
-   with min_tx_delay_ns = the processing budget, so the delay is fixed and, for a
-   compliant input, every output RTP equals the input RTP. A received unit is a valid send
+   with the input's media time. Output sessions use media_mode TAI with min_tx_delay_ns =
+   the pipeline budget: one frame period (RX completion) + processing + the pick-up lead,
+   so the delay is fixed and, for a compliant input, every output RTP equals the input
+   RTP. A received unit is a valid send
    template: its RX-only flags are ignored. */
 #include <mtl/experimental/mtl_util.h>
 
@@ -801,7 +800,7 @@ int open_packet_tx(mtl_instance_h mt, mtl_session_h* s) {
   mtl_flow_ipv4(&sc.flows[1], 239, 168, 86, 20, 20000);
   sc.video.raster.width = 1920;
   sc.video.raster.height = 1080;
-  sc.video.raster.rate = MTL_FPS_59_94;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
   sc.video.format = MTL_YUV422_10;
   sc.packet.packets_per_unit = PKTS_PER_FRAME;
   sc.packet.set_fields =
@@ -828,7 +827,7 @@ int send_frame(mtl_session_h s, int64_t frame) {
 }
 
 /* RX of a session with unit = MTL_UNIT_PACKETS: chunks of received packets, duplicates of
-   the two legs already removed by sequence number. */
+   the two legs already removed by RTP timestamp and sequence number. */
 int receive_packets(mtl_session_h s) {
   struct mtl_unit u;
   MTL_INIT(&u);
@@ -843,7 +842,8 @@ int receive_packets(mtl_session_h s) {
 
 ## 15. NMOS IS-05: switch destinations at one instant
 
-One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch together on every leg at one instant, all or nothing, at the slot boundary whether media flows or not. The call returns the instant it will switch on; `status.update_*` and `MTL_EVENT_UPDATE` say when it did. Disabling every leg mutes the session without stopping it ([nmos-ipmx.md](nmos-ipmx.md)).
+One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch together on every leg at one instant, all or nothing, at the slot boundary whether media flows or not.
+The update reads only the members its parts name, so the Node passes its own copy of the configuration. The call returns the instant it will switch on, or `-MTL_EBUSY` while an earlier activation is pending; `status.update_*` and `MTL_EVENT_UPDATE` say when it did. Disabling every leg mutes the session without stopping it; muting is Phase 7, and until then `master_enable` false is a stop ([nmos-ipmx.md](nmos-ipmx.md)).
 
 ```c
 /* ex13 — NMOS IS-05 on one session. One PATCH is one update: new destinations and
@@ -851,48 +851,43 @@ One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables switch
    instant it switches on (the 202 response of a scheduled activation); the status says
    when it did (the 200 response of an immediate one, or /active of a scheduled one).
    master_enable stays the Node's own state: with every leg disabled the session is muted
-   but RUNNING, so a disable can be scheduled too. */
+   but RUNNING, so a disable can be scheduled too (muting is Phase 7; until then
+   master_enable false is a stop). */
 #include <string.h>
 
 #include "ex_common.h"
 
-/* dest[i]: the IS-05 destination of leg i (only ip and udp_port are read), or NULL to
-   keep it; legs_disabled: the rtp_enabled bits (and every bit when master_enable is
-   false); when NULL: activate_immediate. */
-int activate(mtl_session_h s, const struct mtl_flow* const dest[MTL_MAX_LEGS],
-             uint32_t legs_disabled, const struct mtl_when* when, int64_t* planned_tai_ns,
-             uint64_t* seq) {
-  struct mtl_session_config sc;
+/* sc: the Node's copy of the session's configuration (the update reads only the members
+   its parts name). dest[i]: the IS-05 destination of leg i (only ip, source_filter and
+   udp_port are read), or NULL to keep it; legs_disabled: the rtp_enabled bits (and every
+   existing leg's bit when master_enable is false); when NULL: activate_immediate. */
+int activate(mtl_session_h s, struct mtl_session_config* sc,
+             const struct mtl_flow* const dest[MTL_MAX_LEGS], uint32_t legs_disabled,
+             const struct mtl_when* when, int64_t* planned_tai_ns, uint64_t* seq) {
   struct mtl_session_status st;
-  MTL_INIT(&sc);
-  int ret = mtl_session_get_config(s, &sc); /* the active configuration */
-  for (int i = 0; ret >= 0 && i < MTL_MAX_LEGS; i++) {
-    if (!dest[i]) continue; /* copy only what IS-05 changed: ssrc, dscp, pt stay */
-    memcpy(sc.flows[i].ip, dest[i]->ip, sizeof(dest[i]->ip));
-    memcpy(sc.flows[i].source_filter, dest[i]->source_filter,
+  for (int i = 0; i < MTL_MAX_LEGS; i++) {
+    if (!dest[i]) continue; /* copy only what IS-05 changed: dscp and ttl stay */
+    memcpy(sc->flows[i].ip, dest[i]->ip, sizeof(dest[i]->ip));
+    memcpy(sc->flows[i].source_filter, dest[i]->source_filter,
            sizeof(dest[i]->source_filter));
-    sc.flows[i].udp_port = dest[i]->udp_port;
+    sc->flows[i].udp_port = dest[i]->udp_port;
   }
-  sc.legs_disabled = legs_disabled;
-  /* identical legs are re-applied, as IS-05 asks */
-  if (ret >= 0)
-    ret = mtl_session_update(s, &sc,
-                             MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS | MTL_UPDATE_REAPPLY,
-                             when, planned_tai_ns);
+  sc->legs_disabled = legs_disabled;
+  /* -MTL_EBUSY while an earlier activation is pending: the Node answers 423 */
+  int ret =
+      mtl_session_update(s, sc, MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS, when, planned_tai_ns);
   if (ret >= 0) ret = mtl_session_get_status(s, &st, sizeof(st));
   if (ret >= 0) *seq = st.update_seq; /* the Node serialises the updates of a session */
   return ret < 0 ? ex_fail("activate", ret) : 0;
 }
 
-/* 1: switched at *tai_ns (activation_time); 0: still pending; -MTL_ECANCELED: replaced or
-   cancelled; -MTL_EIO: failed (status.update_reason says why). */
+/* 1: switched at *tai_ns (activation_time); 0: still pending; -MTL_EIO: failed
+   (status.update_reason says why). */
 int applied_at(mtl_session_h s, uint64_t seq, int64_t* tai_ns) {
   struct mtl_session_status st;
   int ret = mtl_session_get_status(s, &st, sizeof(st));
   if (ret < 0) return ret;
-  if (st.update_seq != seq || st.update_state == MTL_UPDATE_STATE_REPLACED ||
-      st.update_state == MTL_UPDATE_STATE_CANCELLED)
-    return -MTL_ECANCELED;
+  if (st.update_seq != seq) return -MTL_EINVAL; /* not the last activation */
   if (st.update_state == MTL_UPDATE_STATE_FAILED) return -MTL_EIO;
   if (st.update_state != MTL_UPDATE_STATE_APPLIED) return 0;
   *tai_ns = st.update_applied_tai_ns;
@@ -904,22 +899,20 @@ int applied_at(mtl_session_h s, uint64_t seq, int64_t* tai_ns) {
 
 `MTL_INIT`, typed handles and options work unchanged; an RAII guard releases a lease that was not submitted.
 
-The second function is a test bench that needs no NIC: an instance on `null:1` with the test clock (`mtl_test_clock`, `mtl_test_clock_advance`), a capacity dry
+The second function is a test bench that needs no NIC: an instance on `null:1` with the test clock (the faults `MTL_FAULT_TEST_CLOCK` and `MTL_FAULT_CLOCK_ADVANCE` of `mtl_debug_inject`; each advance completes the units that fell due, on the caller's thread), a capacity dry
 run (`mtl_session_query` with `MTL_QUERY_CHECK_CAPACITY`, `-MTL_ENOSPC` with a `CAPACITY_*` reason), a start at a TAI instant (`struct mtl_when` with `MTL_AT_TAI`),
-results and events on a shared queue (`mtl_queue_bind`), full timing records read by size (`struct mtl_tx_result_full`; the NIC launch time only when `MTL_TXF_OBSERVED_LEG0` is set),
-a library dispatch thread (`mtl_queue_dispatch_start`), and an injected loss of the time source (`mtl_debug_inject`, debug builds).
+full timing records (`mtl_tx_reap_full`; the NIC launch time only when `MTL_TXF_OBSERVED_LEG0` is set), an injected loss of the time source (`mtl_debug_inject`, debug builds), and the instance's events (`mtl_instance_read_events`).
 
 ```cpp
 // examples_cpp.cpp — the core API from C++17: MTL_INIT, typed handles, options, an RAII
-// lease guard and a stride-safe result read; then a test bench on the null backend: a
-// capacity dry run, a start at a TAI instant, a shared queue read by a library thread,
-// the full timing record, the test clock and an injected fault. Bindings follow the same
-// pattern.
+// lease guard and a typed result read; then a test bench on the null backend: a capacity
+// dry run, a start at a TAI instant, the full timing record, the test clock, an injected
+// fault and the instance's events. Bindings follow the same pattern.
 #include <mtl/experimental/mtl.h>
 #include <mtl/experimental/mtl_debug.h>
+#include <mtl/experimental/mtl_events.h>
 #include <mtl/experimental/mtl_observe.h>
 #include <mtl/experimental/mtl_options.h>
-#include <mtl/experimental/mtl_queue.h>
 
 #include <array>
 #include <cstdio>
@@ -928,8 +921,8 @@ extern volatile int g_running;
 
 namespace {
 
-// Releases an acquired TX lease unless it was handed to submit (which keeps it only on
-// -MTL_EAGAIN).
+// Releases an acquired TX lease unless it was handed to submit (which consumes it, also
+// on failure).
 class TxLease {
  public:
   explicit TxLease(mtl_session_h s) : s_(s) {
@@ -946,9 +939,8 @@ class TxLease {
     return ret;
   }
   int submit() {
-    int ret = mtl_tx_submit(s_, &u_);
-    held_ = ret == -MTL_EAGAIN;
-    return ret;
+    held_ = false;
+    return mtl_tx_submit(s_, &u_);
   }
   mtl_unit& unit() {
     return u_;
@@ -976,16 +968,24 @@ void video_tx_config(mtl_session_config* sc) {
   sc->flows[0].udp_port = 20000;
 }
 
-// Runs on the queue's library thread, never on a tasklet: every TX result and event of
-// the sessions bound to the queue, plus the instance events it subscribed to.
-void on_queue(void* user, const mtl_tx_result* r, const mtl_event* ev) {
-  (void)user;
-  if (r && r->status != MTL_TX_ON_TIME)
-    std::printf("unit %llu: %s\n", static_cast<unsigned long long>(r->seq),
-                mtl_reason_name(r->reason));
-  if (ev)
-    std::printf("%s: event %u, %s\n", ev->origin_name, ev->type,
-                mtl_reason_name(ev->reason));
+// Prints the pending events of the instance (ports, time, schedulers, health) without
+// waiting; the same loop reads a session's with mtl_session_read_events.
+void print_instance_events(mtl_instance_h mt) {
+  std::array<mtl_event, 8> ev{};
+  int n;
+  while ((n = mtl_instance_read_events(mt, ev.data(), static_cast<uint32_t>(ev.size()),
+                                       0)) > 0)
+    for (int i = 0; i < n; i++)
+      std::printf("%s: event %u, %s\n", ev[i].origin_name, ev[i].type,
+                  mtl_reason_name(ev[i].reason));
+}
+
+// Moves the test clock (mtl_debug.h) by ns.
+int advance(mtl_instance_h mt, int64_t ns) {
+  mtl_fault_params f;
+  MTL_INIT(&f);
+  f.step_ns = ns;
+  return mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_CLOCK_ADVANCE, &f);
 }
 
 }  // namespace
@@ -995,7 +995,7 @@ int cpp_sender(mtl_instance_h mt) {
   video_tx_config(&sc);
   // a tuning knob: options are absent unless set, and absent means the default
   const std::array<mtl_option, 1> opts{
-      {{MTL_OPT_LATE_POLICY, 0, MTL_LATE_SEND_LATE, nullptr}}};
+      {{MTL_OPT_LATE_POLICY, 0, MTL_LATE_DROP, nullptr}}};
   sc.options = opts.data();
   sc.option_count = static_cast<uint32_t>(opts.size());
 
@@ -1011,7 +1011,7 @@ int cpp_sender(mtl_instance_h mt) {
     }
     if (ret == 0) ret = lease.submit();
     std::array<mtl_tx_result, 8> r{};
-    int n = mtl_tx_reap(s, r.data(), sizeof(r[0]), static_cast<uint32_t>(r.size()), 0);
+    int n = mtl_tx_reap(s, r.data(), static_cast<uint32_t>(r.size()), 0);
     for (int i = 0; i < n; i++)
       if (r[i].status != MTL_TX_ON_TIME)
         std::printf("unit %llu: %s\n", static_cast<unsigned long long>(r[i].seq),
@@ -1033,7 +1033,9 @@ int cpp_test_bench() {
   mtl_instance_h mt = MTL_NULL(mtl_instance_h);
   int ret = mtl_instance_open(&p, &mt);
   if (ret < 0) return ret;
-  ret = mtl_test_clock(mt, 0, mtl_rational{0, 0});
+  mtl_fault_params clock;  // rate {0, 0}: the clock moves only by CLOCK_ADVANCE
+  MTL_INIT(&clock);
+  ret = mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_TEST_CLOCK, &clock);
 
   // the dry run of create: grants, and with CHECK_CAPACITY also the free capacity
   mtl_session_config sc;
@@ -1048,51 +1050,43 @@ int cpp_test_bench() {
     std::printf("no room: %s\n", mtl_reason_name(e.reason));  // a CAPACITY_* reason
   }
 
-  // results and events of the session, and the instance's time events, on one queue
   mtl_session_h s = MTL_NULL(mtl_session_h);
-  mtl_queue_h q = MTL_NULL(mtl_queue_h);
-  mtl_queue_config qc;
-  MTL_INIT(&qc);
-  qc.subscribe = MTL_SUB_TIME;
   if (ret >= 0) ret = mtl_session_create(mt, &sc, &s);
-  if (ret >= 0) ret = mtl_queue_create(mt, &qc, &q);
-  if (ret >= 0) ret = mtl_queue_bind(q, s, MTL_BIND_RESULTS | MTL_BIND_EVENTS);
 
   // start at an instant: 100 ms from now on the instance clock
   int64_t now = 0;
-  if (ret >= 0) ret = mtl_time_now(mt, &now);
+  if (ret >= 0) ret = mtl_time_now(mt, &now, nullptr, nullptr);
   mtl_when when{};
   when.kind = MTL_AT_TAI;
   when.value = now + MTL_MS(100);
   if (ret >= 0) ret = mtl_session_start(&s, 1, &when, nullptr);
+  // each advance completes, on this thread, every unit that fell due (mtl_debug.h)
   for (int i = 0; ret >= 0 && i < 3; i++) {
     TxLease lease(s);
     ret = lease.acquire(0);
     if (ret == 0) ret = lease.submit();
-    if (ret >= 0) ret = mtl_test_clock_advance(mt, MTL_MS(50));
+    if (ret >= 0) ret = advance(mt, MTL_MS(50));
   }
 
-  // the full timing record: pass its size; the NIC launch time is valid only when flagged
+  // the full timing record; the NIC launch time is valid only when flagged
   std::array<mtl_tx_result_full, 4> full{};
-  int n = ret < 0 ? 0
-                  : mtl_queue_reap(q, full.data(), sizeof(full[0]),
-                                   static_cast<uint32_t>(full.size()), 0);
+  int n = ret < 0
+              ? 0
+              : mtl_tx_reap_full(s, full.data(), static_cast<uint32_t>(full.size()), 0);
   for (int i = 0; i < n; i++)
     if (full[i].detail_flags & MTL_TXF_OBSERVED_LEG0)
       std::printf("launch error %lld ns\n",
                   static_cast<long long>(full[i].observed_first_tai_ns[0] -
                                          full[i].scheduled_tai_ns));
 
-  // from here a library thread reads the queue; then the time source is lost on purpose
-  if (ret >= 0) ret = mtl_queue_dispatch_start(q, on_queue, nullptr);
+  // the time source is lost on purpose: the instance posts MTL_EVENT_TIME_STATE
   mtl_fault_params f;
   MTL_INIT(&f);
   if (ret >= 0) ret = mtl_debug_inject(MTL_OBJ_OF_INSTANCE(mt), MTL_FAULT_TIME_LOST, &f);
-  if (ret >= 0) ret = mtl_test_clock_advance(mt, MTL_SEC(1));
-  mtl_queue_dispatch_stop(q);
+  if (ret >= 0) ret = advance(mt, MTL_SEC(1));
+  if (ret >= 0) print_instance_events(mt);
 
   mtl_session_close(s, MTL_SEC(1));
-  mtl_queue_close(q);
   mtl_instance_close(mt, MTL_SEC(1));
   return ret;
 }
@@ -1100,7 +1094,7 @@ int cpp_test_bench() {
 
 ## 17. An st20p program side by side
 
-| st20p today | Revision 4 |
+| st20p today | Unified API |
 |---|---|
 | `mtl_init(&mtl_init_params)` | `mtl_instance_open(&params, &mt)`; `MTL_INSTANCE_SHARED` for plugins sharing one instance |
 | `st20p_tx_create(mt, &ops)` returns a handle or NULL | `mtl_session_open(mt, &sc, &s)` (or `create` + `start`) returns an `MTL_E*` code; `mtl_last_error()` names the field |
@@ -1120,4 +1114,4 @@ int cpp_test_bench() {
 | `ST20_TYPE_SLICE_LEVEL` | `unit = MTL_UNIT_ROWS` (example 10) |
 | `ST_EVENT_VSYNC` | `MTL_EVENT_EPOCH_TICK` with the option `session.epoch_tick` |
 | `ST20P_TX_FLAG_*` tuning bits, `mtl_init_params` tuning fields | option keys `MTL_OPT_*` (`mtl_options.h`) in the config's `options` array |
-| interlaced `ops.fps` (the field rate) | `raster.rate` (or `raster.fps`) is the frame rate |
+| `ops.fps` | `raster.fps = mtl_fps_rational(MTL_FPS_59_94)`: a rational only; interlaced, it is the frame rate (legacy `ops.fps` counts fields) |

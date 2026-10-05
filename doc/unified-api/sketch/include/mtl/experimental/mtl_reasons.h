@@ -1,16 +1,18 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  */
-/* A hand-formatted design sketch: formatted when it moves to include/ (milestone M0). */
+/* Hand-formatted: clang-format stays off so the milestone tags keep their place
+   (check.sh lint 5). */
 /* clang-format off */
 /*
- * mtl_reasons.h - reason codes of the unified MTL API, revision 0.2. The implementation
- * generates this file, mtl_reason_name() and the test trigger list from one table; the
- * table, with each reason's trigger, is contract.md §8.3.
+ * mtl_reasons.h - reason codes of the unified MTL API, revision 0.2. The library's reasons
+ * table (names for mtl_reason_name()) is checked against this header by a U test (task
+ * H1b); the table, with each reason's trigger, is contract.md §8.3.
  *
  * One vocabulary for mtl_error_info.reason, status.reason/.error_reason, event reasons and
  * TX result reasons. Grouped by hundreds so each group can grow; values are frozen once
- * published. Include it to branch on a reason; mtl_reason_name() is enough to log one.
+ * published, and the reasons of later items are declared under MTL_LATER with their
+ * values kept. Include it to branch on a reason; mtl_reason_name() is enough to log one.
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_REASONS_H
@@ -30,7 +32,9 @@ enum mtl_reason {
   MTL_REASON_CLOSE_IN_PROGRESS = 9,
   MTL_REASON_INSTANCE_SHUTDOWN = 10, /* closed by the instance's close or shutdown */
   MTL_REASON_FORKED = 11,            /* a call in a forked child (mtl.h R8) */
-  MTL_REASON_UPDATE_COMMITTING = 12, /* cancel came too late: the update applies */
+#if defined(MTL_LATER)
+  MTL_REASON_UPDATE_COMMITTING = 12, /* cancel came too late: the update applies (Phase 7) */
+#endif
   /* 100-199: device, port, network */
   MTL_REASON_TX_QUEUE_FATAL = 100,
   MTL_REASON_TX_QUEUE_HANG = 101,
@@ -38,7 +42,7 @@ enum mtl_reason {
   MTL_REASON_PORT_RESET = 103,
   MTL_REASON_DEVICE_GONE = 104,
   MTL_REASON_BACKEND_FAILED = 105,
-  MTL_REASON_PORT_NOT_OPEN = 106,
+  MTL_REASON_PORT_NOT_OPEN = 106, /* -MTL_EINVAL: a flow or option names a port not opened */
   MTL_REASON_WAITING_NEIGHBOUR = 107, /* also the TX drop reason "no neighbour" */
   MTL_REASON_JOIN_FAILED = 108,
   MTL_REASON_LEG_DISABLED = 109,
@@ -70,14 +74,27 @@ enum mtl_reason {
   MTL_REASON_POOL_TOO_SMALL = 218,
   MTL_REASON_HOLD_REQUIRED = 219, /* a pool over another session's pool needs hold */
   MTL_REASON_NAME_EXISTS = 220,
-  MTL_REASON_TIMELINE_MISMATCH = 221,
-  MTL_REASON_START_SET_MIXED = 222, /* a start array mixes timelines or directions, or
-                                       holds an AUTO TX session */
-  MTL_REASON_BUSY_LOOP_THREAD = 223, /* -MTL_EDEADLK */
-  MTL_REASON_LIBRARY_THREAD = 227,   /* -MTL_EDEADLK: close from a thread it would join */
+#if defined(MTL_LATER)
+  MTL_REASON_TIMELINE_MISMATCH = 221, /* a named timeline created again with another config */
+#endif
+  MTL_REASON_START_SET_MIXED = 222, /* a start array mixes directions, or holds an AUTO TX
+                                       session */
+  MTL_REASON_LIBRARY_THREAD = 227,   /* -MTL_EDEADLK: open, close or shutdown from a library
+                                        thread */
   MTL_REASON_PORT_CHANGE_NEEDS_STOP = 224,
-  MTL_REASON_GRID_MISMATCH = 225,
+#if defined(MTL_LATER)
+  MTL_REASON_GRID_MISMATCH = 225, /* a unit period that does not fit a timeline's grid */
+#endif
   MTL_REASON_PKT_CONFIG = 226, /* packet sizes or counts do not fit the port or pacing */
+  MTL_REASON_NOT_IMPLEMENTED = 228, /* -MTL_ENOTSUP: a known item this library does not
+                                       implement yet; field names it (mtl.h R1) */
+  MTL_REASON_RASTER_MISMATCH = 229, /* an ANC or grid-fastmeta raster that differs from the
+                                       first video session of its start */
+#if defined(MTL_LATER)
+  MTL_REASON_RX_TIMELINE_LAZY = 230, /* -MTL_EINVAL: an RX session on an AT_START timeline */
+#endif
+  MTL_REASON_BACKEND_REMOVED = 231,  /* -MTL_ENOTSUP: a removed port prefix ("dpdk_af_xdp:",
+                                        "dpdk_af_packet:"); detail names the replacement */
   /* 300-399: capacity and memory */
   MTL_REASON_CAPACITY_TX_QUEUES = 300,
   MTL_REASON_CAPACITY_RX_QUEUES = 301,
@@ -101,44 +118,64 @@ enum mtl_reason {
   MTL_REASON_LINK_OFFSET_BUDGET = 404,
   MTL_REASON_TIME_ESTIMATED = 405,
   MTL_REASON_TIME_STEP = 406,
+#if defined(MTL_LATER)
+  MTL_REASON_OFF_GRID_PHASE = 407, /* status.timing_reason: a LOCKED_PHASE session relocked,
+                                      or drops off-grid units (MTL_OFF_GRID_DROP) */
+#endif
   /* 500-599: why a TX unit was not on time (mtl_tx_result.reason) */
   MTL_REASON_TOO_LATE = 500,
-  MTL_REASON_WOULD_OVERLAP = 501,
+#if defined(MTL_LATER)
+  MTL_REASON_WOULD_OVERLAP = 501, /* bounded SEND_LATE, MTL_MEDIA_SENDER (Phase 7) */
+#endif
   MTL_REASON_DUPLICATE_SLOT = 502,  /* TAI: two units snapped to one slot */
   MTL_REASON_DUPLICATE_INDEX = 503, /* INDEX: an index equal to the last one */
   MTL_REASON_BEHIND = 504,          /* INDEX: an index smaller than the last one */
-  MTL_REASON_OFF_GRID = 505,
+#if defined(MTL_LATER)
+  MTL_REASON_OFF_GRID = 505, /* LOCKED_PHASE: a TAI media time off the grid */
+#endif
   MTL_REASON_RECOVERY = 506,
   MTL_REASON_INVALID_PAYLOAD = 507,
   MTL_REASON_ENCODER_FAILED = 508,
   MTL_REASON_REJECTED_AT_PICKUP = 509,
   MTL_REASON_STOP_FLUSH = 510,
   MTL_REASON_DISCARD = 511,
-  MTL_REASON_WITHDRAWN = 512,
   MTL_REASON_CLOSE = 513,
   MTL_REASON_BEFORE_START = 514,
   MTL_REASON_SESSION_ERROR = 515,
   MTL_REASON_PKT_COUNT = 516,   /* packet units: more packets than packets_per_unit */
   MTL_REASON_PKT_INVALID = 517, /* packet units: VALIDATE found a malformed packet */
   MTL_REASON_STOP_TIMEOUT = 518, /* flushed because a DRAIN stop or close missed its deadline */
-  MTL_REASON_NO_KEY = 519,       /* encrypted session without a key for the unit (mtl_crypto.h) */
+#if defined(MTL_LATER)
+  MTL_REASON_NO_KEY = 519,       /* encrypted session without a key for the unit (mtl_ipmx.h,
+                                    Phase 7) */
+#endif
   MTL_REASON_ABORTED = 520,      /* mtl_instance_abort() */
-  /* 600-699: the environment: devices, privileges, limits (checked at open, deployment.md) */
-  MTL_REASON_NO_IOMMU = 600,          /* no-IOMMU or PA mode without instance.allow_noiommu */
-  MTL_REASON_DEVICE_NODE_MISSING = 601, /* /dev/vfio/... not in the container */
-  MTL_REASON_DRIVER_MISMATCH = 602,   /* the device is not bound to the expected driver */
-  MTL_REASON_HUGEPAGES_LIMIT = 603,   /* the cgroup hugetlb limit or the free pages */
-  MTL_REASON_MEMLOCK_LIMIT = 604,     /* RLIMIT_MEMLOCK without CAP_IPC_LOCK */
-  MTL_REASON_CAPABILITY_MISSING = 605, /* detail names it */
-  MTL_REASON_CPU_NOT_ALLOWED = 606,   /* a CPU outside the affinity mask */
-  MTL_REASON_CPU_SHARED = 607,        /* busy-poll CPUs under a CFS quota or shared */
-  MTL_REASON_PORT_ENV_UNSET = 608,    /* "env:VAR" unset, or #n out of range */
-  MTL_REASON_RUNTIME_DIR = 609,       /* instance.runtime_dir missing or not writable */
-  MTL_REASON_MANAGER_REQUIRED = 610,  /* the configuration needs MtlManager */
-  MTL_REASON_XSK_UNAVAILABLE = 611,   /* AF_XDP: no socket or map from the node agent */
-  MTL_REASON_VF_UNTRUSTED = 612,      /* the request needs a trusted VF */
-  MTL_REASON_TIME_SOURCE_UNAVAILABLE = 613, /* the named time source cannot be read */
-  MTL_REASON_CLOCK_NOT_OWNED = 614,   /* PTP_BUILTIN asked to steer a PHC MTL does not own */
+  /* 600-699: the environment: devices, privileges, limits (checked at open, deployment.md);
+     each with the code mtl_instance_open returns (VF_UNTRUSTED: mtl_session_create) */
+  MTL_REASON_NO_IOMMU = 600,          /* -MTL_ENOTSUP: no-IOMMU or PA mode without
+                                         instance.allow_noiommu */
+  MTL_REASON_DEVICE_NODE_MISSING = 601, /* -MTL_ENODEV: /dev/vfio/... not in the container */
+  MTL_REASON_DRIVER_MISMATCH = 602,   /* -MTL_ENODEV: the device is not bound to the expected
+                                         driver */
+  MTL_REASON_HUGEPAGES_LIMIT = 603,   /* -MTL_ENOMEM: the cgroup hugetlb limit or the free
+                                         pages */
+  MTL_REASON_MEMLOCK_LIMIT = 604,     /* -MTL_ENOMEM: RLIMIT_MEMLOCK without CAP_IPC_LOCK */
+  MTL_REASON_CAPABILITY_MISSING = 605, /* -MTL_ENOTSUP: detail names it */
+  MTL_REASON_CPU_NOT_ALLOWED = 606,   /* -MTL_EINVAL: a CPU outside the affinity mask */
+  MTL_REASON_CPU_SHARED = 607,        /* -MTL_ENOSPC: busy-poll CPUs under a CFS quota or
+                                         shared, with MTL_CPU_SHARED_REFUSE */
+  MTL_REASON_PORT_ENV_UNSET = 608,    /* -MTL_EINVAL: "env:VAR" unset, or #n out of range */
+  MTL_REASON_RUNTIME_DIR = 609,       /* -MTL_EINVAL: instance.runtime_dir missing or not
+                                         writable */
+  MTL_REASON_MANAGER_REQUIRED = 610,  /* -MTL_ENOTSUP: the configuration needs MtlManager */
+  MTL_REASON_XSK_UNAVAILABLE = 611,   /* -MTL_ENODEV: AF_XDP: no socket or map from the node
+                                         agent */
+  MTL_REASON_VF_UNTRUSTED = 612,      /* -MTL_ENOTSUP at create: the request needs a trusted
+                                         VF */
+  MTL_REASON_TIME_SOURCE_UNAVAILABLE = 613, /* -MTL_ENOTSUP: the named time source cannot be
+                                               read */
+  MTL_REASON_CLOCK_NOT_OWNED = 614,   /* -MTL_EINVAL: PTP_BUILTIN asked to steer a PHC MTL
+                                         does not own */
 };
 
 /* clang-format on */

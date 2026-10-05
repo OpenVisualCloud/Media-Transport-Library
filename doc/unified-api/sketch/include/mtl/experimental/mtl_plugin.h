@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  */
-/* A hand-formatted design sketch: formatted when it moves to include/ (milestone M0). */
+/* Hand-formatted: clang-format stays off so the milestone tags keep their place
+   (check.sh lint 5). */
 /* clang-format off */
 /*
  * mtl_plugin.h - codec and converter plugin ABI, version 2 (revision 0.2).
@@ -114,13 +115,16 @@ typedef int (*mtl_plugin_entry_fn)(uint32_t host_abi, uint32_t* plugin_abi,
 typedef struct mtl_plugin_h {
   uint64_t id;
 } mtl_plugin_h;
-/* Loads a plugin .so into an instance. CP. */
-MTL_API_CP int mtl_plugin_load(mtl_instance_h mt, const char* path, mtl_plugin_h* out);
-/* Registers an in-process device (tests, apps that embed a codec). CP. */
-MTL_API_CP int mtl_plugin_register(mtl_instance_h mt, const struct mtl_plugin_device* dev,
-                                   mtl_plugin_h* out);
-/* -MTL_EBUSY while a session uses it. CP. */
-MTL_API_CP int mtl_plugin_unload(mtl_plugin_h p);
+/* Exactly one of path and dev (else -MTL_EINVAL): path loads a plugin .so into the
+   instance; dev registers an in-process device (tests, apps that embed a codec). CP.
+   (MS4) */
+MTL_API_CP int mtl_plugin_open(mtl_instance_h mt, const char* MTL_NULLABLE path,
+                               const struct mtl_plugin_device* MTL_NULLABLE dev,
+                               mtl_plugin_h* out);
+/* -MTL_EBUSY while a session uses it (p is then not consumed). CP. */
+static inline int mtl_plugin_unload(mtl_plugin_h p) {
+  return mtl_close(mtl_obj(MTL_OBJ_PLUGIN, 0, p.id), 0);
+}
 
 MTL_SIZE_CHECK(mtl_plugin_plane, 32);
 MTL_SIZE_CHECK(mtl_plugin_frame, 200);
