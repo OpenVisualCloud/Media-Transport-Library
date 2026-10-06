@@ -102,10 +102,10 @@ static void st40_fuzz_init_impl(void) {
   }
 
   g_pool = rte_pktmbuf_pool_create(ST40_FUZZ_POOL_NAME, ST40_FUZZ_POOL_SIZE, 0, 0,
-                                   RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                   RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   if (!g_pool) abort();
 
-  g_ring = rte_ring_create(ST40_FUZZ_RING_NAME, ST40_FUZZ_RING_SIZE, rte_socket_id(),
+  g_ring = rte_ring_create(ST40_FUZZ_RING_NAME, ST40_FUZZ_RING_SIZE, (int)rte_socket_id(),
                            RING_F_SP_ENQ | RING_F_SC_DEQ);
   if (!g_ring) abort();
 }
@@ -128,7 +128,7 @@ static void st40_fuzz_reset_context(void) {
   g_mgr.idx = 0;
 
   g_session.idx = 0;
-  g_session.socket_id = rte_socket_id();
+  g_session.socket_id = (int)rte_socket_id();
   g_session.mgr = &g_mgr;
   g_session.packet_ring = g_ring;
   g_session.attached = true;
@@ -162,8 +162,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   uint8_t* dst = rte_pktmbuf_mtod(mbuf, uint8_t*);
   memcpy(dst, data, pkt_size);
-  mbuf->data_len = pkt_size;
-  mbuf->pkt_len = pkt_size;
+  mbuf->data_len = (uint16_t)pkt_size;
+  mbuf->pkt_len = (uint32_t)pkt_size;
 
   rx_ancillary_session_handle_pkt(&g_impl, &g_session, mbuf, MTL_SESSION_PORT_P);
   rte_pktmbuf_free(mbuf);

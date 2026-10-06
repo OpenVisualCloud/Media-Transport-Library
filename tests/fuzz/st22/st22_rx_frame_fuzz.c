@@ -132,7 +132,7 @@ static void st22_fuzz_init_eal(void) {
   }
 
   g_pool = rte_pktmbuf_pool_create(ST22_FUZZ_POOL_NAME, ST22_FUZZ_POOL_SIZE, 0, 0,
-                                   RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                   RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   if (!g_pool) abort();
 }
 
@@ -156,7 +156,7 @@ static void st22_fuzz_reset_context(void) {
   g_mgr.sessions[0] = &g_session;
 
   g_session.idx = 0;
-  g_session.socket_id = rte_socket_id();
+  g_session.socket_id = (int)rte_socket_id();
   g_session.parent = &g_mgr;
   g_session.impl = &g_impl;
   g_session.attached = true;
@@ -200,7 +200,7 @@ static void st22_fuzz_reset_context(void) {
   if (fps <= 0.0) fps = 60.0;
   g_session.frame_time = (double)NS_PER_S / fps;
   g_session.frame_time_sampling = g_session.frame_time;
-  int estimated_pkts = g_session.st20_frame_size / ST_VIDEO_BPM_SIZE;
+  int estimated_pkts = (int)(g_session.st20_frame_size / ST_VIDEO_BPM_SIZE);
   if (estimated_pkts <= 0) estimated_pkts = 1;
   g_session.trs = g_session.frame_time / estimated_pkts;
 
@@ -237,8 +237,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   uint8_t* dst = rte_pktmbuf_mtod(mbuf, uint8_t*);
   memcpy(dst, data, pkt_size);
-  mbuf->data_len = pkt_size;
-  mbuf->pkt_len = pkt_size;
+  mbuf->data_len = (uint16_t)pkt_size;
+  mbuf->pkt_len = (uint32_t)pkt_size;
 
   rv_handle_st22_pkt(&g_session, mbuf, MTL_SESSION_PORT_P, true);
   rte_pktmbuf_free(mbuf);

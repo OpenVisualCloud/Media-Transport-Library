@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 fuzz_cc = meson.get_compiler('c')
-fuzz_c_args = []
+fuzz_c_args = ['-Wconversion']
 fuzz_link_args = []
 fuzzer_deps = []
 asan_enabled = get_option('enable_asan')

@@ -126,7 +126,7 @@ static void st30_fuzz_init_impl(void) {
   }
 
   g_pool = rte_pktmbuf_pool_create(ST30_FUZZ_POOL_NAME, ST30_FUZZ_POOL_SIZE, 0, 0,
-                                   RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                   RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   if (!g_pool) abort();
 }
 
@@ -149,7 +149,7 @@ static void st30_fuzz_reset_context(size_t payload_len) {
   g_mgr.max_idx = 1;
 
   g_session.idx = 0;
-  g_session.socket_id = rte_socket_id();
+  g_session.socket_id = (int)rte_socket_id();
   g_session.mgr = &g_mgr;
   g_session.attached = true;
   g_session.ops.type = ST30_TYPE_FRAME_LEVEL;
@@ -204,8 +204,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   uint8_t* dst = rte_pktmbuf_mtod(mbuf, uint8_t*);
   memcpy(dst, data, pkt_size);
-  mbuf->data_len = pkt_size;
-  mbuf->pkt_len = pkt_size;
+  mbuf->data_len = (uint16_t)pkt_size;
+  mbuf->pkt_len = (uint32_t)pkt_size;
 
   size_t payload = pkt_size - sizeof(struct st_rfc3550_audio_hdr);
   st30_fuzz_reset_context(payload);
