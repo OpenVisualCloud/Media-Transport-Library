@@ -30,7 +30,7 @@ JOBS = [
     ),
     (
         "mtl_sync.h",
-        "epoch index arithmetic, media clock ticks, slot hint, row deadlines and RX row "
+        "epoch index arithmetic, media clock ticks, the next-unit record, row deadlines and RX row "
         "waits, A/V alignment, clocks, the time reference",
     ),
     ("mtl_events.h", "the events of a session and of an instance"),

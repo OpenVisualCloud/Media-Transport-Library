@@ -36,6 +36,6 @@ int rx_video(mtl_instance_h mt) {
   }
 
   if (ret < 0) ex_fail("rx", ret);
-  mtl_session_close(s, 0); /* 1 = still retiring, not a failure: it ends on its own */
+  mtl_session_close(s, 0); /* MTL_RETIRING is not a failure: it ends on its own */
   return ret;
 }

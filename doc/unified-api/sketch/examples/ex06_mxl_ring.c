@@ -50,8 +50,8 @@ int mxl_bridge(mtl_instance_h mt) {
   }
 
   if (ret < 0) ex_fail("mxl", ret);
-  /* 1: still retiring; poll until 0, then MXL may reuse the ring */
-  while (mtl_session_close(s, MTL_SEC(1)) == 1) {
+  /* MTL_RETIRING: poll until 0, then MXL may reuse the ring */
+  while (mtl_session_close(s, MTL_SEC(1)) == MTL_RETIRING) {
   }
   return ret;
 }

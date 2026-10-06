@@ -52,6 +52,8 @@ enum mtl_reason {
   MTL_REASON_WORKER_STALLED = 113,
   MTL_REASON_QUEUE_QUARANTINED = 114, /* not quiesced: its memory is never freed (deployment.md) */
   MTL_REASON_MCAST_FILTERS = 115,     /* the VF's multicast filter budget is used up */
+  MTL_REASON_DETECT_FAILED = 116,     /* status.format_reason: detection cannot identify the
+                                         stream's raster; it keeps trying */
   /* 200-299: configuration and arguments (detail and field name the culprit) */
   MTL_REASON_INVALID_ARGUMENT = 200,
   MTL_REASON_UNKNOWN_BITS = 201,
@@ -95,6 +97,11 @@ enum mtl_reason {
 #endif
   MTL_REASON_BACKEND_REMOVED = 231,  /* -MTL_ENOTSUP: a removed port prefix ("dpdk_af_xdp:",
                                         "dpdk_af_packet:"); detail names the replacement */
+  MTL_REASON_OPTION_WITHDRAWN = 232, /* -MTL_ENOTSUP: a provisional key this library no
+                                        longer has (mtl_options.h) */
+  MTL_REASON_FIELD_RATE = 233,       /* -MTL_EINVAL: an interlaced or PsF raster.fps above 30
+                                        frames per second, a field rate given as the frame
+                                        rate */
   /* 300-399: capacity and memory */
   MTL_REASON_CAPACITY_TX_QUEUES = 300,
   MTL_REASON_CAPACITY_RX_QUEUES = 301,
@@ -110,6 +117,7 @@ enum mtl_reason {
   MTL_REASON_PACING_UNAVAILABLE = 311,
   MTL_REASON_POOL_COUNT_MAX = 312,
   MTL_REASON_RX_RING_BUDGET = 313, /* packet RX: NIC buffers the session may hold */
+  MTL_REASON_PROVIDE_FULL = 314,   /* mtl_rx_provide beyond pool_count destinations held */
   /* 400-499: timing */
   MTL_REASON_BEYOND_HORIZON = 400,
   MTL_REASON_START_IN_PAST = 401,
@@ -127,7 +135,7 @@ enum mtl_reason {
 #if defined(MTL_LATER)
   MTL_REASON_WOULD_OVERLAP = 501, /* bounded SEND_LATE, MTL_MEDIA_SENDER (Phase 7) */
 #endif
-  MTL_REASON_DUPLICATE_SLOT = 502,  /* TAI: two units snapped to one slot */
+  MTL_REASON_SNAP_COLLISION = 502,  /* TAI: two units snapped to one media index */
   MTL_REASON_DUPLICATE_INDEX = 503, /* INDEX: an index equal to the last one */
   MTL_REASON_BEHIND = 504,          /* INDEX: an index smaller than the last one */
 #if defined(MTL_LATER)
@@ -176,6 +184,8 @@ enum mtl_reason {
                                                read */
   MTL_REASON_CLOCK_NOT_OWNED = 614,   /* -MTL_EINVAL: PTP_BUILTIN asked to steer a PHC MTL
                                          does not own */
+  MTL_REASON_DESCRIPTOR_LIMIT = 615,  /* -MTL_ENOSPC: no descriptor for a wait handle
+                                         (RLIMIT_NOFILE or the system's file limit) */
 };
 
 /* clang-format on */

@@ -72,19 +72,21 @@ files, pinned host memory), pins it and maps it into every port and DMA engine a
 ### 1.2 Wait handles
 
 `mtl_get_wait_handle` (`mtl_session_get_wait_handle`, `mtl_instance_get_wait_handle`) returns an
-`intptr_t`: a Linux eventfd (poll for `POLLIN`) or a Windows auto-reset event `HANDLE`.
+`intptr_t`: a Linux eventfd (poll for `POLLIN`) or a Windows manual-reset event `HANDLE` (from MS2a).
 
-The library **owns** it: the application may poll or wait on it, never read, write or close it. Data
-calls drain it (R2), so an application that reads it steals a wake-up. It is close-on-exec and
-non-blocking (R8; fork: §4.4). It carries no data and grants no access: a write to it only causes a
-spurious wake-up, which every wait loop tolerates.
+The library **owns** it: the application may poll or wait on it, never read, write or close it. A
+call that finds nothing resets it (R2), so an application that reads or resets it steals a wake-up.
+It is close-on-exec and non-blocking (R8; fork: §4.4). It carries no data and grants no access: a
+write to it only causes a spurious wake-up, which every wait loop tolerates.
 
 ### 1.3 Threads, priorities and affinity
 
 - No library thread asks for a real-time priority: the workers, the admin thread and the log-sink
-  thread run `SCHED_OTHER`. The wake-up writes of the deferred wake run on each scheduler's own CPU,
-  after its tasklets, so waking needs no thread of its own; a waker thread (W3) is built only if
-  spike S1 shows that those writes harm pacing (D-102).
+  thread run `SCHED_OTHER`. The wake-ups of the deferred wake run on each scheduler's own CPU,
+  after its tasklets, one object per iteration (D-142); a slack gate or a waker thread (W3) is built
+  only by D-142's rules. Threads that wait in MTL calls or on MTL wait handles run on CPUs disjoint
+  from the scheduler lcores: the kernel's wake-affine placement can otherwise put a woken thread on a
+  scheduler's CPU and preempt it.
 - Affinity is explicit: every non-scheduler thread runs on `instance.main_lcore`, never on a scheduler
   CPU, never with the creating thread's affinity (§4.7). `MTL_INSTANCE_TASKLET_THREAD` (no dedicated
   CPUs) makes schedulers preemptible pthreads, still pinned one per CPU and registered with
@@ -252,7 +254,7 @@ sequenceDiagram
     M->>M: 0. refuse new data calls, wait for those inside one
     M->>N: 1. TX finishes the unit on the wire, flushes the rest
     M->>N: 2. RX sends a leave on every leg
-    M->>M: 3. discard unread results, join the log-sink and codec threads
+    M->>M: 3. discard unread results, join the codec threads (the log thread once no sink and no instance remain)
     M->>N: 4. stop schedulers, queues and ports
     M->>G: 5. return grants by closing the connection
     M->>M: 6. free memory not under a lease
@@ -266,7 +268,7 @@ sequenceDiagram
 | 0 | New data calls return `-MTL_ESHUTDOWN`; health shows `SHUTTING_DOWN`, so readiness fails. Threads already inside a data call are waited for through each session's in-flight counter. | the deadline | µs; a UHD conversion in the caller: ms |
 | 1 | TX: the unit whose first packet left is sent to its end at its pace, with its normal result: the wire never carries a partial unit. Rows units end by `tx.rows_late` (STALL as TRUNCATE). Queued units: `MTL_TX_FLUSHED`, reason `CLOSE`. `MTL_SHUTDOWN_DRAIN` sends every queued unit instead, until the deadline minus what steps 2–6 need. | the deadline | one unit (16.7 ms at 59.94p) |
 | 2 | RX: an IGMP/MLD leave on every leg before the queues close; incomplete units are discarded and counted. | never waits on the network | one packet per group |
-| 3 | Results no reader took are discarded and counted (`results_discarded`), so a framework that frees buffers on results reaps before it shuts down. Then the log-sink and codec threads are joined; one stuck in foreign code counts in `threads_unjoined`. | the deadline | ms |
+| 3 | Results no reader took are discarded and counted (`results_discarded`), so a framework that frees buffers on results reaps before it shuts down. Then the codec threads are joined, and the log thread once no sink and no other instance remain; one stuck in foreign code counts in `threads_unjoined`. | the deadline | ms |
 | 4 | Schedulers stop, then queues and ports; flows go, AF_XDP sockets close, regions leave the IOMMU only after the queues stopped. A stuck queue runs the stalled-queue steps ([engine.md](engine.md)): a port reset if the budget left covers `caps.reset_budget_ns`, else quarantine. | the deadline | ms; a stuck rate-limit queue: up to the reset budget |
 | 5 | MtlManager grants (CPUs, queues, flows, XDP references) are returned by closing the connection, after step 4: a grant returned while still in use is the double booking in today's `mtl_uninit`, where `mt_sch_mrg_uinit` releases the lcores before it frees the schedulers still polling them (`mt_sch.c:1022-1030`). | socket close | µs |
 | 6 | Library pools are freed, except slots under a lease the application still holds. | — | ms |
@@ -329,10 +331,12 @@ step (`reason` names the first that did not finish; `ports_unquiesced` is a bit 
   default (`instance.telemetry`).
 - **AS calls at any time.** A handler may call `mtl_instance_interrupt(mt, 1)`, `mtl_instance_abort(mt)`,
   `mtl_session_interrupt(s, 1)` and `mtl_interrupt` with `MTL_INTR_ON` at any time, also during and
-  after close. Their state lives in the never-freed handle slot: the AS path increments an in-flight counter,
-  checks `closed`, writes the eventfd and decrements; close sets `closed` and waits for the counter
-  before closing the eventfd, so a late signal never writes into a recycled descriptor (in ex11 that
-  descriptor number could have been `/dev/termination-log`).
+  after close. Their state lives in the never-freed handle slot. Every AS call, every wake and every
+  syscall on a wait handle runs inside the slot's in-flight counter; retire marks the slot RETIRED
+  and waits for the counter before closing the descriptor, so a late signal never writes into a
+  recycled descriptor (in ex11 that descriptor number could have been `/dev/termination-log`). An AS
+  call keeps `errno` and never writes `mtl_last_error()`; in a `fork()`ed child it returns
+  `-MTL_EBADF`.
 - **The recipe ([examples.md](examples.md), ex11).** Block SIGTERM and SIGINT before open and before any
   thread exists; install the handlers after open, then unblock, so a signal during open stays pending
   (as PID 1 an unhandled SIGTERM is discarded; or run `tini`; a wrapper script must `exec` the binary).
@@ -647,7 +651,7 @@ Native XDP depends on the NIC driver; a manager that cannot attach native falls 
 `/sys/class/net/<if>/queues/tx-1/tx_maxrate` at init (`dev/mt_af_xdp.c:277-292`), the rate at queue
 get (`:867-874`), 0 at put (`:889-892`) **[verified]**. An unprivileged pod mounts `/sys` read only, so
 the probe fails and rate pacing on AF_XDP is unavailable: the session runs `MTL_PACING_SW` with
-`MTL_STATUS_PACING_DOWNGRADED`, or fails at create when `caps.pacing` carries `MTL_REQ_REQUIRE`. With EK19 and no
+`MTL_STATUS_PACING_DOWNGRADED`, or fails at create when `caps.pacing_req` is `MTL_REQ_REQUIRE`. With EK19 and no
 MtlManager nobody sets the rate.
 
 **Who sets the rate in a pod** (OI-23): MtlManager, when it is the node agent that hands over
@@ -824,10 +828,13 @@ The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 ## 6. Windows
 
 - **Stance.** The unified headers are one ABI on every OS (D-43). A wait handle is
-  an auto-reset event `HANDLE` in the same `intptr_t`; error codes are `MTL_E*` constants equal to the
+  a manual-reset event `HANDLE` (from MS2a) in the same `intptr_t`; error codes are `MTL_E*` constants equal to the
   Linux errno values on every OS, also where the UCRT lacks the name (`ESHUTDOWN`, `ESTALE`) or gives
   it another value, so Windows code compares against `MTL_E*` only; values ≥ 1000 are reserved for
   future MTL-only codes. Flags are plain integer literals.
+- **Waits (from MS2a).** `WaitForMultipleObjects` takes at most 64 handles; a framework with more
+  sessions uses thread-pool waits. Sub-millisecond timeouts round up to 1 ms, and the 15.6 ms tick
+  applies unless `timeBeginPeriod` is set.
 - **v1 commitment.** A compile-only CI job builds the headers and the examples with MSVC and MinGW.
   Runtime support follows the legacy library's Windows support; two of the eleven open issues at the
   baseline are Windows build failures (#1672, #1301). Everything in §4 is Linux only.
@@ -836,17 +843,61 @@ The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 
 Tags follow `vYY.MM` (v25.02, v25.12-rc1, v26.01; PR #1768 prepares v26.09).
 
-- Until the ABI freeze the unified API ships inside libmtl, in the symbol version node
-  `MTL_UNIFIED_EXPERIMENTAL_<rev>`, renamed on every incompatible change, so `ld.so` rejects a binary
-  linked against an older node. There is no compatibility promise and no deprecation period for it.
-  libmtl itself gets a soname and the `MTL_LEGACY` node in MS3.
-- At the ABI freeze it moves to `MTL_1.0`, and the legacy APIs it replaces are marked deprecated (a
-  `MTL_LEGACY_DEPRECATED` attribute and the release notes).
-- A deprecated legacy API is removed **no earlier than two `vYY.MM` releases** after the one that
-  deprecated it, and only when the migration map ([migration.md](migration.md)) covers every in-tree use
-  and the maintainer signs off.
-- The legacy session-level APIs (`st20_*`, …) are frozen from the ABI freeze: bugfixes only.
-- Every release note lists the legacy opt-in flags the engine work added, and which may become default
-  at the freeze.
-- Security fixes to MtlManager (§1.6) and to import validation (§1.1) are backported to the legacy API,
-  because they are not API changes.
+**Before the freeze.** The unified API ships inside libmtl in one symbol version node per
+milestone, `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, all renamed together on every incompatible
+change. `ld.so` rejects a binary linked against an older revision at load, and also a binary that
+needs a node the library lacks. A node is frozen at its milestone's exit. A function added to the
+open node after a release fails only at its first call (or at load with `BIND_NOW`), so a binary
+built against a later snapshot of the same milestone has no load-time guarantee. `MTL_LEVEL` in
+`mtl.h` names the last milestone whose exit passed. There is no compatibility promise and no
+deprecation period for the unified API before the freeze. libmtl itself gets a soname and the
+`MTL_LEGACY` node in MS3.
+
+**Targets.** The maintainer publishes, in this section and in the release notes of the MS3
+release, the `vYY.MM` of three releases:
+
+| Stage | Release | No earlier than |
+|---|---|---|
+| F: the `MTL_1.0` freeze (MS7); the legacy APIs deprecated | `<vYY.MM of F>` | `<YYYY-MM>` |
+| F+1: the last release that installs the legacy headers through `mtl.pc` | `<vYY.MM of F+1>` | the release after F |
+| F+2: the legacy session API leaves the public set (migration.md §8.3) | `<vYY.MM of F+2>` | `<YYYY-MM>`, at least 12 months after F ships |
+
+1. **Never earlier.** A published target may move later, announced at least one release ahead;
+   it never moves earlier, also when the work is early.
+2. **Calendar floor.** F+2 ships no earlier than 12 months after F, however many releases fall
+   between; this adds a time floor to the two-release rule of D-69.
+3. **Slip rule.** F moves to a later release whenever, at that release's feature freeze, the
+   pre-hide gate (migration.md §8.4), the legacy-coverage check (migration.md §8.3) or the
+   external review of MS7 is not green. When F moves, F+1 and F+2 move with it, so that F+1 is a
+   later release than F and F+2 keeps its 12-month floor; the new targets are published in the
+   release notes of the release that would have been F.
+4. **Notice.** The release before F lists every legacy symbol the deprecation covers with its
+   unified home (the output of the legacy-coverage check), and asks private users for their
+   `readelf -V` and `nm -D` reports.
+
+**Deprecation.** At F the unified API becomes `MTL_1.0`, and the legacy APIs it replaces carry
+`MTL_LEGACY_DEPRECATED` and a release-note entry. A deprecated legacy API is removed no earlier
+than two `vYY.MM` releases after the one that deprecated it and no earlier than the F+2 floor
+above, only when the migration map ([migration.md](migration.md)) covers every in-tree use, and
+the maintainer signs off. Removal moves the session headers to the internal tier; no legacy struct
+layout ever changes.
+
+**Long-term support.** F+1 gets a `vYY.MM.x` branch, maintained until `<YYYY-MM>`: at least
+24 months after F+1 ships and at least 12 months after F+2 ships. The branch pins one DPDK LTS and
+one ICE driver in `versions.env`, changed only for a security fix or a build break on a supported
+kernel. It never gains a symbol: no `MTL_1.1` node and no new legacy function. After F+2 the legacy
+session API is internal, and this branch is its only public maintenance until it ends.
+
+**Backport scope**, on the LTS branch (legacy API and `MTL_1.0` alike) and on the legacy session
+layer from F:
+
+- security fixes (MtlManager, §1.6; import validation, §1.1);
+- crashes, hangs and memory corruption;
+- data-plane correctness fixes: on the legacy API behind its legacy opt-in flags only, so no
+  default changes on the wire (D-24); on `MTL_1.0` as on the main branch, within its documented
+  behaviour;
+- build fixes for supported compilers and kernels;
+- no features and no new symbols.
+
+Every release note lists the legacy opt-in flags the engine work added, and which may become
+default at the freeze. From F the legacy session-level APIs (`st20_*`, …) take bugfixes only.

@@ -36,7 +36,7 @@ enum mtl_stat_kind {
   MTL_STAT_COUNTER = 1,
   MTL_STAT_GAUGE = 2,
   MTL_STAT_CONST = 3, /* granted configuration and capabilities ("info.*", "caps.*") */
-  MTL_STAT_HIST = 4,  /* 4 + MTL_HIST_BUCKETS slots: count, sum, min, max, buckets */
+  MTL_STAT_HIST = 4,  /* 4 + MTL_HIST_BUCKETS values: count, sum, min, max, buckets */
 };
 enum mtl_stat_unit {
   MTL_SU_COUNT = 1,
@@ -59,8 +59,8 @@ enum mtl_stat_unit {
 struct mtl_stat_desc {
   char name[48];  /* "tx.units_dropped" */
   char label[48]; /* "reason=too_late", "leg=1", "essence=fastmeta,dir=tx", "" */
-  uint32_t slot;  /* index of the first value in mtl_stat_read() */
-  uint16_t width; /* slots: 1, or 4 + MTL_HIST_BUCKETS */
+  uint32_t first; /* index of the first value in mtl_stat_read() */
+  uint16_t width; /* values: 1, or 4 + MTL_HIST_BUCKETS */
   uint16_t kind;  /* enum mtl_stat_kind */
   uint16_t unit;  /* enum mtl_stat_unit */
   uint16_t flags; /* MTL_STAT_* */
@@ -69,25 +69,25 @@ struct mtl_stat_desc {
 };
 /* The schema of o; *n = total, at most cap written (d may be NULL with cap 0); *gen = the
    schema generation. CP. (MS2) */
-MTL_API_CP int mtl_stat_list(struct mtl_object o, struct mtl_stat_desc* MTL_NULLABLE d,
-                             size_t desc_size, uint32_t cap, uint32_t* n, uint64_t* gen);
-/* "name" or "name{label}" to its slot. CP. (MS2) */
-MTL_API_CP int mtl_stat_find(struct mtl_object o, const char* key, uint32_t* slot);
-/* count values from slot first, one snapshot, if the schema is still at gen; the count
+MTL_API_CP(2) int mtl_stat_list(struct mtl_object o, struct mtl_stat_desc* MTL_NULLABLE d,
+                                size_t desc_size, uint32_t cap, uint32_t* n, uint64_t* gen);
+/* "name" or "name{label}" to the index of its first value. CP. (MS2) */
+MTL_API_CP(2) int mtl_stat_find(struct mtl_object o, const char* key, uint32_t* first);
+/* count values from index first, one snapshot, if the schema is still at gen; the count
    written, or -MTL_ESTALE after a schema change. DP. (MS2) */
-MTL_API_DP int mtl_stat_read(struct mtl_object o, uint64_t gen, uint32_t first,
-                             uint32_t count, int64_t* values,
-                             int64_t* MTL_NULLABLE snapshot_tai_ns);
+MTL_API_DP(2) int mtl_stat_read(struct mtl_object o, uint64_t gen, uint32_t first,
+                                uint32_t count, int64_t* values,
+                                int64_t* MTL_NULLABLE snapshot_tai_ns);
 /* One value by name (a histogram: its count): list, find and read, again after a schema
    change. CP. */
 static inline int mtl_stat_get(struct mtl_object o, const char* key, int64_t* value) {
   int ret = -MTL_ESTALE;
   for (int tries = 0; ret == -MTL_ESTALE && tries < 4; tries++) {
-    uint32_t n = 0, slot = 0;
+    uint32_t n = 0, first = 0;
     uint64_t gen = 0;
     ret = mtl_stat_list(o, NULL, sizeof(struct mtl_stat_desc), 0, &n, &gen);
-    if (ret >= 0) ret = mtl_stat_find(o, key, &slot);
-    if (ret >= 0) ret = mtl_stat_read(o, gen, slot, 1, value, NULL);
+    if (ret >= 0) ret = mtl_stat_find(o, key, &first);
+    if (ret >= 0) ret = mtl_stat_read(o, gen, first, 1, value, NULL);
   }
   return ret < 0 ? ret : 0;
 }
@@ -132,7 +132,7 @@ struct mtl_tx_result_full {
   int64_t pickup_slack_ns; /* deadline - pickup */
   int32_t snap_error_ns;
   int32_t max_packet_lateness_ns;
-  uint32_t slots_skipped_before;
+  uint32_t indices_skipped_before; /* media indices left empty on the wire before it */
   uint32_t samples_padded;   /* audio */
   uint32_t samples_dropped;  /* audio */
   uint32_t samples_inserted; /* audio */
@@ -156,7 +156,7 @@ static inline int mtl_tx_reap_full(mtl_session_h s, struct mtl_tx_result_full* r
 
 /* ST 2110-21 timing results of a held RX unit, per leg (rx.timing_parser on), in
    mtl_rx_detail.timing[], with the names and formulas of RP 2110-25 §4. The VRX read
-   schedule starts at TVD = N x TFRAME + TROFFSET, TROFFSET the option rx.troffset_ns (the
+   schedule starts at TVD = N x TFRAME + TROFFSET, TROFFSET the config's troffset_us (the
    sender's TROFF), else TRODEFAULT (RP 2110-25 §4.9.2). Audio sessions report DPVR, IPT
    and TSDF over the unit instead of the video measures. */
 enum mtl_compliance {
@@ -214,16 +214,24 @@ struct mtl_rx_detail {
   uint32_t pkts_received[MTL_MAX_LEGS];
   uint32_t pkts_recovered; /* filled by the other leg */
   uint32_t missing_ranges; /* runs of lost packets */
-  uint32_t format_changed; /* detected-property mask */
+  uint32_t format_seq;     /* video: the unit's format, 1 for the first published after a
+                              start, + 1 for each later one (MTL_UNITF_FORMAT_CHANGED on
+                              its first unit) */
   uint32_t pkts_dma;
   uint32_t marker_seen;    /* 1 = the unit's last packet carried the marker */
   uint64_t bytes_received;
   uint32_t seq_discont[MTL_MAX_LEGS]; /* sequence discontinuities per leg */
   struct mtl_rx_timing_result timing[MTL_MAX_LEGS]; /* with MTL_RXF_TIMING_LEG* */
+  struct mtl_raster raster; /* video: the unit's raster (detected, or the configured one) */
+  uint32_t packing;         /* video: enum mtl_packing of the stream */
+  uint32_t fps_approx;      /* 1: raster.fps matched no named rate (rx.detected.fps_approx) */
+  uint32_t anc_skipped;   /* ANC: corrupt packets skipped, every cause together (the
+                             anc.pkts_skipped{cause} stats key counts each cause) */
+  uint32_t anc_truncated; /* ANC: packets beyond the table or the user data words */
 };
 /* The detail of a unit the caller holds. DP. (MS2) */
-MTL_API_DP int mtl_rx_get_detail(mtl_session_h s, mtl_lease_h lease,
-                                 struct mtl_rx_detail* d, size_t size);
+MTL_API_DP(2) int mtl_rx_get_detail(mtl_session_h s, mtl_lease_h lease,
+                                    struct mtl_rx_detail* d, size_t size);
 
 /* ---- Health and shutdown (deployment.md) ----------------------------------------------------------- */
 
@@ -274,8 +282,8 @@ struct mtl_health {
    thread at any rate, even when the control plane is wedged: a consistent snapshot,
    never torn. During close: SHUTTING_DOWN (SCHED_STALLED masked); after it:
    -MTL_ESHUTDOWN. DP. (MS3) */
-MTL_API_DP int mtl_instance_get_health(mtl_instance_h mt, struct mtl_health* MTL_NULLABLE h,
-                                       size_t size);
+MTL_API_DP(3) int mtl_instance_get_health(mtl_instance_h mt, struct mtl_health* MTL_NULLABLE h,
+                                          size_t size);
 
 #define MTL_SHUTDOWN_ALL_REFERENCES 0x1u /* a shared instance: for every component; their
                                             handles then get -MTL_ESHUTDOWN, close 0 */
@@ -305,18 +313,18 @@ struct mtl_shutdown_report {
    thread but a library thread (-MTL_EDEADLK there, without effect). mtl_instance_abort()
    during the call (a second SIGTERM) skips to the hard stop. r (may be NULL) is filled
    whatever the call returns. CP. (MS3) */
-MTL_API_CP int mtl_instance_shutdown(mtl_instance_h mt, uint64_t flags, int64_t timeout_ns,
-                                     struct mtl_shutdown_report* MTL_NULLABLE r, size_t size);
+MTL_API_CP(3) int mtl_instance_shutdown(mtl_instance_h mt, uint64_t flags, int64_t timeout_ns,
+                                        struct mtl_shutdown_report* MTL_NULLABLE r, size_t size);
 
 /* ---- Enumeration and ports ----------------------------------------------------------- */
 
 /* Every live session, closing ones included; *n = total. CP. (MS2) */
-MTL_API_CP int mtl_instance_list_sessions(mtl_instance_h mt, mtl_session_h* s,
-                                          uint32_t cap, uint32_t* n);
+MTL_API_CP(2) int mtl_instance_list_sessions(mtl_instance_h mt, mtl_session_h* s,
+                                             uint32_t cap, uint32_t* n);
 /* The port as granted: address, prefix and gateway in use (a DHCP lease included).
    -MTL_EINVAL (field "port") beyond the last port. CP. (MS2) */
-MTL_API_CP int mtl_port_get_spec(mtl_instance_h mt, uint32_t port, struct mtl_port_spec* out,
-                              size_t size);
+MTL_API_CP(2) int mtl_port_get_spec(mtl_instance_h mt, uint32_t port, struct mtl_port_spec* out,
+                                 size_t size);
 /* A port by its name (PCI BDF, "kernel:<ifname>", ...) or its IPv4 address in dotted
    form; its caps, status and counters are "caps.*", "port.*". -MTL_EINVAL if none
    matches. CP. */
@@ -355,14 +363,64 @@ static inline int mtl_port_find(mtl_instance_h mt, const char* name, uint32_t* p
 
 /* ---- Logging ------------------------------------------------------------------------- */
 
-typedef void (*mtl_log_fn)(void* user, uint32_t level, const char* line);
-/* Library log lines go to fn instead of stderr, process-wide; fn runs on one library
-   thread, never on a tasklet (tasklets write formatted lines into a ring, dropped with a
-   count when fn is too slow). fn may not call mtl_log_set_sink or an instance's close or
-   shutdown (-MTL_EDEADLK). fn NULL restores the default and waits for a running fn, so
-   `user` may be freed after it returns. Each instance's level is its option log.level.
-   CP. (MS2) */
-MTL_API_CP int mtl_log_set_sink(mtl_log_fn fn, void* user, const char* MTL_NULLABLE prefix);
+typedef struct mtl_log_sink_h {
+  uint64_t id;
+} mtl_log_sink_h;
+/* One log line, valid during the sink call only (r_size versions it). */
+struct mtl_log_record {
+  uint32_t severity; /* enum mtl_severity (mtl.h) */
+  uint32_t dropped;  /* lines this sink would have taken that were lost since its previous
+                        record (exact for an instance's rings; process-wide lines lost are
+                        counted for every sink whose level takes them) */
+  struct mtl_object origin; /* the session, port, scheduler or instance the line is about;
+                               kind 0 = the process (EAL, DPDK, lines before any open). An
+                               instance, port or scheduler names its instance by the
+                               instance's identity (stat instance.identity), the same for
+                               every reference of a shared instance */
+  char origin_name[MTL_NAME_MAX]; /* the session or port name, "sched<N>", the instance's
+                                     first port name; "" for the process; readable after
+                                     the origin retired */
+  int64_t realtime_ns; /* CLOCK_REALTIME when the line was produced */
+  const char* text;    /* NUL-terminated, without prefix or newline; at most 511 bytes,
+                          a longer line ends in "..." */
+  uint32_t text_len;
+  uint32_t reserved;
+};
+typedef void (*mtl_log_fn)(void* priv, const struct mtl_log_record* r, size_t r_size);
+struct mtl_log_sink_params {
+  uint32_t struct_size;
+  uint32_t min_severity;      /* enum mtl_severity; 0 = MTL_SEV_INFO */
+  mtl_log_fn MTL_NULLABLE fn; /* NULL = the library's stderr writer, legacy format (D-110) */
+  void* MTL_NULLABLE priv;
+  mtl_instance_h instance; /* null = every instance and the process; else the lines of that
+                              instance (any reference to it), its ports, schedulers and
+                              sessions */
+  const char* MTL_NULLABLE prefix; /* fn NULL: prepended to every line; copied */
+  uint64_t reserved[5];
+};
+/* Adds a log sink, with its own level and filter; several may exist, also before any open
+   (EAL lines of an EAL the library starts). With no sink, a control-plane line is written
+   to stderr by its caller, in the legacy format, at the process threshold
+   (mtl_instance_params.log_level, or a bridged legacy instance's level); tasklet lines go
+   through the log thread. Once a sink exists, lines reach sinks only (fn NULL keeps
+   stderr) and the production threshold is the lowest min_severity among the sinks whose
+   filter matches; on a bridged instance the legacy level follows it, and when the last
+   sink goes both return to the stderr threshold. Every fn runs on the one process-wide log thread, one call at a time
+   across all sinks, never on a tasklet or an application thread; the lines of one
+   producing thread arrive in order. fn may call any function but instance open, close and
+   shutdown (-MTL_EDEADLK, LIBRARY_THREAD); lines its calls produce are dropped and counted,
+   never delivered. When the rings are full, lines are dropped and counted (r->dropped).
+   The log thread runs while a sink or an instance exists; an instance's close hands its
+   queued lines to the sinks before it returns. In a forked child the sinks are never
+   called and add is -MTL_EBADF (FORKED). CP. (MS2) */
+MTL_API_CP(2) int mtl_log_add_sink(const struct mtl_log_sink_params* p, mtl_log_sink_h* out);
+/* Removes a sink. 0: fn is not running and is never called again, so priv may be freed;
+   MTL_RETIRING: fn was still running at the deadline, call again to poll. From inside fn
+   it never waits: 0 for another sink, MTL_RETIRING for its own (the running call is its
+   last). 0 for a null handle; in a forked child it drops the handle. CP. */
+static inline int mtl_log_remove_sink(mtl_log_sink_h h, int64_t timeout_ns) {
+  return mtl_close(mtl_obj(MTL_OBJ_LOG_SINK, 0, h.id), timeout_ns);
+}
 
 /* ---- Packet capture -------------------------------------------------------------------- */
 
@@ -375,14 +433,17 @@ struct mtl_capture_params {
 };
 /* Copies a session's packets to a file from a library worker; MTL_EVENT_CAPTURE_DONE
    when it ends. p NULL stops a running capture. CP. (MS4) */
-MTL_API_CP int mtl_session_capture(mtl_session_h s,
-                                   const struct mtl_capture_params* MTL_NULLABLE p);
+MTL_API_CP(4) int mtl_session_capture(mtl_session_h s,
+                                      const struct mtl_capture_params* MTL_NULLABLE p);
 
 MTL_SIZE_CHECK(mtl_stat_desc, 120);
 MTL_SIZE_CHECK(mtl_health, 152);
 MTL_SIZE_CHECK(mtl_shutdown_report, 200);
 MTL_SIZE_CHECK(mtl_tx_result_full, 216);
-MTL_SIZE_CHECK(mtl_rx_detail, 336);
+MTL_SIZE_CHECK(mtl_rx_detail, 384);
+MTL_SIZE_CHECK(mtl_log_sink_h, 8);
+MTL_SIZE_CHECK(mtl_log_record, 112);
+MTL_SIZE_CHECK(mtl_log_sink_params, 80);
 MTL_SIZE_CHECK(mtl_rx_timing_result, 112);
 MTL_SIZE_CHECK(mtl_capture_params, 56);
 

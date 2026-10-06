@@ -67,7 +67,7 @@ struct mtl_plugin_session_req {
   uint32_t frame_count;
   uint32_t threads; /* MTL_OPT_CVIDEO_THREADS; 0 = plugin default */
   uint32_t quality;
-  uint32_t numa; /* node + 1 */
+  uint32_t numa; /* MTL_INDEX(node) */
   uint32_t reserved0;
   uint64_t codestream_bytes; /* encoder: the CBR target per unit */
   uint64_t reserved[4];
@@ -118,9 +118,9 @@ typedef struct mtl_plugin_h {
 /* Exactly one of path and dev (else -MTL_EINVAL): path loads a plugin .so into the
    instance; dev registers an in-process device (tests, apps that embed a codec). CP.
    (MS4) */
-MTL_API_CP int mtl_plugin_open(mtl_instance_h mt, const char* MTL_NULLABLE path,
-                               const struct mtl_plugin_device* MTL_NULLABLE dev,
-                               mtl_plugin_h* out);
+MTL_API_CP(4) int mtl_plugin_open(mtl_instance_h mt, const char* MTL_NULLABLE path,
+                                  const struct mtl_plugin_device* MTL_NULLABLE dev,
+                                  mtl_plugin_h* out);
 /* -MTL_EBUSY while a session uses it (p is then not consumed). CP. */
 static inline int mtl_plugin_unload(mtl_plugin_h p) {
   return mtl_close(mtl_obj(MTL_OBJ_PLUGIN, 0, p.id), 0);

@@ -47,7 +47,8 @@ extern "C" {
 #define MTL_PKT_SET_TIMESTAMP 0x1u /* floor(M * rate) from the unit's media time, one per
                                      unit (audio: per packet); -MTL_EINVAL for SMPTE2022-6,
                                      whose packets each carry their own (mtl.h) */
-#define MTL_PKT_SET_SEQ 0x2u       /* 16-bit, plus the RFC 4175 extended sequence (video) */
+#define MTL_PKT_SET_SEQ 0x2u       /* 16-bit, plus the extended sequence of RFC 4175 (video)
+                                     or RFC 8331 (ANC), the payload's first two bytes */
 #define MTL_PKT_SET_SSRC_PT 0x4u   /* from sc.ssrc and sc.payload_type */
 #define MTL_PKT_SET_MARKER 0x8u    /* the essence's marker rule: M on the last packet of a
                                      unit (video: of a frame or field; ANC: also the empty
@@ -63,7 +64,7 @@ extern "C" {
 #define MTL_PKT_SPLIT 0x10u          /* plane 0 header slots, plane 1 payload slots */
 #define MTL_PKT_RX_LEND 0x20u        /* RX: no copy; dequeue is then DP instead of DPC */
 
-/* Limits: an RTP packet in a slot is at most session.max_udp_payload (1452: the Standard
+/* Limits: an RTP packet in a slot is at most sc.max_udp_payload (1452: the Standard
    UDP Size Limit minus the UDP header, ST 2110-10 §6.3), never above the port MTU minus IP
    and UDP headers. */
 #define MTL_UDP_HDR_BYTES 8

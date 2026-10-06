@@ -34,14 +34,16 @@ enum mtl_event_type {
   MTL_EVENT_LEG_STATE = 4,      /* S; index = leg; oper; value[0] admin */
   MTL_EVENT_FLOW_STATE = 5,     /* S; index = leg; enum mtl_flow_state; value[0] first index */
   MTL_EVENT_RX_SIGNAL = 6,      /* S; 0/1 packets present */
-  MTL_EVENT_RX_FORMAT = 7,      /* S; new = changed-property mask; values: stats rx.detected.* */
+  MTL_EVENT_RX_FORMAT = 7,      /* S; old -> new format_seq published, new 0 while none is
+                                   (status format_reason, MTL_STATUS_RX_DETECTING); values:
+                                   stats rx.detected.* */
   MTL_EVENT_RX_TIMEBASE_SUSPECT = 8, /* S; value[0] arrival - media ns; the getter is
                                         MTL_STATUS_TIMEBASE_SUSPECT */
   MTL_EVENT_PACING_CHANGED = 9,      /* S; enum mtl_pacing */
   MTL_EVENT_TIMING_INFEASIBLE = 10,  /* S; value[0] shortfall, value[1] suggested delay */
   MTL_EVENT_BACKPRESSURE = 11,       /* S; enum mtl_blocked_on; NONE -> X begins, X -> NONE
                                         ends */
-  MTL_EVENT_TX_UNDERRUN = 12,        /* S; value[0] slots filled by the underrun policy */
+  MTL_EVENT_TX_UNDERRUN = 12,        /* S; value[0] indices filled by the underrun policy */
   MTL_EVENT_TIME_STATE = 13,         /* I; port; enum mtl_time_state; value[0] offset ns */
   MTL_EVENT_TIME_STEP = 14,          /* I; value[0] step ns */
   MTL_EVENT_PORT_LINK = 15,          /* I; port; 0/1 up; value[0] Mb/s */
@@ -68,16 +70,11 @@ enum mtl_event_type {
                                     (Phase 7) */
 #endif
 };
-enum mtl_severity {
-  MTL_SEV_INFO = 0,
-  MTL_SEV_WARNING = 1,
-  MTL_SEV_ERROR = 2,
-};
 #define MTL_EVF_TIME_VALID 0x1u
 /* One event record (ev_size versions it). */
 struct mtl_event {
   uint32_t type;      /* enum mtl_event_type */
-  uint32_t severity;  /* enum mtl_severity */
+  uint32_t severity;  /* enum mtl_severity (mtl.h): INFO, WARNING or ERR */
   uint32_t reason;    /* mtl_reasons.h, 0 if not applicable */
   uint32_t coalesced; /* occurrences this record stands for, >= 1 */
   uint64_t seq;       /* per reader; a gap means overflow */
@@ -91,9 +88,10 @@ struct mtl_event {
   int64_t value[2];
 };
 /* The events of a session or of an instance (its own, not its sessions'), each ev_size
-   bytes apart. A count >= 1, or -MTL_EAGAIN. The typed wrappers pass the size. WT. (MS3) */
-MTL_API_WT int mtl_read_events(struct mtl_object o, struct mtl_event* ev, size_t ev_size,
-                               uint32_t max, int64_t timeout_ns);
+   bytes apart. A count >= 1, or -MTL_EAGAIN. The typed wrappers pass the size. WT
+   (waiting: mtl.h). (MS3) */
+MTL_API_WT(3) int mtl_read_events(struct mtl_object o, struct mtl_event* ev, size_t ev_size,
+                                  uint32_t max, int64_t timeout_ns);
 static inline int mtl_session_read_events(mtl_session_h s, struct mtl_event* ev, uint32_t max,
                                           int64_t timeout_ns) {
   return mtl_read_events(MTL_OBJ_OF_SESSION(s), ev, sizeof(*ev), max, timeout_ns);
@@ -127,8 +125,8 @@ struct mtl_queue_config {
   uint64_t reserved[4];
 };
 /* CP. (later) */
-MTL_API_CP int mtl_queue_create(mtl_instance_h mt, const struct mtl_queue_config* c,
-                                mtl_queue_h* out);
+MTL_API_CP(LATER) int mtl_queue_create(mtl_instance_h mt, const struct mtl_queue_config* c,
+                                       mtl_queue_h* out);
 /* Unbinds every session (their results and events return to them) and retires the
    queue. 0 for a null handle. CP. */
 static inline int mtl_queue_close(mtl_queue_h q) {
@@ -140,7 +138,7 @@ static inline int mtl_queue_close(mtl_queue_h q) {
 #define MTL_BIND_READY 0x2u   /* RX readiness is reported by mtl_queue_ready() */
 #define MTL_BIND_EVENTS 0x4u  /* a copy of the session's events */
 /* CREATED or STOPPED; parts 0 unbinds. CP. (later) */
-MTL_API_CP int mtl_queue_bind(mtl_queue_h q, mtl_session_h s, uint64_t parts);
+MTL_API_CP(LATER) int mtl_queue_bind(mtl_queue_h q, mtl_session_h s, uint64_t parts);
 
 /* TX results of bound sessions (mtl_tx_result.session says whose), per session in
    submission order. A count >= 1, or -MTL_EAGAIN. WT. */
@@ -150,8 +148,8 @@ static inline int mtl_queue_reap(mtl_queue_h q, struct mtl_tx_result* r, uint32_
 }
 /* Up to max bound RX sessions with a unit ready to dequeue. A count >= 1, or -MTL_EAGAIN.
    WT. (later) */
-MTL_API_WT int mtl_queue_ready(mtl_queue_h q, mtl_session_h* s, uint32_t max,
-                               int64_t timeout_ns);
+MTL_API_WT(LATER) int mtl_queue_ready(mtl_queue_h q, mtl_session_h* s, uint32_t max,
+                                      int64_t timeout_ns);
 static inline int mtl_queue_read_events(mtl_queue_h q, struct mtl_event* ev, uint32_t max,
                                         int64_t timeout_ns) {
   return mtl_read_events(MTL_OBJ_OF_QUEUE(q), ev, sizeof(*ev), max, timeout_ns);
@@ -167,7 +165,7 @@ static inline int mtl_queue_get_wait_handle(mtl_queue_h q, uint64_t mask, intptr
 }
 /* Waits on this queue only. AS with on = 1, CP with on = 0. */
 static inline int mtl_queue_interrupt(mtl_queue_h q, int on) {
-  return mtl_interrupt(MTL_OBJ_OF_QUEUE(q), on ? MTL_INTR_ON : MTL_INTR_OFF);
+  return mtl_interrupt(MTL_OBJ_OF_QUEUE(q), on ? MTL_INTR_ON : MTL_INTR_OFF, 0);
 }
 
 /* fn set: a library thread (never a tasklet) reads q and calls fn for each result and
@@ -177,8 +175,8 @@ static inline int mtl_queue_interrupt(mtl_queue_h q, int on) {
    waits for a running fn, so `user` may be freed after it returns. CP. (later) */
 typedef void (*mtl_queue_fn)(void* user, const struct mtl_tx_result* MTL_NULLABLE result,
                              const struct mtl_event* MTL_NULLABLE event);
-MTL_API_CP int mtl_queue_dispatch(mtl_queue_h q, mtl_queue_fn MTL_NULLABLE fn,
-                                  void* MTL_NULLABLE user);
+MTL_API_CP(LATER) int mtl_queue_dispatch(mtl_queue_h q, mtl_queue_fn MTL_NULLABLE fn,
+                                         void* MTL_NULLABLE user);
 
 MTL_SIZE_CHECK(mtl_queue_h, 8);
 MTL_SIZE_CHECK(mtl_queue_config, 48);
@@ -190,7 +188,7 @@ MTL_SIZE_CHECK(mtl_queue_config, 48);
    timeout 0 that trylock, and AS calls) and is disabled with MTL_EVENT_OVERFLOW if it
    overruns. CP. (later) */
 typedef void (*mtl_inline_fn)(void* user, mtl_session_h s, uint64_t ready_mask);
-MTL_API_CP int mtl_session_set_inline_notify(mtl_session_h s, mtl_inline_fn fn, void* user);
+MTL_API_CP(LATER) int mtl_session_set_inline_notify(mtl_session_h s, mtl_inline_fn fn, void* user);
 #endif
 
 MTL_SIZE_CHECK(mtl_event, 144);

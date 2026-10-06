@@ -67,9 +67,9 @@ int zero_copy_tx(mtl_instance_h mt) {
   mtl_session_stop(&s, 1, MTL_STOP_DRAIN,
                    MTL_SEC(1)); /* every accepted unit gets a result */
   reap(s);
-  /* 1: still retiring, the NIC may still read a surface; poll until 0, then the arena
-     may be freed */
-  while (mtl_session_close(s, MTL_SEC(1)) == 1) {
+  /* MTL_RETIRING: the NIC may still read a surface; poll until 0, then the arena may be
+     freed */
+  while (mtl_session_close(s, MTL_SEC(1)) == MTL_RETIRING) {
   }
   return ret;
 }

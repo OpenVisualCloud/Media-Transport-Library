@@ -1,7 +1,10 @@
 /* ex03 — a sender in the application's own epoll loop, reading a result per frame.
-   s: a started TX session created with MTL_SESSION_RESULTS in sc.flags. A data call that
-   finds nothing returns -MTL_EAGAIN and arms the wait handle, so the loop is "drain until
-   -MTL_EAGAIN, then sleep in epoll". Needs: MS1. */
+   s: a started TX session created with MTL_SESSION_RESULTS in sc.flags. A data call on a
+   target of the handle's mask that finds nothing returns -MTL_EAGAIN and arms the wait
+   handle, so the loop is "call every target until -MTL_EAGAIN, then sleep in epoll". A
+   loop of per-target timeout-0 calls never sees an interrupt: to react to one, sweep with
+   mtl_wait(o, mask, 0) or also wait on a descriptor of your own; this loop ends on
+   g_running instead. Needs: MS1. */
 #include <sys/epoll.h>
 #include <unistd.h>
 

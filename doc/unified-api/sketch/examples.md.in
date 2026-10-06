@@ -102,7 +102,7 @@ captions for frame k carry video frame k's timestamp. The ANC session takes its 
 delay from the first video of its start; audio uses the copy path. `preroll_ns` puts T0 far enough
 ahead that the first unit of each session is queued before it. A full pool is waited out
 (`-MTL_EAGAIN` is retried), and an audio write that takes only part of its bytes continues at the
-next index of `mtl_tx_next_slot`.
+next index of `mtl_tx_get_next`.
 
 @@EXAMPLE ex07_av_anc_playout.c@@
 
@@ -161,7 +161,20 @@ full timing records (`mtl_tx_reap_full`; the NIC launch time only when `MTL_TXF_
 
 @@EXAMPLE examples_cpp.cpp@@
 
-## 17. An st20p program side by side
+## 17. ANC: captions, an SCTE-104 relay, a raw relay, timecode and a dump
+
+An ANC unit is the ANC packets of one frame or field: the packet table in plane 0, one `struct mtl_anc_packet` per entry, and the words in plane 1; `used` counts the entries.
+`mtl_anc_put` appends one packet with its words. With the default 8-bit words MTL writes the
+parity, Data_Count and checksum; with `MTL_ANC_WORDS_RAW` a relay carries every word as received.
+MTL packs the entries into RTP packets of at most 1432 bytes and 255 ANC packets, a new one where
+an entry carries `MTL_ANCF_NEW_RTP`, which RX sets on the first entry of each packet it received,
+so a relay keeps the sender's boundaries by copying entries. Every entry RX delivers is a valid TX
+entry. A unit with no entries sends the empty packet that keeps the stream alive, and so does a
+frame with no unit.
+
+@@EXAMPLE ex14_anc.c@@
+
+## 18. An st20p program side by side
 
 | st20p today | Unified API |
 |---|---|
@@ -183,4 +196,4 @@ full timing records (`mtl_tx_reap_full`; the NIC launch time only when `MTL_TXF_
 | `ST20_TYPE_SLICE_LEVEL` | `unit = MTL_UNIT_ROWS` (example 10) |
 | `ST_EVENT_VSYNC` | `MTL_EVENT_EPOCH_TICK` with the option `session.epoch_tick` |
 | `ST20P_TX_FLAG_*` tuning bits, `mtl_init_params` tuning fields | option keys `MTL_OPT_*` (`mtl_options.h`) in the config's `options` array |
-| `ops.fps` | `raster.fps = mtl_fps_rational(MTL_FPS_59_94)`: a rational only; interlaced, it is the frame rate (legacy `ops.fps` counts fields) |
+| `ops.fps`, `ops.interlaced` | `mtl_raster_from_legacy(ops.fps, ops.interlaced, &raster)`: a rational frame rate; interlaced, legacy `ops.fps` counts fields and the helper halves it |

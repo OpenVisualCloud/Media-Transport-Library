@@ -35,7 +35,7 @@ flowchart TB
 
 | Part | What | Where | Milestone |
 |---|---|---|---|
-| API shell | the installed headers' functions, each exported in the milestone that implements it (counts: `sketch/check.sh`); `mtl_session_config` into engine `ops` through the option table `lib/src/unified/mtl_options.def`; reasons, `mtl_last_error`, call classes; no data-path state | `lib/src/unified/` in **libmtl**, node `MTL_UNIFIED_EXPERIMENTAL_<rev>` (D-23) | MS1 (task H1b) |
+| API shell | the installed headers' functions, each exported in the milestone that implements it (counts: `sketch/check.sh`); `mtl_session_config` into engine `ops` through the option table `lib/src/unified/mtl_options.def`; reasons, `mtl_last_error`, call classes; no data-path state | `lib/src/unified/` in **libmtl**, nodes `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn` (D-23) | MS1 (task H1b) |
 | core | the unit session (§3.2): slot table, descriptor ring, results, holds, nine session states, `ctl`/`ack` and `tick` (§6), the armed wait and the deferred `mt_wake` (§7), handles (§5.7), the transform state; reaches the instance via §4.11, the engines via callbacks and §4.12 | `lib/src/st2110/core/` in libmtl, header `st_core.h` (task C0) | MS1 (`ctl`/`ack`, `tick`: MS2) |
 | bindings | one per essence and direction, plus `packet` and `null`: each implements the callbacks its engine already calls (§3.1) | `lib/src/st2110/core/bind_*.c` | video and null MS1; others MS4; packet MS5 |
 | legacy pipelines | `st*p_*` as wrappers on the core: `get_frame` = acquire seen as `st_frame`, `put_frame` = submit, `put_frame_abort` = release, `BLOCK_GET` = the core's wait, one legacy notifier for `notify_frame_done` and `notify_frame_available` | `lib/src/st2110/pipeline/` (about 7.9 k lines today, about 2.5 k after [inferred]) | st20p MS2, the others MS4 |
@@ -56,6 +56,12 @@ Rules of the picture:
   pipelines are one implementation of exactly these (`st20_pipeline_tx.c:456-457`,
   `st30_pipeline_tx.c:294-295`, `st20_pipeline_rx.c:566`, `:595`) **[verified at HEAD]**. So
   frames and rows need no new engine entry point; packets need one shared chunk expander (§11.2).
+  ANC adds one create-time internal setter per direction in `st_engine_core.h` because
+  `struct st40_frame` (20 entries) and `struct st40_rx_ops` are frozen ABI: TX
+  `st40_tx_set_unit_source` (the wire records' layout, the internal bits; per frame TX keeps
+  `get_next_frame` and its `st40_tx_frame_meta`); RX `st40_rx_set_unit_sink`, which installs the
+  per-unit destination callback the ST40 RX engine lacks (the analogue of video's
+  `query_ext_frame`) (§4.12, D-149).
 - **Bindings are wait-free.** They run on the tasklet with the session spinlock held
   (`st_tx_video_session.c:2682`, `st_rx_video_session.c:3516`): a CAS, a release store, a fence,
   an armed-word load and at most one bit set in the scheduler's pending wake bitmap (§7.2). No
@@ -66,7 +72,7 @@ Rules of the picture:
   **[verified at HEAD]**; R7 in [legacy-internals.md](legacy-internals.md)).
   A binding *is* `get_next_frame`, so the meta it writes is the meta the engine keeps.
 - **One library** (D-23, D-106, D-108): the API shell `lib/src/unified/` and the core are compiled
-  into libmtl, with the unified functions in their own version node; the node, the version script,
+  into libmtl, with the unified functions in one version node per milestone; the nodes, the version script,
   the soname and the hiding of symbols are in [migration.md](migration.md) §7.2.
 - **Binding pitfalls PR #1610 hit** (the video bindings set transport ops the same way): set the
   enabling flag together with its field (`ST20_RX_FLAG_ENABLE_VSYNC` with `notify_event`,
@@ -94,7 +100,7 @@ an MTL tasklet.
 | H2 | a same-session stats getter called from a callback spins forever on the non-recursive spinlock | `st_tx_video_session.c:4760`, `st20_pipeline_tx.c:1311` (SF-13) |
 | H3 | BLOCK_GET: the tasklet does `pthread_mutex_lock` + `pthread_cond_signal` on every frame event; the application holds that mutex while scanning, so the pinned core can sleep in `FUTEX_WAIT` | `st20_pipeline_tx.c:29-34` called at `:41-43` **[verified at HEAD]**; `:774-789`; same in every `st*p` (SF-15) |
 | H4 | TX-hang recovery runs on the transmitter: queue re-acquire under a pthread mutex, mempool re-create, busy flush, INFO logs | `st_video_transmitter.c:681` → `st_tx_video_session.c:4231-4332` **[verified at HEAD]**; audio `st_tx_audio_session.c:2742-2753` |
-| H5 | RX auto-detect allocates on the tasklet | `rv_init_sw` `st_rx_video_session.c:2564`, `rx_st20p_notify_detected` `st20_pipeline_rx.c:341-393` |
+| H5 | RX auto-detect allocates on the tasklet (legacy only from MS3) | `rv_init_sw` `st_rx_video_session.c:2564`, `rx_st20p_notify_detected` `st20_pipeline_rx.c:341-393` |
 | H6 | `update_destination` holds the session spinlock across an ARP wait of up to 60 s; `update_source` across flow and IGMP work | `st_tx_video_session.c:3848-3855` **[verified at HEAD]**, `mt_arp.c:171-199`, `st_rx_video_session.c:3932-3990` (SF-14) |
 | H7 | `ptp_get_time_fn`, PHC reads and the log printer (`localtime_r`) run on the hot path | `dev/mt_dev.c:1603-1608`, `mt_ptp.c:393-403`, `mt_log.h:24-39` |
 | H8 | TX `notify_frame_done` fires on the transmitter, the builder, the application thread or a plugin thread; migration moves sessions between lcores | [legacy-internals.md](legacy-internals.md) (which context runs which callback) |
@@ -129,7 +135,7 @@ tasklets already take one mbuf per packet and one per frame at TX start
 
 | Backend | Syscalls on the tasklet | Status |
 |---|---|---|
-| DPDK PMD | none inside a handler; the scheduler loop makes one non-blocking eventfd `write()` per iteration for each session flagged for an armed waiter (§7.2) | promise (G-39, the deferred wake write excepted); the writes are counted per scheduler and reported |
+| DPDK PMD | none inside a handler; after its handler loop the scheduler wakes at most one marked object per iteration: one futex wake and one eventfd `write()` at most (§7.2) | promise (G-39, the deferred wake excepted); the writes are counted per scheduler and reported |
 | kernel socket | `sendto`/`sendmsg` in `mt_tx_socket_burst` (`datapath/mt_dp_socket.c:421-445`) | reported per backend; G-39 scoped out |
 | native AF_XDP | `send()` kick (`dev/mt_af_xdp.c:522-526`) | same |
 | built-in PTP time reads | `rte_eth_timesync_read_time` per `mt_get_ptp_time` | replaced by the published time base (§8, MS6) |
@@ -139,7 +145,7 @@ tasklets already take one mbuf per packet and one per frame at TX start
 | Rule | Mechanism | Section |
 |---|---|---|
 | arrows into the tasklet world are lock-free hand-offs | commands in the session's `ctl` word, acknowledged in its `ack` word by the per-visit `tick` (MS2); flush and discard of queued units are control-plane CASes on the slot table; the CP applies commands itself on a detached session | §6 |
-| arrows out of the tasklet world are wait-free stores | a completion is the claim CAS, the result written into the unit's descriptor, a release store of PUBLISHED and a fence; an event updates pending state; a waiter is woken through `mt_wake()`: a bit in the scheduler's pending bitmap, turned into one eventfd write per iteration by the scheduler loop | §5, §7 |
+| arrows out of the tasklet world are wait-free stores | a completion is the claim CAS, the result written into the unit's descriptor, a release store of PUBLISHED and a fence; an event updates pending state; a waiter is woken through `mt_wake()`: the object's `fired` lanes and a bit in the loop's bitmap, turned by the loop into at most one object's wake per iteration | §5, §7 |
 | heavy per-unit work never runs on a tasklet | conversion, RX copies into application memory, zero-fill of missing data run in the caller (DPC) or on a worker. One exception, library code only: `rx.convert_per_packet` (`MTL_OPT_RX_CONVERT_PER_PACKET`) converts each packet on the RX tasklet as it lands, as `ST20P_RX_FLAG_PKT_CONVERT` does today (§4.4) | §3, §4 |
 | results cannot be lost or overflow | acquire reserves the result's descriptor (the `resv` counter) before the unit exists, and the completer writes the result in place; the tasklet allocates no entry | §5 |
 | no user code or driver read for time | one published, slewed time base per CPU socket (MS6) | §8 |
@@ -151,8 +157,9 @@ tasklets already take one mbuf per packet and one per frame at TX start
 `MTL_API_DPC`, `MTL_API_WT`, `MTL_API_AS` (the contract is in [contract.md](contract.md)). For the
 engine this means: DP and DPC calls never wait for a tasklet and return `-MTL_EAGAIN` instead; a
 tasklet never waits for an application thread (an empty submission means idle, a full results
-ring cannot happen, §5). The one syscall a DP call may make is the non-blocking `read()` that
-drains a signalled wait handle (R6, §7.3). Seqlock readers (`mtl_time_now`, and with it the
+ring cannot happen, §5). A DP call makes syscalls only on its own object (R6): a reset of its
+wait handle when it finds nothing, a re-signal or re-post of it, and one wake when it makes a target
+ready for a waiter (§7.1). Every syscall is raw, so no DP call is a cancellation point. Seqlock readers (`mtl_time_now`, and with it the
 inline `mtl_time_convert`, `mtl_stat_read`, health) are DP, not AS: a signal handler that interrupts the writer's own
 thread mid-update would retry forever.
 
@@ -161,7 +168,7 @@ application code on a completing context (D-04); the function is added only if W
 cannot close the latency gap for slice producers, zero-hop forwarders and the MXL bridge. If it
 is added, it runs on the completing context without any session lock held (so it cannot
 self-deadlock, H2), must be wait-free and bounded, may call only the inline-safe subset (the DP
-calls with timeout 0, which then only trylock the reaper lock and never drain a wait handle, and
+calls with timeout 0, which then only trylock the reaper lock and never touch a wait handle (no reset, no arming), and
 the AS calls), has a
 measured budget with counters, and is disabled with `MTL_EVENT_OVERFLOW` when it overruns
 repeatedly.
@@ -172,12 +179,14 @@ lcore), and none runs application code
 (R6). Busy polling belongs to application threads: they may poll the DP calls and the WT calls
 with timeout 0 (W0). Each library loop sets a thread-local `mt_in_busy_loop` that backs a
 debug-build assert on every public entry; it is not a public error. AS calls are allowed on any
-thread: a signal can be delivered to a pinned lcore thread too, and an AS call is atomics plus at
-most one eventfd `write()`, made from a context already in a signal handler. User schedulers and
+thread: a signal can be delivered to a pinned lcore thread too, and an AS call is atomics, the futex
+call and `write()`, inside the object's in-flight counter: a session interrupt makes at most one of
+each, and the instance interrupt walks the session table (§7.3). User schedulers and
 tasklets (`mtl_sch_*`) are cut ([coverage.md](coverage.md)), so neither H2 nor the 1 s sleep of
 a self-unregistering tasklet (`mt_sch.c:885-901`) can be reached from the API.
 
-**Debug enforcement** (MS3). Every entry point sets a thread-local "current class". `mt_rte_zmalloc*`,
+**Debug enforcement** (MS3). Every entry point except the AS ones sets a thread-local "current
+class"; AS entries touch no TLS and skip the `mt_in_busy_loop` assert. `mt_rte_zmalloc*`,
 `mt_pthread_mutex_lock`, `mt_sleep_ms`, `info()` and `warn()` assert that the class is not DP,
 DPC or AS and that the thread is not a tasklet or library loop. A WT call with timeout 0 runs as DP. A
 signal-safety test raises a signal inside every CP call with `malloc` and `pthread_mutex_lock`
@@ -190,7 +199,8 @@ interposers armed, and calls every AS function from the handler.
   `rte_thread_register` appears nowhere in `lib/src` **[verified at HEAD]** (SF-49). Such a
   thread has `LCORE_ID_ANY` and no mempool cache. The fix calls `rte_thread_register` in the
   scheduler thread at start and pins each scheduler thread to one CPU (MS1, task E1). The wake is
-  the same in this mode: the scheduler thread flushes after its handler loop (§7.2).
+  the same in this mode: the scheduler thread flushes after its handler loop, one object per
+  iteration (§7.2).
 - **Threads that are not schedulers** run on `instance.main_lcore` (`MTL_OPT_MAIN_LCORE`, D-92).
   Today every one inherits the affinity of the thread that called `mtl_init`; each is pinned at
   its creation site: admin (`mt_admin.c:384`), stat (`mt_stat.c:156`), CNI (`mt_cni.c:415`),
@@ -199,8 +209,8 @@ interposers armed, and calls every AS function from the handler.
   of a null-only instance are new and are created pinned (part of EK7).
 - `MTL_INSTANCE_TASKLET_SLEEP`: the idle path already enters the kernel
   (`rte_eal_alarm_set` + `cond_timedwait` with a 1 s safety net, `mt_sch.c:86-96`
-  **[verified at HEAD]**). The wake flush runs before the sleep check (`mt_sch.c:211-213`), so a
-  scheduler never sleeps on a pending wake (§7.2), and posting a command calls `sch_sleep_wakeup`
+  **[verified at HEAD]**). The wake flush runs before the sleep check (`mt_sch.c:211-213`) and returns 1
+  while an object stays marked, so a scheduler never sleeps on a pending wake (§7.2), and posting a command calls `sch_sleep_wakeup`
   (`mt_sch.c:52-56` **[verified at HEAD]**) from the CP thread.
 
 ### 2.6 Mempools and application threads
@@ -289,17 +299,25 @@ registry rules are [contract.md §11](contract.md), the log rules contract.md §
 
 | Essence × direction | Callbacks the binding implements | Engine work it needs |
 |---|---|---|
-| video TX, frames | `get_next_frame` (the descriptor at the pick cursor if its slot word is QUEUED with its generation; the slot N, §4.13; the meta; ENGINE), `notify_frame_done` (the completion CAS, the result) | MF1 (`st_tx_video_session.c:134-139`), MF7, the recovery verdict (§10); idle descriptor cleanup (§4.3); "last packet handed" for no-chain (MS2) |
-| video TX, rows (MS2) | the same, with the session created `ST20_TYPE_SLICE_LEVEL`; `query_frame_lines_ready` returns the slot's `progress` (an acquire load), or the TRUNCATE code that ends the frame early | the TRUNCATE return code and `tx.troffset_ns` (§4.14); the rest is today's slice path (`st_tx_video_session.c:2005-2033`) |
+| video TX, frames | `get_next_frame` (the descriptor at the pick cursor if its slot word is QUEUED with its generation; the launch index N, §4.13; the meta; ENGINE), `notify_frame_done` (the completion CAS, the result) | MF1 (`st_tx_video_session.c:134-139`), MF7, the recovery verdict (§10); idle descriptor cleanup (§4.3); "last packet handed" for no-chain (MS2) |
+| video TX, rows (MS2) | the same, with the session created `ST20_TYPE_SLICE_LEVEL`; `query_frame_lines_ready` returns the slot's `progress` (an acquire load), or the TRUNCATE code that ends the frame early | the TRUNCATE return code and `sc.video.troffset_us` (§4.14); the rest is today's slice path (`st_tx_video_session.c:2005-2033`) |
 | video RX, frames | `query_ext_frame` hands the engine a core slot (MS1: any FREE; MS2: attached pools, by index, or the oldest unread with `RX_LATEST`) and records the first arrival; `notify_frame_ready` publishes it with the next `pub_seq` | incomplete delivery always on; the RX hook never refuses (SF-45); MF4; a tasklet-callable frame put and the frame count (§4.12) |
 | video RX, rows (MS2) | `notify_slice_ready` stores `progress` and wakes `mtl_rx_wait_rows` waiters | none |
 | per-packet conversion | the engine's `uframe_pg_callback` path, installed by the video RX binding (library code, the one tasklet conversion contract.md §9.7 allows) | none |
 | cvideo TX/RX (MS4) | the ST22 `get_next_frame` (`st_tx_video_session.c:2444`) and RX callbacks; codecs on the transform state | per-unit status, stats, CBR (E10), SF-42 |
 | audio TX/RX (MS4) | `get_next_frame` (`st_tx_audio_session.c:765`), done, RX ready | "last packet handed" (done fires at build today, `:923-925`); media time from the sample index; carry buffer (E6) |
-| ANC TX/RX (MS4) | `get_next_frame` (`st_tx_ancillary_session.c:937`), done, RX ready; the UDW binding of `st40_pipeline_tx.c:253-273` moves here | ANC RTP from media time, every RTP packet inside its ST 2110-40 window, keep-alive (E7) |
+| ANC TX/RX (MS4a2) | TX: `get_next_frame` (`st_tx_ancillary_session.c:937`) fills `st40_tx_frame_meta` and returns frame 0 or the carrier 1; the engine sends the wire records of `st40_tx_set_unit_source`. RX: `st40_rx_set_unit_sink` gives a core slot per new timestamp; the binding decodes at dequeue (detail below the table) | E7, E12, UDW |
 | fastmeta TX/RX (MS4) | `get_next_frame` (`st_tx_fastmetadata_session.c:718`), done; RX frames assembled at dequeue from the RTP ring (`st_rx_fastmetadata_session.c:183`, `:205` are RTP-only) | keep-alive |
 | packet units, every essence (MS5) | one shared chunk expander on the TX tasklet (header mbufs plus extbuf attaches, one `shinfo` per chunk whose `free_cb` completes the chunk) feeding the engine's existing RTP ring; RX chunks formed at dequeue from `rtps_ring` | PE1 as one helper (about 250 lines [inferred]) plus about 10 lines per TX engine where it dequeues `packet_ring`; PE2–PE8 |
 | null | none: completes units at their launch instant on the instance clock (synchronously under the test clock) and loops each TX unit to the RX sessions whose flow matches (§4.11) | none |
+
+**ANC.** TX: `get_next_frame` (`st_tx_ancillary_session.c:937`) takes the descriptor, decides the
+index and the late policy, fills `st40_tx_frame_meta` (TAI TFST, `second_field`, `rtp_timestamp`)
+and returns frame 0 or the carrier 1, O(1); the engine sends the slot's wire records set up by
+`st40_tx_set_unit_source` (§4.12), 16 per call; `notify_frame_done` is the completion. RX:
+`st40_rx_set_unit_sink` gives a FREE core slot per new timestamp; the engine copies payloads into
+its wire area; `notify_frame_ready` publishes it; the binding decodes at dequeue. st40p is
+re-based on the core in MS4a2 (N6a, N6b).
 
 UB tests drive the real engine through the bindings, so they survive refactors of the engine
 internals.
@@ -340,6 +358,7 @@ thing for the reader: something published to read.
   and the TX unit's terminal outcome removes it.
 - **Progress**: `progress` (`used`) carries rows and packets in the same slot (§3.1). For rows
   units `used` counts rows and 0 is legal, because the slot is claimed before row 0 exists.
+- **APP → XFORM**: an inline transform in submit (ANC), the same exits as a converter's.
 
 Today's st20p TX frame states (`st20_pipeline_tx.h:12-19`) map onto these: FREE = FREE, IN_USER =
 APP, READY = QUEUED with X, CONVERTED = QUEUED, IN_CONVERTING = XFORM, IN_TRANSMITTING = ENGINE,
@@ -355,17 +374,16 @@ these files. The core and the bindings are new files; the engine diffs of MS1 st
 - **C0, the core's internal header.** `lib/src/st2110/core/st_core.h`: the slot word (§3.2), the
   descriptor ring (§5.4), the armed words (§7.1), the binding ops and the environment interface
   (§4.11). Maintainer checkpoint 1; no code depends on it before it is approved.
-- **C1a and C1b, the core.** New files in `lib/src/st2110/core/` (`st_core_slot.c`,
+- **C1a, C1w and C1b, the core.** New files in `lib/src/st2110/core/` (`st_core_slot.c`,
   `st_core_session.c`, `st_core_wait.c`, `st_core_handle.c`; names indicative), added with
   `subdir('core')` to `lib/src/st2110/meson.build` next to `subdir('pipeline')`. C1a: the handle
   table (§5.7; today's guard `mt_handle_guard.h:75-95` is not reused), the nine session states,
-  sticky interrupts, the deferred and idempotent close (§9), with U tests on a test binding. C1b:
-  the slot table, the descriptor ring, results and the reservation (§3.2, §5), the armed wait and
-  the deferred `mt_wake()` (§7; PR #1610's eventfd and poll loop seed it, legacy-internals.md
-  §12.1 row C1b). The one engine line is
-  the wake flush call in `sch_tasklet_func`, between the handler loop (`mt_sch.c:192-210`) and
-  the sleep check (`:211-213`), reached through the environment interface. Start and stop are a
-  session state the bindings read; `ctl`/`ack` come in MS2 (§6).
+  the deferred and idempotent close (§9), with U tests on a test binding. C1b: the slot table, the
+  descriptor ring, results and the reservation (§3.2, §5), with each target's readiness predicate.
+  **C1w** (after C1a, before C1b): the wait protocol of §7, sticky interrupts included, and the one
+  engine line, the wake flush call in `sch_tasklet_func` between `mt_sch.c:210` and `:211` (the
+  handler loop and the sleep check), reached through the environment interface. Start and stop
+  are a session state the bindings read; `ctl`/`ack` come in MS2 (§6).
 - **A1, the instance.** The null-only instance and its EAL rule (§4.11), the bridge from a legacy
   instance, errors and reasons, options, and the null port parsing: on a mixed instance the API
   shell takes `null:<n>` ports out of the port list before `mtl_init` (today's prefixes are parsed
@@ -400,18 +418,24 @@ these files. The core and the bindings are new files; the engine diffs of MS1 st
   - `get_next_frame` is called at `st_tx_video_session.c:1922` (today `tx_st20p_next_frame`,
     `st20_pipeline_tx.c:181-245`); `notify_frame_done` by `tv_notify_frame_done`
     (`st_tx_video_session.c:93-107`; today `tx_st20p_frame_done`, `st20_pipeline_tx.c:247-297`);
-  - the binding owns the slot decision and drives the engine with `ST20_TX_FLAG_USER_PACING |
+  - the binding owns the launch decision and drives the engine with `ST20_TX_FLAG_USER_PACING |
     ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH` (`include/st20_api.h:56`, `:100`) and `required_tai = N·T`
     (§4.13), which replaces the pipeline's drop-when-late (`st20_pipeline_tx.c:115-179`); one or
     two legs, interlace, DSCP (§2.7), `sc.ssrc` and `sc.payload_type` into `ops.ssrc` and
     `ops.payload_type` (one RTP identity for both legs, read at `st_tx_video_session.c:964-967`);
   - the sender type goes into `ops.pacing`; the engine has only the gapped schedule today (N, and W
     with the gapped TRS, SF-34), reads `ST21_PACING_LINEAR` nowhere (SF-72) and applies the gapped
-    schedule to every raster (SF-73). So until E5 (MS6) the binding reports
-    `MTL_INFO_NON_COMPLIANT` for `MTL_SENDER_NL`, `MTL_SENDER_W`, and `MTL_SENDER_N` on a raster
-    outside ST 2110-21:2022 §6.3.1 (where only NL and W exist,
-    [standards.md §6.1](standards.md#61-the-model)); the create rule for such rasters (refuse N, or
-    grant NL) is the contract's;
+    schedule to every raster (SF-73). MS1 passes the requested sender type as the legacy pipeline
+    does and reports no type; from MS2a (C-GRANT) the binding grants it (contract.md §3.3, D-143),
+    caps VRX0 through `ops.start_vrx` for the W bound and for interlaced and PsF N (TLINE/2), and
+    flags SD interlaced N until E5b. In detail:
+    - MS1 sets `MTL_INFO_NON_COMPLIANT` for NL, off-format N and interlaced or PsF N (the base
+      rule without W);
+    - the interlaced cap with its floor: with k = ceil(TLINE / (2 × TRS)), `ops.start_vrx` =
+      VRX_N − 3 − k if that is at least 1; else the binding sets `ST20_TX_FLAG_DISABLE_BULK` and
+      `ops.start_vrx` = VRX_N − 1 − k; if that is still below 1, `-MTL_ENOTSUP`
+      (`NOT_IMPLEMENTED`); `start_vrx` is never 0, which the engine reads as unset;
+    - on a wrapper the core and the bindings read `mt_get_ptp_time(impl, MTL_PORT_P)`;
   - TX library pools are the engine's own framebuffers in MS1 (OI-59 (b)); conversion runs in the
     caller (OI-60), and with `MTL_SUBMIT_SRC_PLANES` submit reads the caller's planes during the
     call as the conversion or copy source;
@@ -452,10 +476,10 @@ logic lives in the core design.
 | `tx_st20p_convert_put_frame` `:347-391`; internal convert in `st20p_tx_put_ext_frame` `:992-1000` | converting paths fire `notify_frame_done` at conversion, never at transport done (`:380-385`, `:995-999`) | conversion is the XFORM state (D-100), which ends in QUEUED and never in a result; a unit's result exists only at transport done on every path. An early storage release is a later opt-in |
 | `st20p_tx_get_frame` `:757-822` | numbers frames at `get_frame` (`:808` **[verified at HEAD]**); BLOCK_GET waits under `block_wake_mutex` (`:774-789`) | `mtl_tx_acquire`: a CAS FREE (or PUBLISHED) → APP with the next generation, plus the reservation (§5.4); the wait is the armed wait on `MTL_WAIT_ACQUIRE` (§7.1); `seq` at submit. At MS2, `st20p_tx_get_frame` is acquire seen as `st_frame` |
 | `tx_st20p_newest_available` `:62-77` | returns the **oldest** CONVERTED by `seq_number` **[verified at HEAD]** (the intended FIFO, misnamed, SF-44): acquire A, B, submit B, A sends A, B | the binding's `get_next_frame` takes the descriptor at the pick cursor, so pick-up is by submit `seq` (G-08); the misnamed function goes with the MS2 re-base |
-| `tx_st20p_next_frame` `:181-245` | the transport's `get_next_frame`; copies the frame's time into the meta only with USER_PACING or USER_TIMESTAMP (`:231-234`) | the binding's `get_next_frame`: QUEUED → ENGINE, the slot decision, then `st20_tx_frame_meta` with `tfmt` TAI and `timestamp = N·T` (§4.13); media time and launch apart inside `tv_*` is E1 (MS3) |
+| `tx_st20p_next_frame` `:181-245` | the transport's `get_next_frame`; copies the frame's time into the meta only with USER_PACING or USER_TIMESTAMP (`:231-234`) | the binding's `get_next_frame`: QUEUED → ENGINE, the launch decision, then `st20_tx_frame_meta` with `tfmt` TAI and `timestamp = N·T` (§4.13); media time and launch apart inside `tv_*` is E1 (MS3) |
 | `st20p_tx_put_frame` `:825`, `st20p_tx_put_ext_frame` `:929` | state store, optional inline conversion in the caller | `mtl_tx_submit`: the descriptor at `seq` in one line, then APP → QUEUED (+ X for a transform, §5.4); conversion in the caller (DPC, OI-60); `MTL_SUBMIT_SRC_PLANES`: the caller's planes are the conversion or copy source, read during the call |
 | `st20p_tx_put_frame_abort` `:902-927` | IN_USER only | `mtl_release` of an APP slot (CAS to FREE, `resv` decremented); a QUEUED slot leaves by a control-plane CAS QUEUED → PUBLISHED with `MTL_TX_FLUSHED` (stop FLUSH, discard), with no engine call (D-103) |
-| `tx_st20p_if_frame_late` `:115-179` | DROP_WHEN_LATE needs USER_PACING; one-frame grace; reads PTP time on the tasklet (`:133`) | replaced by the slot decision (§4.13, MS1): a TAI unit whose slot is too late is `MTL_TX_DROPPED` with `TOO_LATE` at pick-up, with no grace period; admission reporting with `margin_ns` is E3 (MS3) |
+| `tx_st20p_if_frame_late` `:115-179` | DROP_WHEN_LATE needs USER_PACING; one-frame grace; reads PTP time on the tasklet (`:133`) | replaced by the launch decision (§4.13, MS1): a TAI unit whose index is too late is `MTL_TX_DROPPED` with `TOO_LATE` at pick-up, with no grace period; admission reporting with `margin_ns` is E3 (MS3) |
 | `tx_st20p_block_wake` `:29-34` | mutex + cond on the tasklet (H3) | not in the core: one `mt_wake()` (§7); legacy st20p gets it with the MS2 re-base (SF-15) |
 | `tx_st20p_framebuffs_flush` `:722-753` | sleeps up to ~1 s per held frame at free (H-K-15) | not on the close path; close uses §9 |
 | `st20p_tx_get_session_stats` `:1300` | blocking spinlock (`:1311`, H2) | per-writer counters |
@@ -479,7 +503,7 @@ logic lives in the core design.
 | `tv_mgr_update_dst` `:3843-3862` | holds the spinlock across `tv_update_dst` and its ARP wait **[verified at HEAD]** | a boundary command (MS5): prepared header templates swapped by the `tick` (D-103); the builders copy the template into every packet (`:1062`, `:1107`, `:1213`) |
 | `tv_pkts_capable_chain` `:2873-2895`; no-chain decision `:3413-3421` | silent copy mode when `total_pkts × (frames_cnt − 1) < nb_tx_desc` (`:2887`, a warn log); `nb_tx_desc` = 512 (`MT_DEV_TX_DESC`, `dev/mt_dev.c:1009`) **[verified at HEAD]** | report `MTL_TXR_COPIED`, `mtl_session_info.direct`; `MTL_SESSION_REQUIRE_DIRECT` fails create; `min_count_direct` in `mtl_buffer_requirements` |
 | frame arrays `:4073`; linesize `:3333-3339`, copy-chain mempool `:2981-2995` | `ST20_FB_MAX_COUNT` = 8; linesize fixed at create | E11 (MS2); MF9 (MS2, §11) |
-| `tv_init_pacing` `:494-611` | TR offset from a fixed table (`:505-517`); only `start_vrx` and WIDE are capped by the TR offset (`:554`, `:587-597`); gapped TRS on every raster (`:502`, `:518`, SF-73); SD constants by height (`:507-516`, SF-74); NL runs as N (`:594`, SF-72) **[verified at HEAD]** | `tx.troffset_ns` with the VRX cap of §4.14 (MS2); NL, linear, HEIGHT constants (E5, MS6) |
+| `tv_init_pacing` `:494-611` | TR offset from a fixed table (`:505-517`); only `start_vrx` and WIDE are capped by the TR offset (`:554`, `:587-597`); gapped TRS on every raster (`:502`, `:518`, SF-73); SD constants by height (`:507-516`, SF-74); NL runs as N (`:594`, SF-72) **[verified at HEAD]** | `sc.video.troffset_us` with the VRX cap of §4.14 (MS2); NL, linear (E5a, MS5); HEIGHT (E5b, MS6) |
 | linesize and chain build | the engine already strides (below the table) | a plane with `stride ≥ row_bytes` (a sub-rectangle, a woven field) is direct: `plane[0].stride` becomes the engine linesize through MF9 (G-84) |
 | `st20_tx_get_session_stats` `:4760` | blocking spinlock (H2) | per-writer counters |
 
@@ -535,6 +559,16 @@ MS2.
 | `ST20P_RX_FLAG_PKT_CONVERT` `:523-536` | installs `uframe_pg_callback = rx_st20p_packet_convert` with `uframe_size`: library code per packet on the tasklet, 4:2:2 10-bit to four formats; it disables DMA (`st_rx_video_session.c:2572-2573`) **[verified at HEAD]** | the binding installs it for `MTL_OPT_RX_CONVERT_PER_PACKET` (MS1); only the public `uframe_pg_callback` is cut |
 | `rx_st20p_block_wake` `:29-35` | mutex + cond on the tasklet (H3) | as TX: one `mt_wake()` |
 
+**The RX binding's `query_ext_frame`** (the `rx_st20p_query_ext_frame` row) also does:
+
+- MS1: core slots are allocated one per slot (`round_up(unit_bytes + 64, 64)`, 64 B aligned, the
+  tail reserved), and dequeue writes the 64 B tail.
+- MS2b:
+  - the binding pops a provided destination instead of a core slot, and pushes a dropped unit's
+    destination back to the front;
+  - at the stop, discard and detach acknowledgements it waits for the unit's DMA to drain, then
+    hands back and increments `provide_gen`.
+
 ### 4.5 RX slot reassembly, `st_rx_video_session.c`
 
 | Function | Today | Change |
@@ -546,9 +580,9 @@ MS2.
 | `rv_handle_frame_pkt` `:1567-1864`; `rv_slot_full_frame` `:1335-1342` (called at `:1858`) | a frame completes only when full (`:1850-1858` **[verified at HEAD]**) or evicted | RX deadline: the `tick` force-completes at the due time (E8, MS2) |
 | `rv_frame_notify` `:846-985` | a refused `notify_frame_ready` puts a counted frame back (`:938-944` **[verified at HEAD]**, SF-45); without the incomplete flag an incomplete frame is recycled silently (`:976-982` **[verified at HEAD]**, SF-18) | the binding's `notify_frame_ready` never fails: PUBLISHED, or under `MTL_RX_DISCARD` returned and counted (MF4) |
 | `rv_dma_dequeue` `:1507-1528` | completes frames on the RX tasklet | a completing context: `mt_wake()` from the tasklet |
-| `rv_pkt_lcore_func` `:2470-2482` | packet lcore fires callbacks; races the tasklet (`:2901-2907`, SP-03) | a completing context and a library loop with its own pending wake bitmap, flushed by its loop (§7.2); the race is fixed or the mode stays legacy-only |
+| `rv_pkt_lcore_func` `:2470-2482` | packet lcore fires callbacks; races the tasklet (`:2901-2907`, SP-03) | a completing context and a library loop: it marks `fired` and, after its handler, wakes its one session (§7.2, B3); the race is fixed or the mode stays legacy-only |
 | packet lcore choice `:2642-2668` | above 40 Gb/s without DMA, or with `USE_MULTI_THREADS`, a second lcore runs `rv_handle_frame_pkt` (not with header split); slices and `num_port > 1` are then `-EINVAL` **[verified at HEAD]**: UHD 2022-7 RX above 40 Gb/s without DMA fails create | `rx.threads` = 2 needs one leg and frame units, else `-MTL_ENOTSUP`; auto stays 1 for them (use `MTL_OPT_DMA`) |
-| `rv_handle_detect_pkt` `:2728`, `rv_init_sw` `:2564` | auto-detect re-init allocates on the tasklet (H5) | worker (MS6) |
+| `rv_handle_detect_pkt` `:2728`, `rv_init_sw` `:2564` | auto-detect re-init allocates on the tasklet (H5) | worker (MS6); unified sessions: none, sized for the maximum at create (E14, MS3) |
 | `rv_update_src` `:3932-3990` | holds the spinlock across flow and IGMP work (SF-14) | boundary command (MS5): add the new flow rule to the same queue before removing the old one; IGMP on a worker |
 | recycled frames | not re-zeroed: lost packets show the previous frame | library pools zero-fill missing ranges in `mtl_rx_dequeue` (DPC, MS2) unless `MTL_SESSION_RX_NO_FILL`; attached pools are never zero-filled (the unit carries `MTL_RX_INCOMPLETE` and the loss counts of `mtl_rx_get_detail`); needs the packet bitmap of the next row |
 | packet bitmap `slot->frame_bitmap` | per reassembly slot (`ST_VIDEO_RX_REC_NUM_OFO` = 2, `st_header.h:39`, `:625`), cleared when the slot takes a new timestamp (`:1298-1299`); the frame is delivered with counts only (the miss loop is `#if 0`, `:966-972`) **[verified at HEAD]** | the core keeps a copy per unit (below the table, MS2) |
@@ -565,7 +599,7 @@ bitmap (`st_rx_video_session.c:714-721`), so the binding gets it through `st_eng
 
 | File | Today | Change |
 |---|---|---|
-| `mt_sch.c` `sch_tasklet_func` `:155-242` | sums handler returns; no heartbeat | the wake flush between the handler loop (`:192-210`) and the sleep check (`:211-213`) (§7.2, MS1, task C1b); set `mt_in_busy_loop`; per-scheduler `loop_seq` and `last_loop`, also advanced on wake-ups (EK11) |
+| `mt_sch.c` `sch_tasklet_func` `:155-242` | sums handler returns; no heartbeat | the wake flush between the handler loop (`:192-210`) and the sleep check (`:211-213`) (§7.2, MS1, task C1w); set `mt_in_busy_loop`; per-scheduler `loop_seq` and `last_loop`, also advanced on wake-ups (EK11) |
 | `mt_sch.c` unregister `:873-923` | polls 1 ms × 1000, returns `-EIO` with the tasklet still registered (`:884-901` **[verified at HEAD]**); callers free anyway (SF-56) | on timeout, never free; quarantine; health `DEVICE_FAULT` (EK2) |
 | `mt_sch.c` `sch_stop` `:316-321` | waits forever for `stopped` | bounded (EK1) |
 | `mt_sch.c` lcore table `:505-620`, `:685-699` | SysV shm, `flock(/tmp/kahawai_lcore.lock)`, `kill(pid, 0)` | affinity only, or OFD locks keyed by CPU (EK6) |
@@ -582,18 +616,18 @@ The EK rows of this table land in MS3, E9 in MS6 (§11).
    SF-09 and SF-23; if it is not merged in week 1 the MF1 hunk goes into task E1), task T1 (PR
    #1610's st20p parity tests on main's harness) and spike S0 (the baseline: RxTxApp
    `--tasklet_time`, RL and TSC, average and maximum).
-2. **MS1, in task order:** H1a and H1b (the header move, the API shell inside libmtl with its
-   version node), C0 (checkpoint 1), C1a and C1b, A1, then C2 as the U-tier substrate on
-   `null:1`; E1 (S0's data before the merge); B1 and B2 on top of E1, with UB tests that drive the
-   real engine through the bindings; A2a, CI1a, the I1 and R1 rewrites, CI1b, P1, SA1; A2b, B3
-   and X as stretch. The task table, the gates and the calendar are
-   [implementation-plan.md](implementation-plan.md) §5.
-3. **MS2:** rows through `query_frame_lines_ready` with the TRUNCATE code and `tx.troffset_ns`,
+2. **MS1, in task order:** H1b (the header move, the API shell inside libmtl with its version
+   node, the run options) and E1 (S0's data before its merge), C0 (checkpoint 1), C1a, C1w and C1b,
+   A1, then C2 as the U-tier substrate on `null:1`; B1 and B2 on top of E1, with UB tests that drive
+   the real engine through the bindings; A2a and A2c, the I1 and R1 rewrites, P1 (with the CI
+   entries and the samples); A2b, B3 and X as stretch, committed in MS2a. The task table, the gates
+   and the calendar are [implementation-plan.md](implementation-plan.md) §5.
+3. **MS2:** rows through `query_frame_lines_ready` with the TRUNCATE code and `sc.video.troffset_us`,
    and `notify_slice_ready` (§4.14); attached memory, by-index and latest RX (OI-59 (a)) with MF2,
    MF3, MF9 and E11; the `tick` with `ctl`/`ack` and the RX due time (E8); the packet bitmap and
    "last packet handed" accessors (§4.12); the check whether S1 calls for W3 (§7.2); the st20p
    re-base onto the core last.
-4. **MS3:** E1, E2 (unless task X landed it in MS1), E3 reporting, E4; the stalled-queue close
+4. **MS3:** E1, E2 (unless task X landed it in MS2a), E3 reporting, E4; the stalled-queue close
    (S8, SF-50), which also completes attached memory after a recovery (§10); EK1, EK2, EK6 and EK7
    first among the pod fixes.
 5. **Side fixes the core relies on**, with their milestones: SF-05/MF1, SF-45, SF-49, SF-41 and
@@ -627,7 +661,7 @@ RL = `MTL_PACING_HW_RATE`, TSN = `MTL_PACING_HW_LAUNCH`, TSC = `MTL_PACING_SW` (
 TSC_NARROW = `MTL_PACING_SW_NARROW` (bulk 1), PTP = `MTL_PACING_PTP`, BE = `MTL_PACING_BEST_EFFORT`
 (only packet 0 of a frame is timed). Every downgrade below raises `MTL_STATUS_PACING_DOWNGRADED`
 and `MTL_EVENT_PACING_CHANGED` for core sessions, and fails create with `PACING_UNAVAILABLE`
-when `MTL_OPT_PACING` is set with `MTL_REQ_REQUIRE`. **[verified at HEAD]**
+when `MTL_OPT_PACING` is set with `MTL_OPT_PACING_REQ` = `MTL_REQ_REQUIRE`. **[verified at HEAD]**
 
 | Site | Today | Log |
 |---|---|---|
@@ -674,7 +708,7 @@ by the API shell and declared in `st_core.h` (task C0):
 |---|---|---|
 | allocate and free on a NUMA socket | `mt_rte_zmalloc_socket` with `mt_socket_id(impl, port)` | the same over EAL memory without hugepages |
 | clock: TAI now and TSC | the instance clock of §4.13 and `mt_get_tsc` | the instance clock, or the test clock under `MTL_FAULT_TEST_CLOCK` |
-| wake flush hook | called by `sch_tasklet_func` after its handler loop (§7.2) | called by the instance's loop thread |
+| wake flush hook | called by `sch_tasklet_func` after its handler loop, its return added to `pending` (§7.2) | called by the instance's loop thread |
 | scheduler ID of the calling context | the scheduler's index | 0 |
 
 The scheduler ID selects the pending wake bitmap (§7.2), the stats block (§2.8) and the log ring.
@@ -692,8 +726,9 @@ A **null-only instance** (only `null:<n>` ports) does not call `mtl_init`:
   flush, as a scheduler would (a TK context, §2.2), pinned at creation (§2.5).
 - **Test clock.** Under `MTL_FAULT_TEST_CLOCK` the clock moves only by `MTL_FAULT_CLOCK_ADVANCE`,
   and the completions that fall due run synchronously inside that call on the caller's thread, in
-  `seq` order, so a test sees one deterministic sequence (G-92). Such a completion is an
-  application-thread completion and writes the eventfd directly (§7.2).
+  `seq` order, so a test sees one deterministic sequence (G-92). The loop thread parks; ADVANCE
+  marks the completions like the loop and runs the flush with no bound before it returns (§7.2), so
+  the production path runs and the order stays deterministic.
 - **Loopback.** A TX unit completes at its scheduled instant and is delivered to every RX session
   whose flow (destination IP and UDP port) matches (D-111).
 
@@ -713,14 +748,16 @@ from the engines, so a refactor of the engine internals touches this header and 
 | "last packet handed" | no-chain completion (§4.2) | done at build (`st_tx_video_session.c:2130-2134`, ST22 `:2655-2659`) | MS2 |
 | engine frame count ≥ pool_count + slot_max | RX_LATEST and BY_INDEX: every core slot plus the reassembly slots need a carrier frame (§4.5) | `ST20_FB_MAX_COUNT` = 8 (`include/st20_api.h:24`), arrays at `st_rx_video_session.c:4266` | E11, MS2 |
 | an RTP sequence seed | an update that re-creates the engine session keeps the sequence (OI-62) | no `ops` field | MS5 |
+| `st40_tx_set_unit_source` (once at create): the slots' wire-record layout, D, TD, internal bits (launch offsets, RTP from meta, keep-alive carrier, burst 16) | the engine sends any unit size without `struct st40_frame` (20 entries, ABI), encoding or a per-frame allocation | input `st40_frame` (`:562`, `:960`), one allocation per frame (`:162`), the encoder on the tasklet (`:584-596`) | MS4a2 |
+| `st40_rx_set_unit_sink`: once at create, installs the per-unit destination callback the ST40 RX engine lacks (a core slot per new timestamp) and the out counts | RX copies payloads into the core slot's wire area, no decode, no `udw_buf` | the engine's own slots and UDW buffers (`:907-933`), decode on the tasklet (`:111-422`) | MS4a2 |
 
 The pacing parameters a binding needs (TR offset, TRS, VRX) come from the public
 `st20_tx_get_pacing_params` (`st_tx_video_session.c:4730`), read once at create.
 
-### 4.13 The TX slot decision, the pick-up lead and the clock
+### 4.13 The TX launch decision, the pick-up lead and the clock
 
-**The binding owns the slot decision** (MS1, D-131). At `get_next_frame` the video TX binding
-computes the slot N of the unit with exact rational math on the instance clock and hands the engine
+**The binding owns the launch decision** (MS1, D-131). At `get_next_frame` the video TX binding
+computes the launch index N of the unit with exact rational math on the instance clock and hands the engine
 a frame that already names it: the session is created with `ST20_TX_FLAG_USER_PACING |
 ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`, and each frame carries `tfmt` TAI, `timestamp = required_tai =
 N·T` (in ns) and, when interlaced, `second_field = N & 1`. Why the engine then lands on N exactly
@@ -739,19 +776,19 @@ N·T` (in ns) and, when interlaced, `second_field = N & 1`. Why the engine then 
   epoch RTP with today's rounding (G-20 in MS1; `floor` with E2).
 
 The engine itself never refuses a late slot: a start in the past is sent at once
-(`time_to_tx_ns = 0`, `:731-732`), and nothing stops two frames on one slot (SP-10). So the
+(`time_to_tx_ns = 0`, `:731-732`), and nothing stops two frames on one epoch (SP-10). So the
 binding decides:
 
 | Unit | N | Outcome |
 |---|---|---|
-| AUTO | the next feasible slot: last N + 1 if its pick-up deadline is still ahead, else the first slot whose deadline is | ON_TIME; a slot later than last N + 1 is ON_TIME with `MTL_TXR_RESLOTTED` ([contract.md](contract.md) §6.3) |
-| AUTO + `MTL_SUBMIT_NOT_BEFORE` t | the first feasible slot whose first-packet time is ≥ t | as AUTO |
-| TAI (`media_tai_ns` = M) | the slot nearest M | DROPPED with `DUPLICATE_SLOT` (N equal to the last), `BEHIND` (N before the last) or `TOO_LATE` (N's deadline has passed) |
+| AUTO | the next feasible index: last N + 1 if its pick-up deadline is still ahead, else the first index whose deadline is | ON_TIME; an index later than last N + 1 is ON_TIME with `MTL_TXR_DEFERRED` ([contract.md](contract.md) §6.3) |
+| AUTO + `MTL_SUBMIT_NOT_BEFORE` t | the first feasible index whose first-packet time is ≥ t | as AUTO |
+| TAI (`media_tai_ns` = M) | the index nearest M | DROPPED with `SNAP_COLLISION` (N equal to the last), `BEHIND` (N before the last) or `TOO_LATE` (N's deadline has passed) |
 | `MTL_SUBMIT_EXACT` (launch t) | as the media mode gives; the binding checks t against [now + RL warm-up lead, now + 1 s] itself, the window outside which `tv_pacing_required_tai` silently falls back (`:1796-1805`) | the frame starts at t with `ST20_TX_FLAG_EXACT_USER_PACING` |
-| `MTL_SUBMIT_RTP_TS`; TAI with NOT_BEFORE or EXACT landing in another slot than M's | — | `-MTL_ENOTSUP` until E1 (MS3) |
+| `MTL_SUBMIT_RTP_TS`; TAI with NOT_BEFORE or EXACT landing in another index than M's | — | `-MTL_ENOTSUP` until E1 (MS3) |
 | `MTL_MEDIA_INDEX` | — | MS3 |
 
-Interlaced AUTO units take fields in submission order, and a reslot skips whole frames, so the
+Interlaced AUTO units take fields in submission order, and a defer skips whole frames, so the
 parity of N always matches the field.
 
 `ST20_TX_FLAG_EXACT_USER_PACING` is a session flag, not a per-frame one (`include/st20_api.h:94`,
@@ -764,7 +801,7 @@ because TR offset − VRX × TRS < T/2.
 
 **The pick-up lead** (D-130) is how long before the first-packet time of N the binding must take
 the unit. The builder asks for the next frame only between frames and polls `get_next_frame` every
-iteration while it waits (`st_tx_video_session.c:1912-1925`); the slot is fixed in that call
+iteration while it waits (`st_tx_video_session.c:1912-1925`); the launch index is fixed in that call
 (`:1970-1980`). The first bulk then only has to reach the transmitter in time: RL starts its
 warm-up `warm_pkts × TRS` before the target (`st_video_transmitter.c:226-233`; `warm_pkts` is 80 %
 of the packets in the TR offset, at most 128, `st_tx_video_session.c:554-563`), and TSC holds a
@@ -781,7 +818,7 @@ pick-up lead; the default 0 is playback. The formulas are [timing.md](timing.md)
 clock plus the TAI−UTC offset), both vDSO reads; a PHC, one syscall per read, comes in MS6 with the
 published time base (E9, §8). An instance the unified API opens installs that clock as the engine's
 time function (`ptp_get_time_fn`, chosen at `dev/mt_dev.c:2283-2286`, called at `:1603-1608`), so
-the binding's slot math and the engine's `mt_get_ptp_time` (`st_tx_video_session.c:695`, `:1797`)
+the binding's index math and the engine's `mt_get_ptp_time` (`st_tx_video_session.c:695`, `:1797`)
 read one clock. Today's default is `CLOCK_REALTIME` (`dev/mt_dev.c:2287-2290` → `mt_main.h:1874`),
 37 s behind TAI.
 
@@ -796,12 +833,12 @@ read one clock. Today's default is `CLOCK_REALTIME` (`dev/mt_dev.c:2287-2290` �
   that stops mid-frame stalls the session. The engine gains a return code that ends the frame after
   the rows already handed over (about 30 lines), used by `tx.rows_late` = `MTL_ROWS_TRUNCATE`.
 - **Interlace.** Interlaced rows are kept: the engine slices each field (`height >> 1`, `:2014`).
-- **TR offset.** `tx.troffset_ns` (`MTL_OPT_TROFFSET_NS`) is a new engine item: the TR offset comes
+- **TR offset.** `sc.video.troffset_us` (whole µs; 0 = TRODEFAULT) is a new engine item: the TR offset comes
   from a fixed table today (`:505-517`). The knob comes with the cap VRX0 ≤ floor(TROFFSET / TRS)
   for every sender type, because today only `start_vrx` and WIDE are capped by the packets in the
   TR offset (`:554`, `:587-597`) and the narrow VRX (`:565-579`) is not, so a short TR offset would
   put the first packet before the epoch (`transmission_start_time`, `:63-70`).
-- Rows reach gateway latency with MS3's INDEX and TAI modes and `mtl_tx_next_slot`.
+- Rows reach gateway latency with MS3's INDEX and TAI modes and `mtl_tx_get_next`.
 
 ### 4.15 ST 2022-7 RX: relock and skew
 
@@ -834,6 +871,30 @@ The design (D-133):
 - **One RTP identity per session.** `sc.ssrc` and `sc.payload_type` (0: one random SSRC per
   session, the essence's default PT) go into the engine ops once for both legs; on RX a non-zero
   `ssrc` is the engine's existing filter (`include/st20_api.h:1505-1507`).
+
+### 4.16 Rate sites
+
+Every engine use of the rate (grep of `lib/src` at the base commit) and what task C-FPS changes for
+a rational rate:
+
+| Use | Sites | Change for a rational |
+|---|---|---|
+| lookup at create | `st_tx_video_session.c:3316`; `st_rx_video_session.c:2690`, `:3325`; `st_tx_ancillary_session.c:1734`; `st_tx_fastmetadata_session.c:1480`; `st_rx_timing_parser.c:296` | internal `st20_tx_create_timed(mt, ops, const struct st_fps_timing*)` and `st20_rx_create_timed()`; the legacy `st20_tx_create`/`st20_rx_create` call them with the table timing; ANC/fastmeta the same in MS4a |
+| pacing, frame time, TRS, TRO, VRX, RL rate, RTP | `st_tx_video_session.c:89-90, 444, 499-527, 729, 780-797, 1422, 1496, 3364-3366`; `st_rx_video_session.c:2696, 3337-3338`; `st_tx_ancillary_session.c:263-268, 427-465`; `st_tx_fastmetadata_session.c:206-211`; `st_rx_timing_parser.c:301, 345` | none: they read `s->fps_tm` already |
+| bandwidth and quota | `st_tx_video_session.c:4427, 4883, 4895`; `st_rx_video_session.c:2635, 3030, 4470, 4872, 4882`; helpers `st_fmt.c:1036, 1062, 1078` | internal `_tm` variants of the three helpers taking `const struct st_fps_timing*`; the public helpers call them |
+| logs and USDT periods | `st_tx_video_session.c:603, 1994, 2513`; `st_rx_video_session.c:906, 1015, 2848, 3475` | `(double)fps_tm.mul / fps_tm.den`; period `max(1, …)` (0 today below 0.2 fps: a modulo by zero) |
+| legacy callback meta | `st_tx_video_session.c:811, 831`; `st_rx_video_session.c:866, 1268, 2609, 2623`; `st_tx_ancillary_session.c:475`; `st_tx_fastmetadata_session.c:341` | `ops.fps` = the table enum when the rate has one, else `ST_FPS_MAX`; the bindings never read it |
+| session copies | `st_tx_video_session.c:4976`; `st_rx_video_session.c:4954` (ST22 → ST20 ops) | carry the timing with the copy |
+| detection | `st_rx_video_session.c:117-160, 2790-2798` | not used by core sessions (detect off); timing.md §11.9 in MS3 |
+| JPEG XS box | `st_tx_video_session.c:861-866` | the cvideo raster check (contract.md §3.3), MS4b |
+| legacy pipelines | `st20_pipeline_tx.c:446, 620, 887, 1014, 1099`; `st20_pipeline_rx.c:557, 747, 924`; `st22_pipeline_*`; `st40_pipeline_tx.c:323, 665`; `experimental/st20_redundant_combined_rx.c:170` | none: legacy only; st20p on the core (MS2b) maps its enum with `mtl_raster_from_legacy` |
+| RL static pad table | `st_fmt.c:1502` (keyed on `ops->fps`) | with `ST_FPS_MAX` it misses harmlessly and RL trains instead; no change |
+
+Size of C-FPS (video TX and RX only): ≈ 200 lines of code (two entries 40, ~30 site edits 60, three
+helper variants 40, guards 15, the binding's rational → timing 20, `st_fps_from_rational` 15) and
+≈ 200 lines of U/UB tests (`frame_time`, TRS, VRX, RL bps and wire bandwidth per rate against the
+oracle; G-99 legacy wire identical). Independent of E2 and E5: a non-table rate is as exact as
+59.94 is today (double `frame_time`, E2 fixes both).
 
 ## 5. Lease table and result materialisation
 
@@ -873,9 +934,8 @@ COMPLETING CONTEXT                                   READER (application thread,
 3. store slot word = PUBLISHED|gen (release)           RX: the entry at the dequeue cursor names a
    (results off: FREE, nothing is read)                  PUBLISHED slot: CAS it to APP|gen + 1
 4. atomic_thread_fence(seq_cst)
-5. load the target's armed word (relaxed)
-6. if armed: mt_wake(session, target): set the session's bit in the calling scheduler's
-             pending bitmap on a library loop; write the eventfd on an application thread
+5. load the object's armed word (relaxed)
+6. if a lane of the event is armed: mt_wake(object, lanes) (§7.1 EVENT, §7.2)
 ```
 
 - **Single producer per result.** The claim CAS makes exactly one context complete a unit, and only
@@ -895,8 +955,8 @@ COMPLETING CONTEXT                                   READER (application thread,
 
 ### 5.3 Every completing context
 
-The wake path is what `mt_wake()` does from that context (§7.2): a library loop sets a bit in its
-pending bitmap, which its loop flushes; any other thread writes the eventfd directly. The stats
+The wake path is what `mt_wake()` does from that context (§7.2): a library loop marks the object,
+which its loop flushes one object per iteration; any other thread wakes directly (§7.2). The stats
 column is the block a completion writes (§2.8).
 
 | Context | Where today | Wake path and stats block |
@@ -910,8 +970,9 @@ column is the block a completion writes (§2.8).
 | queue stop/start after a stall, on a worker (new, §9) | — | direct |
 | the application thread in `mtl_tx_submit` with in-caller conversion: it converts before the QUEUED store, so it completes a unit only when the conversion fails (today `put_frame`/`put_ext_frame` fire `notify_frame_done` here) | `st20_pipeline_tx.c:991-1000` | direct |
 | a plugin converter or encoder thread ending XFORM (MS2): QUEUED on success, a failed result otherwise (today it fires `notify_frame_done`) | `st20_pipeline_tx.c:380-385` | direct |
+| the application thread in `mtl_tx_release` (an APP lease) or `mtl_reap` (result space) | not a completion: a wake source for ACQUIRE (§7.1) | direct |
 | RX tasklet, session spinlock held | `st_rx_video_session.c:3516` → `rv_slot_full_frame` (`:1850-1858`) | the scheduler's bitmap and block |
-| the RX packet lcore (`USE_MULTI_THREADS`) | `rv_pkt_lcore_func` `:2470-2482` | its own bitmap, flushed by its loop, and its own block |
+| the RX packet lcore (`USE_MULTI_THREADS`) | `rv_pkt_lcore_func` `:2470-2482` | it marks `fired` and, after its handler, wakes its one session (B3); its own stats block |
 | the RX DMA completion drain | `rv_dma_dequeue` | the scheduler's bitmap and block |
 | the last reference to a HELD RX slot (MS2): a TX completing context or `mtl_release` | the core's CAS HELD → FREE, then `rv_put_frame` (`:222-232`) | none for the slot; in a deferred close the last drop posts the retire to a worker |
 
@@ -935,6 +996,12 @@ PMD reference publish; `sh_info` is written only at frame setup.
   whose `seq` is its pick cursor and whose slot word is QUEUED with the entry's generation, so
   pick-up is in submission order (G-08; PR #1610 could send `A B D C`) and a stale entry is never
   picked. The completer writes the result back into the same entry.
+- **ANC submit claims before it writes** (MS4a2). It first CASes the slot word APP|g → XFORM|g
+  (§3.2); a stale or second submit fails there with `-MTL_EBADF` or `-MTL_ESTALE` and writes
+  nothing. It then checks and encodes the unit into the session's private wire area (the RTP record
+  count goes into the descriptor entry), writes the descriptor and release-stores XFORM|g →
+  QUEUED|g; a refused unit goes XFORM|g → FREE|g with the error and no descriptor. So a wire area
+  never mixes two units, and a write to the planes after submit never reaches the wire.
 - **The reservation** (D-120). Acquire CAS-increments a counter `resv` while `resv − reap_seq <
   size`, so every leased slot already owns the entry its result will use and producing a result
   never waits; releasing an APP lease decrements it. When unread results fill the ring, acquire
@@ -979,7 +1046,7 @@ PMD reference publish; `sh_info` is written only at frame setup.
 | `mtl_release` (`mtl_tx_release`, `mtl_rx_release`) | MP-safe (CAS, or hold-count change), any thread, any order | — |
 | `mtl_tx_submit` (and the inline `mtl_tx_write`, `mtl_tx_send_slot`) | one submitting context at a time | `MTL_SESSION_MT_SUBMIT`: CAS on the submission tail, for several submitting threads (an exported pool whose only submitter is `render` does not need it) |
 | `mtl_reap`, `mtl_rx_dequeue` | MP-safe under the reaper lock | — |
-| waits | several waiters per target | — |
+| waits | any number of waiters per target and on any targets (G-95) | — |
 
 Debug builds detect violations by overlap, not by thread identity: each externally serialised
 entry point sets an owner flag with a CAS for its duration. A framework pool whose acquire and
@@ -1010,8 +1077,9 @@ lease handle  = | session index:16 | slot:16 | generation:32 |         mtl_lease
 | generations | start from a random seed per table slot (per session for leases), skip 0, advance on every reuse. A lease of another session fails deterministically on the index (`-MTL_EBADF`); an old lease of the right session fails on the generation (`-MTL_ESTALE`), so a double submit or a double release cannot corrupt another lease (PR #1610 D4) |
 | reuse | free slots are reused FIFO, as late as possible. Until reuse the slot is a tombstone: `mtl_session_get_state()` answers `MTL_STATE_RETIRED`; an object its instance closed keeps its slot in a CLOSED_BY_INSTANCE state, where data calls return `-MTL_ESHUTDOWN` and close returns 0 (R4, [deployment.md](deployment.md)) |
 | lookup | a chunk index, an array index and a 32-bit compare |
-| destroy protection | a per-object in-flight counter on its own cache line, never written by a tasklet; close waits for it to drain (§9). Rejected: QSBR or epochs per thread (below the table) |
+| destroy protection | a per-object in-flight counter on its own cache line, never written inside a tasklet handler (a library loop's wake enters it once per woken object, §7.2); close and retire wait for it to drain (§9, §7.3). Rejected: QSBR or epochs per thread (below the table) |
 | no elision | every data call, stop included, takes the in-flight counter; `mtl_release` too, because it is legal from any thread during a deferred close |
+| wait words | the entry carries the wait line (line A) and, 128 B away, the tasklet line with `fired` (§7.1); they live as long as the entry; retire closes the descriptor after the in-flight counter drains; reuse resets every word but `wseq` and the counter |
 
 Today's guard cannot give this: it reads `impl->type` through the raw pointer
 (`mt_handle_guard.h:75-95`), and its `lc_refcnt` shares a line with tasklet-read fields (§2.6).
@@ -1159,44 +1227,177 @@ or an MXL grain-count change into stop, update, start instead of close and creat
 
 ## 7. Waking
 
-### 7.1 Wait targets and the armed-waiter protocol
+### 7.1 Wait targets, wait words and the protocol
 
-A session has one eventfd and one armed counter per target (D-122). The counter counts waiters, so
-several threads may wait on one target and the wake is a broadcast; it only decides whether a
-completion writes the eventfd at all.
+Every session and the instance object have one set of wait words in their handle-table entry
+(§5.7). The entry is never freed, so a late wake, flush or interrupt only ever touches valid memory
+(D-141). Two kinds of sleeper use them:
 
-| Target (`mtl_wait` mask) | Armed by | Signalled when |
+| | WT calls (timeout ≠ 0) | event loops (the wait handle, §7.3) |
 |---|---|---|
-| `MTL_WAIT_ACQUIRE` | `mtl_tx_acquire` with a timeout | a TX slot becomes acquirable |
-| `MTL_WAIT_RESULTS` | `mtl_reap` with a timeout | a result becomes readable |
-| `MTL_WAIT_DEQUEUE` | `mtl_rx_dequeue` with a timeout | an RX unit becomes PUBLISHED |
-| `MTL_WAIT_EVENTS` | `mtl_read_events` with a timeout (MS3), on a session or the instance object | an event is posted |
+| sleep on | the object's 32-bit wake word `wseq` (futex) | the object's eventfd, in their own epoll |
+| arm | a count in their target's lane of `armed` | the target's `H` bit in `armed` |
+| are woken by | a bump of `wseq`, then `FUTEX_WAKE_BITSET` for the woken lanes | the lanes OR'd into `h_pend`, and one signal when it goes from 0 to non-0 |
+
+Targets map to four lanes per object kind; the API shell converts the public masks:
+
+| Lane | TX session | RX session | Instance | Woken by (each runs EVENT, below) |
+|---|---|---|---|---|
+| 0 | `MTL_WAIT_ACQUIRE` | `MTL_WAIT_DEQUEUE` | — | TX: a completion; `mtl_tx_release` of an APP lease; `mtl_reap` advancing `reap_seq`; a control-plane or submit flush (D-121). RX: a publish (tasklet, DMA drain, packet lcore); the due-time force completion (MS2) |
+| 1 | `MTL_WAIT_RESULTS` | rows (`mtl_rx_wait_rows`, MS2) | — | TX: a completion with results; a flush; a failed in-caller or plugin conversion. RX: `notify_slice_ready` at each `rx.rows_step` and at the unit's end |
+| 2 | `MTL_WAIT_EVENTS` (MS3) | `MTL_WAIT_EVENTS` (MS3) | `MTL_WAIT_EVENTS` (MS3) | a source's pending state changes (tasklet); a ring post (library or application thread). Instance objects are never marked on a loop (§5.6: no tasklet posts instance events) |
+| 3 | spare | `MTL_WAIT_RTCP` (Phase 7) | — | — |
+| every lane | | | | start, stop, the end of DRAIN or FLUSH, ERROR (also from a tasklet), CLOSING; an interrupt, by the interrupt map: RX `MTL_WAIT_DEQUEUE` selects lanes 0 and 1 |
+
+A WT call sleeps only in a state where "nothing ready" means wait (CREATED, ARMED, RUNNING,
+STOPPED; contract.md §4.2). In every other state it returns the state's code, so the sources above
+are complete.
+
+The wait line is line A of the entry (64 B). Line B, 128 B away, holds `fired`, written by
+tasklets. The entry's own in-flight counter and state word guard the lifetime:
+
+| Offset | Word | Size | Meaning |
+|---|---|---|---|
+| 0 | `armed` | u64 | 4 lanes × 16 bits: bit 15 `H` = armed for the wait handle; bits 0–14 = WT waiters (≤ 32 767, a documented limit); every modification `seq_cst` |
+| 8 | `wseq` | u32 | wake sequence, the futex word; never reset |
+| 12 | `intr` | u32 | sticky interrupted targets (`MTL_WAIT_*` bits) |
+| 16 | `h_pend` | u32 | lanes woken for the handle and not yet taken |
+| 20 | `h_mask` | u32 | lanes the handle arms, fixed by its first request; 0 = no handle |
+| 24 | `h_fd` | `_Atomic` i64 | the eventfd; −1 until the first `mtl_get_wait_handle` |
+| 32 | `owner`, `kind` | u16, u8 | the instance's table index; the lane map |
+
+Notation for the blocks below:
+- `o.A` is line A and `o.B` line B; `I` is the session's instance.
+- `HB(L)`, `WC(L)` and `ONE(L)` are the `H` bits, the count fields and a count of 1, for each
+  lane of a lane set L.
+- `P` is a call's readiness predicate and `P_lane` the lane's (a unit any call of the lane would
+  take). Both only load, and return READY, WAIT or the state's code. In MS1 they are equal.
+- `ATTEMPT` is the consuming body. On an application thread it takes the reaper lock (§5.4) and
+  never trylocks it.
+- "Enter" and "leave" are the in-flight counter (§5.7).
+- Every syscall of a DP, WT or AS call is a raw `syscall(SYS_…)`, so none of them is a
+  cancellation point.
 
 ```text
-APP (WT call, target T)                          COMPLETING CONTEXT
-1. DP attempt -> got something? return it        a. claim, write result, store PUBLISHED (release)
-2. fetch_add(armed[T], 1)        (seq_cst)       b. atomic_thread_fence(seq_cst)
-3. atomic_thread_fence(seq_cst)                  c. load armed[T] (relaxed)
-4. DP attempt again -> got it?                   d. if armed[T] > 0: mt_wake(session, T)
-      fetch_sub(armed[T], 1); return it
-5. poll() {session eventfd, instance interrupt eventfd}, remaining timeout
-6. woken -> drain, fetch_sub(armed[T], 1); goto 1
+EVENT(o, F)
+E1  publish: the completion's release store (§5.2) | a release's APP -> FREE CAS |
+    store(reap_seq, release) | store(progress, release) | an event's pending state |
+    store(state, new, seq_cst) for a state change (F = every lane)
+E2  atomic_thread_fence(seq_cst)
+E3  a = load(o.A.armed, relaxed)
+E4  F &= the lanes with H set or a count > 0 in a
+E5  if (F) mt_wake(o, F)
+
+mt_wake(o, F)     a scheduler or the null loop:   M1 if (fetch_or(o.B.fired, F, release) == 0)
+                                                     mark index(o) in the loop's bitmap
+                  the RX packet lcore:            M1 only (it flushes its one session itself)
+                  any other thread:               WAKE_NOW(o, F)
+
+WAKE_NOW(o, F)    -> syscalls made; a caller already inside a data call skips W0 and W6
+W0  fetch_add(o.inflight, 1, seq_cst); if (load(o.state, seq_cst) == RETIRED) { W6; return 0 }
+W1  a = load(o.A.armed, acquire)
+W2  if (a & HB(F)) a = fetch_and(o.A.armed, ~HB(F), seq_cst)
+W3  if (a & WC(F)) { fetch_add(o.A.wseq, 1, release);
+                     futex(&o.A.wseq, FUTEX_WAKE_BITSET|FUTEX_PRIVATE_FLAG, INT_MAX, bits(F)) }
+W4  hf = F & the lanes with H set in a
+W5  if (hf) POST(o, hf)
+W6  fetch_sub(o.inflight, 1, release)
+POST(o, l)
+P1  if (fetch_or(o.A.h_pend, l, seq_cst) == 0) SIGNAL(o)
+SIGNAL(o)         inside the object's in-flight counter
+S1  write(h_fd, 1); a failure counts instance.wake_errors (unreachable for an eventfd)
+
+DP(o, T)          timeout 0, or a WT call's final attempt; l = lane(T)
+D1  enter; CLOSING or RETIRED: leave, return -MTL_ESHUTDOWN
+D2  r = ATTEMPT(o, T)
+D3  if (r >= 0) { the call's own sources; leave; return r }   never resets or arms the handle
+D4  if (r != -MTL_EAGAIN || !(load(o.A.h_mask, acquire) & l)) { leave; return r }
+D5  took = CONSUME(o, l)
+D6  ARM_H(o, l)
+D7  if (P(o, T) != WAIT) r = ATTEMPT(o, T)                       once
+D8  if (took && (r != -MTL_EAGAIN || P_lane(o, l) != WAIT)) POST(o, took)
+D9  if (r >= 0) the call's own sources
+D10 leave; return r
+CONSUME(o, l)
+K1  p = load(o.A.h_pend, acquire); took = 0
+K2  if (p & l) { old = fetch_and(o.A.h_pend, ~l, acq_rel); took = old & l; p = old & ~l }
+K3  if (p == 0) DRAIN(o); else SIGNAL(o)
+K4  return took
+DRAIN(o)          inside the caller's in-flight counter
+R1  read(h_fd) (non-blocking; -EAGAIN is fine)
+R2  if (load(o.A.h_pend, seq_cst) != 0) SIGNAL(o)
+ARM_H(o, l)
+H1  a = load(o.A.armed, seq_cst)
+H2  if ((a & HB(l)) != HB(l)) fetch_or(o.A.armed, HB(l), seq_cst)
+H3  atomic_thread_fence(seq_cst)
+
+WT(o, M, timeout) timeout != 0; l = lanes(M)
+T1  deadline = timeout == MTL_FOREVER ? NONE : now(CLOCK_MONOTONIC) + timeout
+T2  enter
+T3  c = the state's code for M; if none and ((o.A.intr | I.A.intr) & M): c = -MTL_ECANCELED
+    if (c) { leave; return c }
+T4  r = ATTEMPT(o, M) (mtl_wait: the ready subset); if (r >= 0) { sources; leave; return r }
+T5  CAS armed += ONE(l) (seq_cst); a lane at 32 767: goto T12
+T6  atomic_thread_fence(seq_cst)
+T7  v = load(o.A.wseq, acquire)
+T8  if (a code, an interrupt or P(o, M) != WAIT) { fetch_sub(armed, ONE(l), seq_cst); goto T3 }
+T9  if (deadline passed) { fetch_sub(armed, ONE(l), seq_cst); goto T12 }
+T10 futex(&o.A.wseq, FUTEX_WAIT_BITSET|FUTEX_PRIVATE_FLAG, v, deadline (absolute), bits(l))
+T11 fetch_sub(o.A.armed, ONE(l), seq_cst); if (deadline not passed) goto T3
+T12 r = DP(o, M) without its enter (mtl_wait: WAIT0 likewise); leave; return r
+
+WAIT0(o, M)       mtl_wait with timeout 0; l = lanes(M)
+Q1  enter; c = the state's code for M; if (c) { leave; return c }          handle untouched
+Q2  if ((o.A.intr | I.A.intr) & M) { leave; return -MTL_ECANCELED }        handle untouched
+Q3  R = the lanes of M that are READY; if (R) { leave; return R }
+Q4  hl = l & load(o.A.h_mask, acquire); if (!hl) { leave; return -MTL_EAGAIN }
+Q5  took = CONSUME(o, hl); ARM_H(o, hl)
+Q5a if ((load(o.A.intr, seq_cst) | load(I.A.intr, seq_cst)) & M) {
+        if (took) POST(o, took); else SIGNAL(o);   leave; return -MTL_ECANCELED }
+Q6  R = the lanes of hl whose P_lane != WAIT
+Q7  if (took & R) POST(o, took & R)
+Q8  leave; return R ? R : -MTL_EAGAIN
 ```
 
-Both fences are required: either the application sees PUBLISHED in step 4, or the completing context
-sees the waiter in step c. A release store followed by a seq_cst load is not enough;
-`mt_handle_guard.h:48-53` notes the same for its Dekker pair **[verified at HEAD]**. A litmus test
-with forced interleavings is part of G-52.
+The call's own sources: a reap that advanced `reap_seq` runs EVENT(o, ACQUIRE); a failed
+in-caller conversion, or submit's own flush (D-121), runs EVENT(o, RESULTS | ACQUIRE).
 
-Who arms: a WT call with a non-zero timeout arms its own target. A DP call (and a WT call with
-timeout 0) that returns `-MTL_EAGAIN` arms only the targets in the mask of an existing wait handle
-(§7.3), so an application that polls without a handle never causes eventfd writes, and one that
-waits on the handle is woken (D-88). `mtl_wait` returning `-MTL_EAGAIN` means "armed, block on the
-handle".
+**Why it is correct.** The `WaitHook` tests replay each step's counterexample, and the model job
+checks them (implementation-plan.md §8.2):
+- **The Dekker pair.** E2 against H3 and T6: either the waker's load sees the arm, or the
+  re-check sees the publish (`seq_cst` fences; `mt_handle_guard.h:48-53` notes the same pair). A
+  release store followed by a `seq_cst` load is not enough.
+- **WT calls.** `v` is loaded after the arm's fence and before the re-check. A wake that saw the
+  arm bumps `wseq` before `FUTEX_WAKE`, so either `futex_wait` compares the new value or the
+  waker finds the waiter queued.
+- **The handle.**
+  - A lane's pending bit is cleared only by a call that then re-arms and finds the lane empty,
+    or posts it again.
+  - A wake clears `H` only to post the lane.
+  - The descriptor is signalled whenever a lane is pending (every read is followed by a re-check
+    of `h_pend`).
+  - A call that finds nothing with nothing pending always resets it, so a stale signal costs one
+    spurious wake, never a busy loop.
+- **Lifetimes.**
+  - The words are never freed.
+  - Every wake and every AS write is inside the in-flight counter, after a check that the object
+    is not RETIRED; retire waits for the counter (§7.3).
+  - The ARM orderings are argued, not tested.
 
-**One `mt_wake()`** (D-102). Every completing context, the control plane and the interrupt path
-wake through one internal `mt_wake(session, target)`. What it does depends only on the calling
-context (§7.2); nothing in the API depends on it.
+**Who touches the handle.**
+- Only a call that finds nothing, on a target in the handle's mask, resets or arms it: `mtl_tx_acquire`,
+  `mtl_reap`, `mtl_rx_dequeue`, `mtl_read_events` (MS3) and, from MS2, `mtl_tx_acquire_slot` and
+  `mtl_tx_acquire_layout`, each with timeout 0 or in the final attempt of a timed-out call; and
+  `mtl_wait` with timeout 0.
+- A successful call never resets or arms it. It may signal it as a wake source (a reap that frees
+  result space). `mtl_tx_submit`, `mtl_release` and the getters only signal, and only as wake
+  sources.
+- An inline notify (`MTL_LATER`) never touches it.
+- Retire closes it.
+
+**One `mt_wake()`** (D-102). Every completing context, every source above, the control plane and
+the interrupt path wake through one internal `mt_wake(object, lanes)`. What it does depends only
+on the calling context (§7.2).
 
 ### 7.2 The deferred wake
 
@@ -1204,64 +1405,174 @@ A completing context never makes a syscall inside a tasklet handler (D-68):
 
 | Calling context | `mt_wake()` does |
 |---|---|
-| a tasklet (a scheduler in lcore or thread mode, the loop thread of a null-only instance) | sets the session's bit in its scheduler's pending bitmap and the bitmap word's bit in the summary word (two relaxed RMWs, only when a waiter is armed) |
-| the RX packet lcore (`USE_MULTI_THREADS`) | the same in its own bitmap, flushed by its own loop |
-| an application thread, a worker, the admin thread, the control plane | one non-blocking eventfd `write()` (Windows: `SetEvent`) |
+| a scheduler (lcore or thread mode) or the loop thread of a null-only instance | M1: marks the object, only when a waiter is armed (E4) |
+| the RX packet lcore (`USE_MULTI_THREADS`, task B3) | M1; after `rv_handle_frame_pkt` it takes `xchg(fired)` of its one session and runs WAKE_NOW; no bitmap |
+| an application thread, a worker, the admin thread, the control plane, a plugin thread | WAKE_NOW at once |
+| the test clock (`MTL_FAULT_CLOCK_ADVANCE`) | the null loop thread parks; ADVANCE marks like the loop and runs FLUSH with no bound before it returns, under the instance's test-clock lock |
 
-**The flush.** The scheduler loop `sch_tasklet_func` (`mt_sch.c:155-242`) calls the environment's
-wake flush hook (§4.11) once per iteration, after its handler loop (`:192-210`) and before the sleep
-check (`:211-213`) **[verified at HEAD]**. The flush exchanges the summary word with 0, visits only
-the flagged bitmap words, exchanges each with 0, and writes the eventfd of every flagged session
-once, however many units it completed in that iteration. Because the flush precedes the sleep
-check, a scheduler never sleeps on a pending wake, and the added latency is at most the rest of one
-iteration.
+**The flush.** Each scheduler calls the environment's wake flush hook (§4.11) once per iteration.
+In `sch_tasklet_func` (`mt_sch.c:155-242`) the call sits after the handler loop (`:210`), inside
+the `time_measure` window, and before the sleep check (`:211`); its return is added to `pending`.
+On loop exit the flush runs with no bound (after the `ops->stop` loop, `mt_sch.c:231-236`).
 
-**Layout.** One bitmap per scheduler (and per RX packet lcore), indexed by a per-scheduler session
-index, with the summary word on its own cache line. One 64-bit summary word covers 64 bitmap words,
-4 096 sessions, above the 1 656 sessions one scheduler can hold today (60 + 60 video, 512 + 1 024
-audio, `st_header.h:33-34`, `:48`, `:50`). Only tasklets of that scheduler write it, so no line
-bounces between pinned cores; a migration moves the session's index with the `ctl`/`ack` handshake
-(MS2).
+```text
+FLUSH(Lp)
+F1  if (load(Lp.L2, relaxed) == 0) return 0
+F2  n = 0; z = 0
+F3  for each set bit i of Lp.L0, ascending from Lp.cursor, wrapping once:
+F4      if (n >= 1 || z >= 32) { Lp.cursor = i; sched.wake_carried += the bits left; return 1 }
+F5      clear bit i (and its summary bits once their word is 0)
+F6      F = xchg(entry(i).B.fired, 0, acquire)
+F7      if (F) { if (WAKE_NOW(entry(i), F) > 0) n++; else z++ }
+F8  Lp.cursor = 0; return 0
+```
 
-**Cost.** The syscalls run on the pinned core, outside the handlers: at most one `write()` per
-armed session per iteration, ≈ 1–2 µs each with the waiter's core awake and 3–6 µs from a deep
-C-state (unverified; spike S1). They are counted per scheduler and reported with the backend's
-syscalls (§2.3).
+- **The bound is a count** (D-142): at most one woken object whose wake made a syscall per
+  iteration, and at most 32 objects whose wake had nothing to do.
+- **Objects beyond it** stay marked. Later completions merge into their `fired` lanes, and the
+  next flush resumes at the cursor, so an object marked with F others is woken within F
+  iterations. A return of 1 keeps the loop from sleeping.
+- **Counters:** `sched.wake_carried`, `sched.wake_syscalls` and `instance.wake_errors`.
+
+**Layout.**
+- One bitmap per scheduler and one for the null loop, indexed by the object's process-wide handle
+  index (65 536 bits), with two summary levels.
+- The loop's own thread is the only writer, using relaxed loads and stores; W3, if built, switches
+  to RMWs.
+- A completion by another scheduler's tasklet (a shared TX queue, §5.3) marks the object in that
+  other loop. `fired` is one word per object, so whichever loop flushes first takes every lane.
+
+**Cost** (S1 measures it).
+- Per completion: one fence and one load; when a waiter is armed, one RMW on line B and up to three
+  loop-local stores.
+- Per iteration with nothing marked: one load.
+- Per woken object: about 0.2 µs, plus one futex wake if a WT waiter is armed on a fired lane, plus
+  one eventfd `write()` if the handle is armed and nothing was pending.
+- A flush therefore stalls the pinned core by at most one object's wake (two syscalls). That fits
+  rate-limit pacing and TSC pacing at 1080p. At 2160p under TSC pacing it may not, so S1b decides
+  the slack gate or W3.
+- W2 fits while Σ(armed objects × unit rate) × the cost per wake ≤ 2 % of a core per scheduler,
+  about 13 k wakes/s. Above that, use W0, wake groups (D-142) or W3.
+- Waiting threads run on CPUs disjoint from the schedulers' ([deployment.md](deployment.md)):
+  otherwise the kernel's wake-affine placement can put a woken thread on a scheduler's CPU.
+- The waker does not pay the wakee's C-state exit, but the wake latency does (C6: about
+  100–300 µs on Xeon), so `info.expected_wake_latency_ns` comes from S1 per C-state policy.
 
 | Option | Cost on the tasklet side | Added latency | Use |
 |---|---|---|---|
-| W0 application busy-polls with timeout 0 | 0 | 0 | lowest latency; one application core per polling thread; the option to document for 125 µs audio packet times and for `MTL_UNIT_ROWS` (line mode) |
+| W0 application busy-polls with timeout 0, without a wait handle | 0 | 0 | lowest latency; the mode for 125 µs and 1 ms audio and for `MTL_UNIT_ROWS` (line mode) |
 | W1 application spins then sleeps with back-off | 0 | up to the back-off | fallback |
-| W2-deferred (the design) | fence + load per completion; a bit set when armed; one `write()` per flagged session per scheduler iteration, outside the handlers | ≤ one scheduler iteration plus the wake-up | every session, every mode, from MS1 |
-| W3 waker thread draining the same bitmaps (contingency) | fence + load; a bit set when armed | 10–70 µs p99 | built only if spike S1 shows that the deferred writes harm pacing; checked in MS2 (D-102) |
+| W2-deferred (the design) | a fence and a load per completion; a mark when armed; per iteration at most one object's wake | ≤ the marked objects' iterations plus the wake-up | every session, every mode, from MS1 |
+| W3 waker thread draining the same bitmaps (contingency) | as W2 without the flush | 10–70 µs p99 | built only by D-142's rules (MS2a) |
 
-W3 changes nothing but who flushes: an unpinned waker on a housekeeping CPU drains the same
-bitmaps, deadline-driven by a per-session `next_due_tsc`, with `PR_SET_TIMERSLACK` = 1, so the
-completing side and the API stay as they are. `info.expected_wake_latency_ns` states the latency
-(from S1).
+### 7.3 Wait handles, interrupts and close
 
-### 7.3 Wait handles and interrupts
+**The handle.**
 
-- `mtl_get_wait_handle(o, mask, &native)` (`mtl_session_get_wait_handle` on a session) returns the
-  object's one eventfd (Linux, counter mode) or auto-reset event (Windows), created with the
-  object, and records `mask` as the targets that DP calls arm (§7.1). Data calls on an
-  application thread drain the counter only when it was signalled (one non-blocking `read()`), so
-  level-triggered epoll does not spin; tasklets never drain. That read is the only syscall R6
-  allows in a DP call. The instance object has its own eventfd for instance events (§5.6).
-- `mtl_interrupt(o, mode)` (AS) takes the mode in bits 0–7 (`MTL_INTR_OFF`, `MTL_INTR_ON`,
-  `MTL_INTR_ABORT`) and an optional wait-target mask in bits 8–31 (`MTL_WAIT_*` << 8; 0 = every
-  target). `MTL_INTR_ON` sets a sticky flag per selected target and makes one eventfd write; while
-  set, every data wait with a timeout on a selected target returns `-MTL_ECANCELED` at once, so a
-  GStreamer `unlock` can interrupt acquire without making a reaper spin. On the instance
-  (`mtl_instance_interrupt(mt, 1)`) it sets one instance-wide flag, which every wait checks with one
-  relaxed load, and writes the instance interrupt eventfd that every WT wait polls (§7.1).
-- Close wins over interrupt; a waiter woken by both returns `-MTL_ESHUTDOWN`.
-- The AS path increments an in-flight counter, checks a `closed` flag, writes and decrements;
-  close waits for the counter before it closes the eventfd, so a late signal never writes into a
-  recycled descriptor (EK20).
-- Today `*_wake_block()` does not make `get_frame` return early: the predicate loop sleeps again
-  until the deadline (`st20_pipeline_tx.c:781-788`, SF-16), so shutdown takes up to the 1 s block
-  timeout.
+```text
+GET_WAIT_HANDLE(o, mask, &native)    CP
+G1  enter; CLOSING or RETIRED: leave, -MTL_ESHUTDOWN
+G2  the mask checks of contract.md §7.3
+G3  m = load(h_mask); if (m != 0 && m != lanes(mask)) { leave; return -MTL_EBUSY (WRONG_STATE) }
+G4  if (load(h_fd) == -1) { fd = eventfd(0, EFD_NONBLOCK|EFD_CLOEXEC);
+        failure: leave, -MTL_ENOSPC (DESCRIPTOR_LIMIT); if (!CAS(h_fd, -1, fd)) close(fd) }
+G5  if (!CAS(h_mask, 0, lanes(mask)) (release) && load(h_mask) != lanes(mask)) {
+        leave; return -MTL_EBUSY (WRONG_STATE) }
+    *native = h_fd; leave
+```
+
+- The descriptor is created on the first call, so a program that never asks for one uses none
+  (D-122). The first call fixes the mask.
+- The handle is readable while a lane is pending; misses reset it (§7.1).
+- A state code (`-MTL_ESHUTDOWN`, `-MTL_EIO`, `-MTL_ENODEV`) and an interrupt seen by `mtl_wait`
+  leave the handle as it is. It stays readable while they hold, so every thread asleep on it
+  learns of them: of a state code always, and of an interrupt, if every thread sweeping the handle
+  uses `mtl_wait` (contract.md §7.3).
+- Any number of threads may wait on one handle and make calls on its object, provided each thread
+  sweeps every target of the mask after each wake. Level-triggered, `EPOLLONESHOT` (re-armed after
+  the sweep) and `EPOLLEXCLUSIVE` qualify with any number of threads; edge-triggered with one
+  thread per handle.
+
+**Interrupts** (`mtl_interrupt(o, mode, targets)`; the checks and codes are contract.md §8.4's):
+
+```text
+INTERRUPT(o, mode, targets)
+N1  the mode and target checks (-MTL_EINVAL, -MTL_ENOTSUP), pure, without mtl_last_error
+N0' if (syscall(SYS_getpid) != load(mt_pid, relaxed)) return -MTL_EBADF       no table access
+N2  saved = errno                                               no TLS from here on
+N3  x = entry(o) (chunk acquire); a generation mismatch: errno = saved, return -MTL_EBADF
+N4  fetch_add(x.inflight, 1, seq_cst)
+N5  st = load(x.state, seq_cst); the generation changed: r = -MTL_EBADF, goto N12
+    a session CLOSING or RETIRED, an instance closing or closed: r = 0 (R4), goto N12
+N6  pm = targets ? targets : every target; OFF: fetch_and(x.A.intr, ~pm, release), r = 0, goto N12
+N7  fetch_or(x.A.intr, pm, seq_cst)
+N8  atomic_thread_fence(seq_cst)
+N9  WAKE_NOW(x, the interrupt lanes of pm) without W0/W6
+N10 an instance: WALK(x, pm)
+N11 ABORT: the instance's abort flag (§6)
+N12 fetch_sub(x.inflight, 1, release); errno = saved; return r
+WALK(I, pm)
+K5  h = load(session_table.hw, seq_cst)
+K6  for each entry e < h (chunk pointers acquire) with load(e.A.owner, seq_cst) == I's index:
+        if (load(e.A.armed, relaxed) & WC(F = the interrupt lanes of pm for e)) {
+            fetch_add(e.A.wseq, 1, release); futex(&e.A.wseq, FUTEX_WAKE_BITSET, INT_MAX, bits(F)) }
+```
+
+- **Waiters and the walk.** A WT waiter loads both `intr` words after its fence, so either it sees
+  the interrupt or the walk sees its count. An entry's `hw` and `owner` are stored (`seq_cst`)
+  before its handle is returned, so a walk that misses an entry cannot miss its waiter's view of
+  `I.A.intr`. The walk posts nothing to handles.
+- **Session handles.** An instance interrupt wakes WT calls and the instance's own handle (MS3),
+  not session handles. An event loop that must see it in MS1 waits on its own descriptor.
+- **Cost.** O(`hw`) loads (≤ 65 536), plus one RMW and one syscall per object with a WT waiter
+  (T8).
+- **AS-safety.**
+  - Atomics, raw `futex` and `write`; `errno` saved and restored; no TLS (no `mtl_last_error()`,
+    no debug class, no `mt_in_busy_loop`).
+  - Only never-freed memory is read. In a forked child the call returns at N0': `mt_pid` is
+    stored at the first instance open, before any handle exists.
+  - From MS2a MTL blocks asynchronous signals around `rte_eal_init` and in the threads it creates
+    on a direct open. A bridged instance keeps the legacy behaviour.
+- **Precedence.** Close wins over an interrupt.
+
+**Close and retire.**
+
+```text
+CLOSE(s):  STATE_CHANGE(CLOSING) wakes every lane; close then waits for the in-flight counter
+RETIRE(s)
+X1  store(s.state, RETIRED, seq_cst); atomic_thread_fence(seq_cst)
+X2  while (load(s.inflight, seq_cst) != 0) sched_yield()    data calls, wakes and AS calls
+X3  if (h_fd != -1) { close(h_fd); h_fd = -1 }
+X4  tombstone (§5.7); the wait words stay
+CREATE on a reused entry, before the handle is returned:
+Y1  advance the generation; armed, intr, h_pend, h_mask, fired = 0; h_fd = -1; kind;
+    owner (seq_cst); then the state RETIRED -> CREATED (release), last; hw (seq_cst) if it
+    grows. wseq and inflight are never reset.
+```
+
+**Timeouts.**
+- A timeout is a duration on `CLOCK_MONOTONIC`, turned into one absolute deadline at entry.
+  `FUTEX_WAIT_BITSET` takes it as is, so a TAI step or PTP loss never changes it.
+- Timer slack (50 µs by default) can lengthen a timeout; it never delays a wake.
+- DP, WT and AS calls are not cancellation points; a call with a timeout is not ended by
+  `pthread_cancel` (contract.md §7.1). A call with a timeout is ended with `mtl_interrupt`.
+- Neither `longjmp` out of any MTL call nor asynchronous cancellation of a thread inside one is
+  allowed.
+
+**Windows (from MS2a).**
+- `WaitOnAddress` loops on a QPC deadline. Sub-millisecond timeouts round up to 1 ms, and the 15.6
+  ms tick applies unless `timeBeginPeriod` is set.
+- `WakeByAddressAll` has no bitset: waiters of other lanes wake, re-check and sleep again.
+- The handle is a manual-reset event (`SetEvent`/`ResetEvent`). An auto-reset event would be
+  consumed by the application's own wait.
+- `WaitForMultipleObjects` takes at most 64 handles; a framework with more sessions uses
+  thread-pool waits.
+- The console control handler runs on its own thread.
+- In MS1 the unified library, its waits and its handles are Linux only.
+
+Today `*_wake_block()` does not make `get_frame` return early: the predicate loop sleeps again
+until the deadline (`st20_pipeline_tx.c:781-788`, SF-16), so shutdown takes up to the 1 s block
+timeout.
 
 ### 7.4 The RX due time
 
@@ -1406,7 +1717,7 @@ legacy `mtl_uninit` order is fixed too, as a bugfix (OI-3, MS1 task E1).
 | VF reset, device removal | not handled; `inf->resetting` only brackets `rte_tm_hierarchy_commit` (`dev/mt_dev.c:759-763`) | RMV, RESET and RECOVERY ethdev callbacks posted to the admin worker (EK14, MS3); `MTL_EVENT_PORT_RESET`, `MTL_EVENT_PORT_REMOVED`; a removed port fails calls with `-MTL_ENODEV` and still lets close succeed |
 | PTP loss | `locked`/`connected` never cleared (SF-20); `instance_in_reset` never set (SF-19) | lock state that clears, `MTL_EVENT_TIME_STATE` (E9, MS6) |
 | MtlManager death | no reconnect; `send()` may raise SIGPIPE (`mt_instance.c:15-32`) | `MSG_NOSIGNAL`, timeouts, `MTL_EVENT_MANAGER_LOST`, reconnect with re-registration (EK4, EK5: MS3; reconnect MS5) |
-| RX auto-detect | `rv_init_sw` on the tasklet (called at `st_rx_video_session.c:2839`, defined at `:2564`) | worker (MS6), with the same quiesce handshake as TX recovery; RX queue overflow while the worker re-allocates for the detected format is accepted (the packets of that transition are lost and counted) |
+| RX auto-detect | `rv_init_sw` on the tasklet (called at `st_rx_video_session.c:2839`, defined at `:2564`) | worker (MS6), with the same quiesce handshake as TX recovery; RX queue overflow while the worker re-allocates for the detected format is accepted (the packets of that transition are lost and counted); unified sessions: none, sized for the maximum at create (E14, MS3) |
 
 **The recovery verdict** (MS1, task E1, D-123). Until R1 moves it to a worker, recovery stays on
 the transmitter, but it no longer completes frames itself. Today it calls `tv_notify_frame_done`
@@ -1444,8 +1755,8 @@ G-99 test: flag off, wire identical to the baseline; flag on, the oracle passes.
 and every E-change passes the **legacy gate**: legacy KahawaiTest (mandatory level, `--pacing_way`
 default and `tsc`) and the acceptance smoke suite, plus a pcap diff for wire-visible changes.
 
-MF1–MF10 are the memory fixes; rows named by a word (ACC, CLOCK, DSCP, FPS, RELOCK, RTCP-SR,
-RXHDR, TPARSER, TROFFSET, TRUNCATE, UDW, WAKE) are the engine items of the bindings. The Risk column rates the E-changes
+MF1–MF10 are the memory fixes; rows named by a word (ACC, BRIDGE-TIME, CLOCK, DSCP, FPS, RELOCK,
+RTCP-SR, RXHDR, TPARSER, TROFFSET, TRUNCATE, UDW, WAKE) are the engine items of the bindings. The Risk column rates the E-changes
 only; the other rows are fixes or binding items. **When** is the milestone of
 [implementation-plan.md](implementation-plan.md) §1.2 that needs the item (E3: reporting MS3, the
 rest MS6; E8: arrival MS1, due time MS2, `media_index` inverse MS3, the rest MS6); "unnecessary"
@@ -1456,17 +1767,20 @@ stays listed so that nobody adds it again.
 |---|---|---|---|---|---|---|
 | E1 | media time and launch carried separately into `tv_*`; RTP from media time | metadata loss (PR #1610); ST 2110-10 RTP | `st_tx_video_session.c` `tv_sync_pacing` `:692`, `tv_update_rtp_time_stamp` `:762`; `st20_pipeline_tx.c:231-234` | plumbing on; RTP off (`ST20_TX_FLAG_RTP_FROM_MEDIA_TIME`) | medium: default video RTP is wire-visible | MS3 for ST20; the other essences with E6, E7, E13 |
 | E2 | exact rational epoch math, `floor` for RTP; the T0 formula; the RX inverse; one implementation for the engines and the core | double `frame_time` and round-to-nearest: ±1 tick at 1001 rates | `st_fmt.c:943-993`, epoch helpers | off (`*_TX_FLAG_EXACT_RTP`) | low; unit-testable; ±1 tick at 1001 rates, so legacy keeps its rounding without the flag (D-24) | MS1 stretch (task X), else MS3 |
-| E3 | admission reporting at pick-up: `DROPPED`/`LATE`, reasons, `margin_ns`, skipped slots; NEAREST hysteresis, `DUPLICATE_INDEX`, REBASE (the slot decision itself is the binding's from MS1, §4.13; bounded SEND_LATE is Phase 7) | "late" measured at the epoch boundary; silent fallback | `calc_frame_count_since_epoch` `:637-690`; `tx_st20p_if_frame_late` | reporting on | medium | MS3, MS6 |
+| E3 | admission reporting at pick-up: `DROPPED`/`LATE`, reasons, `margin_ns`, skipped indices; NEAREST hysteresis, `DUPLICATE_INDEX`, REBASE (the launch decision itself is the binding's from MS1, §4.13; bounded SEND_LATE is Phase 7) | "late" measured at the epoch boundary; silent fallback | `calc_frame_count_since_epoch` `:637-690`; `tx_st20p_if_frame_late` | reporting on | medium | MS3, MS6 |
 | E4 | enqueue and HW observed times per unit and leg; TX self-check counters | results carry `sent_tai_ns` | transmitters | on | low | MS3 |
-| E5 | linear read schedule for W/NL; TLINE/2 for the second field and PsF; pre-fill cap; SD constants from HEIGHT; gapped only on the ST 2110-21 §6.3.1 rasters | ST 2110-21:2022 §6.3.1, §7.1 (SF-34, SF-72, SF-73, SF-74) | `tv_init_pacing` `:494-519`; `st_rx_timing_parser.c:317-332` | off (`ST20_TX_FLAG_LINEAR_SCHEDULE`) | medium: a wire change, per sender type | MS6 (2022-6 RTP part: MS5, PE7) |
+| E5a | linear TRS for NL and W on the frame path and for 2022-6 on the RTP path, one implementation in `tv_init_pacing` (detail below the table) | ST 2110-21:2022 §6.4, §7.1.3-7.1.4; ST 2022-8 §6 (SF-34, SF-72, SF-73) | `tv_init_pacing` `:494-527`, `:3183` | off (`ST20_TX_FLAG_LINEAR_SCHEDULE`) | medium: a wire change, per sender type | MS5 (with PE7) |
+| E5b | TLINE/2 for the second field and PsF; pre-fill cap; SD constants from HEIGHT; the RX parser's linear and NL verdicts; removes the TLINE cap and the SD flag | ST 2110-21:2022 §6.3.3 (SF-74) | `tv_init_pacing` `:507-516`; `st_rx_timing_parser.c:317-332` | off (same flag) | medium | MS6 |
 | E6 | audio RTP from the sample index; integer `samples_per_packet`; launch offset; carry buffer; gap fill and overlap trim | RTP contiguity; SF-35 | `st_tx_audio_session.c` | off (`ST30_TX_FLAG_RTP_FROM_SAMPLE_INDEX`) | medium | MS4 |
-| E7 | ANC RTP from media time; packet j at `TFST + TEPO(j) + anc.target_delay_ns` (CTM/LLTM); keep-alive on underrun and per PsF segment; RTP packets of ≤ 1432 B payload; count checks | ANC spread over the frame period (`:1108`); SF-80 | `st_tx_ancillary_session.c:942-946`, `:1108` | off (`ST40_TX_FLAG_RTP_FROM_MEDIA_TIME`, `ST40_TX_FLAG_KEEPALIVE`) | medium | MS4 |
+| E7 | ANC TX for unit sources: wire records with launch offsets, TFST added at send, ≤ 16 RTP packets per call, the carrier, RTP from the meta; the transmitter bound; SF-87, SF-88 (detail below the table) | SF-80, SF-87, SF-88, head-of-line in the shared ring | `st_tx_ancillary_session.c:137-176`, `:529-710`, `:869-1161`; `st_ancillary_transmitter.c:73-90` | below the table | medium | MS4a2 |
 | E8 | RX per-leg arrival times; exact `media_index` inverse; due time and force-complete; stale units per unit (the relock is RELOCK); RTP offset and SENDER mode (Phase 7) | RX stalls at stop; per-leg skew | `st_rx_*` | on | medium: the due-time check is new code in every RX `tick` | arrival MS1; due time MS2; inverse MS3; the rest MS6 |
 | E9 | explicit time sources (PHC, FREERUN), lock state that clears, step events, published time base; the built-in client's ST 2059-2 gaps (BMCA, announce timeout, `time.ptp_domain`, one-step masters, the Sync interval, the UTC offset) | H7; SF-20, SF-21, SF-82 | `mt_ptp.c`, `dev/mt_dev.c:1597-1614` | on (publication gated by S7) | medium | MS6 (MS1 has CLOCK) |
 | E10 | ST22 `rate_mode`: CBR (constant bytes and packets per frame) or VBR_MAX; synchronous oversize check (`-MTL_ENOSPC`) | ST 2110-22 requires CBR | `st_tx_video_session.c:2467-2485`, `:750-757` | VBR_MAX unchanged (`ST22_TX_FLAG_CBR`); unified CBR | medium | MS4b (with cvideo) |
 | E11 | dynamic ST20/ST22 frame arrays; RX frames ≥ pool_count + slot_max | `ST20_FB_MAX_COUNT` = `ST22_FB_MAX_COUNT` = 8, the ST22 cap at TX `st_tx_video_session.c:4189` and RX `st_rx_video_session.c:4403` (other essences below) | `include/st20_api.h:24`, `:29`; `st_tx_video_session.c:4073`; `st_rx_video_session.c:4266` | legacy ops keep the limit (ABI constant) | medium | ST20 MS2; ST22 MS4 |
-| E12 | ST40 RX meta array beyond `ST40_MAX_META` = 20 | 255 ANC packets per unit | `include/st40_api.h:308` | legacy keeps the limit | low | MS4 |
+| E12 | ANC RX for unit sinks: payloads into the slot's wire area, records indexed by sequence distance, a bitmap per in-flight record, the two-leg gap wait, the drops (detail below the table) | 255+ ANC packets per unit; 2022-7 at any unit size | `st_rx_ancillary_session.c:111-422`, `:540-560`, `:907-933`; `st_header.h:1135-1159`, `:1208` | legacy unchanged (20 entries) | low | MS4a2 |
 | E13 | fastmeta rate from the video or explicit, launch offset, index parity | RTP from media time | `st_tx_fastmetadata_session.c:206-234` | off (`ST41_TX_FLAG_RTP_FROM_MEDIA_TIME`) | low | MS6 |
+| E14 | RX detection for unified sessions: sized for the maximum at create, O(1) per packet on the main leg, the rate of timing.md §11.9, contract.md §3.3's published-format check, no allocation (below the table) | the legacy detector (SF-84), H5 | `rv_handle_detect_pkt` `:2728-2857`, `rv_detector_*` `:37-180`, `rv_init_sw` | off: an ops flag the unified binding sets (D-24) | medium | MS3 |
+| E15 | the RFC 4175 ↔ V210 kernels (scalar and AVX-512) convert a partial last 6-pixel group, so the row loop (`st_convert.c:151-157`, `:353-358`) writes rows of ((w + 47) / 48) × 128 B at any width | V210 at widths that are not a multiple of 48 has no row layout (below the table) | `st_convert.c` | the legacy contiguous layout stays for legacy ops | low | MS2a |
 | R1 | the recovery verdict: in-flight units `DROPPED/RECOVERY`, published by the last PMD reference; two alternating `sh_info` per frame (§10); then recovery on a worker | H4; SF-12, SF-41 | `st_tx_video_session.c:4231-4332`, `:235-237`; `st_video_transmitter.c:681`; `st_tx_audio_session.c:2718-2776` | on | — | verdict MS1 (E1); attached memory MS3 (S8); worker MS6 |
 | R2 | exactly-once `notify_frame_done` for legacy callbacks: core sessions by the completion CAS, the legacy pipelines when they become wrappers on the core | SF-05, SF-38, SF-39 | `st20_pipeline_tx.c`, `st_tx_video_session.c` | on | — | MS1 for core sessions; MS2 for st20p, MS4 for the other pipelines (their re-base) |
 | MF1 | `tv_frame_free_cb`: CAS claim, decrement `refcnt` and clear `addr/iova` before any completion | re-arming from the callback fails or loses its address; double report with recovery | `st_tx_video_session.c:116-141`; `st20_pipeline_tx.c:264-276` | on | — | MS1 (task E1, unless PR #1770 landed) |
@@ -1501,26 +1815,57 @@ stays listed so that nobody adds it again.
 | EK20 | process-wide, never-freed handle slots with a CLOSED_BY_INSTANCE state; the AS in-flight counter for interrupt and abort | R4, use after close | `lib/src/st2110/core/` (the handle table, §5.7) | unified only | — | MS1 (task C1a) |
 | EK21 | shutdown counts the unread results it discards (`results_discarded`); delivery to dispatch threads comes with shared queues (`MTL_LATER`) | lossless shutdown | `lib/src/unified/`, the core's reaper | unified only | — | MS3 |
 | ACC | `st_engine_core.h` (§4.12): RX frame put from the tasklet, recovery verdict, per-leg arrival, TX TOS; packet bitmap, "last packet handed"; RTP sequence seed | no other engine internals | `st_rx_video_session.c:222-232`, `:1293-1294`, `:1299`; `st_tx_video_session.c:945`, `:2130-2134`, `:4290-4301` | internal | — | MS1 (the first four); MS2 (bitmap, last packet); MS5 (seed, OI-62) |
-| WAKE | the wake flush call in the scheduler loop, between the handler loop and the sleep check (§7.2); the same in the RX packet lcore loop | no syscall inside a handler (D-68) | `mt_sch.c:192-213`; `st_rx_video_session.c:2470-2482` | internal | — | MS1 (task C1b) |
-| CLOCK | the instance clock (`CLOCK_TAI`, else SYSTEM_TAI) installed as the engine's time function (§4.13) | the binding's slot math and the engine read one clock | `dev/mt_dev.c:2280-2290`, `:1603-1608` | unified instances only | — | MS1 |
+| WAKE | the wake flush call in the scheduler loop, between the handler loop and the sleep check (§7.2); the same in the RX packet lcore loop | no syscall inside a handler (D-68) | `mt_sch.c:192-213`; `st_rx_video_session.c:2470-2482` | internal | — | MS1 (task C1w; the RX packet lcore: B3) |
+| CLOCK | the instance clock (`CLOCK_TAI`, else SYSTEM_TAI) installed as the engine's time function (§4.13) | the binding's index math and the engine read one clock | `dev/mt_dev.c:2280-2290`, `:1603-1608` | unified instances only | — | MS1 |
 | DSCP | `mtl_flow.dscp` and `ttl` into the TX header templates; `setsockopt(IP_TOS)` on the kernel-socket backend (§2.7) | TOS 0 everywhere today | `st_tx_video_session.c:945`; `st_tx_audio_session.c:165`; `st_tx_ancillary_session.c:225`; `st_tx_fastmetadata_session.c:168`; `datapath/mt_dp_socket.c:212` | legacy default 0 = today's wire | — | video MS1 (task B1); the others MS4 |
 | TRUNCATE | a `query_frame_lines_ready` return code that ends the frame after the rows handed over (about 30 lines, §4.14) | `MTL_ROWS_TRUNCATE`; a stopped producer stalls the session today | `st_tx_video_session.c:2018-2031` | legacy callers never return it | — | MS2 |
-| TROFFSET | `tx.troffset_ns` replaces the TR offset table, with VRX0 ≤ floor(TROFFSET / TRS) for every sender type (§4.14) | gateway latency; the narrow VRX is uncapped today | `st_tx_video_session.c:505-517`, `:554`, `:565-597` | legacy keeps the table | — | MS2 |
+| TROFFSET | `sc.video.troffset_us` replaces the TR offset table, with VRX0 ≤ floor(TROFFSET / TRS) for every sender type (§4.14) | gateway latency; the narrow VRX is uncapped today | `st_tx_video_session.c:505-517`, `:554`, `:565-597` | legacy keeps the table | — | MS2 |
 | RELOCK | ST 2022-7 RX relocks only on a lag above `rx.skew_budget_ns` worth of ticks or with every enabled leg stale; ceil(skew_budget / TFRAME) + 1 slots, else `info.tolerated_skew_ns` and a warning | today's rule is blind to skew (SF-71) | `st_rx_video_session.c:1187-1197`, `:1634-1640`, `:704-707`; `st_header.h:39` | legacy keeps today's rule | — | `tolerated_skew_ns` MS1 (B2); the rule MS2 |
-| FPS | any frame rate: the engines take `enum st_fps`, so a rational outside that table is `-MTL_ENOTSUP` until the table changes | `raster.fps` is rational | `include/st_api.h:59-72` | legacy keeps the enum | — | MS4 |
+| FPS | any frame rate: internal create entries taking `struct st_fps_timing`, `_tm` variants of the three bandwidth helpers, logs and USDT periods from `fps_tm` (§4.16, below the table) | `raster.fps` is rational; 47.95/48 have no table row | `include/st_api.h:59-72`; the sites of §4.16 | legacy keeps the enum and its entries | — | video MS2a (C-FPS); fastmeta MS4a1, ANC MS4a2; cvideo MS4b |
+| BRIDGE-TIME | `ptp->master_results`, a never-cleared counter of master-derived results, read by the wrapper's time thread; `time_kind`; the wrapper list (detail below the table) | SF-20 seen through a wrapper without changing legacy | `mt_ptp.c`, `mt_main.h` (`struct mt_ptp_impl`) | legacy unchanged | — | MS2a (C-BRIDGE) |
 | RTCP-SR | RTCP sender reports on TX, driven by options, with a library-built Info Block | the TX RTCP path sends and parses only NACK (PT 204) today | `mt_rtcp.h:10`, `mt_rtcp.c:214`, `:393` | — | — | MS5 |
 | RXHDR | RX skips the CSRC list and an RFC 8285 extension (CC, X); video RX parses three SRDs and places each by its own row and offset | SF-68 (ST 2110-10 §6.2; IPMX carries extensions); SF-76 | `st_rx_video_session.c:1570-1585`, `:1799-1826`; audio, ANC and fastmeta RX (SF-68) | on (legacy bugfix, D-24) | — | video MS2; audio, ANC and fastmeta MS4 |
-| TPARSER | RX timing parser on RP 2110-25: N rounded, TVD from `rx.troffset_ns` (else TRODEFAULT), VRX underflow and missing, margin, gap; the NL verdict and linear checks | SF-81 | `st_rx_timing_parser.c:21`, `:42-44`, `:72-137`; `include/st20_api.h:528-529` | legacy keeps its verdicts | — | task B3, else MS2; NL and linear with E5 (MS6) |
-| UDW | 10-bit UDWs in the ANC encoder and decoder (8-bit stays the legacy default); a bad ANC packet is counted and skipped when its data count is sound, the parse stops at `ANC_Count`, no log line on the tasklet | ST 291-1 §6.6 (SF-78); SF-79 | `st_ancillary.c:234`, `:270-271`; `st_rx_ancillary_session.c:218-233` | 8-bit kept; the parse fix on (legacy bugfix) | — | MS4 |
+| TPARSER | RX timing parser on RP 2110-25: N rounded, TVD from `sc.video.troffset_us` (else TRODEFAULT), VRX underflow and missing, margin, gap; the NL verdict and linear checks | SF-81 | `st_rx_timing_parser.c:21`, `:42-44`, `:72-137`; `include/st20_api.h:528-529` | legacy keeps its verdicts | — | task B3, else MS2; NL and linear with E5b (MS6) |
+| UDW | the unified bindings encode at submit and decode at dequeue with `mtl_anc_rfc8331_encode/_decode` (one implementation with packet-unit applications): 8-bit, 10-bit, RAW; legacy sessions and st40p keep `st40_rfc8331_*` on the tasklet | ST 291-1 §6.6 (SF-78); SF-79 | `st_ancillary.c:210-283` | legacy unchanged | — | MS4a2 |
 | PE1 | one shared chunk expander on the TX tasklet (header mbufs plus extbuf attaches per slot, one `shinfo` per chunk whose `free_cb` completes the chunk) feeding each TX engine's existing RTP ring, about 10 lines per engine where it dequeues `packet_ring` (§3.1) | packet units (§12.4) | `st_tx_video_session.c:1295`, `:1706` (the frame chain pattern) | — | — | MS5 |
 | PE2 | explicit unit end; per-unit packet accounting; field parity from the unit index | §12.4 #3 | `st_tx_video_session.c:1392-1410` | — | — | MS5 |
 | PE3 | media time and launch into the RTP-mode pacing sync (shared with E1) | §12.4 #2 | `st_tx_video_session.c:1410`; `st_tx_audio_session.c:992` | — | — | MS5 |
 | PE4 | ST40/ST41 RTP TX: sync before the gate | §12.4 #4 | `st_tx_ancillary_session.c:1208-1221`, `:752`, `:816`; `st_tx_fastmetadata_session.c:956` | — | — | MS5 |
 | PE5 | ST40 chain pointer and byte-order paths | §12.4 #5 | `st_tx_ancillary_session.c:805-807`, `:739-741` | — | — | MS5 |
 | PE6 | RX: reference before enqueue, dedup bit after enqueue, `last_pkt_idx` reset (SF-69), a past-timestamp guard; the same order in ST30/40/41 | §12.4 #7–#9 | `st_rx_video_session.c:1924`, `:1962-1969` | on (legacy bugfix, D-24) | — | MS1 for SF-69 (the reorder counter of the MS1 stats); the rest any time, at the latest MS5 |
-| PE7 | a per-session RTP packet size limit, `session.max_udp_payload` (1452 B by default, up to the port MTU − 28 for `MTL_RTP`), instead of the fixed 1352 B: ST 2022-6 packets are 1396–1456 B (ST 2022-6 §6.2–§6.5); the RX data room from the limit; the 2022-6 linear schedule (below the table) | §12.4 #1; SF-77 | `mt_util.h:19-24` and its callers (SF-77); `dev/mt_dev.c:1367` | — | — | MS5 |
+| PE7 | a per-session RTP packet size limit, `sc.max_udp_payload` (1452 B by default; TX default `instance.max_udp_payload`; up to the port MTU − 28 for `MTL_RTP`), not the fixed 1352 B: ST 2022-6 packets are 1396–1456 B (ST 2022-6 §6.2–§6.5); the RX data room from the limit; the 2022-6 linear schedule | §12.4 #1; SF-77 | `mt_util.h:19-24` and callers; `dev/mt_dev.c:1367` | — | — | MS5 |
 | PE8 | ST41 RX: dedup threshold counter, duplicates not errors, DIT and K filters | §12.4 #14 | `st_rx_fastmetadata_session.c:159-168`, `:228-229` | — | — | MS5 |
 | PE9 | legacy only: validate power-of-two ring sizes and ST22 `rtp_frame_total_pkts`; fix the `notify_rtp_done` doc; TX RTCP chain offset | §12.4 #6, #10, #11 | `st_tx_video_session.c:3012-3015`, `:4208-4221`; `mt_rtcp.c:41-43` | on (legacy bugfix) | — | any time (legacy bugfix), at the latest MS5 |
+
+**Rows in detail.**
+
+- **E5a**: linear TRS (RACTIVE = 1, TRODEFAULT as gapped) for NL and W on the frame path and for
+  2022-6 on the RTP path, one implementation in `tv_init_pacing`; it keeps W's bursts within NL's
+  CMAX at ≥ 900 k packets/s; RL warm-up off and the RL rate checked against frame-to-frame drift;
+  RACTIVE a parameter (Phase 7: height/vtotal).
+- **E7**: for unit sources, send wire records (header from the template, payload copied into the
+  chain mbuf) with their launch offsets, TFST added at send, up to 16 RTP packets per call, the
+  carrier, RTP from the meta; the shared-queue transmitter drains at most max(`max_idx`, 32)
+  packets per call in a manager with unified sessions; for every session the planner's exact count
+  (SF-87) and the pre-check of every entry (SF-88). Legacy: only the SF-87 and SF-88 bugfixes,
+  byte-identical otherwise, the transmitter count unchanged without unified sessions.
+- **E12**: for unit sinks, copy payloads into the core slot's wire area with records indexed by
+  sequence distance, a bitmap of `max_packets` + 2 bits per in-flight record, the two-leg gap
+  wait, after-marker and F = 01 drops, the PsF end rule.
+- **E14**: per packet O(1) on the main leg: width = largest SRD offset + length / pgroup size ×
+  coverage, height = (largest row + 1) × 2 with the F bit, scan (F bit; PsF when both segments
+  share one RTP timestamp, ST 2110-10 §7.6.1, §7.6.4), packing as today; the published-format check
+  and hysteresis of contract.md §3.3; field updates only. Legacy unchanged.
+- **E15**: V210 at widths that are not a multiple of 48 (1280, DCI 2048, DCI 4096) has no row
+  layout (`st_fmt.c:559-565`); the kernels need `pg_count % 3 == 0` (`st_convert.c:1763-1767`);
+  `xfail.py:15-28`.
+- **FPS**: internal create entries taking `struct st_fps_timing` (`st20_tx_create_timed`,
+  `st20_rx_create_timed`; fastmeta in MS4a1, ANC in MS4a2), `_tm` variants of the three bandwidth
+  helpers, logs and USDT periods from `fps_tm` (§4.16).
+- **BRIDGE-TIME**: `ptp->master_results`, a never-cleared counter of master-derived results
+  (`ptp_parse_result`, `mt_ptp.c:748`), read by the wrapper's time thread; `time_kind` in
+  `struct mt_interface` (atomic, set beside each `ptp_get_time_fn` assignment); `impl->wrappers`
+  and `wrapper_mutex` (E1, MS1).
 
 PE1–PE9 are the packet-unit fixes (the requirements they serve are
 [requirements.md §3.3 and §4.5](requirements.md)); PE6 and PE9 are legacy bugfixes and may land at
@@ -1534,7 +1879,7 @@ a 2022-6 stream:
   2022-6 packet (+ 8 UDP, 20 IPv4, 14 Ethernet). The frame fits today only because
   `mt_mempool_create_by_ops` rounds the element size up to a multiple of the 128-entry cache
   size, so the room is 1536 B (`mt_util.c:539-540`) **[verified]**. PE7 sizes the room from
-  `session.max_udp_payload` instead. A frame above 1536 B (only under the Extended UDP Size
+  `sc.max_udp_payload` instead. A frame above 1536 B (only under the Extended UDP Size
   Limit) arrives split over two mbufs where the PMD scatters **[inferred]**, and video frame RX
   drops multi-segment packets (`st_rx_video_session.c:1621-1626`).
 - **RX keys.** The RTP-level video RX opens a slot per RTP timestamp (`rv_rtp_slot_by_tmstamp`,
@@ -1545,10 +1890,9 @@ a 2022-6 stream:
   RTP sequence alone.
 - **TX pacing.** The RTP-level video TX paces with the gapped ST 2110-20 schedule: the TRS is
   TFRAME × RACTIVE / `rtp_frame_total_pkts` with RACTIVE = 1080/1125 (`st_tx_video_session.c:3183`,
-  `:502-519`), and ST 2022-8 §6 forbids that for 2022-6. The linear schedule is E5's (MS6), so
-  PE7 (MS5) depends on it. The plan moves the part 2022-6 needs into MS5 with PE7: a linear
-  TRS = TFRAME / packets per frame on the video RTP path, behind `MTL_RTP_LINEAR`. W, NL and
-  the frame path keep E5's schedule (MS6).
+  `:502-519`), and ST 2022-8 §6 forbids that for 2022-6. The linear schedule is E5a's, which
+  lands in MS5 with PE7: one implementation for NL and W on the frame path and for 2022-6 on the
+  video RTP path (TRS = TFRAME / packets per frame there, behind `MTL_RTP_LINEAR`).
 
 The frame-level engines are not affected: they never build an RTP packet above 1452 B. The
 Ethernet frame is capped at a 1460 B UDP datagram by `ST_PKT_MAX_ETHER_BYTES` (`st_pkt.h:90`;
@@ -1579,12 +1923,12 @@ Audio, ANC and fastmeta have no engine frame cap (only `framebuff_cnt ≥ 1`, fo
 `st_tx_audio_session.c:2667`), so they report the lease-encoding bound (the 16-bit slot field) as
 `max_count`.
 
-Order: in MS1 MF1, MF7 and R1's verdict (task E1), WAKE (C1b), CLOCK, DSCP and the MS1 ACC entries
-(B1, B2), E8's arrival and E2 if task X lands, TPARSER with task B3; in MS2 E8's due time, E11
-for ST20, TRUNCATE, TROFFSET, RELOCK, RXHDR for video, TPARSER unless B3 landed and the MS2 ACC
-entries; then E1, E2 (unless done), E3 reporting and E4 (MS3); E6, E7, E10 (MS4b), E11 for ST22, E12, FPS,
-UDW and RXHDR for audio, ANC and fastmeta (MS4); RTCP-SR, the PE rows and, with PE7, the linear
-schedule of the video RTP path (MS5); and E5, E9, E13 (MS6). EK1, EK2, EK6, EK7 first among the pod
+Order: in MS1 MF1, MF7 and R1's verdict (task E1), WAKE (C1w), CLOCK, DSCP and the MS1 ACC entries
+(B1, B2), E8's arrival; in MS2a E2 and TPARSER if the stretch tasks X and B3 were written; in MS2 E8's due time, E11
+for ST20, TRUNCATE, TROFFSET, RELOCK, RXHDR for video, TPARSER unless B3 did and the MS2 ACC
+entries; FPS for video, BRIDGE-TIME and E15 (MS2a); then E1, E2 (unless done), E3 reporting, E4
+and E14 (MS3); E6, E7, E10 (MS4b), E11 for ST22, E12, FPS, UDW and RXHDR for audio, ANC and
+fastmeta (MS4); RTCP-SR, the PE rows and, with PE7, E5a (MS5); and E5b, E9, E13 (MS6). EK1, EK2, EK6, EK7 first among the pod
 fixes (MS3): they remove a use-after-free, CPU theft between pods and a crash loop on a valid
 configuration.
 
@@ -1593,7 +1937,7 @@ configuration.
 | Spike | Question | Gates |
 |---|---|---|
 | S0 | today's tasklet iteration p99.99/max, call costs, completion latency, sessions per scheduler (`MTL_FLAG_TASKLET_TIME_MEASURE`; RxTxApp `--tasklet_time`, RL and TSC, average and maximum) | the performance budgets (implementation-plan.md §8.4); the scheduler-iteration term of the pick-up lead (§4.13); run by the main session in MS1 week 1, its data needed before task E1 merges |
-| S1 | the cost of the deferred wake writes on a pinned core (iteration time and packet timing with 64 or more armed sessions per scheduler, at 125 µs and 1 ms unit periods); wake latency (p50/p99/p99.9) and CPU % for W0, W2-deferred and W3, waiter awake and in C6 | whether W3 is built (MS2a, D-102), and then the shared queues are reconsidered for MS6 (OI-66); `info.expected_wake_latency_ns` |
+| S1 | MS2a: S1a, the costs of the wake, the flush and the walk, and wake latency; S1b, pacing compliance under wake load (below the table). Pass: ST1–ST9 (below the table) | the slack gate; W3 per pacing class or for guests; wake groups (MS4a); `info.expected_wake_latency_ns` (D-142) |
 | S4 | explicit `rte_dev_dma_map` per device on E810 VF/PF with VFIO; PA mode; memfd pinning; page-alignment behaviour | MF2, regions (MS2; contract.md §9.2, deployment.md §1.1) |
 | S5 | TSC-at-`tx_burst` vs HW TX timestamp; what TSN launch gives | E4 (MS3); `MTL_TXR_SENT_HW` |
 | S6 | rate and cost of `rte_eth_tx_done_cleanup` while idle; effect on pacing; iavf/ice `tx_rs_thresh`/`tx_free_thresh`; TSQ behaviour | idle cleanup (its smallest form in MS1 task E1, the measured rate before MS2); `completion_latency_ns` |
@@ -1602,6 +1946,44 @@ configuration.
 | SP-PKT | per-packet tasklet cost of extbuf attach plus a header mbuf against today's RTP level at 1080p59.94 and 2160p59.94, two legs; RX copy cost on the application thread; chunk size 8–128 against pacing jitter | PE1 (MS5) |
 | no-IOMMU DMA after SIGKILL | in no-IOMMU mode with anonymous hugepages, can the VF still DMA into pages freed after SIGKILL | the no-IOMMU refusal rationale (EK8, MS3, [deployment.md](deployment.md)) |
 | PHC–TAI agreement bound | the agreement bound between the PHC and `CLOCK_TAI` at start | `time.phc_trust` absent (detect) ([deployment.md](deployment.md)) |
+
+**S1** (MS2a). S1a: per-call cost of the eventfd `write` and `read` and of `FUTEX_WAKE_BITSET` (0,
+1, 4 waiters; wakee running, C1E, C6; bare metal and a KVM guest); the flush for 1–512 marked
+objects under the count bound; wake latency with the waiter's CPU disjoint and overlapping; the
+instance walk at 64–65 536 entries. S1b: ST 2110-21 narrow compliance, CMAX, VRX and launch offset
+with the timing parser, TSC and RL, 1080p59.94 and 2160p59.94 at quota, W0 against W2, with a
+synthetic wake load (64/256/512 objects at 1 ms and 125 µs; a debug fault, `MTL_FAULT_WAKE_LOAD` =
+14, added to `mtl_debug.h` in MS2a), also in thread mode; involuntary context switches.
+
+**S1 thresholds:**
+
+| # | Metric | Pass |
+|---|---|---|
+| ST1 | per-call cost on the pinned core | bare metal p99.9 ≤ 2 µs, max ≤ 10 µs; `FUTEX_WAKE` with no queued waiter p99.9 ≤ 0.5 µs; guest reported |
+| ST2 | flush time per iteration, N = 1–512 marked | max ≤ 2 × ST1 max + the bitmap scan; the last object woken within N iterations |
+| ST3 | iteration time | avg ≤ S0 + 2 %; **max ≤ S0 max + one object's wake (ST1 max)**; p99.99 ≤ W0's + 2 µs |
+| ST4 | **the gate: pacing** | ST 2110-21 narrow compliance unchanged against W0; CMAX and VRX_FULL peaks ≤ W0; launch offset p99.99 ≤ W0 + 1 µs |
+| ST5 | wake latency | W2 p99 ≤ 10 µs with one object marked per iteration at ≤ C1E; with N marked ≤ 10 µs + N × the iteration p99; C6 reported as `info.expected_wake_latency_ns`; W3 p99 ≤ period / 10; N sessions completed in one iteration: the k-th waits about k × (one iteration + one wake) |
+| ST6 | involuntary context switches of every scheduler thread | 0, overlapping affinity and thread mode included |
+| ST7 | wake rate | W2 flush time ≤ 2 % of a core per scheduler at the target load; W3 ≥ N × f at ≤ 50 % of its CPU |
+| ST8 | the instance walk | ≤ 2 ms at 65 536 entries + 3 µs per waiting object |
+| ST9 | no waiter, no handle | 0 futex and 0 eventfd syscalls over 10^6 units; 0 syscalls in a W0 loop without a handle |
+
+**S1 decision rules (D-142):**
+
+- **SR1.** The count bound is on from MS1.
+- **SR2.** If the guest's ST1 p99.9 is above 5 µs, W3 is the default in guests (MS2a).
+- **SR3.** If ST4 or ST3 fail for a pacing class, first build **the slack gate**. TSC tasklets store
+  their minimum `target_tsc − now` into the scheduler (about 10 lines, `st_video_transmitter.c`),
+  and the flush carries when the slack is below ST1's p99.9. Only if ST4 still fails is W3 built for
+  that class. If ST6 fails, disjoint affinity becomes a deployment rule first, then W3.
+- **SR4.** If ST7 or W3's ST5 fail, wake groups come next (MS4a), in their smallest form:
+  - an option `session.wait_group`;
+  - sessions of a group share the handle half of one wait line, so the flush makes one signal per
+    iteration for the whole group (the 0 → non-0 rule already coalesces);
+  - the application sweeps every session of the group after each wake;
+  - no ready list and no new function.
+- **SR5.** `mtl_queue_*` comes only for framework needs (MS6).
 
 No spike de-risks the core itself: the bindings use the engines' existing callbacks, so there is no
 new engine interface to try first. The costs the core adds (the 208-B `struct mtl_unit` copy per
@@ -1632,7 +2014,7 @@ How PE1–PE8 carry `MTL_UNIT_PACKETS` (MS5; the API rules are
   (refcount + 1), rewrites L2–L4 only, so the RTP bytes are identical by construction; the copy path
   copies once per leg. A disabled or down leg is skipped and counted (D-59).
 - **Stamping** (`sc.packet.set_fields`) runs on the tasklet where L2–L4 are written (a few stores
-  per packet), because under `MTL_MEDIA_AUTO` the slot, hence the RTP, is known only at pick-up; it
+  per packet), because under `MTL_MEDIA_AUTO` the launch index, hence the RTP, is known only at pick-up; it
   is written before leg duplication. Packets are counted per unit at submit (O(1) on the
   application thread); slot contents are read on the tasklet.
 
@@ -1728,7 +2110,7 @@ so each needs a reproducing test before a fix; the same holds for any row whose 
 | SF-31 | instance calls without a NULL check | `mt_main.c:700-758` | open | unit |
 | SF-32 | unregister from a tasklet sleeps 1 s and fails; plain `bool` handshake | `mt_sch.c:873-923`, `mt_main.h:476-477` | open | unit |
 | SF-33 | header split cannot be built on DPDK 26.07 | `versions.env:1`, `patches/dpdk/` | open (header split RX is cut, [coverage.md](coverage.md)) | build |
-| SF-34 | `ST21_PACING_WIDE` and the RX parser use the gapped schedule | `tv_init_pacing`; `st_rx_timing_parser.c` | open (E5, MS6) | measurement |
+| SF-34 | `ST21_PACING_WIDE` and the RX parser use the gapped schedule | `tv_init_pacing`; `st_rx_timing_parser.c` | open (E5a, MS5) | measurement |
 | SF-35 | `ST31_PTIME_80US` drifts +4.17 %: 4 (8) samples at 48 (96) kHz every 80 000 ns, where ST 2110-31 Table 1 gives a packet every 83⅓ µs | `st_fmt.c:1111-1113`, `:1172-1174`, `:1197-1199`; `st_tx_audio_session.c:207-211` | #1770 | unit |
 | SF-36 | kernel-socket `update_destination` does not redirect GSO | `datapath/mt_dp_socket.c:236`, `:148` | #1770 | integration |
 | SF-37 | `update_destination` leaves the RTCP TX header stale | `st_tx_video_session.c:1023-1025` | open (§6, MS5) | unit |
@@ -1766,9 +2148,9 @@ so each needs a reproducing test before a fix; the same holds for any row whose 
 | SF-69 | frame-mode RX reorder counter inflated: `slot->last_pkt_idx[]` is reset at init, not when `rv_slot_by_tmstamp` reuses a slot, and only rises: from the third frame on nearly every packet counts as reordered (the `leg.pkts_reordered` stat of MS1) | `st_rx_video_session.c:3254-3255` vs `:1226-1236`; `:1770`, `:1731` **[verified at HEAD]**; effect **[inferred]** | open (PE6, MS1) | unit |
 | SF-70 | RX source filter (#1239) not enforced on the DPDK PMD path: the multicast flow rule matches the group only and no RX handler checks the source (kernel socket: `IP_ADD_SOURCE_MEMBERSHIP`; native AF_XDP not checked) | `mt_flow.c:127-136`; `st_rx_video_session.c:3035`, `:3098`; `mt_socket.c:441-446` **[verified at HEAD]** | open: software check | integration |
 | SF-71 | video RX does not relock onto a backward RTP step: a past packet resets the per-leg `redundant_error_cnt` a relock needs, so both legs drop every packet until the new timestamps pass the old ones, as long as the step lasts | `st_rx_video_session.c:1187-1197`, `:1634-1640` **[verified at HEAD]**; effect **[inferred]** | open (RELOCK, MS2) | unit |
-| SF-72 | `ST21_PACING_LINEAR` (type NL) is read nowhere in `lib/`: NL is paced as N while the application signals `TP=2110TPNL` (ST 2110-21 §7.1.3) | `include/st20_api.h:314`; only WIDE is tested, `st_tx_video_session.c:594` **[verified at HEAD]** | open (E5, MS6; until then `MTL_INFO_NON_COMPLIANT` for `MTL_SENDER_NL`, §4 task B1) | UB |
-| SF-73 | the gapped schedule on every raster, while ST 2110-21 §6.3.1 defines it only for BT.656, BT.1543, BT.1847, BT.709 and BT.2020 formats (1920×1200, 2048×1080, an odd rate: linear only) | `st_tx_video_session.c:502-519` **[verified at HEAD]** | open (E5, MS6; unified create: [timing.md §5.1](timing.md#51-the-st-2110-21-model)) | unit |
-| SF-74 | SD interlaced constants from a height switch: 480i gets RACTIVE 487/525 (Table 1: HEIGHT/525); a 486-line 525 stream (RP 2110-24 §4.3) gets 576/625 and the 1125-line TRODEFAULT; the RX parser too | `st_tx_video_session.c:507-516`; `st_rx_timing_parser.c:317-332` **[verified at HEAD]** | open (E5, MS6) | unit |
+| SF-72 | `ST21_PACING_LINEAR` (type NL) is read nowhere in `lib/`: NL is paced as N while the application signals `TP=2110TPNL` (ST 2110-21 §7.1.3) | `include/st20_api.h:314`; only WIDE is tested, `st_tx_video_session.c:594` **[verified at HEAD]** | open (E5a, MS5) | UB |
+| SF-73 | the gapped schedule on every raster, while ST 2110-21 §6.3.1 defines it only for BT.656, BT.1543, BT.1847, BT.709 and BT.2020 formats (1920×1200, 2048×1080, an odd rate: linear only) | `st_tx_video_session.c:502-519` **[verified at HEAD]** | open (E5a, MS5) | unit |
+| SF-74 | SD interlaced constants from a height switch: 480i gets RACTIVE 487/525 (Table 1: HEIGHT/525); a 486-line 525 stream (RP 2110-24 §4.3) gets 576/625 and the 1125-line TRODEFAULT; the RX parser too | `st_tx_video_session.c:507-516`; `st_rx_timing_parser.c:317-332` **[verified at HEAD]** | open (E5b, MS6; until then the TLINE cap and the SD flag) | unit |
 | SF-75 | PTP management (13) and signalling (12) messages from the master fall to `err("unknown message_type")` on the tasklet: one error line per second per port with an ST 2059-2 grandmaster (its SM TLV, §5.13) | `mt_ptp.c:1479-1481`, behind the master filter `:1446-1461` **[verified at HEAD]** | open (legacy bugfix, any time: drop 12 and 13 silently, count them) | unit |
 | SF-76 | video RX parses two SRD headers and places data by the first SRD alone: a packet with a third SRD (ST 2110-20 §6.2.1) is dropped by the length check; the second SRD's row and offset never place its payload (below) | `st_rx_video_session.c:1580-1585`, `:1694-1703`, `:1789-1803`, `:1825-1826` **[verified at HEAD]** | open (RXHDR; legacy bugfix, at the latest MS2) | unit |
 | SF-77 | the RTP-level API rejects RTP packets above `MTL_PKT_MAX_RTP_BYTES` = 1352 B at create and at every put: no ST 2022-6 (1396–1456 B) and no valid ST 2110 packet of 1353–1452 B (ST 2110-10 §6.3) | `mt_util.h:19-24`, `include/mtl_api.h:89`; callers below **[verified at HEAD]** | open (PE7, MS5) | unit |
@@ -1778,6 +2160,11 @@ so each needs a reproducing test before a fix; the same holds for any row whose 
 | SF-81 | RX timing parser against RP 2110-25: N by floor where §4.4 rounds, and VRX and CINST anchored at that N; verdict narrow, wide or failed only (no NL); no TROFF input (§4.9.2): `tr_offset` is an output criterion | `st_rx_timing_parser.c:21`, `:42-44`, `:72-137`; `include/st20_api.h:528-529` **[verified at HEAD]**; effect below | open (TPARSER: task B3, else MS2; NL with E5, MS6) | unit |
 | SF-82 | the built-in PTP client is not an ST 2059-2 slave: no BMCA, UTC offset read once, no domain filter, two-step only, servo gain for a 0.25 s Sync, layer-2 transport (outside §5.9); below and [standards.md §13.3](standards.md#133-mtls-built-in-ptp-client-against-st-2059-2) | `mt_ptp.c` (below) **[verified at HEAD]** | open (E9, MS6; until then ptp4l) | unit |
 | SF-83 | the PTP `correctionField` (signed, ns × 2^16) is shifted as unsigned, so a negative correction adds about 2^48 ns to t1 (Follow_Up) and subtracts it from t4 (Delay_Resp); the Sync message's correction is not added **[inferred]** | `mt_ptp.c:1015-1016`, `:1091-1092` **[verified at HEAD]** | open (legacy bugfix, any time) | unit |
+| SF-84 | the legacy RX detector misreads 119.88 as 120 about one detection in four, reports width 640 for 480 interlaced lines, takes width from a line-count table (DCI 4096 × 2160 reads as 3840), and fails 576i and 486i | `st_rx_video_session.c:55-115`, `:124-130`, `:68-71` | open: unified sessions use E14 and the detector of timing.md §11.9 (MS3); legacy bugfix, any time | G-129, G-138 |
+| SF-85 | `query_ext_frame` destinations in assembly at stop or destroy go back to the engine and never to the user: the GStreamer source leaks its `GstBuffer` and its pool | `rv_uinit_slot`, `st_rx_video_session.c:650-651`; `gst_mtl_st20p_rx.c:569-611` | open: the unified RX binding hands them back (contract.md §9.11 rule 6, MS2b); legacy stage A | G-137 |
+| SF-86 | the GStreamer RX passes a plane count where a format is expected | `st_frame_fmt_planes(video_meta->n_planes)`, `gst_mtl_st20p_rx.c:601` | open: the plugin port (MS6) or a one-line legacy fix | — |
+| SF-87 | ANC TX frame mode sizes a frame as ⌈Σ udw × 10 / 8 / 1432⌉ RTP packets, ignoring each ANC packet's header, DID/SDID/DC/checksum words and word_align, so ANC packets that did not fit are dropped silently (606 of 5 120 shapes; row details) | `st_tx_ancillary_session.c:960-977`, `:567-572`, `:615-617`, `:1107-1149` **[verified at HEAD]** | open (E7, MS4a2; legacy bugfix) | UB |
+| SF-88 | an entry with `udw_size` > 255 fails the legacy encoder after the frame's earlier RTP packets left (split mode, or a frame of several RTP packets): a partial frame without a marker | `st_ancillary.c:213`; `st_tx_ancillary_session.c:584-596`, `:1050-1056`, `:1073-1079`, `:89-110` **[verified at HEAD]** | open (E7, MS4a2; legacy bugfix: the frame sends nothing) | UB |
 | SP-01 | `mtl_uninit` with live sessions self-deadlocks (`tv_mgr_uinit` holds the lock `tv_mgr_detach` takes; the same in TX and RX audio, ANC and fastmeta) | `st_tx_video_session.c:3803`, `:3907-3914`; `st_tx_audio_session.c:2538`; RX audio `st_rx_audio_session.c:1463` → `:1466` → `:1425` ([legacy-internals.md](legacy-internals.md)) | open (to confirm; MS1 avoids, MS3 fix) | repro first |
 | SP-02 | `DATA_PATH_ONLY` on non-socket backends dereferences a NULL flow | `st_rx_video_session.c:3053-3056`; `datapath/mt_queue.c:56`, `:76` | #1770 | repro first |
 | SP-03 | `USE_MULTI_THREADS`: tasklet and packet lcore on one session | `st_rx_video_session.c:2901-2907`, `:2479` | open | repro first |
@@ -1848,6 +2235,10 @@ Row details:
   01-1B-19-00-00-00 (`:423-424`). E9 brings `time.ptp_domain` and `time.ptp_announce_timeout`;
   until then ptp4l with `MTL_TIME_SOURCE_PHC` is the compliant path.
 
+- SF-87: the builder packs greedily and ends the frame after the estimate, with the marker; of
+  5 120 equal-size shapes of ≤ 20 packets, 606 lose ANC packets (148 with estimate 1, 458 after
+  the `err()` resume; 909 ANC packets, e.g. 20 × 57 words: 3 dropped); an estimate above one logs
+  `err()` on the tasklet and stalls one call.
 - SF-05: the free callback (1) checks frame `refcnt == 1`, (2) calls `notify_frame_done`, (3)
   decrements `refcnt`, (4) for EXT clears `addr` and `iova` (`st_tx_video_session.c:116-141`),
   and st20p has already set the slot FREE before it calls the application

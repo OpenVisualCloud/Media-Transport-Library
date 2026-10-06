@@ -45,15 +45,16 @@ or processor, P7 libfabric- or Rivermax-familiar developer, P9 operator or NMOS 
 | [ex05_rx_to_framework.c](sketch/examples/ex05_rx_to_framework.c) | P2 | received frames lent to a framework, released on any thread; GStreamer `unlock` | `mtl.h` | MS1 | [2.7](#27-received-frames-handed-to-a-framework-ex05) | [examples §7](examples.md#7-received-frames-lent-to-a-framework) |
 | [ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c) | P5 | frame k lands in MXL grain k mod 8 | `mtl_mem.h` | MS2b | [2.8](#28-into-an-mxl-ring-by-frame-number-ex06) | [examples §8](examples.md#8-receive-into-an-mxl-ring-by-frame-number) |
 | [ex07_av_anc_playout.c](sketch/examples/ex07_av_anc_playout.c) | P3 | video, audio and captions from one file, started together with `MTL_WHEN_ORIGIN`, exact RTP | `mtl_util.h` | MS6 | [2.9](#29-video-audio-and-captions-from-one-file-ex07), [2.17](#217-media-time-and-launch-time) | [examples §9](examples.md#9-video-audio-and-captions-from-one-file) |
-| [ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c) | P4 | rows leave before the frame is finished (SDI-to-IP gateway) | `mtl_sync.h` | MS3 (rows MS2a, INDEX and the slot hint MS3) | [2.10](#210-rows-leave-before-the-frame-is-finished-ex08) | [examples §10](examples.md#10-rows-that-leave-before-the-frame-is-finished) |
+| [ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c) | P4 | rows leave before the frame is finished (SDI-to-IP gateway) | `mtl_sync.h` | MS3 (rows MS2a, INDEX and `mtl_tx_get_next` MS3) | [2.10](#210-rows-leave-before-the-frame-is-finished-ex08) | [examples §10](examples.md#10-rows-that-leave-before-the-frame-is-finished) |
 | [ex09_split_forwarder.c](sketch/examples/ex09_split_forwarder.c) | P5 | one 4K frame in, four HD streams out, no copy | `mtl_util.h` (includes `mtl_mem.h`) | MS2b | [2.11](#211-one-4k-frame-in-four-hd-streams-out-no-copy-ex09) | [examples §11](examples.md#11-one-4k-frame-in-four-hd-streams-out-no-copy) |
 | [ex10_processor.c](sketch/examples/ex10_processor.c) | P5 | a processor that keeps the input's media time and RTP | `mtl_util.h` | MS4a (`process_video`: MS1) | [2.12](#212-a-processor-that-keeps-the-inputs-timing-ex10) | [examples §12](examples.md#12-a-processor-that-keeps-the-inputs-timing) |
 | [ex11_signal.c](sketch/examples/ex11_signal.c) | P9, any service | a service in a Kubernetes pod: SIGTERM, probes from health, a bounded network-first shutdown with a report | `mtl_observe.h` | MS3 | [2.13](#213-a-service-in-a-kubernetes-pod-ex11) | [examples §13](examples.md#13-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown) |
 | [ex12_rtp_packets.c](sketch/examples/ex12_rtp_packets.c) | P5, P7 | RTP passthrough: app-built packets, library pacing, both legs; RX packet chunks | `mtl_packet.h` | MS5 | [2.14](#214-rtp-passthrough-you-build-the-packets-ex12) | [examples §14](examples.md#14-rtp-passthrough-the-application-builds-the-packets) |
 | [ex13_nmos_switch.c](sketch/examples/ex13_nmos_switch.c) | P9 | one IS-05 PATCH as one update: destinations and `rtp_enabled` on both legs at one instant; the planned instant (the 202 response) and the applied one (in `/active`) | `mtl.h` | MS5; mute (every leg disabled) is Phase 7 | [2.15](#215-an-is-05-activation-at-one-instant-ex13) | [examples §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant) |
+| [ex14_anc.c](sketch/examples/ex14_anc.c) | P3, P5 | ANC units: a caption inserter, an SCTE-104 relay, a raw relay, timecode in both fields, a dump | `mtl_observe.h`, `mtl_util.h` | MS4a2 (the dump's detail: MS2) | — | [examples §17](examples.md#17-anc-captions-an-scte-104-relay-a-raw-relay-timecode-and-a-dump) |
 | [examples_cpp.cpp](sketch/examples/examples_cpp.cpp) | P2 (bindings) | the same API from C++17: `MTL_INIT`, an option, an RAII lease guard, a stride-safe result read | `mtl.h`, `mtl_options.h` | MS5 (`cpp_sender`: MS1) | [2.16](#216-the-same-api-from-c-examples_cppcpp) | [examples §16](examples.md#16-the-same-api-from-c) |
 | [ex_common.h](sketch/examples/ex_common.h) | all | `ex_fail()`: the code, reason, field and detail of a failure | `mtl.h` | MS1 | [2.20](#220-what-a-return-code-tells-you) | [examples §2](examples.md#2-shared-by-the-examples) |
-| (no file) | P1, P2 | an st20p program side by side with the unified calls | — | — | — | [examples §17](examples.md#17-an-st20p-program-side-by-side) |
+| (no file) | P1, P2 | an st20p program side by side with the unified calls | — | — | — | [examples §18](examples.md#18-an-st20p-program-side-by-side) |
 
 Return codes are always negative `MTL_E*` constants with the Linux errno values; `0` is success,
 and reads that return a count return at least 1.
@@ -89,7 +90,7 @@ flowchart LR
 A typed config (`MTL_INIT(&sc)`, then `direction`, `essence`, `flows[0]` with `mtl_flow_ipv4()`,
 `video.raster` and `video.format`) describes the stream, and `mtl_session_open` creates and starts
 it. `mtl_instance_open(NULL, &mt)` takes the ports from `MTL_PORTS` (`"null:1"` runs without a
-NIC). MTL owns the buffers; each submitted frame goes out in the next slot (media mode AUTO on the
+NIC). MTL owns the buffers; each submitted frame goes out at the next feasible index (media mode AUTO on the
 SMPTE epoch, `min_tx_delay_ns` 0, results off). Nothing has to be read back, and one
 `mtl_session_close` at the end sends what is queued and retires the session.
 
@@ -129,7 +130,7 @@ stateDiagram-v2
     Free --> Yours: acquire
     Yours --> Free: release
     Yours --> Queued: submit
-    Queued --> OnTheWire: its slot comes
+    Queued --> OnTheWire: its launch time comes
     Queued --> Free: dropped or flushed, result recorded
     OnTheWire --> Free: sent, result recorded
 ```
@@ -152,7 +153,7 @@ flowchart LR
 
 The session is created with `MTL_SESSION_RESULTS`; `mtl_session_get_wait_handle(s,
 MTL_WAIT_ACQUIRE | MTL_WAIT_RESULTS, &fd)` gives an eventfd. Every data call that finds nothing
-returns `-MTL_EAGAIN` and arms its target, which is in the handle's mask, before it returns (R2), so "drain until nothing, then
+returns `-MTL_EAGAIN` and arms its target, which is in the handle's mask, before it returns (R2), so "call every target until nothing, then
 sleep" never misses a wake-up. The slot is acquired before the source frame is taken, so no source
 frame is taken without a place to go; `u.cookie` comes back in the result.
 
@@ -265,18 +266,18 @@ The three TX sessions use `MTL_MEDIA_INDEX`, so `u.media_index` is the frame (vi
 first sample (audio). `mtl_session_start(s, 3, &origin, NULL)` with `origin.flags =
 MTL_WHEN_ORIGIN` starts all three or none, resolves T0 once on the common grid, and makes media
 index 0 of every session T0, so the file's counts are media indices as they are. MTL turns the
-indices into timestamps that agree exactly; the ANC session takes the raster and slot delay of
+indices into timestamps that agree exactly; the ANC session takes the raster and launch delay of
 the video. Audio uses the copy path
 `mtl_tx_write`; frames without captions still get the empty ANC packet. The arithmetic is in
 [timing.md §10](timing.md#10-avanc-synchronisation).
 
 ### 2.10 Rows leave before the frame is finished (ex08)
 
-[ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c), [examples §10](examples.md#10-rows-that-leave-before-the-frame-is-finished). MS3 (rows MS2a, INDEX and the slot hint MS3).
+[ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c), [examples §10](examples.md#10-rows-that-leave-before-the-frame-is-finished). MS3 (rows MS2a, INDEX and `mtl_tx_get_next` MS3).
 
 ```mermaid
 flowchart LR
-    H["next slot hint:<br/>which frame"]:::mtl --> A["acquire"]:::mtl
+    H["next unit:<br/>which frame"]:::mtl --> A["acquire"]:::mtl
     A --> R1["draw rows 0-63<br/>submit, used = 64"]:::app
     R1 --> R2["draw rows 64-127<br/>submit, used = 128"]:::app
     R2 --> R3["... last rows<br/>submit, used = rows"]:::app
@@ -287,7 +288,7 @@ flowchart LR
 ```
 
 For an SDI-to-IP gateway (`unit = MTL_UNIT_ROWS`, `media_mode = MTL_MEDIA_INDEX`, the option
-`tx.troffset_ns`, `min_tx_delay_ns` 0): `mtl_tx_next_slot` says which frame is being filled, and each
+`sc.video.troffset_us`, `min_tx_delay_ns` 0): `mtl_tx_get_next` says which frame is being filled, and each
 submit of the same lease with a larger `used` publishes more rows; `used == rows` ends the frame.
 The first rows are sent while the rest are still being drawn. A failing later submit ends the unit
 where its rows stopped (option `tx.rows_late`) and its one result follows.
@@ -403,7 +404,7 @@ sequenceDiagram
     M-->>N: planned_tai_ns
     N->>M: get_status: update_seq
     N-->>C: 202, activation at the planned instant
-    Note over M: at the slot boundary both legs switch, unit or not
+    Note over M: at the index boundary both legs switch, unit or not
     N->>M: get_status, or MTL_EVENT_UPDATE
     M-->>N: APPLIED for this update_seq, update_applied_tai_ns
     N->>N: /active shows activation_time
@@ -458,7 +459,7 @@ flowchart LR
 
 What a frame *is* (its media time, and so its RTP timestamp) is separate from when it *leaves*.
 With `min_tx_delay_ns` 0 (playback) the first packet leaves at TVD − VRX0·TRS, TVD = N × TFRAME +
-TROFFSET. A late frame is dropped (INDEX, TAI) or moved to the next free slot (AUTO) by
+TROFFSET. A late frame is dropped (INDEX, TAI) or moved to the next feasible index (AUTO) by
 `tx.late_policy`, but never moves the frames after it.
 
 ### 2.18 Which header do I need?
@@ -470,10 +471,10 @@ header and per milestone are printed by `sketch/check.sh`.
 |---|---|---|
 | send or receive with MTL's buffers | `mtl.h` only | MS1 (video), MS4 (the other essences) |
 | use your own memory, or lend one session's pool to another | `+ mtl_mem.h` | MS2 (video), MS4 |
-| compute frame numbers and row deadlines, or align essences on RX | `+ mtl_sync.h` | MS2 (media ticks, row deadlines, the time reference), MS3 (epoch index, slot hint); start arrays (`mtl.h`) MS6 |
+| compute frame numbers and row deadlines, or align essences on RX | `+ mtl_sync.h` | MS2 (media ticks, row deadlines, the time reference), MS3 (epoch index, `mtl_tx_get_next`); start arrays (`mtl.h`) MS6 |
 | build or parse RTP packets yourself | `+ mtl_packet.h` | MS5 |
 | read the events of a session or of the instance | `+ mtl_events.h` | MS3 |
-| export stats, route logs, capture packets, answer probes, shut down with a report | `+ mtl_observe.h` | MS1 (full TX results), MS2 (stats, RX detail, enumeration, ports, log sink; MS1 if A2b lands), MS3 (health, shutdown), MS4 (capture) |
+| export stats, route logs, capture packets, answer probes, shut down with a report | `+ mtl_observe.h` | MS1 (full TX results), MS2 (stats, RX detail, enumeration, ports, log sink), MS3 (health, shutdown), MS4 (capture) |
 | set a tuning knob | `+ mtl_options.h` | MS1 |
 | send from a byte buffer, or send a named slot in one call | `+ mtl_util.h` | MS3 (`mtl_tx_write`; audio and ANC sessions MS4), MS2 (named slots) |
 | render or parse SDP, add Info Block entries, read IPMX sender reports, encrypt with IPMX PEP | `+ mtl_ipmx.h` | Phase 7; TX sender reports from the `rtcp.*` options (`mtl_options.h`) MS5 |
@@ -492,17 +493,17 @@ sequenceDiagram
     A->>A: acquire finds nothing: -MTL_EAGAIN, target armed
     A->>A: sleep on the wait handle
     T->>T: frame sent: result stored, PUBLISHED, fence
-    T->>L: armed: mt_wake sets the session's pending bit
+    T->>L: armed: mt_wake marks the session (fired lanes, a bit in the loop's bitmap)
     Note over T,L: the handler loop ends
-    L->>A: one non-blocking eventfd write per flagged session
+    L->>A: FLUSH wakes at most one marked object per iteration: one eventfd write
     A->>A: drain: reap the result, acquire
 ```
 
 The pinned cores only send and receive packets. They never run application code and never take a
-lock an application holds. Inside a tasklet a wake-up costs one bit set; the scheduler loop, after
-its handlers, writes the eventfd of each flagged session once per iteration, and only for an armed
-waiter (W2-deferred, D-68, every mode from MS1). A waker thread that takes those writes off the
-core (W3) is a contingency, built only if spike S1 shows that they harm pacing (D-102).
+lock an application holds. Inside a tasklet a wake-up costs one mark; the scheduler loop, after its
+handlers, wakes at most one marked object per iteration (one futex wake and one eventfd `write()` at
+most), and only for an armed waiter (W2-deferred, D-68, D-142, every mode from MS1). A waker thread
+that takes those wakes off the core (W3) is a contingency, built only by D-142's rules (S1, MS2a).
 
 ### 2.20 What a return code tells you
 
@@ -535,7 +536,7 @@ flowchart LR
     EXT --> MTLH
     L7 --> MTLH
     subgraph LIBMTL["libmtl"]
-        LIB["the API shell, in the version node<br/>MTL_UNIFIED_EXPERIMENTAL_rev"]
+        LIB["the API shell, in one version node<br/>per milestone, MTL_UNIFIED_EXPERIMENTAL_rev_MSn"]
         ENG["the core, the bindings,<br/>the engines"]
     end
     MTLH --> LIB
@@ -546,7 +547,7 @@ flowchart LR
 header includes a legacy one. The rest is `static inline`: typed wrappers of the object verbs
 `mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_get_wait_handle`, `mtl_reap`, `mtl_read_events` and
 `mtl_release`, and helpers on public calls. A function is exported in the milestone that
-implements it, in libmtl's node `MTL_UNIFIED_EXPERIMENTAL_<rev>` (`MTL_1.0` from MS7); a known
+implements it, in libmtl's node `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn` (`MTL_1.0` from MS7); a known
 value of an exported call that is not built yet returns `-MTL_ENOTSUP` with
 `MTL_REASON_NOT_IMPLEMENTED`. `sketch/check.sh` prints the functions per header and per milestone.
 
@@ -561,7 +562,7 @@ flowchart TB
     LA["legacy st*p_* application"] --> LW
     LSA["legacy st2x_* application"] --> LS
     subgraph L["libmtl"]
-        SH["API shell, lib/src/unified/:<br/>config to ops through the option table,<br/>reasons, call classes;<br/>node MTL_UNIFIED_EXPERIMENTAL_rev"]
+        SH["API shell, lib/src/unified/:<br/>config to ops through the option table,<br/>reasons, call classes;<br/>nodes MTL_UNIFIED_EXPERIMENTAL_rev_MSn"]
         LW["legacy st*p_* wrappers<br/>(st20p MS2, the others MS4)"]
         CORE["the core, lib/src/st2110/core/<br/>slot table: FREE, APP, QUEUED, XFORM,<br/>ENGINE, PUBLISHED, HELD; descriptor ring;<br/>session states, armed wait, mt_wake, handles"]
         BIND["bindings, one per essence and direction:<br/>video, cvideo, audio, anc, fastmeta,<br/>packet; null has no engine"]
@@ -597,7 +598,7 @@ flowchart LR
     DS["Log-sink and codec threads:<br/>the only ones that run app code"]
     NIC(("NIC: DPDK PMD,<br/>AF_XDP, kernel<br/>socket, or null"))
     APP -->|"slot CAS,<br/>ctl (MS2)"| TK
-    TK -->|"completion CAS; after the handlers,<br/>one eventfd write per flagged session"| APP
+    TK -->|"completion CAS; after the handlers,<br/>at most one object's wake per iteration"| APP
     APP -->|"blocking control work"| WK
     TK -.- AD
     DS -->|"your log callback,<br/>your codec"| APP
@@ -606,8 +607,8 @@ flowchart LR
 
 Arrows into the tasklet world are lock-free hand-offs (a CAS on the slot, the `ctl` word that the
 `tick` hook acknowledges in `ack`); arrows out of it are wait-free stores (the completion CAS, a
-fence, and for an armed waiter a bit in the scheduler's pending bitmap). The scheduler loop turns
-those bits into eventfd writes after its handlers. No tasklet allocates, prints a log line (it
+fence, and for an armed waiter the object's `fired` lanes and a bit in the loop's bitmap). The
+scheduler loop turns those marks into at most one object's wake per iteration after its handlers. No tasklet allocates, prints a log line (it
 writes formatted lines into a per-scheduler ring), takes a lock an application thread can hold, or
 runs application code (R6). The deferred wake and the W3 contingency are
 [§6.2](#62-who-makes-the-wake-up-syscall).
@@ -689,7 +690,7 @@ The install layout during the transition, with the tier names of
 [migration.md §8.2](migration.md#82-three-tiers):
 
 ```text
-include/mtl/experimental/mtl.h + the optional headers    public    MTL_UNIFIED_EXPERIMENTAL_<rev>, then MTL_1.0 (release F)
+include/mtl/experimental/mtl.h + the optional headers    public    MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn, then MTL_1.0 (release F)
 include/mtl/legacy/mtl_api.h, st_api.h, st20_api.h, ...  legacy    MTL_LEGACY (from MS3)
 include/mtl/legacy/mtl_legacy_gate.h                     legacy    included first by every legacy header; reads MTL_LEGACY_STAGE
 include/mtl/st20_api.h, ...                              stubs     #include "legacy/st20_api.h"; removed at F+1
@@ -698,7 +699,7 @@ lib/include/mtl_internal/                                internal  session decla
 
 ```mermaid
 flowchart LR
-    S1["MS1, tasks H1a, H1b<br/>unified headers in<br/>include/mtl/experimental/;<br/>the unified node in libmtl"] --> S3["MS3<br/>soname, MTL_LEGACY node,<br/>local: * after the nm audit;<br/>gate added, inert"]
+    S1["MS1, task H1b<br/>unified headers in<br/>include/mtl/experimental/;<br/>the MS1 node in libmtl"] --> S3["MS3<br/>soname, MTL_LEGACY node,<br/>local: * after the nm audit;<br/>gate added, inert"]
     S3 --> S6["MS4 to MS6<br/>pre-hide gaps closed; legacy in<br/>mtl/legacy/ + stubs; in-tree consumers port"]
     S6 --> F["MS7, release F<br/>deprecation warnings;<br/>unified API is MTL_1.0"]
     F --> F1["F+1<br/>#error unless MTL_LEGACY_API;<br/>stubs removed"]
@@ -775,7 +776,7 @@ flowchart LR
 
 Mixed directions, or a TX session in `MTL_MEDIA_AUTO` in an array of more than one, are
 `-MTL_EINVAL` (`START_SET_MIXED`). An ANC or fastmeta session with an all-zero video raster takes
-the raster and slot delay of the first video session of the array. `t0` receives T0. Stop arrays
+the raster and launch delay of the first video session of the array. `t0` receives T0. Stop arrays
 may mix directions.
 
 ### 4.4 Legs and flow states
@@ -824,7 +825,7 @@ sequenceDiagram
     C->>C: the submission descriptor (seq, generation, media time, cookie) in the order ring, APP to QUEUED
     E->>B: get_next_frame (the builder, on the tasklet)
     B->>C: the descriptor at the pick cursor, its slot QUEUED with that generation: QUEUED to ENGINE
-    B-->>E: the frame and its slot N (the slot decision), user pacing, epoch RTP
+    B-->>E: the frame and its launch index N (the launch decision), user pacing, epoch RTP
     E->>E: build, pace, burst, the last mbuf freed
     E->>B: notify_frame_done
     B->>C: completion CAS to claimed, result in the descriptor, PUBLISHED, fence, armed load
@@ -834,11 +835,11 @@ sequenceDiagram
     C-->>A: results in seq order, each slot PUBLISHED to FREE
 ```
 
-With results off the completion stores FREE instead of PUBLISHED. The binding decides the slot at
-`get_next_frame` with exact math (AUTO: the next feasible slot; INDEX and TAI: the unit's slot, or
+With results off the completion stores FREE instead of PUBLISHED. The binding makes the launch decision at
+`get_next_frame` with exact math (AUTO: the next feasible index; INDEX and TAI: the unit's index, or
 DROPPED when it can no longer be met) and drives the engine with user pacing and the epoch RTP, so
 the engine's own late notification never fires for a core session; the outcome is the result's
-status ([timing.md §6.8](timing.md#68-the-slot-decision-of-the-video-tx-binding)).
+status ([timing.md §6.8](timing.md#68-the-launch-decision-of-the-video-tx-binding)).
 
 ### 5.2 One RX unit through the layers
 
@@ -967,54 +968,62 @@ listed in [§5.3](engine.md#53-every-completing-context).
 ### 6.1 Arming, in the application's terms
 
 A data call that finds nothing returns `-MTL_EAGAIN` and arms its target (with timeout 0 only if
-it is in the wait handle's mask, R2), so "drain until
+it is in the wait handle's mask, R2), so "call every target until
 `-MTL_EAGAIN`, then sleep on the wait handle" never misses a wake-up: [§2.4](#24-in-your-own-event-loop-ex03).
 `mtl_wait` (typed: `mtl_session_wait`) blocks on the same targets, and `mtl_get_wait_handle`
 (`mtl_session_get_wait_handle`, `mtl_instance_get_wait_handle`) gives the eventfd for the
-application's own loop; the instance's handle carries its events (`MTL_WAIT_EVENTS`). The armed-waiter protocol with its two fences is
-[engine.md §7.1](engine.md#71-wait-targets-and-the-armed-waiter-protocol).
+application's own loop; the instance's handle carries its events (`MTL_WAIT_EVENTS`). The wait words and the protocol, with their fences, are
+[engine.md §7.1](engine.md#71-wait-targets-wait-words-and-the-protocol).
 
 ### 6.2 Who makes the wake-up syscall
 
 The rules are [engine.md §5.2](engine.md#52-the-completing-context-protocol),
-[§7.1](engine.md#71-wait-targets-and-the-armed-waiter-protocol) and
+[§7.1](engine.md#71-wait-targets-wait-words-and-the-protocol) and
 [§7.2](engine.md#72-the-deferred-wake).
 
 ```mermaid
 flowchart TB
-    C["completing context:<br/>completion CAS to PUBLISHED,<br/>result stored, fence"] --> Q{"target armed?"}
+    C["completing context (EVENT):<br/>publish (release), fence,<br/>load the object's armed word"] --> Q{"a lane of the event armed?<br/>(its H bit or a WT count)"}
     Q -->|"no"| N["done: no syscall"]
-    Q -->|"yes"| MW["mt_wake(session, target)"]
-    MW -->|"on a tasklet"| B["set the session's bit in its<br/>scheduler's pending bitmap<br/>and the summary word"]
-    MW -->|"an application thread,<br/>a worker, the control plane"| D["one non-blocking<br/>eventfd write()"]
-    B --> F["the scheduler loop, after its handlers:<br/>one eventfd write per flagged session<br/>(W2-deferred, every mode, MS1)"]
-    B -.->|"contingency W3: only if<br/>spike S1 shows harm to pacing"| W3["a waker thread drains<br/>the same bitmaps"]
-    F --> A["application thread wakes,<br/>drains until -MTL_EAGAIN"]
-    W3 -.-> A
-    D --> A
+    Q -->|"yes"| MW["mt_wake(object, lanes)"]
+    MW -->|"a scheduler or<br/>the null loop"| M["fired |= lanes;<br/>mark the object in<br/>the loop's bitmap"]
+    MW -->|"the RX packet lcore"| L["fired |= lanes; after its<br/>handler it takes fired of<br/>its one session"]
+    MW -->|"an application thread, a worker,<br/>the control plane, a plugin thread"| WN["WAKE_NOW at once,<br/>inside the object's<br/>in-flight counter"]
+    M --> FL["FLUSH, after the handler loop and<br/>before the sleep check: take fired,<br/>WAKE_NOW, round robin from the cursor"]
+    FL -->|"at most one object whose wake<br/>makes a syscall per iteration<br/>(and 32 without one)"| WN
+    FL -.->|"the rest"| CA["stay marked, counted as carried;<br/>the loop returns 1, so it does not<br/>sleep, and resumes at the cursor"]
+    M -.->|"contingency W3,<br/>only by D-142's rules"| W3["a waker thread drains<br/>the same bitmaps"]
+    W3 -.-> WN
+    L --> WN
+    WN -->|"a WT waiter armed<br/>on a fired lane"| FU["bump wseq, then<br/>FUTEX_WAKE_BITSET<br/>for the woken lanes"]
+    WN -->|"the handle armed<br/>on a fired lane"| PO["clear H, h_pend |= lanes;<br/>on 0 to non-0 one<br/>eventfd write()"]
+    FU --> WT["WT call: counted in its lane of armed,<br/>fence, load wseq, re-check, then<br/>FUTEX_WAIT_BITSET to an absolute<br/>deadline; woken: re-check"]
+    PO --> EL["event loop wakes on the eventfd,<br/>calls every target of the mask<br/>until -MTL_EAGAIN"]
 ```
 
 Every completing context calls one internal `mt_wake()`, so the choice is in one place (D-102). A
-tasklet only sets bits; `sch_tasklet_func` flushes them once per iteration, after its handler loop
-and before its sleep check, so a scheduler never sleeps on a pending wake (D-68). W3 would change
-only who flushes, and is checked in MS2. An application that never sleeps (W0) causes no wake-up
-at all.
+tasklet only marks the object; `sch_tasklet_func` flushes once per iteration, after its handler
+loop and before its sleep check, and wakes at most one marked object whose wake makes a syscall
+(D-142). The rest stay marked and the loop returns 1, so a scheduler never sleeps on a pending wake
+(D-68). A WT call sleeps on the object's futex word `wseq`, never on the wait handle (D-141). W3
+would change only who flushes, and is built only by D-142's rules (S1, MS2a). An application that
+never sleeps (W0) causes no wake-up at all.
 
 ### 6.3 Interrupts
 
-From [engine.md §7.3](engine.md#73-wait-handles-and-interrupts).
+From [engine.md §7.3](engine.md#73-wait-handles-interrupts-and-close).
 
 ```mermaid
 flowchart LR
-    S["mtl_session_interrupt(s, 1)"] --> G["mtl_interrupt(o, MTL_INTR_ON,<br/>optional targets << 8)"]
+    S["mtl_session_interrupt(s, 1)"] --> G["mtl_interrupt(o, MTL_INTR_ON,<br/>targets 0 = every target)"]
     I["mtl_instance_interrupt(mt, 1)<br/>(signal handlers)"] --> G
-    T["GStreamer unlock:<br/>MTL_INTR_ON with<br/>MTL_WAIT_ACQUIRE << 8"] --> G
+    T["GStreamer unlock:<br/>MTL_INTR_ON with<br/>targets MTL_WAIT_ACQUIRE"] --> G
     G --> F["sticky flag on the selected<br/>targets, every waiter woken"]
     F --> W["their data waits return<br/>-MTL_ECANCELED at once,<br/>until MTL_INTR_OFF"]
     C["stop or close"] --> X["-MTL_ESHUTDOWN:<br/>close wins over interrupt"]
 ```
 
-The typed wrappers all call `mtl_interrupt`; bits 8–31 of the mode limit it to some wait targets
+The typed wrappers all call `mtl_interrupt`; its `targets` argument limits it to some wait targets
 (0 = every target), so an interrupted acquire does not make a reaper of the same session spin.
 `MTL_INTR_ON` is async-signal-safe; `MTL_INTR_OFF` is CP. Stop and close still work while
 interrupted.
@@ -1114,25 +1123,25 @@ The teardown order (sessions before regions before the memory) is
 
 ### 8.1 Two times, not one
 
-What a unit is (media time, RTP) and when it leaves (the slot, by `min_tx_delay_ns`) are separate:
+What a unit is (media time, RTP) and when it leaves (the launch index, by `min_tx_delay_ns`) are separate:
 [concepts.md §7.1](concepts.md#71-two-times-not-one) and [§2.17](#217-media-time-and-launch-time).
 
 ### 8.2 Media modes
 
 From `enum mtl_media_mode`; the rules are [timing.md §4.1](timing.md#41-media-modes) and
-[§5.2](timing.md#52-min_tx_delay_ns-and-the-slot-rule).
+[§5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
 
 ```mermaid
 flowchart LR
-    AUTO["MTL_MEDIA_AUTO<br/>the next slot"] --> M["media time M<br/>on the SMPTE epoch"]
+    AUTO["MTL_MEDIA_AUTO<br/>the next feasible index"] --> M["media time M<br/>on the SMPTE epoch"]
     IDX["MTL_MEDIA_INDEX<br/>T0 + media_index x period"] --> M
     TAI["MTL_MEDIA_TAI<br/>media_tai_ns,<br/>snapped to the grid"] --> M
     M --> RTP["RTP = floor(M x rate)"]
-    M --> LA["launch: the first slot whose first<br/>packet is at or after M + min_tx_delay_ns;<br/>0: the slot of M; one frame + the<br/>pick-up lead: the next slot"]
+    M --> LA["launch: the first index whose first<br/>packet is at or after M + min_tx_delay_ns;<br/>0: the index of M; one frame + the<br/>pick-up lead: the next index"]
     SND["MTL_MEDIA_SENDER, Phase 7:<br/>the source's own instant,<br/>never snapped"] --> RS["RTP follows the source;<br/>launch = M + min_tx_delay_ns"]
 ```
 
-The slot rule: the slot is the first N whose first-packet time TVD(N) − VRX0·TRS is at or after
+The launch rule: the launch index is the first N whose first-packet time TVD(N) − VRX0·TRS is at or after
 M + `min_tx_delay_ns`. `MTL_SUBMIT_NOT_BEFORE` or `MTL_SUBMIT_EXACT` with `launch_tai_ns` override
 the launch of one unit.
 
@@ -1206,11 +1215,11 @@ From `enum mtl_tx_status` and [contract.md §6.3](contract.md#63-statuses-and-re
 flowchart TB
     S["accepted submit:<br/>seq assigned"] --> X{"removed while queued,<br/>or not sendable?"}
     X -->|"stop FLUSH, discard, close,<br/>abort, ERROR"| FL["MTL_TX_FLUSHED"]
-    X -->|"no"| D{"its slot still<br/>feasible at pick-up?"}
+    X -->|"no"| D{"its launch index still<br/>feasible at pick-up?"}
     D -->|"yes"| B["built and paced"]
     D -->|"no: tx.late_policy"| LP{"policy"}
-    LP -->|"DROP (INDEX, TAI)"| DR["MTL_TX_DROPPED<br/>its slot stays empty"]
-    LP -->|"RESLOT (AUTO)"| RS["a later slot,<br/>MTL_TXR_RESLOTTED"]
+    LP -->|"DROP (INDEX, TAI)"| DR["MTL_TX_DROPPED<br/>its index stays empty"]
+    LP -->|"DEFER (AUTO)"| RS["a later index,<br/>MTL_TXR_DEFERRED"]
     RS --> B
     X -->|"not sendable: no neighbour,<br/>link down, every leg disabled"| DR
     B -->|"sent"| OT["MTL_TX_ON_TIME"]
@@ -1328,7 +1337,7 @@ stateDiagram-v2
     [*] --> NONE
     NONE --> PENDING: update posted while ARMED or RUNNING
     NONE --> APPLIED: update in CREATED or STOPPED
-    PENDING --> APPLIED: the slot boundary at or after when
+    PENDING --> APPLIED: the index boundary at or after when
     PENDING --> FAILED: e.g. the time base stepped (TIME_STEP)
 ```
 
@@ -1542,13 +1551,13 @@ other documents are formula, layout and protocol pictures.
 | 1 | 2.1 Send video (ex01) | [diagrams.md#21-send-video-ex01](#21-send-video-ex01) | ex01: typed config, open, acquire, draw, submit | flowchart |
 | 2 | 2.2 Receive video on two networks (ex02) | [diagrams.md#22-receive-video-on-two-networks-ex02](#22-receive-video-on-two-networks-ex02) | ex02: two ST 2022-7 legs merged, dequeue, release | flowchart |
 | 3 | 2.3 One frame's life | [diagrams.md#23-one-frames-life](#23-one-frames-life) | a TX frame: free, yours, queued, on the wire | state |
-| 4 | 2.4 In your own event loop (ex03) | [diagrams.md#24-in-your-own-event-loop-ex03](#24-in-your-own-event-loop-ex03) | ex03: drain until -MTL_EAGAIN, then epoll | flowchart |
+| 4 | 2.4 In your own event loop (ex03) | [diagrams.md#24-in-your-own-event-loop-ex03](#24-in-your-own-event-loop-ex03) | ex03: call every target until -MTL_EAGAIN, then epoll | flowchart |
 | 5 | 2.5 A session's life | [diagrams.md#25-a-sessions-life](#25-a-sessions-life) | the application's path through the session states | state |
 | 6 | 2.6 Zero copy from a framework's pool (ex04) | [diagrams.md#26-zero-copy-from-a-frameworks-pool-ex04](#26-zero-copy-from-a-frameworks-pool-ex04) | ex04: framework surface i is slot i; result frees it | flowchart |
 | 7 | 2.7 Received frames handed to a framework (ex05) | [diagrams.md#27-received-frames-handed-to-a-framework-ex05](#27-received-frames-handed-to-a-framework-ex05) | ex05: dequeue, wrap, release on any thread; unlock | flowchart |
 | 8 | 2.8 Into an MXL ring by frame number (ex06) | [diagrams.md#28-into-an-mxl-ring-by-frame-number-ex06](#28-into-an-mxl-ring-by-frame-number-ex06) | ex06: frame k into MXL grain k mod 8 | flowchart |
 | 9 | 2.9 Video, audio and captions from one file (ex07) | [diagrams.md#29-video-audio-and-captions-from-one-file-ex07](#29-video-audio-and-captions-from-one-file-ex07) | ex07: three essences, one start with `MTL_WHEN_ORIGIN` | flowchart |
-| 10 | 2.10 Rows leave before the frame is finished (ex08) | [diagrams.md#210-rows-leave-before-the-frame-is-finished-ex08](#210-rows-leave-before-the-frame-is-finished-ex08) | ex08: row units published by resubmits (MS3 (rows MS2a, INDEX and the slot hint MS3)) | flowchart |
+| 10 | 2.10 Rows leave before the frame is finished (ex08) | [diagrams.md#210-rows-leave-before-the-frame-is-finished-ex08](#210-rows-leave-before-the-frame-is-finished-ex08) | ex08: row units published by resubmits (MS3 (rows MS2a, INDEX and `mtl_tx_get_next` MS3)) | flowchart |
 | 11 | 2.11 One 4K frame in, four HD streams out, no copy (ex09) | [diagrams.md#211-one-4k-frame-in-four-hd-streams-out-no-copy-ex09](#211-one-4k-frame-in-four-hd-streams-out-no-copy-ex09) | ex09: four TX pools over one RX pool, no copy | flowchart |
 | 12 | 2.12 A processor that keeps the input's timing (ex10) | [diagrams.md#212-a-processor-that-keeps-the-inputs-timing-ex10](#212-a-processor-that-keeps-the-inputs-timing-ex10) | ex10: output keeps the input's media time and RTP | flowchart |
 | 13 | 2.13 A service in a Kubernetes pod (ex11) | [diagrams.md#213-a-service-in-a-kubernetes-pod-ex11](#213-a-service-in-a-kubernetes-pod-ex11) | ex11: SIGTERM, interrupt, join, bounded shutdown, probes | flowchart |
@@ -1559,7 +1568,7 @@ other documents are formula, layout and protocol pictures.
 | 18 | 2.18 Which header do I need? | [diagrams.md#218-which-header-do-i-need](#218-which-header-do-i-need) | header per job, with its milestone | table |
 | 19 | 2.19 Under the hood: nothing waits on the pinned cores | [diagrams.md#219-under-the-hood-nothing-waits-on-the-pinned-cores](#219-under-the-hood-nothing-waits-on-the-pinned-cores) | completion, the pending bit, the scheduler loop's eventfd write | sequence |
 | 20 | 2.20 What a return code tells you | [diagrams.md#220-what-a-return-code-tells-you](#220-what-a-return-code-tells-you) | the codes a loop sees, and what to do | table |
-| 21 | 3.1 The shape of the API | [diagrams.md#31-the-shape-of-the-api](#31-the-shape-of-the-api) | mtl.h, optional headers, the Phase 7 header, libmtl with the unified node | flowchart |
+| 21 | 3.1 The shape of the API | [diagrams.md#31-the-shape-of-the-api](#31-the-shape-of-the-api) | mtl.h, optional headers, the Phase 7 header, libmtl with one unified node per milestone | flowchart |
 | 22 | 3.2 Layers | [diagrams.md#32-layers](#32-layers) | the API shell, the core, the bindings, the engines and the legacy wrappers, all in libmtl | flowchart |
 | 23 | 3.3 Threads and the pinned cores | [diagrams.md#33-threads-and-the-pinned-cores](#33-threads-and-the-pinned-cores) | application, library and pinned threads; slot CAS, completion CAS, the deferred eventfd write | flowchart |
 | 24 | 3.4 Objects and ownership | [diagrams.md#34-objects-and-ownership](#34-objects-and-ownership) | instance, ports, sessions, regions, leases | flowchart |
@@ -1577,7 +1586,7 @@ other documents are formula, layout and protocol pictures.
 | 36 | 5.3 Slot states | [diagrams.md#53-slot-states](#53-slot-states) | the slot states on RX, with HELD | state |
 | 37 | 5.4 Free, yours, MTL's: both directions | [diagrams.md#54-free-yours-mtls-both-directions](#54-free-yours-mtls-both-directions) | free, yours, MTL's for TX and RX | state |
 | 38 | 5.5 One TX frame, step by step | [diagrams.md#55-one-tx-frame-step-by-step](#55-one-tx-frame-step-by-step) | one TX frame per loop iteration | sequence |
-| 39 | 6.2 Who makes the wake-up syscall | [diagrams.md#62-who-makes-the-wake-up-syscall](#62-who-makes-the-wake-up-syscall) | armed or not; mt_wake: the pending bit and the scheduler loop's write, the W3 contingency, a direct write off the tasklet | flowchart |
+| 39 | 6.2 Who makes the wake-up syscall | [diagrams.md#62-who-makes-the-wake-up-syscall](#62-who-makes-the-wake-up-syscall) | EVENT and mt_wake per context; the loop's count-bounded FLUSH, the W3 contingency; WAKE_NOW: the futex wake of WT waiters and the handle's eventfd write | flowchart |
 | 40 | 6.3 Interrupts | [diagrams.md#63-interrupts](#63-interrupts) | session and instance interrupts, limited to wait targets, through mtl_interrupt; close wins | flowchart |
 | 41 | 7.1 Four separate ideas | [diagrams.md#71-four-separate-ideas](#71-four-separate-ideas) | region, slot, lease and slot state, unit and result | flowchart |
 | 42 | 7.2 Where a session's memory comes from | [diagrams.md#72-where-a-sessions-memory-comes-from](#72-where-a-sessions-memory-comes-from) | library pool, alloc, import, device import, pool lending | flowchart |
@@ -1625,18 +1634,20 @@ other documents are formula, layout and protocol pictures.
 | 84 | 5.2 The completing-context protocol | [engine.md#52-the-completing-context-protocol](engine.md#52-the-completing-context-protocol) | claim, result, publication and the reader, step by step | text |
 | 85 | 5.7 Handle table | [engine.md#57-handle-table](engine.md#57-handle-table) | the bit layout of a handle | text |
 | 86 | 6. Commands and acknowledgements | [engine.md#6-commands-and-acknowledgements](engine.md#6-commands-and-acknowledgements) | a flow update across the application, worker and tasklet | text |
-| 87 | 7.1 Wait targets and the armed-waiter protocol | [engine.md#71-wait-targets-and-the-armed-waiter-protocol](engine.md#71-wait-targets-and-the-armed-waiter-protocol) | the armed waiter and the completing context, with their fences | text |
-| 88 | 8. The published time base | [engine.md#8-the-published-time-base](engine.md#8-the-published-time-base) | the published time base record | text |
-| 89 | 9. Close and ERROR on a stalled queue | [engine.md#9-close-and-error-on-a-stalled-queue](engine.md#9-close-and-error-on-a-stalled-queue) | close and the stalled-queue steps | text |
-| 90 | 6. Coexistence | [migration.md#6-coexistence](migration.md#6-coexistence) | legacy and unified code on one instance | flowchart |
-| 91 | 4.2 Shutdown | [deployment.md#42-shutdown](deployment.md#42-shutdown) | the network-first shutdown in a pod | sequence |
-| 92 | 4.1 Instance | [legacy-internals.md#41-instance](legacy-internals.md#41-instance) | today's instance lifecycle calls | text |
-| 93 | 4.3 Sessions | [legacy-internals.md#43-sessions](legacy-internals.md#43-sessions) | today's session lifecycle calls | text |
-| 94 | 6.5 MTL's TX today against the model | [standards.md#65-mtls-tx-today-against-the-model](standards.md#65-mtls-tx-today-against-the-model) | today's TX timing against the ST 2110-21 model | text |
-| 95 | 13. Synchronisation, latency and lip-sync | [standards.md#13-synchronisation-latency-and-lip-sync](standards.md#13-synchronisation-latency-and-lip-sync) | the RTP and arrival times of the latency measures | text |
-| 96 | The idea in one picture | [presentation/slides.md#the-idea-in-one-picture](presentation/slides.md#the-idea-in-one-picture) | the idea: app, API shell, core, bindings, engines, pinned cores | flowchart |
-| 97 | Nothing on the pinned cores | [presentation/slides.md#nothing-on-the-pinned-cores](presentation/slides.md#nothing-on-the-pinned-cores) | the deferred wake-up: pending bit, then the scheduler loop's write | sequence |
-| 98 | A/V/ANC in sync by construction | [presentation/slides.md#avanc-in-sync-by-construction](presentation/slides.md#avanc-in-sync-by-construction) | A/V/ANC in one start with `MTL_WHEN_ORIGIN` | flowchart |
-| 99 | RTP passthrough, coherently | [presentation/slides.md#rtp-passthrough-coherently](presentation/slides.md#rtp-passthrough-coherently) | RTP passthrough | flowchart |
-| 100 | Running in a Kubernetes pod | [presentation/slides.md#running-in-a-kubernetes-pod](presentation/slides.md#running-in-a-kubernetes-pod) | the pod shutdown in one row | flowchart |
-| 101 | Delivery | [presentation/slides.md#delivery](presentation/slides.md#delivery) | the milestones in one row | flowchart |
+| 87 | 7.1 Wait targets, wait words and the protocol | [engine.md#71-wait-targets-wait-words-and-the-protocol](engine.md#71-wait-targets-wait-words-and-the-protocol) | EVENT, mt_wake, WAKE_NOW, the DP and WT calls and WAIT0 on the wait words, with their fences | text |
+| 88 | 7.2 The deferred wake | [engine.md#72-the-deferred-wake](engine.md#72-the-deferred-wake) | the loop's count-bounded FLUSH | text |
+| 89 | 7.3 Wait handles, interrupts and close | [engine.md#73-wait-handles-interrupts-and-close](engine.md#73-wait-handles-interrupts-and-close) | the wait handle, the interrupt and its walk, close and retire | text |
+| 90 | 8. The published time base | [engine.md#8-the-published-time-base](engine.md#8-the-published-time-base) | the published time base record | text |
+| 91 | 9. Close and ERROR on a stalled queue | [engine.md#9-close-and-error-on-a-stalled-queue](engine.md#9-close-and-error-on-a-stalled-queue) | close and the stalled-queue steps | text |
+| 92 | 6. Coexistence | [migration.md#6-coexistence](migration.md#6-coexistence) | legacy and unified code on one instance | flowchart |
+| 93 | 4.2 Shutdown | [deployment.md#42-shutdown](deployment.md#42-shutdown) | the network-first shutdown in a pod | sequence |
+| 94 | 4.1 Instance | [legacy-internals.md#41-instance](legacy-internals.md#41-instance) | today's instance lifecycle calls | text |
+| 95 | 4.3 Sessions | [legacy-internals.md#43-sessions](legacy-internals.md#43-sessions) | today's session lifecycle calls | text |
+| 96 | 6.5 MTL's TX today against the model | [standards.md#65-mtls-tx-today-against-the-model](standards.md#65-mtls-tx-today-against-the-model) | today's TX timing against the ST 2110-21 model | text |
+| 97 | 13. Synchronisation, latency and lip-sync | [standards.md#13-synchronisation-latency-and-lip-sync](standards.md#13-synchronisation-latency-and-lip-sync) | the RTP and arrival times of the latency measures | text |
+| 98 | The idea in one picture | [presentation/slides.md#the-idea-in-one-picture](presentation/slides.md#the-idea-in-one-picture) | the idea: app, API shell, core, bindings, engines, pinned cores | flowchart |
+| 99 | Nothing on the pinned cores | [presentation/slides.md#nothing-on-the-pinned-cores](presentation/slides.md#nothing-on-the-pinned-cores) | the deferred wake-up: pending bit, then the scheduler loop's write | sequence |
+| 100 | A/V/ANC in sync by construction | [presentation/slides.md#avanc-in-sync-by-construction](presentation/slides.md#avanc-in-sync-by-construction) | A/V/ANC in one start with `MTL_WHEN_ORIGIN` | flowchart |
+| 101 | RTP passthrough, coherently | [presentation/slides.md#rtp-passthrough-coherently](presentation/slides.md#rtp-passthrough-coherently) | RTP passthrough | flowchart |
+| 102 | Running in a Kubernetes pod | [presentation/slides.md#running-in-a-kubernetes-pod](presentation/slides.md#running-in-a-kubernetes-pod) | the pod shutdown in one row | flowchart |
+| 103 | Delivery | [presentation/slides.md#delivery](presentation/slides.md#delivery) | the milestones in one row | flowchart |

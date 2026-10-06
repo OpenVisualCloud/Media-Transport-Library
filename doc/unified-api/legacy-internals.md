@@ -1775,7 +1775,7 @@ it as a checklist and write new code; "avoid" lists the defects above.
     reads (`st20_pipeline_tx.c:137`)
   - avoid: a second translation unit that also includes `st20_pipeline_tx.c` (duplicate symbols;
     `main` links without `--allow-multiple-definition`, `tests/unit/meson.build:7-9`)
-- **H1a, H1b**
+- **H1b**
   - study: the meson wiring `lib/src/new_api/meson.build:1-13`
   - avoid: `include/mtl_session_api.h`; the vtable dispatch as an ABI (`ses.h:51-102`)
 - **C0**
@@ -1788,17 +1788,19 @@ it as a checklist and write new code; "avoid" lists the defects above.
   - avoid: R9; raw pointer plus magic as a handle (`ses.h:320-331`); release/acquire as the stop
     flag (`ses.h:461-487`; D-121 needs the state table and a seq_cst re-load); a "signal-safe"
     stop that calls `vt->stop` and `dbg()` (`ses.c:182-202`)
+- **C1w**
+  - adapt: `ev.c:41-47`, the eventfd with `EFD_NONBLOCK | EFD_CLOEXEC`, created by the first
+    `mtl_get_wait_handle`, a failure `-MTL_ENOSPC`; `cmn.h:153-175`, deadlines in `int64_t` ns
+  - avoid:
+    - `cmn.c:191-221`, `poll()` on the session fd for WT waits, the ms round-up and draining in
+      every data call (OI-63);
+    - `ev.c:71-80`'s libc `write()`, which is a cancellation point: use `syscall(SYS_write)`;
+    - `ev.c:55-65`'s separate `closed` flag: the entry's in-flight counter and RETIRED state
+      replace it;
+    - R4 (`ev.c:19`, `:34-39`, `:82-105`), as today: the lossy ring, `write()` and the user
+      callback on the tasklet (`:98`, `:101-103`)
 - **C1b**
-  - adapt: `ev.c:41-47` eventfd with `EFD_NONBLOCK | EFD_CLOEXEC`, but a failure fails create;
-    `ev.c:71-80` non-blocking `write()` as the application-thread branch of `mt_wake` and
-    `mtl_interrupt`; `cmn.c:191-221` poll and drain as `mtl_wait`, polling the session fd and
-    the instance interrupt fd, arming with fetch_add and a seq_cst fence and re-checking before
-    `poll()`, keeping the ms round-up `:205-210`, draining only when signalled; `cmn.h:153-175`
-    deadlines in `int64_t` ns; `ev.c:55-65` close after the EK20 in-flight count and the
-    `closed` flag
-  - avoid: R4 (`ev.c:19`, `:34-39`, `:82-105`): the lossy ring, `write()` and the user callback
-    on the tasklet (`:98`, `:101-103`); `-EAGAIN` before dequeue after stop (`ses.c:356-358`,
-    `cmn.c:178-180`)
+  - avoid: `-EAGAIN` before dequeue after stop (`ses.c:356-358`, `cmn.c:178-180`)
 - **A1**
   - study: default socket = `mt_socket_id(impl, P)` (`ses.c:68-69`)
 - **E1**
@@ -1811,7 +1813,7 @@ it as a checklist and write new code; "avoid" lists the defects above.
     derive decision and the converter cached at create (`cmn.c:27-75`); staging buffers
     (`cmn.c:77-122`); conversion (`cmn.c:128-168`) generalised to `mtl_plane[]` with strides for
     `MTL_SUBMIT_SRC_PLANES`, a failure becoming a result
-  - study: the late check `tx.c:73-84` (replaced by the slot decision); buffer fill
+  - study: the late check `tx.c:73-84` (replaced by the launch decision); buffer fill
     `tx.c:299-323`; the done path `tx.c:218-255` (now the completion CAS and the result)
   - avoid: D8, R6, R7, D9, D4 (`tx.c:102-114`, `:166-211`, `:332-362`, `:384-401`, `:465-485`);
     a failed conversion silently FREE (`tx.c:472-476`); the user-owned backlog `tx.c:512-561`
@@ -1842,12 +1844,12 @@ it as a checklist and write new code; "avoid" lists the defects above.
   - study: io_stats and pcap passthrough `tx.c:672-684`, `rx.c:635-654`
 - **B3**
   - adapt: the DMA, multi-thread and timing-parser flags `rx.c:776-789`
-- **SA1**
+- **P1** (the samples)
   - study: only the wiring `app/sample/meson.build:53-57`, `app/meson.build:444-470`
   - avoid: the samples `app/sample/new_api/*`, which carry D2 and D3; the new samples expand the
     sketch examples (A2a runs those on `null:1`)
 
-S0, C2, CI1a, CI1b, I1, P1 and X have nothing to take. `doc/new_API/*` is superseded
+S0, C2, I1 and X have nothing to take, nor have H1b's run options and P1's CI entries. `doc/new_API/*` is superseded
 (`GRACEFUL_SHUTDOWN.md` describes a guard the code does not have, R9).
 
 **U and UB test ideas** (`tests/unit/new_api/`, rewritten on the new harnesses):

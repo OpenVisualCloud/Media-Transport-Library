@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Design complete; implementation starts with milestone MS1 ([implementation-plan.md](implementation-plan.md)). Nothing is implemented yet |
-| Normative | the headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) (they move to `include/mtl/experimental/` in task H1a of MS1); where a document and a header disagree, the header is right |
+| Normative | the headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) (they move to `include/mtl/experimental/` in task H1b of MS1); where a document and a header disagree, the header is right |
 | Baseline | `main` @ `545a266a`; every `path:line` in these documents is pinned there |
 
 The unified API is the one public API MTL converges on. One session type serves every ST 2110
@@ -27,7 +27,7 @@ The work is done by a main session that plans and integrates, and by the reposit
 diff (Gate 5), `mtl-system-admin` runs KahawaiTest on VFs (Gate 6); pytest runs from the main
 session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/agents/`.
 
-**Read first, in this order** (about 23 k tokens in all, at 4 bytes a token):
+**Read first, in this order** (about 27 k tokens in all, at 4 bytes a token):
 
 1. this README §1 and [ms1-status.md](ms1-status.md) (where the work stands);
 2. [implementation-plan.md](implementation-plan.md) §1.1, §1.2, §1.3, §2.1, §2.2, §3, §4, §5.1,
@@ -36,7 +36,7 @@ session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/age
    gates, the exit criteria and how the work runs;
 3. [engine.md](engine.md) §1, §2.2, §2.4, §3: the layers, the pinned-core rules, the core, the
    bindings and the slot table;
-4. [`mtl.h`](sketch/include/mtl/experimental/mtl.h) lines 1–109: the top comment with the rules
+4. [`mtl.h`](sketch/include/mtl/experimental/mtl.h) lines 1–122: the top comment with the rules
    R1–R8 every call follows.
 
 engine.md §4 (where each MS1 task starts in `lib/`), the plan's scope map (§2.3), test pool
@@ -62,7 +62,7 @@ agent reads. Do not load whole documents into one context; the large ones are re
   legacy API is removed; then the pipeline-level cases and the legacy RxTxApp are deleted, and the
   session-level cases stay as the engine's internal test (implementation-plan.md §4.1).
 - Commits stay under about 1.5 k changed lines (mechanical copies and deletions exempt), tests
-  first, each through `mtl-reviewer`; the maintainer reviews three to four a week, so ask at the
+  first, each through `mtl-reviewer`; the maintainer reviews at most four a week, so ask at the
   checkpoints of §5.2 and not between.
 - `standards/` at the repository root holds the maintainer's copies of the SMPTE standards: read
   them to check a rule, cite clauses in the documents, never commit or quote them (they are
@@ -77,8 +77,9 @@ agent reads. Do not load whole documents into one context; the large ones are re
    `.git/info/exclude` on the maintainer's machine; keep it out of every commit. Create the work
    branch `unified-api-ms1` from that commit and record it in [ms1-status.md](ms1-status.md).
 2. Then, in calendar order: P0 (the tooling the gates need), S0 (baseline measurement), T1
-   (pinning today's st20p behaviour with tests), H1a and H1b (headers and the API shell inside
-   libmtl), C0 (the core's internal header, the maintainer's first checkpoint).
+   (pinning today's st20p behaviour with tests), H1b (the headers, the API shell inside libmtl and
+   the run options) and E1 (the MS1 engine fixes), C0 (the core's internal header, the
+   maintainer's first checkpoint).
 
 The order, the gates and how the work runs are in implementation-plan.md §5.2 and §5.8; the state
 of every task and the standing instructions are in [ms1-status.md](ms1-status.md).
@@ -94,7 +95,7 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [contract.md](contract.md) | implementers, users | the normative behaviour of every call: rules R1–R8, instance, lifecycle, data path, results, waiting, errors, memory, events, stats, options, packet units, legs |
 | [timing.md](timing.md) | implementers, users | clocks, media time and RTP, launch and pacing, late policy, A/V/ANC sync, RX timing, timing tests |
 | [migration.md](migration.md) | users porting; the legacy wrappers | call map, field maps of every legacy `ops` struct, enum tables, coexistence, the library and ABI plan, hiding the legacy headers, plugins, bindings, per-consumer notes |
-| [coverage.md](coverage.md) | implementers, maintainers | every legacy capability (U-001…U-419) with its unified home and milestone; the cut list; what blocks hiding the session headers |
+| [coverage.md](coverage.md) | implementers, maintainers | every legacy capability (U-001…U-420) with its unified home and milestone; the cut list; what blocks hiding the session headers |
 | [legacy-internals.md](legacy-internals.md) | implementers | verified facts about today's `lib/` and its consumers: modes, lifecycle, threads and locks, memory, pacing and timestamps, stats, PR #1610: its pitfalls and what each MS1 task can reuse |
 | [standards.md](standards.md) | implementers, testers | what ST 2110, ST 2022, AES67, VSF TR-10 and AMWA NMOS require, where MTL disagrees today, an arithmetic reference, the bibliography |
 | [requirements.md](requirements.md) | maintainers | goals, non-goals, personas, the requirement catalogues (R-*, R-PKT, K-REQ, N-REQ, I-REQ) and the guarantee texts of later milestones |
@@ -104,32 +105,37 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [diagrams.md](diagrams.md) | everyone | a picture per example and per topic, with an index |
 | [presentation/slides.md](presentation/slides.md) | presenters | a talk on the design and the plan (Marp) |
 | [sketch/](sketch/README.md) | everyone | the normative headers, the compiling examples, `check.sh` |
+| [design/](design/wait-tests.md) | implementers | the wait protocol's pause-hook tests WH1–WH21 and the models (`design/models/`) that C1w and MS2b's provide tests copy |
 
 ## 3. Reading the IDs
 
 | ID | Means | Defined in |
 |---|---|---|
 | MS1…MS7, Phase 7 | milestones | [implementation-plan.md](implementation-plan.md) §1.2 |
-| P0, S0, T1, H1a, H1b, C0, C1a, C1b, A1, C2, E1, B1, B2, A2a, A2b, CI1a, CI1b, I1, R1, P1, SA1, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
+| P0, S0, T1, H1b, E1, C0, C1a, C1w, C1b, A1, C2, B1, B2, A2a, A2c, I1, R1, P1, A2b, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
+| C-FPS, C-GRANT, C-BRIDGE, C1h (MS2a), N1–N8, N6a, N6b (MS4a2) | later tasks named by the designs | [implementation-plan.md](implementation-plan.md) §6 |
 | R1–R8 | the rules every call follows | `mtl.h`, [contract.md](contract.md) §1 |
-| D-01…D-138 | design decisions and their reason | [decisions.md](decisions.md) §2 |
+| D-01…D-156 | design decisions and their reason | [decisions.md](decisions.md) §2 |
 | OI-n | open implementation issues, each with its rule and milestone | [decisions.md](decisions.md) §5 |
-| G-01…G-114, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
+| G-01…G-142, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
 | R-xxx-n, R-PKT-n, K-REQ-n, N-REQ-n, I-REQ-n | requirements | [requirements.md](requirements.md) |
 | GO-n, NG-n, P1–P9 | goals, non-goals, personas | [requirements.md](requirements.md) §2 |
-| E1–E13, R1, R2, MF1–MF10, EK1–EK21, PE1–PE9 | engine changes | [engine.md](engine.md) §11 |
+| E1–E15 (E5 split into E5a, E5b), R1, R2, MF1–MF10, EK1–EK21, PE1–PE9 | engine changes | [engine.md](engine.md) §11 |
 | SF-n, SP-n, DD-n, H-K-n | defects and drift in today's code; pod hazards | [engine.md](engine.md) §12 |
 | H1–H10, W0–W3 | pinned-core hazards, wake-up mechanisms | [engine.md](engine.md) §2, §7 |
 | S0, S1, S4–S8 | measurements (spikes) | [engine.md](engine.md) §11.1, [implementation-plan.md](implementation-plan.md) §3.3 |
-| U-001…U-419, H-01…H-19, CUT-n | legacy capabilities, pre-hide gaps, the cut list | [coverage.md](coverage.md) |
+| WH1–WH21, ST1–ST9, SR1–SR5 | the pause-hook tests of the wait protocol, the S1 thresholds and decision rules | [implementation-plan.md](implementation-plan.md) §8.2, [engine.md](engine.md) §11.1 |
+| U-001…U-420, H-01…H-19, CUT-n | legacy capabilities, pre-hide gaps, the cut list | [coverage.md](coverage.md) |
 | NM-*, IX-* | the NMOS and IPMX features MTL provides | [nmos-ipmx.md](nmos-ipmx.md) §3 |
 | NX-n | proposals that make the NMOS integration easier | [nmos-ipmx.md](nmos-ipmx.md) §6 |
 | G-Nn, GI-n, C-Nn, C-In | NMOS and IPMX gap dispositions and conflicts | [nmos-ipmx.md](nmos-ipmx.md) §21 |
-| ex01…ex13 | the examples | [examples.md](examples.md) |
+| ex01…ex14 | the examples | [examples.md](examples.md) |
 
-Some letters are reused: R1 and R2 are contract rules and also engine items (R1 also a task), H1
-is a pinned-core hazard while H1a and H1b are tasks, E1 is a task and an engine change, S0 a task
-and a spike, and G-Nn is an NMOS gap, not a guarantee G-xx. The document in the third column settles which one a text means.
+Some letters are reused: R1 and R2 are contract rules and also engine items (R1 also a task), H1 is
+a pinned-core hazard while H1b is a task, E1 is a task and an engine change, S0 a task and a spike,
+P1 a task and a persona (P1–P9), and G-Nn is an NMOS gap, not a guarantee G-xx. N1–N8 are MS4a2
+tasks, while engine.md §7's N0' and N1–N12 are steps of INTERRUPT. The document in the third column
+settles which one a text means.
 
 ## 4. The sketch
 
@@ -142,7 +148,8 @@ python3 doc/unified-api/sketch/gen_api_doc.py   # regenerates examples.md from s
 ```
 
 [sketch/README.md](sketch/README.md) says what the check covers. Functions of Phase 7, and the
-types only they use, sit under `MTL_LATER` and are not installed; every other function is exported
-in the milestone its tag names, and within MS1 the node grows task by task (G-51: a subset of the
-MS1 tags); a known value not built yet returns `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED`
+types only they use, sit under `MTL_LATER`, which only the design checks define; every other
+function is exported in the milestone its tag names, in that milestone's version node (within a
+milestone the node grows task by task, G-51), and a call to a function above `MTL_LEVEL` fails to
+compile naming its milestone (OI-64); a known value not built yet returns `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED`
 (D-106). The library and its version node: [migration.md](migration.md) §7.2.

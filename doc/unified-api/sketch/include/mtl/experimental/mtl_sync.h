@@ -54,8 +54,8 @@ struct mtl_timeline_config {
   uint64_t reserved[4];
 };
 /* A second create with the same name and another config is -MTL_EEXIST. CP. (later) */
-MTL_API_CP int mtl_timeline_create(mtl_instance_h mt, const struct mtl_timeline_config* c,
-                                   mtl_timeline_h* out);
+MTL_API_CP(LATER) int mtl_timeline_create(mtl_instance_h mt, const struct mtl_timeline_config* c,
+                                          mtl_timeline_h* out);
 /* Drops this reference; sessions using the timeline hold their own. CP. */
 static inline int mtl_timeline_close(mtl_timeline_h tl) {
   return mtl_close(mtl_obj(MTL_OBJ_TIMELINE, 0, tl.id), 0);
@@ -72,10 +72,10 @@ struct mtl_timeline_info {
   int64_t index_offset; /* whole-unit trim kept by the timeline */
 };
 /* tl may be null (the epoch). DP. (later) */
-MTL_API_DP int mtl_timeline_get_info(mtl_timeline_h tl, struct mtl_timeline_info* info,
-                                     size_t size);
+MTL_API_DP(LATER) int mtl_timeline_get_info(mtl_timeline_h tl, struct mtl_timeline_info* info,
+                                            size_t size);
 /* k = floor((tai_ns - T0) / index period of session s) on its timeline. DP. (later) */
-MTL_API_DP int mtl_index_at(mtl_session_h s, int64_t tai_ns, int64_t* k);
+MTL_API_DP(LATER) int mtl_index_at(mtl_session_h s, int64_t tai_ns, int64_t* k);
 
 MTL_SIZE_CHECK(mtl_timeline_config, 136);
 MTL_SIZE_CHECK(mtl_timeline_info, 56);
@@ -85,16 +85,22 @@ MTL_SIZE_CHECK(mtl_timeline_info, 56);
 
 /* k = floor((tai_ns - 1970 TAI) / period), period = 1 / unit_rate: the epoch unit that
    contains tai_ns. The first unit at or after tai_ns is k, or k + 1 when tai_ns is past its
-   start (to align starts across processes). No instance needed. AS. (MS3) */
-MTL_API_AS int mtl_epoch_index_at(int64_t tai_ns, struct mtl_rational unit_rate,
-                                  int64_t* k);
+   start (to align starts across processes). unit_rate is the index rate (fields per second
+   for interlaced video, the sample rate for audio): -MTL_EINVAL unless, reduced, num x den
+   <= 2^33 and num <= 2^29 x den (2^29 units per second), both checked by division so that
+   no product wraps; tai_ns < 0 is -MTL_ERANGE. A unit's
+   own media_tai_ns is floored to ns, so its containing unit can be the one before: use the
+   "at or after" index for it, or its media_index. No instance needed. AS. (MS3) */
+MTL_API_AS(3) int mtl_epoch_index_at(int64_t tai_ns, struct mtl_rational unit_rate,
+                                     int64_t* k);
 /* TAI to RTP ticks at a media clock rate, exact (RTP = floor(M * rate)). AS. (MS2) */
-MTL_API_AS uint32_t mtl_media_ticks(int64_t tai_ns, uint32_t clock_rate);
+MTL_API_AS(2) uint32_t mtl_media_ticks(int64_t tai_ns, uint32_t clock_rate);
 /* RTP ticks to the TAI instant nearest near_tai_ns that has them (unwraps). AS. (MS2) */
-MTL_API_AS int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_t clock_rate);
+MTL_API_AS(2) int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_t clock_rate);
 
-/* Where the next TX unit lands: output; the size argument versions it. */
-struct mtl_slot_hint {
+/* Where the next TX unit lands and by when to submit it. Output; the size argument versions
+   it. */
+struct mtl_tx_next {
   uint32_t queued; /* units queued ahead */
   uint32_t reserved;
   int64_t next_media_index;       /* the smallest feasible index at or after the end of
@@ -104,40 +110,65 @@ struct mtl_slot_hint {
   int64_t submit_deadline_tai_ns; /* submit before this */
 };
 /* DP. (MS3) */
-MTL_API_DP int mtl_tx_next_slot(mtl_session_h s, struct mtl_slot_hint* h, size_t size);
-/* Rows units: the latest submit time of `row` for the slot of media index k; row 0 is the
+MTL_API_DP(3) int mtl_tx_get_next(mtl_session_h s, struct mtl_tx_next* n, size_t size);
+/* Rows units: the latest submit time of `row` for media index k; row 0 is the
    unit's deadline. DP. (MS2) */
-MTL_API_DP int mtl_tx_row_deadline(mtl_session_h s, int64_t k, uint32_t row,
-                                   int64_t* tai_ns);
+MTL_API_DP(2) int mtl_tx_row_deadline(mtl_session_h s, int64_t k, uint32_t row,
+                                      int64_t* tai_ns);
 /* Rows units, RX: a unit dequeued with MTL_UNITF_PARTIAL grows while it is held; wait until
    at least min_rows rows are complete (or the unit ends). *rows gets the rows ready; the
-   option rx.rows_step sets how often a wake-up happens. -MTL_EAGAIN by the timeout. WT.
-   (MS2) */
-MTL_API_WT int mtl_rx_wait_rows(mtl_session_h s, mtl_lease_h lease, uint32_t min_rows,
-                                uint32_t* rows, int64_t timeout_ns);
+   option rx.rows_step sets how often a wake-up happens. -MTL_EAGAIN by the timeout. WT: it
+   sleeps on the session like the other waits (mtl.h), is interrupted with
+   MTL_WAIT_DEQUEUE, and never arms the wait handle. (MS2) */
+MTL_API_WT(2) int mtl_rx_wait_rows(mtl_session_h s, mtl_lease_h lease, uint32_t min_rows,
+                                   uint32_t* rows, int64_t timeout_ns);
 
 /* RX alignment: the audio sample inside unit `audio` that starts with video unit
    `video`, from their media indices (both MTL_UNITF_INDEX_VALID, on one epoch) and the
-   exact rates: video_rate is the video's index rate (frames per second, fields when
-   interlaced), sample_rate the audio's. *sample_offset = the audio sample index of the
-   video unit's start, rounded down, minus the audio unit's first sample. 0 = exact, 1 =
-   rounded down (the video unit starts inside a sample); -MTL_EINVAL: an index not valid
-   or a zero rate; -MTL_ERANGE: the video unit starts before the audio unit. The caller
-   checks the offset against the samples the audio unit holds. */
-static inline int mtl_rx_align(const struct mtl_unit* video, struct mtl_rational video_rate,
+   exact rates: `raster` is the video session's (fps the frame rate; the index counts fields
+   when scan is MTL_INTERLACED), sample_rate the audio's. *sample_offset = the audio sample
+   index of the video unit's start, rounded down, minus the audio unit's first sample. 0 =
+   exact, 1 = rounded down (the video unit starts inside a sample); -MTL_EINVAL: an index
+   not valid, an fps outside the struct mtl_rational limits, or a sample rate of 0 or above
+   2^29; -MTL_ERANGE: the video unit starts before the audio unit. The caller checks the
+   offset against the samples the audio unit holds. */
+static inline int mtl_rx_align(const struct mtl_unit* video, const struct mtl_raster* raster,
                                const struct mtl_unit* audio, uint32_t sample_rate,
                                int64_t* sample_offset) {
+  uint64_t num = raster->fps.num, den = raster->fps.den;
   if (!(video->flags & MTL_UNITF_INDEX_VALID) || !(audio->flags & MTL_UNITF_INDEX_VALID) ||
-      video->media_index < 0 || video_rate.num == 0 || video_rate.den == 0 || sample_rate == 0)
+      video->media_index < 0 || num == 0 || den == 0 || num > 4194303u || den > 1023u ||
+      sample_rate == 0 || sample_rate > (1u << 29))
     return -MTL_EINVAL;
-  /* sample = floor(k x den x sample_rate / num), split so nothing overflows */
-  uint64_t k = (uint64_t)video->media_index, num = video_rate.num;
-  uint64_t step = video_rate.den * sample_rate;
+  if (raster->scan == MTL_INTERLACED) num *= 2; /* field indices */
+  /* sample = floor(k x den x sample_rate / num), split: (k % num) x den x rate < 2^63 */
+  uint64_t k = (uint64_t)video->media_index;
+  uint64_t step = den * sample_rate;
   uint64_t rest = (k % num) * step;
   int64_t sample = (int64_t)((k / num) * step + rest / num);
   if (sample < audio->media_index) return -MTL_ERANGE;
   *sample_offset = sample - audio->media_index;
   return rest % num == 0 ? 0 : 1;
+}
+
+/* The forward offset in [0, one frame) from anchor_tai_ns to the next frame instant k /
+   frame_rate on the epoch (k integer; the instant floored to ns). The TAI-mode sessions of a
+   programme add the same offset, computed once, to their media times, so units at anchor +
+   j frames (times exact to the ns) snap with an error of at most 1 ns and audio and ANC keep
+   the video's phase (timing.md §10.5).
+   frame_rate is raster.fps, frames also when interlaced, so first fields land on even
+   indices. 0, or -MTL_EINVAL: a rate outside the struct mtl_rational limits, or
+   anchor_tai_ns < 0. AS. */
+static inline int mtl_grid_offset(int64_t anchor_tai_ns, struct mtl_rational frame_rate,
+                                  int64_t* offset_ns) {
+  uint64_t n = frame_rate.num, d = frame_rate.den;
+  if (anchor_tai_ns < 0 || n == 0 || d == 0 || n > 4194303u || d > 1023u) return -MTL_EINVAL;
+  uint64_t q = d * 1000000000u;            /* n frames take exactly d seconds: the cycle */
+  uint64_t r = (uint64_t)anchor_tai_ns % q; /* the anchor's place in its cycle */
+  uint64_t p = r * n;                      /* < 2^62 */
+  uint64_t c = p / q + (p % q != 0);       /* the first frame of the cycle at or after it */
+  *offset_ns = (int64_t)(c * q / n - r);   /* c x q <= n x q < 2^62 */
+  return 0;
 }
 
 /* ---- Clocks ------------------------------------------------------------------------------ */
@@ -188,14 +219,14 @@ struct mtl_time_reference {
 /* Sets the reference. Applies to PHC, CLOCK_TAI and USER sources; the built-in client
    fills it itself. A changed grandmaster posts MTL_EVENT_GRANDMASTER; with time.phc_trust
    detect, `locked` is what tells MTL the node lost its grandmaster. port = 0 for every
-   port, else port index + 1. Every call sets the whole reference. With
+   port, else MTL_INDEX(port). Every call sets the whole reference. With
    MTL_TIMEREF_USER_PAIR the call also feeds MTL_TIME_SOURCE_USER one (TAI,
    CLOCK_MONOTONIC) pair (port 0; another source is -MTL_EINVAL naming user_tai_ns). CP.
    (MS2) */
-MTL_API_CP int mtl_time_set_reference(mtl_instance_h mt, uint32_t port,
-                                      const struct mtl_time_reference* ref);
+MTL_API_CP(2) int mtl_time_set_reference(mtl_instance_h mt, uint32_t port,
+                                         const struct mtl_time_reference* ref);
 
-MTL_SIZE_CHECK(mtl_slot_hint, 32);
+MTL_SIZE_CHECK(mtl_tx_next, 32);
 MTL_SIZE_CHECK(mtl_time_reference, 56);
 
 #if defined(__cplusplus)

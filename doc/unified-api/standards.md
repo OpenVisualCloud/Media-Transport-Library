@@ -256,7 +256,7 @@ count, and never uses the Extended UDP Size Limit. Senders signal `PM`; pgroups 
 
 LIST's `calculate_rtp_timestamp()` uses `round()`, not truncation, so tools tolerate ±1 tick where a strict reading
 (truncate) does not; the unified oracle does not tolerate it ([timing.md §16.3](timing.md#163-substrate-and-budgets)).
-Both video windows say "unless justified": a capture source with a slot delay L ≥ 1 reports an RTP offset of about
+Both video windows say "unless justified": a capture source with a launch delay L ≥ 1 reports an RTP offset of about
 −L·TFRAME and a latency of about L·TFRAME, which is the justified case (worked numbers in timing.md §5.2).
 
 **RP 2110-25:2023** gives the names and formulas test equipment reports; the unified stats, the RX timing parser and
@@ -930,7 +930,8 @@ The source URLs are §16.
 | 23 | video RX RTP header | receivers tolerate CSRCs and header extensions (ST 2110-10:2022 §6.2; ST 2110-20:2022 §6.1.2) | the payload header is read at a fixed offset behind a 12-byte RTP header; CC and X are not looked at, so such a packet is misparsed (`st_rx_video_session.c:1570-1574`) | parse CC and X in the video RX path (SF-68, MS2) |
 | 24 | video RX SRDs | up to three SRD headers; every packing mode (ST 2110-20:2022 §6.2.1, §6.3.1) | two SRDs parsed; a packet with a third fails the length check and is dropped (`st_rx_video_session.c:1694-1703`); the second SRD's row and offset never place data (`:1799-1803`, `:1825-1826`), only the callback reads them (`:1789-1793`) | three SRDs, each at its own row and offset (SF-76, MS2) |
 | 25 | SD interlaced constants | RACTIVE `HEIGHT/525`, TRODEFAULT by Table 1 (ST 2110-21:2022 §6.3.3); 525-line heights 480–486 (RP 2110-24:2023 §4.3) | 487/525 at 480i; a 486-line stream gets 576/625 and the 1125-line TRODEFAULT (`st_tx_video_session.c:507-516`, `st_rx_timing_parser.c:317-332`) | constants from HEIGHT (SF-74, with E5) |
-| 26 | gapped schedule scope | gapped PRS only for BT.656/BT.1543/BT.1847/BT.709/BT.2020 formats (ST 2110-21:2022 §6.3.1) | type N gapped pacing for any raster (`st_tx_video_session.c:502-519`) | type N refused, or NL granted, outside those formats (timing.md §5.1; SF-73, with E5) |
+| 26 | gapped schedule scope | gapped PRS only for BT.656/BT.1543/BT.1847/BT.709/BT.2020 formats (ST 2110-21:2022 §6.3.1) | type N gapped pacing for any raster (`st_tx_video_session.c:502-519`) (legacy); unified: from MS2a granted W off the §6.3.1 formats until E5a (MS5), then NL (D-143) | type N refused, or NL granted, outside those formats (timing.md §5.1; SF-73, with E5) |
+| 27 | HANC on the vertical alignment line before the alignment point | its TLBO is from the most recent alignment point, a frame earlier (ST 2110-40 §6.2.1) | MTL times it from its own frame's alignment point | D-148 (no producer means the literal reading) |
 
 The legacy pacing contract draft agrees with the standards where it says "RTP describes the content, pacing chooses
 TX"; the full comparison is [timing.md §16.2](timing.md#162-oracle-and-contract).
@@ -962,7 +963,7 @@ rules; these are the numbers to check them against).
 | ANC packet sizes (RFC 8331) | one ANC packet = 4 + round-up-to-4 of ⌈(n + 4) × 10 / 8⌉ bytes: 12 B at n = 0 UDW, 328 B at n = 255; payload room per RTP packet at the Standard UDP Size Limit 1460 − 8 − 12 − 8 = 1432 B: at most 119 ANC packets (`ANC_Count` 255 is unreachable) or 4 of 255 UDW |
 | RTP unwrap window | ±6.628 h at 90 kHz, ±12.43 h at 48 kHz, ±6.21 h at 96 kHz, ±13.53 h at 44.1 kHz |
 | second field, 29.97i, frames 0–3 | RTP 1501, 4504, 7507, 10510 on the epoch grid (both formulas agree there; they diverge for an off-grid T0) |
-| slot delay L = 1 at 1080p59.94, type N | first packet ≈ M + 17.30 ms (RL, VRX0 = 5); EBU LIST then reports an RTP offset of −1501/−1502 ticks against a `[−1, 59]` window and a latency of 17.3 ms against `[0, 1 ms]`: legal for a camera ("unless justified"), not for playback with L ≥ 2 |
+| launch delay L = 1 at 1080p59.94, type N | first packet ≈ M + 17.30 ms (RL, VRX0 = 5); EBU LIST then reports an RTP offset of −1501/−1502 ticks against a `[−1, 59]` window and a latency of 17.3 ms against `[0, 1 ms]`: legal for a camera ("unless justified"), not for playback with L ≥ 2 |
 | ST 2110-31 `ptime` 0.08 | 4 samples at 48 kHz (8 at 96 kHz) = 83⅓ µs, 12 000 packets/s; MTL's 80 µs period sends 4 samples per 80 µs, a 50 kHz rate (+4.17 %, about 41.7 ms per second against PTP; SF-35) |
 | audio payload at the level limits | L24: 48 × 8 × 3 = 6 × 64 × 3 = 96 × 4 × 3 = 12 × 32 × 3 = 1152 B (1172 B UDP); AM824: 6 × 60 × 4 = 12 × 30 × 4 = 1440 B (1460 B UDP, the limit), 4 × 80 × 4 = 1280 B, 96 × 2 × 4 = 768 B |
 | fastmeta package size | at most 359 content words (1436 B) per package at the Standard UDP Size Limit, although the 9-bit length allows 511; CMAX = 4 and TDRAIN = 1.25 ms for any stream below 727 packets/s |

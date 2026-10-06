@@ -125,7 +125,7 @@ struct mtl_rtcp_info {
    update NMOS; a unit's meta record MTL_META_RTCP_MIB only appends to that unit's report
    and never changes the version. -MTL_ENOSPC if report, Info Block and SDES do not fit one
    datagram; -MTL_EINVAL beyond the wire field sizes. CP. (Phase 7) */
-MTL_API_CP int mtl_rtcp_set_info(mtl_session_h s, const struct mtl_rtcp_info* info);
+MTL_API_CP(LATER) int mtl_rtcp_set_info(mtl_session_h s, const struct mtl_rtcp_info* info);
 
 /* ---- RTCP RX: received reports --------------------------------------------------------- */
 
@@ -148,8 +148,8 @@ struct mtl_rtcp_report {
 };
 /* The oldest unread report; a full ring drops the oldest ("rx.rtcp_sr_dropped"). 1, or
    -MTL_EAGAIN (MTL_WAIT_RTCP is then armed). WT. (Phase 7) */
-MTL_API_WT int mtl_rtcp_read(mtl_session_h s, struct mtl_rtcp_report* rpt, size_t rpt_size,
-                             void* MTL_NULLABLE buf, size_t cap, int64_t timeout_ns);
+MTL_API_WT(LATER) int mtl_rtcp_read(mtl_session_h s, struct mtl_rtcp_report* rpt, size_t rpt_size,
+                                    void* MTL_NULLABLE buf, size_t cap, int64_t timeout_ns);
 
 /* ---- SDP ------------------------------------------------------------------------------ */
 
@@ -178,8 +178,8 @@ struct mtl_sdp_meta {
 /* The SDP of a created session as it is now. The length written (without the NUL),
    -MTL_ENOSPC if cap is short, -MTL_EBUSY (WRONG_STATE) while a value it needs is not
    known yet (an ANC raster before start). CP. (Phase 7) */
-MTL_API_CP int mtl_sdp_render(mtl_session_h s, const struct mtl_sdp_meta* MTL_NULLABLE meta,
-                              char* buf, size_t cap);
+MTL_API_CP(LATER) int mtl_sdp_render(mtl_session_h s, const struct mtl_sdp_meta* MTL_NULLABLE meta,
+                                     char* buf, size_t cap);
 /* An SDP into sc (direction as given; flows, payload types, source filters, the essence
    member) and meta (rx.rtp_offset, rx.mediaclk and the crypto.* options into
    meta.options, for the caller to pass in sc->options). Legs from a=group:DUP, as two
@@ -187,8 +187,8 @@ MTL_API_CP int mtl_sdp_render(mtl_session_h s, const struct mtl_sdp_meta* MTL_NU
    their legs_disabled bits set (reserved), so a one-leg SDP never leaves a stale second
    leg. The leg count; unknown attributes are ignored, a malformed required one is
    -MTL_EINVAL naming it. CP. (Phase 7) */
-MTL_API_CP int mtl_sdp_parse(const char* sdp, size_t len, struct mtl_session_config* sc,
-                             struct mtl_sdp_meta* MTL_NULLABLE meta);
+MTL_API_CP(LATER) int mtl_sdp_parse(const char* sdp, size_t len, struct mtl_session_config* sc,
+                                    struct mtl_sdp_meta* MTL_NULLABLE meta);
 
 /* ---- Encryption: keys ------------------------------------------------------------------ */
 
@@ -200,9 +200,9 @@ MTL_API_CP int mtl_sdp_parse(const char* sdp, size_t len, struct mtl_session_con
    rule of mtl.h), kept beside the current key and chosen per packet by the extension's key
    version (RTP_KV); a packet with an unknown version counts in "rx.crypto_unknown_key"
    and posts MTL_EVENT_KEY_NEEDED. Never readable back. CP. (Phase 7) */
-MTL_API_CP int mtl_crypto_set_key(mtl_session_h s, uint32_t key_version,
-                                  const uint8_t* MTL_NULLABLE key, uint32_t key_bytes,
-                                  const struct mtl_when* MTL_NULLABLE when);
+MTL_API_CP(LATER) int mtl_crypto_set_key(mtl_session_h s, uint32_t key_version,
+                                         const uint8_t* MTL_NULLABLE key, uint32_t key_bytes,
+                                         const struct mtl_when* MTL_NULLABLE when);
 
 MTL_SIZE_CHECK(mtl_rtcp_info, 144);
 MTL_SIZE_CHECK(mtl_rtcp_report, 56);

@@ -68,8 +68,8 @@ struct mtl_fault_params {
   uint64_t reserved[3];
 };
 /* Applies the fault once, or until its inverse (LEG_UP). p may be NULL. CP. (MS1) */
-MTL_API_CP int mtl_debug_inject(struct mtl_object obj, uint32_t fault,
-                                const struct mtl_fault_params* MTL_NULLABLE p);
+MTL_API_CP(1) int mtl_debug_inject(struct mtl_object obj, uint32_t fault,
+                                   const struct mtl_fault_params* MTL_NULLABLE p);
 
 MTL_SIZE_CHECK(mtl_fault_params, 104);
 

@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Doc test for the unified API sketch (doc/unified-api/sketch/README.md).
 # Every header and example must compile warning-free as C99 (-Wpadded, -pedantic for the
-# headers) and C++17, with gcc and, when present, clang. Lints: size checks, the include
-# layering, the packet-mode naming rule, the milestone tag of every exported function, and
-# the examples copied verbatim into examples.md. Prints the exported functions per header,
-# per call class and per milestone, and the number of frozen names: the one place the
-# documents take these counts from.
+# headers) and C++17, with gcc and, when present, clang; each example to object code at the
+# level its "Needs: MSn" names. Lints: size checks, the include layering, the packet-mode
+# naming rule, the milestone of every exported function (comment tag = call-class
+# argument), the availability probes, and the examples copied verbatim into examples.md.
+# Prints the exported functions per header, per call class and per milestone, and the
+# number of frozen names: the one place the documents take these counts from.
+# check.sh --tags prints "name<TAB>milestone<TAB>header" per exported function and exits
+# (the export check of libmtl reads it).
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 inc="$here/include"
@@ -15,6 +18,38 @@ cflags=(-std=c99 -Wall -Wextra -Wpadded -Werror -fsyntax-only -I "$inc")
 cxxflags=(-std=c++17 -Wall -Wextra -Werror -fsyntax-only -I "$inc")
 fail=0
 ran=0
+
+# The milestone of every exported function, from its declaration MTL_API_<class>(n) and from
+# the tag that ends the comment above it: (MS1) to (MS7), or (Phase 7) and (later) inside
+# MTL_LATER, where n is LATER. A declaration takes the tag of the comment that ends closest
+# above it, with only a typedef or its continuation between.
+tags="$(cd "$hdr" && awk '
+    FNR == 1 { depth = 0; later = 0; tag = "" }
+    /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
+    /^#endif/ { if (later == depth) later = 0; depth-- }
+    match($0, /\((MS[1-7]|Phase 7|later)\) \*\/$/) { tag = substr($0, RSTART + 1, RLENGTH - 5); next }
+    /^MTL_API_(CP|DP|DPC|WT|AS)\(/ {
+      arg = $0; sub(/^MTL_API_[A-Z]+\(/, "", arg); sub(/\).*/, "", arg)
+      name = $0; sub(/^MTL_API_[A-Z]+\([^)]*\) /, "", name); sub(/\(.*/, "", name); sub(/.*[ *]/, "", name)
+      want = tag ~ /^MS/ ? substr(tag, 3) : (tag == "" ? "?" : "LATER")
+      ok = tag != "" && ((later > 0) == (tag == "Phase 7" || tag == "later")) && arg == want
+      printf "%s\t%s\t%s\t%s\t%s\n", (ok ? "ok" : "bad"), (tag == "" ? "none" : tag), name, FILENAME, arg
+      tag = ""; next
+    }
+    /^(#define|#if|#endif|struct |enum |static inline|MTL_MUST_CHECK|MTL_SIZE_CHECK|\})/ || /^[ \t]*$/ { tag = "" }
+  ' ./*.h)"
+if [ "${1:-}" = --tags ]; then
+	printf '%s\n' "$tags" | awk -F'\t' '{ sub(/^\.\//, "", $4); print $3 "\t" $5 "\t" $4 }'
+	exit 0
+fi
+
+# An example compiles to object code at the milestone its "Needs: MSn" names, so a call to a
+# function of a later milestone fails there (the error attribute acts at code generation).
+eflags=(-std=c99 -Wall -Wextra -Wpadded -Werror -c -o /dev/null -I "$inc")
+exxflags=(-std=c++17 -Wall -Wextra -Werror -c -o /dev/null -I "$inc")
+needs() { # file: the n of its first "Needs: MSn"
+	tr '\n' ' ' <"$1" | grep -oE 'Needs:[ /*]*MS[1-7]' | head -1 | grep -oE '[1-7]$'
+}
 
 run() { # label, command...
 	local label="$1"
@@ -43,7 +78,7 @@ for cc in "${compilers_c[@]}"; do
 		done
 	done
 	for f in "$here"/examples/*.c; do
-		run "$cc C99 $(basename "$f")" "$cc" "${cflags[@]}" "$f"
+		run "$cc C99 $(basename "$f") at MS$(needs "$f")" "$cc" "${eflags[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f"
 	done
 done
 
@@ -81,9 +116,45 @@ for cxx in "${compilers_cxx[@]}"; do
 		done
 	done
 	for f in "$here"/examples/*.cpp; do
-		[ -e "$f" ] && run "$cxx C++17 $(basename "$f")" "$cxx" "${cxxflags[@]}" "$f"
+		[ -e "$f" ] && run "$cxx C++17 $(basename "$f") at MS$(needs "$f")" "$cxx" "${exxflags[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f"
 	done
 done
+
+# Availability (mtl.h, OI-64). Every header together compiles to object code at levels 0 and
+# 7, so an inline wrapper never trips the error attribute by being included; a call to an
+# MS3 function, directly or through its wrapper, fails at level 2 naming MS3 and compiles at
+# level 3, at -O0 and -O2, in C and C++.
+for v in 0 7; do
+	for cc in "${compilers_c[@]}"; do
+		run "$cc C99 all headers -c at level $v" sh -c "echo '$all' | $cc ${eflags[*]} -pedantic -DMTL_TARGET_LEVEL=$v -x c -"
+	done
+	for cxx in "${compilers_cxx[@]}"; do
+		run "$cxx C++17 all headers -c at level $v" sh -c "echo '$all' | $cxx ${exxflags[*]} -pedantic -DMTL_TARGET_LEVEL=$v -x c++ -"
+	done
+done
+probe_direct='#include <mtl/experimental/mtl_events.h>
+int f(mtl_session_h s, struct mtl_event* e) { return mtl_read_events(MTL_OBJ_OF_SESSION(s), e, sizeof(*e), 1, 0); }'
+probe_wrapper='#include <mtl/experimental/mtl_events.h>
+int f(mtl_session_h s, struct mtl_event* e) { return mtl_session_read_events(s, e, 1, 0); }'
+for cc in "${compilers_c[@]}" "${compilers_cxx[@]}"; do
+	printf '#if defined(__has_attribute)\n#if __has_attribute(error)\nyes\n#endif\n#endif\n' | "$cc" -E -P -x c - | grep -q yes || continue
+	case "$cc" in *++) fl=("${exxflags[@]}") lang=c++ ;; *) fl=("${eflags[@]}") lang=c ;; esac
+	for p in "$probe_direct" "$probe_wrapper"; do
+		for o in -O0 -O2; do
+			ran=$((ran + 2))
+			if out="$(echo "$p" | "$cc" "${fl[@]}" "$o" -DMTL_TARGET_LEVEL=2 -x "$lang" - 2>&1)" || ! echo "$out" | grep -q 'MS3 function'; then
+				echo "FAIL: $cc $o compiled a call to an MS3 function at level 2, or did not name MS3"
+				fail=1
+			fi
+			if ! echo "$p" | "$cc" "${fl[@]}" "$o" -DMTL_TARGET_LEVEL=3 -x "$lang" - >/dev/null 2>&1; then
+				echo "FAIL: $cc $o rejected a call to an MS3 function at level 3"
+				fail=1
+			fi
+		done
+	done
+done
+# The in-tree level (MTL_LEVEL + 1) is a valid MTL_TARGET_LEVEL expression.
+run "gcc C99 all headers -c at level (MTL_LEVEL+1)" sh -c "echo '$all' | gcc ${eflags[*]} -pedantic '-DMTL_TARGET_LEVEL=(MTL_LEVEL+1)' -x c -"
 
 # Lint 1: every public struct has a size check.
 for h in "${headers[@]}"; do
@@ -144,7 +215,7 @@ count() { # file, mode(api|later)
 	awk -v mode="$2" '
     /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
     /^#endif/ { if (later == depth) later = 0; depth-- }
-    /^MTL_API_(CP|DP|DPC|WT|AS) / { if ((mode == "later") == (later > 0)) n++ }
+    /^MTL_API_(CP|DP|DPC|WT|AS)\(/ { if ((mode == "later") == (later > 0)) n++ }
     END {print n + 0}' "$1"
 }
 total=0
@@ -160,28 +231,14 @@ for c in CP DP DPC WT AS; do
 	printf '  MTL_API_%-4s %4d\n' "$c" "$(cat "$hdr"/*.h | awk -v c="$c" '
     /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
     /^#endif/ { if (later == depth) later = 0; depth-- }
-    !later && $1 == "MTL_API_" c {n++} END {print n + 0}')"
+    !later && $1 ~ "^MTL_API_" c "\\(" {n++} END {print n + 0}')"
 done
 
-# Lint 5: the comment above every exported function ends with its milestone tag: (MS1) to
-# (MS7) outside MTL_LATER, (Phase 7) or (later) inside it. A declaration takes the tag of
-# the comment that ends closest above it, with only a typedef or its continuation between.
-tags="$(cd "$hdr" && awk '
-    FNR == 1 { depth = 0; later = 0; tag = "" }
-    /^#if/ { depth++; if ($0 ~ /defined\(MTL_LATER\)/ && !later) later = depth }
-    /^#endif/ { if (later == depth) later = 0; depth-- }
-    match($0, /\((MS[1-7]|Phase 7|later)\) \*\/$/) { tag = substr($0, RSTART + 1, RLENGTH - 5); next }
-    /^MTL_API_(CP|DP|DPC|WT|AS) / {
-      name = $0; sub(/\(.*/, "", name); sub(/.*[ *]/, "", name)
-      ok = tag != "" && ((later > 0) == (tag == "Phase 7" || tag == "later"))
-      printf "%s\t%s\t%s\t%s\n", (ok ? "ok" : "bad"), (tag == "" ? "none" : tag), name, FILENAME
-      tag = ""; next
-    }
-    /^(#define|#if|#endif|struct |enum |static inline|MTL_SIZE_CHECK|\})/ || /^[ \t]*$/ { tag = "" }
-  ' ./*.h)"
-while IFS=$'\t' read -r ok tag name file; do
+# Lint 5: every exported function has its milestone twice, as the tag that ends its comment
+# and as the argument of its call-class macro, and they agree ($tags, above).
+while IFS=$'\t' read -r ok tag name file arg; do
 	if [ "$ok" != ok ]; then
-		echo "FAIL: $name ($file) has milestone tag '$tag'"
+		echo "FAIL: $name ($file) has milestone tag '$tag' and call-class argument '$arg'"
 		fail=1
 	fi
 done <<<"$tags"
@@ -201,7 +258,7 @@ printf '#define UINTPTR_MAX 0xFFFFFFFFFFFFFFFFu\n' >"$fake/stdint.h"
 frozen_src="$(for h in "${headers[@]}"; do [ "$h" = mtl_debug.h ] || echo "#include <mtl/experimental/$h>"; done)"
 pp="$(echo "$frozen_src" | gcc -E -P -nostdinc -I "$fake" -I "$inc" -x c - | tr '\n' ' ')"
 n_macros="$(echo "$frozen_src" | gcc -E -dM -nostdinc -I "$fake" -I "$inc" -x c - |
-	awk '{ name = $2; sub(/\(.*/, "", name) } name ~ /^(MTL|mtl)_/ && name !~ /^MTL_EXPERIMENTAL_.*_H$/ {n++} END {print n + 0}')"
+	awk '{ name = $2; sub(/\(.*/, "", name) } name ~ /^(MTL|mtl)_/ && name !~ /^MTL_EXPERIMENTAL_.*_H$/ && name !~ /_$/ {n++} END {print n + 0}')"
 rm -rf "$fake"
 n_enums="$(echo "$pp" | grep -oE 'enum [a-z0-9_]* ?\{[^}]*\}' | grep -oE 'MTL_[A-Z0-9_]+ *=' | sort -u | wc -l)"
 n_structs="$(echo "$pp" | grep -oE 'struct mtl_[a-z0-9_]+ \{' | sort -u | wc -l)"

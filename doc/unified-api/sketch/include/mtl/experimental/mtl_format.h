@@ -134,12 +134,12 @@ struct mtl_format_desc {
 /* A format of `kind` (enum mtl_format_kind): names, pixel group, and the layout of one
    frame of width x height (0 x 0: names and pixel group only). -MTL_EINVAL for an
    unknown format. AS. (MS1) */
-MTL_API_AS int mtl_format_describe(uint32_t format, uint32_t kind, uint32_t width,
-                                   uint32_t height, struct mtl_format_desc* out,
-                                   size_t size);
+MTL_API_AS(1) int mtl_format_describe(uint32_t format, uint32_t kind, uint32_t width,
+                                      uint32_t height, struct mtl_format_desc* out,
+                                      size_t size);
 /* The reverse: a name, SDP string, codec name or FFmpeg/GStreamer name to a format and
    its kind. AS. (MS2) */
-MTL_API_AS int mtl_format_parse(const char* name, uint32_t* format, uint32_t* kind);
+MTL_API_AS(2) int mtl_format_parse(const char* name, uint32_t* format, uint32_t* kind);
 /* Bytes of `samples` samples of an audio config (all channels). */
 static inline int mtl_audio_bytes(const struct mtl_audio_config* a, uint32_t samples,
                                   uint64_t* bytes) {
@@ -187,7 +187,7 @@ struct mtl_convert_desc {
   uint64_t reserved[3];
 };
 /* -MTL_ENOTSUP for a pair MTL does not convert. DPC. (MS4) */
-MTL_API_DPC int mtl_convert(const struct mtl_convert_desc* d);
+MTL_API_DPC(4) int mtl_convert(const struct mtl_convert_desc* d);
 
 /* ST 2110-31 AM824 subframe: byte 0 = B (block start) bit 5, F (frame start) bit 4,
    V, U, C, P bits 3-0; bytes 1-3 = the 24-bit sample, big endian. */

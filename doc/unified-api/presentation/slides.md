@@ -103,8 +103,8 @@ pipelines run on the same core.
   engines already call: `get_next_frame`, `notify_frame_done`, `query_ext_frame`,
   `notify_frame_ready`, `notify_slice_ready`, …
   - no new engine entry point for frames and rows
-- **API shell** `lib/src/unified/`, compiled into libmtl with the version node
-  `MTL_UNIFIED_EXPERIMENTAL_<rev>`: config → `ops` through the option table, reasons,
+- **API shell** `lib/src/unified/`, compiled into libmtl with one version node per milestone,
+  `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`: config → `ops` through the option table, reasons,
   call classes; no data-path state
 - **Legacy**: `st*p_*` become wrappers on the core (st20p MS2, the others MS4); the session API
   stays as the engines' interface
@@ -182,10 +182,10 @@ sequenceDiagram
 
 - **Media time M**: what the unit represents → `RTP = floor(M × rate)`, exact, every essence
 - **Launch time**: when it leaves → from ST 2110-21 and `min_tx_delay_ns`
-  - 0 (playback): content exists before its time, sent in the slot of M
-  - one frame + the pick-up lead (capture): exists only after its sampling instant, the next slot
+  - 0 (playback): content exists before its time, sent at the index of M
+  - one frame + the pick-up lead (capture): exists only after its sampling instant, the next index
   - rows units (gateway): SDI → IP, same frame, line by line
-- late units are dropped (INDEX, TAI) or moved to the next slot (AUTO): nothing ever slides
+- late units are dropped (INDEX, TAI) or moved to the next index (AUTO): nothing ever slides
 
 ---
 
@@ -252,7 +252,7 @@ flowchart LR
 
 | Stage | What applications see |
 |---|---|
-| MS1 | unified headers in `include/mtl/experimental/`, their functions in libmtl's node `MTL_UNIFIED_EXPERIMENTAL_<rev>`; the legacy API untouched |
+| MS1 | unified headers in `include/mtl/experimental/`, their functions in libmtl's node `MTL_UNIFIED_EXPERIMENTAL_<rev>_MS1`; the legacy API untouched |
 | MS3 | libmtl gets a soname, the `MTL_LEGACY` node and hidden internals |
 | MS4–MS6 | legacy headers move to `mtl/legacy/` with stubs; in-tree consumers port |
 | MS7, release F | legacy calls deprecated; the unified API is `MTL_1.0` |
@@ -307,7 +307,7 @@ deployment.md has the rules.
 
 - **MS5: one IS-05 PATCH = one `mtl_session_update`**: flows and legs, all or nothing
   - the call returns the planned instant (202); `status.update_*` says when it applied (200)
-  - the switch is at the slot boundary by the clock, unit or not
+  - the switch is at the index boundary by the clock, unit or not
 - **MS5: RTCP sender reports on TX**, driven by the `rtcp.*` options, Info Block built by MTL
 - **MS6: `MTL_TIME_SOURCE_FREERUN`**, with the published time base
 - **Phase 7, after MS7** (declared under `MTL_LATER`, the design kept):
@@ -367,19 +367,20 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 
 | Week | Tasks |
 |---|---|
-| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1a headers to `include/mtl/experimental/`, H1b the API shell in libmtl, C0 the core's header |
-| 2 | C1a handles, states, close; C1b slot table, descriptor ring, results, deferred wake; A1 instance; E1 engine fixes; the gtest and RxTxApp copies |
-| 3 | C2 null binding and test clock, B1 video TX binding, B2 video RX binding, A2a session and data calls, CI1a run options |
-| 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, CI1b baseline entries, P1 acceptance smoke set, SA1 samples; stretch A2b, B3, X |
+| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header |
+| 2 | C1a handles, states, close; C1w the wait protocol; C1b slot table, descriptor ring, results; A1 instance; the gtest and RxTxApp copies |
+| 3 | C2 null binding, test clock and rate rules, B1 video TX binding, B2 video RX binding, A2a session, data and wait calls, A2c info, status and latency fields |
+| 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, P1 acceptance smoke set, baseline CI entries and the samples `tx_video`, `rx_video`, `legacy_bridge`; stretch A2b, B3, X written if the gates allow, committed in MS2a |
 
 - one signed-off commit per task, at most 1.5 k changed lines with its tests; the maintainer
   reviews and pushes
 - exit: SHA-256 equal across the two APIs in both directions, one and two legs; `St20p*` green in
   `UnifiedKahawaiTest` next to `KahawaiTest`; the acceptance smoke set passes on `rxtxapp` and
-  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02, ex03 and ex05 run on `null:1`; the
-  samples call every function of the MS1 node
+  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02, ex03 and ex05 run on `null:1`; with
+  them the samples `tx_video`, `rx_video` and `legacy_bridge` call every function of the MS1 node,
+  the rest listed in ms1-status
 
-<!-- Critical path: P0 → H1a → H1b → A1 → A2a → R1 and I1 → CI1b → P1, with C0 → C1a → C1b → B1/B2 → A2a beside it; SA1 after A2a gates exit criterion 8. Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
+<!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → R1 and I1 → P1, with C0 → C1a, C1w → C1b → C2 and E1 → B1/B2 beside it; A2c after A2a, before P1. Four reviewed commits a week (C0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
 
 ---
 

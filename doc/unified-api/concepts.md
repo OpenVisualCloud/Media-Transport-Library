@@ -59,7 +59,7 @@ so a fix lands once. ST 2110-20 video comes first ([implementation-plan.md](impl
 | Tuning | flag bits and ops fields per essence | named options, absent unless set, listable by name |
 | Observability | per-essence stats structs, reset on read | one registry of named, cumulative values; events with getters |
 | Public headers | the session layer included | `mtl.h` and optional headers, one job each (`sketch/check.sh` prints the functions per header and per milestone); the legacy headers opt-in, then internal |
-| ABI | no soname, no struct versioning | `struct_size` and `MTL_INIT`, size-checked structs; in libmtl, the symbol version node `MTL_UNIFIED_EXPERIMENTAL_<rev>`, then `MTL_1.0` at the freeze |
+| ABI | no soname, no struct versioning | `struct_size` and `MTL_INIT`, size-checked structs; in libmtl, one symbol version node per milestone `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, then `MTL_1.0` at the freeze; a call above `MTL_LEVEL` fails to compile |
 | Testing | a NIC for almost everything | the null backend, a test clock, fault injection |
 | Pods | unbounded teardown, no health signal, open blocks up to 180 s | a bounded network-first shutdown, lock-free health, fail-fast open |
 | NMOS and IPMX | destination updates only | one atomic `mtl_session_update` with planned and applied instants (MS5); RTCP sender reports (MS5) and FREERUN (MS6); the rest of IS-05, SDP, IPMX and PEP (Phase 7) |
@@ -111,7 +111,7 @@ A function is exported from its milestone, and a value of an exported call not b
 | MS1 | ST 2110-20 frames, TX and RX: library pools, one or two legs (ST 2022-7), conversion to an application format, results, wait handles, media modes AUTO and TAI; the null backend, PCI ports through the legacy bridge | ex01, ex02, ex03, ex05 |
 | MS2a | rows units (slice mode), RX zero fill and `MTL_SESSION_RX_LATEST`, PCI ports opened directly, the log sink | — |
 | MS2b | zero copy for video: imported and attached memory, holds, split forwarding, MXL rings | ex04, ex06, ex09 |
-| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_next_slot`; events, health, a shutdown with a report | ex08, ex11 |
+| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_get_next`; events, health, a shutdown with a report | ex08, ex11 |
 | MS4 | every essence: audio, ANC and fast metadata (MS4a); compressed video, codec plugins and `mtl_convert` (MS4b) | ex10 |
 | MS5 | packet units (RTP passthrough, ST 2022-6) and `mtl_session_update` | ex12, ex13 |
 | MS6 | sync: start arrays, ANC that follows its video, sample-accurate audio; the framework and language ports | ex07 |
@@ -127,7 +127,7 @@ A function is exported from its milestone, and a value of an exported call not b
 | **session** | one stream of one essence in one direction: video TX, audio RX, ANC TX, … | `mtl_session_h` (legacy `st20p_tx_handle` and its siblings) |
 | **config** | one typed struct that describes a session: direction, essence, flows, essence fields | `struct mtl_session_config` (legacy `struct st20p_tx_ops` and friends) |
 | **unit** | what one call moves: a frame or field, rows of a frame, a run of audio samples, the ANC of one frame, or a chunk of RTP packets | `struct mtl_unit` (legacy `struct st_frame`) |
-| **slot** | one buffer of a session's pool, named by its index; the stable identity of a buffer. The time a unit takes on the wire is its **frame time** (a wire slot), not a slot | `u.slot`, `sc.pool_count` (legacy `framebuff_cnt`) |
+| **slot** | one buffer of a session's pool, named by its index; the stable identity of a buffer. The time a unit takes on the wire is its **frame time**, at its launch index, never a slot | `u.slot`, `sc.pool_count` (legacy `framebuff_cnt`) |
 | **lease** | permission to touch one slot's memory now, from acquire or dequeue until submit or release | `mtl_lease_h`, `u.lease` |
 | **result** | what happened to one TX unit you submitted | `struct mtl_tx_result`, `mtl_tx_reap` (legacy `notify_frame_done`) |
 | **media time** | the TAI instant a unit represents, counted from the SMPTE epoch, so units of every session mean the same instant | `u.media_index`, `u.media_tai_ns`, `sc.media_mode` |
@@ -484,8 +484,8 @@ returns up to `max` results in submission order.
 
 | `status` | Meaning |
 |---|---|
-| `MTL_TX_ON_TIME` | sent at its frame time (AUTO late: a later one, `MTL_TXR_RESLOTTED`) |
-| `MTL_TX_DROPPED` | not sent; `reason` says why (for example `TOO_LATE`, `DUPLICATE_SLOT`, `WAITING_NEIGHBOUR`); its frame time stays empty on the wire |
+| `MTL_TX_ON_TIME` | sent at its frame time (AUTO late: a later one, `MTL_TXR_DEFERRED`) |
+| `MTL_TX_DROPPED` | not sent; `reason` says why (for example `TOO_LATE`, `SNAP_COLLISION`, `WAITING_NEIGHBOUR`); its frame time stays empty on the wire |
 | `MTL_TX_FLUSHED` | removed by stop with FLUSH, discard or close (`STOP_FLUSH`, `DISCARD`, `CLOSE`, `STOP_TIMEOUT`, `ABORTED`) |
 | `MTL_TX_FAILED` | a device or queue failure; `error` and `reason` |
 
@@ -574,10 +574,10 @@ only carrier of a fact.
 | Question | Where |
 |---|---|
 | was my frame on time? | the result's `status` and `margin_ns` (`mtl_tx_reap`) |
-| how early or late? | `margin_ns`; stats `tx.margin_ns` (histogram), `tx.margin_min_ns`; `mtl_tx_next_slot` before acquiring |
+| how early or late? | `margin_ns`; stats `tx.margin_ns` (histogram), `tx.margin_min_ns`; `mtl_tx_get_next` before acquiring |
 | why can I not acquire? | `-MTL_EAGAIN`, `status.blocked_on`, `MTL_EVENT_BACKPRESSURE` |
 | how much is buffered? | `queue.gauge{state}`, `queue.queued_media_ns` |
-| did a frame time go empty? | `tx.slots_empty`, `MTL_EVENT_TX_UNDERRUN`, `slots_skipped_before` in the full result |
+| did a frame time go empty? | `tx.indices_empty`, `MTL_EVENT_TX_UNDERRUN`, `indices_skipped_before` in the full result |
 | is my sender ST 2110-21 compliant? | `tx.vrx_max`, `tx.cinst_max`, `tx.tpr_late_pkts` |
 | is PTP locked, which grandmaster? | the flags of `mtl_time_now`, `time.*`, `MTL_EVENT_TIME_STATE`, `MTL_EVENT_GRANDMASTER` |
 | which leg is alive? | `status.leg[]` (admin, oper), `MTL_EVENT_LEG_STATE` |
@@ -611,7 +611,7 @@ flowchart LR
     M --> RTP["RTP = floor of M x rate"]
     M --> D{"min_tx_delay_ns"}
     D -->|"0: playback"| P["at the frame time of M"]
-    D -->|"one frame + pick-up lead:<br/>capture"| C["the next frame time,<br/>slot delay 1"]
+    D -->|"one frame + pick-up lead:<br/>capture"| C["the next frame time,<br/>launch delay 1"]
     D -->|"0, rows units:<br/>gateway"| G["the same frame,<br/>line by line"]
 ```
 
@@ -640,19 +640,19 @@ is the unit's first sample), and the video's frame for ANC and fast metadata. Wh
 `sc.min_tx_delay_ns` is the earliest a unit may leave after its media time, and the one setting
 that says when content exists:
 
-| Producer | Content exists | `sc.min_tx_delay_ns` | Slot delay |
+| Producer | Content exists | `sc.min_tx_delay_ns` | Launch delay |
 |---|---|---|---|
 | playback (the default): files, graphics, generators | before its media time | 0 | 0: the frame time of M |
 | capture: cameras, encoders, RX-to-TX processors | only after its sampling instant | one frame period plus the pick-up lead | 1 |
-| gateway: SDI to IP, with rows units ([ex08](sketch/examples/ex08_progressive_rows.c)) | in the same frame period, line by line | 0, with the option `tx.troffset_ns` if needed | 0 |
+| gateway: SDI to IP, with rows units ([ex08](sketch/examples/ex08_progressive_rows.c)) | in the same frame period, line by line | 0, with `sc.video.troffset_us` if needed | 0 |
 
 The pick-up lead is how long before its frame time MTL takes a unit: about 0.5 ms with rate-limit pacing
-and about 20 µs with TSC pacing, plus a conversion stage when there is one. The slot delay is
-reported (`info.slot_delay`), never configured. In TAI mode `sc.media_time_offset_ns` declares the
+and about 20 µs with TSC pacing, plus a conversion stage when there is one. The launch delay is
+reported (`info.launch_delay`), never configured. In TAI mode `sc.media_time_offset_ns` declares the
 producer's latency and moves the frame time; the legacy RTP trim with the launch kept is the option
 `tx.rtp_trim_ns`. A processor that submits each output with its input's media time keeps the
 input's RTP and a constant delay ([ex10](sketch/examples/ex10_processor.c)). The rule and its
-numbers: [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-slot-rule).
+numbers: [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
 
 ### 7.4 Late units and empty frame times
 
@@ -662,7 +662,7 @@ The late policy (option `MTL_OPT_LATE_POLICY`) follows the media mode:
 | Policy | A unit whose deadline passed | Default for |
 |---|---|---|
 | `MTL_LATE_DROP` | is not sent; result `DROPPED`, reason `TOO_LATE`; its frame time stays empty | INDEX and TAI |
-| `MTL_LATE_RESLOT` | gets the next free frame time and its media time; result `ON_TIME` with `MTL_TXR_RESLOTTED` | AUTO |
+| `MTL_LATE_DEFER` | gets the next free frame time and its media time; result `ON_TIME` with `MTL_TXR_DEFERRED` | AUTO |
 
 A bounded late send (`MTL_LATE_SEND_LATE`, result `MTL_TX_LATE`) is reserved for Phase 7. A frame
 time without a unit follows the underrun policy (option `MTL_OPT_UNDERRUN_POLICY`): nothing for video,
@@ -696,7 +696,7 @@ if (ret >= 0) ret = mtl_session_start(s, 3, &origin, NULL); /* all three or none
 
 Each session has `sc.media_mode = MTL_MEDIA_INDEX`, and each unit says which frame or sample it
 is. The RTP of ANC frame k equals that of video frame k, and audio sample n has exactly
-`floor(T0 × 48000) + n`. The ANC session needs no raster: it takes the raster and slot delay of
+`floor(T0 × 48000) + n`. The ANC session needs no raster: it takes the raster and launch delay of
 the first video of its start. On RX, units report `media_index` too, and `mtl_rx_align` gives the
 audio sample that belongs to a video frame. Created timelines with their own anchors are reserved
 for later (`MTL_LATER`). As a picture:
@@ -797,7 +797,7 @@ Pictures: the shutdown order and the instance phases with their probes
 
 A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, and adds one job. A
 function is exported from the milestone that implements it (the header declares the whole design,
-so an earlier call fails to link); `sketch/check.sh` prints the exported functions per header and per milestone and the number
+and a call above `MTL_LEVEL` fails to compile, naming its milestone); `sketch/check.sh` prints the exported functions per header and per milestone and the number
 of frozen names. A verb several objects share is one exported function over `struct mtl_object`
 (`mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_get_wait_handle`, `mtl_reap`, `mtl_read_events`,
 `mtl_release`), with `static inline` typed wrappers that keep the familiar names
@@ -871,7 +871,7 @@ The ten words of §2.1, plus:
 | arm | what a data call returning `-MTL_EAGAIN` does to the wait handle, so the next completion wakes you |
 | epoch | the SMPTE epoch, 1970-01-01 TAI: index 0 of every session unless its start sets T0 (`MTL_WHEN_ORIGIN`) |
 | essence | one media type: video (-20), compressed video (-22), audio (-30), ANC (-40), fast metadata (-41), or generic RTP |
-| frame time | a unit's period on the epoch grid, the wire slot it is sent in: a frame or a field for video, the video's frame for ANC; never a buffer (that is a slot) |
+| frame time | a unit's period on the epoch grid, the wire period of the launch index it is sent at: a frame or a field for video, the video's frame for ANC; never a buffer (that is a slot) |
 | health | lock-free liveness and readiness flags for probes (`mtl_instance_get_health`) |
 | launch time | when a unit's first packet leaves |
 | leg | one of a session's two ST 2022-7 network paths, `flows[0]` and `flows[1]` |
@@ -885,7 +885,7 @@ The ten words of §2.1, plus:
 | quiesced | after a close: no device can reach any memory, though a lease or thread still holds some |
 | region | memory MTL may DMA, refcounted and mapped into every device on the path |
 | retired | closed, with no memory, lease or device reference left |
-| slot delay | how many frame times after its media time a unit leaves (`info.slot_delay`): 0 for playback, 1 for capture |
+| launch delay | how many frame times after its media time a unit leaves (`info.launch_delay`): 0 for playback, 1 for capture |
 | tasklet | a function MTL's scheduler calls in a tight loop on a pinned core |
 | underrun | a frame time with no unit; the underrun policy says what is sent |
 | wake-up | the eventfd write that wakes an armed thread; a tasklet only flags the session, and its scheduler loop writes once per iteration |

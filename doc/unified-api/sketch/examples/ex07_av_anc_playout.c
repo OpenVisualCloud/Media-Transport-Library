@@ -12,8 +12,9 @@ enum { VIDEO, AUDIO, CAPTIONS };
 /* the demuxer: video pts in frames, audio pts in samples, both from 0; 0 = a packet */
 int demux_next(int* stream, int64_t* pts, const void** data, size_t* size);
 void decode_into(struct mtl_unit* u, const void* data, size_t size);
-/* writes captions for frame pts as ANC: a meta header + packets, and the UDW run */
-size_t captions_for(int64_t pts, void* meta, void* udw);
+/* appends the caption ANC packets of frame pts to u (mtl_anc_put, 8-bit words, in raster
+   order): 0, or an MTL_E* code */
+int captions_for(int64_t pts, struct mtl_unit* u);
 
 /* One TX session of the file; port: the UDP port of its flow. */
 static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_session_h* s) {
@@ -32,7 +33,7 @@ static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_sessi
     sc.audio.format = MTL_PCM24;
     sc.audio.sample_rate = 48000;
     sc.audio.channels = 2;
-  } /* ANC: raster and slot delay come from the first video of its start */
+  } /* ANC: raster and launch delay come from the first video of its start */
   return mtl_session_create(mt, &sc, s);
 }
 
@@ -46,7 +47,7 @@ static int acquire(mtl_session_h s, struct mtl_unit* u) {
 }
 
 /* The copy path: the sample count follows from the bytes. A full pool (-MTL_EAGAIN) is
-   waited out; a partial write continues at the next index (mtl_tx_next_slot). */
+   waited out; a partial write continues at the next index (mtl_tx_get_next). */
 static int write_audio(mtl_session_h s, int64_t first, const void* data, size_t size) {
   const uint8_t* p = (const uint8_t*)data;
   struct mtl_unit how;
@@ -59,10 +60,10 @@ static int write_audio(mtl_session_h s, int64_t first, const void* data, size_t 
     p += n;
     size -= (size_t)n;
     if (size > 0) {
-      struct mtl_slot_hint h;
-      int ret = mtl_tx_next_slot(s, &h, sizeof(h));
+      struct mtl_tx_next c;
+      int ret = mtl_tx_get_next(s, &c, sizeof(c));
       if (ret < 0) return ret;
-      how.media_index = h.next_media_index;
+      how.media_index = c.next_media_index;
     }
   }
   return 0;
@@ -92,9 +93,14 @@ int av_anc_playout(mtl_instance_h mt) {
       ret = write_audio(s[AUDIO], pts, data, size);
       continue;
     }
-    ret = acquire(s[CAPTIONS], &u); /* frames without captions get the empty ANC packet */
+    ret =
+        acquire(s[CAPTIONS], &u); /* a unit without captions sends the empty ANC packet */
     if (ret < 0) break;
-    u.used = (uint32_t)captions_for(pts, u.meta, u.plane[0].addr);
+    ret = captions_for(pts, &u);
+    if (ret < 0) {
+      mtl_tx_release(s[CAPTIONS], u.lease);
+      break;
+    }
     u.media_index = pts;
     ret = mtl_tx_submit(s[CAPTIONS], &u);
     if (ret < 0) break;
