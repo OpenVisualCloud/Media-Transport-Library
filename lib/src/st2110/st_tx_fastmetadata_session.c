@@ -186,7 +186,7 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   rtp->base.marker = 0;
   rtp->base.payload_type =
       ops->payload_type ? ops->payload_type : ST_RFMDRTP_PAYLOAD_TYPE_FASTMETADATA;
-  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : (uint32_t)s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st41_seq_id = 0;
   s->st41_rtp_time = -1;
@@ -539,7 +539,7 @@ static int tx_fastmetadata_session_rtp_update_packet(
   mt_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   mt_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
-  if (rtp->tmstamp != s->st41_rtp_time) {
+  if (rtp->tmstamp != (uint32_t)s->st41_rtp_time) {
     /* start of a new frame */
     s->st41_pkt_idx = 0;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
@@ -590,7 +590,7 @@ static int tx_fastmetadata_session_build_packet_chain(
     /* update rtp time for rtp path */
     if (ops->type == ST41_TYPE_RTP_LEVEL) {
       struct st41_rtp_hdr* rtp = rte_pktmbuf_mtod(pkt_rtp, struct st41_rtp_hdr*);
-      if (rtp->base.tmstamp != s->st41_rtp_time) {
+      if (rtp->base.tmstamp != (uint32_t)s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
         s->port_user_stats.common.port[s_port].frames++;

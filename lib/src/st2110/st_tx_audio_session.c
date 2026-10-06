@@ -185,7 +185,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   rtp->marker = 0;
   rtp->payload_type =
       ops->payload_type ? ops->payload_type : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
-  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x223450;
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : (uint32_t)s->idx + 0x223450;
   rtp->ssrc = htonl(ssrc);
 
   s->st30_seq_id = 0;
@@ -1547,7 +1547,7 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
     /* re-calculate the delta */
     uint32_t delta_tsc_now = target_tsc - mt_get_tsc(impl);
     uint32_t delta_pkts_now = delta_tsc_now / trs;
-    if (delta_pkts_now < (i - 0)) {
+    if (delta_pkts_now < (uint32_t)(i - 0)) {
       dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
           i);
       /* try next sync point */

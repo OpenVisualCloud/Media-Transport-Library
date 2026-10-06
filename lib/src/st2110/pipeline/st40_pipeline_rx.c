@@ -154,12 +154,13 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  uint8_t num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_rx.num_port = num_port;
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.interlaced = ops->interlaced;
 
-  for (int i = 0; i < ops_rx.num_port; i++) {
+  for (int i = 0; i < num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);

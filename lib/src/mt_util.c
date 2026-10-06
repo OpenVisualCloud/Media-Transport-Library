@@ -228,7 +228,7 @@ enum mtl_port mt_port_by_name(struct mtl_main_impl* impl, const char* name) {
     return MTL_PORT_MAX;
   }
 
-  for (enum mtl_port i = 0; i < main_num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)main_num_ports; i++) {
     if (0 == strncmp(p->port[i], name, MTL_PORT_MAX_LEN)) {
       return i;
     }
@@ -660,7 +660,7 @@ int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
 }
 
 int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32_t n) {
-  if (fifo->used + n > fifo->size) {
+  if (fifo->used + n > (uint32_t)fifo->size) {
     dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
   }
@@ -675,7 +675,7 @@ int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32
 }
 
 int mt_u64_fifo_get_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n) {
-  if (fifo->used < n) {
+  if ((uint32_t)fifo->used < n) {
     dbg("%s, fail as no enough item\n", __func__);
     return -EIO;
   }
@@ -726,11 +726,11 @@ int mt_u64_fifo_read_any(struct mt_u64_fifo* fifo, uint64_t* item, int skip) {
 
 int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n,
                               int skip) {
-  if (fifo->used < n) {
+  if ((uint32_t)fifo->used < n) {
     dbg("%s, fail as no enough item\n", __func__);
     return -EIO;
   }
-  if (skip < 0 || skip + n > fifo->used) {
+  if (skip < 0 || skip + n > (uint32_t)fifo->used) {
     dbg("%s, fail as skip(%d)/n(%u) is invalid\n", __func__, skip, n);
     return -EIO;
   }
@@ -1126,7 +1126,7 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
   size_t len = strlen(buf);
   ssize_t bytes_written = write(fd, buf, len);
   int ret;
-  if (bytes_written != len) {
+  if (bytes_written < 0 || (size_t)bytes_written != len) {
     warn("%s, write %u to %s fail\n", __func__, value, path);
     ret = -EIO;
   } else {

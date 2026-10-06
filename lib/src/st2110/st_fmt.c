@@ -660,7 +660,7 @@ int st_frame_sanity_check(struct st_frame* frame) {
 }
 
 int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
     if (fmt == st20_pgroups[i].fmt) {
@@ -706,7 +706,7 @@ const char* st20_fmt_name(enum st20_fmt fmt) {
 }
 
 enum st20_fmt st20_name_to_fmt(const char* name) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
     if (!strcmp(name, st20_pgroups[i].name)) {
@@ -719,7 +719,7 @@ enum st20_fmt st20_name_to_fmt(const char* name) {
 }
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (fps == st_fps_timings[i].fps) {
@@ -750,7 +750,7 @@ int st_frame_period_ns(enum st_fps fps, uint64_t* period_ns) {
 }
 
 double st_frame_rate(enum st_fps fps) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (fps == st_fps_timings[i].fps) {
@@ -769,7 +769,7 @@ double st_frame_rate(enum st_fps fps) {
 #define ST_FPS_SNAP_TOLERANCE (1e-3)
 
 enum st_fps st_frame_rate_to_st_fps(double framerate) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (framerate == st_fps_timings[i].framerate ||
@@ -793,7 +793,7 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
 }
 
 enum st_fps st_name_to_fps(const char* name) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (!strcmp(name, st_fps_timings[i].name)) {
@@ -806,7 +806,7 @@ enum st_fps st_name_to_fps(const char* name) {
 }
 
 const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
@@ -819,7 +819,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
 }
 
 enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (!strcmp(name, st_frame_fmt_descs[i].name)) {
@@ -848,7 +848,7 @@ enum st22_codec st_name_to_codec(const char* name) {
 }
 
 uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
@@ -861,7 +861,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
 }
 
 enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
@@ -1496,7 +1496,7 @@ uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
 
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
 
-  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
+  for (size_t i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
     refer = &g_cvl_static_pad_tables[i];
     if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
         (ops->height == refer->height) && (ops->fps == refer->fps) &&

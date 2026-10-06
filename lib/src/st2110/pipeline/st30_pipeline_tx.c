@@ -435,7 +435,7 @@ static int tx_st30p_usdt_dump_frame(struct st30p_tx_ctx* ctx, struct st30_frame*
 
   /* write frame to dump file */
   ssize_t n = write(ctx->usdt_dump_fd, frame->addr, frame->data_size);
-  if (n != frame->data_size) {
+  if (n < 0 || (size_t)n != frame->data_size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     ctx->usdt_dumped_frames++;

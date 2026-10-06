@@ -250,7 +250,7 @@ static int rx_audio_session_usdt_dump_frame(struct st_rx_audio_session_impl* s,
 
   /* write frame to dump file */
   ssize_t n = write(s->usdt_dump_fd, frame->addr, s->st30_frame_size);
-  if (n != s->st30_frame_size) {
+  if (n < 0 || (size_t)n != s->st30_frame_size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     s->usdt_dumped_frames++;

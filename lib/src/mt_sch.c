@@ -390,9 +390,9 @@ static int sch_free(struct mtl_sch_impl* sch) {
   info("%s(%d), start to free sch: %s \n", __func__, idx, sch->name);
   sch_lock(sch);
   if (sch->tasklet) {
-    for (int i = 0; i < sch->nb_tasklets; i++) {
+    for (uint32_t i = 0; i < sch->nb_tasklets; i++) {
       if (sch->tasklet[i]) {
-        warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
+        warn("%s(%d), tasklet %u still active\n", __func__, idx, i);
         sch_unlock(sch); /* unlock */
         mtl_sch_unregister_tasklet(sch->tasklet[i]);
         sch_lock(sch);
@@ -913,7 +913,7 @@ int mtl_sch_unregister_tasklet(mtl_tasklet_handle tasklet) {
   mt_rte_free(tasklet);
 
   int max_idx = 0;
-  for (int i = 0; i < sch->nb_tasklets; i++) {
+  for (uint32_t i = 0; i < sch->nb_tasklets; i++) {
     if (sch->tasklet[i]) max_idx = i + 1;
   }
   sch->max_tasklet_idx = max_idx;
@@ -930,7 +930,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
   sch_lock(sch);
 
   /* find one empty slot in the mgr */
-  for (int i = 0; i < sch->nb_tasklets; i++) {
+  for (int i = 0; (uint32_t)i < sch->nb_tasklets; i++) {
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
