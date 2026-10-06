@@ -46,7 +46,7 @@ endif
 if get_option('buildtype') != 'debug'
   plugins_c_args += ['-Werror']
 endif
-plugins_c_args += ['-Wall']
+plugins_c_args += ['-Wall', '-Wconversion']
 plugins_c_args += ['-Wunused-parameter']
 
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?

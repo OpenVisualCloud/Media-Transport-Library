@@ -71,7 +71,7 @@ struct _Gst_Mtl_St30p_Rx {
   guint retry_frame;
   GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl session device */
-  gint framebuffer_num;
+  guint framebuffer_num;
 
   /* audio (st30p) specific arguments */
   guint channel;

@@ -121,10 +121,11 @@ build_ffmpeg() {
 	done
 
 	# MTL's own files get the warning flags of the MTL meson projects; the
-	# rest of FFmpeg keeps its own
+	# rest of FFmpeg keeps its own. FFmpeg's headers are not -Wconversion
+	# clean, so these files see them as system headers.
 	cat >>libavdevice/Makefile <<'EOF'
 
-$(SUBDIR)mtl_%.o: CFLAGS += -Wextra -Werror -Wimplicit-fallthrough
+$(SUBDIR)mtl_%.o: CFLAGS += -Wextra -Werror -Wimplicit-fallthrough -Wconversion -isystem $(SRC_PATH)
 EOF
 
 	# Use bash array to pass extra configuration flags to avoid shellcheck SC2086 word-splitting warnings.

@@ -101,12 +101,12 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     err(ctx, "%s, invalid width: %d\n", __func__, s->width);
     return AVERROR(EINVAL);
   }
-  ops_rx.width = s->width;
+  ops_rx.width = (uint32_t)s->width;
   if (s->height <= 0) {
     err(ctx, "%s, invalid height: %d\n", __func__, s->height);
     return AVERROR(EINVAL);
   }
-  ops_rx.height = s->height;
+  ops_rx.height = (uint32_t)s->height;
   ops_rx.fps = framerate_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
     err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
@@ -190,8 +190,9 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   st->codecpar->format = pix_fmt;
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
-  avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
-  ctx->packet_size = img_buf_size;
+  avpriv_set_pts_info(st, 64, (unsigned int)s->framerate.den,
+                      (unsigned int)s->framerate.num);
+  ctx->packet_size = (unsigned int)img_buf_size;
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
@@ -199,7 +200,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   ops_rx.priv = s;  // Handle of priv_data registered to lib
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
-  ops_rx.framebuff_cnt = s->fb_cnt;
+  ops_rx.framebuff_cnt = (uint16_t)s->fb_cnt;
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   if (s->gpu_direct_enabled) {
@@ -209,7 +210,8 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     /* print GPU device and driver IDs */
     print_gpu_drivers_and_devices();
 
-    ret = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
+    ret = init_gpu_device(&gpu_ctx, (unsigned)s->gpu_driver_index,
+                          (unsigned)s->gpu_device_index);
     if (ret < 0) {
       err(ctx, "%s, app gpu initialization failed %d\n", __func__, ret);
       return -ENXIO;
@@ -235,9 +237,9 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   }
 
   if (s->timeout_sec)
-    st20p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+    st20p_rx_set_block_timeout(s->rx_handle, (uint64_t)s->timeout_sec * NS_PER_S);
 
-  img_buf_size = st20p_rx_frame_size(s->rx_handle);
+  img_buf_size = (int)st20p_rx_frame_size(s->rx_handle);
   if ((unsigned int)img_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
     mtl_st20p_read_close(ctx);
@@ -287,7 +289,7 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
 
-  ret = av_new_packet(pkt, ctx->packet_size);
+  ret = av_new_packet(pkt, (int)ctx->packet_size);
   if (ret != 0) {
     err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
     st20p_rx_put_frame(s->rx_handle, frame);

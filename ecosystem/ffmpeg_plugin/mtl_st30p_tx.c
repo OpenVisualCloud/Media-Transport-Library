@@ -73,6 +73,7 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   mtlSt30pMuxerContext* s = ctx->priv_data;
   struct st30p_tx_ops ops_tx;
   int ret;
+  int channels;
   AVCodecParameters* codecpar = ctx->streams[0]->codecpar;
 
   if (codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
@@ -105,11 +106,16 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   ops_tx.ptime = s->ptime;
 #ifdef MTL_FFMPEG_4_4
   info(ctx, "%s, channels %d\n", __func__, codecpar->channels);
-  ops_tx.channel = codecpar->channels;
+  channels = codecpar->channels;
 #else
   info(ctx, "%s, nb_channels %d\n", __func__, codecpar->ch_layout.nb_channels);
-  ops_tx.channel = codecpar->ch_layout.nb_channels;
+  channels = codecpar->ch_layout.nb_channels;
 #endif
+  if ((channels <= 0) || (channels > UINT16_MAX)) {
+    err(ctx, "%s, invalid channels %d\n", __func__, channels);
+    return AVERROR(EINVAL);
+  }
+  ops_tx.channel = (uint16_t)channels;
   ret = mtl_parse_st30_sample_rate(&ops_tx.sampling, codecpar->sample_rate);
   if (ret) {
     err(ctx, "%s, unknown sample_rate %d\n", __func__, codecpar->sample_rate);
@@ -131,8 +137,8 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
 
   ops_tx.name = "st30p_ffmpeg";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
-  ops_tx.framebuff_cnt = s->fb_cnt;
-  ops_tx.framebuff_size = s->frame_size;
+  ops_tx.framebuff_cnt = (uint16_t)s->fb_cnt;
+  ops_tx.framebuff_size = (uint32_t)s->frame_size;
 
   // get mtl dev
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
@@ -192,11 +198,11 @@ static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
         s->filled);
 
     if (size < left) {
-      mtl_memcpy(cur, data, size);
+      mtl_memcpy(cur, data, (size_t)size);
       s->filled += size;
       break;
     } else {
-      mtl_memcpy(cur, data, left);
+      mtl_memcpy(cur, data, (size_t)left);
       s->frame_counter++;
       dbg(ctx, "%s(%d), put frame addr %p\n", __func__, s->idx, frame->addr);
       st30p_tx_put_frame(s->tx_handle, frame);

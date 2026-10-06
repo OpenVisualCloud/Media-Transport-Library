@@ -165,7 +165,7 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
       gobject_class, PROP_ST30P_TX_FRAMEBUFF_NUM,
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT16, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_TX_PTIME,
@@ -359,7 +359,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
         return FALSE;
     }
   }
-  ops_tx.channel = info->channels;
+  ops_tx.channel = (uint16_t)info->channels;
 
   if (!gst_mtl_common_gst_to_st_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
@@ -380,15 +380,16 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
       ops_tx.ptime = ST30_PTIME_1MS;
   }
 
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  int framebuff_size = st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
-  if (ops_tx.framebuff_size <= 0) {
+  if (framebuff_size <= 0) {
     GST_ERROR("Failed to calculate framebuff size");
     return FALSE;
   }
+  ops_tx.framebuff_size = (uint32_t)framebuff_size;
 
   if (sink->framebuffer_num) {
-    ops_tx.framebuff_cnt = sink->framebuffer_num;
+    ops_tx.framebuff_cnt = (uint16_t)sink->framebuffer_num;
   } else {
     ops_tx.framebuff_cnt = 3;
   }
@@ -396,7 +397,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
   gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
 
   ops_tx.port.num_port =
-      gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
+      (uint8_t)gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -415,7 +416,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  sink->frame_size = st30p_tx_frame_size(sink->tx_handle);
+  sink->frame_size = (guint)st30p_tx_frame_size(sink->tx_handle);
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -507,11 +508,11 @@ static struct st30_frame* mtl_st30p_fetch_frame(Gst_Mtl_St30p_Tx* sink) {
 static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(parent);
-  gint buffer_n = gst_buffer_n_memory(buf);
+  guint buffer_n = gst_buffer_n_memory(buf);
   struct st30_frame* frame = NULL;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
-  gint bytes_to_write;
+  gsize bytes_to_write;
   void* cur_addr_frame;
   void* cur_addr_buf;
 
@@ -532,7 +533,7 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     return GST_FLOW_ERROR;
   }
 
-  for (int i = 0; i < buffer_n; i++) {
+  for (guint i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
@@ -563,7 +564,7 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
 
       if (sink->cur_frame_available_size > (guint)bytes_to_write) {
         memcpy(cur_addr_frame, cur_addr_buf, bytes_to_write);
-        sink->cur_frame_available_size -= bytes_to_write;
+        sink->cur_frame_available_size -= (guint)bytes_to_write;
         bytes_to_write = 0;
         break;
       } else {

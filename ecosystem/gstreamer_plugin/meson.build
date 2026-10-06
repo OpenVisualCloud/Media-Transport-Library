@@ -27,6 +27,7 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
 plugin_c_args = cc.get_supported_arguments([
+  '-Wconversion',
   '-Wno-redundant-decls',
   '-Wno-discarded-qualifiers',
   '-Wno-incompatible-pointer-types-discards-qualifiers',

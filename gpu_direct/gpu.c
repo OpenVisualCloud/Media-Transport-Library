@@ -134,7 +134,7 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
     return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDriverGet(&ctx->driverCount, ctx->drivers));
-  ctx->currentDriverIndex = driverIndex;
+  ctx->currentDriverIndex = (int)driverIndex;
   ctx->driverHandle = ctx->drivers[driverIndex];
 
   // Init context
@@ -157,7 +157,7 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
     return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDeviceGet(ctx->driverHandle, &ctx->deviceCount, ctx->devices));
-  ctx->currentDeviceIndex = deviceIndex;
+  ctx->currentDeviceIndex = (int)deviceIndex;
   ctx->deviceHandler = ctx->devices[deviceIndex];
 
   // Get properties of the selected device

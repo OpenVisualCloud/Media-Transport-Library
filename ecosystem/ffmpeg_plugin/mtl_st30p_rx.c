@@ -117,7 +117,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     }
   }
   ops_rx.ptime = s->ptime;
-  ops_rx.channel = s->channels;
+  ops_rx.channel = (uint16_t)s->channels;
   ret = mtl_parse_st30_sample_rate(&ops_rx.sampling, s->sample_rate);
   if (ret) {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
@@ -125,7 +125,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   }
   frame_buf_size = st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
-  ctx->packet_size = frame_buf_size;
+  ctx->packet_size = (unsigned int)frame_buf_size;
 
   st = avformat_new_stream(ctx, NULL);
   if (!st) {
@@ -147,9 +147,9 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
 
   ops_rx.name = "st30p_rx_ffmpeg";
   ops_rx.priv = s;  // Handle of priv_data registered to lib
-  ops_rx.framebuff_cnt = s->fb_cnt;
+  ops_rx.framebuff_cnt = (uint16_t)s->fb_cnt;
   /* set frame size to 10ms time */
-  ops_rx.framebuff_size = frame_buf_size;
+  ops_rx.framebuff_size = (uint32_t)frame_buf_size;
 
   // get mtl dev
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
@@ -166,9 +166,9 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   }
 
   if (s->timeout_sec)
-    st30p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+    st30p_rx_set_block_timeout(s->rx_handle, (uint64_t)s->timeout_sec * NS_PER_S);
 
-  frame_buf_size = st30p_rx_frame_size(s->rx_handle);
+  frame_buf_size = (int)st30p_rx_frame_size(s->rx_handle);
   if ((unsigned int)frame_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, frame_buf_size,
         ctx->packet_size);
@@ -219,7 +219,7 @@ static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
 
-  ret = av_new_packet(pkt, ctx->packet_size);
+  ret = av_new_packet(pkt, (int)ctx->packet_size);
   if (ret != 0) {
     err(ctx, "%s, av_new_packet failed with %d\n", __func__, ret);
     st30p_rx_put_frame(s->rx_handle, frame);
@@ -284,7 +284,7 @@ static const AVOption mtl_st30p_rx_options[] = {
      AV_OPT_TYPE_INT,
      {.i64 = 2},
      1,
-     INT_MAX,
+     UINT16_MAX,
      DEC,
      NULL},
     {"pcm_fmt",

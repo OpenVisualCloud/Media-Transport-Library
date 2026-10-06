@@ -156,13 +156,13 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
       gobject_class, PROP_ST30P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
+                        G_MAXUINT16, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_RX_CHANNEL,
       g_param_spec_uint("rx-channel", "Audio channel", "Audio channel number.", 0,
-                        G_MAXUINT, 2, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT16, 2, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_RX_SAMPLING,
@@ -200,10 +200,10 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   src->retry_frame = 10; /* TODO add support for parameter */
 
   ops_rx->name = "st30src";
-  ops_rx->channel = src->channel;
+  ops_rx->channel = (uint16_t)src->channel;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
-  if (!gst_mtl_common_gst_to_st_sampling(src->sampling, &ops_rx->sampling)) {
+  if (!gst_mtl_common_gst_to_st_sampling((gint)src->sampling, &ops_rx->sampling)) {
     GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
     return FALSE;
   }
@@ -225,17 +225,18 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  ops_rx->framebuff_size =
+  int framebuff_size =
       st30_calculate_framebuff_size(ops_rx->fmt, ops_rx->ptime, ops_rx->sampling,
                                     ops_rx->channel, 10 * NS_PER_MS, NULL);
 
-  if (!ops_rx->framebuff_size) {
+  if (framebuff_size <= 0) {
     GST_ERROR("Failed to calculate framebuff size");
     return FALSE;
   }
+  ops_rx->framebuff_size = (uint32_t)framebuff_size;
 
   if (src->framebuffer_num) {
-    ops_rx->framebuff_cnt = src->framebuffer_num;
+    ops_rx->framebuff_cnt = (uint16_t)src->framebuffer_num;
   } else {
     ops_rx->framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   }
@@ -243,7 +244,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
   ops_rx->port.num_port =
-      gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
+      (uint8_t)gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
   if (!ops_rx->port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -255,7 +256,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  src->frame_size = st30p_rx_frame_size(src->rx_handle);
+  src->frame_size = (guint)st30p_rx_frame_size(src->rx_handle);
   if (src->frame_size <= 0) {
     GST_ERROR("Failed to get frame size");
     return FALSE;

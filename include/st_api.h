@@ -667,7 +667,7 @@ static inline uint16_t st_rx_sessions_queue_cnt(uint16_t st20_sessions,
                                                 uint16_t st30_sessions,
                                                 uint16_t st40_sessions,
                                                 uint16_t st41_sessions) {
-  return st20_sessions + st30_sessions + st40_sessions + st41_sessions;
+  return (uint16_t)(st20_sessions + st30_sessions + st40_sessions + st41_sessions);
 }
 
 #if defined(__cplusplus)

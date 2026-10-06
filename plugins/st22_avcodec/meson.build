@@ -37,7 +37,7 @@ st22_avcodec_plugin_c_args = []
 if get_option('buildtype') != 'debug'
   st22_avcodec_plugin_c_args += ['-Werror']
 endif
-st22_avcodec_plugin_c_args += ['-Wall']
+st22_avcodec_plugin_c_args += ['-Wall', '-Wconversion']
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512?
 st22_avcodec_plugin_c_args += ['-msse4.2']
 

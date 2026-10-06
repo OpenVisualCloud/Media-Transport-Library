@@ -93,7 +93,7 @@ struct _Gst_Mtl_St40p_Tx {
   GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuff_cnt;
-  guint fps_n, fps_d;
+  gint fps_n, fps_d;
   guint did;
   guint sdid;
   gboolean interlaced;

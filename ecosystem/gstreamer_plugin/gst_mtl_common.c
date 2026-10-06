@@ -311,7 +311,7 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
-      general_args->log_level = g_value_get_uint(value);
+      general_args->log_level = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT:
       strncpy(general_args->port[MTL_PORT_P], g_value_get_string(value),
@@ -347,21 +347,21 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
               MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
-      portArgs->udp_port[MTL_PORT_P] = g_value_get_uint(value);
+      portArgs->udp_port[MTL_PORT_P] = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_UDP_PORT_R:
-      portArgs->udp_port[MTL_PORT_R] = g_value_get_uint(value);
+      portArgs->udp_port[MTL_PORT_R] = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
-      portArgs->payload_type = g_value_get_uint(value);
+      portArgs->payload_type = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_RX_QUEUES:
-      general_args->rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
-      general_args->rx_queues_cnt[MTL_PORT_R] = g_value_get_uint(value);
+      general_args->rx_queues_cnt[MTL_PORT_P] = (gint)g_value_get_uint(value);
+      general_args->rx_queues_cnt[MTL_PORT_R] = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
-      general_args->tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
-      general_args->tx_queues_cnt[MTL_PORT_R] = g_value_get_uint(value);
+      general_args->tx_queues_cnt[MTL_PORT_P] = (gint)g_value_get_uint(value);
+      general_args->tx_queues_cnt[MTL_PORT_R] = (gint)g_value_get_uint(value);
       break;
     case PROP_GENERAL_ENABLE_ONBOARD_PTP:
       general_args->enable_onboard_ptp = g_value_get_boolean(value);
@@ -384,7 +384,7 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
-      g_value_set_uint(value, general_args->log_level);
+      g_value_set_uint(value, (guint)general_args->log_level);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT:
       g_value_set_string(value, general_args->port[MTL_PORT_P]);
@@ -414,19 +414,19 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
-      g_value_set_uint(value, portArgs->udp_port[MTL_PORT_P]);
+      g_value_set_uint(value, (guint)portArgs->udp_port[MTL_PORT_P]);
       break;
     case PROP_GENERAL_PORT_UDP_PORT_R:
-      g_value_set_uint(value, portArgs->udp_port[MTL_PORT_R]);
+      g_value_set_uint(value, (guint)portArgs->udp_port[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
-      g_value_set_uint(value, portArgs->payload_type);
+      g_value_set_uint(value, (guint)portArgs->payload_type);
       break;
     case PROP_GENERAL_PORT_RX_QUEUES:
-      g_value_set_uint(value, general_args->rx_queues_cnt[MTL_PORT_P]);
+      g_value_set_uint(value, (guint)general_args->rx_queues_cnt[MTL_PORT_P]);
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
-      g_value_set_uint(value, general_args->tx_queues_cnt[MTL_PORT_P]);
+      g_value_set_uint(value, (guint)general_args->tx_queues_cnt[MTL_PORT_P]);
       break;
     case PROP_GENERAL_ENABLE_ONBOARD_PTP:
       g_value_set_boolean(value, general_args->enable_onboard_ptp);
@@ -509,7 +509,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
       return 0;
     }
 
-    port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
+    port->udp_port[mtl_port_idx] = (uint16_t)port_args->udp_port[mtl_port_idx];
     mtl_port_idx++;
   }
 
@@ -518,7 +518,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
     return 0;
   }
 
-  port->payload_type = port_args->payload_type;
+  port->payload_type = (uint8_t)port_args->payload_type;
 
   return mtl_port_idx;
 }
@@ -553,7 +553,7 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
       return 0;
     }
 
-    port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
+    port->udp_port[mtl_port_idx] = (uint16_t)port_args->udp_port[mtl_port_idx];
     mtl_port_idx++;
   }
 
@@ -568,7 +568,7 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
     return 0;
   }
 
-  port->payload_type = port_args->payload_type;
+  port->payload_type = (uint8_t)port_args->payload_type;
 
   return mtl_port_idx;
 }
@@ -610,16 +610,24 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
       return FALSE;
     }
 
+    if ((general_args->rx_queues_cnt[mtl_port_idx] < 0) ||
+        (general_args->rx_queues_cnt[mtl_port_idx] > 0xFFFF) ||
+        (general_args->tx_queues_cnt[mtl_port_idx] < 0) ||
+        (general_args->tx_queues_cnt[mtl_port_idx] > 0xFFFF)) {
+      GST_ERROR("%s, invalid queue count on port %d\n", __func__, mtl_port_idx);
+      return FALSE;
+    }
+
     if (general_args->rx_queues_cnt[mtl_port_idx]) {
       mtl_init_params->rx_queues_cnt[mtl_port_idx] =
-          general_args->rx_queues_cnt[mtl_port_idx];
+          (uint16_t)general_args->rx_queues_cnt[mtl_port_idx];
     } else {
       mtl_init_params->rx_queues_cnt[mtl_port_idx] = 16;
     }
 
     if (general_args->tx_queues_cnt[mtl_port_idx]) {
       mtl_init_params->tx_queues_cnt[mtl_port_idx] =
-          general_args->tx_queues_cnt[mtl_port_idx];
+          (uint16_t)general_args->tx_queues_cnt[mtl_port_idx];
     } else {
       mtl_init_params->tx_queues_cnt[mtl_port_idx] = 16;
     }

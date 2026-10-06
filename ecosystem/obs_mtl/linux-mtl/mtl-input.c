@@ -387,14 +387,14 @@ static void mtl_input_update(void* vptr, obs_data_t* settings) {
   s->lcores = (char*)obs_data_get_string(settings, "lcores");
   s->sip = (char*)obs_data_get_string(settings, "sip");
   s->ip = (char*)obs_data_get_string(settings, "ip");
-  s->udp_port = obs_data_get_int(settings, "udp_port");
-  s->payload_type = obs_data_get_int(settings, "payload_type");
-  s->width = obs_data_get_int(settings, "width");
-  s->height = obs_data_get_int(settings, "height");
+  s->udp_port = (uint16_t)obs_data_get_int(settings, "udp_port");
+  s->payload_type = (uint8_t)obs_data_get_int(settings, "payload_type");
+  s->width = (uint32_t)obs_data_get_int(settings, "width");
+  s->height = (uint32_t)obs_data_get_int(settings, "height");
   s->fps = obs_data_get_int(settings, "fps");
   s->t_fmt = obs_data_get_int(settings, "t_fmt");
   s->v_fmt = obs_data_get_int(settings, "v_fmt");
-  s->framebuffer_cnt = obs_data_get_int(settings, "framebuffer_cnt");
+  s->framebuffer_cnt = (uint8_t)obs_data_get_int(settings, "framebuffer_cnt");
   s->log_level = obs_data_get_int(settings, "log_level");
 }
 

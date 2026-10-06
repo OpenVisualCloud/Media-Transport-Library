@@ -189,7 +189,7 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
       gobject_class, PROP_ST20P_TX_FRAMEBUFF_NUM,
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT16, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_ASYNC_SESSION_CREATE,
@@ -344,13 +344,13 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   info = gst_video_info_new_from_caps(caps);
   ops_tx.name = "st20sink";
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
-  ops_tx.width = info->width;
-  ops_tx.height = info->height;
+  ops_tx.width = (uint32_t)info->width;
+  ops_tx.height = (uint32_t)info->height;
   ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
   ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
 
   if (sink->framebuffer_num) {
-    ops_tx.framebuff_cnt = sink->framebuffer_num;
+    ops_tx.framebuff_cnt = (uint16_t)sink->framebuffer_num;
   } else {
     ops_tx.framebuff_cnt = 3;
   }
@@ -391,7 +391,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
 
   ops_tx.port.num_port =
-      gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
+      (uint8_t)gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -417,7 +417,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     pthread_mutex_unlock(&sink->session_mutex);
   }
 
-  sink->frame_size = st20p_tx_frame_size(sink->tx_handle);
+  sink->frame_size = (guint)st20p_tx_frame_size(sink->tx_handle);
   return TRUE;
 }
 
@@ -603,7 +603,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
   struct st_frame* frame;
   struct st_ext_frame ext_frame;
   GstVideoMeta* video_meta = NULL;
-  gint buffer_n = gst_buffer_n_memory(buf);
+  guint buffer_n = gst_buffer_n_memory(buf);
 
   parent = malloc(sizeof(GstSt20pTxExternalDataParent));
   if (!parent) {
@@ -614,7 +614,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
   parent->child_count = buffer_n;
   pthread_mutex_init(&parent->parent_mutex, NULL);
 
-  for (int i = 0; i < buffer_n; i++) {
+  for (guint i = 0; i < buffer_n; i++) {
     child = malloc(sizeof(GstSt20pTxExternalDataChild));
     if (!child) {
       GST_ERROR("Failed to allocate memory for child structure");
@@ -656,7 +656,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
     if (video_meta) {
       for (guint i = 0; i < video_meta->n_planes; i++) {
         ext_frame.addr[i] = child->map_info.data + video_meta->offset[i];
-        ext_frame.linesize[i] = video_meta->stride[i];
+        ext_frame.linesize[i] = (size_t)video_meta->stride[i];
         ext_frame.iova[i] = 0;
       }
 
@@ -667,7 +667,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
       guint8 planes = st_frame_fmt_planes(frame->fmt);
 
       /* Assume video planes are stored contiguously in memory */
-      for (gint plane = 1; plane < planes; plane++) {
+      for (guint8 plane = 1; plane < planes; plane++) {
         ext_frame.linesize[plane] =
             st_frame_least_linesize(frame->fmt, frame->width, plane);
         ext_frame.addr[plane] = (guint8*)ext_frame.addr[plane - 1] +
@@ -687,13 +687,14 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
 }
 
 static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
-  gint buffer_size, buffer_n = gst_buffer_n_memory(buf);
+  gsize buffer_size;
+  guint buffer_n = gst_buffer_n_memory(buf);
   struct st_frame* frame = NULL;
-  gint frame_size = sink->frame_size;
+  guint frame_size = sink->frame_size;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
 
-  for (int i = 0; i < buffer_n; i++) {
+  for (guint i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
@@ -703,7 +704,7 @@ static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer
     buffer_size = map_info.size;
 
     if (buffer_size < frame_size) {
-      GST_ERROR("Buffer size %d is smaller than frame size %d", buffer_size, frame_size);
+      GST_ERROR("Buffer size %zu is smaller than frame size %u", buffer_size, frame_size);
       gst_memory_unmap(gst_buffer_memory, &map_info);
       return GST_FLOW_ERROR;
     }

@@ -56,7 +56,7 @@ static inline uint64_t st_get_monotonic_time() {
   struct timespec ts;
 
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+  return ((uint64_t)ts.tv_sec * NS_PER_S) + (uint64_t)ts.tv_nsec;
 }
 
 static inline void st_usleep(
