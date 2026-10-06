@@ -323,6 +323,8 @@ static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query) {
 
 static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offset,
                                               guint size, GstBuffer** buf) {
+  (void)offset;
+  (void)size;
   GstAncGenerator* src = GST_ANC_GENERATOR(basesrc);
 
   if (src->num_frames > 0 && src->frames_generated >= src->num_frames) {

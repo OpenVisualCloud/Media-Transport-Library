@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2024 Intel Corporation
 
-project('gstreamer_mtl_plugins', 'c',
+project('gstreamer_mtl_plugins', 'c', default_options: ['buildtype=release', 'warning_level=2'],
         version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(), license : 'LGPL')
 
 cc = meson.get_compiler('c')

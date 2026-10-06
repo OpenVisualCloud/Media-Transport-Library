@@ -67,7 +67,7 @@ int print_gpu_drivers_and_devices() {
     return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDriverGet(&driversCount, drivers));
-  for (int i = 0; i < driversCount; i++) {
+  for (uint32_t i = 0; i < driversCount; i++) {
     ze_context_desc_t ctxtDesc = {ZE_STRUCTURE_TYPE_CONTEXT_DESC, NULL, 0};
     ze_context_handle_t context;
     ze_driver_handle_t driver = drivers[i];
@@ -83,12 +83,12 @@ int print_gpu_drivers_and_devices() {
       return -ENOMEM;
     }
     ZE_CHECK_ERROR(zeDeviceGet(driver, &devicesCount, devices));
-    for (int j = 0; j < devicesCount; j++) {
+    for (uint32_t j = 0; j < devicesCount; j++) {
       ze_device_handle_t device = devices[j];
       // Get properties of the device
       ze_device_properties_t deviceProperties;
       ZE_CHECK_ERROR(zeDeviceGetProperties(device, &deviceProperties));
-      printf("Driver: %d: Device: %d: Name: %s, Type: %d, VendorID: %x, DeviceID: %d\n",
+      printf("Driver: %u: Device: %u: Name: %s, Type: %d, VendorID: %x, DeviceID: %d\n",
              i, j, deviceProperties.name, deviceProperties.type,
              deviceProperties.vendorId, deviceProperties.deviceId);
     }

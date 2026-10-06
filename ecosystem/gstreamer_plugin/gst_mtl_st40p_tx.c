@@ -574,6 +574,7 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
  */
 static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info* frame_info, void* data,
                                        guint32 data_size, guint did, guint sdid) {
+  MTL_MAY_UNUSED(data);
   frame_info->meta[0].c = 0;
   frame_info->meta[0].line_number = 0;
   frame_info->meta[0].hori_offset = 0;
@@ -626,7 +627,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
   guint data_count, buffer_size = map_info.size, udw_byte_size;
   guint16 udw;
 
-  if (buffer_size < bytes_left_to_process) {
+  if (buffer_size < (guint)bytes_left_to_process) {
     GST_ERROR("Buffer size (%u) is smaller than bytes left to process (%d)", buffer_size,
               bytes_left_to_process);
     return GST_FLOW_ERROR;
@@ -640,9 +641,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
 
   frame_info->meta_num = 0;
 
-  for (int i = 0; i < anc_count; i++) {
+  for (guint i = 0; i < anc_count; i++) {
     /* Processing of the input 8331 header */
-    if (bytes_left_to_process < sizeof(struct st40_rfc8331_payload_hdr)) {
+    if ((gsize)bytes_left_to_process < sizeof(struct st40_rfc8331_payload_hdr)) {
       GST_ERROR("Buffer size (%u) is too small to contain rfc8331 header (%lu)",
                 bytes_left_to_process, sizeof(struct st40_rfc8331_payload_hdr));
       return GST_FLOW_ERROR;
@@ -675,7 +676,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     /* round up to the nearest byte */
     udw_byte_size = (udw_byte_size + 7) / 8;
 
-    if (bytes_left_to_process < udw_byte_size) {
+    if ((guint)bytes_left_to_process < udw_byte_size) {
       GST_ERROR("Buffer size (%u) is too small for data count (%d)",
                 bytes_left_to_process, udw_byte_size);
     }
@@ -696,7 +697,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
      * - 2nd UDW: Data_Count (number of user data words)
      * Start processing actual user data words from the 3rd UDW onward.
      */
-    for (int j = 0; j < data_count; j++) {
+    for (guint j = 0; j < data_count; j++) {
       if (frame_info->udw_buffer_fill >= frame_info->udw_buffer_size) {
         GST_ERROR("UDW buffer overflow: fill=%u size=%zu", frame_info->udw_buffer_fill,
                   frame_info->udw_buffer_size);
@@ -904,9 +905,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
     }
 
     cur_addr_buf = map_info.data + map_info.size - bytes_left_to_process;
-    bytes_left_to_process_cur = bytes_left_to_process > sink->frame_size
+    bytes_left_to_process_cur = (guint)bytes_left_to_process > sink->frame_size
                                     ? sink->frame_size
-                                    : bytes_left_to_process;
+                                    : (guint)bytes_left_to_process;
 
     memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_left_to_process_cur);
 
@@ -938,6 +939,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
  */
 static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
+  MTL_MAY_UNUSED(pad);
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(parent);
   gint buffer_n = gst_buffer_n_memory(buf);
   GstMemory* gst_buffer_memory;

@@ -161,6 +161,7 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
 
 static struct st30_frame* mtl_st30p_fetch_frame(AVFormatContext* ctx,
                                                 mtlSt30pMuxerContext* s) {
+  MTL_MAY_UNUSED(ctx);
   if (s->last_frame) {
     return s->last_frame;
   } else {
@@ -229,7 +230,8 @@ static const AVOption mtl_st30p_tx_options[] = {
      {.i64 = 3},
      3,
      8000,
-     ENC},
+     ENC,
+     NULL},
     {"ptime",
      "audio packet time",
      OFFSET(ptime_str),
