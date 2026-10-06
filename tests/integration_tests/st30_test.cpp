@@ -10,7 +10,7 @@
 #define ST30_TEST_PAYLOAD_TYPE (111)
 
 static int tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st30_tx_frame_meta* meta) {
+                               struct st30_tx_frame_meta* /*meta*/) {
   return tx_next_frame(priv, next_frame_idx);
 }
 
@@ -154,7 +154,8 @@ static void rx_get_packet(void* args) {
   }
 }
 
-static int st30_rx_frame_ready(void* priv, void* frame, struct st30_rx_frame_meta* meta) {
+static int st30_rx_frame_ready(void* priv, void* frame,
+                               struct st30_rx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO;

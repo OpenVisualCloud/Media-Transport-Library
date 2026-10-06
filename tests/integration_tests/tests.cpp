@@ -784,7 +784,7 @@ TEST(St10Conversions, ZeroSamplingRateIsGraceful) {
   EXPECT_EQ(st10_media_clk_to_ns(1234U, 0), 0U);
 }
 
-static int run_all_test(int argc, char** argv, struct st_tests_context* ctx) {
+static int run_all_test(int /*argc*/, char** /*argv*/, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
   int ret;
 
@@ -952,6 +952,7 @@ int tests_context_unit(tests_context* ctx) {
 }
 
 int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
+  MTL_MAY_UNUSED(args);
   if (event == ST_EVENT_VSYNC) {
     tests_context* s = (tests_context*)priv;
     s->vsync_cnt++;

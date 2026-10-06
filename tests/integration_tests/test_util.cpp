@@ -9,6 +9,8 @@
 #include "log.h"
 
 void test_sha_dump(const char* tag, unsigned char* sha) {
+  (void)tag;
+  (void)sha;
   for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
     dbg("0x%02x ", sha[i]);
   }

@@ -10,7 +10,7 @@
 #define ST40_TEST_PAYLOAD_TYPE (113)
 
 static int tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
-                             struct st40_tx_frame_meta* meta) {
+                             struct st40_tx_frame_meta* /*meta*/) {
   return tx_next_frame(priv, next_frame_idx);
 }
 

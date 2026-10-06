@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17', 'b_pie=true'],
+project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'warning_level=2', 'cpp_std=c++17', 'b_pie=true'],
   version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),
 )
 

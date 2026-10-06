@@ -47,6 +47,7 @@ static inline void st_test_free(void* p) {
 }
 
 static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
+  (void)base;
   for (size_t i = 0; i < sz; i++) {
 #if TEST_DATA_FIXED_PATTER
     p[i] = base + i;
@@ -57,6 +58,7 @@ static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
 }
 
 static inline void st_test_rand_v210(uint8_t* p, size_t sz, uint8_t base) {
+  (void)base;
   for (size_t i = 0; i < sz; i++) {
 #if TEST_DATA_FIXED_PATTER
     p[i] = base + i;

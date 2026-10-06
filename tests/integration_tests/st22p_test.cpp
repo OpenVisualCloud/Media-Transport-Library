@@ -379,7 +379,7 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   return 0;
 }
 
-static void plugin_register_test(const char* so_name, bool expect_succ) {
+static void plugin_register_test(const char* so_name, bool /*expect_succ*/) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
 
@@ -495,7 +495,7 @@ static int test_st22p_rx_frame_available(void* priv) {
 }
 
 static int test_st22p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
-                                         struct st22_rx_frame_meta* meta) {
+                                         struct st22_rx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
   if (!ctx->handle) return -EIO; /* not ready */
   int i = ctx->ext_idx;
