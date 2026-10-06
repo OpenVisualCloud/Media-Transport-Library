@@ -263,7 +263,7 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
   }
 
   ctx->frames_cnt = ops->framebuff_cnt * 2; /* more for redundant */
-  ctx->frames = mt_rte_zmalloc_socket(sizeof(*ctx->frames) * ctx->frames_cnt,
+  ctx->frames = mt_rte_zmalloc_socket(sizeof(*ctx->frames) * (size_t)ctx->frames_cnt,
                                       mt_socket_id(impl, MTL_PORT_P));
   if (!ctx->frames) {
     err("%s, ctx frames malloc fail\n", __func__);
@@ -286,7 +286,7 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
 
   /* crete transport handle */
   for (int i = 0; i < num_port; i++) {
-    ret = rx_st20rc_create_transport(ctx, ops, i);
+    ret = rx_st20rc_create_transport(ctx, ops, (enum mtl_session_port)i);
     if (ret < 0) {
       err("%s(%d), create transport fail\n", __func__, idx);
       st20rc_rx_free(ctx);
@@ -314,7 +314,7 @@ size_t st20rc_rx_get_framebuffer_size(st20rc_rx_handle handle) {
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
+    return (size_t)-EIO;
   }
 
   return st20_rx_get_framebuffer_size(ctx->transport[MTL_SESSION_PORT_P]->handle);

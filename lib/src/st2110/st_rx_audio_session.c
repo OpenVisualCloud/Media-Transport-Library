@@ -125,7 +125,7 @@ static int rx_audio_session_alloc_frames(struct st_rx_audio_session_impl* s) {
   void* frame;
 
   s->st30_frames =
-      mt_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st30_frames) * (size_t)s->st30_frames_cnt, soc_id);
   if (!s->st30_frames) {
     err("%s(%d), st30_frames alloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -315,9 +315,10 @@ static void rx_audio_session_frame_notify(struct mtl_main_impl* impl,
     if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
       for (int sp = 0; sp < ops->num_port; sp++) {
         struct st_ra_tp_slot* slot = &s->tp->slot[sp];
-        ra_tp_slot_parse_result(s, sp);
+        ra_tp_slot_parse_result(s, (enum mtl_session_port)sp);
         if (s->enable_timing_parser_meta) {
-          ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
+          ops->notify_timing_parser_result(ops->priv, (enum mtl_session_port)sp,
+                                           &slot->meta);
         }
         ra_tp_slot_init(slot);
       }
@@ -357,7 +358,7 @@ static void rx_audio_session_frame_notify(struct mtl_main_impl* impl,
     if (time_measure) tsc_start = mt_get_tsc(impl);
     int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
     if (time_measure) {
-      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
     if (ret < 0) {
@@ -384,7 +385,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
   uint8_t payload_type = rtp->payload_type;
-  uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
+  uint32_t pkt_len = (uint32_t)(mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr));
 
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
@@ -421,7 +422,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
-      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+      mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
@@ -431,11 +432,11 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     /* exact same seq seen again on the same port — same-port duplicate
      * (distinct from a duplicate arriving on the redundant port) */
     s->port_user_stats.common.port[s_port].duplicates_same_port++;
-  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+  } else if (!mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     /* backward arrival on the same port — genuine intra-port reorder */
     s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+  if (mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
 
   s->port_user_stats.common.port[s_port].packets++;
@@ -443,7 +444,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* drop packets older than the open frame's base (or the next-frame floor
    * between frames); the bitmap dedups packets inside the open frame */
-  if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
+  if (!mt_seq32_greater(tmstamp, (uint32_t)s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     s->redundant_error_cnt[s_port]++;
@@ -464,7 +465,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
   if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
-      mt_seq16_greater(seq_id, s->session_seq_id)) {
+      mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
@@ -474,7 +475,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   /* The package is accepted and goes into the frame */
 
   /* only advance, never go backward */
-  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
+  if (mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) s->session_seq_id = seq_id;
 
   if (!s->st30_cur_frame) {
     if (rx_audio_session_open_frame(s, s_port, tmstamp,
@@ -561,7 +562,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   /* redundant stream seq_id out of order is not a big deal as long as stream is continous
    */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
-      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+      mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
@@ -571,18 +572,18 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     /* exact same seq seen again on the same port — same-port duplicate
      * (distinct from a duplicate arriving on the redundant port) */
     s->port_user_stats.common.port[s_port].duplicates_same_port++;
-  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+  } else if (!mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     /* backward arrival on the same port — genuine intra-port reorder */
     s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+  if (mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
 
   s->port_user_stats.common.port[s_port].packets++;
   s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
 
   /* all packets need to have increasing timestamp */
-  if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
+  if (!mt_seq32_greater(tmstamp, (uint32_t)s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     s->redundant_error_cnt[s_port]++;
@@ -605,7 +606,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
   if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
-      mt_seq16_greater(seq_id, s->session_seq_id)) {
+      mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
@@ -614,7 +615,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   /* The package is accepted and goes into the frame */
   /* only advance, never go backward */
-  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
+  if (mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) s->session_seq_id = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
@@ -675,7 +676,7 @@ static int ra_stop_pcap(struct st_rx_audio_session_impl* s,
 
 static int rv_stop_pcap_dump(struct st_rx_audio_session_impl* s) {
   for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
-    ra_stop_pcap(s, s_port);
+    ra_stop_pcap(s, (enum mtl_session_port)s_port);
   }
   return 0;
 }
@@ -753,7 +754,9 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   struct mt_rx_pcap* pcap = &s->pcap[s_port];
   if (pcap->required_pkts) {
     if (pcap->dumped_pkts < pcap->required_pkts) {
-      ra_dump_pcap(s, mbuf, RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts), s_port);
+      ra_dump_pcap(s, mbuf,
+                   (uint16_t)RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts),
+                   s_port);
     } else { /* got enough packets, stop dumping */
       ra_stop_pcap(s, s_port);
     }
@@ -794,12 +797,12 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
       if (!pcap->usdt_dump) {
         /* dump 5 sec */
         int required_pkts = s->st30_total_pkts * s->frames_per_sec * 5;
-        ra_start_pcap(s, s_port, required_pkts);
+        ra_start_pcap(s, (enum mtl_session_port)s_port, (uint32_t)required_pkts);
         pcap->usdt_dump = true;
       }
     } else {
       if (pcap->usdt_dump) {
-        ra_stop_pcap(s, s_port);
+        ra_stop_pcap(s, (enum mtl_session_port)s_port);
         pcap->usdt_dump = false;
       }
     }
@@ -863,11 +866,11 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
-    s->priv[i].s_port = i;
+    s->priv[i].s_port = (enum mtl_session_port)i;
 
     memset(&flow, 0, sizeof(flow));
     mt_memcpy(flow.dip_addr, s->ops.ip_addr[i], MTL_IP_ADDR_LEN);
@@ -892,7 +895,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         rx_audio_queue_id(s, i), flow.dst_port);
+         rx_audio_queue_id(s, (enum mtl_session_port)i), flow.dst_port);
   }
 
   return 0;
@@ -905,7 +908,7 @@ static int rx_audio_session_uinit_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!s->mcast_joined[i]) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
@@ -921,7 +924,7 @@ static int rx_audio_session_init_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
@@ -994,12 +997,13 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   }
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
+    s->st30_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(20000 + idx * 2);
   }
 
   ret = st30_get_packet_size(ops->fmt, ops->ptime, ops->sampling, ops->channel);
   if (ret < 0) return ret;
-  s->pkt_len = ret;
+  s->pkt_len = (uint32_t)ret;
 
   size_t bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
   s->st30_pkt_size = s->pkt_len + sizeof(struct st_rfc3550_audio_hdr);
@@ -1009,7 +1013,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   }
 
   s->st30_frames_cnt = ops->framebuff_cnt;
-  s->st30_total_pkts = ops->framebuff_size / s->pkt_len;
+  s->st30_total_pkts = (int)(ops->framebuff_size / s->pkt_len);
   if (ops->framebuff_size % s->pkt_len) {
     /* todo: add the support? */
     err("%s(%d), framebuff_size %d not multiple pkt_len %d\n", __func__, idx, s->pkt_len,
@@ -1026,7 +1030,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   if (ops->flags & ST30_RX_FLAG_SIMULATE_PKT_LOSS) {
     /* st30_rx_ops exposes no loss tuning knobs; use fixed test defaults */
     s->burst_loss_max = 1;
-    s->sim_loss_rate = 0.1;
+    s->sim_loss_rate = 0.1f;
     info("%s(%d), simulated packet loss max burst %u rate %f\n", __func__, idx,
          s->burst_loss_max, s->sim_loss_rate);
   }
@@ -1077,7 +1081,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   }
 
   s->frames_per_sec =
-      (double)NS_PER_S / st30_get_packet_time(ops->ptime) / s->st30_total_pkts;
+      (int)((double)NS_PER_S / st30_get_packet_time(ops->ptime) / s->st30_total_pkts);
   s->attached = true;
   info("%s(%d), fmt %d channel %u sampling %d ptime %d payload_type %u\n", __func__, idx,
        ops->fmt, ops->channel, ops->sampling, ops->ptime, ops->payload_type);
@@ -1150,16 +1154,16 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
 
   if (lost_pkts) {
     if (s->ops.num_port > 1) {
-      double pct_p =
-          port_pkts[MTL_SESSION_PORT_P]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
-                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
-              : 0.0;
-      double pct_r =
-          port_pkts[MTL_SESSION_PORT_R]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
-                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
-              : 0.0;
+      double pct_p = port_pkts[MTL_SESSION_PORT_P]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_P] /
+                               (double)(port_pkts[MTL_SESSION_PORT_P] +
+                                        port_lost[MTL_SESSION_PORT_P])
+                         : 0.0;
+      double pct_r = port_pkts[MTL_SESSION_PORT_R]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_R] /
+                               (double)(port_pkts[MTL_SESSION_PORT_R] +
+                                        port_lost[MTL_SESSION_PORT_R])
+                         : 0.0;
       double save_rate =
           (lost_pkts + pkts_unrecovered)
               ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
@@ -1276,7 +1280,8 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
     memcpy(ops->ip_addr[i], src->ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops->mcast_sip_addr[i], src->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
+    s->st30_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(20000 + idx * 2);
   }
   /* reset seq id */
 
@@ -1513,7 +1518,7 @@ static int rx_audio_ops_prune_down_ports(struct mtl_main_impl* impl,
   if (num_ports < ops->num_port) {
     info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
          ops->num_port, num_ports);
-    ops->num_port = num_ports;
+    ops->num_port = (uint8_t)num_ports;
   }
 
   return 0;
@@ -1643,7 +1648,8 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
     return NULL;
   }
 
-  quota_mbs = impl->main_sch->data_quota_mbs_limit / impl->rx_audio_sessions_max_per_sch;
+  quota_mbs = (int)((uint32_t)impl->main_sch->data_quota_mbs_limit /
+                    impl->rx_audio_sessions_max_per_sch);
   sch =
       mt_sch_get_by_socket(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL, socket);
   if (!sch) {
@@ -1808,7 +1814,7 @@ void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len) {
 
   size_t hdr_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                    sizeof(struct rte_udp_hdr);
-  *len = pkt->data_len - hdr_len;
+  *len = (uint16_t)(pkt->data_len - hdr_len);
   *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_len);
   ret_pkt = pkt;
 out:
@@ -1835,9 +1841,9 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
   s = s_impl->impl;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
+  meta->num_port = (uint8_t)RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    meta->queue_id[i] = rx_audio_queue_id(s, i);
+    meta->queue_id[i] = (uint8_t)rx_audio_queue_id(s, i);
   }
 
   MT_HANDLE_RELEASE(s_impl);
