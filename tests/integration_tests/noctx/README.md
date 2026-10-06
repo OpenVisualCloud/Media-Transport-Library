@@ -180,6 +180,7 @@ rtp_timestamp`; the user-paced tests request `t_user(n) = start + n·T`, with
 | `st30p_redundant_latency`, `st30p_redundant_latency2` | ST 2022-7 audio merge with R 10 ms behind, and with P stopping after 10 s | `_latency`: packets on each port == TX ± 10 %. `_latency2`: packets on port 1 (R) == TX ± 10 %, port 0 > 0, accepted packets == TX ± 1 %. Both: loss ≤ 0.1 %, RX buffers == TX ± 1 % (100 RX buffers) | Counts |
 | `st40p_user_pacing`, `st40p_user_pacing_59fps`, `st40p_user_pacing_offset_jitter` | ST40 user pacing snaps to the nearest epoch, at 60p and 59.94p (1501/1502 steps) | TX `round(t_user/T)·T`; `RTP == tick90k(TX)`; step from the planned grid | Software RX time in [0, +1 ms] |
 | `st40p_exact_user_pacing` | Exact ST40 pacing sends at the request | TX `t_user`; `RTP == tick(t_user)`; no step check | Software RX time in [0, +1 ms] |
+| `st20_tx_tasklet_sleep_idle_peer` | With `MTL_FLAG_TASKLET_SLEEP`, an idle TX video session after a busy one on the same scheduler does not let it sleep while the busy one has packets to build | Scheduler iterations, counted by the idle session's `get_next_frame`, per user-paced frame 100 ms ahead: in the first 10 ms (TX ring prefill) and from 20 to 60 ms (nothing to do) | ≥ 64; ≤ 200 |
 | Other NoCtx tests | ST20 2022-7 even/odd loss recovery, epoch recovery after a PTP step, TSN packet spread and epoch recovery (`_pf_`), ST20p TX multithread stability (default 1800 s), ST40 interlace/split/auto-detect, 32–128 and asymmetric queue init | Stats, counts, frame content | See each file |
 
 ## Failure signatures
