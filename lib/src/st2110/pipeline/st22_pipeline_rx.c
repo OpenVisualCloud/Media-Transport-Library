@@ -117,20 +117,56 @@ static struct st22p_rx_frame* rx_st22p_claim_available(
   return NULL;
 }
 
+/* The session runs before st22_rx_create() returns, so frames may be parked already. */
+static void rx_st22p_set_transport(struct st22p_rx_ctx* ctx, st22_rx_handle handle) {
+  void* frames[ST22_FB_MAX_COUNT];
+  uint16_t cnt;
+
+  rte_spinlock_lock(&ctx->pending_put_lock);
+  ctx->transport = handle;
+  cnt = ctx->pending_put_cnt;
+  memcpy(frames, ctx->pending_put_frames, sizeof(frames[0]) * cnt);
+  ctx->pending_put_cnt = 0;
+  rte_spinlock_unlock(&ctx->pending_put_lock);
+
+  for (uint16_t i = 0; i < cnt; i++) st22_rx_put_framebuff(handle, frames[i]);
+}
+
+/* The session puts back a refused complete frame, but an incomplete one stays ours. */
+static int rx_st22p_refuse_frame(struct st22p_rx_ctx* ctx, void* frame,
+                                 struct st22_rx_frame_meta* meta, int ret) {
+  st22_rx_handle handle;
+
+  if (st_is_frame_complete(meta->status)) return ret;
+
+  rte_spinlock_lock(&ctx->pending_put_lock);
+  handle = ctx->transport;
+  if (!handle) {
+    if (ctx->pending_put_cnt < ST22_FB_MAX_COUNT)
+      ctx->pending_put_frames[ctx->pending_put_cnt++] = frame;
+    else /* impossible: the session holds at most ST22_FB_MAX_COUNT frames */
+      err_once("%s, no slot to park frame %p\n", __func__, frame);
+  }
+  rte_spinlock_unlock(&ctx->pending_put_lock);
+
+  if (handle) st22_rx_put_framebuff(handle, frame);
+  return ret;
+}
+
 static int rx_st22p_frame_ready(void* priv, void* frame,
                                 struct st22_rx_frame_meta* meta) {
   struct st22p_rx_ctx* ctx = priv;
   struct st22p_rx_frame* framebuff;
   int ret;
 
-  if (!ctx->ready) return -EBUSY; /* not ready */
+  if (!ctx->ready) return rx_st22p_refuse_frame(ctx, frame, meta, -EBUSY);
 
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    return -EBUSY;
+    return rx_st22p_refuse_frame(ctx, frame, meta, -EBUSY);
   }
 
   MT_USDT_ST22P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame, meta->rtp_timestamp,
@@ -143,7 +179,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st22p_refuse_frame(ctx, frame, meta, ret);
     }
 
     uint8_t planes = st_frame_fmt_planes(framebuff->dst.fmt);
@@ -159,7 +195,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st22p_refuse_frame(ctx, frame, meta, ret);
     }
   }
 
@@ -421,7 +457,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
     err("%s(%d), transport create fail\n", __func__, idx);
     return -EIO;
   }
-  ctx->transport = transport;
+  rx_st22p_set_transport(ctx, transport);
 
   struct st22p_rx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
@@ -772,6 +808,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   ctx->idx = idx;
   ctx->socket_id = socket;
   ctx->ready = false;
+  rte_spinlock_init(&ctx->pending_put_lock);
   ctx->ext_frame = (ops->flags & ST22P_RX_FLAG_EXT_FRAME) ? true : false;
   ctx->codestream_fmt = codestream_fmt;
   ctx->impl = impl;

@@ -166,12 +166,48 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   return ret;
 }
 
+/* The session runs before st20_rx_create() returns, so frames may be parked already. */
+static void rx_st20p_set_transport(struct st20p_rx_ctx* ctx, st20_rx_handle handle) {
+  void* frames[ST20_FB_MAX_COUNT];
+  uint16_t cnt;
+
+  rte_spinlock_lock(&ctx->pending_put_lock);
+  ctx->transport = handle;
+  cnt = ctx->pending_put_cnt;
+  memcpy(frames, ctx->pending_put_frames, sizeof(frames[0]) * cnt);
+  ctx->pending_put_cnt = 0;
+  rte_spinlock_unlock(&ctx->pending_put_lock);
+
+  for (uint16_t i = 0; i < cnt; i++) st20_rx_put_framebuff(handle, frames[i]);
+}
+
+/* The session puts back a refused complete frame, but an incomplete one stays ours. */
+static int rx_st20p_refuse_frame(struct st20p_rx_ctx* ctx, void* frame,
+                                 struct st20_rx_frame_meta* meta, int ret) {
+  st20_rx_handle handle;
+
+  if (st_is_frame_complete(meta->status)) return ret;
+
+  rte_spinlock_lock(&ctx->pending_put_lock);
+  handle = ctx->transport;
+  if (!handle) {
+    if (ctx->pending_put_cnt < ST20_FB_MAX_COUNT)
+      ctx->pending_put_frames[ctx->pending_put_cnt++] = frame;
+    else /* impossible: the session holds at most ST20_FB_MAX_COUNT frames */
+      err_once("%s, no slot to park frame %p\n", __func__, frame);
+  }
+  rte_spinlock_unlock(&ctx->pending_put_lock);
+
+  if (handle) st20_rx_put_framebuff(handle, frame);
+  return ret;
+}
+
 static int rx_st20p_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff;
 
-  if (!ctx->ready) return -EBUSY; /* not ready */
+  if (!ctx->ready) return rx_st20p_refuse_frame(ctx, frame, meta, -EBUSY);
 
   if (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT) {
     framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
@@ -195,7 +231,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
     atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
-    return -EBUSY;
+    return rx_st20p_refuse_frame(ctx, frame, meta, -EBUSY);
   }
 
   MT_USDT_ST20P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame, meta->rtp_timestamp,
@@ -209,7 +245,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st20p_refuse_frame(ctx, frame, meta, ret);
     }
 
     uint8_t planes = st_frame_fmt_planes(framebuff->dst.fmt);
@@ -225,7 +261,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st20p_refuse_frame(ctx, frame, meta, ret);
     }
   }
 
@@ -602,7 +638,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     if (trans_ext_frames) mt_rte_free(trans_ext_frames);
     return -EIO;
   }
-  ctx->transport = transport;
+  rx_st20p_set_transport(ctx, transport);
 
   struct st20p_rx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
@@ -1050,6 +1086,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->idx = idx;
   ctx->socket_id = socket;
   ctx->ready = false;
+  rte_spinlock_init(&ctx->pending_put_lock);
   ctx->derive = st_frame_fmt_equal_transport(ops->output_fmt, ops->transport_fmt);
   ctx->dynamic_ext_frame = (ops->flags & ST20P_RX_FLAG_EXT_FRAME) ? true : false;
   ctx->impl = impl;

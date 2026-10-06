@@ -4,7 +4,8 @@
  * C harness for ST20p (video) pipeline-layer unit tests.
  *
  * Drives rx_st20p_frame_ready() directly with a synthetic
- * st20_rx_frame_meta — bypasses the transport session entirely.
+ * st20_rx_frame_meta — bypasses the transport session unless
+ * ut20p_set_transport() is given one.
  * The pipeline counters under test (stat_frames_received / _dropped /
  * _corrupted) are about producer/consumer flow, not packet semantics,
  * so transport realism is not required.
@@ -56,10 +57,15 @@
  * and wired in via the #define redirection above.
  */
 
+/* st20_api.h was parsed under the rename above, so declare the real symbol. */
+int st20_rx_put_framebuff(st20_rx_handle handle, void* framebuff);
+
+#define UT20P_FAKE_TRANSPORT ((st20_rx_handle)(uintptr_t)0x1)
+
+/* No-op for the fake transport; a real handle from ut20p_set_transport() gets the put. */
 int ut20p_stub_put_framebuff(st20_rx_handle handle, void* frame) {
-  (void)handle;
-  (void)frame; /* transport-side framebuf release is a no-op for the harness */
-  return 0;
+  if (handle == UT20P_FAKE_TRANSPORT) return 0;
+  return st20_rx_put_framebuff(handle, frame);
 }
 
 int ut20p_stub_get_session_stats(st20_rx_handle handle,
@@ -133,9 +139,10 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
    * ST20P_RX_FRAME_CONVERTED, which get_frame() consumes directly. */
   p->derive = true;
   p->ready = true;
+  rte_spinlock_init(&p->pending_put_lock);
   /* transport handle: must be non-NULL for put_frame / overlay paths,
    * but our stubs ignore it. */
-  p->transport = (st20_rx_handle)(uintptr_t)0x1;
+  p->transport = UT20P_FAKE_TRANSPORT;
 
   return ctx;
 }
@@ -152,8 +159,8 @@ int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t tim
   /* Stack-allocated synthetic meta — frame_ready copies what it needs
    * into the framebuf.  The frame addr only needs to be a stable
    * non-NULL pointer; with derive=true it is never dereferenced by the
-   * pipeline before delivery, and our st20_rx_put_framebuff stub
-   * ignores it on release. */
+   * pipeline before delivery, and the put stub ignores it for the fake
+   * transport. */
   struct st20_rx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));
   meta.status = status;
@@ -165,6 +172,33 @@ int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t tim
 
   static uint8_t dummy_frame_storage; /* address-stable sentinel */
   return rx_st20p_frame_ready(&ctx->pipeline, &dummy_frame_storage, &meta);
+}
+
+int ut20p_frame_ready(ut20p_ctx* ctx, void* frame, struct st20_rx_frame_meta* meta) {
+  return rx_st20p_frame_ready(&ctx->pipeline, frame, meta);
+}
+
+void ut20p_set_ready(ut20p_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
+void ut20p_set_transport(ut20p_ctx* ctx, st20_rx_handle transport) {
+  rx_st20p_set_transport(&ctx->pipeline, transport);
+}
+
+void ut20p_set_flags(ut20p_ctx* ctx, uint32_t flags) {
+  ctx->pipeline.ops.flags = flags;
+}
+
+void ut20p_enable_ext_frame(ut20p_ctx* ctx,
+                            int (*query)(void* priv, struct st_ext_frame* ext_frame,
+                                         struct st20_rx_frame_meta* meta),
+                            void* priv) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  p->derive = false;
+  p->dynamic_ext_frame = true;
+  p->ops.query_ext_frame = query;
+  p->ops.priv = priv;
 }
 
 /* ── frame get/put ────────────────────────────────────────────────────── */

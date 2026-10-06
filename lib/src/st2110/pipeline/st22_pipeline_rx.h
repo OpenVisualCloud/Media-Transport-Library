@@ -40,6 +40,10 @@ struct st22p_rx_ctx {
   struct st22p_rx_ops ops;
 
   st22_rx_handle transport;
+  /* incomplete frames refused before transport was set */
+  rte_spinlock_t pending_put_lock;
+  void* pending_put_frames[ST22_FB_MAX_COUNT];
+  uint16_t pending_put_cnt;
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_decode_idx;
