@@ -149,6 +149,7 @@ static int udp_hdr_list_dump(struct udp_monitor_ctx* ctx, bool clear, bool skip_
 }
 
 static int udp_hdr_entry_handler(void* pri, void* data, size_t data_sz) {
+  (void)data_sz;
   struct udp_monitor_ctx* ctx = pri;
   const struct udp_pkt_entry* e = data;
   struct udp_detect_list* list = &ctx->detect;
