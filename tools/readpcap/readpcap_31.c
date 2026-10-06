@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define RFC3550_RTP_HDR_LEN (12)
 
@@ -75,8 +76,8 @@ static int g_pkt_idx = 0;
 void packetHandler(uint8_t* userData, const struct pcap_pkthdr* pkthdr,
                    const uint8_t* packet) {
   struct user_data* ud = (struct user_data*)userData;
-  uint8_t* payload = packet + sizeof(struct ether_header) + sizeof(struct iphdr) +
-                     sizeof(struct udphdr) + RFC3550_RTP_HDR_LEN;
+  const uint8_t* payload = packet + sizeof(struct ether_header) + sizeof(struct iphdr) +
+                           sizeof(struct udphdr) + RFC3550_RTP_HDR_LEN;
   uint16_t payload_len = pkthdr->len - sizeof(struct ether_header) -
                          sizeof(struct iphdr) - sizeof(struct udphdr) -
                          RFC3550_RTP_HDR_LEN;
@@ -88,9 +89,9 @@ void packetHandler(uint8_t* userData, const struct pcap_pkthdr* pkthdr,
   int sample_per_packet = 48;  // 48khz, 1ms packet time
   int num_channels = num_subframes / sample_per_packet;
   printf("pkt %d, %d subframes of %d channels\n", g_pkt_idx, num_subframes, num_channels);
-  am824_t* am = (am824_t*)payload;
+  const am824_t* am = (const am824_t*)payload;
   for (int i = 0; i < num_subframes; i++) {
-    uint32_t am_32 = *(uint32_t*)am;
+    uint32_t am_32 = *(const uint32_t*)am;
     printf("pkt %d, subframe %d, hex: %08x, channel bit: %u\n", g_pkt_idx, i, am_32,
            am->c);
     if (am->f) {
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  if (pcap_loop(fp, -1, packetHandler, &ud) < 0) {
+  if (pcap_loop(fp, -1, packetHandler, (u_char*)&ud) < 0) {
     fprintf(stderr, "pcap_loop() failed: %s\n", pcap_geterr(fp));
     close(fd);
     pcap_close(fp);

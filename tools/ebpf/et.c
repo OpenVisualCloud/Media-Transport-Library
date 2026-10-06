@@ -24,6 +24,7 @@ static volatile bool stop = false;
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
                            va_list args) {
+  (void)level;
   return vfprintf(stderr, format, args);
 }
 
@@ -40,6 +41,8 @@ static void et_sig_handler(int signo) {
 }
 
 static int udp_send_handler(void* ctx, void* data, size_t data_sz) {
+  (void)ctx;
+  (void)data_sz;
   const struct udp_send_event* e = data;
 
   printf("%s: pid %d, gso_size %u, bytes %u, duration_ns %llu\n", __func__, e->pid,
