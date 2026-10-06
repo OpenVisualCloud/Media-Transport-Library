@@ -81,13 +81,13 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
   /* Map each framebuffer address to its slot index so a returned st_frame can
    * be attributed to a specific slot for ownership tracking. */
   std::unordered_map<void*, int> addr2idx;
-  for (int i = 0; i < kFrameCnt; i++) {
+  for (uint16_t i = 0; i < kFrameCnt; i++) {
     void* a = st20p_tx_get_fb_addr(tx, i);
     ASSERT_NE(a, nullptr) << "framebuffer " << i << " has no address";
     addr2idx[a] = i;
   }
 
-  std::vector<std::atomic<int>> holder(kFrameCnt);
+  std::vector<std::atomic<int>> holder((size_t)kFrameCnt);
   for (auto& h : holder) h.store(0);
 
   const size_t frameSize = st20p_tx_frame_size(tx);
@@ -119,10 +119,10 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
       } else {
         int idx = it->second;
         /* Claim the slot; a non-zero previous owner means a double-claim. */
-        if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
+        if (holder[(size_t)idx].exchange(id) != 0) ownership_violation.store(true);
         /* Write while owned: ASan flags any aliasing to another live slot. */
         std::memset(f->addr[0], (uint8_t)id, 64);
-        if (holder[idx].exchange(0) != id) ownership_violation.store(true);
+        if (holder[(size_t)idx].exchange(0) != id) ownership_violation.store(true);
       }
       f->data_size = frameSize;
       if (st20p_tx_put_frame(tx, f) < 0) api_error.store(true);

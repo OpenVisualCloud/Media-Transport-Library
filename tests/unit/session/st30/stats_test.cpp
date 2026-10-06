@@ -23,9 +23,9 @@ class St30RxStatsTest : public St30RxBaseTest {};
 /* Per-port packet counters track packets received on each port independently. */
 TEST_F(St30RxStatsTest, PortPacketCount) {
   /* feed 5 pkts on P with increasing ts */
-  for (int i = 0; i < 5; i++) feed(i, 1000 + i, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 5; i++) feed(i, 1000 + i, MTL_SESSION_PORT_P);
   /* feed 3 pkts on R with further increasing ts */
-  for (int i = 0; i < 3; i++) feed(5 + i, 2000 + i, MTL_SESSION_PORT_R);
+  for (int i = 0; i < 3; i++) feed((uint16_t)(5 + i), 2000 + i, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(port_pkts(MTL_SESSION_PORT_P), 5u);
   EXPECT_EQ(port_pkts(MTL_SESSION_PORT_R), 3u);

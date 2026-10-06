@@ -172,7 +172,7 @@ class tests_context {
  public:
   struct st_tests_context* ctx = NULL;
   int idx = 0;
-  int fb_cnt = 0;
+  uint16_t fb_cnt = 0;
   uint16_t fb_idx = 0;
   int fb_send = 0;
   int fb_send_done = 0;
@@ -406,7 +406,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     EXPECT_TRUE(handle == NULL);           \
                                            \
     /* test with negative num_port */      \
-    ops.num_port = -1;                     \
+    ops.num_port = (uint8_t)-1;            \
     handle = A##_create(m_handle, &ops);   \
     EXPECT_TRUE(handle == NULL);           \
                                            \
@@ -719,7 +719,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     EXPECT_TRUE(handle == NULL);           \
                                            \
     /* test with negative num_port */      \
-    ops.port.num_port = -1;                \
+    ops.port.num_port = (uint8_t)-1;       \
     handle = A##_create(m_handle, &ops);   \
     EXPECT_TRUE(handle == NULL);           \
                                            \

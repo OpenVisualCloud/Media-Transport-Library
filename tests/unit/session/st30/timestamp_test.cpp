@@ -28,7 +28,7 @@ TEST_F(St30RxTimestampTest, AudioFrameBoundary) {
 
   /* each packet lands in its own positional slot */
   uint32_t s = spp();
-  for (int i = 0; i < total_pkts; i++) {
+  for (uint16_t i = 0; i < total_pkts; i++) {
     feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_P);
   }
 
@@ -152,7 +152,7 @@ TEST_F(St30RxTimestampTest, BackToBackMonotonic) {
   ctx_ = ut30_ctx_create(1);
   ASSERT_NE(ctx_, nullptr);
 
-  for (int i = 0; i < 40; i++) {
+  for (uint16_t i = 0; i < 40; i++) {
     feed(i, 1000 + (uint32_t)i * spp(), MTL_SESSION_PORT_P);
   }
 

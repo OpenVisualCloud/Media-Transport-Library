@@ -43,14 +43,14 @@ static uint64_t ut_g_raw_time_ns = 0;
 
 int rte_eth_timesync_read_time(uint16_t port_id, struct timespec* timestamp) {
   (void)port_id;
-  timestamp->tv_sec = ut_g_raw_time_ns / NS_PER_S;
-  timestamp->tv_nsec = ut_g_raw_time_ns % NS_PER_S;
+  timestamp->tv_sec = (time_t)(ut_g_raw_time_ns / NS_PER_S);
+  timestamp->tv_nsec = (long)(ut_g_raw_time_ns % NS_PER_S);
   return 0;
 }
 
 int rte_eth_timesync_adjust_time(uint16_t port_id, int64_t delta) {
   (void)port_id;
-  ut_g_raw_time_ns += delta;
+  ut_g_raw_time_ns += (uint64_t)delta;
   return 0;
 }
 
@@ -62,8 +62,8 @@ int rte_eth_timesync_adjust_time(uint16_t port_id, int64_t delta) {
 int rte_eth_timesync_read_tx_timestamp(uint16_t port_id, struct timespec* timestamp) {
   (void)port_id;
   if (timestamp) {
-    timestamp->tv_sec = ut_g_read_tx_ns / NS_PER_S;
-    timestamp->tv_nsec = ut_g_read_tx_ns % NS_PER_S;
+    timestamp->tv_sec = (time_t)(ut_g_read_tx_ns / NS_PER_S);
+    timestamp->tv_nsec = (long)(ut_g_read_tx_ns % NS_PER_S);
   }
   return ut_g_read_tx_ret;
 }

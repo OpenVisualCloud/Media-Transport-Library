@@ -41,7 +41,7 @@ class TxSyncSession {
     std::lock_guard<std::mutex> lck(mtx_);
     uint16_t idx = next_fb_idx_;
     pending_tai_[idx] = requested_tai;
-    next_fb_idx_ = (next_fb_idx_ + 1) % TX_SYNC_FB_CNT;
+    next_fb_idx_ = (uint16_t)((next_fb_idx_ + 1) % TX_SYNC_FB_CNT);
     return idx;
   }
 
@@ -293,7 +293,7 @@ void tx_timestamp_sync_test(enum st_test_level level) {
 
   /* empty ANC frames: content is irrelevant to the timestamp sync under test */
   uint8_t* anc_frame_bufs[TX_SYNC_FB_CNT] = {};
-  for (int i = 0; i < TX_SYNC_FB_CNT; i++) {
+  for (uint16_t i = 0; i < TX_SYNC_FB_CNT; i++) {
     anc_frame_bufs[i] = (uint8_t*)st_test_zmalloc(1);
     ASSERT_TRUE(anc_frame_bufs[i] != NULL);
     auto* dst = (struct st40_frame*)st40_tx_get_framebuffer(h40, i);

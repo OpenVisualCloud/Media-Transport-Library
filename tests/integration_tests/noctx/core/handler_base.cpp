@@ -47,7 +47,7 @@ void Handlers::setSessionPortsTx(struct st_tx_port* port, int txPortIdx,
       num_ports = 2;
     }
 
-    port->num_port = num_ports;
+    port->num_port = (uint8_t)num_ports;
   }
 }
 
@@ -71,6 +71,6 @@ void Handlers::setSessionPortsRx(struct st_rx_port* port, int rxPortIdx,
                ctx->para.port[rxPortRedundantIdx]);
       num_ports = 2;
     }
-    port->num_port = num_ports;
+    port->num_port = (uint8_t)num_ports;
   }
 }

@@ -146,10 +146,10 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
 int mtl_interface::get_queue() {
   auto it = std::find(queues.begin(), queues.end(), false);
   if (it != queues.end()) {
-    size_t q = std::distance(queues.begin(), it);
+    size_t q = (size_t)std::distance(queues.begin(), it);
     queues[q] = true;
     log(log_level::INFO, "Get queue " + std::to_string(q));
-    return q;
+    return (int)q;
   } else {
     log(log_level::ERROR, "No free queue");
     return -1;
@@ -310,8 +310,8 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     return ret;
   }
 
-  uint32_t rule_size = cmd_w_rules->data;
-  free_loc = rule_size - 1; /* start from lowest priority */
+  uint32_t rule_size = (uint32_t)cmd_w_rules->data;
+  free_loc = (int)(rule_size - 1); /* start from lowest priority */
   while (free_loc > 0) {
     bool used = false;
     for (uint32_t i = 0; i < cmd.rule_cnt; i++) {
@@ -357,7 +357,7 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     fs->h_u.udp_ip4_spec.ip4src = src_ip;
   }
   fs->ring_cookie = queue_id;
-  fs->location = free_loc; /* for some NICs the location must be set */
+  fs->location = (__u32)free_loc; /* for some NICs the location must be set */
 
   ifr.ifr_data = (caddr_t)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
@@ -366,7 +366,7 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     close(fd);
     return ret;
   }
-  flow_id = fs->location;
+  flow_id = (int)fs->location;
 
   close(fd);
 
@@ -419,10 +419,10 @@ int mtl_interface::load_xdp() {
     return -1;
   }
 
-  if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
+  if (xdp_program__attach(xdp_prog, (int)ifindex, XDP_MODE_NATIVE, 0) < 0) {
     log(log_level::WARNING,
         "Failed to attach XDP program with native mode, try skb mode.");
-    if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
+    if (xdp_program__attach(xdp_prog, (int)ifindex, XDP_MODE_SKB, 0) < 0) {
       log(log_level::ERROR, "Failed to attach XDP program.");
       xdp_program__close(xdp_prog);
       return -1;
@@ -431,7 +431,7 @@ int mtl_interface::load_xdp() {
   }
   xdp_mode = XDP_MODE_NATIVE;
 
-  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
+  if (xsk_setup_xdp_prog((int)ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
     log(log_level::ERROR, "Failed to setup AF_XDP socket.");
     unload_xdp();
     return -1;
@@ -452,7 +452,7 @@ int mtl_interface::load_xdp() {
 }
 
 void mtl_interface::unload_xdp() {
-  xdp_program__detach(xdp_prog, ifindex, xdp_mode, 0);
+  xdp_program__detach(xdp_prog, (int)ifindex, xdp_mode, 0);
   xdp_program__close(xdp_prog);
 
   log(log_level::INFO, "Unloaded xdp prog.");

@@ -4,9 +4,10 @@
 
 #include "st20_common.h"
 
-static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fmt[],
-                                     bool user_pacing[], bool user_timestamp[],
-                                     enum st_test_level level, int sessions = 1) {
+static void st20_tx_user_pacing_test(uint32_t width[], uint32_t height[],
+                                     enum st20_fmt fmt[], bool user_pacing[],
+                                     bool user_timestamp[], enum st_test_level level,
+                                     size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -48,7 +49,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
 
   enum st_fps fps = ST_FPS_P59_94;
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     if (user_pacing[i])
       expect_framerate[i] = st_frame_rate(fps) / 2;
     else
@@ -84,12 +85,12 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->height = ops_tx.height;
-    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    test_ctx_tx[i]->stride = (int)(ops_tx.width / st20_pg.coverage * st20_pg.size);
     uint8_t* fb;
-    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      st_test_rand_data(fb, frame_size, (uint8_t)frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
@@ -97,7 +98,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     test_ctx_tx[i]->handle = tx_handle[i];
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3, true);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->user_pacing = user_pacing[i];
@@ -132,10 +133,10 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10 * 1);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     rx_framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -145,15 +146,15 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
 
   /* freeze counters before assertions */
   guard.stop();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
 
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          rx_framerate[i]);
-    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_send %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          tx_framerate[i]);
 
     EXPECT_NEAR(tx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -162,8 +163,8 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
 }
 
 TEST(St20_tx, tx_user_pacing) {
-  int width[3] = {1280, 1920, 1280};
-  int height[3] = {720, 1080, 720};
+  uint32_t width[3] = {1280, 1920, 1280};
+  uint32_t height[3] = {720, 1080, 720};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
   bool user_pacing[3] = {false, true, true};

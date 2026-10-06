@@ -40,7 +40,7 @@ int OnFrameDone(void* priv, struct st_frame* frame) {
   cb->call_count++;
 
   /* release the ext buffer, exactly as EXT_FRAME_MANUAL_RELEASE intends. */
-  ut20p_tx_notify_ext_frame_free(cb->tx_ctx, ut20p_tx_frame_idx(frame));
+  ut20p_tx_notify_ext_frame_free(cb->tx_ctx, (uint16_t)ut20p_tx_frame_idx(frame));
 
   if (cb->call_count == 1) {
     /* pull the next frame immediately, as a tight producer loop would once
@@ -54,7 +54,7 @@ int OnFrameDone(void* priv, struct st_frame* frame) {
 int OnFrameDoneReleaseOnly(void* priv, struct st_frame* frame) {
   auto* cb = static_cast<CallbackCtx*>(priv);
   cb->call_count++;
-  ut20p_tx_notify_ext_frame_free(cb->tx_ctx, ut20p_tx_frame_idx(frame));
+  ut20p_tx_notify_ext_frame_free(cb->tx_ctx, (uint16_t)ut20p_tx_frame_idx(frame));
   return 0;
 }
 
@@ -183,7 +183,7 @@ TEST(St20PipelineTxExtFrameRelease, InternalConverterNotifyFreeIsNoOp) {
          "put_ext_frame";
   ASSERT_EQ(ut20p_tx_frame_stat(ctx, idx0), 3 /* CONVERTED, never parked IN_USER */);
 
-  EXPECT_EQ(ut20p_tx_notify_ext_frame_free(ctx, idx0), 0)
+  EXPECT_EQ(ut20p_tx_notify_ext_frame_free(ctx, (uint16_t)idx0), 0)
       << "internal-converter path must be a silent no-op regardless of frame state, "
          "not -EIO for not being IN_USER";
 

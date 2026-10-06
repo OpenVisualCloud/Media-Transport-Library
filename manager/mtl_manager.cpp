@@ -162,13 +162,13 @@ int main() {
   while (is_running) {
     std::vector<struct epoll_event> events(clients.size() + 2);
 
-    int nfds = epoll_wait(epfd, events.data(), clients.size() + 2, -1);
+    int nfds = epoll_wait(epfd, events.data(), (int)(clients.size() + 2), -1);
     if (nfds < 0) {
       logger::log(log_level::ERROR, "Failed to wait for epoll.");
       continue;
     }
 
-    for (int i = 0; i < nfds; i++) {
+    for (size_t i = 0; i < (size_t)nfds; i++) {
       int evfd = events[i].data.fd;
       if (evfd == sockfd) { /* accept new client */
         int client_sockfd = accept(sockfd, NULL, NULL);
@@ -215,7 +215,7 @@ int main() {
         if (it != clients.end()) {
           auto& client = *it;
           char buf[256];
-          int len = recv(evfd, buf, sizeof(buf), 0);
+          int len = (int)recv(evfd, buf, sizeof(buf), 0);
           if (len < 0) {
             logger::log(log_level::ERROR,
                         "Failed to receive data from client " + std::to_string(evfd));

@@ -34,7 +34,7 @@ uint64_t monotonicNowNs() {
   struct timespec spec;
   /* The clock mt_get_tsc() is calibrated against; NTP slewing would read as drift. */
   clock_gettime(CLOCK_MONOTONIC_RAW, &spec);
-  return (uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec;
+  return (uint64_t)spec.tv_sec * NS_PER_S + (uint64_t)spec.tv_nsec;
 }
 
 void startClock(uint64_t now) {
@@ -119,7 +119,7 @@ void NoCtxTest::ResetFakePtpClock() {
 
 void NoCtxTest::sleepUntilFailure(int sleep_duration) {
   if (!sleep_duration) {
-    sleep_duration = defaultTestDuration;
+    sleep_duration = (int)defaultTestDuration;
   }
 
   for (int i = 0; i < sleep_duration * 10; ++i) {

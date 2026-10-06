@@ -52,7 +52,7 @@ static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
 #if TEST_DATA_FIXED_PATTER
     p[i] = base + i;
 #else
-    p[i] = rand();
+    p[i] = (uint8_t)rand();
 #endif
   }
 }
@@ -63,7 +63,7 @@ static inline void st_test_rand_v210(uint8_t* p, size_t sz, uint8_t base) {
 #if TEST_DATA_FIXED_PATTER
     p[i] = base + i;
 #else
-    p[i] = rand();
+    p[i] = (uint8_t)rand();
 #endif
     if ((i % 4) == 3) p[i] &= 0x3F;
   }
@@ -80,7 +80,7 @@ static inline uint64_t st_test_get_monotonic_time() {
   struct timespec ts;
 
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+  return ((uint64_t)ts.tv_sec * NS_PER_S) + (uint64_t)ts.tv_nsec;
 }
 
 void test_sha_dump(const char* tag, unsigned char* sha);

@@ -34,7 +34,7 @@ int ut40p_tx_init(void) {
   return ut_eal_init();
 }
 
-ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt) {
+ut40p_tx_ctx* ut40p_tx_ctx_create(uint16_t framebuff_cnt) {
   ut40p_tx_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
@@ -49,7 +49,7 @@ ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt) {
     free(ctx);
     return NULL;
   }
-  for (int i = 0; i < framebuff_cnt; i++) {
+  for (uint16_t i = 0; i < framebuff_cnt; i++) {
     ctx->framebuffs[i].stat = ST40P_TX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
     /* mirrors production init: put_frame() recovers framebuf via frame_info->priv */
@@ -61,7 +61,7 @@ ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt) {
   struct st40p_tx_ctx* p = &ctx->pipeline;
   p->impl = &ctx->impl;
   p->idx = 0;
-  p->socket_id = rte_socket_id();
+  p->socket_id = (int)rte_socket_id();
   p->type = MT_ST40_HANDLE_PIPELINE_TX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;

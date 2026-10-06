@@ -35,7 +35,7 @@ typedef struct ut20p_ctx ut20p_ctx;
 int ut20p_init(void);
 
 /** Create a pipeline test context with the given framebuffer ring depth. */
-ut20p_ctx* ut20p_ctx_create(int framebuff_cnt);
+ut20p_ctx* ut20p_ctx_create(uint16_t framebuff_cnt);
 void ut20p_ctx_destroy(ut20p_ctx* ctx);
 
 /** Inject one synthetic frame into the pipeline as if the transport just

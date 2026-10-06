@@ -33,7 +33,7 @@ typedef struct ut30p_tx_ctx ut30p_tx_ctx;
 
 int ut30p_tx_init(void);
 
-ut30p_tx_ctx* ut30p_tx_ctx_create(int framebuff_cnt);
+ut30p_tx_ctx* ut30p_tx_ctx_create(uint16_t framebuff_cnt);
 void ut30p_tx_ctx_destroy(ut30p_tx_ctx* ctx);
 
 /**

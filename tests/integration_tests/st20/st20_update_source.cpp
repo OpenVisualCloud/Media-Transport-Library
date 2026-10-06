@@ -4,7 +4,7 @@
 
 #include "st20_common.h"
 
-static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
+static void st20_rx_update_src_test(enum st20_type type, size_t tx_sessions,
                                     enum st_test_level level = ST_TEST_LEVEL_ALL) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
@@ -24,7 +24,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  int rx_sessions = 1;
+  size_t rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.
   int max_rtp_delta = 3003;
 
@@ -49,10 +49,10 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
 
-  for (int i = 0; i < rx_sessions; i++)
+  for (size_t i = 0; i < rx_sessions; i++)
     expect_framerate[i] = st_frame_rate(ST_FPS_P59_94);
 
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
     test_ctx_tx[i]->stop = false;
@@ -91,7 +91,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     }
   }
 
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -127,7 +127,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * tx_sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * tx_sessions)); /* time for train_pacing */
   sleep(5);
 
   struct st_rx_source_info src;
@@ -148,7 +148,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   } else {
     test_ctx_tx[1]->seq_id = 0; /* reset seq id */
   }
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -156,13 +156,13 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     if (type == ST20_TYPE_FRAME_LEVEL) {
@@ -177,7 +177,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     test_ctx_tx[2]->seq_id = rand(); /* random seq id */
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       ret = st20_rx_update_source(rx_handle[i], &src);
       EXPECT_GE(ret, 0);
       test_ctx_rx[i]->start_time = 0;
@@ -185,13 +185,13 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     }
     sleep(10);
     /* check rx fps */
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
+      info("%s, session %zu fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
       if (type == ST20_TYPE_FRAME_LEVEL) {
@@ -215,7 +215,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     ret = st20_tx_update_destination(tx_handle[0], &dst);
     EXPECT_GE(ret, 0);
   }
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -223,13 +223,13 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     if (type == ST20_TYPE_FRAME_LEVEL) {

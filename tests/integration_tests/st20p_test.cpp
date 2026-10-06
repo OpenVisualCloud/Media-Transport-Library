@@ -31,7 +31,7 @@ static int test_convert_frame(struct test_converter_session* s,
   else
     memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
            frame->src->addr[0], SHA256_DIGEST_LENGTH);
-  st_usleep(s->sleep_time_us);
+  st_usleep((useconds_t)s->sleep_time_us);
 
   s->frame_cnt++;
   // dbg("%s(%d), succ\n", __func__, s->idx);
@@ -44,7 +44,7 @@ static int test_convert_frame(struct test_converter_session* s,
   }
   if (s->timeout_interval) {
     if (!(s->frame_cnt % s->timeout_interval)) {
-      st_usleep(s->timeout_ms * 1000);
+      st_usleep((useconds_t)(s->timeout_ms * 1000));
     }
   }
 
@@ -92,8 +92,8 @@ static st20_convert_priv test_converter_create_session(
     session->req = *req;
     session->session_p = session_p;
     double fps = st_frame_rate(req->fps);
-    if (!fps) fps = 60;
-    session->sleep_time_us = 1000 * 1000 / fps / 2;
+    if (fps == 0) fps = 60;
+    session->sleep_time_us = (int)(1000 * 1000 / fps / 2);
     dbg("%s(%d), sleep_time_us %d\n", __func__, i, session->sleep_time_us);
     session->fail_interval = ctx->plugin_fail_interval;
     session->timeout_interval = ctx->plugin_timeout_interval;
@@ -223,7 +223,7 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
-  for (int i = 0; i < s->fb_cnt; ++i) {
+  for (uint16_t i = 0; i < s->fb_cnt; ++i) {
     if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
@@ -275,7 +275,7 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
          MTL_IP_ADDR_LEN);
   snprintf(ops_tx->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST20P_TEST_UDP_PORT + st20->idx);
   ops_tx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -301,7 +301,7 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
          MTL_IP_ADDR_LEN);
   snprintf(ops_rx->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
-  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST20P_TEST_UDP_PORT + st20->idx);
   ops_rx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -406,7 +406,7 @@ static void test_st20p_tx_frame_thread(void* args) {
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
     if (s->user_timestamp) {
       frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->timestamp = s->fb_send;
+      frame->timestamp = (uint64_t)s->fb_send;
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
     if (s->user_meta) {
@@ -547,7 +547,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
     if (s->rx_timing_parser) test_st20p_rx_check_tp(s, frame);
-    if (s->field_period_ns) test_st20p_rx_check_field_phase(s, frame);
+    if (s->field_period_ns != 0) test_st20p_rx_check_field_phase(s, frame);
 
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
@@ -629,7 +629,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     timestamp = frame->timestamp;
 
     if (s->rx_timing_parser) test_st20p_rx_check_tp(s, frame);
-    if (s->field_period_ns) test_st20p_rx_check_field_phase(s, frame);
+    if (s->field_period_ns != 0) test_st20p_rx_check_field_phase(s, frame);
 
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
@@ -689,7 +689,7 @@ static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
 
 struct st20p_rx_digest_test_para {
   enum st_plugin_device device;
-  int sessions;
+  size_t sessions;
   int fail_interval;
   int timeout_interval;
   int timeout_ms;
@@ -745,7 +745,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->zero_payload_type = false;
 }
 
-static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
+static void st20p_rx_digest_test(enum st_fps fps[], uint32_t width[], uint32_t height[],
                                  enum st_frame_fmt tx_fmt[], enum st20_fmt t_fmt[],
                                  enum st_frame_fmt rx_fmt[],
                                  struct st20p_rx_digest_test_para* para) {
@@ -754,7 +754,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   int ret;
   struct st20p_tx_ops ops_tx;
   struct st20p_rx_ops ops_rx;
-  int sessions = para->sessions;
+  size_t sessions = para->sessions;
 
   st_test_jxs_fail_interval(ctx, para->fail_interval);
   st_test_jxs_timeout_interval(ctx, para->timeout_interval);
@@ -846,7 +846,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
   } guard{test_ctx_tx, test_ctx_rx, tx_thread, rx_thread, tx_handle, rx_handle, para};
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate_tx[i] = st_frame_rate(fps[i]);
     if (para->timeout_interval) {
       expect_framerate_tx[i] =
@@ -856,7 +856,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
@@ -879,7 +879,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST20P_TEST_UDP_PORT + i * 2);
     ops_tx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
@@ -949,9 +949,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_tx[i]->ext_fb_iova =
           mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
+      info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
-      for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
         for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
           test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
               st_frame_least_linesize(rx_fmt[i], width[i], plane) +
@@ -975,22 +975,22 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
 
-    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       if (para->tx_ext)
         fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
       else
         fb = (uint8_t*)st20p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       if (!para->line_padding_size)
-        st_test_rand_data(fb, frame_size, frame);
+        st_test_rand_data(fb, frame_size, (uint8_t)frame);
       else {
-        for (int plane = 0; plane < planes; plane++) {
+        for (uint8_t plane = 0; plane < planes; plane++) {
           size_t least_line_size = st_frame_least_linesize(tx_fmt[i], width[i], plane);
           uint8_t* start = (uint8_t*)test_ctx_tx[i]->p_ext_frames[frame].addr[plane];
-          for (int line = 0; line < height[i]; line++) {
+          for (uint32_t line = 0; line < height[i]; line++) {
             uint8_t* cur_line =
                 start + test_ctx_tx[i]->p_ext_frames[frame].linesize[plane] * line;
-            st_test_rand_data(cur_line, least_line_size, frame);
+            st_test_rand_data(cur_line, least_line_size, (uint8_t)frame);
           }
         }
       }
@@ -1025,7 +1025,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     tx_thread[i] = std::thread(test_st20p_tx_frame_thread, test_ctx_tx[i]);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     if (para->fail_interval) {
       /* loss in the tx */
       expect_framerate_tx[i] =
@@ -1035,7 +1035,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_rx[i]->fb_idx = 0;
@@ -1070,10 +1070,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova =
           mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
+      info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
-      for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
         for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
           test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
               st_frame_least_linesize(rx_fmt[i], width[i], plane) +
@@ -1110,7 +1110,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST20P_TEST_UDP_PORT + i * 2);
     ops_rx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
@@ -1152,7 +1152,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.rtcp.seq_bitmap_size = 64;
       ops_rx.rtcp.seq_skip_window = 0;
       ops_rx.rtcp.burst_loss_max = 1;
-      ops_rx.rtcp.sim_loss_rate = 0.1;
+      ops_rx.rtcp.sim_loss_rate = 0.1f;
     }
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
@@ -1188,7 +1188,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
     framerate_tx[i] = test_ctx_tx[i]->fb_send / time_sec;
@@ -1214,7 +1214,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ret = mtl_stop(st);
     EXPECT_GE(ret, 0);
   }
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate_rx[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -1240,10 +1240,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     rx_thread[i].join();
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     ret = st20p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
-    info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
+    info("%s, session %zu fb_send %d framerate %f:%f\n", __func__, i,
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GT(test_ctx_tx[i]->fb_send, 0);
     if (para->tx_ext) {
@@ -1256,10 +1256,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     delete test_ctx_tx[i];
     test_ctx_tx[i] = NULL;
   }
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     ret = st20p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
-    info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
@@ -1284,7 +1284,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       st_test_free(test_ctx_rx[i]->p_ext_frames);
     }
     if (para->rtcp) {
-      info("%s, session %d rx/tx fb ratio %f\n", __func__, i,
+      info("%s, session %zu rx/tx fb ratio %f\n", __func__, i,
            (double)test_ctx_rx[i]->fb_rec / test_ctx_rx[i]->fb_send);
     }
     delete test_ctx_rx[i];
@@ -1294,8 +1294,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
 TEST(St20p, digest_1080p_s1) {
   enum st_fps fps[1] = {ST_FPS_P25};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1313,8 +1313,8 @@ TEST(St20p, digest_1080p_s1) {
 
 TEST(St20p, digest_1080i_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                  ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1338,8 +1338,8 @@ TEST(St20p, digest_1080i_s2) {
 
 TEST(St20p, digest_1080p_internal_s1) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1355,8 +1355,8 @@ TEST(St20p, digest_1080p_internal_s1) {
 
 TEST(St20p, digest_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
                                  ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1374,8 +1374,8 @@ TEST(St20p, digest_s2) {
 
 TEST(St20p, digest_1080p_fail_interval) {
   enum st_fps fps[1] = {ST_FPS_P25};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1389,8 +1389,8 @@ TEST(St20p, digest_1080p_fail_interval) {
 
 TEST(St20p, digest_1080p_timeout_interval) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1405,8 +1405,8 @@ TEST(St20p, digest_1080p_timeout_interval) {
 
 TEST(St20p, digest_1080p_internal_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1423,8 +1423,8 @@ TEST(St20p, digest_1080p_internal_s2) {
 
 TEST(St20p, digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST_FRAME_FMT_RGB8};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_RGB_8BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST_FRAME_FMT_RGB8};
@@ -1440,8 +1440,8 @@ TEST(St20p, digest_1080p_no_convert_s2) {
 
 TEST(St20p, digest_1080p_packet_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1459,8 +1459,8 @@ TEST(St20p, digest_1080p_packet_convert_s2) {
 
 TEST(St20p, tx_ext_digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                  ST_FRAME_FMT_YUV422RFC4175PG2BE10};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1479,8 +1479,8 @@ TEST(St20p, tx_ext_digest_1080p_no_convert_s2) {
 
 TEST(St20p, tx_ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
@@ -1497,8 +1497,8 @@ TEST(St20p, tx_ext_digest_1080p_convert_s2) {
 
 TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                  ST_FRAME_FMT_YUV422RFC4175PG2BE10};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1518,8 +1518,8 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
 
 TEST(St20p, rx_ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
@@ -1536,8 +1536,8 @@ TEST(St20p, rx_ext_digest_1080p_convert_s2) {
 
 TEST(St20p, rx_ext_digest_1080p_packet_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1556,8 +1556,8 @@ TEST(St20p, rx_ext_digest_1080p_packet_convert_s2) {
 
 TEST(St20p, ext_digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                  ST_FRAME_FMT_YUV422RFC4175PG2BE10};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1577,8 +1577,8 @@ TEST(St20p, ext_digest_1080p_no_convert_s2) {
 
 TEST(St20p, ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
@@ -1598,8 +1598,8 @@ TEST(St20p, ext_digest_1080p_convert_s2) {
 
 TEST(St20p, rx_dedicated_ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
-  int width[2] = {1920, 1280};
-  int height[2] = {1080, 720};
+  uint32_t width[2] = {1920, 1280};
+  uint32_t height[2] = {1080, 720};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1616,8 +1616,8 @@ TEST(St20p, rx_dedicated_ext_digest_1080p_convert_s2) {
 
 TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1636,8 +1636,8 @@ TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
 
 TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1657,8 +1657,8 @@ TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
 
 TEST(St20p, ext_digest_1080p_packet_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
@@ -1679,8 +1679,8 @@ TEST(St20p, ext_digest_1080p_packet_convert_with_padding_s2) {
 
 TEST(St20p, digest_user_meta_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                  ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
@@ -1702,8 +1702,8 @@ TEST(St20p, digest_user_meta_s2) {
 
 TEST(St20p, digest_rtcp_s1) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
@@ -1720,8 +1720,8 @@ TEST(St20p, digest_rtcp_s1) {
 
 TEST(St20p, transport_yuv422p10le) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_PLANAR10LE};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1804,8 +1804,8 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
   struct st_ext_frame ext_frames[fb_cnt];
   memset(ext_frames, 0, sizeof(ext_frames));
   for (int i = 0; i < fb_cnt; i++) {
-    ext_frames[i].addr[0] = ext_fb + i * frame_size;
-    ext_frames[i].iova[0] = ext_fb_iova + i * frame_size;
+    ext_frames[i].addr[0] = ext_fb + (size_t)i * frame_size;
+    ext_frames[i].iova[0] = ext_fb_iova + (size_t)i * frame_size;
     ext_frames[i].linesize[0] = st_frame_least_linesize(fmt, width, 0);
     ext_frames[i].size = frame_size;
   }
@@ -2073,7 +2073,7 @@ TEST(St20p, redundant_stats) {
 
   struct st20p_tx_ops ops_tx;
   struct st20p_rx_ops ops_rx;
-  int udp_port = ST20P_TEST_UDP_PORT + 100;
+  uint16_t udp_port = ST20P_TEST_UDP_PORT + 100;
 
   /* TX context */
   auto test_ctx_tx = new tests_context();
@@ -2301,7 +2301,7 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
   };
 
   std::vector<std::thread> threads;
-  threads.reserve(reader_threads);
+  threads.reserve((size_t)reader_threads);
   for (int i = 0; i < reader_threads; i++) threads.emplace_back(reader);
 
   for (int it = 0; it < iterations; it++) {

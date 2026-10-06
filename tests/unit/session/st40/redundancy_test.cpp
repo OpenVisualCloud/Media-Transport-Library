@@ -197,8 +197,8 @@ TEST_F(St40RxRedundancyTest, ThresholdBypass) {
 
   /* now send 21 packets with old timestamp on BOTH ports to exceed threshold */
   for (int i = 0; i < 21; i++) {
-    feed(50 + i, ts_old, false, MTL_SESSION_PORT_P);
-    feed(50 + i, ts_old, false, MTL_SESSION_PORT_R);
+    feed((uint16_t)(50 + i), ts_old, false, MTL_SESSION_PORT_P);
+    feed((uint16_t)(50 + i), ts_old, false, MTL_SESSION_PORT_R);
   }
 
   /* the 21st pair should have been accepted (threshold = 20 per port) */
@@ -227,7 +227,7 @@ TEST_F(St40RxRedundancyTest, ThresholdBypassPerPort) {
 
   /* send 25 old-ts packets on port 0 ONLY */
   for (int i = 0; i < 25; i++) {
-    int rc = feed(50 + i, ts_old, false, MTL_SESSION_PORT_P);
+    int rc = feed((uint16_t)(50 + i), ts_old, false, MTL_SESSION_PORT_P);
     /* all should be rejected: port R counter is 4, still below threshold */
     EXPECT_LT(rc, 0)
         << "Should not bypass threshold when port R only has 4 errors (< 20)";
@@ -385,7 +385,7 @@ TEST_F(St40RxRedundancyTest, HighPerLegLossRedundancySaves) {
   /* P drops every 4th seq (i%4==3); R supplies those interleaved so the
    * rescue lands inside the bitmap / prev_tmstamp window. */
   int p_drops = 0;
-  for (int i = 0; i < kPkts; i++) {
+  for (uint16_t i = 0; i < kPkts; i++) {
     if (i % 4 == 3) {
       p_drops++;
       feed(i, ts, false, MTL_SESSION_PORT_R); /* R covers immediately */
@@ -492,7 +492,7 @@ TEST_F(St40RxRedundancyTest, MidFrameDisconnectPeerCompletesFrame) {
   feed(2, ts, false, MTL_SESSION_PORT_P);
   feed(3, ts, false, MTL_SESSION_PORT_P);
   /* P dies mid-frame; R sends the full frame. */
-  for (int i = 0; i < 6; i++) feed(i, ts, i == 5, MTL_SESSION_PORT_R);
+  for (uint16_t i = 0; i < 6; i++) feed(i, ts, i == 5, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(unrecovered(), 0u) << "frame reconstructed via cross-port fill";
   EXPECT_EQ(redundant(), 4u) << "R's pkts 0..3 duplicate P's";
@@ -513,7 +513,7 @@ TEST_F(St40RxRedundancyTest, WireCorruptedSeqDoesNotStallSession) {
   feed(3, ts1, true, MTL_SESSION_PORT_R);
   /* A subsequent clean frame must still complete - the wild seq watermark
    * must not block forward progress. */
-  for (int i = 0; i < 4; i++) feed(60 + i, 2000, i == 3, MTL_SESSION_PORT_P);
+  for (int i = 0; i < 4; i++) feed((uint16_t)(60 + i), 2000, i == 3, MTL_SESSION_PORT_P);
 
   EXPECT_GE(frames_received(), 1) << "session must keep producing frames";
   EXPECT_LE(unrecovered(), 64u)

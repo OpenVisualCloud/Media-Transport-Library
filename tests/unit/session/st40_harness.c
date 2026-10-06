@@ -108,11 +108,11 @@ ut_test_ctx* ut40_ctx_create(int num_port) {
   ctx->mgr.idx = 0;
 
   ctx->session.idx = 0;
-  ctx->session.socket_id = rte_socket_id();
+  ctx->session.socket_id = (int)rte_socket_id();
   ctx->session.mgr = &ctx->mgr;
   ctx->session.packet_ring = g_ring;
   ctx->session.attached = true;
-  ctx->session.ops.num_port = num_port;
+  ctx->session.ops.num_port = (uint8_t)num_port;
   ctx->session.ops.payload_type = 0;
   ctx->session.ops.interlaced = false;
   ctx->session.ops.type = ST40_TYPE_RTP_LEVEL; /* legacy default for harness */
@@ -163,7 +163,7 @@ static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker
   rtp->base.seq_number = htons(seq);
   rtp->base.tmstamp = htonl(ts);
   rtp->base.ssrc = htonl(ssrc);
-  rtp->base.payload_type = pt;
+  rtp->base.payload_type = pt & 0x7fU;
   rtp->base.marker = marker ? 1 : 0;
 
   /* pack anc_count=1 and f_bits into the chunk that gets ntohl'd */
@@ -171,8 +171,8 @@ static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker
   chunk |= ((uint32_t)(f_bits & 0x3)) << 22;
   rtp->swapped_first_hdr_chunk = htonl(chunk);
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
   return m;
 }
 
@@ -195,7 +195,7 @@ void ut40_feed_burst(ut_test_ctx* ctx, uint16_t seq_start, int count, uint32_t t
                      int last_marker, enum mtl_session_port port) {
   for (int i = 0; i < count; i++) {
     int marker = last_marker && (i == count - 1);
-    ut40_feed_pkt(ctx, seq_start + i, ts, marker, port);
+    ut40_feed_pkt(ctx, (uint16_t)(seq_start + i), ts, marker, port);
   }
 }
 
@@ -409,8 +409,8 @@ static int ut_notify_frame_ready(void* priv, void* addr,
 
   struct ut40_captured_frame* c = &g_captured[g_captured_count++];
   c->addr = addr;
-  c->meta_num = meta->meta_num;
-  c->udw_buffer_fill = meta->udw_buffer_fill;
+  c->meta_num = (uint16_t)meta->meta_num;
+  c->udw_buffer_fill = (uint32_t)meta->udw_buffer_fill;
   c->rtp_timestamp = meta->rtp_timestamp;
   c->timestamp_first_pkt = meta->timestamp_first_pkt;
   c->rtp_marker = meta->rtp_marker;
@@ -418,8 +418,9 @@ static int ut_notify_frame_ready(void* priv, void* addr,
   c->second_field = meta->second_field;
   if (meta->meta && meta->meta_num <= UT40_CAPTURE_META_PER_FRAME)
     memcpy(c->meta, meta->meta, sizeof(struct st40_meta) * meta->meta_num);
-  c->udw_copy_len = meta->udw_buffer_fill < sizeof(c->udw_copy) ? meta->udw_buffer_fill
-                                                                : sizeof(c->udw_copy);
+  c->udw_copy_len =
+      (uint32_t)(meta->udw_buffer_fill < sizeof(c->udw_copy) ? meta->udw_buffer_fill
+                                                             : sizeof(c->udw_copy));
   if (addr) memcpy(c->udw_copy, addr, c->udw_copy_len);
   c->seq_lost = meta->seq_lost;
   c->seq_discont = meta->seq_discont;
@@ -594,9 +595,9 @@ int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   pkt->first_hdr_chunk.horizontal_offset = 0;
   pkt->first_hdr_chunk.s = 0;
   pkt->first_hdr_chunk.stream_num = 0;
-  pkt->second_hdr_chunk.did = st40_add_parity_bits(did);
-  pkt->second_hdr_chunk.sdid = st40_add_parity_bits(sdid);
-  pkt->second_hdr_chunk.data_count = st40_add_parity_bits((uint8_t)udw_size);
+  pkt->second_hdr_chunk.did = st40_add_parity_bits(did) & 0x3ffU;
+  pkt->second_hdr_chunk.sdid = st40_add_parity_bits(sdid) & 0x3ffU;
+  pkt->second_hdr_chunk.data_count = st40_add_parity_bits((uint8_t)udw_size) & 0x3ffU;
   st40_rfc8331_payload_hdr_bswap(pkt);
 
   uint8_t* udw_dst = (uint8_t*)&pkt->second_hdr_chunk;
@@ -609,8 +610,8 @@ int ut40_feed_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int marker,
   if (corrupt_checksum) cs ^= 0x1;
   st40_set_udw(udw_size + 3, cs, udw_dst);
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
 
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
@@ -679,9 +680,10 @@ int ut40_feed_multi_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int mar
     payload_hdr->first_hdr_chunk.horizontal_offset = 0;
     payload_hdr->first_hdr_chunk.s = 0;
     payload_hdr->first_hdr_chunk.stream_num = 0;
-    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x41);
-    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x05);
-    payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits((uint8_t)udw_size);
+    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x41) & 0x3ffU;
+    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x05) & 0x3ffU;
+    payload_hdr->second_hdr_chunk.data_count =
+        st40_add_parity_bits((uint8_t)udw_size) & 0x3ffU;
     st40_rfc8331_payload_hdr_bswap(payload_hdr);
 
     uint8_t* udw_dst = (uint8_t*)&payload_hdr->second_hdr_chunk;
@@ -695,8 +697,8 @@ int ut40_feed_multi_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int mar
     payload += ut40_anc_payload_bytes(udw_size);
   }
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
 
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);

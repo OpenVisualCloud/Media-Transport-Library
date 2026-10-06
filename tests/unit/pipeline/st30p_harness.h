@@ -32,7 +32,7 @@ typedef struct ut30p_ctx ut30p_ctx;
 
 int ut30p_init(void);
 
-ut30p_ctx* ut30p_ctx_create(int framebuff_cnt);
+ut30p_ctx* ut30p_ctx_create(uint16_t framebuff_cnt);
 void ut30p_ctx_destroy(ut30p_ctx* ctx);
 
 /** Inject one synthetic audio frame as if the transport just completed it.

@@ -54,8 +54,8 @@ class mtl_instance {
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
     msg.header.type = (mtl_message_type_t)htonl(type);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
-    msg.body.response_msg.response = htonl(response);
-    return send(conn_fd, &msg, sizeof(mtl_message_t), 0);
+    msg.body.response_msg.response = (int)htonl((uint32_t)response);
+    return (int)send(conn_fd, &msg, sizeof(mtl_message_t), 0);
   }
   std::shared_ptr<mtl_interface> get_interface(const unsigned int ifindex);
 
@@ -189,8 +189,8 @@ void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
 }
 
 void mtl_instance::handle_message_register(mtl_register_message_t* register_msg) {
-  pid = ntohl(register_msg->pid);
-  uid = ntohl(register_msg->uid);
+  pid = (int)ntohl(register_msg->pid);
+  uid = (int)ntohl(register_msg->uid);
   hostname = std::string(register_msg->hostname, 64);
   uint16_t num_if = ntohs(register_msg->num_if);
   for (int i = 0; i < num_if; i++) {
@@ -297,7 +297,7 @@ void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
     return;
   }
   int ret = interface->get_queue();
-  if (ret > 0) if_queue_ids[ifindex].insert(ret);
+  if (ret > 0) if_queue_ids[ifindex].insert((uint16_t)ret);
   if (send_response(ret, MTL_MSG_TYPE_IF_QUEUE_ID) < 0) {
     log(log_level::ERROR, "Failed to send response for if_get_queue");
   }
@@ -332,7 +332,7 @@ void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
   int ret = interface->add_flow(ntohs(if_msg->queue_id), ntohl(if_msg->flow_type),
                                 ntohl(if_msg->src_ip), ntohl(if_msg->dst_ip),
                                 ntohs(if_msg->src_port), ntohs(if_msg->dst_port));
-  if (ret > 0) if_flow_ids[ifindex].insert(ret);
+  if (ret > 0) if_flow_ids[ifindex].insert((unsigned int)ret);
   if (send_response(ret, MTL_MSG_TYPE_IF_FLOW_ID) < 0) {
     log(log_level::ERROR, "Failed to send response for if_add_flow");
   }

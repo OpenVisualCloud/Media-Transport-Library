@@ -2,8 +2,8 @@
 
 add_languages('cpp', required : true)
 
-unit_cpp_args = ['-Wall', '-Werror']
-unit_c_args = ['-Wall', '-Werror']
+unit_cpp_args = ['-Wall', '-Werror', '-Wconversion']
+unit_c_args = ['-Wall', '-Werror', '-Wconversion']
 # Deliberately no '-Wl,--allow-multiple-definition': harnesses shadow production symbols by
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []

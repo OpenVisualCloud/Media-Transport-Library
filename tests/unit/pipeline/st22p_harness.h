@@ -34,7 +34,7 @@ typedef struct ut22p_ctx ut22p_ctx;
 
 int ut22p_init(void);
 
-ut22p_ctx* ut22p_ctx_create(int framebuff_cnt);
+ut22p_ctx* ut22p_ctx_create(uint16_t framebuff_cnt);
 void ut22p_ctx_destroy(ut22p_ctx* ctx);
 
 /**

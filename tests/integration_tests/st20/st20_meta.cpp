@@ -8,20 +8,23 @@ static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr*
                                   uint16_t* pkt_len) {
   struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
   int offset;
-  int frame_size = s->frame_size;
+  int frame_size = (int)s->frame_size;
   uint16_t row_number, row_offset;
   uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
   int pkt_idx = s->pkt_idx;
 
   if (s->single_line) {
-    row_number = pkt_idx / s->pkts_in_line;
-    int pixels_in_pkt = s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage;
-    row_offset = pixels_in_pkt * (pkt_idx % s->pkts_in_line);
-    offset = (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
+    row_number = (uint16_t)(pkt_idx / s->pkts_in_line);
+    int pixels_in_pkt =
+        (int)((uint32_t)s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage);
+    row_offset = (uint16_t)(pixels_in_pkt * (pkt_idx % s->pkts_in_line));
+    offset = (int)((row_number * s->width + row_offset) / s->st20_pg.coverage *
+                   s->st20_pg.size);
   } else {
     offset = s->pkt_data_len * pkt_idx;
-    row_number = offset / s->bytes_in_line;
-    row_offset = (offset % s->bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
+    row_number = (uint16_t)(offset / s->bytes_in_line);
+    row_offset = (uint16_t)((uint32_t)(offset % s->bytes_in_line) * s->st20_pg.coverage /
+                            s->st20_pg.size);
     if ((offset + s->pkt_data_len > (row_number + 1) * s->bytes_in_line) &&
         (offset + s->pkt_data_len < frame_size)) {
       e_rtp = (struct st20_rfc4175_extra_rtp_hdr*)payload;
@@ -40,18 +43,18 @@ static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr*
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
-  rtp->base.seq_number = htons(s->seq_id);
+  rtp->base.seq_number = htons((uint16_t)s->seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
   s->seq_id++;
   int temp = s->single_line
-                 ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
+                 ? (int)((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
                  : (frame_size - offset);
-  uint16_t data_len = s->pkt_data_len > temp ? temp : s->pkt_data_len;
+  uint16_t data_len = (uint16_t)(s->pkt_data_len > temp ? temp : s->pkt_data_len);
   rtp->row_length = htons(data_len);
   *pkt_len = data_len + sizeof(*rtp);
   if (e_rtp) {
-    uint16_t row_length_0 = (row_number + 1) * s->bytes_in_line - offset;
-    uint16_t row_length_1 = s->pkt_data_len - row_length_0;
+    uint16_t row_length_0 = (uint16_t)((row_number + 1) * s->bytes_in_line - offset);
+    uint16_t row_length_1 = (uint16_t)(s->pkt_data_len - row_length_0);
     rtp->row_length = htons(row_length_0);
     e_rtp->row_length = htons(row_length_1);
     e_rtp->row_offset = htons(0);
@@ -134,8 +137,8 @@ static int st20_rx_meta_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
-                              enum st20_fmt fmt, int sessions = 1) {
+static void st20_rx_meta_test(enum st_fps fps[], uint32_t width[], uint32_t height[],
+                              enum st20_fmt fmt, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -168,7 +171,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, nullptr);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
@@ -192,7 +195,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     rtp_thread_tx[i] = std::thread(st20_rx_meta_feed_packet, test_ctx_tx[i]);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
@@ -229,10 +232,10 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -240,14 +243,14 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
 
   /* freeze counters before assertions */
   guard.stop();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     float expect_incomplete_frame_cnt = (float)test_ctx_rx[i]->fb_rec / 2;
     EXPECT_NEAR(test_ctx_rx[i]->incomplete_frame_cnt, expect_incomplete_frame_cnt,
                 expect_incomplete_frame_cnt * 0.1);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->rx_meta_fail_cnt, 0);
-    info("%s, session %d fb_rec %d fb_incomplete %d framerate %f\n", __func__, i,
+    info("%s, session %zu fb_rec %d fb_incomplete %d framerate %f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
@@ -255,7 +258,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
 
 TEST(St20_rx, frame_meta_1080p_fps59_94_s1) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_rx_meta_test(fps, width, height, ST20_FMT_YUV_422_10BIT);
 }

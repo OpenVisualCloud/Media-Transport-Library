@@ -30,7 +30,7 @@ typedef struct ut40p_ctx ut40p_ctx;
 
 int ut40p_init(void);
 
-ut40p_ctx* ut40p_ctx_create(int framebuff_cnt);
+ut40p_ctx* ut40p_ctx_create(uint16_t framebuff_cnt);
 void ut40p_ctx_destroy(ut40p_ctx* ctx);
 
 /** Inject one synthetic ANC frame as if the transport just completed it.

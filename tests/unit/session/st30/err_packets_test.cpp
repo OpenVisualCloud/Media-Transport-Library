@@ -124,7 +124,7 @@ TEST_F(St30RxErrPacketsTest, RedundancyFilterDoesNotBumpErrCounter) {
 
 /* A healthy redundant stream must have zero unexplained err_packets. */
 TEST_F(St30RxErrPacketsTest, HealthyRedundantStreamHasZeroUnexplainedErrors) {
-  for (int i = 0; i < 5; i++) {
+  for (uint16_t i = 0; i < 5; i++) {
     feed_good(i, 1000 + i, MTL_SESSION_PORT_P);
     feed_good(i, 1000 + i, MTL_SESSION_PORT_R);
   }

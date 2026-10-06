@@ -34,7 +34,7 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
 
     uint32_t total_bytes = 0;
     uint32_t offset = 0;
-    info->meta_num = anc_sizes_.size();
+    info->meta_num = static_cast<uint32_t>(anc_sizes_.size());
     for (size_t i = 0; i < anc_sizes_.size(); i++) {
       const uint16_t udw_size = anc_sizes_[i];
       struct st40_meta& meta = info->meta[i];
@@ -46,7 +46,7 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
       meta.did = 0x45;
       meta.sdid = 0x01;
       meta.udw_size = udw_size;
-      meta.udw_offset = offset;
+      meta.udw_offset = static_cast<uint16_t>(offset);
 
       for (uint16_t j = 0; j < udw_size; j++) {
         info->udw_buff_addr[offset + j] = static_cast<uint8_t>((i + 1) * 7 + j);
@@ -114,21 +114,23 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   ph->first_hdr_chunk.horizontal_offset = 0;
   ph->first_hdr_chunk.s = 0;
   ph->first_hdr_chunk.stream_num = 0;
-  ph->second_hdr_chunk.did = st40_add_parity_bits(0x45);
-  ph->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
-  ph->second_hdr_chunk.data_count = st40_add_parity_bits(payload.size());
+  ph->second_hdr_chunk.did = st40_add_parity_bits(0x45) & 0x3ffU;
+  ph->second_hdr_chunk.sdid = st40_add_parity_bits(0x01) & 0x3ffU;
+  ph->second_hdr_chunk.data_count =
+      st40_add_parity_bits(static_cast<uint16_t>(payload.size())) & 0x3ffU;
 
   uint8_t* udw_dst = reinterpret_cast<uint8_t*>(&ph->second_hdr_chunk);
   for (size_t i = 0; i < payload.size(); i++) {
-    st40_set_udw(static_cast<int>(i + 3), st40_add_parity_bits(payload[i]), udw_dst);
+    st40_set_udw(static_cast<uint32_t>(i + 3), st40_add_parity_bits(payload[i]), udw_dst);
   }
-  uint16_t checksum = st40_calc_checksum(3 + payload.size(), udw_dst);
-  st40_set_udw(static_cast<int>(payload.size() + 3), checksum, udw_dst);
+  uint16_t checksum =
+      st40_calc_checksum(static_cast<uint32_t>(3 + payload.size()), udw_dst);
+  st40_set_udw(static_cast<uint32_t>(payload.size() + 3), checksum, udw_dst);
 
   uint32_t payload_bytes =
       st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
 
-  rtp->length = htons(payload_bytes);
+  rtp->length = htons(static_cast<uint16_t>(payload_bytes));
   st40_rfc8331_rtp_hdr_bswap(rtp);
   st40_rfc8331_payload_hdr_bswap(ph);
   out.resize(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes);

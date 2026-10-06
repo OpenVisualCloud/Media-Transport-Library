@@ -27,9 +27,9 @@ St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
 
 St20pHandler::~St20pHandler() = default;
 
-void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
+void St20pHandler::fillSt20Ops(uint16_t transmissionPort, uint16_t framebufferQueueSize,
                                enum st20_fmt fmt, uint width, uint height,
-                               uint payloadType, enum st_fps fps, bool interlaced,
+                               uint8_t payloadType, enum st_fps fps, bool interlaced,
                                enum st20_packing /*packing*/) {
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st20p_noctx_test_tx";
@@ -44,7 +44,7 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
            ctx->para.port[MTL_PORT_P]);
 
   sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsTx.port.payload_type = payloadType;
   sessionsOpsTx.width = width;
   sessionsOpsTx.height = height;
@@ -67,7 +67,7 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
            ctx->para.port[MTL_PORT_R]);
 
   sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsRx.port.payload_type = payloadType;
   sessionsOpsRx.width = width;
   sessionsOpsRx.height = height;
@@ -106,7 +106,7 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
   enum st20_fmt fmt = (enum st20_fmt)sessionsOpsTx.input_fmt;
   bool interlaced = sessionsOpsTx.interlaced;
 
-  uint frameSize = st_frame_size((enum st_frame_fmt)fmt, width, height, interlaced);
+  uint frameSize = (uint)st_frame_size((enum st_frame_fmt)fmt, width, height, interlaced);
 
   while (!stopFlag) {
     frame = st20p_tx_get_frame(handle);
@@ -140,7 +140,7 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
   uint32_t height = sessionsOpsRx.height;
   bool interlaced = sessionsOpsRx.interlaced;
 
-  uint frameSize = st_frame_size(fmt, width, height, interlaced);
+  uint frameSize = (uint)st_frame_size(fmt, width, height, interlaced);
 
   while (!stopFlag) {
     frame = st20p_rx_get_frame(handle);

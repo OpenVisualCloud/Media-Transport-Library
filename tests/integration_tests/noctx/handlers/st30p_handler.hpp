@@ -18,8 +18,8 @@ class St30pHandler : public PipelineHandlerBase<st30p_tx_ops, st30p_rx_ops,
                         st30p_rx_ops ops_rx = {}, uint msPerFramebuffer = 10);
   ~St30pHandler() override;
 
-  void fillSt30pOps(uint transmissionPort = 30000, uint framebufferQueueSize = 3,
-                    uint payloadType = 111, st30_fmt format = ST30_FMT_PCM16,
+  void fillSt30pOps(uint16_t transmissionPort = 30000, uint16_t framebufferQueueSize = 3,
+                    uint8_t payloadType = 111, st30_fmt format = ST30_FMT_PCM16,
                     st30_sampling sampling = ST30_SAMPLING_48K, uint8_t channelCount = 2,
                     st30_ptime ptime = ST30_PTIME_1MS);
 

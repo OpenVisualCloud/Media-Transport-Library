@@ -165,7 +165,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
         nb = atoi(optarg);
         if (nb > 0 && nb < 100) {
-          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+          p->data_quota_mbs_per_sch =
+              (uint32_t)((uint64_t)nb * st20_1080p59_yuv422_10bit_bandwidth_mps());
         }
         break;
       case TEST_ARG_DMA_DEV:
@@ -214,10 +215,12 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         p->ptp_get_time_fn = NULL; /* clear the user ptp func */
         break;
       case TEST_ARG_NB_TX_DESC:
-        p->nb_tx_desc = atoi(optarg);
+        nb = atoi(optarg);
+        if (nb >= 0 && nb <= UINT16_MAX) p->nb_tx_desc = (uint16_t)nb;
         break;
       case TEST_ARG_NB_RX_DESC:
-        p->nb_rx_desc = atoi(optarg);
+        nb = atoi(optarg);
+        if (nb >= 0 && nb <= UINT16_MAX) p->nb_rx_desc = (uint16_t)nb;
         break;
       case TEST_ARG_LEVEL:
         if (!strcmp(optarg, "all"))
@@ -234,7 +237,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
         break;
       case TEST_ARG_QUEUE_CNT: {
-        uint16_t cnt = atoi(optarg);
+        nb = atoi(optarg);
+        if (nb < 0 || nb > UINT16_MAX) break;
+        uint16_t cnt = (uint16_t)nb;
         p->tx_queues_cnt[MTL_PORT_P] = cnt;
         p->tx_queues_cnt[MTL_PORT_R] = cnt;
         p->rx_queues_cnt[MTL_PORT_P] = cnt;
@@ -332,8 +337,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
   /* Only generate random IP if user didn't specify one */
   if (!ctx->user_p_sip) {
     p_ip[0] = 197;
-    p_ip[1] = rand() % 0xFF;
-    p_ip[2] = rand() % 0xFF;
+    p_ip[1] = (uint8_t)(rand() % 0xFF);
+    p_ip[2] = (uint8_t)(rand() % 0xFF);
     p_ip[3] = 1;
   }
 
@@ -351,7 +356,7 @@ static void test_random_ip(struct st_tests_context* ctx) {
     p->sip_addr[i][3] = (uint8_t)((p_ip[3] - 1 + i) % 254 + 1);
   }
 
-  srand(st_test_get_monotonic_time());
+  srand((unsigned int)st_test_get_monotonic_time());
 
   uint8_t* p_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_P];
   uint8_t* r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_R];
@@ -379,7 +384,7 @@ static uint64_t test_ptp_from_real_time(void* priv) {
   struct timespec spec;
 #ifndef WINDOWSENV
   clock_gettime(CLOCK_REALTIME, &spec);
-  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
+  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + (uint64_t)spec.tv_nsec;
 #else
   unsigned __int64 t;
   union {
@@ -390,7 +395,7 @@ static uint64_t test_ptp_from_real_time(void* priv) {
   t = ct.u64 - INT64_C(116444736000000000);
   spec.tv_sec = t / 10000000;
   spec.tv_nsec = ((int)(t % 10000000)) * 100;
-  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
+  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + (uint64_t)spec.tv_nsec;
 #endif
   return ctx->ptp_time;
 }
@@ -450,7 +455,7 @@ static void mtl_memcpy_test(size_t size) {
   char* src = new char[size];
   char* dst = new char[size];
 
-  for (size_t i = 0; i < size; i++) src[i] = i;
+  for (size_t i = 0; i < size; i++) src[i] = (char)i;
   memset(dst, 0, size);
 
   mtl_memcpy(dst, src, size);
@@ -579,7 +584,7 @@ TEST(Misc, get_numa_id) {
     EXPECT_GE(ret, 0);
   }
 
-  ret = mtl_get_numa_id(handle, (enum mtl_port)MTL_PORT_MAX);
+  ret = mtl_get_numa_id(handle, (enum mtl_port)ctx->para.num_ports);
   EXPECT_LT(ret, 0);
 }
 
@@ -599,7 +604,7 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
   uint64_t ns_delta = st10_media_clk_to_ns(media2 - media1, sampling_rate);
   uint64_t expect_delta = ptp2 - ptp1;
   dbg("%s, delta %" PRIu64 " %" PRIu64 "\n", __func__, ns_delta, expect_delta);
-  EXPECT_NEAR(ns_delta, expect_delta, expect_delta * 0.5);
+  EXPECT_NEAR((double)ns_delta, (double)expect_delta, (double)expect_delta * 0.5);
 }
 
 TEST(Misc, St10_timestamp) {
@@ -835,13 +840,13 @@ static int run_all_test(int /*argc*/, char** /*argv*/, struct st_tests_context* 
   ret = RUN_ALL_TESTS();
 
   uint64_t end_time_ns = st_test_get_monotonic_time();
-  int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
+  int time_s = (int)((end_time_ns - start_time_ns) / NS_PER_S);
   int time_least = 10;
 
   if (!ctx->noctx_tests && link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
-    sleep(time_least - time_s);
+    sleep((unsigned int)(time_least - time_s));
   }
 
   st_test_st22_plugin_unregister(ctx);
@@ -922,7 +927,7 @@ void sha_frame_check(void* args) {
 }
 
 int tests_context_unit(tests_context* ctx) {
-  for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+  for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
     if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
     ctx->frame_buf[frame] = NULL;
   }

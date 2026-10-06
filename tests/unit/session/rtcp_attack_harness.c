@@ -60,7 +60,7 @@ uint16_t ut_rtk_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** pkts,
   (void)entry;
   ut_rtk_ctx* ctx = ut_rtk_active;
   uint16_t take = nb;
-  if (ctx->burst_limit >= 0 && take > ctx->burst_limit) take = ctx->burst_limit;
+  if (ctx->burst_limit >= 0 && take > ctx->burst_limit) take = (uint16_t)ctx->burst_limit;
   for (uint16_t i = 0; i < take; i++) {
     struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
         pkts[i], struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
@@ -91,13 +91,13 @@ static struct rte_mempool* ut_rtk_pool(unsigned int n) {
   char name[32];
   snprintf(name, sizeof(name), "ut_rtk_%d", seq++);
   return rte_pktmbuf_pool_create(name, n, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
-                                 rte_socket_id());
+                                 (int)rte_socket_id());
 }
 
 ut_rtk_ctx* ut_rtk_create(int ring_size, int rfc4175, unsigned int pool_n) {
   ut_rtk_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
-  ctx->fifo.data = calloc(ring_size + UT_RTK_GUARD_SLOTS, sizeof(uint64_t));
+  ctx->fifo.data = calloc((size_t)(ring_size + UT_RTK_GUARD_SLOTS), sizeof(uint64_t));
   ctx->sent_seq = calloc(UT_RTK_SENT_CAP, sizeof(uint16_t));
   ctx->sent_row_length = calloc(UT_RTK_SENT_CAP, sizeof(uint16_t));
   for (int i = 0; i < UT_RTK_GUARD_SLOTS; i++)
@@ -105,7 +105,7 @@ ut_rtk_ctx* ut_rtk_create(int ring_size, int rfc4175, unsigned int pool_n) {
   ctx->fifo.size = ring_size;
 
   /* A ring of 65535 only probes the stack; it never gets packets. */
-  unsigned int src_n = ring_size <= 4096 ? ring_size + 64 : 64;
+  unsigned int src_n = ring_size <= 4096 ? (unsigned int)(ring_size + 64) : 64;
   ctx->src_pool = ut_rtk_pool(src_n);
   ctx->copy_pool = ut_rtk_pool(pool_n ? pool_n : 4096);
   ctx->copy_avail_at_create = rte_mempool_avail_count(ctx->copy_pool);

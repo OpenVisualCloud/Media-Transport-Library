@@ -52,7 +52,7 @@ uint32_t expectedBpmPackets(const St20pHandler* handler) {
   if (!pg.coverage) return 0;
   uint64_t frame_bytes = (uint64_t)ops.width * ops.height * pg.size / pg.coverage;
   if (ops.interlaced) frame_bytes /= 2;
-  return (frame_bytes + kBpmPayloadBytes - 1) / kBpmPayloadBytes;
+  return (uint32_t)((frame_bytes + kBpmPayloadBytes - 1) / kBpmPayloadBytes);
 }
 
 void expectCompletePrimaryFrame(uint64_t frame_idx, const st_frame* frame,
@@ -116,7 +116,7 @@ int openPortPhc(const char* port) {
 }
 
 uint64_t timespecNs(const timespec& t) {
-  return static_cast<uint64_t>(t.tv_sec) * NS_PER_S + t.tv_nsec;
+  return static_cast<uint64_t>(t.tv_sec) * NS_PER_S + static_cast<uint64_t>(t.tv_nsec);
 }
 
 /* CLOCK_REALTIME minus CLOCK_MONOTONIC_RAW, to +-*half_width_ns. */
@@ -457,14 +457,16 @@ void St20pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size
 
 uint64_t St20pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
   uint64_t base = plannedTimestampBaseNs(frame_idx);
-  int64_t offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
-  int64_t adjusted = base + offset;
-  return adjusted < 0 ? 0 : (adjusted);
+  int64_t offset =
+      static_cast<int64_t>(frameTimeNs * offsetMultiplierForFrame(frame_idx));
+  int64_t adjusted = static_cast<int64_t>(base) + offset;
+  return adjusted < 0 ? 0 : static_cast<uint64_t>(adjusted);
 }
 
 uint64_t St20pUserPacingOracle::plannedTimestampBaseNs(uint64_t frame_idx) const {
-  int64_t base = startingTime + frame_idx * frameTimeNs;
-  return base < 0 ? 0 : base;
+  int64_t base = static_cast<int64_t>(static_cast<double>(startingTime) +
+                                      static_cast<double>(frame_idx) * frameTimeNs);
+  return base < 0 ? 0 : static_cast<uint64_t>(base);
 }
 
 double St20pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const {
@@ -514,8 +516,9 @@ void St20pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
     return;
   }
 
-  double current_target = plannedTimestampBaseNs(frame_idx);
-  double previous_target = plannedTimestampBaseNs(frame_idx ? frame_idx - 1 : 0);
+  double current_target = static_cast<double>(plannedTimestampBaseNs(frame_idx));
+  double previous_target =
+      static_cast<double>(plannedTimestampBaseNs(frame_idx ? frame_idx - 1 : 0));
   double expected_step_ns = current_target - previous_target;
   if (expected_step_ns < 0.0) {
     expected_step_ns = 0.0;
@@ -533,17 +536,17 @@ void St20pUserPacingOracle::initializeTiming(St20pHandler* handler) {
     throw std::invalid_argument("St20pUserPacingOracle expects a valid handler");
   }
 
-  frameTimeNs = handler->nsFrameTime;
+  frameTimeNs = static_cast<double>(handler->nsFrameTime);
 
-  if (!frameTimeNs) {
+  if (frameTimeNs == 0) {
     double framerate = st_frame_rate(handler->sessionsOpsTx.fps);
     if (framerate > 0.0) {
       long double frame_time = static_cast<long double>(NS_PER_S) / framerate;
-      frameTimeNs = static_cast<uint64_t>(frame_time + 0.5L);
+      frameTimeNs = static_cast<double>(static_cast<uint64_t>(frame_time + 0.5L));
     }
   }
 
-  if (!frameTimeNs) {
+  if (frameTimeNs == 0) {
     frameTimeNs = NS_PER_S / 25;
   }
 

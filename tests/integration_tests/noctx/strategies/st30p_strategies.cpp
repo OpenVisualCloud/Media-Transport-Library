@@ -18,10 +18,11 @@
 namespace {
 /* Normal ST30 labels frame 0 with the packet-grid point it is sent at, not PTP zero. */
 void expectFirstFrameOnPacketGrid(const st30_frame* f, const St30pHandler* handler) {
-  const uint32_t sampling = st30_get_sample_rate(handler->sessionsOpsRx.sampling);
-  const uint64_t packet_ns = st30_get_packet_time(handler->sessionsOpsRx.ptime);
+  const uint32_t sampling =
+      (uint32_t)st30_get_sample_rate(handler->sessionsOpsRx.sampling);
+  const uint64_t packet_ns = (uint64_t)st30_get_packet_time(handler->sessionsOpsRx.ptime);
   const uint64_t rtp_tai =
-      st10_media_clk_to_tai(f->receive_timestamp, f->timestamp, sampling);
+      st10_media_clk_to_tai(f->receive_timestamp, (uint32_t)f->timestamp, sampling);
   EXPECT_EQ(rtp_tai % packet_ns, 0u)
       << "frame 0 RTP time " << rtp_tai << " is off the " << packet_ns << " ns grid";
   ASSERT_LE(rtp_tai, f->receive_timestamp)
@@ -41,7 +42,7 @@ St30pDefaultPacingOracle::St30pDefaultPacingOracle(St30pHandler* parentHandler)
 void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st30_frame*>(frame);
   auto* st30pParent = static_cast<St30pHandler*>(parent);
-  uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
+  uint32_t sampling = (uint32_t)st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsFramebuffTime, sampling);
 
   if (idx_rx == 0) expectFirstFrameOnPacketGrid(f, st30pParent);
@@ -83,7 +84,8 @@ void St30pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size
 
   const uint64_t frame_idx = idx_rx++;
   const uint64_t expected_timestamp_ns = plannedTimestampNs(frame_idx);
-  const uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
+  const uint32_t sampling =
+      (uint32_t)st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   const uint64_t expected_media_clk =
       st10_tai_to_media_clk(expected_timestamp_ns, sampling);
 
@@ -102,21 +104,21 @@ void St30pUserPacingOracle::initializeTiming(St30pHandler* handler) {
     return;
   }
 
-  frameTimeNs = handler->nsFramebuffTime;
-  if (!frameTimeNs) {
+  frameTimeNs = (double)handler->nsFramebuffTime;
+  if (frameTimeNs == 0) {
     auto& ops = handler->sessionsOpsTx;
-    uint64_t packet_time = st30_get_packet_time(ops.ptime);
+    uint64_t packet_time = (uint64_t)st30_get_packet_time(ops.ptime);
     uint64_t packet_size =
-        st30_get_packet_size(ops.fmt, ops.ptime, ops.sampling, ops.channel);
+        (uint64_t)st30_get_packet_size(ops.fmt, ops.ptime, ops.sampling, ops.channel);
     uint64_t packets_per_frame = 0;
     if (packet_size) {
       packets_per_frame = ops.framebuff_size / packet_size;
     }
 
-    frameTimeNs = packet_time * packets_per_frame;
+    frameTimeNs = (double)(packet_time * packets_per_frame);
   }
 
-  if (!frameTimeNs) {
+  if (frameTimeNs == 0) {
     frameTimeNs = NS_PER_MS;
   }
 
@@ -125,7 +127,7 @@ void St30pUserPacingOracle::initializeTiming(St30pHandler* handler) {
 }
 
 uint64_t St30pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
-  double base = startingTime + frame_idx * frameTimeNs;
+  double base = (double)startingTime + (double)frame_idx * frameTimeNs;
   return base <= 0.0 ? 0 : static_cast<uint64_t>(base);
 }
 
@@ -170,15 +172,17 @@ void St30pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
     return;
   }
 
-  double current_target = startingTime + frame_idx * frameTimeNs;
-  double previous_target = startingTime + (frame_idx ? frame_idx - 1 : 0) * frameTimeNs;
+  double current_target = (double)startingTime + (double)frame_idx * frameTimeNs;
+  double previous_target =
+      (double)startingTime + (double)(frame_idx ? frame_idx - 1 : 0) * frameTimeNs;
   double expected_step_ns = current_target - previous_target;
   if (expected_step_ns < 0.0) {
     expected_step_ns = 0.0;
   }
 
   uint64_t expected_step_input = static_cast<uint64_t>(expected_step_ns);
-  const uint64_t expected_step = st10_tai_to_media_clk(expected_step_input, sampling_hz);
+  const uint64_t expected_step =
+      st10_tai_to_media_clk(expected_step_input, (uint32_t)sampling_hz);
   const uint64_t diff = current_timestamp - lastTimestamp;
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
 }

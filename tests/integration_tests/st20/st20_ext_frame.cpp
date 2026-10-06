@@ -30,10 +30,11 @@ static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
 }
 
 static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
-                                             enum st_fps fps[], int width[], int height[],
-                                             bool interlaced[], enum st20_fmt fmt[],
-                                             bool check_fps, enum st_test_level level,
-                                             int sessions = 1, bool dynamic = false) {
+                                             enum st_fps fps[], uint32_t width[],
+                                             uint32_t height[], bool interlaced[],
+                                             enum st20_fmt fmt[], bool check_fps,
+                                             enum st_test_level level,
+                                             size_t sessions = 1, bool dynamic = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -83,7 +84,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   guard.set_ext_buf(true);
   guard.set_rx_ctx_cleanup(st20_rx_drain_bufq_put_framebuff);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
@@ -121,7 +122,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->height = ops_tx.height;
-    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    test_ctx_tx[i]->stride = (int)(ops_tx.width / st20_pg.coverage * st20_pg.size);
 
     test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
         sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
@@ -136,9 +137,9 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     test_ctx_tx[i]->ext_fb_iova =
         mtl_dma_map(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
     ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
-    info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
+    info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
-    for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
+    for (uint16_t j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
       test_ctx_tx[i]->ext_frames[j].buf_addr = test_ctx_tx[i]->ext_fb + j * frame_size;
       test_ctx_tx[i]->ext_frames[j].buf_iova =
           test_ctx_tx[i]->ext_fb_iova + j * frame_size;
@@ -146,18 +147,18 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     }
 
     uint8_t* fb;
-    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
 
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      st_test_rand_data(fb, frame_size, (uint8_t)frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
     }
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3, true);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -175,10 +176,10 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
         (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
     test_ctx_rx[i]->ext_fb_iova =
         mtl_dma_map(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
-    info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
+    info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
     ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
-    for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
+    for (uint16_t j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
       test_ctx_rx[i]->ext_frames[j].buf_addr = test_ctx_rx[i]->ext_fb + j * frame_size;
       test_ctx_rx[i]->ext_frames[j].buf_iova =
           test_ctx_rx[i]->ext_fb_iova + j * frame_size;
@@ -237,8 +238,8 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
   /* Auto-start can run tasklets during setup. Publish TX only after every RX is ready. */
   uint64_t tx_release_ns = st_test_get_monotonic_time();
-  for (int i = 0; i < sessions; i++) {
-    info("%s, session %d TX gated for %.3f ms until RX ready\n", __func__, i,
+  for (size_t i = 0; i < sessions; i++) {
+    info("%s, session %zu TX gated for %.3f ms until RX ready\n", __func__, i,
          (double)(tx_release_ns - tx_created_ns[i]) / NS_PER_MS);
     test_ctx_tx[i]->handle = tx_handle[i];
     test_ctx_tx[i]->ready.store(true, std::memory_order_release);
@@ -247,21 +248,21 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10 * 1);
 
   /* Auto-start makes mtl_stop() a no-op. Release sessions to freeze the counters. */
-  for (int i = 0; i < sessions; i++)
+  for (size_t i = 0; i < sessions; i++)
     test_ctx_tx[i]->ready.store(false, std::memory_order_release);
   guard.release_sessions();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
     int64_t start_delta_ns =
         (int64_t)test_ctx_rx[i]->start_time - (int64_t)test_ctx_tx[i]->start_time;
     info(
-        "%s, session %d first RX minus first TX %.3f ms, sent %d received %d "
+        "%s, session %zu first RX minus first TX %.3f ms, sent %d received %d "
         "incomplete %d\n",
         __func__, i, (double)start_delta_ns / NS_PER_MS, test_ctx_tx[i]->fb_send,
         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt);
@@ -271,7 +272,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
-    info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i], test_ctx_tx[i]->fb_send);
     if (check_fps) {
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -282,8 +283,8 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 TEST(St20_rx, ext_frame_digest_frame_1080p_fps59_94_s1) {
   enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
@@ -293,8 +294,8 @@ TEST(St20_rx, ext_frame_digest_frame_1080p_fps59_94_s1) {
 TEST(St20_rx, ext_frame_digest20_field_1080p_fps59_94_s1) {
   enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   bool interlaced[1] = {true};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
@@ -304,8 +305,8 @@ TEST(St20_rx, ext_frame_digest20_field_1080p_fps59_94_s1) {
 TEST(St20_rx, ext_frame_digest_frame_720p_fps59_94_s1_gpm) {
   enum st20_packing packing[1] = {ST20_PACKING_GPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
@@ -315,8 +316,8 @@ TEST(St20_rx, ext_frame_digest_frame_720p_fps59_94_s1_gpm) {
 TEST(St20_rx, ext_frame_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_BPM, ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   bool interlaced[3] = {true, true, true};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
@@ -327,8 +328,8 @@ TEST(St20_rx, ext_frame_s3) {
 TEST(St20_rx, ext_frame_s3_2) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_BPM, ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   bool interlaced[3] = {true, false, true};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_12BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_8BIT};
@@ -339,8 +340,8 @@ TEST(St20_rx, ext_frame_s3_2) {
 TEST(St20_rx, dynamic_ext_frame_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_BPM, ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1280, 1920};
-  int height[3] = {720, 720, 1080};
+  uint32_t width[3] = {1280, 1280, 1920};
+  uint32_t height[3] = {720, 720, 1080};
   bool interlaced[3] = {false, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};

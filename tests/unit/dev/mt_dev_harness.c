@@ -221,8 +221,8 @@ static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx
                                                uint16_t* nb_tx_desc) {
   (void)port_id;
   (void)nb_tx_desc;
-  *nb_rx_desc = RTE_MIN(*nb_rx_desc,
-                        ut_active_ctx->impl.inf[MTL_PORT_P].dev_info.rx_desc_lim.nb_max);
+  *nb_rx_desc = (uint16_t)RTE_MIN(
+      *nb_rx_desc, ut_active_ctx->impl.inf[MTL_PORT_P].dev_info.rx_desc_lim.nb_max);
   return 0;
 }
 
@@ -335,7 +335,7 @@ void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled) {
   if (enabled)
     ctx->impl.user_para.flags |= MTL_FLAG_PTP_ENABLE;
   else
-    ctx->impl.user_para.flags &= ~MTL_FLAG_PTP_ENABLE;
+    ctx->impl.user_para.flags &= ~(uint64_t)MTL_FLAG_PTP_ENABLE;
 }
 
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
@@ -457,7 +457,7 @@ int ut_dev_eal_init_calls(const ut_dev_ctx* ctx) {
 }
 
 void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports) {
-  ctx->impl.user_para.num_ports = num_ports;
+  ctx->impl.user_para.num_ports = (uint8_t)num_ports;
 }
 
 void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num) {

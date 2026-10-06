@@ -4,8 +4,8 @@
 
 #include "st20_common.h"
 
-static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int width[],
-                              int height[], enum st20_fmt fmt, int sessions = 1) {
+static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], uint32_t width[],
+                              uint32_t height[], enum st20_fmt fmt, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -45,7 +45,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
@@ -74,7 +74,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     }
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -103,12 +103,12 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
 
   sleep(5);
 
   uint32_t max_dump_packets = 100;
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     struct st_pcap_dump_meta meta;
     ret = st20_rx_pcapng_dump(rx_handle[i], max_dump_packets, true, &meta);
     EXPECT_GE(ret, 0);
@@ -117,7 +117,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     if (ret >= 0) remove(meta.file_name[MTL_SESSION_PORT_P]);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -129,7 +129,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
 TEST(St20_rx, pcap_dump) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1280, 1920};
-  int height[2] = {720, 1080};
+  uint32_t width[2] = {1280, 1920};
+  uint32_t height[2] = {720, 1080};
   st20_rx_dump_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, 2);
 }
