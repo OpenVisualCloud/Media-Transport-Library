@@ -52,7 +52,7 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
     close(fd);
     return -EIO;
   }
-  if (i.st_size < s->frame_size) {
+  if ((size_t)i.st_size < s->frame_size) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
         s->frame_size);
     close(fd);
@@ -163,10 +163,10 @@ int main(int argc, char** argv) {
   struct tx_st20p_sample_ctx* app[session_num];
 
   // create and register tx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(struct tx_st20p_sample_ctx));
     if (!app[i]) {
-      err("%s(%d), app context malloc fail\n", __func__, i);
+      err("%s(%u), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     app[i]->idx = i;
     app[i]->stop = false;
     if (ctx.has_user_meta) {
-      snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20p_tx_%d", i);
+      snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20p_tx_%u", i);
       app[i]->has_user_meta = true;
     }
 
@@ -216,23 +216,23 @@ int main(int argc, char** argv) {
 
     st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
-      err("%s(%d), st20p_tx_create fail\n", __func__, i);
+      err("%s(%u), st20p_tx_create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
     app[i]->handle = tx_handle;
 
     app[i]->frame_size = st20p_tx_frame_size(tx_handle);
-    info("%s(%d), frame_size %" PRId64 "\n", __func__, i, app[i]->frame_size);
+    info("%s(%u), frame_size %" PRId64 "\n", __func__, i, app[i]->frame_size);
     ret = tx_st20p_open_source(app[i], ctx.tx_url);
     if (ret < 0) {
-      err("%s(%d), open source fail\n", __func__, i);
+      err("%s(%u), open source fail\n", __func__, i);
       goto error;
     }
 
     ret = pthread_create(&app[i]->frame_thread, NULL, tx_st20p_frame_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), thread create fail %u\n", __func__, ret, i);
       ret = -EIO;
       goto error;
     }
@@ -243,26 +243,26 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     if (app[i]->handle) st20p_tx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
-    info("%s(%d), sent frames %d(done %d)\n", __func__, i, app[i]->fb_send,
+    info("%s(%u), sent frames %d(done %d)\n", __func__, i, app[i]->fb_send,
          app[i]->fb_send_done);
 
     tx_st20p_close_source(app[i]);
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_send <= 0) {
-      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      err("%s(%u), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
       ret = -EIO;
     }
   }
 
 error:
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_tx_free(app[i]->handle);
       free(app[i]);

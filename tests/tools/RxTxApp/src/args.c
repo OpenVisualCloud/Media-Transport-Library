@@ -447,7 +447,7 @@ static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_param
   if (json_ctx) {
     int json_num_interfaces = json_ctx->num_interfaces;
     st_json_interface_t* json_interfaces = &json_ctx->interfaces[port];
-    if (port < json_num_interfaces) {
+    if (port < (enum mtl_port)json_num_interfaces) {
       info("%s, override json interface for port: %d to %s\n", __func__, port, str);
       snprintf(json_interfaces->name, sizeof(json_interfaces->name), "%s", str);
       snprintf(p->port[port], sizeof(p->port[port]), "%s", str);

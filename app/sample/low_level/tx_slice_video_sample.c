@@ -181,10 +181,10 @@ int main(int argc, char** argv) {
   struct tv_slice_sample_ctx* app[session_num];
 
   // create and register tx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = (struct tv_slice_sample_ctx*)malloc(sizeof(struct tv_slice_sample_ctx));
     if (!app[i]) {
-      err("%s(%d), app context malloc fail\n", __func__, i);
+      err("%s(%u), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
     app[i]->framebuffs =
         (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
+      err("%s(%u), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
     ops_tx.query_frame_lines_ready = tx_video_frame_lines_ready;
     tx_handle[i] = st20_tx_create(ctx.st, &ops_tx);
     if (!tx_handle[i]) {
-      err("%s(%d), st20_tx_create fail\n", __func__, i);
+      err("%s(%u), st20_tx_create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
     app[i]->lines_per_slice = app[i]->height / 30;
     ret = pthread_create(&app[i]->app_thread, NULL, tx_video_slice_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), app_thread create fail %u\n", __func__, ret, i);
       ret = -EIO;
       goto error;
     }
@@ -254,26 +254,26 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
-    info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
+    info("%s(%u), sent frames %d\n", __func__, i, app[i]->fb_send);
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_send <= 0) {
-      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      err("%s(%u), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
       ret = -EIO;
     }
   }
 
 error:
   // release session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (!app[i]) continue;
     if (app[i]->handle) st20_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);

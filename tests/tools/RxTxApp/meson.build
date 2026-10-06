@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('mtl_app', 'c', default_options: ['buildtype=release', 'b_pie=true'],
+project('mtl_app', 'c', default_options: ['buildtype=release', 'warning_level=2', 'b_pie=true'],
   version: run_command(find_program('cat'), files('../../../VERSION'), check: true).stdout().strip(),)
 
 gpu_direct = dependency('mtl_gpu_direct', required: false)

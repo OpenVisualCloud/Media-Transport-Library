@@ -142,7 +142,7 @@ static void app_tx_video_check_lcore(struct st_app_tx_video_session* s, bool rtp
     s->handle_sch_idx = sch_idx;
     unsigned int lcore;
     int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
-    if ((ret >= 0) && (lcore != s->lcore)) {
+    if ((ret >= 0) && (lcore != (unsigned int)s->lcore)) {
       s->lcore = lcore;
       app_tx_video_thread_bind(s);
       info("%s(%d), bind to new lcore %d\n", __func__, s->idx, lcore);
@@ -422,8 +422,9 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
     offset = s->st20_pkt_data_len * s->st20_pkt_idx;
     row_number = offset / s->st20_bytes_in_line;
     row_offset = (offset % s->st20_bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
-    if ((offset + s->st20_pkt_data_len > (row_number + 1) * s->st20_bytes_in_line) &&
-        (offset + s->st20_pkt_data_len < s->st20_frame_size)) {
+    if ((offset + s->st20_pkt_data_len >
+         (uint32_t)((row_number + 1) * s->st20_bytes_in_line)) &&
+        (offset + s->st20_pkt_data_len < (uint32_t)s->st20_frame_size)) {
       e_rtp = (struct st20_rfc4175_extra_rtp_hdr*)payload;
       payload += sizeof(*e_rtp);
     }
@@ -442,9 +443,9 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
   rtp->seq_number_ext = htons((uint16_t)(s->st20_seq_id >> 16));
   s->st20_seq_id++;
 
-  int temp = s->single_line
-                 ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
-                 : (s->st20_frame_size - offset);
+  uint32_t temp = s->single_line
+                      ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
+                      : (s->st20_frame_size - offset);
   uint16_t data_len = s->st20_pkt_data_len > temp ? temp : s->st20_pkt_data_len;
   rtp->row_length = htons(data_len);
   *pkt_len = data_len + sizeof(*rtp);

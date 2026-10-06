@@ -18,7 +18,7 @@ static int dma_copy_sample(mtl_handle st) {
   uint16_t nb_desc = 1024;
   int nb_elements = nb_desc * 8, element_size = 1260;
   size_t fb_size = element_size * nb_elements;
-  int fb_dst_iova_off = 0, fb_src_iova_off = 0;
+  size_t fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
   /* create user dma dev */
   dma = mtl_udma_create(st, nb_desc, MTL_PORT_P);
@@ -97,7 +97,7 @@ static int dma_map_copy_sample(mtl_handle st) {
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   size_t fb_size_malloc = fb_size + 2 * pg_sz;
-  int fb_dst_iova_off = 0, fb_src_iova_off = 0;
+  size_t fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
   /* create user dma dev */
   dma = mtl_udma_create(st, nb_desc, MTL_PORT_P);

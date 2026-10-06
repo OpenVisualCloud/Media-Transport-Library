@@ -125,7 +125,7 @@ static void* display_thread_func(void* arg) {
     if (d->font) {
       char text[32];
       sprintf(text, "FPS:\t%.2f", d->fps);
-      SDL_Color Red = {255, 0, 0};
+      SDL_Color Red = {255, 0, 0, SDL_ALPHA_OPAQUE};
       SDL_Surface* surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
       SDL_Texture* Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
 

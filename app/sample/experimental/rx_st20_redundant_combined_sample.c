@@ -138,10 +138,10 @@ int main(int argc, char** argv) {
   int loop = 0;
 
   // create and register rx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = (struct st20rc_sample_ctx*)malloc(sizeof(struct st20rc_sample_ctx));
     if (!app[i]) {
-      err("%s(%d), app context malloc fail\n", __func__, i);
+      err("%s(%u), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
     app[i]->framebuffs =
         (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
+      err("%s(%u), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
 
     rx_handle[i] = st20rc_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
-      err("%s(%d), rx create fail\n", __func__, i);
+      err("%s(%u), rx create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
 
     ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), app_thread create fail %u\n", __func__, ret, i);
       goto error;
     }
   }
@@ -211,10 +211,10 @@ int main(int argc, char** argv) {
     if (0 == (loop % 10)) {
       uint64_t end_time_ns = mtl_ptp_read_time(ctx.st);
       double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
-      for (int i = 0; i < session_num; i++) {
+      for (uint32_t i = 0; i < session_num; i++) {
         int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;
         double framerate = fb_rec / time_sec;
-        info("%s(%d), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
+        info("%s(%u), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
         app[i]->stat_fb_rec = app[i]->fb_rec;
       }
       sart_time_ns = end_time_ns;
@@ -222,26 +222,26 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
-    info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_rec);
+    info("%s(%u), received frames %d\n", __func__, i, app[i]->fb_rec);
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_rec <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      err("%s(%u), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
       ret = -EIO;
     }
   }
 
 error:
   // release session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (!app[i]) continue;
     if (app[i]->handle) st20rc_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);

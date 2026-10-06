@@ -104,7 +104,7 @@ static int convert(struct conv_app_context* ctx) {
   fseek(fp_in, 0, SEEK_SET);
   for (int i = 0; i < frame_num; i++) {
     int ret = fread(buf_in, 1, frame_size_in, fp_in);
-    if (ret < frame_size_in) {
+    if (ret < 0 || (size_t)ret < frame_size_in) {
       err("%s, fread fail %d\n", __func__, ret);
       ret = -EIO;
       goto out;
@@ -387,7 +387,7 @@ static int frame2field(struct conv_app_context* ctx) {
   fseek(fp_in, 0, SEEK_SET);
   for (int i = 0; i < frame_num; i++) {
     int ret = fread(buf_in, 1, frame_size, fp_in);
-    if (ret < frame_size) {
+    if (ret < 0 || (size_t)ret < frame_size) {
       err("%s, fread fail %d\n", __func__, ret);
       ret = -EIO;
       goto out;

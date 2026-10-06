@@ -83,7 +83,7 @@ static void* tx_st20p_fwd_thread(void* args) {
         uint8_t* dst = tx_frame->addr[0];
         uint32_t src_linesize = frame->linesize[0];
         uint32_t dst_linesize = tx_frame->linesize[0];
-        for (int line = 0; line < tx_frame->height; line++) {
+        for (uint32_t line = 0; line < tx_frame->height; line++) {
           mtl_memcpy(dst, src, dst_linesize);
           src += src_linesize;
           dst += dst_linesize;
