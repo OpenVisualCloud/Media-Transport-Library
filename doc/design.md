@@ -6,7 +6,7 @@ This section provides a detailed design concept of the Media Transport Library, 
 
 Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
 
-![Software Stack](png/software_stack.png)
+![Software Stack](png/software_stack.svg)
 
 ## 2. Core management
 
@@ -21,7 +21,7 @@ With this PMD design, it is expected that a CPU thread will always be utilized t
 We provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
-![Tasklet](png/tasklet.png)
+![Tasklet](png/tasklet.svg)
 
 ### 2.1. Tasklet design
 
@@ -216,7 +216,7 @@ During the packet construction process, only the RTP header is regenerated to re
 
 Note that if the currently used NIC does not support the multi-buffer feature, the MTL will need to copy the video frame into the descriptor, resulting in a loss of performance.
 
-![TX Zero Copy](png/tx_zero_copy.png)
+![TX Zero Copy](png/tx_zero_copy.svg)
 
 #### 4.3.2. ST2110-21 pacing
 
@@ -233,7 +233,7 @@ However, for a 4K 50fps session, the time for one packet is approximately ~1us, 
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
-![TX Pacing](png/tx_pacing.png)
+![TX Pacing](png/tx_pacing.svg)
 
 #### 4.3.3. TSN launch-time pacing
 
@@ -252,7 +252,7 @@ Once the packet is received and validated as legitimate, the RX session will cop
 
 The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA Guide](dma.md)
 
-![RX DMA Offload](png/rx_dma_offload.png)
+![RX DMA Offload](png/rx_dma_offload.svg)
 
 ## 5. Control path
 

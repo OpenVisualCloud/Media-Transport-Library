@@ -400,3 +400,21 @@ for that a regular expression cannot judge -- imperative mood, "explain why, not
 chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
 bucket as the two-world rule and the prefixes in
 [`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
+
+## 8. Diagram colors
+
+The diagrams in `doc/png/` use the five palette colors.
+
+| Color | Hex | Use |
+| --- | --- | --- |
+| Intel Classic Blue | `#0068B5` | The MTL logo, `png/mtl_logo.svg` |
+
+| Hex | Use in the diagrams |
+| --- | --- |
+| `#1F271B` | Text, lines, arrows and borders |
+| `#0B4F6C` | Session blocks and the control plane panel |
+| `#145C9E` | The MTL block and the data plane panel |
+| `#CBB9A8` | Group panels, for example Pipeline API and Device |
+| `#DCC7BE` | Page background and labels |
+
+The logo letters are polygons. Thus, installed fonts do not change the logo.
