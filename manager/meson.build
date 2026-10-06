@@ -26,7 +26,11 @@ add_project_arguments(cpp_c.get_supported_arguments(['-fstack-protector-strong',
 fortify = run_command(cpp_c.cmd_array(), get_option('cpp_args'), '-O2', '-dM', '-E', '-x', 'c++', '/dev/null',
   check: true).stdout()
 if get_option('optimization') not in ['0', 'plain'] and not fortify.contains('_FORTIFY_SOURCE')
-  add_project_arguments('-D_FORTIFY_SOURCE=2', language : 'cpp')
+  # 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+  level = run_command(cpp_c.cmd_array(), get_option('cpp_args'), '-O2', '-D_FORTIFY_SOURCE=3', '-dM', '-E',
+    '-include', 'string.h', '-x', 'c++', '/dev/null', check: true).stdout()
+  add_project_arguments(level.contains('__USE_FORTIFY_LEVEL 3') ? '-D_FORTIFY_SOURCE=3' : '-D_FORTIFY_SOURCE=2',
+    language : 'cpp')
 endif
 add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'cpp')
 
