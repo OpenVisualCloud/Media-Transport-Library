@@ -238,10 +238,10 @@ static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
   dbg("%s(%d), checksum %d\n", __func__, port, checksum);
   mb_report->checksum = htons(checksum);
 
-  ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_report_len);
+  ip_hdr->total_length = htons((uint16_t)(sizeof(struct rte_ipv4_hdr) + mb_report_len));
   mt_mbuf_init_ipv4(pkt);
-  pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_report_len;
-  pkt->data_len = pkt->pkt_len;
+  pkt->pkt_len = (uint32_t)(pkt->l2_len + pkt->l3_len + mb_report_len);
+  pkt->data_len = (uint16_t)pkt->pkt_len;
 
 #ifdef MCAST_DEBUG
   /* send packet to kernel for capturing */
@@ -304,10 +304,10 @@ static int mcast_membership_report_on_action(struct mtl_main_impl* impl,
   dbg("%s(%d), checksum %d\n", __func__, checksum, port);
   mb_report->checksum = htons(checksum);
 
-  ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_report_len);
+  ip_hdr->total_length = htons((uint16_t)(sizeof(struct rte_ipv4_hdr) + mb_report_len));
   mt_mbuf_init_ipv4(pkt);
-  pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_report_len;
-  pkt->data_len = pkt->pkt_len;
+  pkt->pkt_len = (uint32_t)(pkt->l2_len + pkt->l3_len + mb_report_len);
+  pkt->data_len = (uint16_t)pkt->pkt_len;
 
 #ifdef MCAST_DEBUG
   /* send packet to kernel for capturing */
@@ -345,7 +345,7 @@ static void mcast_membership_report_cb(void* param) {
 
   int ret;
 
-  for (int port = 0; port < num_ports; port++) {
+  for (enum mtl_port port = 0; port < (enum mtl_port)num_ports; port++) {
     struct mt_mcast_impl* mcast = get_mcast(impl, port);
     if (!mcast) continue;
     if (!mcast->has_external_query) {
@@ -463,7 +463,7 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
     return 0;
   }
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     if (mt_drv_mcast_in_dp(impl, i)) continue;
     struct mt_mcast_impl* mcast = mt_rte_zmalloc_socket(sizeof(*mcast), socket);
     if (!mcast) {
@@ -529,7 +529,7 @@ int mt_mcast_uinit(struct mtl_main_impl* impl) {
 
   bool has_mcast = false;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_mcast_impl* mcast = get_mcast(impl, i);
     if (!mcast) continue;
 

@@ -25,9 +25,9 @@
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
-  int i;
+  enum mtl_port i;
 
-  for (i = 0; i < num_ports; i++) {
+  for (i = 0; i < (enum mtl_port)num_ports; i++) {
     if (port_id == mt_port_id(impl, i)) return i;
   }
 
@@ -79,9 +79,9 @@ uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
 
 bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
   int num_ports = mt_num_ports(impl);
-  int i;
+  enum mtl_port i;
 
-  for (i = 0; i < num_ports; i++) {
+  for (i = 0; i < (enum mtl_port)num_ports; i++) {
     if (soc_id == mt_socket_id(impl, i)) return true;
   }
 
@@ -113,7 +113,8 @@ static void* mt_calibrate_tsc(void* arg) {
   mt_tsc_mono_pair(&start, &start_tsc);
   mt_sleep_ms(MS_PER_S);
   mt_tsc_mono_pair(&end, &end_tsc);
-  impl->tsc_hz = (double)NS_PER_S * (end_tsc - start_tsc) / (end - start);
+  impl->tsc_hz = (uint64_t)((double)NS_PER_S * (double)(end_tsc - start_tsc) /
+                            (double)(end - start));
   mt_dev_tsc_done_action(impl);
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
@@ -450,11 +451,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
   if (!(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA) && (numa_nodes > 1)) {
     /* bind current thread and its children to socket node */
-    struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
+    struct bitmask* mask = numa_bitmask_alloc((unsigned int)numa_nodes);
 
     info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
          numa_nodes);
-    numa_bitmask_setbit(mask, socket[MTL_PORT_P]);
+    numa_bitmask_setbit(mask, (unsigned int)socket[MTL_PORT_P]);
     numa_bind(mask);
     numa_bitmask_free(mask);
   }
@@ -490,7 +491,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   mt_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
   impl->type = MT_HANDLE_MAIN;
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
     inf->parent = impl;
 
@@ -581,7 +582,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 #ifdef WINDOWSENV /* todo, fix for Win */
   impl->page_size = 4096;
 #else
-  impl->page_size = sysconf(_SC_PAGESIZE);
+  impl->page_size = (size_t)sysconf(_SC_PAGESIZE);
 #endif
 
   ret = mt_stat_init(impl);
@@ -827,7 +828,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
     return MTL_BAD_IOVA;
   }
 
-  if (!rte_is_aligned((void*)vaddr, page_size)) {
+  if (!rte_is_aligned((void*)vaddr, (unsigned int)page_size)) {
     err("%s, vaddr %p not align to page size\n", __func__, vaddr);
     return MTL_BAD_IOVA;
   }
@@ -888,7 +889,7 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
     return -EIO;
   }
 
-  if (!rte_is_aligned((void*)vaddr, page_size)) {
+  if (!rte_is_aligned((void*)vaddr, (unsigned int)page_size)) {
     err("%s, vaddr %p not align to page size\n", __func__, vaddr);
     return -EINVAL;
   }
@@ -1011,7 +1012,7 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info) {
 
   memset(info, 0, sizeof(*info));
   info->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
-  info->num_ports = mt_num_ports(impl);
+  info->num_ports = (uint8_t)mt_num_ports(impl);
   info->init_flags = mt_get_user_params(impl)->flags;
   return 0;
 }
@@ -1026,9 +1027,9 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
   }
 
   memset(info, 0, sizeof(*info));
-  info->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
-  info->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
-  info->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
+  info->sch_cnt = (uint8_t)rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
+  info->lcore_cnt = (uint8_t)rte_atomic32_read(&impl->lcore_cnt);
+  info->dma_dev_cnt = (uint8_t)rte_atomic32_read(&mgr->num_dma_dev_active);
   info->dev_started = mt_started(impl);
 
   return 0;
@@ -1043,16 +1044,16 @@ int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
   }
 
   memset(info, 0, sizeof(*info));
-  info->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
-  info->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
-  info->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);
-  info->st40_tx_sessions_cnt = rte_atomic32_read(&impl->st40_tx_sessions_cnt);
-  info->st41_tx_sessions_cnt = rte_atomic32_read(&impl->st41_tx_sessions_cnt);
-  info->st20_rx_sessions_cnt = rte_atomic32_read(&impl->st20_rx_sessions_cnt);
-  info->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
-  info->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
-  info->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
-  info->st41_rx_sessions_cnt = rte_atomic32_read(&impl->st41_rx_sessions_cnt);
+  info->st20_tx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st20_tx_sessions_cnt);
+  info->st22_tx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st22_tx_sessions_cnt);
+  info->st30_tx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st30_tx_sessions_cnt);
+  info->st40_tx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st40_tx_sessions_cnt);
+  info->st41_tx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st41_tx_sessions_cnt);
+  info->st20_rx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st20_rx_sessions_cnt);
+  info->st22_rx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st22_rx_sessions_cnt);
+  info->st30_rx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st30_rx_sessions_cnt);
+  info->st40_rx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st40_rx_sessions_cnt);
+  info->st41_rx_sessions_cnt = (uint16_t)rte_atomic32_read(&impl->st41_rx_sessions_cnt);
 
   return 0;
 }
@@ -1211,7 +1212,7 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
-    return -EIO;
+    return (uint16_t)-EIO;
   }
 
   return mt_dma_completed(dev, nb_cpls, NULL, NULL);

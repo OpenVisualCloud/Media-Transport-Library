@@ -188,7 +188,7 @@ static int arp_get_result(struct mt_arp_impl* arp_impl, struct mt_arp_entry* ent
         err("%s(%d), cache fail as timeout to %d ms\n", __func__, port, timeout_ms);
       return -EIO;
     }
-    mt_sleep_ms(sleep_interval_ms);
+    mt_sleep_ms((unsigned int)sleep_interval_ms);
     retry++;
     if (0 == (retry % 10)) {
       uint8_t ip[MTL_IP_ADDR_LEN];
@@ -318,7 +318,7 @@ int mt_arp_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     if (mt_has_virtio_user(impl, i)) continue; /* use kernel path */
     struct mt_arp_impl* arp = mt_rte_zmalloc_socket(sizeof(*arp), socket);
     if (!arp) {
@@ -341,7 +341,7 @@ int mt_arp_init(struct mtl_main_impl* impl) {
 int mt_arp_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_arp_impl* arp = get_arp(impl, i);
     if (!arp) continue;
 

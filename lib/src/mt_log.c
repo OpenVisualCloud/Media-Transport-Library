@@ -121,7 +121,7 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
-    return -EIO;
+    return (enum mtl_log_level)(-EIO);
   }
 
   return mt_get_user_params(impl)->log_level;

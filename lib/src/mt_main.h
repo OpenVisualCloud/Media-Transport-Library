@@ -1731,7 +1731,8 @@ static inline uint16_t mt_if_nb_tx_burst(struct mtl_main_impl* impl, enum mtl_po
 
   if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
     /* same umem for both tx and rx */
-    burst_pkts = RTE_MAX(mt_if_nb_rx_desc(impl, port), mt_if_nb_tx_desc(impl, port));
+    burst_pkts =
+        (uint16_t)RTE_MAX(mt_if_nb_rx_desc(impl, port), mt_if_nb_tx_desc(impl, port));
   } else {
     burst_pkts = mt_if_nb_tx_desc(impl, port);
   }
@@ -1829,12 +1830,12 @@ static inline void mt_mbuf_init_ipv4(struct rte_mbuf* pkt) {
 }
 
 static inline uint64_t mt_timespec_to_ns(const struct timespec* ts) {
-  return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
+  return ((uint64_t)ts->tv_sec * NS_PER_S) + (uint64_t)ts->tv_nsec;
 }
 
 static inline void mt_ns_to_timespec(uint64_t ns, struct timespec* ts) {
-  ts->tv_sec = ns / NS_PER_S;
-  ts->tv_nsec = ns % NS_PER_S;
+  ts->tv_sec = (time_t)(ns / NS_PER_S);
+  ts->tv_nsec = (long)(ns % NS_PER_S);
 }
 
 static inline int mt_wait_tsc_stable(struct mtl_main_impl* impl) {
@@ -1848,10 +1849,10 @@ static inline int mt_wait_tsc_stable(struct mtl_main_impl* impl) {
 
 /* Return relative TSC time in nanoseconds */
 static inline uint64_t mt_get_tsc(struct mtl_main_impl* impl) {
-  double tsc = rte_get_tsc_cycles();
-  double tsc_hz = impl->tsc_hz;
+  double tsc = (double)rte_get_tsc_cycles();
+  double tsc_hz = (double)impl->tsc_hz;
   double time_nano = tsc / (tsc_hz / ((double)NS_PER_S));
-  return time_nano;
+  return (uint64_t)time_nano;
 }
 
 /* busy loop until target time reach */
@@ -1997,7 +1998,7 @@ static inline json_object* mt_json_object_get(json_object* obj, const char* key)
 static inline bool mt_spinlock_lock_timeout(struct mtl_main_impl* impl,
                                             rte_spinlock_t* lock, int timeout_us) {
   uint64_t time = mt_get_tsc(impl);
-  uint64_t end = time + timeout_us * NS_PER_US;
+  uint64_t end = time + (uint64_t)timeout_us * NS_PER_US;
   while (time < end) {
     if (rte_spinlock_trylock(lock)) return true;
     time = mt_get_tsc(impl);

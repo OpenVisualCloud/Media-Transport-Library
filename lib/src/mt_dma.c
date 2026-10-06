@@ -324,7 +324,7 @@ static int dma_sw_uinit(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
 
 #if MT_DMA_RTE_RING
   if (dev->borrow_queue) {
-    nb_inflight = rte_ring_count(dev->borrow_queue);
+    nb_inflight = (uint16_t)rte_ring_count(dev->borrow_queue);
     if (nb_inflight) {
       warn("%s(%d), still has %u mbufs\n", __func__, dev->idx, nb_inflight);
       dma_drop_mbuf(dev, nb_inflight);
@@ -405,7 +405,7 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       }
       dev->nb_desc = nb_desc;
       dev->sch_idx = req->sch_idx;
-      dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
+      dev->max_shared = (uint16_t)RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
       ret = dma_sw_init(impl, dev);
       if (ret < 0) {
         err("%s(%d), dma sw init fail %d\n", __func__, idx, ret);
@@ -484,7 +484,7 @@ uint16_t mt_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
 int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   struct mt_dma_dev* dma_dev = dev->parent;
 
-  st_rx_mbuf_set_lender(mbuf, dev->lender_id);
+  st_rx_mbuf_set_lender(mbuf, (uint32_t)dev->lender_id);
 #if MT_DMA_RTE_RING
   int ret = rte_ring_sp_enqueue(dma_dev->borrow_queue, (void*)mbuf);
   if (ret) {
@@ -558,7 +558,7 @@ int mt_dma_init(struct mtl_main_impl* impl) {
     }
     idx++;
   }
-  mgr->num_dma_dev = idx;
+  mgr->num_dma_dev = (uint8_t)idx;
 
   return 0;
 }

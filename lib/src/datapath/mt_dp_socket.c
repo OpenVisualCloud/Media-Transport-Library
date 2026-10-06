@@ -68,7 +68,7 @@ static int tx_socket_send_mbuf(struct mt_tx_socket_thread* t, struct rte_mbuf* m
   // mt_mbuf_dump(port, 0, "socket_tx", m);
 
   void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
-  ssize_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
+  ssize_t payload_len = (ssize_t)(m->data_len - sizeof(struct mt_udp_hdr));
 
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -76,7 +76,7 @@ static int tx_socket_send_mbuf(struct mt_tx_socket_thread* t, struct rte_mbuf* m
 
   t->stat_tx_try++;
   /* nonblocking */
-  ssize_t send = sendto(fd, payload, payload_len, MSG_DONTWAIT,
+  ssize_t send = sendto(fd, payload, (size_t)payload_len, MSG_DONTWAIT,
                         (const struct sockaddr*)&send_addr, sizeof(send_addr));
   dbg("%s(%d,%d), len %" PRId64 " send %" PRId64 "\n", __func__, port, fd, payload_len,
       send);
@@ -118,7 +118,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
     }
 
     t->stat_tx_try++;
-    uint16_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
+    uint16_t payload_len = (uint16_t)(m->data_len - sizeof(struct mt_udp_hdr));
     void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
     dbg("%s(%d,%d), mbuf %u payload_len %u\n", __func__, port, fd, i, payload_len);
 
@@ -138,7 +138,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
         tx += gso_cnt;
         if (stats) {
           stats->tx_packets += gso_cnt;
-          stats->tx_bytes += write;
+          stats->tx_bytes += (uint64_t)write;
         }
         t->stat_tx_pkt += gso_cnt;
         t->stat_tx_gso++;
@@ -155,7 +155,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
       tx++;
       if (stats) {
         stats->tx_packets++;
-        stats->tx_bytes += write;
+        stats->tx_bytes += (uint64_t)write;
       }
       t->stat_tx_pkt++;
     }
@@ -174,7 +174,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
     tx += gso_cnt;
     if (stats) {
       stats->tx_packets += gso_cnt;
-      stats->tx_bytes += write;
+      stats->tx_bytes += (uint64_t)write;
     }
     t->stat_tx_pkt += gso_cnt;
     t->stat_tx_gso++;
@@ -226,7 +226,7 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread* t) {
 
   /* bind to device */
   const char* if_name = mt_kernel_if_name(entry->parent, port);
-  ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
+  ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, (socklen_t)strlen(if_name));
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, idx, if_name, ret);
     return ret;
@@ -350,8 +350,8 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
   }
 
   uint64_t required = flow->bytes_per_sec * 8;
-  entry->threads = required / entry->rate_limit_per_thread + 1;
-  entry->threads = RTE_MIN(entry->threads, MT_DP_SOCKET_THREADS_MAX);
+  entry->threads = (int)RTE_MIN(required / entry->rate_limit_per_thread + 1,
+                                (uint64_t)MT_DP_SOCKET_THREADS_MAX);
   if (entry->threads > 1) {
     ret = tx_socket_init_threads(entry);
     if (ret < 0) {
@@ -427,7 +427,7 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
     unsigned int n =
         rte_ring_sp_enqueue_bulk(entry->ring, (void**)&tx_pkts[0], nb_pkts, NULL);
     // tx_socket_dequeue(&entry->threads_data[0]);
-    return n;
+    return (uint16_t)n;
   }
 
   if (entry->gso_sz) {
@@ -469,7 +469,7 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
   /* bind to device */
   const char* if_name = mt_kernel_if_name(impl, port);
   info("%s(%d,%d), SO_BINDTODEVICE to %s\n", __func__, port, fd, if_name);
-  ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
+  ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, (socklen_t)strlen(if_name));
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, fd, if_name, ret);
     return ret;
@@ -558,9 +558,9 @@ static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
   }
   /* get one packet */
   dbg("%s(%d,%d), recv len %" PRId64 "\n", __func__, port, fd, len);
-  pkt->pkt_len = len + sizeof(*hdr);
-  pkt->data_len = pkt->pkt_len;
-  udp->dgram_len = htons(len + sizeof(*udp));
+  pkt->pkt_len = (uint32_t)((size_t)len + sizeof(*hdr));
+  pkt->data_len = (uint16_t)pkt->pkt_len;
+  udp->dgram_len = htons((uint16_t)((size_t)len + sizeof(*udp)));
   udp->src_port = addr_in.sin_port;
   ipv4->src_addr = addr_in.sin_addr.s_addr;
   ipv4->next_proto_id = IPPROTO_UDP;
@@ -698,8 +698,8 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
   entry->fd = fd;
 
   uint64_t required = flow->bytes_per_sec * 8;
-  entry->threads = required / entry->rate_limit_per_thread + 1;
-  entry->threads = RTE_MIN(entry->threads, MT_DP_SOCKET_THREADS_MAX);
+  entry->threads = (int)RTE_MIN(required / entry->rate_limit_per_thread + 1,
+                                (uint64_t)MT_DP_SOCKET_THREADS_MAX);
   ret = rx_socket_init_fd(entry, fd, false);
   if (ret < 0) {
     mt_rx_socket_put(entry);
@@ -795,7 +795,8 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** 
   struct mt_rx_socket_thread* t = &entry->threads_data[0];
 
   if (entry->ring) {
-    return rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
+    return (uint16_t)rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts,
+                                               NULL);
   }
 
   for (rx = 0; rx < nb_pkts; rx++) {
