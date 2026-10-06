@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('st22 encoder plugins based on avcodec', 'c', default_options: ['buildtype=release'],
+project('st22 encoder plugins based on avcodec', 'c', default_options: ['buildtype=release', 'warning_level=2'],
         version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(),)
 
 # allow experimental api
