@@ -199,7 +199,8 @@ extern "C" {
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
- * User can check st20_rx_frame_meta data for the frame integrity
+ * User can check st20_rx_frame_meta data for the frame integrity.
+ * App must always return an incomplete frame by st20_rx_put_framebuff.
  */
 #define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 /**
@@ -284,7 +285,8 @@ extern "C" {
  * Flag bit in flags of struct st22_rx_ops.
  * Only for ST22_TYPE_FRAME_LEVEL.
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
- * User can check st22_rx_frame_meta data for the frame integrity
+ * User can check st22_rx_frame_meta data for the frame integrity.
+ * App must always return an incomplete frame by st22_rx_put_framebuff.
  */
 #define ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 
@@ -1538,6 +1540,10 @@ struct st20_rx_ops {
    *   - 0: if app consume the frame successful. App should call st20_rx_put_framebuff
    * to return the frame when it finish the handling
    *   < 0: the error code if app can't handle, lib will call st20_rx_put_framebuff then.
+   * For an incomplete frame (ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) the return value is
+   * ignored: the frame always belongs to app, which must return it by
+   * st20_rx_put_framebuff.
+   * This callback may run before st20_rx_create() returns.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
@@ -1698,6 +1704,10 @@ struct st22_rx_ops {
    *   - 0: if app consume the frame successful. App should call st22_rx_put_framebuff
    * to return the frame when it finish the handling
    *   < 0: the error code if app can't handle, lib will free the frame then.
+   * For an incomplete frame (ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) the return value is
+   * ignored: the frame always belongs to app, which must return it by
+   * st22_rx_put_framebuff.
+   * This callback may run before st22_rx_create() returns.
    * Only for ST22_TYPE_FRAME_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
