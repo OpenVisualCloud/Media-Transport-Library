@@ -43,7 +43,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_p
   __m512i srlv_and_mask = _mm512_loadu_si512(be10_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
 
 #if 0
@@ -132,17 +132,17 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   __m512i srlv_le_mask = _mm512_loadu_si512(be10_to_ple_srlv_tbl_512);
   __m512i srlv_and_mask = _mm512_loadu_si512(be10_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
 
   int caches_num = 4;
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
   int align = caches_num * 8; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_be);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
@@ -167,8 +167,9 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
     int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
-      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      rte_iova_t be_cache_iova =
+          be_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, (uint32_t)cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -352,7 +353,7 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_b
   __m512i permute_r1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   int batch = pg_cnt / 12;
 
   for (int i = 0; i < batch; i++) {
@@ -376,19 +377,19 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_b
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
-    y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
-    cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
-    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+    cb = (uint16_t)((pg_be->Cb00 << 2) + pg_be->Cb00_);
+    y0 = (uint16_t)((pg_be->Y00 << 4) + pg_be->Y00_);
+    cr = (uint16_t)((pg_be->Cr00 << 6) + pg_be->Cr00_);
+    y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
-    pg_le->Cb00 = cb;
-    pg_le->Cb00_ = cb >> 8;
-    pg_le->Y00 = y0;
-    pg_le->Y00_ = y0 >> 6;
-    pg_le->Cr00 = cr;
-    pg_le->Cr00_ = cr >> 4;
-    pg_le->Y01 = y1;
-    pg_le->Y01_ = y1 >> 2;
+    pg_le->Cb00 = (uint8_t)cb;
+    pg_le->Cb00_ = (uint8_t)((cb >> 8) & 0x3);
+    pg_le->Y00 = (uint8_t)(y0 & 0x3F);
+    pg_le->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg_le->Cr00 = (uint8_t)(cr & 0xF);
+    pg_le->Cr00_ = (uint8_t)((cr >> 4) & 0x3F);
+    pg_le->Y01 = (uint8_t)(y1 & 0x3);
+    pg_le->Y01_ = (uint8_t)(y1 >> 2);
     pg_be++;
     pg_le++;
     left--;
@@ -408,17 +409,17 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   __m512i permute_l1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_l1_tbl_512);
   __m512i permute_r1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
 
   int caches_num = 4;
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
   int align = caches_num * 12; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_be);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
@@ -444,8 +445,9 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
     int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
-      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      rte_iova_t be_cache_iova =
+          be_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, (uint32_t)cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -509,19 +511,19 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
-    y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
-    cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
-    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+    cb = (uint16_t)((pg_be->Cb00 << 2) + pg_be->Cb00_);
+    y0 = (uint16_t)((pg_be->Y00 << 4) + pg_be->Y00_);
+    cr = (uint16_t)((pg_be->Cr00 << 6) + pg_be->Cr00_);
+    y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
-    pg_le->Cb00 = cb;
-    pg_le->Cb00_ = cb >> 8;
-    pg_le->Y00 = y0;
-    pg_le->Y00_ = y0 >> 6;
-    pg_le->Cr00 = cr;
-    pg_le->Cr00_ = cr >> 4;
-    pg_le->Y01 = y1;
-    pg_le->Y01_ = y1 >> 2;
+    pg_le->Cb00 = (uint8_t)cb;
+    pg_le->Cb00_ = (uint8_t)((cb >> 8) & 0x3);
+    pg_le->Y00 = (uint8_t)(y0 & 0x3F);
+    pg_le->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg_le->Cr00 = (uint8_t)(cr & 0xF);
+    pg_le->Cr00_ = (uint8_t)((cr >> 4) & 0x3F);
+    pg_le->Y01 = (uint8_t)(y1 & 0x3);
+    pg_le->Y01_ = (uint8_t)(y1 >> 2);
     pg_be++;
     pg_le++;
     left--;
@@ -576,7 +578,7 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be
   __m512i multishift_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_multishift_tbl_512);
   __mmask16 k_load = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   __mmask32 k_compress = 0xDBDBDBDB;
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
 
   /* each __m512i batch handle 12 pg groups */
@@ -596,9 +598,9 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be
   int left = pg_cnt % 12;
   while (left) {
     pg_8->Cb00 = pg_10->Cb00;
-    pg_8->Y00 = (pg_10->Y00 << 2) + (pg_10->Y00_ >> 2);
-    pg_8->Cr00 = (pg_10->Cr00 << 4) + (pg_10->Cr00_ >> 2);
-    pg_8->Y01 = (pg_10->Y01 << 6) + (pg_10->Y01_ >> 2);
+    pg_8->Y00 = (uint8_t)((pg_10->Y00 << 2) + (pg_10->Y00_ >> 2));
+    pg_8->Cr00 = (uint8_t)((pg_10->Cr00 << 4) + (pg_10->Cr00_ >> 2));
+    pg_8->Y01 = (uint8_t)((pg_10->Y01 << 6) + (pg_10->Y01_ >> 2));
 
     pg_10++;
     pg_8++;
@@ -617,18 +619,18 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   __m512i multishift_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_multishift_tbl_512);
   __mmask16 k_load = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   __mmask32 k_compress = 0xDBDBDBDB;
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
 
   int caches_num = 4;
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_10); /* pg cnt for each cache */
   int align = caches_num * 12; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_10);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_10);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be10_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be10_caches || !ctx) {
@@ -655,8 +657,8 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be10_cache_iova =
-          be10_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
+          be10_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, (uint32_t)cache_size);
       pg_10 += cache_pg_cnt;
       pg_10_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -706,9 +708,9 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   int left = pg_cnt % 12;
   while (left) {
     pg_8->Cb00 = pg_10->Cb00;
-    pg_8->Y00 = (pg_10->Y00 << 2) + (pg_10->Y00_ >> 2);
-    pg_8->Cr00 = (pg_10->Cr00 << 4) + (pg_10->Cr00_ >> 2);
-    pg_8->Y01 = (pg_10->Y01 << 6) + (pg_10->Y01_ >> 2);
+    pg_8->Y00 = (uint8_t)((pg_10->Y00 << 2) + (pg_10->Y00_ >> 2));
+    pg_8->Cr00 = (uint8_t)((pg_10->Cr00 << 4) + (pg_10->Cr00_ >> 2));
+    pg_8->Y01 = (uint8_t)((pg_10->Y01 << 6) + (pg_10->Y01_ >> 2));
 
     pg_10++;
     pg_8++;
@@ -753,7 +755,7 @@ int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, u
   __m512i padding_mask = _mm512_loadu_si512((__m512i*)le10_to_v210_and_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   if (pg_cnt % 12 != 0) {
     err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
         pg_cnt);
@@ -838,7 +840,7 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* 
   __m512i and1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   if (pg_cnt % 12 != 0) {
     err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
         pg_cnt);
@@ -881,7 +883,7 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   __m512i and1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   if (pg_cnt % 12 != 0) {
     err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
         pg_cnt);
@@ -892,11 +894,11 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
   int align = caches_num * 12; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_be);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
@@ -922,8 +924,9 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
     int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
-      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      rte_iova_t be_cache_iova =
+          be_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, (uint32_t)cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -1120,14 +1123,14 @@ int st20_yuv422p10le_to_rfc4175_422be10_vbmi(uint16_t* y, uint16_t* b, uint16_t*
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb >> 2;
-    pg->Cb00_ = cb;
-    pg->Y00 = y0 >> 4;
-    pg->Y00_ = y0;
-    pg->Cr00 = cr >> 6;
-    pg->Cr00_ = cr;
-    pg->Y01 = y1 >> 8;
-    pg->Y01_ = y1;
+    pg->Cb00 = (uint8_t)(cb >> 2);
+    pg->Cb00_ = (uint8_t)(cb & 0x3);
+    pg->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg->Y00_ = (uint8_t)(y0 & 0xF);
+    pg->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg->Y01_ = (uint8_t)y1;
     pg++;
 
     pg_cnt--;
@@ -1292,7 +1295,7 @@ int st20_rfc4175_422le10_to_422be10_vbmi(struct st20_rfc4175_422_10_pg2_le* pg_l
   __m512i permute_r1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   int batch = pg_cnt / 12;
 
   for (int i = 0; i < batch; i++) {
@@ -1316,19 +1319,19 @@ int st20_rfc4175_422le10_to_422be10_vbmi(struct st20_rfc4175_422_10_pg2_le* pg_l
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
-    y0 = pg_le->Y00 + (pg_le->Y00_ << 6);
-    cr = pg_le->Cr00 + (pg_le->Cr00_ << 4);
-    y1 = pg_le->Y01 + (pg_le->Y01_ << 2);
+    cb = (uint16_t)(pg_le->Cb00 + (pg_le->Cb00_ << 8));
+    y0 = (uint16_t)(pg_le->Y00 + (pg_le->Y00_ << 6));
+    cr = (uint16_t)(pg_le->Cr00 + (pg_le->Cr00_ << 4));
+    y1 = (uint16_t)(pg_le->Y01 + (pg_le->Y01_ << 2));
 
-    pg_be->Cb00 = cb >> 2;
-    pg_be->Cb00_ = cb;
-    pg_be->Y00 = y0 >> 4;
-    pg_be->Y00_ = y0;
-    pg_be->Cr00 = cr >> 6;
-    pg_be->Cr00_ = cr;
-    pg_be->Y01 = y1 >> 8;
-    pg_be->Y01_ = y1;
+    pg_be->Cb00 = (uint8_t)(cb >> 2);
+    pg_be->Cb00_ = (uint8_t)(cb & 0x3);
+    pg_be->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg_be->Y00_ = (uint8_t)(y0 & 0xF);
+    pg_be->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg_be->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg_be->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg_be->Y01_ = (uint8_t)y1;
 
     pg_be++;
     pg_le++;
@@ -1349,17 +1352,17 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   __m512i permute_l1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_l1_tbl_512);
   __m512i permute_r1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
 
   int caches_num = 4;
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_le); /* pg cnt for each cache */
   int align = caches_num * 12; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_le);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_le);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_le* le_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!le_caches || !ctx) {
@@ -1385,8 +1388,9 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
     int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
-      rte_iova_t be_cache_iova = le_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be_cache_iova, pg_le_iova, cache_size);
+      rte_iova_t be_cache_iova =
+          le_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_le_iova, (uint32_t)cache_size);
       pg_le += cache_pg_cnt;
       pg_le_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -1450,19 +1454,19 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
-    y0 = pg_le->Y00 + (pg_le->Y00_ << 6);
-    cr = pg_le->Cr00 + (pg_le->Cr00_ << 4);
-    y1 = pg_le->Y01 + (pg_le->Y01_ << 2);
+    cb = (uint16_t)(pg_le->Cb00 + (pg_le->Cb00_ << 8));
+    y0 = (uint16_t)(pg_le->Y00 + (pg_le->Y00_ << 6));
+    cr = (uint16_t)(pg_le->Cr00 + (pg_le->Cr00_ << 4));
+    y1 = (uint16_t)(pg_le->Y01 + (pg_le->Y01_ << 2));
 
-    pg_be->Cb00 = cb >> 2;
-    pg_be->Cb00_ = cb;
-    pg_be->Y00 = y0 >> 4;
-    pg_be->Y00_ = y0;
-    pg_be->Cr00 = cr >> 6;
-    pg_be->Cr00_ = cr;
-    pg_be->Y01 = y1 >> 8;
-    pg_be->Y01_ = y1;
+    pg_be->Cb00 = (uint8_t)(cb >> 2);
+    pg_be->Cb00_ = (uint8_t)(cb & 0x3);
+    pg_be->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg_be->Y00_ = (uint8_t)(y0 & 0xF);
+    pg_be->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg_be->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg_be->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg_be->Y01_ = (uint8_t)y1;
 
     pg_be++;
     pg_le++;
@@ -1563,7 +1567,7 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
   __mmask64 k_store =
       0x7FFF7FFF7FFF7FFF; /* each __m128i with 3 pg group, 15 bytes, 4*xmms*/
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   if (pg_cnt % 12 != 0) {
     err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
         pg_cnt);
@@ -1605,7 +1609,7 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   __mmask64 k_store =
       0x7FFF7FFF7FFF7FFF; /* each __m128i with 3 pg group, 15 bytes, 4*xmms */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   if (pg_cnt % 12 != 0) {
     err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
         pg_cnt);
@@ -1616,10 +1620,10 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   int cache_3_pg_cnt = (256 * 1024) / 16; /* 3pg cnt for each cache */
   int align = caches_num * 4;             /* align to simd pg groups and caches_num */
   cache_3_pg_cnt = cache_3_pg_cnt / align * align;
-  size_t cache_size = cache_3_pg_cnt * 16;
+  size_t cache_size = (size_t)(cache_3_pg_cnt * 16);
   int soc_id = dma->parent->soc_id;
 
-  uint8_t* v210_caches = mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  uint8_t* v210_caches = mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   /* two type v210(0) or be(1) */
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!v210_caches || !ctx) {
@@ -1645,8 +1649,8 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t v210_cache_iova =
-          v210_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, cache_size);
+          v210_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, (uint32_t)cache_size);
       pg_v210 += (cache_3_pg_cnt * 16);
       pg_v210_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);
@@ -1712,7 +1716,7 @@ int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t
   int new_pg_in_zmm = 6;
   __mmask64 k = 0b1111100000111110000011111000001111100000111110000011111;
   /* calculate batch size */
-  int new_pg_per_line = w / 2;
+  int new_pg_per_line = (int)(w / 2);
   int batches = new_pg_per_line / new_pg_in_zmm;
   for (uint32_t line = 0; line < h; line++) {
     /* calculate offset */
@@ -1771,7 +1775,7 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi(struct st20_rfc4175_422_12_p
   __m512i srlv_and_mask = _mm512_loadu_si512(be12_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFFFF; /* each __m512i with 2*4 pg group, 48 bytes */
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
 
   /* each __m512i batch handle 8 pg groups */
@@ -1821,17 +1825,17 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
   __m512i srlv_le_mask = _mm512_loadu_si512(be12_to_ple_srlv_tbl_512);
   __m512i srlv_and_mask = _mm512_loadu_si512(be12_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFFFF; /* each __m512i with 2*4 pg group, 48 bytes */
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
 
   int caches_num = 4;
   int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
   int align = caches_num * 8; /* align to simd pg groups and caches_num */
   cache_pg_cnt = cache_pg_cnt / align * align;
-  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  size_t cache_size = (size_t)cache_pg_cnt * sizeof(*pg_be);
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * (size_t)caches_num, soc_id);
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
@@ -1856,8 +1860,9 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
     int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
-      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      rte_iova_t be_cache_iova =
+          be_caches_iova + (size_t)(cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, (uint32_t)cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       mt_cvt_dma_ctx_push(ctx, 0);

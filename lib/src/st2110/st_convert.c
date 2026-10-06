@@ -20,16 +20,16 @@
 #endif
 
 static bool has_lines_padding(struct st_frame* src, struct st_frame* dst) {
-  int planes = 0;
+  uint8_t planes = 0;
 
   planes = st_frame_fmt_planes(src->fmt);
-  for (int plane = 0; plane < planes; plane++) {
+  for (uint8_t plane = 0; plane < planes; plane++) {
     if (src->linesize[plane] > st_frame_least_linesize(src->fmt, src->width, plane))
       return true;
   }
 
   planes = st_frame_fmt_planes(dst->fmt);
-  for (int plane = 0; plane < planes; plane++) {
+  for (uint8_t plane = 0; plane < planes; plane++) {
     if (dst->linesize[plane] > st_frame_least_linesize(dst->fmt, dst->width, plane))
       return true;
   }
@@ -625,14 +625,14 @@ static int st20_yuv422p16le_to_rfc4175_422be10_scalar(
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb >> 8;
-    pg->Cb00_ = cb >> 6;
-    pg->Y00 = y0 >> 10;
-    pg->Y00_ = y0 >> 6;
-    pg->Cr00 = cr >> 12;
-    pg->Cr00_ = cr >> 6;
-    pg->Y01 = y1 >> 14;
-    pg->Y01_ = y1 >> 6;
+    pg->Cb00 = (uint8_t)(cb >> 8);
+    pg->Cb00_ = (uint8_t)((cb >> 6) & 0x3);
+    pg->Y00 = (uint8_t)((y0 >> 10) & 0x3F);
+    pg->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg->Cr00 = (uint8_t)((cr >> 12) & 0xF);
+    pg->Cr00_ = (uint8_t)((cr >> 6) & 0x3F);
+    pg->Y01 = (uint8_t)((y1 >> 14) & 0x3);
+    pg->Y01_ = (uint8_t)(y1 >> 6);
 
     pg++;
   }
@@ -903,8 +903,8 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
 
   uint32_t width = new_frame->width;
   uint32_t height = st_frame_data_height(new_frame);
-  uint32_t src_linesize = old_frame->linesize[0];
-  uint32_t dst_linesize = new_frame->linesize[0];
+  uint32_t src_linesize = (uint32_t)old_frame->linesize[0];
+  uint32_t dst_linesize = (uint32_t)new_frame->linesize[0];
   uint8_t* src_start = old_frame->addr[0];
   uint8_t* dst_start = new_frame->addr[0];
   /* check the idx and set src offset */
@@ -977,14 +977,14 @@ static int st20_yuv422p10le_to_rfc4175_422be10_scalar(
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb >> 2;
-    pg->Cb00_ = cb;
-    pg->Y00 = y0 >> 4;
-    pg->Y00_ = y0;
-    pg->Cr00 = cr >> 6;
-    pg->Cr00_ = cr;
-    pg->Y01 = y1 >> 8;
-    pg->Y01_ = y1;
+    pg->Cb00 = (uint8_t)(cb >> 2);
+    pg->Cb00_ = (uint8_t)(cb & 0x3);
+    pg->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg->Y00_ = (uint8_t)(y0 & 0xF);
+    pg->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg->Y01_ = (uint8_t)y1;
 
     pg++;
   }
@@ -1052,10 +1052,10 @@ static int st20_rfc4175_422be10_to_yuv422p10le_scalar(
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = (pg->Cb00 << 2) + pg->Cb00_;
-    y0 = (pg->Y00 << 4) + pg->Y00_;
-    cr = (pg->Cr00 << 6) + pg->Cr00_;
-    y1 = (pg->Y01 << 8) + pg->Y01_;
+    cb = (uint16_t)((pg->Cb00 << 2) + pg->Cb00_);
+    y0 = (uint16_t)((pg->Y00 << 4) + pg->Y00_);
+    cr = (uint16_t)((pg->Cr00 << 6) + pg->Cr00_);
+    y1 = (uint16_t)((pg->Y01 << 8) + pg->Y01_);
 
     *b++ = cb;
     *y++ = y0;
@@ -1107,14 +1107,14 @@ static int st20_rfc4175_422be10_to_yuv422p10le_scalar_2way(
     uint16_t* b_decimated, uint16_t* r_decimated, int decimator) {
   uint32_t pg_per_line = w / 2; /* two pgs in one convert */
   uint16_t cb, y0, cr, y1;
-  uint32_t stride = decimator - 1;
+  uint32_t stride = (uint32_t)(decimator - 1);
 
   for (uint32_t line = 0; line < h; line++) {
     for (uint32_t p = 0; p < pg_per_line; p++) {
-      cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
-      y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
-      cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
-      y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+      cb = (uint16_t)((pg_be->Cb00 << 2) + pg_be->Cb00_);
+      y0 = (uint16_t)((pg_be->Y00 << 4) + pg_be->Y00_);
+      cr = (uint16_t)((pg_be->Cr00 << 6) + pg_be->Cr00_);
+      y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
       *b_full++ = cb;
       *y_full++ = y0;
@@ -1123,7 +1123,8 @@ static int st20_rfc4175_422be10_to_yuv422p10le_scalar_2way(
       pg_be++;
 
       /* handle decimated */
-      if (((line % decimator) == stride) && ((p % decimator) == stride)) {
+      if (((line % (uint32_t)decimator) == stride) &&
+          ((p % (uint32_t)decimator) == stride)) {
         *b_decimated++ = cb;
         *y_decimated++ = y0;
         *r_decimated++ = cr;
@@ -1147,11 +1148,11 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_2way(
   MTL_MAY_UNUSED(ret);
   MTL_MAY_UNUSED(level);
 
-  if (w % decimator) {
+  if (w % (uint32_t)decimator) {
     err("%s, w %u is not multiple of decimator %d!\n", __func__, w, decimator);
     return -EINVAL;
   }
-  if (h % decimator) {
+  if (h % (uint32_t)decimator) {
     err("%s, h %u is not multiple of decimator %d!\n", __func__, w, decimator);
     return -EINVAL;
   }
@@ -1217,14 +1218,14 @@ int st20_yuv422p10le_to_rfc4175_422le10(uint16_t* y, uint16_t* b, uint16_t* r,
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb;
-    pg->Cb00_ = cb >> 8;
-    pg->Y00 = y0;
-    pg->Y00_ = y0 >> 6;
-    pg->Cr00 = cr;
-    pg->Cr00_ = cr >> 4;
-    pg->Y01 = y1;
-    pg->Y01_ = y1 >> 2;
+    pg->Cb00 = (uint8_t)cb;
+    pg->Cb00_ = (uint8_t)((cb >> 8) & 0x3);
+    pg->Y00 = (uint8_t)(y0 & 0x3F);
+    pg->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg->Cr00 = (uint8_t)(cr & 0xF);
+    pg->Cr00_ = (uint8_t)((cr >> 4) & 0x3F);
+    pg->Y01 = (uint8_t)(y1 & 0x3);
+    pg->Y01_ = (uint8_t)(y1 >> 2);
 
     pg++;
   }
@@ -1239,10 +1240,10 @@ int st20_rfc4175_422le10_to_yuv422p10le(struct st20_rfc4175_422_10_pg2_le* pg,
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = pg->Cb00 + (pg->Cb00_ << 8);
-    y0 = pg->Y00 + (pg->Y00_ << 6);
-    cr = pg->Cr00 + (pg->Cr00_ << 4);
-    y1 = pg->Y01 + (pg->Y01_ << 2);
+    cb = (uint16_t)(pg->Cb00 + (pg->Cb00_ << 8));
+    y0 = (uint16_t)(pg->Y00 + (pg->Y00_ << 6));
+    cr = (uint16_t)(pg->Cr00 + (pg->Cr00_ << 4));
+    y1 = (uint16_t)(pg->Y01 + (pg->Y01_ << 2));
 
     *b++ = cb;
     *y++ = y0;
@@ -1261,19 +1262,19 @@ int st20_rfc4175_422be10_to_422le10_scalar(struct st20_rfc4175_422_10_pg2_be* pg
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
-    y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
-    cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
-    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+    cb = (uint16_t)((pg_be->Cb00 << 2) + pg_be->Cb00_);
+    y0 = (uint16_t)((pg_be->Y00 << 4) + pg_be->Y00_);
+    cr = (uint16_t)((pg_be->Cr00 << 6) + pg_be->Cr00_);
+    y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
-    pg_le->Cb00 = cb;
-    pg_le->Cb00_ = cb >> 8;
-    pg_le->Y00 = y0;
-    pg_le->Y00_ = y0 >> 6;
-    pg_le->Cr00 = cr;
-    pg_le->Cr00_ = cr >> 4;
-    pg_le->Y01 = y1;
-    pg_le->Y01_ = y1 >> 2;
+    pg_le->Cb00 = (uint8_t)cb;
+    pg_le->Cb00_ = (uint8_t)((cb >> 8) & 0x3);
+    pg_le->Y00 = (uint8_t)(y0 & 0x3F);
+    pg_le->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg_le->Cr00 = (uint8_t)(cr & 0xF);
+    pg_le->Cr00_ = (uint8_t)((cr >> 4) & 0x3F);
+    pg_le->Y01 = (uint8_t)(y1 & 0x3);
+    pg_le->Y01_ = (uint8_t)(y1 >> 2);
 
     pg_be++;
     pg_le++;
@@ -1372,19 +1373,19 @@ int st20_rfc4175_422le10_to_422be10_scalar(struct st20_rfc4175_422_10_pg2_le* pg
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
-    y0 = pg_le->Y00 + (pg_le->Y00_ << 6);
-    cr = pg_le->Cr00 + (pg_le->Cr00_ << 4);
-    y1 = pg_le->Y01 + (pg_le->Y01_ << 2);
+    cb = (uint16_t)(pg_le->Cb00 + (pg_le->Cb00_ << 8));
+    y0 = (uint16_t)(pg_le->Y00 + (pg_le->Y00_ << 6));
+    cr = (uint16_t)(pg_le->Cr00 + (pg_le->Cr00_ << 4));
+    y1 = (uint16_t)(pg_le->Y01 + (pg_le->Y01_ << 2));
 
-    pg_be->Cb00 = cb >> 2;
-    pg_be->Cb00_ = cb;
-    pg_be->Y00 = y0 >> 4;
-    pg_be->Y00_ = y0;
-    pg_be->Cr00 = cr >> 6;
-    pg_be->Cr00_ = cr;
-    pg_be->Y01 = y1 >> 8;
-    pg_be->Y01_ = y1;
+    pg_be->Cb00 = (uint8_t)(cb >> 2);
+    pg_be->Cb00_ = (uint8_t)(cb & 0x3);
+    pg_be->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg_be->Y00_ = (uint8_t)(y0 & 0xF);
+    pg_be->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg_be->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg_be->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg_be->Y01_ = (uint8_t)y1;
 
     pg_be++;
     pg_le++;
@@ -1483,9 +1484,9 @@ int st20_rfc4175_422be10_to_422le8_scalar(struct st20_rfc4175_422_10_pg2_be* pg_
 
   for (uint32_t i = 0; i < cnt; i++) {
     pg_8[i].Cb00 = pg_10[i].Cb00;
-    pg_8[i].Y00 = (pg_10[i].Y00 << 2) + (pg_10[i].Y00_ >> 2);
-    pg_8[i].Cr00 = (pg_10[i].Cr00 << 4) + (pg_10[i].Cr00_ >> 2);
-    pg_8[i].Y01 = (pg_10[i].Y01 << 6) + (pg_10[i].Y01_ >> 2);
+    pg_8[i].Y00 = (uint8_t)((pg_10[i].Y00 << 2) + (pg_10[i].Y00_ >> 2));
+    pg_8[i].Cr00 = (uint8_t)((pg_10[i].Cr00 << 4) + (pg_10[i].Cr00_ >> 2));
+    pg_8[i].Y01 = (uint8_t)((pg_10[i].Y01 << 6) + (pg_10[i].Y01_ >> 2));
   }
 
   return 0;
@@ -1572,9 +1573,9 @@ static int st20_rfc4175_422be10_to_yuv422p8_scalar(struct st20_rfc4175_422_10_pg
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
     *b++ = pg->Cb00;
-    *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
-    *r++ = (pg->Cr00 << 4) | (pg->Cr00_ >> 2);
-    *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+    *y++ = (uint8_t)((pg->Y00 << 2) | (pg->Y00_ >> 2));
+    *r++ = (uint8_t)((pg->Cr00 << 4) | (pg->Cr00_ >> 2));
+    *y++ = (uint8_t)((pg->Y01 << 6) | (pg->Y01_ >> 2));
     pg++;
   }
 
@@ -1613,15 +1614,15 @@ static int st20_rfc4175_422be10_to_yuv420p8_scalar(struct st20_rfc4175_422_10_pg
     /* first line */
     for (uint32_t j = 0; j < line_pg_cnt; j++) {
       *b++ = pg->Cb00;
-      *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
-      *r++ = (pg->Cr00 << 4) | (pg->Cr00_ >> 2);
-      *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+      *y++ = (uint8_t)((pg->Y00 << 2) | (pg->Y00_ >> 2));
+      *r++ = (uint8_t)((pg->Cr00 << 4) | (pg->Cr00_ >> 2));
+      *y++ = (uint8_t)((pg->Y01 << 6) | (pg->Y01_ >> 2));
       pg++;
     }
     /* second line, no u and v */
     for (uint32_t j = 0; j < line_pg_cnt; j++) {
-      *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
-      *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+      *y++ = (uint8_t)((pg->Y00 << 2) | (pg->Y00_ >> 2));
+      *y++ = (uint8_t)((pg->Y01 << 6) | (pg->Y01_ >> 2));
       pg++;
     }
   }
@@ -1663,27 +1664,27 @@ int st20_rfc4175_422le10_to_v210_scalar(uint8_t* pg_le, uint8_t* pg_v210, uint32
 
   uint32_t batch = pg_count / 3;
   for (uint32_t i = 0; i < batch; i++) {
-    int j = i * 15;
-    int k = i * 16;
+    int j = (int)(i * 15);
+    int k = (int)(i * 16);
 
     pg_v210[k] = pg_le[j];
     pg_v210[k + 1] = pg_le[j + 1];
     pg_v210[k + 2] = pg_le[j + 2];
     pg_v210[k + 3] = pg_le[j + 3] & 0x3F;
 
-    pg_v210[k + 4] = (pg_le[j + 3] >> 6) | (pg_le[j + 4] << 2);
-    pg_v210[k + 5] = (pg_le[j + 4] >> 6) | (pg_le[j + 5] << 2);
-    pg_v210[k + 6] = (pg_le[j + 5] >> 6) | (pg_le[j + 6] << 2);
+    pg_v210[k + 4] = (uint8_t)((pg_le[j + 3] >> 6) | (pg_le[j + 4] << 2));
+    pg_v210[k + 5] = (uint8_t)((pg_le[j + 4] >> 6) | (pg_le[j + 5] << 2));
+    pg_v210[k + 6] = (uint8_t)((pg_le[j + 5] >> 6) | (pg_le[j + 6] << 2));
     pg_v210[k + 7] = ((pg_le[j + 6] >> 6) | (pg_le[j + 7] << 2)) & 0x3F;
 
-    pg_v210[k + 8] = (pg_le[j + 7] >> 4) | (pg_le[j + 8] << 4);
-    pg_v210[k + 9] = (pg_le[j + 8] >> 4) | (pg_le[j + 9] << 4);
-    pg_v210[k + 10] = (pg_le[j + 9] >> 4) | (pg_le[j + 10] << 4);
+    pg_v210[k + 8] = (uint8_t)((pg_le[j + 7] >> 4) | (pg_le[j + 8] << 4));
+    pg_v210[k + 9] = (uint8_t)((pg_le[j + 8] >> 4) | (pg_le[j + 9] << 4));
+    pg_v210[k + 10] = (uint8_t)((pg_le[j + 9] >> 4) | (pg_le[j + 10] << 4));
     pg_v210[k + 11] = ((pg_le[j + 10] >> 4) | (pg_le[j + 11] << 4)) & 0x3F;
 
-    pg_v210[k + 12] = (pg_le[j + 11] >> 2) | (pg_le[j + 12] << 6);
-    pg_v210[k + 13] = (pg_le[j + 12] >> 2) | (pg_le[j + 13] << 6);
-    pg_v210[k + 14] = (pg_le[j + 13] >> 2) | (pg_le[j + 14] << 6);
+    pg_v210[k + 12] = (uint8_t)((pg_le[j + 11] >> 2) | (pg_le[j + 12] << 6));
+    pg_v210[k + 13] = (uint8_t)((pg_le[j + 12] >> 2) | (pg_le[j + 13] << 6));
+    pg_v210[k + 14] = (uint8_t)((pg_le[j + 13] >> 2) | (pg_le[j + 14] << 6));
     pg_v210[k + 15] = pg_le[j + 14] >> 2;
   }
 
@@ -1733,26 +1734,26 @@ int st20_v210_to_rfc4175_422le10(uint8_t* pg_v210, uint8_t* pg_le, uint32_t w,
 
   uint32_t batch = pg_count / 3;
   for (uint32_t i = 0; i < batch; i++) {
-    int j = i * 16;
-    int k = i * 15;
+    int j = (int)(i * 16);
+    int k = (int)(i * 15);
 
     pg_le[k] = pg_v210[j];
     pg_le[k + 1] = pg_v210[j + 1];
     pg_le[k + 2] = pg_v210[j + 2];
-    pg_le[k + 3] = pg_v210[j + 3] | (pg_v210[j + 4] << 6);
-    pg_le[k + 4] = (pg_v210[j + 5] << 6) | (pg_v210[j + 4] >> 2);
+    pg_le[k + 3] = (uint8_t)(pg_v210[j + 3] | (pg_v210[j + 4] << 6));
+    pg_le[k + 4] = (uint8_t)((pg_v210[j + 5] << 6) | (pg_v210[j + 4] >> 2));
 
-    pg_le[k + 5] = (pg_v210[j + 6] << 6) | (pg_v210[j + 5] >> 2);
-    pg_le[k + 6] = (pg_v210[j + 7] << 6) | (pg_v210[j + 6] >> 2);
-    pg_le[k + 7] = (pg_v210[j + 8] << 4) | (pg_v210[j + 7] >> 2);
-    pg_le[k + 8] = (pg_v210[j + 9] << 4) | (pg_v210[j + 8] >> 4);
-    pg_le[k + 9] = (pg_v210[j + 10] << 4) | (pg_v210[j + 9] >> 4);
+    pg_le[k + 5] = (uint8_t)((pg_v210[j + 6] << 6) | (pg_v210[j + 5] >> 2));
+    pg_le[k + 6] = (uint8_t)((pg_v210[j + 7] << 6) | (pg_v210[j + 6] >> 2));
+    pg_le[k + 7] = (uint8_t)((pg_v210[j + 8] << 4) | (pg_v210[j + 7] >> 2));
+    pg_le[k + 8] = (uint8_t)((pg_v210[j + 9] << 4) | (pg_v210[j + 8] >> 4));
+    pg_le[k + 9] = (uint8_t)((pg_v210[j + 10] << 4) | (pg_v210[j + 9] >> 4));
 
-    pg_le[k + 10] = (pg_v210[j + 11] << 4) | (pg_v210[j + 10] >> 4);
-    pg_le[k + 11] = (pg_v210[j + 12] << 2) | (pg_v210[j + 11] >> 4);
-    pg_le[k + 12] = (pg_v210[j + 13] << 2) | (pg_v210[j + 12] >> 6);
-    pg_le[k + 13] = (pg_v210[j + 14] << 2) | (pg_v210[j + 13] >> 6);
-    pg_le[k + 14] = (pg_v210[j + 15] << 2) | (pg_v210[j + 14] >> 6);
+    pg_le[k + 10] = (uint8_t)((pg_v210[j + 11] << 4) | (pg_v210[j + 10] >> 4));
+    pg_le[k + 11] = (uint8_t)((pg_v210[j + 12] << 2) | (pg_v210[j + 11] >> 4));
+    pg_le[k + 12] = (uint8_t)((pg_v210[j + 13] << 2) | (pg_v210[j + 12] >> 6));
+    pg_le[k + 13] = (uint8_t)((pg_v210[j + 14] << 2) | (pg_v210[j + 13] >> 6));
+    pg_le[k + 14] = (uint8_t)((pg_v210[j + 15] << 2) | (pg_v210[j + 14] >> 6));
   }
 
   return 0;
@@ -1769,29 +1770,30 @@ int st20_rfc4175_422be10_to_v210_scalar(uint8_t* pg_be, uint8_t* pg_v210, uint32
 
   uint32_t batch = pg_count / 3;
   for (uint32_t i = 0; i < batch; i++) {
-    int j = i * 15;
-    int k = i * 16;
+    int j = (int)(i * 15);
+    int k = (int)(i * 16);
 
-    pg_v210[k] = pg_be[j] << 2 | pg_be[j + 1] >> 6;
-    pg_v210[k + 1] = pg_be[j] >> 6 | pg_be[j + 1] << 6 | ((pg_be[j + 2] >> 2) & 0x3C);
+    pg_v210[k] = (uint8_t)(pg_be[j] << 2 | pg_be[j + 1] >> 6);
+    pg_v210[k + 1] =
+        (uint8_t)(pg_be[j] >> 6 | pg_be[j + 1] << 6 | ((pg_be[j + 2] >> 2) & 0x3C));
     pg_v210[k + 2] = ((pg_be[j + 1] >> 2) & 0x0F) | ((pg_be[j + 3] << 2) & 0xF0);
     pg_v210[k + 3] = (pg_be[j + 2] << 2 | pg_be[j + 3] >> 6) & 0x3F;
 
     pg_v210[k + 4] = pg_be[j + 4];
-    pg_v210[k + 5] =
-        (pg_be[j + 5] << 4) | ((pg_be[j + 6] >> 4) & 0x0C) | (pg_be[j + 3] & 0x03);
+    pg_v210[k + 5] = (uint8_t)((pg_be[j + 5] << 4) | ((pg_be[j + 6] >> 4) & 0x0C) |
+                               (pg_be[j + 3] & 0x03));
     pg_v210[k + 6] = (pg_be[j + 5] >> 4) | (pg_be[j + 7] & 0xF0);
     pg_v210[k + 7] = (pg_be[j + 6]) & 0x3F;
 
-    pg_v210[k + 8] = (pg_be[j + 7] << 6) | (pg_be[j + 8] >> 2);
-    pg_v210[k + 9] = ((pg_be[j + 7] >> 2) & 0x03) | (pg_be[j + 9] << 2);
-    pg_v210[k + 10] = ((pg_be[j + 8] << 2) & 0x0C) | (pg_be[j + 9] >> 6) |
-                      (pg_be[j + 10] << 6) | ((pg_be[j + 11] >> 2) & 0x30);
+    pg_v210[k + 8] = (uint8_t)((pg_be[j + 7] << 6) | (pg_be[j + 8] >> 2));
+    pg_v210[k + 9] = (uint8_t)(((pg_be[j + 7] >> 2) & 0x03) | (pg_be[j + 9] << 2));
+    pg_v210[k + 10] = (uint8_t)(((pg_be[j + 8] << 2) & 0x0C) | (pg_be[j + 9] >> 6) |
+                                (pg_be[j + 10] << 6) | ((pg_be[j + 11] >> 2) & 0x30));
     pg_v210[k + 11] = (pg_be[j + 10] >> 2);
 
-    pg_v210[k + 12] = (pg_be[j + 12] >> 4) | (pg_be[j + 11] << 4);
+    pg_v210[k + 12] = (uint8_t)((pg_be[j + 12] >> 4) | (pg_be[j + 11] << 4));
     pg_v210[k + 13] = ((pg_be[j + 11] >> 4) & 0x03) | (pg_be[j + 13] & 0xFC);
-    pg_v210[k + 14] = (pg_be[j + 12] & 0x0F) | (pg_be[j + 14] << 4);
+    pg_v210[k + 14] = (uint8_t)((pg_be[j + 12] & 0x0F) | (pg_be[j + 14] << 4));
     pg_v210[k + 15] = ((pg_be[j + 14] >> 4) | (pg_be[j + 13] << 4)) & 0x3F;
   }
 
@@ -1837,35 +1839,38 @@ int st20_rfc4175_422be10_to_v210_scalar_2way(uint8_t* pg_be, uint8_t* pg_v210_fu
   uint32_t line_pg_count = w / 2;
 
   uint32_t line_batch = line_pg_count / 3;
-  uint32_t stride = decimator - 1;
+  uint32_t stride = (uint32_t)(decimator - 1);
   for (uint32_t line = 0; line < h; line++) {
     for (uint32_t i = 0; i < line_batch; i++) {
-      pg_v210_full[0] = pg_be[0] << 2 | pg_be[1] >> 6;
-      pg_v210_full[1] = pg_be[0] >> 6 | pg_be[1] << 6 | ((pg_be[2] >> 2) & 0x3C);
+      pg_v210_full[0] = (uint8_t)(pg_be[0] << 2 | pg_be[1] >> 6);
+      pg_v210_full[1] =
+          (uint8_t)(pg_be[0] >> 6 | pg_be[1] << 6 | ((pg_be[2] >> 2) & 0x3C));
       pg_v210_full[2] = ((pg_be[1] >> 2) & 0x0F) | ((pg_be[3] << 2) & 0xF0);
       pg_v210_full[3] = (pg_be[2] << 2 | pg_be[3] >> 6) & 0x3F;
 
       pg_v210_full[4] = pg_be[4];
-      pg_v210_full[5] = (pg_be[5] << 4) | ((pg_be[6] >> 4) & 0x0C) | (pg_be[3] & 0x03);
+      pg_v210_full[5] =
+          (uint8_t)((pg_be[5] << 4) | ((pg_be[6] >> 4) & 0x0C) | (pg_be[3] & 0x03));
       pg_v210_full[6] = (pg_be[5] >> 4) | (pg_be[7] & 0xF0);
       pg_v210_full[7] = (pg_be[6]) & 0x3F;
 
-      pg_v210_full[8] = (pg_be[7] << 6) | (pg_be[8] >> 2);
-      pg_v210_full[9] = ((pg_be[7] >> 2) & 0x03) | (pg_be[9] << 2);
-      pg_v210_full[10] = ((pg_be[8] << 2) & 0x0C) | (pg_be[9] >> 6) | (pg_be[10] << 6) |
-                         ((pg_be[11] >> 2) & 0x30);
+      pg_v210_full[8] = (uint8_t)((pg_be[7] << 6) | (pg_be[8] >> 2));
+      pg_v210_full[9] = (uint8_t)(((pg_be[7] >> 2) & 0x03) | (pg_be[9] << 2));
+      pg_v210_full[10] = (uint8_t)(((pg_be[8] << 2) & 0x0C) | (pg_be[9] >> 6) |
+                                   (pg_be[10] << 6) | ((pg_be[11] >> 2) & 0x30));
       pg_v210_full[11] = (pg_be[10] >> 2);
 
-      pg_v210_full[12] = (pg_be[12] >> 4) | (pg_be[11] << 4);
+      pg_v210_full[12] = (uint8_t)((pg_be[12] >> 4) | (pg_be[11] << 4));
       pg_v210_full[13] = ((pg_be[11] >> 4) & 0x03) | (pg_be[13] & 0xFC);
-      pg_v210_full[14] = (pg_be[12] & 0x0F) | (pg_be[14] << 4);
+      pg_v210_full[14] = (uint8_t)((pg_be[12] & 0x0F) | (pg_be[14] << 4));
       pg_v210_full[15] = ((pg_be[14] >> 4) | (pg_be[13] << 4)) & 0x3F;
 
       pg_v210_full += 16;
       pg_be += 15;
 
       /* handle pg_v210_decimated */
-      if (((line % decimator) == stride) && ((i % decimator) == stride)) {
+      if (((line % (uint32_t)decimator) == stride) &&
+          ((i % (uint32_t)decimator) == stride)) {
         uint8_t* v210 = pg_v210_full - decimator * 16;
         memcpy(pg_v210_decimated, v210, 16);
         pg_v210_decimated += 16;
@@ -1893,11 +1898,11 @@ int st20_rfc4175_422be10_to_v210_simd_2way(struct st20_rfc4175_422_10_pg2_be* pg
         __func__, line_pg_count);
     return -EINVAL;
   }
-  if (w % decimator) {
+  if (w % (uint32_t)decimator) {
     err("%s, w %u is not multiple of decimator %d!\n", __func__, w, decimator);
     return -EINVAL;
   }
-  if (h % decimator) {
+  if (h % (uint32_t)decimator) {
     err("%s, h %u is not multiple of decimator %d!\n", __func__, w, decimator);
     return -EINVAL;
   }
@@ -1961,27 +1966,29 @@ int st20_v210_to_rfc4175_422be10_scalar(uint8_t* v210, uint8_t* be, uint32_t w,
 
   uint32_t batch = pg_count / 3;
   for (uint32_t i = 0; i < batch; i++) {
-    int j = i * 16;
-    int k = i * 15;
+    int j = (int)(i * 16);
+    int k = (int)(i * 15);
 
-    be[k + 0] = (v210[j + 1] << 6) | (v210[j + 0] >> 2);
-    be[k + 1] = (v210[j + 0] << 6) | ((v210[j + 2] << 2) & 0x3C) | (v210[j + 1] >> 6);
+    be[k + 0] = (uint8_t)((v210[j + 1] << 6) | (v210[j + 0] >> 2));
+    be[k + 1] =
+        (uint8_t)((v210[j + 0] << 6) | ((v210[j + 2] << 2) & 0x3C) | (v210[j + 1] >> 6));
     be[k + 2] = ((v210[j + 1] << 2) & 0xF0) | ((v210[j + 3] >> 2) & 0x0F);
-    be[k + 3] = (v210[j + 5] & 0x03) | ((v210[j + 2] >> 2) & 0x3C) | (v210[j + 3] << 6);
+    be[k + 3] = (uint8_t)((v210[j + 5] & 0x03) | ((v210[j + 2] >> 2) & 0x3C) |
+                          (v210[j + 3] << 6));
     be[k + 4] = v210[j + 4];
 
-    be[k + 5] = (v210[j + 6] << 4) | (v210[j + 5] >> 4);
+    be[k + 5] = (uint8_t)((v210[j + 6] << 4) | (v210[j + 5] >> 4));
     be[k + 6] = ((v210[j + 5] << 4) & 0xC0) | (v210[j + 7] & 0x3F);
     be[k + 7] = (v210[j + 6] & 0xF0) | ((v210[j + 9] << 2) & 0x0C) | (v210[j + 8] >> 6);
-    be[k + 8] = (v210[j + 8] << 2) | ((v210[j + 10] >> 2) & 0x3);
-    be[k + 9] = (v210[j + 10] << 6) | (v210[j + 9] >> 2);
+    be[k + 8] = (uint8_t)((v210[j + 8] << 2) | ((v210[j + 10] >> 2) & 0x3));
+    be[k + 9] = (uint8_t)((v210[j + 10] << 6) | (v210[j + 9] >> 2));
 
-    be[k + 10] = (v210[j + 11] << 2) | (v210[j + 10] >> 6);
+    be[k + 10] = (uint8_t)((v210[j + 11] << 2) | (v210[j + 10] >> 6));
     be[k + 11] =
         ((v210[j + 10] << 2) & 0xC0) | ((v210[j + 13] << 4) & 0x30) | (v210[j + 12] >> 4);
-    be[k + 12] = (v210[j + 12] << 4) | (v210[j + 14] & 0x0F);
+    be[k + 12] = (uint8_t)((v210[j + 12] << 4) | (v210[j + 14] & 0x0F));
     be[k + 13] = (v210[j + 13] & 0xFC) | ((v210[j + 15] >> 4) & 0x03);
-    be[k + 14] = (v210[j + 15] << 4) | (v210[j + 14] >> 4);
+    be[k + 14] = (uint8_t)((v210[j + 15] << 4) | (v210[j + 14] >> 4));
   }
 
   return 0;
@@ -2065,10 +2072,10 @@ int st20_rfc4175_422be10_to_y210_scalar(struct st20_rfc4175_422_10_pg2_be* pg_be
 
   for (uint32_t i = 0; i < pg_count; i++) {
     uint32_t j = i * 4;
-    pg_y210[j] = (pg_be->Y00 << 10) + (pg_be->Y00_ << 6);
-    pg_y210[j + 1] = (pg_be->Cb00 << 8) + (pg_be->Cb00_ << 6);
-    pg_y210[j + 2] = (pg_be->Y01 << 14) + (pg_be->Y01_ << 6);
-    pg_y210[j + 3] = (pg_be->Cr00 << 12) + (pg_be->Cr00_ << 6);
+    pg_y210[j] = (uint16_t)((pg_be->Y00 << 10) + (pg_be->Y00_ << 6));
+    pg_y210[j + 1] = (uint16_t)((pg_be->Cb00 << 8) + (pg_be->Cb00_ << 6));
+    pg_y210[j + 2] = (uint16_t)((pg_be->Y01 << 14) + (pg_be->Y01_ << 6));
+    pg_y210[j + 3] = (uint16_t)((pg_be->Cr00 << 12) + (pg_be->Cr00_ << 6));
     pg_be++;
   }
 
@@ -2132,15 +2139,15 @@ int st20_y210_to_rfc4175_422be10_scalar(uint16_t* pg_y210,
   uint32_t pg_count = w * h / 2;
 
   for (uint32_t i = 0; i < pg_count; i++) {
-    int j = i * 4;
-    pg_be->Cb00 = pg_y210[j + 1] >> 8;
-    pg_be->Cb00_ = (pg_y210[j + 1] >> 6) & 0x3;
-    pg_be->Y00 = pg_y210[j] >> 10;
-    pg_be->Y00_ = (pg_y210[j] >> 6) & 0xF;
-    pg_be->Cr00 = pg_y210[j + 3] >> 12;
-    pg_be->Cr00_ = (pg_y210[j + 3] >> 6) & 0x3F;
-    pg_be->Y01 = pg_y210[j + 2] >> 14;
-    pg_be->Y01_ = (pg_y210[j + 2] >> 6) & 0xFF;
+    int j = (int)(i * 4);
+    pg_be->Cb00 = (uint8_t)(pg_y210[j + 1] >> 8);
+    pg_be->Cb00_ = (uint8_t)((pg_y210[j + 1] >> 6) & 0x3);
+    pg_be->Y00 = (uint8_t)((pg_y210[j] >> 10) & 0x3F);
+    pg_be->Y00_ = (uint8_t)((pg_y210[j] >> 6) & 0xF);
+    pg_be->Cr00 = (uint8_t)((pg_y210[j + 3] >> 12) & 0xF);
+    pg_be->Cr00_ = (uint8_t)((pg_y210[j + 3] >> 6) & 0x3F);
+    pg_be->Y01 = (uint8_t)((pg_y210[j + 2] >> 14) & 0x3);
+    pg_be->Y01_ = (uint8_t)((pg_y210[j + 2] >> 6) & 0xFF);
 
     pg_be++;
   }
@@ -2211,14 +2218,14 @@ static int st20_yuv422p12le_to_rfc4175_422be12_scalar(
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb >> 4;
-    pg->Cb00_ = cb;
-    pg->Y00 = y0 >> 8;
-    pg->Y00_ = y0;
-    pg->Cr00 = cr >> 4;
-    pg->Cr00_ = cr;
-    pg->Y01 = y1 >> 8;
-    pg->Y01_ = y1;
+    pg->Cb00 = (uint8_t)(cb >> 4);
+    pg->Cb00_ = (uint8_t)(cb & 0xF);
+    pg->Y00 = (uint8_t)((y0 >> 8) & 0xF);
+    pg->Y00_ = (uint8_t)y0;
+    pg->Cr00 = (uint8_t)(cr >> 4);
+    pg->Cr00_ = (uint8_t)(cr & 0xF);
+    pg->Y01 = (uint8_t)((y1 >> 8) & 0xF);
+    pg->Y01_ = (uint8_t)y1;
 
     pg++;
   }
@@ -2242,10 +2249,10 @@ static int st20_rfc4175_422be12_to_yuv422p12le_scalar(
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = (pg->Cb00 << 4) + pg->Cb00_;
-    y0 = (pg->Y00 << 8) + pg->Y00_;
-    cr = (pg->Cr00 << 4) + pg->Cr00_;
-    y1 = (pg->Y01 << 8) + pg->Y01_;
+    cb = (uint16_t)((pg->Cb00 << 4) + pg->Cb00_);
+    y0 = (uint16_t)((pg->Y00 << 8) + pg->Y00_);
+    cr = (uint16_t)((pg->Cr00 << 4) + pg->Cr00_);
+    y1 = (uint16_t)((pg->Y01 << 8) + pg->Y01_);
 
     *b++ = cb;
     *y++ = y0;
@@ -2332,14 +2339,14 @@ int st20_yuv422p12le_to_rfc4175_422le12(uint16_t* y, uint16_t* b, uint16_t* r,
     cr = *r++;
     y1 = *y++;
 
-    pg->Cb00 = cb;
-    pg->Cb00_ = cb >> 8;
-    pg->Y00 = y0;
-    pg->Y00_ = y0 >> 4;
-    pg->Cr00 = cr;
-    pg->Cr00_ = cr >> 8;
-    pg->Y01 = y1;
-    pg->Y01_ = y1 >> 4;
+    pg->Cb00 = (uint8_t)cb;
+    pg->Cb00_ = (uint8_t)((cb >> 8) & 0xF);
+    pg->Y00 = (uint8_t)(y0 & 0xF);
+    pg->Y00_ = (uint8_t)(y0 >> 4);
+    pg->Cr00 = (uint8_t)cr;
+    pg->Cr00_ = (uint8_t)((cr >> 8) & 0xF);
+    pg->Y01 = (uint8_t)(y1 & 0xF);
+    pg->Y01_ = (uint8_t)(y1 >> 4);
 
     pg++;
   }
@@ -2354,10 +2361,10 @@ int st20_rfc4175_422le12_to_yuv422p12le(struct st20_rfc4175_422_12_pg2_le* pg,
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = pg->Cb00 + (pg->Cb00_ << 8);
-    y0 = pg->Y00 + (pg->Y00_ << 4);
-    cr = pg->Cr00 + (pg->Cr00_ << 8);
-    y1 = pg->Y01 + (pg->Y01_ << 4);
+    cb = (uint16_t)(pg->Cb00 + (pg->Cb00_ << 8));
+    y0 = (uint16_t)(pg->Y00 + (pg->Y00_ << 4));
+    cr = (uint16_t)(pg->Cr00 + (pg->Cr00_ << 8));
+    y1 = (uint16_t)(pg->Y01 + (pg->Y01_ << 4));
 
     *b++ = cb;
     *y++ = y0;
@@ -2376,19 +2383,19 @@ int st20_rfc4175_422be12_to_422le12_scalar(struct st20_rfc4175_422_12_pg2_be* pg
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = (pg_be->Cb00 << 4) + pg_be->Cb00_;
-    y0 = (pg_be->Y00 << 8) + pg_be->Y00_;
-    cr = (pg_be->Cr00 << 4) + pg_be->Cr00_;
-    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+    cb = (uint16_t)((pg_be->Cb00 << 4) + pg_be->Cb00_);
+    y0 = (uint16_t)((pg_be->Y00 << 8) + pg_be->Y00_);
+    cr = (uint16_t)((pg_be->Cr00 << 4) + pg_be->Cr00_);
+    y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
-    pg_le->Cb00 = cb;
-    pg_le->Cb00_ = cb >> 8;
-    pg_le->Y00 = y0;
-    pg_le->Y00_ = y0 >> 4;
-    pg_le->Cr00 = cr;
-    pg_le->Cr00_ = cr >> 8;
-    pg_le->Y01 = y1;
-    pg_le->Y01_ = y1 >> 4;
+    pg_le->Cb00 = (uint8_t)cb;
+    pg_le->Cb00_ = (uint8_t)((cb >> 8) & 0xF);
+    pg_le->Y00 = (uint8_t)(y0 & 0xF);
+    pg_le->Y00_ = (uint8_t)(y0 >> 4);
+    pg_le->Cr00 = (uint8_t)cr;
+    pg_le->Cr00_ = (uint8_t)((cr >> 8) & 0xF);
+    pg_le->Y01 = (uint8_t)(y1 & 0xF);
+    pg_le->Y01_ = (uint8_t)(y1 >> 4);
 
     pg_be++;
     pg_le++;
@@ -2457,19 +2464,19 @@ int st20_rfc4175_422le12_to_422be12_scalar(struct st20_rfc4175_422_12_pg2_le* pg
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
-    y0 = pg_le->Y00 + (pg_le->Y00_ << 4);
-    cr = pg_le->Cr00 + (pg_le->Cr00_ << 8);
-    y1 = pg_le->Y01 + (pg_le->Y01_ << 4);
+    cb = (uint16_t)(pg_le->Cb00 + (pg_le->Cb00_ << 8));
+    y0 = (uint16_t)(pg_le->Y00 + (pg_le->Y00_ << 4));
+    cr = (uint16_t)(pg_le->Cr00 + (pg_le->Cr00_ << 8));
+    y1 = (uint16_t)(pg_le->Y01 + (pg_le->Y01_ << 4));
 
-    pg_be->Cb00 = cb >> 4;
-    pg_be->Cb00_ = cb;
-    pg_be->Y00 = y0 >> 8;
-    pg_be->Y00_ = y0;
-    pg_be->Cr00 = cr >> 4;
-    pg_be->Cr00_ = cr;
-    pg_be->Y01 = y1 >> 8;
-    pg_be->Y01_ = y1;
+    pg_be->Cb00 = (uint8_t)(cb >> 4);
+    pg_be->Cb00_ = (uint8_t)(cb & 0xF);
+    pg_be->Y00 = (uint8_t)((y0 >> 8) & 0xF);
+    pg_be->Y00_ = (uint8_t)y0;
+    pg_be->Cr00 = (uint8_t)(cr >> 4);
+    pg_be->Cr00_ = (uint8_t)(cr & 0xF);
+    pg_be->Y01 = (uint8_t)((y1 >> 8) & 0xF);
+    pg_be->Y01_ = (uint8_t)y1;
 
     pg_be++;
     pg_le++;
@@ -2508,30 +2515,30 @@ static int st20_444p10le_to_rfc4175_444be10_scalar(uint16_t* y_g, uint16_t* b_r,
     y_g3 = *y_g++;
     cr_b3 = *r_b++;
 
-    pg->Cb_R00 = cb_r0 >> 2;
-    pg->Cb_R00_ = cb_r0;
-    pg->Y_G00 = y_g0 >> 4;
-    pg->Y_G00_ = y_g0;
-    pg->Cr_B00 = cr_b0 >> 6;
-    pg->Cr_B00_ = cr_b0;
-    pg->Cb_R01 = cb_r1 >> 8;
-    pg->Cb_R01_ = cb_r1;
-    pg->Y_G01 = y_g1 >> 2;
-    pg->Y_G01_ = y_g1;
-    pg->Cr_B01 = cr_b1 >> 4;
-    pg->Cr_B01_ = cr_b1;
-    pg->Cb_R02 = cb_r2 >> 6;
-    pg->Cb_R02_ = cb_r2;
-    pg->Y_G02 = y_g2 >> 8;
-    pg->Y_G02_ = y_g2;
-    pg->Cr_B02 = cr_b2 >> 2;
-    pg->Cr_B02_ = cr_b2;
-    pg->Cb_R03 = cb_r3 >> 4;
-    pg->Cb_R03_ = cb_r3;
-    pg->Y_G03 = y_g3 >> 6;
-    pg->Y_G03_ = y_g3;
-    pg->Cr_B03 = cr_b3 >> 8;
-    pg->Cr_B03_ = cr_b3;
+    pg->Cb_R00 = (uint8_t)(cb_r0 >> 2);
+    pg->Cb_R00_ = (uint8_t)(cb_r0 & 0x3);
+    pg->Y_G00 = (uint8_t)((y_g0 >> 4) & 0x3F);
+    pg->Y_G00_ = (uint8_t)(y_g0 & 0xF);
+    pg->Cr_B00 = (uint8_t)((cr_b0 >> 6) & 0xF);
+    pg->Cr_B00_ = (uint8_t)(cr_b0 & 0x3F);
+    pg->Cb_R01 = (uint8_t)((cb_r1 >> 8) & 0x3);
+    pg->Cb_R01_ = (uint8_t)cb_r1;
+    pg->Y_G01 = (uint8_t)(y_g1 >> 2);
+    pg->Y_G01_ = (uint8_t)(y_g1 & 0x3);
+    pg->Cr_B01 = (uint8_t)((cr_b1 >> 4) & 0x3F);
+    pg->Cr_B01_ = (uint8_t)(cr_b1 & 0xF);
+    pg->Cb_R02 = (uint8_t)((cb_r2 >> 6) & 0xF);
+    pg->Cb_R02_ = (uint8_t)(cb_r2 & 0x3F);
+    pg->Y_G02 = (uint8_t)((y_g2 >> 8) & 0x3);
+    pg->Y_G02_ = (uint8_t)y_g2;
+    pg->Cr_B02 = (uint8_t)(cr_b2 >> 2);
+    pg->Cr_B02_ = (uint8_t)(cr_b2 & 0x3);
+    pg->Cb_R03 = (uint8_t)((cb_r3 >> 4) & 0x3F);
+    pg->Cb_R03_ = (uint8_t)(cb_r3 & 0xF);
+    pg->Y_G03 = (uint8_t)((y_g3 >> 6) & 0xF);
+    pg->Y_G03_ = (uint8_t)(y_g3 & 0x3F);
+    pg->Cr_B03 = (uint8_t)((cr_b3 >> 8) & 0x3);
+    pg->Cr_B03_ = (uint8_t)cr_b3;
 
     pg++;
   }
@@ -2556,18 +2563,18 @@ static int st20_rfc4175_444be10_to_444p10le_scalar(struct st20_rfc4175_444_10_pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1, cb_r2, y_g2, cr_b2, cb_r3, y_g3, cr_b3;
 
   for (uint32_t pg4 = 0; pg4 < cnt; pg4++) {
-    cb_r0 = (pg->Cb_R00 << 2) + pg->Cb_R00_;
-    y_g0 = (pg->Y_G00 << 4) + pg->Y_G00_;
-    cr_b0 = (pg->Cr_B00 << 6) + pg->Cr_B00_;
-    cb_r1 = (pg->Cb_R01 << 8) + pg->Cb_R01_;
-    y_g1 = (pg->Y_G01 << 2) + pg->Y_G01_;
-    cr_b1 = (pg->Cr_B01 << 4) + pg->Cr_B01_;
-    cb_r2 = (pg->Cb_R02 << 6) + pg->Cb_R02_;
-    y_g2 = (pg->Y_G02 << 8) + pg->Y_G02_;
-    cr_b2 = (pg->Cr_B02 << 2) + pg->Cr_B02_;
-    cb_r3 = (pg->Cb_R03 << 4) + pg->Cb_R03_;
-    y_g3 = (pg->Y_G03 << 6) + pg->Y_G03_;
-    cr_b3 = (pg->Cr_B03 << 8) + pg->Cr_B03_;
+    cb_r0 = (uint16_t)((pg->Cb_R00 << 2) + pg->Cb_R00_);
+    y_g0 = (uint16_t)((pg->Y_G00 << 4) + pg->Y_G00_);
+    cr_b0 = (uint16_t)((pg->Cr_B00 << 6) + pg->Cr_B00_);
+    cb_r1 = (uint16_t)((pg->Cb_R01 << 8) + pg->Cb_R01_);
+    y_g1 = (uint16_t)((pg->Y_G01 << 2) + pg->Y_G01_);
+    cr_b1 = (uint16_t)((pg->Cr_B01 << 4) + pg->Cr_B01_);
+    cb_r2 = (uint16_t)((pg->Cb_R02 << 6) + pg->Cb_R02_);
+    y_g2 = (uint16_t)((pg->Y_G02 << 8) + pg->Y_G02_);
+    cr_b2 = (uint16_t)((pg->Cr_B02 << 2) + pg->Cr_B02_);
+    cb_r3 = (uint16_t)((pg->Cb_R03 << 4) + pg->Cb_R03_);
+    y_g3 = (uint16_t)((pg->Y_G03 << 6) + pg->Y_G03_);
+    cr_b3 = (uint16_t)((pg->Cr_B03 << 8) + pg->Cr_B03_);
 
     *b_r++ = cb_r0;
     *y_g++ = y_g0;
@@ -2616,30 +2623,30 @@ int st20_444p10le_to_rfc4175_444le10(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b
     y_g3 = *y_g++;
     cr_b3 = *r_b++;
 
-    pg->Cb_R00 = cb_r0;
-    pg->Cb_R00_ = cb_r0 >> 8;
-    pg->Y_G00 = y_g0;
-    pg->Y_G00_ = y_g0 >> 6;
-    pg->Cr_B00 = cr_b0;
-    pg->Cr_B00_ = cr_b0 >> 4;
-    pg->Cb_R01 = cb_r1;
-    pg->Cb_R01_ = cb_r1 >> 2;
-    pg->Y_G01 = y_g1;
-    pg->Y_G01_ = y_g1 >> 8;
-    pg->Cr_B01 = cr_b1;
-    pg->Cr_B01_ = cr_b1 >> 6;
-    pg->Cb_R02 = cb_r2;
-    pg->Cb_R02_ = cb_r2 >> 4;
-    pg->Y_G02 = y_g2;
-    pg->Y_G02_ = y_g2 >> 2;
-    pg->Cr_B02 = cr_b2;
-    pg->Cr_B02_ = cr_b2 >> 8;
-    pg->Cb_R03 = cb_r3;
-    pg->Cb_R03_ = cb_r3 >> 6;
-    pg->Y_G03 = y_g3;
-    pg->Y_G03_ = y_g3 >> 4;
-    pg->Cr_B03 = cr_b3;
-    pg->Cr_B03_ = cr_b3 >> 2;
+    pg->Cb_R00 = (uint8_t)cb_r0;
+    pg->Cb_R00_ = (uint8_t)((cb_r0 >> 8) & 0x3);
+    pg->Y_G00 = (uint8_t)(y_g0 & 0x3F);
+    pg->Y_G00_ = (uint8_t)((y_g0 >> 6) & 0xF);
+    pg->Cr_B00 = (uint8_t)(cr_b0 & 0xF);
+    pg->Cr_B00_ = (uint8_t)((cr_b0 >> 4) & 0x3F);
+    pg->Cb_R01 = (uint8_t)(cb_r1 & 0x3);
+    pg->Cb_R01_ = (uint8_t)(cb_r1 >> 2);
+    pg->Y_G01 = (uint8_t)y_g1;
+    pg->Y_G01_ = (uint8_t)((y_g1 >> 8) & 0x3);
+    pg->Cr_B01 = (uint8_t)(cr_b1 & 0x3F);
+    pg->Cr_B01_ = (uint8_t)((cr_b1 >> 6) & 0xF);
+    pg->Cb_R02 = (uint8_t)(cb_r2 & 0xF);
+    pg->Cb_R02_ = (uint8_t)((cb_r2 >> 4) & 0x3F);
+    pg->Y_G02 = (uint8_t)(y_g2 & 0x3);
+    pg->Y_G02_ = (uint8_t)(y_g2 >> 2);
+    pg->Cr_B02 = (uint8_t)cr_b2;
+    pg->Cr_B02_ = (uint8_t)((cr_b2 >> 8) & 0x3);
+    pg->Cb_R03 = (uint8_t)(cb_r3 & 0x3F);
+    pg->Cb_R03_ = (uint8_t)((cb_r3 >> 6) & 0xF);
+    pg->Y_G03 = (uint8_t)(y_g3 & 0xF);
+    pg->Y_G03_ = (uint8_t)((y_g3 >> 4) & 0x3F);
+    pg->Cr_B03 = (uint8_t)(cr_b3 & 0x3);
+    pg->Cr_B03_ = (uint8_t)(cr_b3 >> 2);
 
     pg++;
   }
@@ -2654,18 +2661,18 @@ int st20_rfc4175_444le10_to_444p10le(struct st20_rfc4175_444_10_pg4_le* pg, uint
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1, cb_r2, y_g2, cr_b2, cb_r3, y_g3, cr_b3;
 
   for (uint32_t pg4 = 0; pg4 < cnt; pg4++) {
-    cb_r0 = pg->Cb_R00 + (pg->Cb_R00_ << 8);
-    y_g0 = pg->Y_G00 + (pg->Y_G00_ << 6);
-    cr_b0 = pg->Cr_B00 + (pg->Cr_B00_ << 4);
-    cb_r1 = pg->Cb_R01 + (pg->Cb_R01_ << 2);
-    y_g1 = pg->Y_G01 + (pg->Y_G01_ << 8);
-    cr_b1 = pg->Cr_B01 + (pg->Cr_B01_ << 6);
-    cb_r2 = pg->Cb_R02 + (pg->Cb_R02_ << 4);
-    y_g2 = pg->Y_G02 + (pg->Y_G02_ << 2);
-    cr_b2 = pg->Cr_B02 + (pg->Cr_B02_ << 8);
-    cb_r3 = pg->Cb_R03 + (pg->Cb_R03_ << 6);
-    y_g3 = pg->Y_G03 + (pg->Y_G03_ << 4);
-    cr_b3 = pg->Cr_B03 + (pg->Cr_B03_ << 2);
+    cb_r0 = (uint16_t)(pg->Cb_R00 + (pg->Cb_R00_ << 8));
+    y_g0 = (uint16_t)(pg->Y_G00 + (pg->Y_G00_ << 6));
+    cr_b0 = (uint16_t)(pg->Cr_B00 + (pg->Cr_B00_ << 4));
+    cb_r1 = (uint16_t)(pg->Cb_R01 + (pg->Cb_R01_ << 2));
+    y_g1 = (uint16_t)(pg->Y_G01 + (pg->Y_G01_ << 8));
+    cr_b1 = (uint16_t)(pg->Cr_B01 + (pg->Cr_B01_ << 6));
+    cb_r2 = (uint16_t)(pg->Cb_R02 + (pg->Cb_R02_ << 4));
+    y_g2 = (uint16_t)(pg->Y_G02 + (pg->Y_G02_ << 2));
+    cr_b2 = (uint16_t)(pg->Cr_B02 + (pg->Cr_B02_ << 8));
+    cb_r3 = (uint16_t)(pg->Cb_R03 + (pg->Cb_R03_ << 6));
+    y_g3 = (uint16_t)(pg->Y_G03 + (pg->Y_G03_ << 4));
+    cr_b3 = (uint16_t)(pg->Cr_B03 + (pg->Cr_B03_ << 2));
 
     *b_r++ = cb_r0;
     *y_g++ = y_g0;
@@ -2692,43 +2699,43 @@ int st20_rfc4175_444be10_to_444le10_scalar(struct st20_rfc4175_444_10_pg4_be* pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1, cb_r2, y_g2, cr_b2, cb_r3, y_g3, cr_b3;
 
   for (uint32_t pg4 = 0; pg4 < cnt; pg4++) {
-    cb_r0 = (pg_be->Cb_R00 << 2) + pg_be->Cb_R00_;
-    y_g0 = (pg_be->Y_G00 << 4) + pg_be->Y_G00_;
-    cr_b0 = (pg_be->Cr_B00 << 6) + pg_be->Cr_B00_;
-    cb_r1 = (pg_be->Cb_R01 << 8) + pg_be->Cb_R01_;
-    y_g1 = (pg_be->Y_G01 << 2) + pg_be->Y_G01_;
-    cr_b1 = (pg_be->Cr_B01 << 4) + pg_be->Cr_B01_;
-    cb_r2 = (pg_be->Cb_R02 << 6) + pg_be->Cb_R02_;
-    y_g2 = (pg_be->Y_G02 << 8) + pg_be->Y_G02_;
-    cr_b2 = (pg_be->Cr_B02 << 2) + pg_be->Cr_B02_;
-    cb_r3 = (pg_be->Cb_R03 << 4) + pg_be->Cb_R03_;
-    y_g3 = (pg_be->Y_G03 << 6) + pg_be->Y_G03_;
-    cr_b3 = (pg_be->Cr_B03 << 8) + pg_be->Cr_B03_;
+    cb_r0 = (uint16_t)((pg_be->Cb_R00 << 2) + pg_be->Cb_R00_);
+    y_g0 = (uint16_t)((pg_be->Y_G00 << 4) + pg_be->Y_G00_);
+    cr_b0 = (uint16_t)((pg_be->Cr_B00 << 6) + pg_be->Cr_B00_);
+    cb_r1 = (uint16_t)((pg_be->Cb_R01 << 8) + pg_be->Cb_R01_);
+    y_g1 = (uint16_t)((pg_be->Y_G01 << 2) + pg_be->Y_G01_);
+    cr_b1 = (uint16_t)((pg_be->Cr_B01 << 4) + pg_be->Cr_B01_);
+    cb_r2 = (uint16_t)((pg_be->Cb_R02 << 6) + pg_be->Cb_R02_);
+    y_g2 = (uint16_t)((pg_be->Y_G02 << 8) + pg_be->Y_G02_);
+    cr_b2 = (uint16_t)((pg_be->Cr_B02 << 2) + pg_be->Cr_B02_);
+    cb_r3 = (uint16_t)((pg_be->Cb_R03 << 4) + pg_be->Cb_R03_);
+    y_g3 = (uint16_t)((pg_be->Y_G03 << 6) + pg_be->Y_G03_);
+    cr_b3 = (uint16_t)((pg_be->Cr_B03 << 8) + pg_be->Cr_B03_);
 
-    pg_le->Cb_R00 = cb_r0;
-    pg_le->Cb_R00_ = cb_r0 >> 8;
-    pg_le->Y_G00 = y_g0;
-    pg_le->Y_G00_ = y_g0 >> 6;
-    pg_le->Cr_B00 = cr_b0;
-    pg_le->Cr_B00_ = cr_b0 >> 4;
-    pg_le->Cb_R01 = cb_r1;
-    pg_le->Cb_R01_ = cb_r1 >> 2;
-    pg_le->Y_G01 = y_g1;
-    pg_le->Y_G01_ = y_g1 >> 8;
-    pg_le->Cr_B01 = cr_b1;
-    pg_le->Cr_B01_ = cr_b1 >> 6;
-    pg_le->Cb_R02 = cb_r2;
-    pg_le->Cb_R02_ = cb_r2 >> 4;
-    pg_le->Y_G02 = y_g2;
-    pg_le->Y_G02_ = y_g2 >> 2;
-    pg_le->Cr_B02 = cr_b2;
-    pg_le->Cr_B02_ = cr_b2 >> 8;
-    pg_le->Cb_R03 = cb_r3;
-    pg_le->Cb_R03_ = cb_r3 >> 6;
-    pg_le->Y_G03 = y_g3;
-    pg_le->Y_G03_ = y_g3 >> 4;
-    pg_le->Cr_B03 = cr_b3;
-    pg_le->Cr_B03_ = cr_b3 >> 2;
+    pg_le->Cb_R00 = (uint8_t)cb_r0;
+    pg_le->Cb_R00_ = (uint8_t)((cb_r0 >> 8) & 0x3);
+    pg_le->Y_G00 = (uint8_t)(y_g0 & 0x3F);
+    pg_le->Y_G00_ = (uint8_t)((y_g0 >> 6) & 0xF);
+    pg_le->Cr_B00 = (uint8_t)(cr_b0 & 0xF);
+    pg_le->Cr_B00_ = (uint8_t)((cr_b0 >> 4) & 0x3F);
+    pg_le->Cb_R01 = (uint8_t)(cb_r1 & 0x3);
+    pg_le->Cb_R01_ = (uint8_t)(cb_r1 >> 2);
+    pg_le->Y_G01 = (uint8_t)y_g1;
+    pg_le->Y_G01_ = (uint8_t)((y_g1 >> 8) & 0x3);
+    pg_le->Cr_B01 = (uint8_t)(cr_b1 & 0x3F);
+    pg_le->Cr_B01_ = (uint8_t)((cr_b1 >> 6) & 0xF);
+    pg_le->Cb_R02 = (uint8_t)(cb_r2 & 0xF);
+    pg_le->Cb_R02_ = (uint8_t)((cb_r2 >> 4) & 0x3F);
+    pg_le->Y_G02 = (uint8_t)(y_g2 & 0x3);
+    pg_le->Y_G02_ = (uint8_t)(y_g2 >> 2);
+    pg_le->Cr_B02 = (uint8_t)cr_b2;
+    pg_le->Cr_B02_ = (uint8_t)((cr_b2 >> 8) & 0x3);
+    pg_le->Cb_R03 = (uint8_t)(cb_r3 & 0x3F);
+    pg_le->Cb_R03_ = (uint8_t)((cb_r3 >> 6) & 0xF);
+    pg_le->Y_G03 = (uint8_t)(y_g3 & 0xF);
+    pg_le->Y_G03_ = (uint8_t)((y_g3 >> 4) & 0x3F);
+    pg_le->Cr_B03 = (uint8_t)(cr_b3 & 0x3);
+    pg_le->Cr_B03_ = (uint8_t)(cr_b3 >> 2);
 
     pg_be++;
     pg_le++;
@@ -2753,43 +2760,43 @@ int st20_rfc4175_444le10_to_444be10_scalar(struct st20_rfc4175_444_10_pg4_le* pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1, cb_r2, y_g2, cr_b2, cb_r3, y_g3, cr_b3;
 
   for (uint32_t pg4 = 0; pg4 < cnt; pg4++) {
-    cb_r0 = pg_le->Cb_R00 + (pg_le->Cb_R00_ << 8);
-    y_g0 = pg_le->Y_G00 + (pg_le->Y_G00_ << 6);
-    cr_b0 = pg_le->Cr_B00 + (pg_le->Cr_B00_ << 4);
-    cb_r1 = pg_le->Cb_R01 + (pg_le->Cb_R01_ << 2);
-    y_g1 = pg_le->Y_G01 + (pg_le->Y_G01_ << 8);
-    cr_b1 = pg_le->Cr_B01 + (pg_le->Cr_B01_ << 6);
-    cb_r2 = pg_le->Cb_R02 + (pg_le->Cb_R02_ << 4);
-    y_g2 = pg_le->Y_G02 + (pg_le->Y_G02_ << 2);
-    cr_b2 = pg_le->Cr_B02 + (pg_le->Cr_B02_ << 8);
-    cb_r3 = pg_le->Cb_R03 + (pg_le->Cb_R03_ << 6);
-    y_g3 = pg_le->Y_G03 + (pg_le->Y_G03_ << 4);
-    cr_b3 = pg_le->Cr_B03 + (pg_le->Cr_B03_ << 2);
+    cb_r0 = (uint16_t)(pg_le->Cb_R00 + (pg_le->Cb_R00_ << 8));
+    y_g0 = (uint16_t)(pg_le->Y_G00 + (pg_le->Y_G00_ << 6));
+    cr_b0 = (uint16_t)(pg_le->Cr_B00 + (pg_le->Cr_B00_ << 4));
+    cb_r1 = (uint16_t)(pg_le->Cb_R01 + (pg_le->Cb_R01_ << 2));
+    y_g1 = (uint16_t)(pg_le->Y_G01 + (pg_le->Y_G01_ << 8));
+    cr_b1 = (uint16_t)(pg_le->Cr_B01 + (pg_le->Cr_B01_ << 6));
+    cb_r2 = (uint16_t)(pg_le->Cb_R02 + (pg_le->Cb_R02_ << 4));
+    y_g2 = (uint16_t)(pg_le->Y_G02 + (pg_le->Y_G02_ << 2));
+    cr_b2 = (uint16_t)(pg_le->Cr_B02 + (pg_le->Cr_B02_ << 8));
+    cb_r3 = (uint16_t)(pg_le->Cb_R03 + (pg_le->Cb_R03_ << 6));
+    y_g3 = (uint16_t)(pg_le->Y_G03 + (pg_le->Y_G03_ << 4));
+    cr_b3 = (uint16_t)(pg_le->Cr_B03 + (pg_le->Cr_B03_ << 2));
 
-    pg_be->Cb_R00 = cb_r0 >> 2;
-    pg_be->Cb_R00_ = cb_r0;
-    pg_be->Y_G00 = y_g0 >> 4;
-    pg_be->Y_G00_ = y_g0;
-    pg_be->Cr_B00 = cr_b0 >> 6;
-    pg_be->Cr_B00_ = cr_b0;
-    pg_be->Cb_R01 = cb_r1 >> 8;
-    pg_be->Cb_R01_ = cb_r1;
-    pg_be->Y_G01 = y_g1 >> 2;
-    pg_be->Y_G01_ = y_g1;
-    pg_be->Cr_B01 = cr_b1 >> 4;
-    pg_be->Cr_B01_ = cr_b1;
-    pg_be->Cb_R02 = cb_r2 >> 6;
-    pg_be->Cb_R02_ = cb_r2;
-    pg_be->Y_G02 = y_g2 >> 8;
-    pg_be->Y_G02_ = y_g2;
-    pg_be->Cr_B02 = cr_b2 >> 2;
-    pg_be->Cr_B02_ = cr_b2;
-    pg_be->Cb_R03 = cb_r3 >> 4;
-    pg_be->Cb_R03_ = cb_r3;
-    pg_be->Y_G03 = y_g3 >> 6;
-    pg_be->Y_G03_ = y_g3;
-    pg_be->Cr_B03 = cr_b3 >> 8;
-    pg_be->Cr_B03_ = cr_b3;
+    pg_be->Cb_R00 = (uint8_t)(cb_r0 >> 2);
+    pg_be->Cb_R00_ = (uint8_t)(cb_r0 & 0x3);
+    pg_be->Y_G00 = (uint8_t)((y_g0 >> 4) & 0x3F);
+    pg_be->Y_G00_ = (uint8_t)(y_g0 & 0xF);
+    pg_be->Cr_B00 = (uint8_t)((cr_b0 >> 6) & 0xF);
+    pg_be->Cr_B00_ = (uint8_t)(cr_b0 & 0x3F);
+    pg_be->Cb_R01 = (uint8_t)((cb_r1 >> 8) & 0x3);
+    pg_be->Cb_R01_ = (uint8_t)cb_r1;
+    pg_be->Y_G01 = (uint8_t)(y_g1 >> 2);
+    pg_be->Y_G01_ = (uint8_t)(y_g1 & 0x3);
+    pg_be->Cr_B01 = (uint8_t)((cr_b1 >> 4) & 0x3F);
+    pg_be->Cr_B01_ = (uint8_t)(cr_b1 & 0xF);
+    pg_be->Cb_R02 = (uint8_t)((cb_r2 >> 6) & 0xF);
+    pg_be->Cb_R02_ = (uint8_t)(cb_r2 & 0x3F);
+    pg_be->Y_G02 = (uint8_t)((y_g2 >> 8) & 0x3);
+    pg_be->Y_G02_ = (uint8_t)y_g2;
+    pg_be->Cr_B02 = (uint8_t)(cr_b2 >> 2);
+    pg_be->Cr_B02_ = (uint8_t)(cr_b2 & 0x3);
+    pg_be->Cb_R03 = (uint8_t)((cb_r3 >> 4) & 0x3F);
+    pg_be->Cb_R03_ = (uint8_t)(cb_r3 & 0xF);
+    pg_be->Y_G03 = (uint8_t)((y_g3 >> 6) & 0xF);
+    pg_be->Y_G03_ = (uint8_t)(y_g3 & 0x3F);
+    pg_be->Cr_B03 = (uint8_t)((cr_b3 >> 8) & 0x3);
+    pg_be->Cr_B03_ = (uint8_t)cr_b3;
 
     pg_be++;
     pg_le++;
@@ -2822,18 +2829,18 @@ static int st20_444p12le_to_rfc4175_444be12_scalar(uint16_t* y_g, uint16_t* b_r,
     y_g1 = *y_g++;
     cr_b1 = *r_b++;
 
-    pg->Cb_R00 = cb_r0 >> 4;
-    pg->Cb_R00_ = cb_r0;
-    pg->Y_G00 = y_g0 >> 8;
-    pg->Y_G00_ = y_g0;
-    pg->Cr_B00 = cr_b0 >> 4;
-    pg->Cr_B00_ = cr_b0;
-    pg->Cb_R01 = cb_r1 >> 8;
-    pg->Cb_R01_ = cb_r1;
-    pg->Y_G01 = y_g1 >> 4;
-    pg->Y_G01_ = y_g1;
-    pg->Cr_B01 = cr_b1 >> 8;
-    pg->Cr_B01_ = cr_b1;
+    pg->Cb_R00 = (uint8_t)(cb_r0 >> 4);
+    pg->Cb_R00_ = (uint8_t)(cb_r0 & 0xF);
+    pg->Y_G00 = (uint8_t)((y_g0 >> 8) & 0xF);
+    pg->Y_G00_ = (uint8_t)y_g0;
+    pg->Cr_B00 = (uint8_t)(cr_b0 >> 4);
+    pg->Cr_B00_ = (uint8_t)(cr_b0 & 0xF);
+    pg->Cb_R01 = (uint8_t)((cb_r1 >> 8) & 0xF);
+    pg->Cb_R01_ = (uint8_t)cb_r1;
+    pg->Y_G01 = (uint8_t)(y_g1 >> 4);
+    pg->Y_G01_ = (uint8_t)(y_g1 & 0xF);
+    pg->Cr_B01 = (uint8_t)((cr_b1 >> 8) & 0xF);
+    pg->Cr_B01_ = (uint8_t)cr_b1;
 
     pg++;
   }
@@ -2858,12 +2865,12 @@ static int st20_rfc4175_444be12_to_444p12le_scalar(struct st20_rfc4175_444_12_pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb_r0 = (pg->Cb_R00 << 4) + pg->Cb_R00_;
-    y_g0 = (pg->Y_G00 << 8) + pg->Y_G00_;
-    cr_b0 = (pg->Cr_B00 << 4) + pg->Cr_B00_;
-    cb_r1 = (pg->Cb_R01 << 8) + pg->Cb_R01_;
-    y_g1 = (pg->Y_G01 << 4) + pg->Y_G01_;
-    cr_b1 = (pg->Cr_B01 << 8) + pg->Cr_B01_;
+    cb_r0 = (uint16_t)((pg->Cb_R00 << 4) + pg->Cb_R00_);
+    y_g0 = (uint16_t)((pg->Y_G00 << 8) + pg->Y_G00_);
+    cr_b0 = (uint16_t)((pg->Cr_B00 << 4) + pg->Cr_B00_);
+    cb_r1 = (uint16_t)((pg->Cb_R01 << 8) + pg->Cb_R01_);
+    y_g1 = (uint16_t)((pg->Y_G01 << 4) + pg->Y_G01_);
+    cr_b1 = (uint16_t)((pg->Cr_B01 << 8) + pg->Cr_B01_);
 
     *b_r++ = cb_r0;
     *y_g++ = y_g0;
@@ -2900,18 +2907,18 @@ int st20_444p12le_to_rfc4175_444le12(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b
     y_g1 = *y_g++;
     cr_b1 = *r_b++;
 
-    pg->Cb_R00 = cb_r0;
-    pg->Cb_R00_ = cb_r0 >> 8;
-    pg->Y_G00 = y_g0;
-    pg->Y_G00_ = y_g0 >> 4;
-    pg->Cr_B00 = cr_b0;
-    pg->Cr_B00_ = cr_b0 >> 8;
-    pg->Cb_R01 = cb_r1;
-    pg->Cb_R01_ = cb_r1 >> 4;
-    pg->Y_G01 = y_g1;
-    pg->Y_G01_ = y_g1 >> 8;
-    pg->Cr_B01 = cr_b1;
-    pg->Cr_B01_ = cr_b1 >> 4;
+    pg->Cb_R00 = (uint8_t)cb_r0;
+    pg->Cb_R00_ = (uint8_t)((cb_r0 >> 8) & 0xF);
+    pg->Y_G00 = (uint8_t)(y_g0 & 0xF);
+    pg->Y_G00_ = (uint8_t)(y_g0 >> 4);
+    pg->Cr_B00 = (uint8_t)cr_b0;
+    pg->Cr_B00_ = (uint8_t)((cr_b0 >> 8) & 0xF);
+    pg->Cb_R01 = (uint8_t)(cb_r1 & 0xF);
+    pg->Cb_R01_ = (uint8_t)(cb_r1 >> 4);
+    pg->Y_G01 = (uint8_t)y_g1;
+    pg->Y_G01_ = (uint8_t)((y_g1 >> 8) & 0xF);
+    pg->Cr_B01 = (uint8_t)(cr_b1 & 0xF);
+    pg->Cr_B01_ = (uint8_t)(cr_b1 >> 4);
 
     pg++;
   }
@@ -2926,12 +2933,12 @@ int st20_rfc4175_444le12_to_444p12le(struct st20_rfc4175_444_12_pg2_le* pg, uint
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb_r0 = pg->Cb_R00 + (pg->Cb_R00_ << 8);
-    y_g0 = pg->Y_G00 + (pg->Y_G00_ << 4);
-    cr_b0 = pg->Cr_B00 + (pg->Cr_B00_ << 8);
-    cb_r1 = pg->Cb_R01 + (pg->Cb_R01_ << 4);
-    y_g1 = pg->Y_G01 + (pg->Y_G01_ << 8);
-    cr_b1 = pg->Cr_B01 + (pg->Cr_B01_ << 4);
+    cb_r0 = (uint16_t)(pg->Cb_R00 + (pg->Cb_R00_ << 8));
+    y_g0 = (uint16_t)(pg->Y_G00 + (pg->Y_G00_ << 4));
+    cr_b0 = (uint16_t)(pg->Cr_B00 + (pg->Cr_B00_ << 8));
+    cb_r1 = (uint16_t)(pg->Cb_R01 + (pg->Cb_R01_ << 4));
+    y_g1 = (uint16_t)(pg->Y_G01 + (pg->Y_G01_ << 8));
+    cr_b1 = (uint16_t)(pg->Cr_B01 + (pg->Cr_B01_ << 4));
 
     *b_r++ = cb_r0;
     *y_g++ = y_g0;
@@ -2952,25 +2959,25 @@ int st20_rfc4175_444be12_to_444le12_scalar(struct st20_rfc4175_444_12_pg2_be* pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb_r0 = (pg_be->Cb_R00 << 4) + pg_be->Cb_R00_;
-    y_g0 = (pg_be->Y_G00 << 8) + pg_be->Y_G00_;
-    cr_b0 = (pg_be->Cr_B00 << 4) + pg_be->Cr_B00_;
-    cb_r1 = (pg_be->Cb_R01 << 8) + pg_be->Cb_R01_;
-    y_g1 = (pg_be->Y_G01 << 4) + pg_be->Y_G01_;
-    cr_b1 = (pg_be->Cr_B01 << 8) + pg_be->Cr_B01_;
+    cb_r0 = (uint16_t)((pg_be->Cb_R00 << 4) + pg_be->Cb_R00_);
+    y_g0 = (uint16_t)((pg_be->Y_G00 << 8) + pg_be->Y_G00_);
+    cr_b0 = (uint16_t)((pg_be->Cr_B00 << 4) + pg_be->Cr_B00_);
+    cb_r1 = (uint16_t)((pg_be->Cb_R01 << 8) + pg_be->Cb_R01_);
+    y_g1 = (uint16_t)((pg_be->Y_G01 << 4) + pg_be->Y_G01_);
+    cr_b1 = (uint16_t)((pg_be->Cr_B01 << 8) + pg_be->Cr_B01_);
 
-    pg_le->Cb_R00 = cb_r0;
-    pg_le->Cb_R00_ = cb_r0 >> 8;
-    pg_le->Y_G00 = y_g0;
-    pg_le->Y_G00_ = y_g0 >> 4;
-    pg_le->Cr_B00 = cr_b0;
-    pg_le->Cr_B00_ = cr_b0 >> 8;
-    pg_le->Cb_R01 = cb_r1;
-    pg_le->Cb_R01_ = cb_r1 >> 4;
-    pg_le->Y_G01 = y_g1;
-    pg_le->Y_G01_ = y_g1 >> 8;
-    pg_le->Cr_B01 = cr_b1;
-    pg_le->Cr_B01_ = cr_b1 >> 4;
+    pg_le->Cb_R00 = (uint8_t)cb_r0;
+    pg_le->Cb_R00_ = (uint8_t)((cb_r0 >> 8) & 0xF);
+    pg_le->Y_G00 = (uint8_t)(y_g0 & 0xF);
+    pg_le->Y_G00_ = (uint8_t)(y_g0 >> 4);
+    pg_le->Cr_B00 = (uint8_t)cr_b0;
+    pg_le->Cr_B00_ = (uint8_t)((cr_b0 >> 8) & 0xF);
+    pg_le->Cb_R01 = (uint8_t)(cb_r1 & 0xF);
+    pg_le->Cb_R01_ = (uint8_t)(cb_r1 >> 4);
+    pg_le->Y_G01 = (uint8_t)y_g1;
+    pg_le->Y_G01_ = (uint8_t)((y_g1 >> 8) & 0xF);
+    pg_le->Cr_B01 = (uint8_t)(cr_b1 & 0xF);
+    pg_le->Cr_B01_ = (uint8_t)(cr_b1 >> 4);
 
     pg_be++;
     pg_le++;
@@ -2995,25 +3002,25 @@ int st20_rfc4175_444le12_to_444be12_scalar(struct st20_rfc4175_444_12_pg2_le* pg
   uint16_t cb_r0, y_g0, cr_b0, cb_r1, y_g1, cr_b1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb_r0 = pg_le->Cb_R00 + (pg_le->Cb_R00_ << 8);
-    y_g0 = pg_le->Y_G00 + (pg_le->Y_G00_ << 4);
-    cr_b0 = pg_le->Cr_B00 + (pg_le->Cr_B00_ << 8);
-    cb_r1 = pg_le->Cb_R01 + (pg_le->Cb_R01_ << 4);
-    y_g1 = pg_le->Y_G01 + (pg_le->Y_G01_ << 8);
-    cr_b1 = pg_le->Cr_B01 + (pg_le->Cr_B01_ << 4);
+    cb_r0 = (uint16_t)(pg_le->Cb_R00 + (pg_le->Cb_R00_ << 8));
+    y_g0 = (uint16_t)(pg_le->Y_G00 + (pg_le->Y_G00_ << 4));
+    cr_b0 = (uint16_t)(pg_le->Cr_B00 + (pg_le->Cr_B00_ << 8));
+    cb_r1 = (uint16_t)(pg_le->Cb_R01 + (pg_le->Cb_R01_ << 4));
+    y_g1 = (uint16_t)(pg_le->Y_G01 + (pg_le->Y_G01_ << 8));
+    cr_b1 = (uint16_t)(pg_le->Cr_B01 + (pg_le->Cr_B01_ << 4));
 
-    pg_be->Cb_R00 = cb_r0 >> 4;
-    pg_be->Cb_R00_ = cb_r0;
-    pg_be->Y_G00 = y_g0 >> 8;
-    pg_be->Y_G00_ = y_g0;
-    pg_be->Cr_B00 = cr_b0 >> 4;
-    pg_be->Cr_B00_ = cr_b0;
-    pg_be->Cb_R01 = cb_r1 >> 8;
-    pg_be->Cb_R01_ = cb_r1;
-    pg_be->Y_G01 = y_g1 >> 4;
-    pg_be->Y_G01_ = y_g1;
-    pg_be->Cr_B01 = cr_b1 >> 8;
-    pg_be->Cr_B01_ = cr_b1;
+    pg_be->Cb_R00 = (uint8_t)(cb_r0 >> 4);
+    pg_be->Cb_R00_ = (uint8_t)(cb_r0 & 0xF);
+    pg_be->Y_G00 = (uint8_t)((y_g0 >> 8) & 0xF);
+    pg_be->Y_G00_ = (uint8_t)y_g0;
+    pg_be->Cr_B00 = (uint8_t)(cr_b0 >> 4);
+    pg_be->Cr_B00_ = (uint8_t)(cr_b0 & 0xF);
+    pg_be->Cb_R01 = (uint8_t)((cb_r1 >> 8) & 0xF);
+    pg_be->Cb_R01_ = (uint8_t)cb_r1;
+    pg_be->Y_G01 = (uint8_t)(y_g1 >> 4);
+    pg_be->Y_G01_ = (uint8_t)(y_g1 & 0xF);
+    pg_be->Cr_B01 = (uint8_t)((cr_b1 >> 8) & 0xF);
+    pg_be->Cr_B01_ = (uint8_t)cr_b1;
 
     pg_be++;
     pg_le++;
@@ -3055,11 +3062,11 @@ int st31_am824_to_aes3(struct st31_am824* sf_am824, struct st31_aes3* sf_aes3,
     sf_aes3->v = sf_am824->v;
 
     /* copy audio data */
-    sf_aes3->data_0 = sf_am824->data[0];
-    sf_aes3->data_1 = ((uint16_t)sf_am824->data[0] >> 4) |
-                      ((uint16_t)sf_am824->data[1] << 4) |
-                      ((uint16_t)sf_am824->data[2] << 12);
-    sf_aes3->data_2 = sf_am824->data[2] >> 4;
+    sf_aes3->data_0 = (uint8_t)(sf_am824->data[0] & 0xF);
+    sf_aes3->data_1 = (uint16_t)(((uint16_t)sf_am824->data[0] >> 4) |
+                                 ((uint16_t)sf_am824->data[1] << 4) |
+                                 ((uint16_t)sf_am824->data[2] << 12));
+    sf_aes3->data_2 = (sf_am824->data[2] >> 4) & 0xFu;
 
     sf_aes3++;
     sf_am824++;
@@ -3098,9 +3105,10 @@ int st31_aes3_to_am824(struct st31_aes3* sf_aes3, struct st31_am824* sf_am824,
     sf_am824->v = sf_aes3->v;
 
     /* copy audio data */
-    sf_am824->data[0] = sf_aes3->data_0 | (sf_aes3->data_1 << 4);
-    sf_am824->data[1] = sf_aes3->data_1 >> 4;
-    sf_am824->data[2] = (sf_aes3->data_2 << 4) | ((uint16_t)sf_aes3->data_1 >> 12);
+    sf_am824->data[0] = (uint8_t)(sf_aes3->data_0 | (sf_aes3->data_1 << 4));
+    sf_am824->data[1] = (uint8_t)(sf_aes3->data_1 >> 4);
+    sf_am824->data[2] =
+        (uint8_t)((sf_aes3->data_2 << 4) | ((uint16_t)sf_aes3->data_1 >> 12));
 
     sf_aes3++;
     sf_am824++;

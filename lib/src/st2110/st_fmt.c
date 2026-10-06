@@ -615,12 +615,12 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
 int st_frame_sanity_check(struct st_frame* frame) {
   RTE_BUILD_BUG_ON(ST_FRAME_FMT_MAX > 64);
 
-  int planes = st_frame_fmt_planes(frame->fmt);
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
   if (planes == 0) {
     err("%s, invalid frame fmt %d\n", __func__, frame->fmt);
     return -EINVAL;
   }
-  for (int plane = 0; plane < planes; plane++) {
+  for (uint8_t plane = 0; plane < planes; plane++) {
     /* check memory address */
     if (!frame->addr[plane]) {
       err("%s, invalid frame addr[%d]\n", __func__, plane);
@@ -745,7 +745,7 @@ int st_frame_period_ns(enum st_fps fps, uint64_t* period_ns) {
   /* NS_PER_S is an int macro, so cast before multiplying: NS_PER_S * den
    * overflows int for the four 1001-denominator rates. Multiply before
    * dividing, or den / mul truncates to zero. */
-  *period_ns = (uint64_t)NS_PER_S * fps_tm.den / fps_tm.mul;
+  *period_ns = (uint64_t)NS_PER_S * (uint64_t)fps_tm.den / (uint64_t)fps_tm.mul;
   return 0;
 }
 
@@ -1050,12 +1050,12 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   if (ret < 0) return ret;
 
   double reactive = 1080.0 / 1125.0;
-  traffic =
-      (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
+  traffic = (double)((uint64_t)width * (uint64_t)height * 8 * pg.size / pg.coverage *
+                     (uint64_t)fps_tm.mul / (uint64_t)fps_tm.den);
   if (interlaced) traffic /= 2;
   traffic = traffic / reactive;
 
-  *bps = traffic;
+  *bps = (uint64_t)traffic;
   return 0;
 }
 
@@ -1070,8 +1070,8 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   if (ret < 0) return ret;
 
   double reactive = 1080.0 / 1125.0;
-  *bps = (uint64_t)total_pkts * pkt_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / reactive;
+  *bps = (uint64_t)total_pkts * pkt_size * (uint64_t)fps_tm.mul / (uint64_t)fps_tm.den;
+  *bps = (uint64_t)((double)*bps / reactive);
   return 0;
 }
 
@@ -1085,8 +1085,8 @@ int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) 
   if (ret < 0) return ret;
 
   double reactive = 1080.0 / 1125.0;
-  *bps = frame_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / reactive;
+  *bps = frame_size * (size_t)fps_tm.mul / (size_t)fps_tm.den;
+  *bps = (uint64_t)((double)*bps / reactive);
   return 0;
 }
 
@@ -1268,15 +1268,15 @@ int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
   int pkt_per_frame = 1;
   int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
   double pkt_time = st30_get_packet_time(ptime);
-  double frame_time = desired_frame_time_ns;
+  double frame_time = (double)desired_frame_time_ns;
   /* set frame time to desired frame time */
   if (pkt_time < frame_time) {
-    pkt_per_frame = frame_time / pkt_time;
+    pkt_per_frame = (int)(frame_time / pkt_time);
   }
   if (fps) {
     *fps = (double)NS_PER_S / pkt_time / pkt_per_frame;
   }
-  uint32_t framebuff_size = pkt_per_frame * pkt_len;
+  int framebuff_size = pkt_per_frame * pkt_len;
   return framebuff_size;
 }
 

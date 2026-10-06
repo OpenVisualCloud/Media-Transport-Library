@@ -58,7 +58,7 @@ int st20_rfc4175_422be10_to_422le10_avx2(struct st20_rfc4175_422_10_pg2_be* pg_b
   __m128i shuffle_l1 = _mm_loadu_si128((__m128i*)rfc4175_b2l_shuffle_l1_tbl);
   __m128i shuffle_r1 = _mm_loadu_si128((__m128i*)rfc4175_b2l_shuffle_r1_tbl);
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   int batch = pg_cnt / 3;
   int left = pg_cnt % 3;
   dbg("%s, pg_cnt %d batch %d left %d\n", __func__, pg_cnt, batch, left);
@@ -88,19 +88,19 @@ int st20_rfc4175_422be10_to_422le10_avx2(struct st20_rfc4175_422_10_pg2_be* pg_b
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
-    y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
-    cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
-    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+    cb = (uint16_t)((pg_be->Cb00 << 2) + pg_be->Cb00_);
+    y0 = (uint16_t)((pg_be->Y00 << 4) + pg_be->Y00_);
+    cr = (uint16_t)((pg_be->Cr00 << 6) + pg_be->Cr00_);
+    y1 = (uint16_t)((pg_be->Y01 << 8) + pg_be->Y01_);
 
-    pg_le->Cb00 = cb;
-    pg_le->Cb00_ = cb >> 8;
-    pg_le->Y00 = y0;
-    pg_le->Y00_ = y0 >> 6;
-    pg_le->Cr00 = cr;
-    pg_le->Cr00_ = cr >> 4;
-    pg_le->Y01 = y1;
-    pg_le->Y01_ = y1 >> 2;
+    pg_le->Cb00 = (uint8_t)cb;
+    pg_le->Cb00_ = (uint8_t)((cb >> 8) & 0x3);
+    pg_le->Y00 = (uint8_t)(y0 & 0x3F);
+    pg_le->Y00_ = (uint8_t)((y0 >> 6) & 0xF);
+    pg_le->Cr00 = (uint8_t)(cr & 0xF);
+    pg_le->Cr00_ = (uint8_t)((cr >> 4) & 0x3F);
+    pg_le->Y01 = (uint8_t)(y1 & 0x3);
+    pg_le->Y01_ = (uint8_t)(y1 >> 2);
     pg_be++;
     pg_le++;
     left--;
@@ -163,7 +163,7 @@ int st20_rfc4175_422le10_to_422be10_avx2(struct st20_rfc4175_422_10_pg2_le* pg_l
   __m128i shuffle_l1 = _mm_loadu_si128((__m128i*)rfc4175_l2b_shuffle_l1_tbl);
   __m128i shuffle_r1 = _mm_loadu_si128((__m128i*)rfc4175_l2b_shuffle_r1_tbl);
 
-  int pg_cnt = w * h / 2;
+  int pg_cnt = (int)(w * h / 2);
   int batch = pg_cnt / 3;
   int left = pg_cnt % 3;
   dbg("%s, pg_cnt %d batch %d left %d\n", __func__, pg_cnt, batch, left);
@@ -193,19 +193,19 @@ int st20_rfc4175_422le10_to_422be10_avx2(struct st20_rfc4175_422_10_pg2_le* pg_l
   while (left) {
     uint16_t cb, y0, cr, y1;
 
-    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
-    y0 = pg_le->Y00 + (pg_le->Y00_ << 6);
-    cr = pg_le->Cr00 + (pg_le->Cr00_ << 4);
-    y1 = pg_le->Y01 + (pg_le->Y01_ << 2);
+    cb = (uint16_t)(pg_le->Cb00 + (pg_le->Cb00_ << 8));
+    y0 = (uint16_t)(pg_le->Y00 + (pg_le->Y00_ << 6));
+    cr = (uint16_t)(pg_le->Cr00 + (pg_le->Cr00_ << 4));
+    y1 = (uint16_t)(pg_le->Y01 + (pg_le->Y01_ << 2));
 
-    pg_be->Cb00 = cb >> 2;
-    pg_be->Cb00_ = cb;
-    pg_be->Y00 = y0 >> 4;
-    pg_be->Y00_ = y0;
-    pg_be->Cr00 = cr >> 6;
-    pg_be->Cr00_ = cr;
-    pg_be->Y01 = y1 >> 8;
-    pg_be->Y01_ = y1;
+    pg_be->Cb00 = (uint8_t)(cb >> 2);
+    pg_be->Cb00_ = (uint8_t)(cb & 0x3);
+    pg_be->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    pg_be->Y00_ = (uint8_t)(y0 & 0xF);
+    pg_be->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    pg_be->Cr00_ = (uint8_t)(cr & 0x3F);
+    pg_be->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    pg_be->Y01_ = (uint8_t)y1;
 
     pg_be++;
     pg_le++;
