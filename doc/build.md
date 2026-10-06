@@ -314,5 +314,20 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 [The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
 
+### 4.5. Compiler hardening
+
+The Linux build compiles the shipped MTL components with the hardening options below. The `meson.build` of each MTL component sets them.
+
+| Option | Protection |
+| --- | --- |
+| `-fstack-protector-strong` | Stack buffer overflow canary |
+| `-fstack-clash-protection` | Stack clash |
+| `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
+| `-D_FORTIFY_SOURCE=2` | Buffer overflow checks in libc calls. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
+| `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
+| `-Wl,-z,noexecstack` | Non-executable stack |
+| `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
