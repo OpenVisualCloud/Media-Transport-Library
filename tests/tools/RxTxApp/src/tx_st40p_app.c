@@ -15,34 +15,33 @@
 #define ST40P_APP_MAX_UDW_SIZE 255
 
 static void app_tx_st40p_fill_meta(struct st_app_tx_st40p_session* s,
-                                   struct st40_frame_info* frame_info,
-                                   uint32_t udw_size) {
+                                   struct st40_frame_info* frame_info, size_t udw_size) {
   struct st40_meta* meta = frame_info->meta;
 
   meta[0].c = 0;
-  meta[0].line_number = 10 + (s->fb_send % 100);
+  meta[0].line_number = (uint16_t)(10 + (s->fb_send % 100));
   meta[0].hori_offset = 0;
   meta[0].s = 0;
   meta[0].stream_num = 0;
   meta[0].did = 0x43;
   meta[0].sdid = 0x02;
-  meta[0].udw_size = udw_size;
+  meta[0].udw_size = (uint16_t)udw_size;
   meta[0].udw_offset = 0;
   frame_info->meta_num = 1;
-  frame_info->udw_buffer_fill = udw_size;
+  frame_info->udw_buffer_fill = (uint32_t)udw_size;
 }
 
 static void app_tx_st40p_fill_payload(struct st_app_tx_st40p_session* s,
                                       struct st40_frame_info* frame_info) {
-  uint32_t chunk = frame_info->udw_buffer_size;
+  size_t chunk = frame_info->udw_buffer_size;
   if (s->udw_payload_limit && chunk > s->udw_payload_limit) chunk = s->udw_payload_limit;
   if (chunk > ST40P_APP_MAX_UDW_SIZE) chunk = ST40P_APP_MAX_UDW_SIZE;
 
   if (s->st40p_source_begin) {
-    size_t remaining = s->st40p_source_end - s->st40p_frame_cursor;
+    size_t remaining = (size_t)(s->st40p_source_end - s->st40p_frame_cursor);
     if (!remaining) {
       s->st40p_frame_cursor = s->st40p_source_begin;
-      remaining = s->st40p_source_end - s->st40p_frame_cursor;
+      remaining = (size_t)(s->st40p_source_end - s->st40p_frame_cursor);
     }
     if (remaining < chunk) chunk = remaining;
     mtl_memcpy(frame_info->udw_buff_addr, s->st40p_frame_cursor, chunk);
@@ -50,8 +49,8 @@ static void app_tx_st40p_fill_payload(struct st_app_tx_st40p_session* s,
     if (s->st40p_frame_cursor >= s->st40p_source_end)
       s->st40p_frame_cursor = s->st40p_source_begin;
   } else {
-    for (uint32_t i = 0; i < chunk; i++) {
-      frame_info->udw_buff_addr[i] = (uint8_t)((s->fb_send + i) & 0xff);
+    for (size_t i = 0; i < chunk; i++) {
+      frame_info->udw_buff_addr[i] = (uint8_t)(((uint32_t)s->fb_send + i) & 0xff);
     }
   }
 
@@ -85,26 +84,26 @@ static int app_tx_st40p_open_source(struct st_app_tx_st40p_session* s) {
     return 0;
   }
 
-  mapped = mmap(NULL, stat_info.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  mapped = mmap(NULL, (size_t)stat_info.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == mapped) {
     err("%s(%d), mmap %s fail\n", __func__, s->idx, file);
     close(fd);
     return -EIO;
   }
 
-  s->st40p_source_begin = mtl_hp_zmalloc(s->st, stat_info.st_size, MTL_PORT_P);
+  s->st40p_source_begin = mtl_hp_zmalloc(s->st, (size_t)stat_info.st_size, MTL_PORT_P);
   if (!s->st40p_source_begin) {
     err("%s(%d), source malloc on hugepage fail\n", __func__, s->idx);
-    munmap(mapped, stat_info.st_size);
+    munmap(mapped, (size_t)stat_info.st_size);
     close(fd);
     return -ENOMEM;
   }
 
-  mtl_memcpy(s->st40p_source_begin, mapped, stat_info.st_size);
+  mtl_memcpy(s->st40p_source_begin, mapped, (size_t)stat_info.st_size);
   s->st40p_source_end = s->st40p_source_begin + stat_info.st_size;
   s->st40p_frame_cursor = s->st40p_source_begin;
 
-  munmap(mapped, stat_info.st_size);
+  munmap(mapped, (size_t)stat_info.st_size);
   close(fd);
 
   info("%s(%d), loaded %s (%" PRIu64 " bytes) into hugepage buffer\n", __func__, s->idx,
@@ -228,7 +227,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   snprintf(name, sizeof(name), "app_tx_st40p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = st40p ? st40p->base.num_inf : ctx->para.num_ports;
+  ops.port.num_port = (uint8_t)(st40p ? st40p->base.num_inf : ctx->para.num_ports);
 
   memcpy(ops.port.dip_addr[MTL_SESSION_PORT_P],
          st40p ? st_json_ip(ctx, &st40p->base, MTL_SESSION_PORT_P)
@@ -238,7 +237,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st40p ? st40p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.port.udp_port[MTL_SESSION_PORT_P] =
-      st40p ? st40p->base.udp_port : (12000 + idx * 2);
+      (uint16_t)(st40p ? st40p->base.udp_port : (12000 + idx * 2));
 
   if (ops.port.num_port > 1) {
     memcpy(ops.port.dip_addr[MTL_SESSION_PORT_R],
@@ -249,7 +248,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st40p ? st40p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
-        st40p ? st40p->base.udp_port : (12000 + idx * 2);
+        (uint16_t)(st40p ? st40p->base.udp_port : (12000 + idx * 2));
   }
 
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
@@ -267,12 +266,12 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
       st40p ? st40p->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.fps = st40p ? st40p->info.fps : ST_FPS_P59_94;
   ops.interlaced = st40p ? st40p->info.interlaced : false;
-  ops.framebuff_cnt = s->framebuff_cnt;
+  ops.framebuff_cnt = (uint16_t)s->framebuff_cnt;
   ops.max_udw_buff_size = ST40P_APP_MAX_UDW_SIZE;
   ops.flags |= ST40P_TX_FLAG_BLOCK_GET;
 
   s->expect_fps = st_frame_rate(ops.fps);
-  s->frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
+  s->frame_time = (s->expect_fps != 0) ? (NS_PER_S / s->expect_fps) : 0;
 
   /* enable user pacing when requested */
   if ((st40p && st40p->user_pacing) || ctx->tx_ts_epoch || ctx->tx_exact_user_pacing) {
@@ -318,7 +317,7 @@ int st_app_tx_st40p_sessions_init(struct st_app_context* ctx) {
   if (!ctx->tx_st40p_session_cnt) return 0;
 
   ctx->tx_st40p_sessions = (struct st_app_tx_st40p_session*)st_app_zmalloc(
-      sizeof(struct st_app_tx_st40p_session) * ctx->tx_st40p_session_cnt);
+      sizeof(struct st_app_tx_st40p_session) * (size_t)ctx->tx_st40p_session_cnt);
   if (!ctx->tx_st40p_sessions) return -ENOMEM;
 
   for (int i = 0; i < ctx->tx_st40p_session_cnt; i++) {

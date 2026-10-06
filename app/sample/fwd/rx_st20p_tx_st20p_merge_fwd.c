@@ -114,8 +114,8 @@ loop_entry:
         /* copy frame */
         uint8_t* src = rx_frame->addr[0];
         uint8_t* dst = frame->addr[0] + rx->fb_offset;
-        uint32_t src_linesize = rx_frame->linesize[0];
-        uint32_t dst_linesize = frame->linesize[0];
+        size_t src_linesize = rx_frame->linesize[0];
+        size_t dst_linesize = frame->linesize[0];
         for (uint32_t line = 0; line < rx_frame->height; line++) {
           mtl_memcpy(dst, src, src_linesize);
           src += src_linesize;
@@ -162,7 +162,7 @@ static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx* app) {
 }
 
 int main(int argc, char** argv) {
-  int session_num = 4;
+  uint16_t session_num = 4;
   struct st_sample_context ctx;
   int ret;
 
@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width / 2;
     ops_rx.height = ctx.height / 2;

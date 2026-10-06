@@ -23,7 +23,7 @@ static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
@@ -72,9 +72,9 @@ static int app_tx_anc_rtp_done(void* priv) {
 
 static void app_tx_anc_build_frame(struct st_app_tx_anc_session* s,
                                    struct st40_frame* dst) {
-  uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
-                          ? 255
-                          : s->st40_source_end - s->st40_frame_cursor;
+  uint16_t udw_size = (uint16_t)(s->st40_source_end - s->st40_frame_cursor > 255
+                                     ? 255
+                                     : s->st40_source_end - s->st40_frame_cursor);
   dst->meta[0].c = 0;
   dst->meta[0].line_number = 10;
   dst->meta[0].hori_offset = 0;
@@ -167,7 +167,7 @@ static void* app_tx_anc_pcap_thread(void* arg) {
         if (ip_hdr->ip_p == IPPROTO_UDP) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-          udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
+          udp_data_len = (uint16_t)(ntohs(udp_hdr->len) - sizeof(struct udphdr));
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
                          sizeof(struct udphdr),
@@ -199,20 +199,20 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
 
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-  uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
-                          ? 255
-                          : s->st40_source_end - s->st40_frame_cursor;
+  uint16_t udw_size = (uint16_t)(s->st40_source_end - s->st40_frame_cursor > 255
+                                     ? 255
+                                     : s->st40_source_end - s->st40_frame_cursor);
   uint16_t check_sum, payload_len;
   hdr->base.marker = 1;
   hdr->first_hdr_chunk.anc_count = 1;
-  hdr->base.payload_type = s->st40_payload_type;
+  hdr->base.payload_type = (uint8_t)(s->st40_payload_type & 0x7F);
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
   hdr->base.csrc_count = 0;
   hdr->first_hdr_chunk.f = 0b00;
   hdr->base.tmstamp = s->st40_rtp_tmstamp;
-  hdr->base.ssrc = htonl(0x88888888 + s->idx);
+  hdr->base.ssrc = htonl(0x88888888 + (uint32_t)s->idx);
   /* update rtp seq*/
   hdr->base.seq_number = htons((uint16_t)s->st40_seq_id);
   hdr->seq_number_ext = htons((uint16_t)(s->st40_seq_id >> 16));
@@ -223,17 +223,18 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   payload_hdr->first_hdr_chunk.horizontal_offset = 0;
   payload_hdr->first_hdr_chunk.s = 0;
   payload_hdr->first_hdr_chunk.stream_num = 0;
-  payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
-  payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
-  payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+  payload_hdr->second_hdr_chunk.did = (uint16_t)(st40_add_parity_bits(0x43) & 0x3FF);
+  payload_hdr->second_hdr_chunk.sdid = (uint16_t)(st40_add_parity_bits(0x02) & 0x3FF);
+  payload_hdr->second_hdr_chunk.data_count =
+      (uint16_t)(st40_add_parity_bits(udw_size) & 0x3FF);
   st40_rfc8331_payload_hdr_bswap(payload_hdr);
-  for (int i = 0; i < udw_size; i++) {
-    st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
+  for (uint16_t i = 0; i < udw_size; i++) {
+    st40_set_udw(i + 3u, st40_add_parity_bits(s->st40_frame_cursor[i]),
                  (uint8_t*)&payload_hdr->second_hdr_chunk);
   }
-  check_sum = st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  payload_len = st40_rfc8331_payload_bytes(udw_size);  // Full size of one ANC
+  check_sum = st40_calc_checksum(3u + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
+  st40_set_udw(udw_size + 3u, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
+  payload_len = (uint16_t)st40_rfc8331_payload_bytes(udw_size);  // Full size of one ANC
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
 
@@ -290,7 +291,8 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
         return -EIO;
       }
 
-      uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
+      uint8_t* m =
+          mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
 
       if (MAP_FAILED != m) {
         s->st40_source_begin = m;
@@ -322,7 +324,7 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
 
 static int app_tx_anc_close_source(struct st_app_tx_anc_session* s) {
   if (s->st40_source_fd >= 0) {
-    munmap(s->st40_source_begin, s->st40_source_end - s->st40_source_begin);
+    munmap(s->st40_source_begin, (size_t)(s->st40_source_end - s->st40_source_begin));
     close(s->st40_source_fd);
     s->st40_source_fd = -1;
   }
@@ -420,14 +422,15 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   snprintf(name, 32, "app_tx_ancillary%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(anc ? anc->base.num_inf : ctx->para.num_ports);
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
          anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
              : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(anc ? anc->base.udp_port : (10200 + s->idx));
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -440,7 +443,8 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(anc ? anc->base.udp_port : (10200 + s->idx));
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);
@@ -468,7 +472,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   if (ops.type == ST40_TYPE_RTP_LEVEL) {
     s->st40_rtp_input = true;
     if (ctx->tx_anc_rtp_ring_size > 0)
-      ops.rtp_ring_size = ctx->tx_anc_rtp_ring_size;
+      ops.rtp_ring_size = (uint32_t)ctx->tx_anc_rtp_ring_size;
     else
       ops.rtp_ring_size = 16;
   }
@@ -520,7 +524,7 @@ int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
   int ret;
   struct st_app_tx_anc_session* s;
   ctx->tx_anc_sessions = (struct st_app_tx_anc_session*)st_app_zmalloc(
-      sizeof(struct st_app_tx_anc_session) * ctx->tx_anc_session_cnt);
+      sizeof(struct st_app_tx_anc_session) * (size_t)ctx->tx_anc_session_cnt);
   if (!ctx->tx_anc_sessions) return -ENOMEM;
 
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {

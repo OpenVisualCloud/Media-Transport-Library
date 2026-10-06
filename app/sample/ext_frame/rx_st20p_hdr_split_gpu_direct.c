@@ -30,12 +30,12 @@ struct rx_st20p_hg_ctx {
   uint8_t* dst_end;
   uint8_t* dst_cursor;
 
-  int fb_cnt;
+  uint16_t fb_cnt;
   size_t pg_sz;
 
   struct st_ext_frame gddr_frame;
   bool use_cpu_copy;
-  off_t cpu_copy_offset;
+  size_t cpu_copy_offset;
 };
 
 static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
@@ -62,7 +62,7 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
   }
   end = clock();
   sec = (float)(end - start) / CLOCKS_PER_SEC;
-  throughput_bit = (float)r_sz * 8 * loop_cnt;
+  throughput_bit = (float)r_sz * 8 * (float)loop_cnt;
   info("%s, read throughput: %f Mbps, time %fs\n", __func__,
        throughput_bit / sec / 1000 / 1000, sec);
 
@@ -77,7 +77,7 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
   }
   end = clock();
   sec = (float)(end - start) / CLOCKS_PER_SEC;
-  throughput_bit = (float)frame->size * 8 * loop_cnt;
+  throughput_bit = (float)frame->size * 8 * (float)loop_cnt;
   info("%s, write throughput: %f Mbps, time %fs\n", __func__,
        throughput_bit / sec / 1000 / 1000, sec);
   return 0;
@@ -95,7 +95,7 @@ static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, s
 
   mtl_iova_t iova;
   if (mtl_iova_mode_get(ctx->st) == MTL_IOVA_MODE_PA) {
-    iova = off; /* use PA */
+    iova = (mtl_iova_t)off; /* use PA */
     dbg("%s, iova pa mode\n", __func__);
   } else {
     dbg("%s, iova va mode\n", __func__);
@@ -110,7 +110,7 @@ static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, s
   frame->size = sz;
   frame->addr[0] = map;
   frame->iova[0] = iova;
-  ctx->gddr_offset += sz;
+  ctx->gddr_offset += (off_t)sz;
   return 0;
 }
 
@@ -126,7 +126,7 @@ static int rx_st20p_frame_available(void* priv) {
 
 static int rx_st20p_close_source(struct rx_st20p_hg_ctx* s) {
   if (s->dst_begin) {
-    munmap(s->dst_begin, s->dst_end - s->dst_begin);
+    munmap(s->dst_begin, (size_t)(s->dst_end - s->dst_begin));
     s->dst_begin = NULL;
   }
   if (s->dst_fd >= 0) {
@@ -148,7 +148,7 @@ static int rx_st20p_open_source(struct rx_st20p_hg_ctx* s, const char* file) {
     return -EIO;
   }
 
-  f_size = fb_cnt * s->frame_size;
+  f_size = (off_t)((size_t)fb_cnt * s->frame_size);
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, file);
@@ -156,7 +156,7 @@ static int rx_st20p_open_source(struct rx_st20p_hg_ctx* s, const char* file) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
 
   if (!ctx.use_cpu_copy) {
     /* enable hdr split */
-    ctx.param.nb_rx_hdr_split_queues = ctx.sessions;
+    ctx.param.nb_rx_hdr_split_queues = (uint16_t)ctx.sessions;
   }
 
   /* enable auto start/stop */
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rx_st20p_hg_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
@@ -281,11 +281,12 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     if (ctx.multi_inc_addr) {
       /* use a new ip addr instead of a new udp port for multi sessions */
       ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] + i);
     }
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
@@ -301,7 +302,7 @@ int main(int argc, char** argv) {
     /* map gddr */
     app[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
-    size_t fb_sz = app[i]->frame_size * (app[i]->fb_cnt + 1) + app[i]->pg_sz * 2;
+    size_t fb_sz = app[i]->frame_size * (app[i]->fb_cnt + 1u) + app[i]->pg_sz * 2;
     fb_sz = mtl_size_page_align(fb_sz, app[i]->pg_sz);
     ret = gddr_map(&ctx, &app[i]->gddr_frame, fb_sz, dev_mem_fd);
     if (ret < 0) goto error;

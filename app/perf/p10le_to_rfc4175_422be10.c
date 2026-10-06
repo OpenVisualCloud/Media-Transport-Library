@@ -12,10 +12,11 @@
 
 #include "../sample/sample_util.h"
 
-static void fill_422_planar_le(uint16_t* y, uint16_t* b, uint16_t* r, int w, int h) {
-  int pg_size = w * h / 2;
+static void fill_422_planar_le(uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+                               uint32_t h) {
+  uint32_t pg_size = w * h / 2;
 
-  for (int pg = 0; pg < pg_size; pg++) {
+  for (uint32_t pg = 0; pg < pg_size; pg++) {
     *b++ = (0 + pg * 4) & 0x3FF;
     *y++ = (1 + pg * 4) & 0x3FF;
     *r++ = (2 + pg * 4) & 0x3FF;
@@ -23,8 +24,8 @@ static void fill_422_planar_le(uint16_t* y, uint16_t* b, uint16_t* r, int w, int
   }
 }
 
-static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int frames,
-                                            int fb_cnt) {
+static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, uint32_t w, uint32_t h,
+                                            uint32_t frames, uint32_t fb_cnt) {
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_be =
@@ -45,7 +46,7 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
   uint16_t* p10_u16_b_in;
   uint16_t* p10_u16_r_in;
 
-  for (int i = 0; i < fb_cnt; i++) {
+  for (uint32_t i = 0; i < fb_cnt; i++) {
     p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
     p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
     p10_u16_r_in = p10_u16_r + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_r));
@@ -56,7 +57,7 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
   float duration;
 
   start = clock();
-  for (int i = 0; i < frames; i++) {
+  for (uint32_t i = 0; i < frames; i++) {
     pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
     p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
     p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
@@ -66,12 +67,12 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
   }
   end = clock();
   duration = (float)(end - start) / CLOCKS_PER_SEC;
-  info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
+  info("scalar, time: %f secs with %u frames(%ux%u,%fm@%u buffers)\n", duration, frames,
        w, h, planar_size_m, fb_cnt);
 
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512) {
     start = clock();
-    for (int i = 0; i < frames; i++) {
+    for (uint32_t i = 0; i < frames; i++) {
       pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
       p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
       p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
@@ -81,12 +82,12 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-    info("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+    info("avx512, time: %f secs with %u frames(%ux%u@%u buffers)\n", duration_simd,
          frames, w, h, fb_cnt);
     info("avx512, %fx performance to scalar\n", duration / duration_simd);
     if (dma) {
       start = clock();
-      for (int i = 0; i < frames; i++) {
+      for (uint32_t i = 0; i < frames; i++) {
         pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
         p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
         p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
@@ -100,7 +101,7 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
       }
       end = clock();
       float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-      info("avx512+dma, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+      info("avx512+dma, time: %f secs with %u frames(%ux%u@%u buffers)\n", duration_simd,
            frames, w, h, fb_cnt);
       info("avx512+dma, %fx performance to scalar\n", duration / duration_simd);
     }
@@ -108,7 +109,7 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
 
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
     start = clock();
-    for (int i = 0; i < frames; i++) {
+    for (uint32_t i = 0; i < frames; i++) {
       pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
       p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
       p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
@@ -119,12 +120,12 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
     }
     end = clock();
     float duration_vbmi = (float)(end - start) / CLOCKS_PER_SEC;
-    info("avx512_vbmi, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_vbmi,
+    info("avx512_vbmi, time: %f secs with %u frames(%ux%u@%u buffers)\n", duration_vbmi,
          frames, w, h, fb_cnt);
     info("avx512_vbmi, %fx performance to scalar\n", duration / duration_vbmi);
     if (dma) {
       start = clock();
-      for (int i = 0; i < frames; i++) {
+      for (uint32_t i = 0; i < frames; i++) {
         pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
         p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
         p10_u16_b_in = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
@@ -139,7 +140,7 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
       }
       end = clock();
       float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-      info("avx512_vbmi+dma, time: %f secs with %d frames(%dx%d@%d buffers)\n",
+      info("avx512_vbmi+dma, time: %f secs with %u frames(%ux%u@%u buffers)\n",
            duration_simd, frames, w, h, fb_cnt);
       info("avx512_vbmi+dma, %fx performance to scalar\n", duration / duration_simd);
     }
@@ -155,8 +156,8 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
 static void* perf_thread(void* arg) {
   struct st_sample_context* ctx = arg;
   mtl_handle dev_handle = ctx->st;
-  int frames = ctx->perf_frames;
-  int fb_cnt = ctx->perf_fb_cnt;
+  uint32_t frames = ctx->perf_frames;
+  uint32_t fb_cnt = ctx->perf_fb_cnt;
 
   unsigned int lcore = 0;
   int ret = mtl_get_lcore(dev_handle, &lcore);

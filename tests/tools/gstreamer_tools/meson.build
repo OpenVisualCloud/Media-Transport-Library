@@ -32,7 +32,8 @@ plugin_c_args = cc.get_supported_arguments([
   '-Wno-declaration-after-statement',
   '-Wno-missing-prototypes',
   '-Wno-missing-declarations',
-  '-Wno-stringop-truncation'
+  '-Wno-stringop-truncation',
+  '-Wconversion'
 ])
 
 # enable warning as error for non debug build

@@ -207,7 +207,8 @@ static GstFlowReturn gst_time_inserter_chain(GstPad* pad, GstObject* parent,
       return GST_FLOW_ERROR;
     }
 
-    filter->firstFrameTaiTime = (((guint64)ts.tv_sec) * NS_PER_S + ts.tv_nsec) - pts_time;
+    filter->firstFrameTaiTime =
+        (((guint64)ts.tv_sec) * NS_PER_S + (guint64)ts.tv_nsec) - pts_time;
     GST_INFO("Captured first frame TAI time: %lu, PTS: %ld\n", filter->firstFrameTaiTime,
              pts_time);
   }

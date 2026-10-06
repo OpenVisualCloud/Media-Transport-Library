@@ -96,25 +96,25 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap %s fail\n", __func__, file);
     close(fd);
     return -EIO;
   }
 
-  s->source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
+  s->source_begin = mtl_hp_malloc(s->st, (size_t)i.st_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
-    munmap(m, i.st_size);
+    munmap(m, (size_t)i.st_size);
     close(fd);
     return -EIO;
   }
 
   s->frame_cursor = s->source_begin;
-  mtl_memcpy(s->source_begin, m, i.st_size);
-  s->source_end = s->source_begin + i.st_size;
-  munmap(m, i.st_size);
+  mtl_memcpy(s->source_begin, m, (size_t)i.st_size);
+  s->source_end = s->source_begin + (size_t)i.st_size;
+  munmap(m, (size_t)i.st_size);
   close(fd);
 
   tx_st22p_open_logo(ctx, s, ctx->logo_url);
@@ -168,7 +168,7 @@ static void* tx_st22p_frame_thread(void* arg) {
 }
 
 int main(int argc, char** argv) {
-  int bpp = 3;
+  uint32_t bpp = 3;
   struct st_sample_context ctx;
   int ret;
 
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
     }
     memset(app[i], 0, sizeof(struct tx_st22p_sample_ctx));
     app[i]->st = ctx.st;
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
 
     struct st22p_tx_ops ops_tx;
@@ -210,18 +210,19 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     if (ops_tx.port.num_port > 1) {
       memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
-      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.udp_port + i * 2);
     }
     if (ctx.multi_inc_addr) {
       /* use a new ip addr instead of a new udp port for multi sessions */
       ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] += i;
+      ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] + i);
     }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;

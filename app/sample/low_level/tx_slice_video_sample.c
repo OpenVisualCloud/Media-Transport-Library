@@ -14,7 +14,7 @@ struct tv_slice_sample_ctx {
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
 
-  int framebuff_size;
+  size_t framebuff_size;
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
@@ -41,7 +41,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     ret = -EIO;
@@ -103,17 +103,17 @@ static void tx_video_build_slice(struct tv_slice_sample_ctx* s,
   }
   lines_build += s->lines_per_slice;
   st_pthread_mutex_lock(&s->wake_mutex);
-  framebuff->lines_ready = lines_build;
+  framebuff->lines_ready = (uint16_t)lines_build;
   st_pthread_mutex_unlock(&s->wake_mutex);
 
   while (lines_build < s->height) {
     /* call the real build here, sample just sleep */
-    st_usleep(10 * 1000 / slices);
+    st_usleep((useconds_t)(10 * 1000 / slices));
 
     st_pthread_mutex_lock(&s->wake_mutex);
     lines_build += s->lines_per_slice;
     if (lines_build > s->height) lines_build = s->height;
-    framebuff->lines_ready = lines_build;
+    framebuff->lines_ready = (uint16_t)lines_build;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
 }
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct tv_slice_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;  // udp port
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_SLICE_LEVEL;
     ops_tx.width = ctx.width;
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
     app[i]->stop = false;
 
     app[i]->framebuff_size = st20_tx_get_framebuffer_size(tx_handle[i]);
-    app[i]->height = ops_tx.height;
+    app[i]->height = (int)ops_tx.height;
     app[i]->lines_per_slice = app[i]->height / 30;
     ret = pthread_create(&app[i]->app_thread, NULL, tx_video_slice_thread, app[i]);
     if (ret < 0) {

@@ -24,7 +24,7 @@ struct rx_st20p_sample_ctx {
   mtl_dma_mem_handle dma_mem;
   struct st20_ext_frame* ext_frames;
   int ext_idx;
-  int fb_cnt;
+  uint16_t fb_cnt;
 };
 
 static int rx_st20p_frame_available(void* priv) {
@@ -51,7 +51,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   uint8_t* addr = ext_frame->addr[0];
   enum st_frame_fmt frame_fmt = st_frame_fmt_from_transport(meta->fmt);
   uint8_t planes = st_frame_fmt_planes(frame_fmt);
-  for (int plane = 0; plane < planes; plane++) {
+  for (uint8_t plane = 0; plane < planes; plane++) {
     if (plane > 0)
       ext_frame->iova[plane] =
           ext_frame->iova[plane - 1] + ext_frame->linesize[plane - 1] * meta->height;
@@ -70,7 +70,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
 
 static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
   if (s->dst_begin) {
-    munmap(s->dst_begin, s->dst_end - s->dst_begin);
+    munmap(s->dst_begin, (size_t)(s->dst_end - s->dst_begin));
     s->dst_begin = NULL;
   }
   if (s->dst_fd >= 0) {
@@ -92,7 +92,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  f_size = fb_cnt * s->frame_size;
+  f_size = (off_t)((size_t)fb_cnt * s->frame_size);
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, file);
@@ -100,7 +100,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -191,7 +191,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rx_st20p_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
       }
       app[i]->dma_mem = dma_mem;
 
-      for (int j = 0; j < app[i]->fb_cnt; ++j) {
+      for (uint16_t j = 0; j < app[i]->fb_cnt; ++j) {
         app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;

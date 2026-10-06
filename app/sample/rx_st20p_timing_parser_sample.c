@@ -28,7 +28,7 @@ struct rx_tp_stat {
 
 struct rx_timing_parser_sample_ctx {
   int idx;
-  int fb_cnt;
+  uint16_t fb_cnt;
   st20p_rx_handle handle;
 
   bool stop;
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rx_timing_parser_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     app[i]->fb_cnt = ctx.framebuff_cnt;
     app[i]->num_port = ctx.param.num_ports;
@@ -194,18 +194,19 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     if (ops_rx.port.num_port > 1) {
       memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
-      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.udp_port + i * 2);
     }
     if (ctx.multi_inc_addr) {
       /* use a new ip addr instead of a new udp port for multi sessions */
       ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] + i);
     }
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;

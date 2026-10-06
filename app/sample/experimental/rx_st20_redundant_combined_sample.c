@@ -106,7 +106,7 @@ static void* rx_video_frame_thread(void* arg) {
     framebuff->frame = NULL;
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct st20rc_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
@@ -176,8 +176,8 @@ int main(int argc, char** argv) {
              ctx.param.port[MTL_PORT_P]);
     snprintf(ops_rx.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
-    ops_rx.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
+    ops_rx.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.udp_port + i * 2);
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;

@@ -23,7 +23,7 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
@@ -78,10 +78,10 @@ static void app_tx_audio_build_frame(struct st_app_tx_audio_session* s, void* fr
   if (s->st30_frame_cursor + frame_size > s->st30_source_end) {
     /* reset to the start */
     s->st30_frame_cursor = s->st30_source_begin;
-    mtl_memcpy(dst, s->st30_frame_cursor, s->st30_frame_size);
+    mtl_memcpy(dst, s->st30_frame_cursor, (size_t)s->st30_frame_size);
     s->st30_frame_cursor += s->st30_frame_size;
   } else {
-    mtl_memcpy(dst, src, s->st30_frame_size);
+    mtl_memcpy(dst, src, (size_t)s->st30_frame_size);
     s->st30_frame_cursor += s->st30_frame_size;
   }
 }
@@ -107,10 +107,10 @@ static void* app_tx_audio_frame_thread(void* arg) {
     st_pthread_mutex_unlock(&s->st30_wake_mutex);
 
     void* frame_addr = st30_tx_get_framebuffer(s->handle, producer_idx);
-    app_tx_audio_build_frame(s, frame_addr, s->st30_frame_size);
+    app_tx_audio_build_frame(s, frame_addr, (size_t)s->st30_frame_size);
 
     st_pthread_mutex_lock(&s->st30_wake_mutex);
-    framebuff->size = s->st30_frame_size;
+    framebuff->size = (size_t)s->st30_frame_size;
     framebuff->stat = ST_TX_FRAME_READY;
     /* point to next */
     producer_idx++;
@@ -161,7 +161,7 @@ static void* app_tx_audio_pcap_thread(void* arg) {
         if (ip_hdr->ip_p == IPPROTO_UDP) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-          udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
+          udp_data_len = (uint16_t)(ntohs(udp_hdr->len) - sizeof(struct udphdr));
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
                          sizeof(struct udphdr),
@@ -199,20 +199,20 @@ static void app_tx_audio_build_rtp(struct st_app_tx_audio_session* s, void* usrp
   rtp->version = 2;
   rtp->marker = 0;
   rtp->payload_type = ST_APP_PAYLOAD_TYPE_AUDIO;
-  rtp->ssrc = htonl(0x66666666 + s->idx);
+  rtp->ssrc = htonl(0x66666666 + (uint32_t)s->idx);
   rtp->tmstamp = s->st30_rtp_tmstamp;
   s->st30_rtp_tmstamp++;
   rtp->seq_number = htons(s->st30_seq_id);
   s->st30_seq_id++;
 
   if (s->st30_frame_cursor + s->pkt_len > s->st30_source_end) {
-    mtl_memcpy(payload, s->st30_source_begin, s->pkt_len);
+    mtl_memcpy(payload, s->st30_source_begin, (size_t)s->pkt_len);
     s->st30_frame_cursor = s->st30_source_begin + s->pkt_len;
   } else {
-    mtl_memcpy(payload, s->st30_frame_cursor, s->pkt_len);
+    mtl_memcpy(payload, s->st30_frame_cursor, (size_t)s->pkt_len);
     s->st30_frame_cursor += s->pkt_len;
   }
-  *mbuf_len = sizeof(struct st_rfc3550_rtp_hdr) + s->pkt_len;
+  *mbuf_len = (uint16_t)(sizeof(struct st_rfc3550_rtp_hdr) + (size_t)s->pkt_len);
 }
 
 static void* app_tx_audio_rtp_thread(void* arg) {
@@ -263,7 +263,8 @@ static int app_tx_audio_open_source(struct st_app_tx_audio_session* s) {
         return -EIO;
       }
 
-      uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st30_source_fd, 0);
+      uint8_t* m =
+          mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, s->st30_source_fd, 0);
 
       if (MAP_FAILED != m) {
         s->st30_source_begin = m;
@@ -295,7 +296,7 @@ static int app_tx_audio_open_source(struct st_app_tx_audio_session* s) {
 
 static int app_tx_audio_close_source(struct st_app_tx_audio_session* s) {
   if (s->st30_source_fd >= 0) {
-    munmap(s->st30_source_begin, s->st30_source_end - s->st30_source_begin);
+    munmap(s->st30_source_begin, (size_t)(s->st30_source_end - s->st30_source_begin));
     close(s->st30_source_fd);
     s->st30_source_fd = -1;
   }
@@ -395,7 +396,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   snprintf(name, 32, "app_tx_audio%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(audio ? audio->base.num_inf : ctx->para.num_ports);
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
          audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
                : ctx->tx_dip_addr[MTL_PORT_P],
@@ -403,7 +404,8 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   snprintf(
       ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(audio ? audio->base.udp_port : (10100 + s->idx));
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -412,7 +414,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   if (ctx->tx_audio_build_pacing) ops.flags |= ST30_TX_FLAG_BUILD_PACING;
   if (ctx->tx_audio_dedicate_queue) ops.flags |= ST30_TX_FLAG_DEDICATE_QUEUE;
   ops.pacing_way = ctx->tx_audio_pacing_way;
-  if (ctx->tx_audio_fifo_size) ops.fifo_size = ctx->tx_audio_fifo_size;
+  if (ctx->tx_audio_fifo_size) ops.fifo_size = (uint16_t)ctx->tx_audio_fifo_size;
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
            audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
@@ -421,7 +423,8 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
     snprintf(
         ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         audio ? audio->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(audio ? audio->base.udp_port : (10100 + s->idx));
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);
@@ -433,7 +436,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.notify_rtp_done = app_tx_audio_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fmt = audio ? audio->info.audio_format : ST30_FMT_PCM16;
-  ops.channel = audio ? audio->info.audio_channel : 2;
+  ops.channel = (uint16_t)(audio ? audio->info.audio_channel : 2);
   ops.sampling = audio ? audio->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
   s->sampling = ops.sampling;
@@ -448,11 +451,11 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   double pkt_time = st30_get_packet_time(ops.ptime);
   /* when ptime <= 1ms, set frame time to 1ms */
   if (pkt_time < NS_PER_MS) {
-    pkt_per_frame = NS_PER_MS / pkt_time;
+    pkt_per_frame = (int)(NS_PER_MS / pkt_time);
   }
 
   s->st30_frame_size = pkt_per_frame * s->pkt_len;
-  ops.framebuff_size = s->st30_frame_size;
+  ops.framebuff_size = (uint32_t)s->st30_frame_size;
   ops.payload_type = audio ? audio->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
   s->st30_pcap_input = false;
@@ -468,12 +471,12 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   if (ops.type == ST30_TYPE_RTP_LEVEL) {
     s->st30_rtp_input = true;
     if (ctx->tx_audio_rtp_ring_size > 0)
-      ops.rtp_ring_size = ctx->tx_audio_rtp_ring_size;
+      ops.rtp_ring_size = (uint32_t)ctx->tx_audio_rtp_ring_size;
     else
       ops.rtp_ring_size = 16;
   }
   if (audio && audio->enable_rtcp) ops.flags |= ST30_TX_FLAG_ENABLE_RTCP;
-  ops.rl_accuracy_ns = ctx->tx_audio_rl_accuracy_us * 1000;
+  ops.rl_accuracy_ns = (uint32_t)(ctx->tx_audio_rl_accuracy_us * 1000);
   ops.rl_offset_ns = ctx->tx_audio_rl_offset_us * 1000;
 
   if (ctx->force_tx_audio_numa >= 0) {
@@ -522,7 +525,7 @@ int st_app_tx_audio_sessions_init(struct st_app_context* ctx) {
   int ret;
   struct st_app_tx_audio_session* s;
   ctx->tx_audio_sessions = (struct st_app_tx_audio_session*)st_app_zmalloc(
-      sizeof(struct st_app_tx_audio_session) * ctx->tx_audio_session_cnt);
+      sizeof(struct st_app_tx_audio_session) * (size_t)ctx->tx_audio_session_cnt);
   if (!ctx->tx_audio_sessions) return -ENOMEM;
 
   for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {

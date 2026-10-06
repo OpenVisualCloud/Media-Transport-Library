@@ -6,7 +6,7 @@
 
 static int app_rx_audio_close_dump(struct st_app_rx_audio_session* s) {
   if (s->st30_dump_fd >= 0) {
-    munmap(s->st30_dump_begin, s->st30_dump_end - s->st30_dump_begin);
+    munmap(s->st30_dump_begin, (size_t)(s->st30_dump_end - s->st30_dump_begin));
     close(s->st30_dump_fd);
     s->st30_dump_fd = -1;
   }
@@ -35,7 +35,7 @@ static int app_rx_audio_open_dump(struct st_app_rx_audio_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, s->st30_dump_url);
     close(fd);
@@ -54,7 +54,8 @@ static int app_rx_audio_open_dump(struct st_app_rx_audio_session* s) {
 
 static int app_rx_audio_close_source(struct st_app_rx_audio_session* session) {
   if (session->st30_ref_fd >= 0) {
-    munmap(session->st30_ref_begin, session->st30_ref_end - session->st30_ref_begin);
+    munmap(session->st30_ref_begin,
+           (size_t)(session->st30_ref_end - session->st30_ref_begin));
     close(session->st30_ref_fd);
     session->st30_ref_fd = -1;
   }
@@ -77,7 +78,7 @@ static int app_rx_audio_open_ref(struct st_app_rx_audio_session* session) {
     close(fd);
     return -EIO;
   }
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, session->st30_ref_url);
     close(fd);
@@ -101,7 +102,7 @@ static int app_rx_audio_compare_with_ref(struct st_app_rx_audio_session* session
   uint8_t* old_ref = session->st30_ref_cursor;
 
   while (ret) {
-    ret = memcmp(frame, session->st30_ref_cursor, session->st30_frame_size);
+    ret = memcmp(frame, session->st30_ref_cursor, (size_t)session->st30_frame_size);
     /* calculate new reference frame */
     session->st30_ref_cursor += session->st30_frame_size;
     if ((session->st30_ref_cursor >= session->st30_ref_end) ||
@@ -217,7 +218,7 @@ static int app_rx_audio_frame_ready(void* priv, void* frame,
       s->st30_dump_cursor = s->st30_dump_begin;
     dbg("%s(%d), dst %p src %p size %d\n", __func__, s->idx, s->st30_dump_cursor, frame,
         s->st30_frame_size);
-    mtl_memcpy(s->st30_dump_cursor, frame, s->st30_frame_size);
+    mtl_memcpy(s->st30_dump_cursor, frame, (size_t)s->st30_frame_size);
     s->st30_dump_cursor += s->st30_frame_size;
   }
 
@@ -322,7 +323,7 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   snprintf(name, 32, "app_rx_audio%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(audio ? audio->base.num_inf : ctx->para.num_ports);
   memcpy(ops.ip_addr[MTL_SESSION_PORT_P],
          audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
@@ -334,7 +335,8 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   snprintf(
       ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(audio ? audio->base.udp_port : (10100 + s->idx));
   if (ops.num_port > 1) {
     memcpy(ops.ip_addr[MTL_SESSION_PORT_R],
            audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
@@ -346,14 +348,15 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
         MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(audio ? audio->base.udp_port : (10100 + s->idx));
   }
   ops.notify_frame_ready = app_rx_audio_frame_ready;
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;
   ops.type = audio ? audio->info.type : ST30_TYPE_FRAME_LEVEL;
   ops.fmt = audio ? audio->info.audio_format : ST30_FMT_PCM16;
   ops.payload_type = audio ? audio->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
-  ops.channel = audio ? audio->info.audio_channel : 2;
+  ops.channel = (uint16_t)(audio ? audio->info.audio_channel : 2);
   ops.sampling = audio ? audio->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
   s->pkt_len = st30_get_packet_size(ops.fmt, ops.ptime, ops.sampling, ops.channel);
@@ -367,15 +370,16 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   double pkt_time = st30_get_packet_time(ops.ptime);
   /* when ptime <= 1ms, set frame time to 1ms */
   if (pkt_time < NS_PER_MS) {
-    pkt_per_frame = NS_PER_MS / pkt_time;
+    pkt_per_frame = (int)(NS_PER_MS / pkt_time);
   }
 
   s->st30_frame_size = pkt_per_frame * s->pkt_len;
   s->expect_fps = (double)NS_PER_S / st30_get_packet_time(ops.ptime) / pkt_per_frame;
 
-  ops.framebuff_size = s->st30_frame_size;
-  ops.framebuff_cnt = s->framebuff_cnt;
-  ops.rtp_ring_size = ctx->rx_audio_rtp_ring_size ? ctx->rx_audio_rtp_ring_size : 16;
+  ops.framebuff_size = (uint32_t)s->st30_frame_size;
+  ops.framebuff_cnt = (uint16_t)s->framebuff_cnt;
+  ops.rtp_ring_size =
+      (uint32_t)(ctx->rx_audio_rtp_ring_size ? ctx->rx_audio_rtp_ring_size : 16);
   if (audio && audio->enable_rtcp) ops.flags |= ST30_RX_FLAG_ENABLE_RTCP;
   if (ctx->enable_timing_parser) ops.flags |= ST30_RX_FLAG_TIMING_PARSER_STAT;
   if (ctx->enable_timing_parser_meta) {
@@ -437,7 +441,7 @@ int st_app_rx_audio_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_audio_session* s;
   ctx->rx_audio_sessions = (struct st_app_rx_audio_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_audio_session) * ctx->rx_audio_session_cnt);
+      sizeof(struct st_app_rx_audio_session) * (size_t)ctx->rx_audio_session_cnt);
   if (!ctx->rx_audio_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
     s = &ctx->rx_audio_sessions[i];

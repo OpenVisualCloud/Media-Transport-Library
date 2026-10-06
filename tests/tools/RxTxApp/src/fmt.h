@@ -42,6 +42,7 @@ static const struct user_pgroup user_pgroups[] = {
 
 int user_get_pgroup(enum user_pg_fmt fmt, struct user_pgroup* pg);
 
-void convert_uyvy10b_to_uyvy8b(uint8_t* yuv_8b, uint8_t const* yuv_10b, int pg_count);
+void convert_uyvy10b_to_uyvy8b(uint8_t* yuv_8b, uint8_t const* yuv_10b,
+                               uint32_t pg_count);
 
 #endif

@@ -160,7 +160,7 @@ static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx* app) {
 }
 
 int main(int argc, char** argv) {
-  int session_num = 4;
+  uint16_t session_num = 4;
   struct st_sample_context ctx;
   int ret;
 
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;

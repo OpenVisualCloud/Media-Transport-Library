@@ -22,7 +22,7 @@ static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     ret = -EIO;
@@ -62,7 +62,7 @@ static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestr
                                     size_t max_codestream_size, size_t* codestream_size) {
   uint8_t* src = s->st22_frame_cursor;
   uint8_t* dst = codestream_addr;
-  int framesize = s->bytes_per_frame;
+  size_t framesize = s->bytes_per_frame;
   MTL_MAY_UNUSED(max_codestream_size);
 
   if (s->st22_frame_cursor + framesize > s->st22_source_end) {
@@ -147,7 +147,7 @@ static int app_tx_st22_start_source(struct st22_app_tx_session* s) {
 
 static int app_tx_st22_close_source(struct st22_app_tx_session* s) {
   if (s->st22_source_fd >= 0) {
-    munmap(s->st22_source_begin, s->st22_source_end - s->st22_source_begin);
+    munmap(s->st22_source_begin, (size_t)(s->st22_source_end - s->st22_source_begin));
     close(s->st22_source_fd);
     s->st22_source_fd = -1;
   }
@@ -177,7 +177,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap %s fail\n", __func__, s->st22_source_url);
     close(fd);
@@ -232,7 +232,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   s->width = 1920;
   s->height = 1080;
   s->bpp = bpp;
-  s->bytes_per_frame = s->width * s->height * bpp / 8;
+  s->bytes_per_frame = (size_t)(s->width * s->height * bpp / 8);
   memcpy(s->st22_source_url, ctx->tx_st22_url, ST_APP_URL_MAX_LEN);
   s->st22_source_fd = -1;
   s->st = ctx->st;
@@ -245,7 +245,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P], ctx->tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = 15000 + s->idx;
+  ops.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -256,7 +256,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = 15000 + s->idx;
+    ops.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(15000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);
@@ -264,8 +264,8 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
     }
   }
   ops.pacing = ST21_PACING_NARROW;
-  ops.width = s->width;
-  ops.height = s->height;
+  ops.width = (uint32_t)s->width;
+  ops.height = (uint32_t)s->height;
   ops.fps = ST_FPS_P59_94;
   ops.payload_type = ST_APP_PAYLOAD_TYPE_ST22;
   ops.type = ST22_TYPE_FRAME_LEVEL;
@@ -319,7 +319,7 @@ int st22_app_tx_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st22_app_tx_session* s;
   ctx->tx_st22_sessions = (struct st22_app_tx_session*)st_app_zmalloc(
-      sizeof(struct st22_app_tx_session) * ctx->tx_st22_session_cnt);
+      sizeof(struct st22_app_tx_session) * (size_t)ctx->tx_st22_session_cnt);
   if (!ctx->tx_st22_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];

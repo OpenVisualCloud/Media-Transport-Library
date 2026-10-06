@@ -295,10 +295,10 @@ static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query) {
       if (format == GST_FORMAT_TIME && src->num_frames > 0) {
         GstClockTime duration = gst_util_uint64_scale_int(
             GST_SECOND * src->num_frames, src->framerate_den, src->framerate_num);
-        gst_query_set_duration(query, GST_FORMAT_TIME, duration);
+        gst_query_set_duration(query, GST_FORMAT_TIME, (gint64)duration);
         ret = TRUE;
       } else if (format == GST_FORMAT_TIME && src->num_frames == 0) {
-        gst_query_set_duration(query, GST_FORMAT_TIME, GST_CLOCK_TIME_NONE);
+        gst_query_set_duration(query, GST_FORMAT_TIME, (gint64)GST_CLOCK_TIME_NONE);
         ret = TRUE;
       }
       break;

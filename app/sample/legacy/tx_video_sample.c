@@ -15,7 +15,7 @@ struct tv_sample_context {
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
 
-  int framebuff_size;
+  size_t framebuff_size;
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
@@ -46,7 +46,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     if (s->has_user_meta) {
       s->meta.idx = s->fb_send;
       meta->user_meta = &s->meta;
@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
     memset(app[i], 0, sizeof(*app[i]));
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     if (ctx.has_user_meta) {
       snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20_tx_%u", i);
       app[i]->has_user_meta = true;
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     if (ctx.ext_frame) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;  // udp port
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ctx.packing;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;

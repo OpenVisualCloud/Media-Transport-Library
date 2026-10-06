@@ -4,8 +4,8 @@
 
 #include "../sample/sample_util.h"
 
-static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frames,
-                                          int fb_cnt) {
+static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, uint32_t w, uint32_t h,
+                                          uint32_t frames, uint32_t fb_cnt) {
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_y210 = (size_t)w * h * 4;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
@@ -22,7 +22,7 @@ static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frame
   struct st20_rfc4175_422_10_pg2_be* pg_be_in;
   uint16_t* pg_y210_out;
 
-  for (int i = 0; i < fb_cnt; i++) {
+  for (uint32_t i = 0; i < fb_cnt; i++) {
     pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
     fill_rfc4175_422_10_pg2_data(pg_be_in, w, h);
   }
@@ -31,19 +31,19 @@ static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frame
   float duration;
 
   start = clock();
-  for (int i = 0; i < frames; i++) {
+  for (uint32_t i = 0; i < frames; i++) {
     pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
     pg_y210_out = pg_y210 + (i % fb_cnt) * (fb_pg2_size_y210 / sizeof(*pg_y210));
     st20_rfc4175_422be10_to_y210_simd(pg_be_in, pg_y210_out, w, h, MTL_SIMD_LEVEL_NONE);
   }
   end = clock();
   duration = (float)(end - start) / CLOCKS_PER_SEC;
-  info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
+  info("scalar, time: %f secs with %u frames(%ux%u,%fm@%u buffers)\n", duration, frames,
        w, h, planar_size_m, fb_cnt);
 
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512) {
     start = clock();
-    for (int i = 0; i < frames; i++) {
+    for (uint32_t i = 0; i < frames; i++) {
       pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
       pg_y210_out = pg_y210 + (i % fb_cnt) * (fb_pg2_size_y210 / sizeof(*pg_y210));
       st20_rfc4175_422be10_to_y210_simd(pg_be_in, pg_y210_out, w, h,
@@ -51,13 +51,13 @@ static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frame
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-    info("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+    info("avx512, time: %f secs with %u frames(%ux%u@%u buffers)\n", duration_simd,
          frames, w, h, fb_cnt);
     info("avx512, %fx performance to scalar\n", duration / duration_simd);
 
     if (dma) {
       start = clock();
-      for (int i = 0; i < frames; i++) {
+      for (uint32_t i = 0; i < frames; i++) {
         pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
         pg_be_in_iova = pg_be_iova + (i % fb_cnt) * (fb_pg2_size);
         pg_y210_out = pg_y210 + (i % fb_cnt) * (fb_pg2_size_y210 / sizeof(*pg_y210));
@@ -66,7 +66,7 @@ static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frame
       }
       end = clock();
       float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-      info("dma+avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+      info("dma+avx512, time: %f secs with %u frames(%ux%u@%u buffers)\n", duration_simd,
            frames, w, h, fb_cnt);
       info("dma+avx512, %fx performance to scalar\n", duration / duration_simd);
     }
@@ -82,8 +82,8 @@ static int perf_cvt_422_10_pg2_be_to_y210(mtl_handle st, int w, int h, int frame
 static void* perf_thread(void* arg) {
   struct st_sample_context* ctx = arg;
   mtl_handle dev_handle = ctx->st;
-  int frames = ctx->perf_frames;
-  int fb_cnt = ctx->perf_fb_cnt;
+  uint32_t frames = ctx->perf_frames;
+  uint32_t fb_cnt = ctx->perf_fb_cnt;
 
   unsigned int lcore = 0;
   int ret = mtl_get_lcore(dev_handle, &lcore);

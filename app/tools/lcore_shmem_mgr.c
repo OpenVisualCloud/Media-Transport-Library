@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
           return -EIO;
         }
         struct mtl_lcore_clean_pid_info pid;
-        pid.lcore = lcore;
+        pid.lcore = (uint32_t)lcore;
         ret = mtl_lcore_shm_clean(MTL_LCORE_CLEAN_LCORE, &pid, sizeof(pid));
         if (ret >= 0)
           info("Succ to delete lcore %d\n", lcore);

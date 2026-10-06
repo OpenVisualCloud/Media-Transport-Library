@@ -94,7 +94,7 @@ static int app_rx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   snprintf(name, sizeof(name), "app_rx_st40p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = st40p ? st40p->base.num_inf : ctx->para.num_ports;
+  ops.port.num_port = (uint8_t)(st40p ? st40p->base.num_inf : ctx->para.num_ports);
 
   memcpy(ops.port.ip_addr[MTL_SESSION_PORT_P],
          st40p ? st_json_ip(ctx, &st40p->base, MTL_SESSION_PORT_P)
@@ -108,7 +108,7 @@ static int app_rx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st40p ? st40p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.port.udp_port[MTL_SESSION_PORT_P] =
-      st40p ? st40p->base.udp_port : (10200 + idx * 2);
+      (uint16_t)(st40p ? st40p->base.udp_port : (10200 + idx * 2));
 
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
@@ -123,14 +123,14 @@ static int app_rx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st40p ? st40p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
-        st40p ? st40p->base.udp_port : (10200 + idx * 2);
+        (uint16_t)(st40p ? st40p->base.udp_port : (10200 + idx * 2));
   }
 
   ops.port.payload_type =
       st40p ? st40p->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.interlaced = st40p ? st40p->info.interlaced : false;
   s->expect_fps = st_frame_rate(st40p ? st40p->info.fps : ST_FPS_P59_94);
-  ops.framebuff_cnt = s->framebuff_cnt;
+  ops.framebuff_cnt = (uint16_t)s->framebuff_cnt;
   ops.max_udw_buff_size = ST40P_APP_RX_MAX_UDW_SIZE;
   ops.rtp_ring_size = ST40P_APP_RX_RTP_RING_SIZE;
   ops.notify_frame_available = app_rx_st40p_frame_available;
@@ -225,7 +225,7 @@ int st_app_rx_st40p_sessions_init(struct st_app_context* ctx) {
   if (!ctx->rx_st40p_session_cnt) return 0;
 
   ctx->rx_st40p_sessions = (struct st_app_rx_st40p_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_st40p_session) * ctx->rx_st40p_session_cnt);
+      sizeof(struct st_app_rx_st40p_session) * (size_t)ctx->rx_st40p_session_cnt);
   if (!ctx->rx_st40p_sessions) return -ENOMEM;
 
   for (i = 0; i < ctx->rx_st40p_session_cnt; i++) {

@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
       return -1;
     }
     memset(app[i], 0, sizeof(struct rv_rtp_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_rx.type = ST20_TYPE_RTP_LEVEL;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;

@@ -67,7 +67,7 @@ static int app_dump_io_stat(struct st_app_context* ctx) {
 static int app_dump_ptp_sync_stat(struct st_app_context* ctx) {
   info("%s, cnt %d max %" PRId64 " min %" PRId64 " average %fus\n", __func__,
        ctx->ptp_sync_cnt, ctx->ptp_sync_delta_max, ctx->ptp_sync_delta_min,
-       (float)ctx->ptp_sync_delta_sum / ctx->ptp_sync_cnt / NS_PER_US);
+       (float)ctx->ptp_sync_delta_sum / (float)ctx->ptp_sync_cnt / NS_PER_US);
   ctx->ptp_sync_delta_sum = 0;
   ctx->ptp_sync_cnt = 0;
   ctx->ptp_sync_delta_max = INT64_MIN;
@@ -115,7 +115,7 @@ static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* met
   uint64_t from_ns = st_timespec_to_ns(&from_ts);
 
   /* record the sync delta */
-  int64_t delta = to_ns - from_ns;
+  int64_t delta = (int64_t)(to_ns - from_ns);
   ctx->ptp_sync_cnt++;
   ctx->ptp_sync_delta_sum += delta;
   if (delta > ctx->ptp_sync_delta_max) ctx->ptp_sync_delta_max = delta;
@@ -152,7 +152,7 @@ static uint64_t app_ptp_from_tai_time(void* priv) {
   struct timespec spec;
   st_get_tai_time(&spec);
   spec.tv_sec -= ctx->utc_offset;
-  return ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
+  return ((uint64_t)spec.tv_sec * NS_PER_S) + (uint64_t)spec.tv_nsec;
 }
 
 static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* p) {
@@ -244,22 +244,22 @@ int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
     if (ctx->rtp_lcore[sch_idx] < 0) {
       ret = mtl_get_lcore(ctx->st, &video_lcore);
       if (ret < 0) return ret;
-      ctx->rtp_lcore[sch_idx] = video_lcore;
+      ctx->rtp_lcore[sch_idx] = (int)video_lcore;
       info("%s, new rtp lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
     }
   } else {
     if (ctx->lcore[sch_idx] < 0) {
       ret = mtl_get_lcore(ctx->st, &video_lcore);
       if (ret < 0) return ret;
-      ctx->lcore[sch_idx] = video_lcore;
+      ctx->lcore[sch_idx] = (int)video_lcore;
       info("%s, new lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
     }
   }
 
   if (rtp)
-    *lcore = ctx->rtp_lcore[sch_idx];
+    *lcore = (unsigned int)ctx->rtp_lcore[sch_idx];
   else
-    *lcore = ctx->lcore[sch_idx];
+    *lcore = (unsigned int)ctx->lcore[sch_idx];
   return 0;
 }
 
@@ -306,11 +306,11 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   if (ctx->st) {
     for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
       if (ctx->lcore[i] >= 0) {
-        mtl_put_lcore(ctx->st, ctx->lcore[i]);
+        mtl_put_lcore(ctx->st, (unsigned int)ctx->lcore[i]);
         ctx->lcore[i] = -1;
       }
       if (ctx->rtp_lcore[i] >= 0) {
-        mtl_put_lcore(ctx->st, ctx->rtp_lcore[i]);
+        mtl_put_lcore(ctx->st, (unsigned int)ctx->rtp_lcore[i]);
         ctx->rtp_lcore[i] = -1;
       }
     }
@@ -411,15 +411,15 @@ int main(int argc, char** argv) {
     if (!ctx->para.tx_queues_cnt[i]) {
       if (ctx->json_ctx) {
         /* get from the assigned sessions on each interface */
-        ctx->para.tx_queues_cnt[i] =
-            st_tx_sessions_queue_cnt(ctx->json_ctx->interfaces[i].tx_video_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].tx_audio_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].tx_anc_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].tx_fmd_sessions_cnt);
+        ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
+            (uint16_t)ctx->json_ctx->interfaces[i].tx_video_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].tx_audio_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].tx_anc_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].tx_fmd_sessions_cnt);
       } else {
-        ctx->para.tx_queues_cnt[i] =
-            st_tx_sessions_queue_cnt(tx_st20_sessions, ctx->tx_audio_session_cnt,
-                                     ctx->tx_anc_session_cnt, ctx->tx_fmd_session_cnt);
+        ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
+            (uint16_t)tx_st20_sessions, (uint16_t)ctx->tx_audio_session_cnt,
+            (uint16_t)ctx->tx_anc_session_cnt, (uint16_t)ctx->tx_fmd_session_cnt);
       }
       if (ctx->para.tx_queues_cnt[i] && (ctx->para.pmd[i] == MTL_PMD_DPDK_USER)) {
         ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
@@ -428,22 +428,22 @@ int main(int argc, char** argv) {
     if (!ctx->para.rx_queues_cnt[i]) {
       if (ctx->json_ctx) {
         /* get from the assigned sessions on each interface */
-        ctx->para.rx_queues_cnt[i] =
-            st_rx_sessions_queue_cnt(ctx->json_ctx->interfaces[i].rx_video_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_audio_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_fmd_sessions_cnt);
+        ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
+            (uint16_t)ctx->json_ctx->interfaces[i].rx_video_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].rx_audio_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt,
+            (uint16_t)ctx->json_ctx->interfaces[i].rx_fmd_sessions_cnt);
       } else {
-        ctx->para.rx_queues_cnt[i] =
-            st_rx_sessions_queue_cnt(rx_st20_sessions, ctx->rx_audio_session_cnt,
-                                     ctx->rx_anc_session_cnt, ctx->rx_fmd_session_cnt);
+        ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
+            (uint16_t)rx_st20_sessions, (uint16_t)ctx->rx_audio_session_cnt,
+            (uint16_t)ctx->rx_anc_session_cnt, (uint16_t)ctx->rx_fmd_session_cnt);
       }
     }
   }
 
   /* hdr split special */
   if (ctx->enable_hdr_split) {
-    ctx->para.nb_rx_hdr_split_queues = ctx->rx_video_session_cnt;
+    ctx->para.nb_rx_hdr_split_queues = (uint16_t)ctx->rx_video_session_cnt;
   }
 
   if (ctx->ptp_systime_sync) ctx->para.ptp_sync_notify = app_ptp_sync_notify;
@@ -696,7 +696,7 @@ uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t fr
   offset = user_time->user_time_offset;
   /* offset may be negative to start the pacing clock in the past, presenting
    * frames late (used by the drop-when-late tests) */
-  tai_time = user_time->base_tai_time + (uint64_t)(frame_time * frame_num);
+  tai_time = user_time->base_tai_time + (uint64_t)(frame_time * (double)frame_num);
   tai_time = (uint64_t)((int64_t)tai_time + offset);
 
   return tai_time;

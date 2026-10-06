@@ -25,7 +25,7 @@ static int app_tx_fmd_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
@@ -75,9 +75,10 @@ static int app_tx_fmd_rtp_done(void* priv) {
 static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
                                    struct st41_frame* dst) {
   uint16_t data_item_length_bytes =
-      (size_t)(s->st41_source_end - s->st41_frame_cursor) > ST_PKT_ST41_PAYLOAD_MAX_BYTES
-          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
-          : (size_t)(s->st41_source_end - s->st41_frame_cursor);
+      (uint16_t)((size_t)(s->st41_source_end - s->st41_frame_cursor) >
+                         ST_PKT_ST41_PAYLOAD_MAX_BYTES
+                     ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
+                     : (size_t)(s->st41_source_end - s->st41_frame_cursor));
   dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
   s->st41_frame_cursor += data_item_length_bytes;
@@ -168,7 +169,7 @@ static void* app_tx_fmd_pcap_thread(void* arg) {
         if (ip_hdr->ip_p == IPPROTO_UDP) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-          udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
+          udp_data_len = (uint16_t)(ntohs(udp_hdr->len) - sizeof(struct udphdr));
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
                          sizeof(struct udphdr),
@@ -199,20 +200,20 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
   uint8_t* payload_hdr = (uint8_t*)(&hdr[1]);
   uint16_t data_item_length_bytes =
-      s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES - 16)
-          ? (MTL_PKT_MAX_RTP_BYTES - 16)
-          : s->st41_source_end - s->st41_frame_cursor;
+      (uint16_t)(s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES - 16)
+                     ? (MTL_PKT_MAX_RTP_BYTES - 16)
+                     : s->st41_source_end - s->st41_frame_cursor);
   uint16_t data_item_length;
-  data_item_length =
-      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  data_item_length = (uint16_t)((data_item_length_bytes + 3) /
+                                4); /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
-  hdr->base.payload_type = s->st41_payload_type;
+  hdr->base.payload_type = (uint8_t)(s->st41_payload_type & 0x7F);
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
   hdr->base.csrc_count = 0;
   hdr->base.tmstamp = s->st41_rtp_tmstamp;
-  hdr->base.ssrc = htonl(0x88888888 + s->idx);
+  hdr->base.ssrc = htonl(0x88888888 + (uint32_t)s->idx);
   /* update rtp seq*/
   hdr->base.seq_number = htons((uint16_t)s->st41_seq_id);
   s->st41_seq_id++;
@@ -226,10 +227,10 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
     payload_hdr[i] = 0;
   }
 
-  *mbuf_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
-  hdr->st41_hdr_chunk.data_item_length = data_item_length;
-  hdr->st41_hdr_chunk.data_item_type = s->st41_dit;
-  hdr->st41_hdr_chunk.data_item_k_bit = s->st41_k_bit;
+  *mbuf_len = (uint16_t)(sizeof(struct st41_rtp_hdr) + data_item_length * 4u);
+  hdr->st41_hdr_chunk.data_item_length = (uint16_t)(data_item_length & 0x1FF);
+  hdr->st41_hdr_chunk.data_item_type = s->st41_dit & 0x3FFFFF;
+  hdr->st41_hdr_chunk.data_item_k_bit = (uint8_t)(s->st41_k_bit & 0x1);
   hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
 
   s->st41_frame_cursor += data_item_length_bytes;
@@ -285,7 +286,8 @@ static int app_tx_fmd_open_source(struct st_app_tx_fmd_session* s) {
         return -EIO;
       }
 
-      uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st41_source_fd, 0);
+      uint8_t* m =
+          mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, s->st41_source_fd, 0);
 
       if (MAP_FAILED != m) {
         s->st41_source_begin = m;
@@ -317,7 +319,7 @@ static int app_tx_fmd_open_source(struct st_app_tx_fmd_session* s) {
 
 static int app_tx_fmd_close_source(struct st_app_tx_fmd_session* s) {
   if (s->st41_source_fd >= 0) {
-    munmap(s->st41_source_begin, s->st41_source_end - s->st41_source_begin);
+    munmap(s->st41_source_begin, (size_t)(s->st41_source_end - s->st41_source_begin));
     close(s->st41_source_fd);
     s->st41_source_fd = -1;
   }
@@ -416,14 +418,15 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_tx_fastmetadata%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = fmd ? fmd->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(fmd ? fmd->base.num_inf : ctx->para.num_ports);
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
          fmd ? st_json_ip(ctx, &fmd->base, MTL_SESSION_PORT_P)
              : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            fmd ? fmd->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = fmd ? fmd->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(fmd ? fmd->base.udp_port : (10200 + s->idx));
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -436,7 +439,8 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              fmd ? fmd->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = fmd ? fmd->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(fmd ? fmd->base.udp_port : (10200 + s->idx));
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);
@@ -465,7 +469,7 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   if (ops.type == ST41_TYPE_RTP_LEVEL) {
     s->st41_rtp_input = true;
     if (ctx->tx_fmd_rtp_ring_size > 0)
-      ops.rtp_ring_size = ctx->tx_fmd_rtp_ring_size;
+      ops.rtp_ring_size = (uint32_t)ctx->tx_fmd_rtp_ring_size;
     else
       ops.rtp_ring_size = 16;
   }
@@ -520,7 +524,7 @@ int st_app_tx_fmd_sessions_init(struct st_app_context* ctx) {
   int ret;
   struct st_app_tx_fmd_session* s;
   ctx->tx_fmd_sessions = (struct st_app_tx_fmd_session*)st_app_zmalloc(
-      sizeof(struct st_app_tx_fmd_session) * ctx->tx_fmd_session_cnt);
+      sizeof(struct st_app_tx_fmd_session) * (size_t)ctx->tx_fmd_session_cnt);
   if (!ctx->tx_fmd_sessions) return -ENOMEM;
 
   for (int i = 0; i < ctx->tx_fmd_session_cnt; i++) {
