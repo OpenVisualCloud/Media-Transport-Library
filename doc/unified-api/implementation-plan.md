@@ -33,6 +33,27 @@ Set by the maintainer; every choice below follows from them.
 
 ### 1.2 The milestones
 
+Port first (D-98): every milestone up to MS7 ports what MTL does today, plus the Kubernetes
+lifecycle. The picture below is the order of the milestones and the headline of each; the table
+after it has their full scope and calendar, and §5 and §6 their tasks.
+
+```mermaid
+flowchart TB
+    subgraph Y1[" "]
+        direction LR
+        MS1["MS1<br/>ST 2110-20 frames,<br/>month 1"] --> MS2["MS2a, MS2b<br/>rows; video memory,<br/>st20p on the core"]
+        MS2 --> MS3["MS3<br/>timing, events,<br/>health, soname"]
+        MS3 --> MS4["MS4a, MS4b<br/>audio, ANC, fastmeta;<br/>cvideo, plugin ABI v2"]
+    end
+    subgraph Y2[" "]
+        direction LR
+        MS5["MS5<br/>packet units, 2022-6,<br/>session update"] --> MS6["MS6<br/>start arrays, time base,<br/>ecosystem ports"]
+        MS6 --> MS7["MS7<br/>MTL_1.0 freeze,<br/>hiding legacy"]
+        MS7 -.-> P7["Phase 7<br/>NMOS extras, SDP,<br/>IPMX timing, PEP"]
+    end
+    Y1 --> Y2
+```
+
 | Milestone | Scope | Calendar [I] |
 |---|---|---|
 | **MS1** ST 2110-20 frames | the core, the video and null bindings, the API shell inside libmtl for ST20 frames TX and RX, a test pool at four tiers, `UnifiedKahawaiTest` and `UnifiedRxTxApp` for `st20p` beside the frozen legacy ones, the acceptance smoke set on both apps (§5) | weeks 1–4 |

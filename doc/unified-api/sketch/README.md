@@ -4,7 +4,7 @@
 |---|---|
 | Status | Normative design sketch, experimental revision 0.2. Nothing is implemented |
 | Date | 2026-10-02 |
-| Reads with | [examples.md](../examples.md) (every example, generated from here), [concepts.md](../concepts.md), [contract.md](../contract.md), [diagrams.md](../diagrams.md) |
+| Reads with | [examples.md](../examples.md) (every example, generated from here), [concepts.md](../concepts.md), [contract.md](../contract.md) |
 
 This directory holds the normative header set of the unified MTL API and the worked examples as
 files that compile. In task H1b of MS1 ([implementation plan §5.2](../implementation-plan.md#52-tasks))

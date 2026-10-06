@@ -195,6 +195,24 @@ A verb that several objects have is one exported function over `struct mtl_objec
 - `timeout_ns` of `mtl_close` bounds the instance and session closes only; the other kinds never wait.
 - Shared queues (`mtl_queue_h`) and created timelines (`mtl_timeline_h`) are reserved for later (`MTL_LATER`); they are not objects of these verbs in v1.
 
+**Objects and ownership.** The picture below shows what each object owns. The instance owns its
+ports, sessions and regions. A session owns its flows (one per leg), its pool of slots and its
+slot table. A lease is access to one slot, now; a slot itself is named by its index (R4). An
+attached pool lies over a region (dotted arrow, §9.3).
+
+```mermaid
+flowchart TB
+    I["mtl_instance_h<br/>ports, schedulers,<br/>time source, events;<br/>one reference per open<br/>if SHARED"]
+    I --> P["ports 0..n<br/>link, pacing class,<br/>time state"]
+    I --> S["mtl_session_h<br/>one essence,<br/>one direction,<br/>unique name,<br/>the SMPTE epoch"]
+    I --> R["mtl_region_h<br/>memory MTL may DMA,<br/>refcounted"]
+    S --> F["flows 0..1 = legs<br/>admin, oper,<br/>flow state"]
+    S --> PL["pool: slots by index<br/>library or attached"]
+    S --> LT["slot table and<br/>descriptor ring,<br/>results, events,<br/>status, stats,<br/>one wait handle"]
+    PL --> L["mtl_lease_h<br/>access to one slot, now"]
+    PL -.->|"attached over"| R
+```
+
 ## 2. Instance
 
 ### 2.1 Open
@@ -266,16 +284,19 @@ exported parser, so applications and plugins with a ports property or argument u
 grammar.
 
 ```text
-ports   := [ws] port { [ws] "," [ws] port } [ws]
-port    := name [ "=" address [ "/" prefix ] [ "@" gateway ] ]
-name    := BDF ("0000:af:01.0") | "kernel:" ifname | "native_af_xdp:" ifname
-         | "null:" id | "env:" VAR [ "#" n ]
+ports := [ws] port { [ws] "," [ws] port } [ws]
+port := name [ "=" address [ "/" prefix ] [ "@" gateway ] ]
+name := bdf | kernel | xdp | null | env
+bdf := a PCI BDF, for example "0000:af:01.0"
+kernel := "kernel:" ifname
+xdp := "native_af_xdp:" ifname
+null := "null:" id
+env := "env:" VAR [ "#" n ]
 address := IPv4 dotted quad | "[" IPv6 "]"
 gateway := an address of the same family
-prefix  := 1–32 (IPv6: 1–128); absent = 24 (IPv6: 64); 0 is invalid (it would read as the
-           default)
-id      := 0–255, a label: each "null:" token is one null port
-ws      := spaces and tabs
+prefix := 1–32 (IPv6: 1–128); absent = 24 (IPv6: 64); 0 is invalid (it would read as the default)
+id := 0–255, a label: each "null:" token is one null port
+ws := spaces and tabs
 ```
 
 - A name is at most 63 bytes and holds none of ',', '=', '@' or whitespace. An interface whose
@@ -808,31 +829,36 @@ Until MS6 a launch flag on audio, ANC or fastmeta is `-MTL_ENOTSUP` (`NOT_IMPLEM
 | `MTL_STATE_CLOSING` | closed, retiring: leases or device references remain |
 | `MTL_STATE_RETIRED` | closed and retired; the handle stays retired |
 
+The picture below shows the machine in two parts. Inside the box are the states of an open
+session, between which start, stop and faults move it; a start from CREATED or STOPPED goes to
+ARMED when its instant is ahead and to RUNNING when it is now (the diamond). `mtl_session_close`
+from any of them is
+the one arrow out of the box: it enters CLOSING, and the session ends in RETIRED (§4.9 shows the
+steps inside CLOSING).
+
 ```mermaid
 stateDiagram-v2
-    [*] --> CREATED: mtl_session_create
-    CREATED --> ARMED: start, instant ahead
-    CREATED --> RUNNING: start now
-    STOPPED --> ARMED: start, instant ahead
-    STOPPED --> RUNNING: start now
-    ARMED --> RUNNING: start instant reached
-    ARMED --> FLUSHING: stop
-    RUNNING --> DRAINING: stop DRAIN
-    RUNNING --> FLUSHING: stop FLUSH
-    DRAINING --> FLUSHING: deadline missed, or stop FLUSH
-    DRAINING --> STOPPED: every unit final
-    FLUSHING --> STOPPED: device released every unit
-    RUNNING --> ERROR: fatal fault
-    ARMED --> ERROR: fatal fault
-    ERROR --> STOPPED: stop
-    CREATED --> CLOSING: close
-    STOPPED --> CLOSING: close
-    ERROR --> CLOSING: close
-    ARMED --> CLOSING: close
-    RUNNING --> CLOSING: close (drains, then flushes)
-    DRAINING --> CLOSING: close
-    FLUSHING --> CLOSING: close
-    CLOSING --> RETIRED: last lease and device reference gone
+    state "open session" as OPEN {
+        state start <<choice>>
+        [*] --> CREATED
+        CREATED --> start: start
+        STOPPED --> start: start
+        start --> ARMED: instant ahead
+        start --> RUNNING: now
+        ARMED --> RUNNING: start instant reached
+        ARMED --> FLUSHING: stop
+        ARMED --> ERROR: fatal fault
+        RUNNING --> DRAINING: stop DRAIN
+        RUNNING --> FLUSHING: stop FLUSH
+        RUNNING --> ERROR: fatal fault
+        DRAINING --> FLUSHING: deadline missed,<br/>or stop FLUSH
+        DRAINING --> STOPPED: every unit final
+        FLUSHING --> STOPPED: device released<br/>every unit
+        ERROR --> STOPPED: stop
+    }
+    [*] --> OPEN: mtl_session_create
+    OPEN --> CLOSING: close, from any state
+    CLOSING --> RETIRED: last lease and<br/>device reference gone
     RETIRED --> [*]
 ```
 
@@ -974,6 +1000,25 @@ The contract:
 - Re-creating a library pool needs every slot FREE (no lease or hold out): `-MTL_EBUSY` otherwise. The pacing values (TRS, VRX, rate-limit rate) and the scheduler weight are re-derived from the new configuration as a dry run first; a weight or rate that no longer fits the scheduler or the queue is `-MTL_ENOSPC`, with nothing changed.
 - A MEDIA or POOL update fails with nothing changed, `-MTL_EINVAL`, `LAYOUT_MISMATCH`, when an attached pool no longer fits the new layout (G-87).
 
+**Update states.** `status.update_state` reports the last update call, in the states of the
+picture below. An update in CREATED or STOPPED applies during the call; one posted while ARMED or
+RUNNING is PENDING until the index boundary at or after `when`, then APPLIED, or FAILED (for
+example `TIME_STEP`), which keeps the old configuration. Each posted update adds 1 to
+`update_seq`, so a Node reads `update_seq` after the call and matches it with `MTL_EVENT_UPDATE`
+(new = the state, value[0] = the applied TAI, value[1] = the seq).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> NONE
+    NONE --> PENDING: posted while<br/>ARMED or RUNNING
+    NONE --> APPLIED: update in<br/>CREATED or STOPPED
+    PENDING --> APPLIED: the index boundary<br/>at or after when
+    PENDING --> FAILED: e.g. the time base<br/>stepped (TIME_STEP)
+```
+
+The states are `MTL_UPDATE_STATE_*` (MS5); REPLACED and CANCELLED are Phase 7.
+
 **What is Phase 7.** MS5 delivers the atomic update of today's destination and source
 update, per-leg enable and disable, MEDIA and POOL in STOPPED, the planned instant,
 `status.update_*`, `MTL_EVENT_UPDATE` and the switch by the clock. These are Phase 7, later
@@ -1002,6 +1047,33 @@ A session enters ERROR only for faults it cannot recover from without the applic
 ### 4.9 Close
 
 `mtl_session_close(s, timeout_ns)` (CP) stops (DRAIN until the deadline, then FLUSH), destroys, and waits up to `timeout_ns` for the session to retire.
+
+The picture below shows the steps inside CLOSING: every step before RETIRED is the state
+CLOSING. A session that is sending drains first; one that is not goes straight to the detach. A
+queue that will not release its descriptors takes the stalled-queue path
+([engine.md §9](engine.md#9-close-and-error-on-a-stalled-queue)).
+
+```mermaid
+stateDiagram-v2
+    state "drain" as Drain
+    state "flush" as Flush
+    state "detach" as Detach
+    state "device references" as DeviceRefs
+    state "leases and holds" as Leases
+    [*] --> Drain: close in ARMED,<br/>RUNNING or DRAINING
+    [*] --> Detach: close in CREATED, STOPPED,<br/>FLUSHING or ERROR
+    Drain --> Flush: deadline passed, rest<br/>FLUSHED (STOP_TIMEOUT)
+    Drain --> Detach: every queued unit sent
+    Flush --> Detach: queued units FLUSHED
+    Detach --> DeviceRefs: tasklet ack,<br/>data callers left
+    DeviceRefs --> Leases: last NIC and DMA<br/>reference gone
+    Leases --> RETIRED: no lease or hold left
+    RETIRED --> [*]
+    note right of Leases
+        close returns 1 here if leases are out;
+        the last release posts the retire to a worker
+    end note
+```
 
 - 0: retired; no memory, lease, hold or device reference remains.
 - `MTL_RETIRING` (1): still retiring (leases out, or units held by the device).
@@ -1157,6 +1229,45 @@ One `struct mtl_unit` is what acquire and dequeue lend and what submit reads.
 
 ### 5.4 Lease rules
 
+The application sees a slot in three ways: free, yours (leased to the application, to write or
+to read) or MTL's (sending or receiving). The two pictures below show how a slot moves between
+them, first on TX, then on RX; the seven slot states behind these views are the slot table's
+([engine.md §3.2](engine.md#32-the-slot-table)).
+
+On TX, acquire makes a free slot yours, submit makes it MTL's, and the recorded result frees it.
+A slot you acquired and do not submit goes back with release.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "Free" as F
+    state "Yours: you write it" as Y
+    state "MTL's: sending" as M
+    [*] --> F
+    F --> Y: mtl_tx_acquire
+    Y --> M: mtl_tx_submit
+    M --> F: sent,<br/>result recorded
+    Y --> F: mtl_tx_release
+```
+
+On RX the order is the other way round: MTL takes a free slot when packets arrive, dequeue makes
+it yours, and release frees it. A slot that TX units still hold stays HELD after the release
+until the last hold drops (rule 8, §9.6).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "Free" as F
+    state "MTL's: receiving" as M
+    state "Yours: you read it" as Y
+    [*] --> F
+    F --> M: packets arrive
+    M --> Y: mtl_rx_dequeue
+    Y --> F: mtl_rx_release
+```
+
+The rules:
+
 1. A lease is one access grant on one pool slot, from acquire or dequeue until submit or release.
 2. A pool slot is never re-acquirable before its outcome is recorded (G-05). "Reusable" means no reader or writer remains: no converter, encoder, DMA descriptor or NIC (G-06).
 3. Submit and release end a lease; any later use is `-MTL_ESTALE`. A lease of another session is `-MTL_EBADF`, deterministically (G-07).
@@ -1297,6 +1408,26 @@ delivered INCOMPLETE. An empty RTP packet is a unit with `used` 0; ANC units are
 
 Status 0 is never terminal (R3): a zeroed record never reads as `ON_TIME`.
 
+The picture below shows which of the four statuses an accepted TX unit ends in. A unit removed
+while queued is FLUSHED. A unit that cannot be sent is DROPPED. A unit whose launch index is no
+longer feasible at pick-up gets `tx.late_policy`: DROP (the default for INDEX and TAI) or DEFER
+(the default for AUTO). A unit that was built and paced is ON_TIME, or FAILED on a device or queue
+failure. The table after it gives the reasons of each status.
+
+```mermaid
+flowchart TB
+    S["accepted submit:<br/>seq assigned"] --> X{"removed while<br/>queued, or not<br/>sendable?"}
+    X -->|"stop FLUSH, discard,<br/>close, abort, ERROR"| FL["MTL_TX_FLUSHED"]
+    X -->|"not sendable:<br/>no neighbour, link down,<br/>every leg disabled"| DR["MTL_TX_DROPPED<br/>its index stays empty"]
+    X -->|"no"| D{"launch index<br/>still feasible<br/>at pick-up?"}
+    D -->|"no, DROP<br/>(INDEX, TAI)"| DR
+    D -->|"no, DEFER<br/>(AUTO)"| RS["a later index,<br/>MTL_TXR_DEFERRED"]
+    D -->|"yes"| B["built and paced"]
+    RS --> B
+    B -->|"sent"| OT["MTL_TX_ON_TIME"]
+    B -->|"device or<br/>queue failure"| FA["MTL_TX_FAILED"]
+```
+
 | Status | Sent? | Meaning | Reasons |
 |---|---|---|---|
 | `MTL_TX_ON_TIME` | yes, on at least one leg | picked up by its deadline and scheduled at its launch index (an admission verdict; wire accuracy is reported, not graded); an AUTO unit that missed its index and took a later one is ON_TIME with `MTL_TXR_DEFERRED` | `NONE`; per leg `leg_reason` in the full record |
@@ -1430,6 +1561,23 @@ interrupted with `MTL_WAIT_DEQUEUE`, and never arms the wait handle.
   32 sessions × 17 µs ≈ 0.5 ms.
 - A wake clears the handle's arming of the targets it wakes, and the next `-MTL_EAGAIN` on them
   arms them again.
+
+The picture below is the same protocol in the application's terms, for an event loop on the wait
+handle (ex03): the `-MTL_EAGAIN` arms the target, the completion wakes the handle, and the sweep
+after the wake-up re-arms what it empties.
+
+```mermaid
+sequenceDiagram
+    participant A as your event loop
+    participant M as MTL
+    A->>M: call every target of the mask
+    M-->>A: -MTL_EAGAIN: the target is armed
+    A->>A: epoll_wait on the wait handle
+    M->>M: a completion: unit or result ready
+    M-->>A: the handle becomes readable
+    A->>M: sweep: call every target until -MTL_EAGAIN
+    M-->>A: the units, then -MTL_EAGAIN: armed again
+```
 - So a thread asleep in a call is woken once its target is ready, whatever other threads do on the
   object. "Call every target of the handle's mask until `-MTL_EAGAIN`, then sleep on the wait
   handle" never misses a wake-up (G-52). An application that never sleeps never causes a wake-up
@@ -1503,6 +1651,24 @@ every session. The typed wrappers take `on` = 1 or 0 and every target:
 | `mtl_session_interrupt(s, 1)` / `(s, 0)` | every data wait on `s` | AS / CP |
 | `mtl_interrupt(MTL_OBJ_OF_SESSION(s), MTL_INTR_ON, MTL_WAIT_ACQUIRE)` | the acquire waits on `s` only | AS |
 | `mtl_instance_interrupt(mt, 1)` / `(mt, 0)` | every data wait of the instance and of every session | AS / CP |
+
+The picture below shows the three ways in: the typed wrappers and a framework's unlock all call
+`mtl_interrupt`, which sets a sticky flag on the selected targets and wakes their waiters. Stop and
+close still work, and close wins over an interrupt.
+
+```mermaid
+flowchart LR
+    S["mtl_session_interrupt<br/>(s, 1)"] --> G["mtl_interrupt<br/>(o, MTL_INTR_ON,<br/>targets)<br/>targets 0 = every target"]
+    I["mtl_instance_interrupt<br/>(mt, 1)<br/>signal handlers"] --> G
+    T["GStreamer unlock:<br/>MTL_INTR_ON,<br/>targets<br/>MTL_WAIT_ACQUIRE"] --> G
+    G --> F["sticky flag on the<br/>selected targets,<br/>every waiter woken"]
+    F --> W["their waits with<br/>a timeout, and mtl_wait,<br/>return -MTL_ECANCELED<br/>at once, until<br/>MTL_INTR_OFF"]
+    C["stop or close"] --> X["-MTL_ESHUTDOWN:<br/>close wins over interrupt"]
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class S,I,T,C app
+    class G,F,W,X mtl
+```
 
 The waiting rules:
 
@@ -1760,6 +1926,43 @@ State-dependent codes follow §4.2; "W" means only with a timeout other than 0. 
 
 ## 9. Memory
 
+Memory is four separate ideas, in the picture below: a region is where the bytes live, a slot is
+one buffer of a pool, a lease is who may touch a slot now, and a unit with its result is what this
+use means. Who allocated the bytes, who may touch them now and what this use means are separate
+questions, so library and application memory run one data path.
+
+```mermaid
+flowchart LR
+    R["region:<br/>where bytes live<br/>VA, length,<br/>backing, NUMA,<br/>IOVA per device,<br/>refcount"] --> S["slot:<br/>one buffer of a pool,<br/>named by its index;<br/>planes and meta,<br/>layout fixed<br/>when attached"]
+    S --> L["lease:<br/>who may touch it now<br/>the slot state:<br/>FREE, APP, QUEUED,<br/>XFORM, ENGINE,<br/>PUBLISHED, HELD;<br/>the generation<br/>in the lease"]
+    L --> U["unit and result:<br/>this use<br/>media time, cookie,<br/>hold, launch;<br/>one terminal outcome"]
+```
+
+A session's slots come from one of the sources in the next picture, and every source ends in the
+same slots and the same data path: the library pool (§9.1), a region (§9.2) that the application
+attaches (§9.3), or memory imported by the attach itself (§9.3).
+
+```mermaid
+flowchart TB
+    LP["library pool<br/>default, mtl.h"] --> SL["the session's slots"]
+    subgraph REG["a region: mtl_region_h"]
+        direction LR
+        MA["mtl_mem_open,<br/>va NULL<br/>library hugepages"]
+        MI["mtl_mem_open,<br/>va set<br/>application memory"]
+        PR["mtl_session_get_<br/>pool_region<br/>another session's pool"]
+        MD["mtl_mem_open,<br/>MTL_MEM_DEVICE<br/>GPU memory (MS6)"]
+    end
+    REG -->|"mtl_session_attach"| SL
+    AV["mtl_session_attach<br/>with va: imported<br/>for this session"] --> SL
+    SL --> V["one data path:<br/>acquire, submit,<br/>dequeue, release"]
+```
+
+Application memory always produces results (MEM3, §6.1); a pool over another session's library
+pool submits every unit with a hold (`HOLD_REQUIRED`, §9.6). Per-acquire layouts
+(`mtl_tx_acquire_layout`) and per-unit RX destinations (`mtl_rx_provide`) come in MS2 (§9.11),
+device memory in MS6. On any session but a `MTL_SESSION_REQUIRE_DIRECT` one,
+`MTL_SUBMIT_SRC_PLANES` copies one unit from caller memory into the slot during submit (§5.2).
+
 ### 9.1 Library pools
 
 - By default MTL allocates the pool (`pool_count` slots) at create, on the session's NUMA node. Nothing from `mtl_mem.h` is needed.
@@ -1879,6 +2082,24 @@ pools put each plane at the first 64-byte boundary after the previous one and pi
 - An application that keeps displaying a slot after submit may read it, because MTL never writes a TX buffer (§5.2). To keep a slot from being reused after its result, it acquires its slots by name with `mtl_tx_acquire_slot` instead of taking any free one.
 
 ### 9.6 Holds and forwarding
+
+The picture below follows one RX slot forwarded to four TX sessions, as in
+[ex09](sketch/examples/ex09_split_forwarder.c): each TX unit holds the RX slot, the application's
+release does not free it, and the last TX outcome does.
+
+```mermaid
+sequenceDiagram
+    participant RX as RX session
+    participant A as your code
+    participant TX as four TX sessions
+    RX-->>A: dequeue: slot j, lease
+    A->>TX: mtl_tx_send_slot with hold = lease, four times
+    Note over RX: hold count of slot j is 4
+    A->>RX: mtl_rx_release(lease)
+    Note over RX: slot j is HELD, not FREE
+    TX-->>RX: each TX unit's terminal outcome drops one hold
+    Note over RX: hold count 0: slot j is FREE
+```
 
 - `unit.hold` is an RX lease a TX unit reads from, kept until the TX unit's result (ANC: until the
   TX submit returns).
@@ -2098,6 +2319,22 @@ conformance tests pass, without changing the basic calls.
 ## 10. Events and queues
 
 ### 10.1 Events
+
+The picture below shows where events come from and how they are read and waited on. A session
+keeps its own events and the instance its own; each object's wait handle carries its events
+(`MTL_WAIT_EVENTS`), and a session's handle also its results and units, so one epoll set with a
+handle per session and one for the instance waits on everything.
+
+```mermaid
+flowchart LR
+    RES["TX results, RX units<br/>MTL_WAIT_RESULTS,<br/>MTL_WAIT_DEQUEUE"] -.-> SH["the session's<br/>wait handle"]
+    SE["session events: state,<br/>legs, flows, RX signal<br/>and format, pacing,<br/>underrun, update"] -.->|"MTL_WAIT_EVENTS"| SH
+    SE --> SR["mtl_session_read_events"]
+    IE["instance events: ports,<br/>time, schedulers, health,<br/>MtlManager, regions"] --> IR["mtl_instance_read_events"]
+    IE -.->|"MTL_WAIT_EVENTS"| IH["the instance's<br/>wait handle"]
+    SH --> EP["one epoll set: a handle<br/>per session, one for<br/>the instance"]
+    IH --> EP
+```
 
 - Events say that something changed. **Every state they report also has a getter, so a lost event loses nothing** (G-41; §10.2 names the getter). G-41 covers state events only; notices (`MTL_EVENT_EPOCH_TICK`, `MTL_EVENT_OVERFLOW`, …) are exempt. Its test overflows the events, then compares every getter with the true state.
 - Events are MS3 (`mtl_events.h`). Each session keeps its own events, and the instance keeps the
@@ -2684,6 +2921,27 @@ non-compliant on an essence that has no wire timing model.
 - A **reserved leg** is a disabled leg that stays all zero until an update gives it an address together with `MTL_UPDATE_LEGS` (Phase 7, later; `-MTL_ENOTSUP` until then).
 - **Every existing leg disabled = muted** (Phase 7, later; `-MTL_ENOTSUP` until then, and `MTL_STATUS_MUTED` is declared under `MTL_LATER`): the session stays RUNNING, TX units retire at their indices (counted in `tx.units_muted`, not `tx.units_dropped`), no sender reports, RX leaves its groups. `MTL_STATUS_MUTED` is a transport state.
 - `status.leg[]` (`struct mtl_leg_status`): `admin` (1 = enabled), `oper` (1 = link up and flow resolved or joined), `flow_state` (`enum mtl_flow_state`). TX: `MTL_FLOW_WAITING_NEIGHBOUR` or `MTL_FLOW_RESOLVED`. RX: `MTL_FLOW_JOINING`, `MTL_FLOW_JOINED`, `MTL_FLOW_JOIN_FAILED`.
+
+The flow state of a leg moves as in the two pictures below. A TX leg waits for its neighbour from
+the start, or from an update of FLOWS, until the neighbour is resolved; a unit on a leg still
+waiting is not sent there (reason `WAITING_NEIGHBOUR`), and an update does not wait for it (§4.7).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> MTL_FLOW_WAITING_NEIGHBOUR: start, or<br/>update of FLOWS
+    MTL_FLOW_WAITING_NEIGHBOUR --> MTL_FLOW_RESOLVED: neighbour<br/>resolved
+```
+
+An RX leg is joining from the moment its IGMP join is sent, until the join succeeds or fails.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> MTL_FLOW_JOINING: IGMP join sent
+    MTL_FLOW_JOINING --> MTL_FLOW_JOINED: joined
+    MTL_FLOW_JOINING --> MTL_FLOW_JOIN_FAILED: failed
+```
 - A leg carries traffic only when it is admin enabled, its link is up and its flow is resolved or joined. `MTL_EVENT_LEG_STATE` and `MTL_EVENT_FLOW_STATE` report changes.
 - Oper state comes from a link monitor (MS5, a prerequisite of `MTL_EVENT_LEG_STATE`;
   `caps.link_source`): the LSC interrupt where the PMD supports it, else the admin thread polls

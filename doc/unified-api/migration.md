@@ -754,19 +754,32 @@ st21_pacing` → `enum mtl_sender_type` (`NARROW` 0 → `MTL_SENDER_N`, `WIDE` 1
 
 One process may run legacy and unified sessions on one instance while the legacy headers are
 installed (until F+2, §8.3), so a port can be gradual. Both APIs live in one library, libmtl, and
-end in the same core and the same engines:
+end in the same core and the same engines, as the picture below shows (blue: your code; green:
+MTL):
 
 ```mermaid
 flowchart TB
-    A["legacy code<br/>st20p_*, st30_*, ..."] --> LP["legacy pipelines st*p_*<br/>wrappers on the core<br/>(st20p from MS2, the rest MS4)"]
-    A --> LS["legacy session API st2x_*<br/>(the engines' interface)"]
-    B["unified code<br/>mtl_session_*, mtl_tx_*, mtl_rx_*"] --> U["API shell lib/src/unified/<br/>(nodes MTL_UNIFIED_EXPERIMENTAL_rev_MSn)"]
-    U --> C["the core<br/>lib/src/st2110/core/"]
-    LP --> C
-    C -->|"bindings implement<br/>the engine callbacks"| E["engines, schedulers, devices<br/>(one shared instance)"]
-    LS --> E
-    B -. "mtl_instance_from_legacy()" .- A
+    UA["unified code<br/>mtl_session_*, mtl_tx_*, mtl_rx_*"]:::app
+    LA["legacy pipeline code<br/>st20p_*, st30p_*, ..."]:::app
+    LSA["legacy session code<br/>st20_tx_create, ..."]:::app
+    UA --> SH["API shell lib/src/unified/<br/>(nodes MTL_UNIFIED_EXPERIMENTAL_rev_MSn)"]:::mtl
+    LA --> LW["legacy pipelines st*p_*<br/>wrappers on the core<br/>(st20p from MS2, the rest MS4)"]:::mtl
+    SH --> C["the core<br/>lib/src/st2110/core/"]:::mtl
+    LW --> C
+    C --> B["bindings<br/>(the engine callbacks)"]:::mtl
+    B -->|"create engine<br/>sessions"| LS["legacy session API st2x_*<br/>(the engines' interface)"]:::mtl
+    LSA --> LS
+    LS --> E["engines, schedulers, devices<br/>(one shared instance)"]:::mtl
+    UA -. "mtl_instance_from_legacy()" .- LA
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
 ```
+
+Unified code reaches the engines through the core and its bindings, which create their engine
+sessions through the legacy session API like any legacy session user. A legacy pipeline becomes a
+wrapper on the core when its essence is on it; until then it runs on the legacy session API as it
+does today. The legacy session API is never wrapped: it stays the engines' interface (§6.3), and
+its headers are hidden from MS7 on (§8). The dotted line is the bridge of §6.2.
 
 ### 6.1 Both header sets in one file
 
@@ -850,6 +863,32 @@ One library, libmtl, carries both APIs (D-23): the API shell (`lib/src/unified/`
 (`lib/src/st2110/core/`) are compiled into it next to the engines and the legacy wrappers, so
 there is no second DSO and no ABI between the core and its callers. pkg-config stays `mtl`.
 
+The picture below is the shape an application sees: it includes `mtl.h`, adds optional headers only
+for the jobs it needs, and links libmtl.
+
+```mermaid
+flowchart LR
+    APP["Your application"]:::app --> MTLH["mtl.h<br/>instance, session, unit,<br/>start / stop, wait, errors"]:::mtl
+    APP -. "only if needed" .-> EXT["optional headers<br/>mtl_mem, mtl_sync, mtl_events,<br/>mtl_packet, mtl_observe,<br/>mtl_options, mtl_util, ..."]:::mtl
+    APP -. "Phase 7" .-> L7["mtl_ipmx<br/>SDP, RTCP, PEP"]:::mtl
+    EXT --> MTLH
+    L7 --> MTLH
+    subgraph LIBMTL["libmtl"]
+        LIB["the API shell, in one version node<br/>per milestone, MTL_UNIFIED_EXPERIMENTAL_rev_MSn"]:::mtl
+        ENG["the core, the bindings,<br/>the engines"]:::mtl
+    end
+    MTLH --> LIB
+    LIB --> ENG
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+```
+
+`mtl.h` holds the core calls; every optional header includes it and adds one job, and no unified
+header includes a legacy one. The rest is `static inline`: the typed wrappers of the object verbs
+`mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_get_wait_handle`, `mtl_reap`, `mtl_read_events` and
+`mtl_release`, and helpers on public calls. What the version nodes, the exports and the headers
+promise is in the table; `sketch/check.sh` prints the functions per header and per milestone.
+
 | Item | Experimental (MS1 to the ABI freeze at MS7) | After the freeze |
 |---|---|---|
 | library | `libmtl.so`, the API shell and the core inside | the same |
@@ -922,6 +961,45 @@ tier. The session layer stays the internal engine: the pipelines call `st20_tx_c
 (`lib/src/st2110/pipeline/st20_pipeline_tx.c:482`), and the core creates its engine sessions the
 same way, with the binding's callbacks in the `ops`.
 
+The two pictures below are today's include graph (from [coverage.md §4.1](coverage.md#41-todays-public-header-set),
+checked against `include/` at `545a266a`); an arrow means "includes". The first shows the session
+headers, which all reach `mtl_api.h`:
+
+```mermaid
+flowchart LR
+    subgraph MEDIA["each includes st_api.h"]
+        S20["st20_api.h<br/>(ST 20 and ST 22)"]
+        S30["st30_api.h"]
+        S40["st40_api.h"]
+        S41["st41_api.h"]
+    end
+    MEDIA --> ST["st_api.h"]
+    ST --> API["mtl_api.h"]
+    SCH["mtl_sch_api.h"] --> API
+    SHM["mtl_lcore_shm_api.h"] --> API
+    API --> CFG["mtl_build_config.h<br/>(generated)"]
+```
+
+The second shows the headers above them, which all reach a session header, so every installed
+legacy header reaches `st20_api.h` or `mtl_api.h`:
+
+```mermaid
+flowchart LR
+    P40["st40_pipeline_api.h"]
+    P30["st30_pipeline_api.h"]
+    COMB["experimental/<br/>st20_combined_api.h"]
+    CA["st_convert_api.h"]
+    P40 --> S40["st40_api.h"]
+    P40 --> PIPE["st_pipeline_api.h"]
+    P30 --> PIPE
+    PIPE --> S20["st20_api.h"]
+    P30 --> S30["st30_api.h"]
+    COMB --> S20
+    CA --> CI["st_convert_internal.h"]
+    CI --> S20
+    CI --> S30
+```
+
 ### 8.2 Three tiers
 
 | Tier | Headers | Installed | Version nodes | Users |
@@ -930,11 +1008,34 @@ same way, with the binding's callbacks in the `ops`.
 | legacy | today's headers and `mtl_build_config.h`, moved unchanged to `mtl/legacy/` | until F+2; pkg-config `mtl-legacy` adds `-I` and `-DMTL_LEGACY_API=1` | `MTL_LEGACY` (from MS3): `mtl_api.h`, `mtl_sch_*`, the pipelines (`st2xp_*`, `st_frame_*`, plugin ABI v1) and the sessions (`st20_` … `st41_`, `st20rc_`, `st10_*`, per-pair converters) | migrating and in-tree legacy code |
 | internal | `lib/include/mtl_internal/`: the session declarations from F+2 | never | none: `local: *`; an `error` attribute unless `MTL_ALLOW_INTERNAL_API` (as DPDK's `__rte_internal`) | the engines, the core's bindings, in-tree tests and tools |
 
+The install layout during the transition puts each tier in its own directory:
+
+| Path | Tier | Version node, or role |
+|---|---|---|
+| `include/mtl/experimental/mtl.h` and the optional headers | public | `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, then `MTL_1.0` (release F) |
+| `include/mtl/legacy/mtl_api.h`, `st_api.h`, `st20_api.h`, … | legacy | `MTL_LEGACY` (from MS3) |
+| `include/mtl/legacy/mtl_legacy_gate.h` | legacy | included first by every legacy header; reads `MTL_LEGACY_STAGE` |
+| `include/mtl/st20_api.h`, … | stubs | `#include "legacy/st20_api.h"`; removed at F+1 |
+| `lib/include/mtl_internal/` | internal | session declarations from F+2; never installed; `local: *` |
+
 One legacy node: `readelf -V` shows that a binary uses the legacy API and `nm -D` which symbols,
 which the survey of private users before the freeze can ask for instead of source. The pipelines
 may leave later than the session layer: hiding goes by symbol list, not by node.
 
 ### 8.3 Stages
+
+The picture below is the order of the stages, from the unified headers of MS1 to the internal
+session headers of F+2; the table after it says what each stage changes and what it asks of
+consumers.
+
+```mermaid
+flowchart LR
+    S1["MS1, task H1b<br/>unified headers in<br/>include/mtl/experimental/;<br/>the MS1 node in libmtl"] --> S3["MS3<br/>soname, MTL_LEGACY node,<br/>local: * after the nm audit;<br/>gate added, inert"]
+    S3 --> S6["MS4 to MS6<br/>pre-hide gaps closed; legacy in<br/>mtl/legacy/ + stubs; in-tree consumers port"]
+    S6 --> F["MS7, release F<br/>deprecation warnings;<br/>unified API is MTL_1.0"]
+    F --> F1["F+1<br/>#error unless MTL_LEGACY_API;<br/>stubs removed"]
+    F1 --> F2["F+2 or later<br/>session headers internal,<br/>their symbols local"]
+```
 
 | Stage | When | Headers and symbols | Consumers |
 |---|---|---|---|
@@ -1636,6 +1737,17 @@ has is **time**: libfabric has no scheduled transmit, deadline or late completio
 send time per chunk but no media time, RTP derivation, lateness or A/V alignment, so its
 applications add TR_OFFSET and detect lateness themselves. Some Rivermax semantics are unknown
 from public sources.
+
+The picture below is that shared shape, with the call of each API at every step; the table after it
+maps the rest.
+
+```mermaid
+flowchart LR
+    A["register memory once<br/>fi_mr_reg, rmx_register_memory,<br/>mtl_mem_import + attach"] --> B["get a slot<br/>get_next_chunk,<br/>mtl_tx_acquire"]
+    B --> C["fill"]
+    C --> D["post or commit<br/>fi_send, commit_chunk,<br/>mtl_tx_submit"]
+    D --> E["completion<br/>fi_cq_read, poll_for_completion,<br/>mtl_tx_reap"]
+```
 
 | libfabric / Rivermax | Unified MTL |
 |---|---|

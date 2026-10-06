@@ -1035,7 +1035,10 @@ IS-05 PATCHes one resource (one session), every leg, all or nothing: one PATCH i
 `mtl_session_update(s, sc, parts, when, &planned_tai_ns)` (CP), typically with `MTL_UPDATE_FLOWS |
 MTL_UPDATE_LEGS`, and `MTL_UPDATE_REAPPLY` from Phase 7 (C-N1). [ex13](sketch/examples/ex13_nmos_switch.c)
 keeps the Node's own copy of the session's configuration, copies only what IS-05 changed, updates,
-and reads `status.update_seq` to match the later event. The `mtl.h` comment is normative:
+and reads `status.update_seq` to match the later event; the picture of one PATCH as one update, with
+its planned and applied instants, is in
+[examples.md §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant). The `mtl.h`
+comment is normative:
 
 - **All or nothing.** Resources are reserved before commit. The update reads only the members its
   `parts` name, and `sc->options`; the rest of `sc` is ignored. `direction`, `essence` and `unit`
@@ -1576,8 +1579,20 @@ writes and parses the extensions, keeps the counters, sizes packets for them (8 
 first, 8 B more with MAC modes: about 0.7 % more packets at 1200 B), and sends one ciphertext on
 both ST 2022-7 legs; RTCP stays clear. Key provisioning (PSK, KDF, ECDH, a fresh key generator per
 boot, the IS-05 parameters) stays with the application, which uses its own crypto library (such as
-OpenSSL); MTL takes derived keys only. The packet layout is
-[diagrams.md](diagrams.md) §11.3.
+OpenSSL); MTL takes derived keys only. The table below is where PEP sits in a packet, in wire
+order:
+
+| Part | Bytes | Under PEP |
+|---|---|---|
+| Ethernet | 14 | clear |
+| IPv4 | 20 | clear |
+| UDP | 8 | clear |
+| RTP header, X=1 | 12 | clear |
+| RFC 8285 extension: `0xBEDE` and length | 4 | clear |
+| CTR extension: Short or Full | 4 or 16 | clear |
+| payload header | per format (next paragraph); audio has none | clear |
+| payload | the rest | AES-CTR in 16-byte slices; the last may be partial |
+| MAC | 8, MAC modes only | after the payload |
 
 **Counters and sizing.** The payload header stays clear: RFC 4175's extended sequence number and
 SRDs, RFC 9134's 4 bytes, RFC 8331's header; audio has none. Packet i of a unit gets ctr_i = the

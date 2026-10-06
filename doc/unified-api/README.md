@@ -102,7 +102,6 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [decisions.md](decisions.md) | maintainers | one line of rationale per design decision D-xx, the defaults for ST20, the open implementation issues OI-n |
 | [deployment.md](deployment.md) | operators | security surfaces, containers, Kubernetes, crash safety, probes, hugepages, Windows, release and deprecation policy |
 | [nmos-ipmx.md](nmos-ipmx.md) | NMOS and IPMX products; Phase 7 | NMOS and IPMX in brief, every feature MTL provides for them (name, purpose, API, milestone), the open-source NMOS stacks, the integration, a demo plan; the Phase 7 design: the IS-05 contract, SDP, RTCP sender reports, timing without PTP, encryption |
-| [diagrams.md](diagrams.md) | everyone | a picture per example and per topic, with an index |
 | [presentation/slides.md](presentation/slides.md) | presenters | a talk on the design and the plan (Marp) |
 | [sketch/](sketch/README.md) | everyone | the normative headers, the compiling examples, `check.sh` |
 | [design/](design/wait-tests.md) | implementers | the wait protocol's pause-hook tests WH1–WH21 and the models (`design/models/`) that C1w and MS2b's provide tests copy |

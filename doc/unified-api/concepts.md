@@ -9,8 +9,29 @@ This page teaches the API in one sitting: why it exists, the ten words it is bui
 sender and receiver, what happens to one unit, and where to read on. It assumes no knowledge of
 today's MTL API. Where a legacy name helps a reader who is moving an application, it is given in
 parentheses, for example `mtl_instance_open` (legacy `mtl_init`). The full legacy map is
-[migration.md](migration.md). Every picture of the set, one per example included, is in
-[diagrams.md](diagrams.md).
+[migration.md](migration.md). Each picture sits where the text explains its subject; every example
+is drawn in [examples.md](examples.md), at the head of its section.
+
+## How to read the pictures
+
+The pictures of this page, of [examples.md](examples.md) and of the other documents share one
+notation. The names in every picture are checked against the headers in
+[sketch/include/mtl/experimental/](sketch/include/mtl/experimental/), and the headers win.
+
+| Notation | Meaning |
+|---|---|
+| blue box | your application's own code |
+| green box | an MTL call, or MTL's work |
+| grey circle | the network, or another system (MXL readers, an NMOS controller, the kubelet) |
+| arrow labels | verb names only; the arguments are in the example |
+| plain boxes | concepts, and pictures of a mechanism, which show the inside of MTL as well |
+| MS1 … MS7, (Phase 7), (`MTL_LATER`) | the milestone of [implementation-plan.md §1.2](implementation-plan.md#12-the-milestones) that builds it; MS1 is the first. Phase 7 comes after MS7; `MTL_LATER` marks names the headers declare only for Phase 7 or later |
+
+The example pictures follow four rules, so they stay readable: one idea each, at most about eight
+boxes, only what an application sees, and the happy path. Error handling is in
+[§6.4](#64-errors); the inside of MTL appears once on this page, in
+[§2.2](#22-the-app-pushes-mtl-never-calls-back), and then in the documents that own each
+mechanism ([engine.md](engine.md), [timing.md](timing.md)).
 
 ## 1. Why a new API
 
@@ -156,8 +177,8 @@ and `MTL_RTP` (generic RTP such as ST 2022-6, packet units only). A unit is one 
 | `MTL_UNIT_ROWS` | rows of a video frame, published progressively | an SDI-to-IP gateway ([ex08](sketch/examples/ex08_progressive_rows.c)) |
 | `MTL_UNIT_PACKETS` | a chunk of RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`) | forwarders, custom payloads ([ex12](sketch/examples/ex12_rtp_packets.c), `mtl_packet.h`) |
 
-The objects and who owns what: [diagrams.md §3.4](diagrams.md#34-objects-and-ownership); the
-shape next to libfabric and Rivermax: [§3.7](diagrams.md#37-the-shape-shared-with-libfabric-and-rivermax).
+The objects and who owns what: [contract.md](contract.md#object-verbs); the
+shape next to libfabric and Rivermax: [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax).
 
 ### 2.2 The app pushes, MTL never calls back
 
@@ -173,10 +194,34 @@ status), and it waits on a handle. Completions on the pinned cores only flag the
 
 One exception to "no conversion on a pinned core": with the option `rx.convert_per_packet`
 (legacy `ST20P_RX_FLAG_PKT_CONVERT`) the library converts each packet on the RX tasklet as it
-lands. It is library code; your code still never runs there. How the wake-up reaches your
-thread: [engine.md §7](engine.md#7-waking). Pictures:
-[diagrams.md §3.3](diagrams.md#33-threads-and-the-pinned-cores) and
-[§2.19](diagrams.md#219-under-the-hood-nothing-waits-on-the-pinned-cores).
+lands. It is library code; your code still never runs there.
+
+The picture below is how a completion on a pinned core reaches a thread of yours that sleeps on a
+wait handle, for example a sender whose pool is full:
+
+```mermaid
+sequenceDiagram
+    participant T as MTL tasklet (pinned)
+    participant L as Scheduler loop (same core)
+    participant A as Your thread
+    A->>A: acquire finds nothing: -MTL_EAGAIN, target armed
+    A->>A: sleep on the wait handle
+    T->>T: frame sent: result stored, PUBLISHED, fence
+    T->>L: armed: mt_wake marks the session
+    Note over T,L: the handler loop ends
+    L->>A: FLUSH: one eventfd write
+    A->>A: drain: reap the result, acquire
+```
+
+Nothing in it waits on the pinned core. Inside a tasklet a wake-up costs one mark: `mt_wake` sets
+the fired lanes of the session and a bit in the loop's bitmap. The scheduler loop, after its
+handlers, wakes at most one marked object per iteration (one futex wake and one eventfd `write()`
+at most), and only for an armed waiter (W2-deferred, D-68, D-142, every mode from MS1). A waker
+thread that takes those wakes off the core (W3) is a contingency, built only by D-142's rules (S1,
+MS2a). The protocol is in [engine.md §5.2](engine.md#52-the-completing-context-protocol) and
+[§7](engine.md#7-waking); who makes the wake-up syscall in every context:
+[engine.md §7.2](engine.md#72-the-deferred-wake); the threads:
+[engine.md §2.2](engine.md#22-execution-contexts).
 
 ### 2.3 The rules every call follows
 
@@ -273,7 +318,28 @@ What to notice:
   retirement in one call; `mtl_instance_close` shuts down network first within its deadline
   (legacy `mtl_uninit`).
 
-The same program as a picture: [diagrams.md §2.1](diagrams.md#21-send-video-ex01).
+The program's loop as a picture is in [examples.md §3](examples.md#3-send-video-smallest-program).
+The picture below follows it one frame at a time, with the reap that a program adds when it turns
+results on (§6.1); each step is explained in §5.1, and the RX twin is §5.2.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App
+    participant M as MTL
+    participant N as Network
+    App->>M: mtl_session_open
+    loop every frame
+        App->>M: mtl_tx_acquire
+        M-->>App: a free frame: lease, planes
+        App->>App: draw into it
+        App->>M: mtl_tx_submit: media index k, cookie
+        M->>N: packets, paced on the ST 2110-21 schedule
+        App->>M: mtl_tx_reap, if results are on
+        M-->>App: ON_TIME, margin_ns
+    end
+    App->>M: mtl_session_close
+```
 
 ## 4. The first receiver
 
@@ -336,12 +402,16 @@ What to notice:
 - **Close with timeout 0** returns 1 instead of waiting when a frame is still leased; the session
   retires on the last release, and calling close again polls (1, then 0).
 
-As a picture: [diagrams.md §2.2](diagrams.md#22-receive-video-on-two-networks-ex02); the legs and
-their flow states: [§4.4](diagrams.md#44-legs-and-flow-states).
+As a picture: [examples.md §4](examples.md#4-receive-video-on-two-st-2022-7-legs); the legs and
+their flow states: [contract.md §14.2](contract.md#142-admin-oper-and-flow-state).
 
 ## 5. The life of a unit
 
 ### 5.1 TX
+
+The picture is one TX unit as the application sees it ([ex01](sketch/examples/ex01_tx_video.c)):
+while it is Yours, MTL never touches it; once Queued it is MTL's until it has left, and it comes
+back Free with exactly one result. The steps below follow it.
 
 ```mermaid
 stateDiagram-v2
@@ -368,14 +438,16 @@ stateDiagram-v2
 4. **Its frame time comes**: MTL paces the packets on the ST 2110-21 schedule (sender type
    `MTL_SENDER_N`, `W` or `NL`) and sends them on every leg.
 5. **One result** records what happened (`ON_TIME`, `DROPPED`, `FLUSHED`, `FAILED`), if results
-   are on (§6.1), and the slot is free again.
+   are on (§6.1), or a counter when they are off, and the slot is free again.
 
 A failed first submit puts the slot back without a result, so a loop needs no cleanup branch; only
 `-MTL_EBADF` and `-MTL_ESTALE` change nothing, because the lease was never valid.
 `mtl_tx_release(s, u.lease)` gives back an unsubmitted lease. Rows units submit the same lease
 again with a larger `u.used` to publish more rows. A frame time with no unit is an underrun
-(§7.4). The same unit through the layers and step by step: [diagrams.md §5.1](diagrams.md#51-one-tx-unit-through-the-layers),
-[§5.5](diagrams.md#55-one-tx-frame-step-by-step).
+(§7.4). The same unit step by step: §3; through the layers:
+[engine.md §3](engine.md#3-the-core-and-its-bindings); the seven slot states behind
+the four of the picture: [engine.md §3.2](engine.md#32-the-slot-table) and
+[engine.md §3.2](engine.md#32-the-slot-table).
 
 What `u.used` counts, per essence (`mtl.h`, `struct mtl_unit`):
 
@@ -416,10 +488,14 @@ sequenceDiagram
   `MTL_SESSION_RX_BY_INDEX` puts frame k in slot k mod `pool_count`, for MXL rings
   ([ex06](sketch/examples/ex06_mxl_ring.c)).
 
-Through the layers: [diagrams.md §5.2](diagrams.md#52-one-rx-unit-through-the-layers); who owns a
-slot when, in both directions: [§5.4](diagrams.md#54-free-yours-mtls-both-directions).
+Through the layers: [engine.md §3](engine.md#3-the-core-and-its-bindings); who owns a
+slot when, in both directions: [contract.md §5.4](contract.md#54-lease-rules).
 
 ### 5.3 A session's life
+
+The picture is the path an application sees; [ex04](sketch/examples/ex04_zero_copy_tx.c) walks it
+(create, attach, start, stop, close). The full machine with every transition is in
+[contract.md §4.1](contract.md#41-states).
 
 ```mermaid
 stateDiagram-v2
@@ -432,8 +508,10 @@ stateDiagram-v2
     STOPPED --> RUNNING: start
     RUNNING --> ERROR: failure
     ERROR --> STOPPED: stop
+    RUNNING --> CLOSING: close
     STOPPED --> CLOSING: close
     CLOSING --> RETIRED: last lease returned
+    RETIRED --> [*]
 ```
 
 - `mtl_session_open` goes straight to RUNNING. **Stop** (`mtl_session_stop`; legacy pipelines had
@@ -451,8 +529,9 @@ stateDiagram-v2
   the pool, all or nothing, at a frame boundary on the wire (legacy `st20p_tx_update_destination`);
   `mtl_session_discard` (MS2) flushes the queue for a seek and stays RUNNING.
 
-The full state machine, what close does and starting sessions together:
-[diagrams.md §4.1–§4.3](diagrams.md#41-the-session-state-machine).
+The full state machine: [contract.md §4.1](contract.md#41-states); what close does:
+[contract.md §4.9](contract.md#49-close); starting sessions together:
+[timing.md §7.1](timing.md#71-starting-sessions-together).
 
 ### 5.4 Packet units
 
@@ -506,7 +585,7 @@ The core record, `struct mtl_tx_result` (96 bytes), also carries `cookie`, `seq`
   `mtl_rx_get_detail` (`mtl_observe.h`, with the ST 2110-21 `timing[]`) adds per-unit detail.
 
 Every path a submitted unit can take to its result:
-[diagrams.md §9.1](diagrams.md#91-what-happens-to-a-submitted-tx-unit).
+[contract.md §6.3](contract.md#63-statuses-and-reasons).
 
 ### 6.2 Waiting without missing a wake-up
 
@@ -528,9 +607,9 @@ wake-up syscall.
   per session; the instance has its own for port, time, health and MtlManager events
   (`mtl_instance_get_wait_handle`). Shared queues are reserved for later (`MTL_LATER`).
 
-Pictures: an event loop ([diagrams.md §2.4](diagrams.md#24-in-your-own-event-loop-ex03)),
-arming ([§6.1](diagrams.md#61-arming-in-the-applications-terms)) and interrupts
-([§6.3](diagrams.md#63-interrupts)).
+Pictures: an event loop ([examples.md §5](examples.md#5-a-sender-in-the-applications-epoll-loop)),
+arming ([contract.md §7.2](contract.md#72-arming-and-wake-ups)) and interrupts
+([contract.md §7.4](contract.md#74-interrupts)).
 
 ### 6.3 Events and status
 
@@ -541,7 +620,9 @@ updates) are read with `mtl_session_read_events`, and the instance's own with
 
 ### 6.4 Errors
 
-One code, one meaning, on every call:
+One code, one meaning, on every call. The table is what a loop sees and what to do;
+[ex_common.h](sketch/examples/ex_common.h) prints any of them, with the reason and the field from
+`mtl_last_error()`, and [contract.md §8.1](contract.md#81-codes) has every code in full.
 
 | You get | It means | Do |
 |---|---|---|
@@ -560,10 +641,10 @@ One code, one meaning, on every call:
 | `-MTL_ENOMEM` | an allocation failed | free memory, or lower `pool_count` |
 | `-MTL_EBADF` / `-MTL_ESTALE` | a wrong or closed handle / a lease already returned | fix the bug |
 | `-MTL_EDEADLK` | a call a library thread may not make, such as closing the instance from the log-sink callback | make it from your own thread |
+| close returns 1 | still retiring: leases are out, or the device holds units | call close again, with a timeout to wait, until it returns 0 |
 
 `mtl_error_name(ret)` and `mtl_reason_name(reason)` give printable names; `mtl_reasons.h` lists
-the reasons for code that branches on them. The codes as a decision tree:
-[diagrams.md §2.20](diagrams.md#220-what-a-return-code-tells-you).
+the reasons for code that branches on them.
 
 ### 6.5 Where do I look?
 
@@ -594,7 +675,7 @@ only carrier of a fact.
 
 Every key: [contract.md §11.3](contract.md#113-key-catalogue); what today's API answers to the same
 questions: [legacy-internals.md](legacy-internals.md); the picture of events and wait handles:
-[diagrams.md §9.2](diagrams.md#92-events-and-wait-handles).
+[contract.md §10.1](contract.md#101-events).
 
 ## 7. Timing in one page
 
@@ -605,19 +686,33 @@ Every unit has a **media time M**, the TAI instant it represents. Its RTP timest
 MTL derives it from M, the ST 2110-21 model and the session's `min_tx_delay_ns`. Legacy MTL used
 one field for both, so pacing and RTP could not be set apart.
 
+The picture follows unit k: its media time gives its RTP timestamp, and, through
+`min_tx_delay_ns` (§7.3), the frame time it is launched in; the packet carries both.
+
 ```mermaid
 flowchart LR
-    K["unit k"] --> M["media time<br/>M = T0 + k x period"]
-    M --> RTP["RTP = floor of M x rate"]
-    M --> D{"min_tx_delay_ns"}
-    D -->|"0: playback"| P["at the frame time of M"]
-    D -->|"one frame + pick-up lead:<br/>capture"| C["the next frame time,<br/>launch delay 1"]
-    D -->|"0, rows units:<br/>gateway"| G["the same frame,<br/>line by line"]
+    K["unit k"]:::app --> M["media time<br/>M = T0 + k x period"]:::mtl
+    M --> RTP["RTP = floor(M x rate)"]:::mtl
+    M --> D{"min_tx_delay_ns"}:::mtl
+    D -->|"0: playback"| P["the frame time of M"]:::mtl
+    D -->|"capture: one frame<br/>+ pick-up lead"| C["the next frame time,<br/>launch delay 1"]:::mtl
+    D -->|"0, rows units:<br/>gateway"| G["the same frame,<br/>line by line"]:::mtl
+    RTP --> W(("packet")):::net
+    P --> W
+    C --> W
+    G --> W
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    classDef net fill:#f3f4f6,stroke:#6b7280,color:#111827
 ```
 
-The same split with numbers, and one video frame on the ST 2110-21 schedule:
-[diagrams.md §2.17](diagrams.md#217-media-time-and-launch-time),
-[§8.3](diagrams.md#83-one-video-frame-on-the-st-2110-21-schedule).
+Within its frame time the first packet leaves at the ST 2110-21 offset: with `min_tx_delay_ns` 0
+(playback) at TVD − VRX0·TRS, TVD = N × TFRAME + TROFFSET. A late unit is dropped (INDEX, TAI) or
+moved to the next feasible index (AUTO) by `tx.late_policy`, but never moves the units after it
+(§7.4). [ex07](sketch/examples/ex07_av_anc_playout.c) and [ex10](sketch/examples/ex10_processor.c)
+use the split; the formulas are in [timing.md §4](timing.md#4-media-time-on-tx) and
+[§5](timing.md#5-launch-time); one video frame on the ST 2110-21 schedule:
+[timing.md §5.1](timing.md#51-the-st-2110-21-model).
 
 ### 7.2 What the application says: the media mode
 
@@ -633,7 +728,7 @@ Legacy `ST20P_TX_FLAG_USER_TIMESTAMP` with `st_frame.timestamp` maps to TAI with
 ([migration.md](migration.md) §4.1). The index
 period is one frame (one field when interlaced) for video, one sample for audio (`u.media_index`
 is the unit's first sample), and the video's frame for ANC and fast metadata. Which mode to pick:
-[diagrams.md §8.2](diagrams.md#82-media-modes).
+[timing.md §4.1](timing.md#41-media-modes).
 
 ### 7.3 When content exists: `min_tx_delay_ns`
 
@@ -700,8 +795,8 @@ is. The RTP of ANC frame k equals that of video frame k, and audio sample n has 
 the first video of its start. On RX, units report `media_index` too, and `mtl_rx_align` gives the
 audio sample that belongs to a video frame. Created timelines with their own anchors are reserved
 for later (`MTL_LATER`). As a picture:
-[diagrams.md §2.9](diagrams.md#29-video-audio-and-captions-from-one-file-ex07),
-[§8.5](diagrams.md#85-video-audio-and-anc-on-one-epoch).
+[examples.md §9](examples.md#9-video-audio-and-captions-from-one-file),
+[timing.md §10.1](timing.md#101-mechanism).
 
 ### 7.6 The clock
 
@@ -724,7 +819,7 @@ daemon disciplines. A time taken while the clock is not locked is flagged ESTIMA
 When a node daemon disciplines the clock, `mtl_time_set_reference` tells MTL what it cannot see
 itself (grandmaster, clock class, `locked`), for example that the node lost its grandmaster; pods
 need it, so it comes in MS2 ([deployment.md](deployment.md)). Where each time comes from:
-[diagrams.md §8.6](diagrams.md#86-where-the-time-comes-from).
+[timing.md §2.2](timing.md#22-time-sources).
 
 Details: grids, snapping, ANC windows, RX timing, time sources and steps are in
 [timing.md](timing.md).
@@ -734,16 +829,9 @@ Details: grids, snapping, ANC windows, RX timing, time sources and steps are in
 **MTL's buffers** (the default): nothing to do. The pool has `sc.pool_count` slots (0 = by
 essence), and `mtl_session_query` reports the layout and the buffer requirements before create.
 
-**Your buffers** (`mtl_mem.h`), for framework pools, MXL rings or pinned host memory:
-
-```mermaid
-flowchart LR
-    P["framework surface i"] --> S["slot i<br/>attached once"]
-    S --> T["acquire slot i,<br/>submit"]
-    T --> W(("network"))
-    W --> R["result for surface i"]
-    R --> F["give surface i back<br/>to the framework"]
-```
+**Your buffers** (`mtl_mem.h`), for framework pools, MXL rings or pinned host memory. The
+picture of a framework's pool sent without a copy, surface i as slot i, is at the head of
+[examples.md §6](examples.md#6-zero-copy-from-a-frameworks-pool).
 
 - **A region** is memory MTL may DMA: page aligned, refcounted, and mapped into every port and DMA
   engine a session using it needs (`mtl_mem_import`, `mtl_mem_alloc`; legacy `mtl_dma_map`, which
@@ -768,9 +856,9 @@ flowchart LR
 
 Regions, attached pools, per-acquire layouts and per-unit RX destinations (`mtl_tx_acquire_layout`,
 `mtl_rx_provide`) come in MS2 for video; device memory (`MTL_MEM_DEVICE`, `-MTL_ENOTSUP` until
-then) in MS6. Pictures: regions, pools, leases and holds as four separate ideas ([diagrams.md §7.1](diagrams.md#71-four-separate-ideas)),
-where a session's memory comes from ([§7.2](diagrams.md#72-where-a-sessions-memory-comes-from)),
-forwarding with holds ([§7.3](diagrams.md#73-forwarding-with-holds)). Details:
+then) in MS6. Pictures: regions, pools, leases and holds as four separate ideas ([contract.md §9](contract.md#9-memory)),
+where a session's memory comes from ([contract.md §9](contract.md#9-memory)),
+forwarding with holds ([contract.md §9.6](contract.md#96-holds-and-forwarding)). Details:
 [contract.md](contract.md) (memory), [engine.md](engine.md) (how pools map onto today's
 framebuffers).
 
@@ -788,9 +876,9 @@ framebuffers).
   SDP, IPMX and encryption is Phase 7 ([nmos-ipmx.md](nmos-ipmx.md)).
 
 Pictures: the shutdown order and the instance phases with their probes
-([diagrams.md §10.1](diagrams.md#101-the-instance-shutdown-order),
-[§10.3](diagrams.md#103-instance-phases-and-probes)), one IS-05 activation
-([§2.15](diagrams.md#215-an-is-05-activation-at-one-instant-ex13)). Details:
+([deployment.md §4.2](deployment.md#42-shutdown),
+[deployment.md §4.10](deployment.md#410-health-and-probes)), one IS-05 activation
+([examples.md §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant)). Details:
 [deployment.md](deployment.md).
 
 ## 10. Where each header fits
@@ -805,25 +893,26 @@ of frozen names. A verb several objects share is one exported function over `str
 …); a verb on a kind that does not have it is `-MTL_EINVAL`. Helpers built only on public calls
 (`mtl_util.h`, the packet table accessors, `mtl_session_open`) are inline too, so a binding calls
 the exported verb with a `struct mtl_object`. Today's API has four frame-exchange models
-([legacy-internals.md](legacy-internals.md)); the unified API has one, lease and result. As a
-picture: [diagrams.md §2.18](diagrams.md#218-which-header-do-i-need).
+([legacy-internals.md](legacy-internals.md)); the unified API has one, lease and result. The
+table says which header to include for a job, and from which milestone; the headers with their
+full jobs are in [examples.md §1](examples.md#1-the-headers).
 
-| Header | Include it to |
-|---|---|
-| `mtl.h` | instance, session config and lifecycle, the unit, TX and RX verbs, results, waiting, errors |
-| `mtl_mem.h` | use your own memory, lend one session's pool to another, address a slot by index |
-| `mtl_sync.h` | compute media indices, the next frame time and row deadlines, convert clocks, align audio to video on RX |
-| `mtl_events.h` | read the events of a session or of the instance |
-| `mtl_packet.h` | build or parse RTP packets yourself (`MTL_UNIT_PACKETS`) |
-| `mtl_observe.h` | stats, full result records, RX detail, health, shutdown with a report, logging, capture |
-| `mtl_options.h` | set a tuning knob (`MTL_OPT_*`), or list every knob by name |
-| `mtl_reasons.h` | branch on a reason code |
-| `mtl_format.h` | use an application pixel format other than the wire format; convert colour or audio formats outside a session |
-| `mtl_util.h` | the copy path (`mtl_tx_write`), one-call slot sends, stride-aware plane copies, meta records, ANC helpers |
-| `mtl_plugin.h` | write a codec plugin |
-| `mtl_legacy.h` | share an instance with legacy code (`mtl_handle`) |
-| `mtl_debug.h` | test clock and fault injection (debug builds) |
-| `mtl_ipmx.h` | SDP, the application's Info Block entries, received sender reports, IPMX encryption (Phase 7; TX sender reports driven by the `rtcp.*` options come in MS5) |
+| Header | Include it to | Milestone |
+|---|---|---|
+| `mtl.h` | send or receive with MTL's buffers: instance, session config and lifecycle, the unit, TX and RX verbs, results, waiting, errors | MS1 (video), MS4 (the other essences) |
+| `mtl_mem.h` | use your own memory, lend one session's pool to another, address a slot by index | MS2 (video), MS4 |
+| `mtl_sync.h` | compute media indices, the next frame time and row deadlines, convert clocks, align audio to video on RX | MS2 (media ticks, row deadlines, the time reference), MS3 (epoch index, `mtl_tx_get_next`); start arrays (`mtl.h`) MS6 |
+| `mtl_events.h` | read the events of a session or of the instance | MS3 |
+| `mtl_packet.h` | build or parse RTP packets yourself (`MTL_UNIT_PACKETS`) | MS5 |
+| `mtl_observe.h` | export stats, read full result records and RX detail, answer probes from health, shut down with a report, route logs, capture packets | MS1 (full TX results), MS2 (stats, RX detail, enumeration, ports, log sink), MS3 (health, shutdown), MS4 (capture) |
+| `mtl_options.h` | set a tuning knob (`MTL_OPT_*`), or list every knob by name | MS1 |
+| `mtl_reasons.h` | branch on a reason code | values only, no functions |
+| `mtl_format.h` | use an application pixel format other than the wire format; convert colour or audio formats outside a session | MS1 (application formats), MS4 (`mtl_convert`) |
+| `mtl_util.h` | the copy path (`mtl_tx_write`, from a byte buffer), one-call slot sends, stride-aware plane copies, meta records, ANC helpers | MS3 (`mtl_tx_write`; audio and ANC sessions MS4), MS2 (named slots) |
+| `mtl_plugin.h` | write a codec plugin | MS4 |
+| `mtl_legacy.h` | share an instance with legacy code (`mtl_handle`) | MS1 |
+| `mtl_debug.h` | test clock and fault injection (debug builds) | MS1 |
+| `mtl_ipmx.h` | render or parse SDP, add the application's Info Block entries, read received sender reports, encrypt with IPMX PEP | Phase 7; TX sender reports driven by the `rtcp.*` options (`mtl_options.h`) MS5 |
 
 **Options** cover the knobs most programs never touch. Pass them at create in an array, or change
 them later with `mtl_set_option(MTL_OBJ_OF_SESSION(s), &opt)` where the key allows it. Each key also
@@ -973,7 +1062,6 @@ program with little-endian PCM, as most sound APIs give, swaps the bytes itself.
 |---|---|
 | see the status and the map of the set | [README.md](README.md) |
 | read every example in full | [examples.md](examples.md), [sketch/examples/](sketch/examples/) |
-| see a picture of every example and every mechanism | [diagrams.md](diagrams.md) |
 | know exactly what a call guarantees | [contract.md](contract.md) |
 | understand timing, sync and RX timing | [timing.md](timing.md) |
 | port an application or a plugin | [migration.md](migration.md) |

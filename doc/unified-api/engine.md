@@ -17,21 +17,46 @@ commit. **[inferred]** means the effect follows from the code but was not run.
 
 ## 1. The layer picture
 
+The picture shows who calls whom; every green box is in libmtl. A unified application enters
+through the API shell, a legacy pipeline application through the `st*p_*` wrappers, and both
+reach the core. The bindings below the core are clients of the legacy session API, and the
+engines call back into them through the callbacks they already make (the upward arrow), so frames
+and rows need no new engine entry point. The table below the picture gives each part's path and
+milestone.
+
 ```mermaid
 flowchart TB
-    APP["application threads<br/>(any core, may block)"] --> API
-    APP --> LEGP
-    APP --> LEGS
-    API["the API shell, lib/src/unified/ in libmtl<br/>config to ops, option table, reasons, call classes"] --> CORE
-    LEGP["legacy st20p, st22p, st30p, st40p<br/>wrappers on the core once their essence is on it"] --> CORE
-    CORE["the core, lib/src/st2110/core/ in libmtl<br/>slot table, descriptor ring, results, holds, states,<br/>wait and deferred mt_wake, handles, transform"] --> BIND
-    BIND["bindings: video, cvideo, audio, anc, fastmeta,<br/>packet, null; each implements one engine's ops callbacks"] --> SESS
-    LEGS["legacy session API st2x_*<br/>unchanged; headers internal at the freeze"] --> SESS
-    SESS["engines: tv_* / rv_* builders and reassembly,<br/>audio, ANC, fastmeta sessions"] --> TRS
-    TRS["transmitters on tasklets<br/>pacing RL / TSC / TSN, PTP"] --> DP
-    DP["datapath: mt_txq / mt_rxq, TSQ, SRSS"] --> BE
-    BE["backends: DPDK PMD, native AF_XDP, kernel socket"]
+    UA["unified application"] --> SH
+    LA["legacy st*p_* application"] --> LW
+    LSA["legacy st2x_* application"] --> LS
+    subgraph L["libmtl"]
+        SH["API shell<br/>lib/src/unified/"]
+        LW["legacy st*p_* wrappers<br/>(st20p MS2, the others MS4)"]
+        CORE["the core<br/>lib/src/st2110/core/"]
+        BIND["bindings: video, cvideo, audio,<br/>anc, fastmeta, packet, null"]
+        LS["legacy session API st2x_*<br/>(headers internal at MS7)"]
+        ENG["engines: tv_* / rv_* builders,<br/>transmitters, reassembly;<br/>audio, ANC, fastmeta sessions"]
+        DP["datapath and backends:<br/>DPDK PMD, AF_XDP, kernel socket"]
+    end
+    SH --> CORE
+    LW --> CORE
+    CORE --> BIND
+    BIND -->|"st2x_*_create<br/>with ops"| LS
+    LS --> ENG
+    ENG -->|"get_next_frame,<br/>notify_frame_done,<br/>query_ext_frame,<br/>notify_frame_ready, ..."| BIND
+    ENG --> DP
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class UA,LA,LSA app
+    class SH,LW,CORE,BIND,LS,ENG,DP mtl
 ```
+
+The callbacks on the upward arrow are, in full, `get_next_frame`, `notify_frame_done`,
+`query_frame_lines_ready`, `query_ext_frame`, `notify_frame_ready`, `notify_slice_ready` and
+`notify_detected` (the first rule below the table); packet units add one shared chunk expander
+(MS5, §11.2). The transmitters pace on tasklets (RL, TSC, TSN; PTP), and the datapath is
+`mt_txq` / `mt_rxq`, TSQ and SRSS. The one-box version for a talk is
+[presentation/slides.md, "The idea in one picture"](presentation/slides.md#the-idea-in-one-picture).
 
 | Part | What | Where | Milestone |
 |---|---|---|---|
@@ -118,6 +143,39 @@ unregister run under a pthread mutex with an ack handshake (`mt_sch.c:873-966`).
 the wake flush between the handler loop and the sleep check (§7.2).
 
 ### 2.2 Execution contexts
+
+The picture shows the contexts and what crosses between them. Arrows into the tasklet world are
+lock-free hand-offs: a CAS on the slot, and from MS2 the `ctl` word that the `tick` hook
+acknowledges in `ack` (§6). Arrows out of it are wait-free stores: the completion CAS, a fence,
+and for an armed waiter the object's `fired` lanes and a bit in the loop's bitmap, which the
+scheduler loop turns into at most one object's wake per iteration after its handlers (§7.2). The
+only threads that run application code are the log-sink thread and codec threads; no tasklet
+does (R6). The table after the picture says what each context may and must never do.
+
+```mermaid
+flowchart LR
+    APP["application threads<br/>any core, may block"]
+    TK["pinned scheduler cores:<br/>tasklets, then the<br/>deferred wake flush"]
+    WK["library workers:<br/>recovery, auto-detect,<br/>ARP, flow, IGMP,<br/>stalled queue, retire"]
+    AD["admin thread:<br/>link monitor, time base,<br/>stats"]
+    DS["log-sink and<br/>codec threads"]
+    NIC(("NIC: DPDK PMD,<br/>AF_XDP, kernel<br/>socket, or null"))
+    APP -->|"slot CAS,<br/>ctl (MS2)"| TK
+    TK -->|"completion CAS,<br/>one wake per iteration"| APP
+    APP -->|"blocking<br/>control work"| WK
+    TK -.- AD
+    DS -->|"your log callback,<br/>your codec"| APP
+    TK <--> NIC
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    classDef net fill:#f3f4f6,stroke:#6b7280,color:#111827
+    class APP app
+    class TK,WK,AD,DS mtl
+    class NIC net
+```
+
+The tasklets are the TX builders and transmitters, RX, the bindings' callbacks and the `tick`
+hook (MS2).
 
 | Context | Pinned | May run | Must never |
 |---|---|---|---|
@@ -295,6 +353,74 @@ registry rules are [contract.md §11](contract.md), the log rules contract.md §
 
 ## 3. The core and its bindings
 
+The core owns the units and their states; a binding is the engine's callbacks, written against the
+core. The two pictures follow one video frame through the layers in MS1, TX first. The slot
+states they name are §3.2's.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as App thread
+    participant C as Core (API shell above it)
+    participant B as Video TX binding
+    participant E as Engine tasklets
+    A->>C: mtl_tx_acquire
+    C->>C: slot FREE to APP (one CAS, new generation),<br/>a result entry reserved
+    C-->>A: unit: lease, slot, planes, meta
+    A->>A: fill the planes, set used, media time, cookie
+    A->>C: mtl_tx_submit
+    C->>C: check lease, layout, media time<br/>(a failed first submit returns the slot FREE)
+    C->>C: descriptor (seq, generation, media time, cookie)<br/>into the order ring, APP to QUEUED
+    E->>B: get_next_frame (the builder)
+    B->>C: descriptor at the pick cursor, slot QUEUED<br/>with its generation: QUEUED to ENGINE
+    B-->>E: the frame, launch index N,<br/>user pacing, epoch RTP
+    E->>E: build, pace, burst, the last mbuf freed
+    E->>B: notify_frame_done
+    B->>C: completion CAS, result in the descriptor,<br/>PUBLISHED, fence, armed load
+    C->>C: if armed: mt_wake marks the session
+    E-->>A: after the handler loop:<br/>the scheduler loop's eventfd write
+    A->>C: mtl_tx_reap (mtl_reap)
+    C-->>A: results in seq order
+```
+
+With results off the completion stores FREE instead of PUBLISHED. The binding makes the launch
+decision at `get_next_frame` (step 10) with exact math (AUTO: the next feasible index; INDEX and
+TAI: the unit's index, or DROPPED when it can no longer be met) and drives the engine with user
+pacing and the epoch RTP, so the engine's own late notification never fires for a core session;
+the outcome is the result's status (§4.13,
+[timing.md §6.8](timing.md#68-the-launch-decision-of-the-video-tx-binding)). The steps of the
+completion (step 13) are §5.2; the wake (steps 14 and 15) is §7.
+
+RX runs the other way: the engine asks the binding for a slot when a new frame's first packet
+arrives, and the application dequeues what the binding published. The RX rules are
+[contract.md §5.3](contract.md#53-rx).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as Engine RX tasklet
+    participant B as Video RX binding
+    participant C as Core (API shell above it)
+    participant A as App thread
+    participant D as Any thread
+    E->>B: query_ext_frame: first packet of a new frame
+    B->>C: assign a slot: any FREE, by index (RX_BY_INDEX),<br/>or the oldest unread (RX_LATEST), FREE to ENGINE
+    B-->>E: the slot's planes and IOVA,<br/>first arrival recorded
+    E->>E: packets for media time M land in the slot<br/>(reassembly, DMA)
+    E->>B: notify_frame_ready: complete,<br/>or incomplete with its status
+    B->>C: completion CAS ENGINE to PUBLISHED: RTP, arrival per leg,<br/>packet counts, pub_seq, fence, mt_wake if armed
+    A->>C: mtl_rx_dequeue
+    C->>C: media index and flags, zero fill or conversion<br/>in the caller where granted, PUBLISHED to APP
+    C-->>A: unit: lease, slot, planes, status
+    A->>D: hand it on (TX units may hold it)
+    D->>C: mtl_rx_release (mtl_release),<br/>any thread, any order
+    C->>C: APP to FREE, or HELD while holds remain,<br/>the last hold drops it to FREE
+```
+
+From MS2 a unit whose due time passes is force-completed: the first arrival (earliest leg) + the
+unit period + `rx.flush_offset_ns` (§7.4,
+[timing.md §11.7](timing.md#117-due-time-completion-and-2022-7-skew)).
+
 ### 3.1 Bindings per essence
 
 | Essence × direction | Callbacks the binding implements | Engine work it needs |
@@ -325,7 +451,46 @@ internals.
 ### 3.2 The slot table
 
 One state machine serves both directions, because a TX result and an RX unit are the same
-thing for the reader: something published to read.
+thing for the reader: something published to read. A TX slot moves as the first picture shows:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> FREE
+    FREE --> APP: mtl_tx_acquire (CAS)
+    APP --> FREE: mtl_tx_release,<br/>failed first submit
+    APP --> QUEUED: mtl_tx_submit,<br/>seq assigned
+    APP --> XFORM: ANC submit (MS4a2)
+    QUEUED --> XFORM: transform claim (bit X)
+    XFORM --> QUEUED: converted or encoded
+    QUEUED --> ENGINE: binding at pick-up
+    QUEUED --> PUBLISHED: flush, discard, close
+    ENGINE --> PUBLISHED: completion CAS
+    PUBLISHED --> APP: mtl_tx_acquire,<br/>result stays in the descriptor
+```
+
+An RX slot moves as the second picture shows:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> FREE
+    FREE --> ENGINE: binding assigns the slot
+    ENGINE --> XFORM: decoder or converter claims it
+    XFORM --> PUBLISHED: decoded or converted
+    ENGINE --> PUBLISHED: completion CAS
+    PUBLISHED --> ENGINE: RX_LATEST reclaim
+    PUBLISHED --> APP: mtl_rx_dequeue
+    APP --> FREE: mtl_rx_release, no hold left
+    APP --> HELD: mtl_rx_release, holds left
+    HELD --> FREE: last hold drops
+```
+
+The pictures leave out the exits that end a unit without a result: with results off a TX
+completion goes from ENGINE (or QUEUED, when flushed) straight to FREE; RX discard takes ENGINE or
+PUBLISHED to FREE; a refused ANC unit goes XFORM to FREE, and a failed conversion ends XFORM with
+a failed result. The table names every exit and who takes it. XFORM is used from MS2 (converter
+plugins) and MS4 (codecs); MS1 converts in the caller.
 
 | State | TX | RX | Who moves it out |
 |---|---|---|---|
@@ -925,18 +1090,49 @@ the RX unit record without a lock, because the record is stable while the slot i
 
 ### 5.2 The completing-context protocol
 
-```text
-COMPLETING CONTEXT                                   READER (application thread, reaper lock)
-1. claim: CAS slot word ENGINE|gen -> ENGINE+C|gen   TX: the entry at reap_seq is done once its
-   (a control-plane flush: QUEUED|gen -> QUEUED+C|gen)   slot word is PUBLISHED with the entry's gen
-2. write the result: TX into the unit's descriptor,      or carries another gen: copy the result out,
-   RX into the unit record (RX: take pub_seq)            reap_seq + 1
-3. store slot word = PUBLISHED|gen (release)           RX: the entry at the dequeue cursor names a
-   (results off: FREE, nothing is read)                  PUBLISHED slot: CAS it to APP|gen + 1
-4. atomic_thread_fence(seq_cst)
-5. load the object's armed word (relaxed)
-6. if a lane of the event is armed: mt_wake(object, lanes) (§7.1 EVENT, §7.2)
+Whatever context completes a unit (§5.3) runs the same six steps against the unit's slot word,
+its result and the object's armed word; the reader, an application thread under the reaper lock,
+only ever looks at the slot word and the result. The picture shows the steps in order, and the
+lists below give each one exactly.
+
+```mermaid
+sequenceDiagram
+    participant CC as Completing context
+    participant SW as Slot word
+    participant RS as Result (descriptor or RX record)
+    participant AW as Armed word
+    participant RD as Reader (reaper lock)
+    CC->>SW: 1. claim CAS: adds C, same gen
+    CC->>RS: 2. write the result (RX: take pub_seq)
+    CC->>SW: 3. store PUBLISHED, gen (release)
+    CC->>CC: 4. seq_cst fence
+    CC->>AW: 5. load (relaxed)
+    opt a lane of the event is armed
+        CC->>CC: 6. mt_wake(object, lanes)
+    end
+    RD->>SW: load: PUBLISHED with the entry's gen?
+    RD->>RS: TX: copy the result out
+    RD->>SW: TX: reap_seq + 1. RX: CAS to APP, gen + 1
 ```
+
+The completing context:
+
+1. **Claim**: CAS the slot word ENGINE|gen → ENGINE+C|gen (a control-plane flush:
+   QUEUED|gen → QUEUED+C|gen).
+2. **Write the result**: TX into the unit's descriptor, RX into the unit record (RX: take
+   `pub_seq`).
+3. **Publish**: store the slot word = PUBLISHED|gen (release). With results off it stores FREE,
+   and nothing is read.
+4. `atomic_thread_fence(seq_cst)`.
+5. Load the object's armed word (relaxed).
+6. If a lane of the event is armed: `mt_wake(object, lanes)` (§7.1 EVENT, §7.2).
+
+The reader:
+
+- **TX**: the entry at `reap_seq` is done once its slot word is PUBLISHED with the entry's gen, or
+  carries another gen; the reader copies the result out and advances `reap_seq` by 1.
+- **RX**: the entry at the dequeue cursor names a PUBLISHED slot; the reader CASes it to
+  APP|gen + 1.
 
 - **Single producer per result.** The claim CAS makes exactly one context complete a unit, and only
   the winner writes the result, so a losing completer never touches the record. It also closes the
@@ -1063,12 +1259,17 @@ these events (§7.5); no tasklet writes them.
 ### 5.7 Handle table
 
 Every public handle is a 64-bit `{ uint64_t id; }` of its own C type (the handle typedefs of `mtl.h`), 0 the null
-handle (R4).
+handle (R4). There are two layouts, with their fields in this order:
 
-```text
-object handle = | type:8 | reserved:8 | index:16 | generation:32 |   instance, session, region, plugin
-lease handle  = | session index:16 | slot:16 | generation:32 |         mtl_lease_h (the C type is the type)
-```
+| Handle | Field | Bits | Meaning |
+|---|---|---|---|
+| object handle (instance, session, region, plugin) | `type` | 8 | the object type |
+| | `reserved` | 8 | — |
+| | `index` | 16 | the entry in the type's table |
+| | `generation` | 32 | the entry's generation |
+| lease handle (`mtl_lease_h`; the C type is the type) | `session index` | 16 | the session's entry |
+| | `slot` | 16 | the slot in the session's slot table |
+| | `generation` | 32 | the slot's generation |
 
 | Property | Rule |
 |---|---|
@@ -1113,6 +1314,28 @@ How import works (contract.md has the rules `MIXED_BACKING`, `REGION_BUDGET`, `U
   not advice.
 - **IOVA of an imported non-hugepage region:** IOVA = VA where the IOMMU allows it (OI-41), else
   MTL's invented range from `0x10000` (`mt_dma.c:21`), made collision-safe.
+
+An imported region reaches the engines through attached slots (MS2 for video), as the picture
+shows. The region is registered and DMA-mapped once; each attached slot is validated once against
+the requirements, and its stride becomes the engine's `linesize`. The video TX binding hands the
+slot to the engine as an ext frame with its IOVA, and the video RX binding returns it from
+`query_ext_frame`. Each attach and each RX hold takes a reference on the region, which drops at
+the completion CAS (TX) or at the last of release and holds, or the DMA drain (RX). The bindings
+are §3; the memory changes MF1–MF10 are in §11.
+
+```mermaid
+flowchart LR
+    R["region<br/>import: extmem register,<br/>DMA map per device,<br/>eager or at first attach"] -->|"refcount + 1 per attach<br/>and per RX hold"| S["attached slot<br/>addr, IOVA;<br/>stride becomes linesize"]
+    S -->|"TX"| T["video TX binding:<br/>get_next_frame hands<br/>an ext frame with its IOVA"]
+    S -->|"RX"| X["video RX binding:<br/>query_ext_frame returns<br/>the slot, addr and IOVA"]
+    T --> D["refcount - 1 at the<br/>completion CAS"]
+    X --> D2["refcount - 1 at the last of<br/>release and holds,<br/>or DMA drain"]
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class R,S,T,X,D,D2 mtl
+```
+
+The teardown order (sessions before regions before the memory) is
+[contract.md §9.10](contract.md#910-teardown-order).
 
 Today's memory and DMA facts that video memory (MS2) and `MTL_OPT_DMA` build on:
 
@@ -1186,19 +1409,23 @@ packet for `mtl_instance_abort` until MS2.
   timeout, the session is quarantined: its memory is never freed. There is no infinite wait.
 
 Flow updates (MS5) keep all blocking work off the tasklet; the swap is the prepared header swap of
-D-103:
+D-103. The application thread (CP) and the workers prepare everything off to the side, the
+tasklet only swaps at a unit boundary, and the old resources go after the ack, as the picture
+shows:
 
-```text
-APP (CP)                          WK / AD                              TK
-build new header templates for    ARP resolve, flow create, IGMP
-every leg off to the side         join, RTCP header update, socket-
-                                  backend queue re-create; all or
-                                  nothing across legs
-                                  publish {templates, gen, activation} --command--> at the first unit
-                                                                                    boundary >= activation:
-                                                                                    swap every leg at once
-wait for ack (bounded) <------------------------------------------------------------ ack {gen, first index}
-old resources released by WK after the ack
+```mermaid
+sequenceDiagram
+    participant APP as APP (CP)
+    participant WK as WK / AD
+    participant TK as TK
+    APP->>APP: build new header templates<br/>for every leg, off to the side
+    APP->>WK: the blocking work
+    WK->>WK: ARP resolve, flow create, IGMP join,<br/>RTCP header update, socket-backend<br/>queue re-create (all or nothing across legs)
+    WK->>TK: command: publish {templates, gen, activation}
+    TK->>TK: at the first unit boundary >= activation:<br/>swap every leg at once
+    TK-->>APP: ack {gen, first index}
+    Note over APP: waits for the ack (bounded)
+    Note over WK: after the ack: releases the old resources
 ```
 
 - Packets already in rings and descriptors carry the old header, so the ack reports the first
@@ -1278,6 +1505,31 @@ Notation for the blocks below:
 - Every syscall of a DP, WT or AS call is a raw `syscall(SYS_…)`, so none of them is a
   cancellation point.
 
+The picture shows who calls what before the steps do. A WT call counts itself in `armed` and
+sleeps on `wseq`; an event loop's DP call that finds nothing arms the `H` bit and sleeps in its
+own epoll. A completing context publishes and runs EVENT; its `mt_wake` either runs WAKE_NOW at
+once or marks the object for its loop's FLUSH (§7.2), and WAKE_NOW wakes each kind of sleeper in
+its own way. The labels are those of the listing below.
+
+```mermaid
+sequenceDiagram
+    participant WT as WT call
+    participant EL as Event loop
+    participant O as Wait words of o
+    participant CC as Waker
+    WT->>O: T5 armed += ONE(l), T6 fence, T7 load wseq
+    WT->>O: T8 re-check, T10 FUTEX_WAIT_BITSET
+    EL->>O: D2 ATTEMPT: -MTL_EAGAIN
+    EL->>O: D5 CONSUME, D6 ARM_H (H bit), D7 re-check
+    Note over EL: sleeps in epoll on the eventfd
+    CC->>O: E1 publish, E2 fence, E3 load armed
+    Note over CC: E5 mt_wake: WAKE_NOW at once,<br/>or M1, then the loop's FLUSH (7.2)
+    CC->>O: W2 clear H, W3 bump wseq, FUTEX_WAKE_BITSET
+    O-->>WT: woken: T11, back to T3
+    CC->>O: W5 POST: P1 h_pend |= lanes, S1 write(h_fd)
+    O-->>EL: readable: call every target<br/>until -MTL_EAGAIN
+```
+
 ```text
 EVENT(o, F)
 E1  publish: the completion's release store (§5.2) | a release's APP -> FREE CAS |
@@ -1288,33 +1540,35 @@ E3  a = load(o.A.armed, relaxed)
 E4  F &= the lanes with H set or a count > 0 in a
 E5  if (F) mt_wake(o, F)
 
-mt_wake(o, F)     a scheduler or the null loop:   M1 if (fetch_or(o.B.fired, F, release) == 0)
-                                                     mark index(o) in the loop's bitmap
-                  the RX packet lcore:            M1 only (it flushes its one session itself)
-                  any other thread:               WAKE_NOW(o, F)
+mt_wake(o, F): what it does depends on the calling context
+  a scheduler or the null loop:
+M1    if (fetch_or(o.B.fired, F, release) == 0) mark index(o) in the loop's bitmap
+  the RX packet lcore: M1 only (it flushes its one session itself)
+  any other thread: WAKE_NOW(o, F)
 
-WAKE_NOW(o, F)    -> syscalls made; a caller already inside a data call skips W0 and W6
+WAKE_NOW(o, F): returns the syscalls made; a caller already inside a data call skips W0 and W6
 W0  fetch_add(o.inflight, 1, seq_cst); if (load(o.state, seq_cst) == RETIRED) { W6; return 0 }
 W1  a = load(o.A.armed, acquire)
 W2  if (a & HB(F)) a = fetch_and(o.A.armed, ~HB(F), seq_cst)
-W3  if (a & WC(F)) { fetch_add(o.A.wseq, 1, release);
-                     futex(&o.A.wseq, FUTEX_WAKE_BITSET|FUTEX_PRIVATE_FLAG, INT_MAX, bits(F)) }
+W3  if (a & WC(F)) {
+        fetch_add(o.A.wseq, 1, release);
+        futex(&o.A.wseq, FUTEX_WAKE_BITSET|FUTEX_PRIVATE_FLAG, INT_MAX, bits(F)) }
 W4  hf = F & the lanes with H set in a
 W5  if (hf) POST(o, hf)
 W6  fetch_sub(o.inflight, 1, release)
 POST(o, l)
 P1  if (fetch_or(o.A.h_pend, l, seq_cst) == 0) SIGNAL(o)
-SIGNAL(o)         inside the object's in-flight counter
+SIGNAL(o): inside the object's in-flight counter
 S1  write(h_fd, 1); a failure counts instance.wake_errors (unreachable for an eventfd)
 
-DP(o, T)          timeout 0, or a WT call's final attempt; l = lane(T)
+DP(o, T): timeout 0, or a WT call's final attempt; l = lane(T)
 D1  enter; CLOSING or RETIRED: leave, return -MTL_ESHUTDOWN
 D2  r = ATTEMPT(o, T)
-D3  if (r >= 0) { the call's own sources; leave; return r }   never resets or arms the handle
+D3  if (r >= 0) { the call's own sources; leave; return r }  // never resets or arms the handle
 D4  if (r != -MTL_EAGAIN || !(load(o.A.h_mask, acquire) & l)) { leave; return r }
 D5  took = CONSUME(o, l)
 D6  ARM_H(o, l)
-D7  if (P(o, T) != WAIT) r = ATTEMPT(o, T)                       once
+D7  if (P(o, T) != WAIT) r = ATTEMPT(o, T)  // once
 D8  if (took && (r != -MTL_EAGAIN || P_lane(o, l) != WAIT)) POST(o, took)
 D9  if (r >= 0) the call's own sources
 D10 leave; return r
@@ -1323,7 +1577,7 @@ K1  p = load(o.A.h_pend, acquire); took = 0
 K2  if (p & l) { old = fetch_and(o.A.h_pend, ~l, acq_rel); took = old & l; p = old & ~l }
 K3  if (p == 0) DRAIN(o); else SIGNAL(o)
 K4  return took
-DRAIN(o)          inside the caller's in-flight counter
+DRAIN(o): inside the caller's in-flight counter
 R1  read(h_fd) (non-blocking; -EAGAIN is fine)
 R2  if (load(o.A.h_pend, seq_cst) != 0) SIGNAL(o)
 ARM_H(o, l)
@@ -1331,7 +1585,7 @@ H1  a = load(o.A.armed, seq_cst)
 H2  if ((a & HB(l)) != HB(l)) fetch_or(o.A.armed, HB(l), seq_cst)
 H3  atomic_thread_fence(seq_cst)
 
-WT(o, M, timeout) timeout != 0; l = lanes(M)
+WT(o, M, timeout): timeout != 0; l = lanes(M)
 T1  deadline = timeout == MTL_FOREVER ? NONE : now(CLOCK_MONOTONIC) + timeout
 T2  enter
 T3  c = the state's code for M; if none and ((o.A.intr | I.A.intr) & M): c = -MTL_ECANCELED
@@ -1346,14 +1600,14 @@ T10 futex(&o.A.wseq, FUTEX_WAIT_BITSET|FUTEX_PRIVATE_FLAG, v, deadline (absolute
 T11 fetch_sub(o.A.armed, ONE(l), seq_cst); if (deadline not passed) goto T3
 T12 r = DP(o, M) without its enter (mtl_wait: WAIT0 likewise); leave; return r
 
-WAIT0(o, M)       mtl_wait with timeout 0; l = lanes(M)
-Q1  enter; c = the state's code for M; if (c) { leave; return c }          handle untouched
-Q2  if ((o.A.intr | I.A.intr) & M) { leave; return -MTL_ECANCELED }        handle untouched
+WAIT0(o, M): mtl_wait with timeout 0; l = lanes(M)
+Q1  enter; c = the state's code for M; if (c) { leave; return c }  // handle untouched
+Q2  if ((o.A.intr | I.A.intr) & M) { leave; return -MTL_ECANCELED }  // handle untouched
 Q3  R = the lanes of M that are READY; if (R) { leave; return R }
 Q4  hl = l & load(o.A.h_mask, acquire); if (!hl) { leave; return -MTL_EAGAIN }
 Q5  took = CONSUME(o, hl); ARM_H(o, hl)
 Q5a if ((load(o.A.intr, seq_cst) | load(I.A.intr, seq_cst)) & M) {
-        if (took) POST(o, took); else SIGNAL(o);   leave; return -MTL_ECANCELED }
+        if (took) POST(o, took); else SIGNAL(o); leave; return -MTL_ECANCELED }
 Q6  R = the lanes of hl whose P_lane != WAIT
 Q7  if (took & R) POST(o, took & R)
 Q8  leave; return R ? R : -MTL_EAGAIN
@@ -1401,7 +1655,34 @@ on the calling context (§7.2).
 
 ### 7.2 The deferred wake
 
-A completing context never makes a syscall inside a tasklet handler (D-68):
+A completing context never makes a syscall inside a tasklet handler (D-68). The picture shows
+who makes the wake-up syscall. Every completing context runs EVENT and calls the one `mt_wake()`
+(D-102), so the choice is in one place. A tasklet only marks the object, and its scheduler loop
+flushes once per iteration, after its handler loop and before its sleep check, waking at most one
+marked object whose wake makes a syscall (D-142). The rest stay marked and the loop returns 1, so
+a scheduler never sleeps on a pending wake (D-68). What WAKE_NOW does for each kind of sleeper is
+the picture in §7.1; a WT call sleeps on `wseq`, never on the wait handle (D-141). W3 would change
+only who flushes, and is built only by D-142's rules (S1, MS2a). An application that never sleeps
+(W0) causes no wake-up at all.
+
+```mermaid
+flowchart TB
+    C["completing context: EVENT<br/>publish, fence, load armed"] --> Q{"a lane of the<br/>event armed?"}
+    Q -->|"no"| N["done: no syscall"]
+    Q -->|"yes"| MW["mt_wake(object, lanes)"]
+    MW -->|"a scheduler or<br/>the null loop"| M["M1: fired |= lanes,<br/>mark the object<br/>in the loop's bitmap"]
+    MW -->|"the RX packet lcore"| L["M1, then after<br/>its handler it takes<br/>fired of its session"]
+    MW -->|"any other thread"| WN["WAKE_NOW (§7.1),<br/>inside the object's<br/>in-flight counter"]
+    M --> FL["FLUSH: after the handler<br/>loop, before the sleep<br/>check, from the cursor"]
+    FL -.->|"the rest"| CA["stay marked (carried),<br/>the loop returns 1<br/>and does not sleep"]
+    FL -->|"at most one with a syscall<br/>per iteration (32 without)"| WN
+    L --> WN
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class C,Q,N,MW,M,L,WN,FL,CA mtl
+```
+
+"Any other thread" is an application thread, a worker, the control plane or a plugin thread. The
+table says the same per context:
 
 | Calling context | `mt_wake()` does |
 |---|---|
@@ -1470,7 +1751,7 @@ F8  Lp.cursor = 0; return 0
 **The handle.**
 
 ```text
-GET_WAIT_HANDLE(o, mask, &native)    CP
+GET_WAIT_HANDLE(o, mask, &native): CP
 G1  enter; CLOSING or RETIRED: leave, -MTL_ESHUTDOWN
 G2  the mask checks of contract.md §7.3
 G3  m = load(h_mask); if (m != 0 && m != lanes(mask)) { leave; return -MTL_EBUSY (WRONG_STATE) }
@@ -1493,13 +1774,34 @@ G5  if (!CAS(h_mask, 0, lanes(mask)) (release) && load(h_mask) != lanes(mask)) {
   the sweep) and `EPOLLEXCLUSIVE` qualify with any number of threads; edge-triggered with one
   thread per handle.
 
-**Interrupts** (`mtl_interrupt(o, mode, targets)`; the checks and codes are contract.md §8.4's):
+**Interrupts** (`mtl_interrupt(o, mode, targets)`; the checks and codes are contract.md §8.4's).
+The interrupting thread, which may be a signal handler, works only inside the object's in-flight
+counter, sets the sticky flag, and wakes the waiters; for an instance it then walks the session
+table and wakes every session's WT waiters. The picture shows the shape of the listing below
+(MTL_INTR_ON):
+
+```mermaid
+sequenceDiagram
+    participant S as Interrupter (any thread)
+    participant X as Entry of o
+    participant W as Waiters on o
+    participant T as Sessions of the instance
+    S->>X: N3 generation check, N4 enter, N5 state
+    S->>X: N7 intr |= targets, N8 fence
+    S->>W: N9 WAKE_NOW: futex wake, handle post
+    opt o is an instance
+        S->>T: N10 WALK: K5 load hw, K6 futex wake<br/>each session with a WT waiter
+    end
+    S->>X: N12 leave, errno restored
+    W->>W: T3 sees intr: -MTL_ECANCELED
+```
+
 
 ```text
 INTERRUPT(o, mode, targets)
 N1  the mode and target checks (-MTL_EINVAL, -MTL_ENOTSUP), pure, without mtl_last_error
-N0' if (syscall(SYS_getpid) != load(mt_pid, relaxed)) return -MTL_EBADF       no table access
-N2  saved = errno                                               no TLS from here on
+N0' if (syscall(SYS_getpid) != load(mt_pid, relaxed)) return -MTL_EBADF  // no table access
+N2  saved = errno  // no TLS from here on
 N3  x = entry(o) (chunk acquire); a generation mismatch: errno = saved, return -MTL_EBADF
 N4  fetch_add(x.inflight, 1, seq_cst)
 N5  st = load(x.state, seq_cst); the generation changed: r = -MTL_EBADF, goto N12
@@ -1515,7 +1817,8 @@ WALK(I, pm)
 K5  h = load(session_table.hw, seq_cst)
 K6  for each entry e < h (chunk pointers acquire) with load(e.A.owner, seq_cst) == I's index:
         if (load(e.A.armed, relaxed) & WC(F = the interrupt lanes of pm for e)) {
-            fetch_add(e.A.wseq, 1, release); futex(&e.A.wseq, FUTEX_WAKE_BITSET, INT_MAX, bits(F)) }
+            fetch_add(e.A.wseq, 1, release);
+            futex(&e.A.wseq, FUTEX_WAKE_BITSET, INT_MAX, bits(F)) }
 ```
 
 - **Waiters and the walk.** A WT waiter loads both `intr` words after its fence, so either it sees
@@ -1535,13 +1838,26 @@ K6  for each entry e < h (chunk pointers acquire) with load(e.A.owner, seq_cst) 
     on a direct open. A bridged instance keeps the legacy behaviour.
 - **Precedence.** Close wins over an interrupt.
 
-**Close and retire.**
+**Close and retire.** A handle-table entry is never freed: close makes it CLOSING and wakes
+every lane, retire makes it a tombstone once the in-flight counter drains, and a later create may
+reuse the tombstone with a new generation. The picture shows that cycle; the listing gives the
+steps.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "in use (CREATED to STOPPED, ERROR)" as LIVE
+    [*] --> LIVE: create
+    LIVE --> CLOSING: CLOSE, every lane woken
+    CLOSING --> RETIRED: X1 to X4, in-flight drained,<br/>h_fd closed, tombstone
+    RETIRED --> LIVE: Y1 reuse, new generation,<br/>words reset
+```
 
 ```text
-CLOSE(s):  STATE_CHANGE(CLOSING) wakes every lane; close then waits for the in-flight counter
+CLOSE(s): STATE_CHANGE(CLOSING) wakes every lane; close then waits for the in-flight counter
 RETIRE(s)
 X1  store(s.state, RETIRED, seq_cst); atomic_thread_fence(seq_cst)
-X2  while (load(s.inflight, seq_cst) != 0) sched_yield()    data calls, wakes and AS calls
+X2  while (load(s.inflight, seq_cst) != 0) sched_yield()  // data calls, wakes and AS calls
 X3  if (h_fd != -1) { close(h_fd); h_fd = -1 }
 X4  tombstone (§5.7); the wait words stay
 CREATE on a reused entry, before the handle is returned:
@@ -1606,12 +1922,18 @@ Today `tv_sync_pacing` reads PTP once per frame and paces the frame on TSC
 (`st_tx_video_session.c:692-748`, read at `:695` **[verified at HEAD]**); with built-in PTP the
 read is a PHC register (`ptp_from_eth`, `mt_ptp.c:401-403`), and a user `ptp_get_time_fn` runs on
 every internal read (`dev/mt_dev.c:1603-1608`). The replacement (E9, MS6), per instance and per
-CPU socket:
+CPU socket, one seqlocked record with one writer:
 
-```text
-{ seq, tsc_base, tai_base_ns, ratio (TAI ns per TSC tick, 32.32 fixed point),
-  monotonic_base_ns, realtime_base_ns, state, accuracy_ns }      seqlocked, one writer
-```
+| Field | Meaning |
+|---|---|
+| `seq` | the seqlock sequence |
+| `tsc_base` | the TSC value the record starts at |
+| `tai_base_ns` | the TAI time at `tsc_base` |
+| `ratio` | TAI ns per TSC tick, 32.32 fixed point |
+| `monotonic_base_ns` | the `CLOCK_MONOTONIC` base (conversions, below) |
+| `realtime_base_ns` | the `CLOCK_REALTIME` base (conversions, below) |
+| `state` | the time base's state (`enum mtl_time_state`) |
+| `accuracy_ns` | its accuracy, in ns |
 
 | Property | Rule |
 |---|---|
@@ -1644,7 +1966,25 @@ bounded wait, application memory could still be referenced by live descriptors.
 
 The stalled-queue path (MS3, after spike S8), used by close, ERROR entry, link loss and shutdown.
 Until it lands, core sessions close through today's teardown (`st20_tx_free`, `st20_rx_free`)
-behind the core's deferred close:
+behind the core's deferred close. The picture shows the escalation; the steps below it give each
+stage exactly.
+
+```mermaid
+flowchart TB
+    A["1. bounded idle cleanup:<br/>rte_eth_tx_done_cleanup"] --> D{"descriptors<br/>released?"}
+    D -->|"no, shared queue"| SH["3. mark the session's frames,<br/>reset at the queue's last user,<br/>session stays CLOSING"]
+    D -->|"yes"| OK["5. device references gone:<br/>the session may retire"]
+    D -->|"no, dedicated queue"| QS["2. worker: tx queue stop,<br/>then start, free callbacks<br/>claim each unit once"]
+    QS --> D2{"stopped and<br/>restarted?"}
+    D2 -->|"yes"| OK
+    D2 -->|"no"| PR["4. port reset:<br/>every queue of the port"]
+    SH --> OK
+    PR --> D3{"reset<br/>worked?"}
+    D3 -->|"yes"| OK
+    D3 -->|"no"| QU["4. quarantine:<br/>nothing it can reach is freed"]
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class A,D,OK,QS,SH,D2,PR,D3,QU mtl
+```
 
 1. Bounded idle cleanup (`rte_eth_tx_done_cleanup`, rate-limited) for up to
    `max(2 × completion latency, 10 ms)`.
@@ -1663,21 +2003,36 @@ behind the core's deferred close:
 5. The session reaches RETIRED, and a repeated `mtl_close` returns 0, only after the device
    references are gone.
 
-`mtl_session_close(s, timeout)` runs, in order:
+`mtl_session_close(s, timeout)` runs the steps of the picture in order. It returns 1 while the
+session is retiring and 0 once it is retired; calling it again on `s` polls, and never returns
+`-MTL_EBADF`.
 
-```text
-close(s):   1 while retiring, 0 once retired; calling it again on s polls (never -MTL_EBADF)
-  state -> CLOSING; new data calls return -MTL_ESHUTDOWN; release and get_status keep working
-  stop: DRAIN until the deadline, then FLUSH (STOP_TIMEOUT)      immediate command
-  wake waiters (-MTL_ESHUTDOWN)
-  detach from the scheduler (ctl + ack, the lock fallback on ack timeout; MS1: the lock)
-  wait for data callers to leave (per-session in-flight counter on its own line)
-  wait for the last NIC and DMA reference: the stalled-queue path above
-  leases or holds outstanding: return 1; the last mtl_tx_release / mtl_rx_release posts the
-      retire to a worker (a DP call cannot free); waiting for it is calling mtl_close again
-  retire: drop region references, discard unread results (counted), tombstone the
-      process-wide handle slot (never freed, R4), drop the instance reference
+```mermaid
+flowchart TB
+    A["1. state to CLOSING"] --> B["2. stop: DRAIN,<br/>then FLUSH"]
+    B --> C["3. wake waiters"]
+    C --> D["4. detach from<br/>the scheduler"]
+    D --> E["5. wait for data<br/>callers to leave"]
+    E --> F["6. wait for the last<br/>NIC and DMA reference"]
+    F --> G{"7. leases or holds<br/>outstanding?"}
+    G -->|"yes"| H["return 1; the last<br/>release posts the retire"]
+    G -->|"no"| R["8. retire"]
+    H -.->|"a worker, later"| R
+    R --> Z["0 once retired"]
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class A,B,C,D,E,F,G,H,R,Z mtl
 ```
+
+| Step | What it does |
+|---|---|
+| 1. CLOSING | the state goes to CLOSING; new data calls return `-MTL_ESHUTDOWN`; release and `get_status` keep working |
+| 2. stop | DRAIN until the deadline, then FLUSH (`STOP_TIMEOUT`); an immediate command |
+| 3. wake | waiters are woken (`-MTL_ESHUTDOWN`) |
+| 4. detach | from the scheduler: `ctl` + `ack`, the lock fallback on ack timeout; MS1: the lock |
+| 5. data callers | wait for them to leave: the per-session in-flight counter, on its own line |
+| 6. device references | wait for the last NIC and DMA reference: the stalled-queue path above |
+| 7. leases or holds | outstanding: return 1; the last `mtl_tx_release` / `mtl_rx_release` posts the retire to a worker (a DP call cannot free); waiting for it is calling `mtl_close` again |
+| 8. retire | drop region references, discard unread results (counted), tombstone the process-wide handle slot (never freed, R4), drop the instance reference |
 
 Instance close and `mtl_instance_shutdown` run the network-first order: refuse new data calls and
 wait for those inside one; TX finishes the unit on the wire and flushes the rest; RX leaves every

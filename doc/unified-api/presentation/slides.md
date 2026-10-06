@@ -7,7 +7,7 @@ paginate: true
 Slide deck for maintainers and users of MTL: the unified API, how it is built on today's
 engines, and the plan. It renders as Markdown on GitHub and in VS Code (mermaid diagrams
 included), and as slides with Marp (marp-cli with the mermaid plugin, or replace the diagrams
-with exports from ../diagrams.md). Speaker notes are the HTML comments under each slide.
+with exports of the mermaid blocks). Speaker notes are the HTML comments under each slide.
 -->
 
 # A unified MTL API
@@ -401,7 +401,6 @@ normative, and `check.sh` stays green.
 ## Learn more
 
 - `concepts.md`: the model in one sitting
-- `diagrams.md`: a picture per example, and the architecture, lifecycle and timing pictures
 - `examples.md` and `sketch/`: the headers and the examples that compile
 - `contract.md`, `timing.md`: the exact behaviour
 - `engine.md`, `implementation-plan.md`: how it is built, ST20 first

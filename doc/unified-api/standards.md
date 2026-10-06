@@ -63,14 +63,14 @@ available). Code facts about MTL are at `545a266a`.
 
 | Fact | Reference |
 |---|---|
-| The SMPTE Epoch is 1970-01-01 00:00:00 TAI, the PTP epoch of IEEE 1588-2008; it lies 63 072 010 s before 1972-01-01T00:00:00Z (UTC). `t` is "elapsed continuous time from SMPTE Epoch in seconds … the same as PTP time" | ST 2059-1:2021 §6.1 note 2, §5.2.1 |
+| The SMPTE Epoch is 1970-01-01 00:00:00 TAI, the PTP epoch of IEEE 1588-2008; it lies 63 072 010 s before 1972-01-01T00:00:00Z (UTC). `t` is the time in seconds that has run without interruption since the SMPTE Epoch; a note equates it with PTP time in PTP-based implementations | ST 2059-1:2021 §6.1 note 2, §5.2.1 |
 | TAI has no leap seconds; UTC = TAI − 37 s since 2017, carried in PTP announce `currentUtcOffset` (the value *(inferred)*); `doc/design.md` §5.4.3 documents the 37 s confusion with third-party tools | ST 2059-1; MTL docs |
 | Every periodic signal is aligned as if an alignment point occurred at the epoch: `AlignmentTime = n × AlignmentPeriod`, `NextAlignmentTime = floor(t / AlignmentPeriod + 1) × AlignmentPeriod`. HD/UHD SDI: `AlignmentPeriod = (H × V)/SR = 1/R`, one frame (two frames in ST 2051 two-frame mode) | ST 2059-1 §6.2, §7.4, §7.4.1 |
 | AES3 audio: the alignment point is the start of the Z preamble, `AlignmentPeriod = 192 × Tsamp` | ST 2059-1 §8.1 |
-| 1001-rate audio cadence: "8008 audio samples are distributed over 5 video frames at the 30/1.001 frame rate", aligned on every 5th alignment point under the ST 318 ten-field sequence | ST 2059-1 §8.2 |
-| `floor` is defined, with the warning "Sufficient precision is necessary in calculations to ensure that rounding or truncation operations will not create errors in the end results": the basis for exact arithmetic (timing.md T4) | ST 2059-1 §5.1 |
+| 1001-rate audio cadence: at 30/1.001 fps, every five video frames together carry 8008 audio samples, aligned on every 5th alignment point under the ST 318 ten-field sequence | ST 2059-1 §8.2 |
+| `floor` is defined, with a caution that the arithmetic must keep enough precision for no rounding or truncation step to corrupt the final values: the basis for exact arithmetic (timing.md T4) | ST 2059-1 §5.1 |
 | Media Clock: the timebase tied to the sampling (video: frame) rate, named by `mediaclk`, that advances the RTP timestamps. RTP Clock: the counter the Media Clock advances and that is sampled for each timestamp. Timestamp Reference Clock: the `ts-refclk` timebase, also used in RTCP sender reports. Image Sampling Instant: the instant representative of scene capture | ST 2110-10:2022 §4.10–§4.15 |
-| With `mediaclk:direct` the SDP offset is the RTP Clock value at the epoch of the Timestamp Reference Clock, and "the offset value shall be zero". Note 1: this overrides RFC 3550's random initial timestamp; receivers that work with other RTP systems may meet a non-zero offset. Note 2: a receiver can use a restarted sender's stream at once, without a new SDP | ST 2110-10:2022 §7.3 |
+| With `mediaclk:direct` the SDP offset is the RTP Clock value at the epoch of the Timestamp Reference Clock, and the standard requires that offset to be zero. Note 1: this overrides RFC 3550's random initial timestamp; receivers that work with other RTP systems may meet a non-zero offset. Note 2: a receiver can use a restarted sender's stream at once, without a new SDP | ST 2110-10:2022 §7.3 |
 | RTP Clock and Media Clock shall advance at uniform rates, at the rate the payload format sets | ST 2110-10:2022 §7.4 |
 | SDP: every stream description has a `ts-refclk` (RFC 7273 §4) and a media-level `mediaclk`. Media clock derived from the reference: `a=mediaclk:direct=0` (the offset is always written); not locked to it: `a=mediaclk:sender` | ST 2110-10:2022 §8.2, §8.3 |
 | PTP-referenced devices write `ts-refclk:ptp=IEEE1588-2008:<gm clockIdentity, EUI-64>:<domain>` or `ptp=IEEE1588-2008:traceable`; traceable is mandatory when the PTP timescale is in use, the grandmaster's `timeTraceable` is set and its `clockAccuracy` is 250 ns or better | ST 2110-10:2022 §8.2 |
@@ -202,7 +202,7 @@ VRX_FULL, CMAX and `TP=` value, and the worked numbers for 1080p59.94 and 1080p5
 | packet count | NPACKETS is the packets per frame, which depends on the mapping; -21 does not state that it is constant for -20 *(inferred: a per-frame read schedule needs it)*; -22 requires a constant count | ST 2110-21:2022 §6.2; ST 2110-22:2022 §4 |
 | SDP | `TP` required; `TROFF` and `CMAX` optional (§5 table) | ST 2110-21:2022 §8 |
 
--21 measures emission "on their network egress interface" (§6.6.1, §6.6.2) and names no bit within the packet. The
+-21 measures emission at the sender's egress port to the network (§6.6.1, §6.6.2) and names no bit within the packet. The
 unified `launch_tai_ns` and TPRj comparisons take the first bit of the packet, the Ethernet start-of-frame delimiter, as
 the instant, as the legacy pacing contract draft does (timing.md §5.1) *(inferred: a convention, not a clause)*.
 
@@ -299,17 +299,19 @@ the standard text:
 
 ### 6.5 MTL's TX today against the model
 
-From `tv_init_pacing()`, `transmission_start_time()` and `tv_sync_pacing()` in `st_tx_video_session.c`:
+From `tv_init_pacing()`, `transmission_start_time()` and `tv_sync_pacing()` in `st_tx_video_session.c`;
+the picture of this timeline is in
+[legacy-internals.md §7.3](legacy-internals.md#73-how-tx-picks-the-epoch):
 
-```text
-frame_time  = 1e9 × den / mul                       double ns; the FIELD period for interlaced
-tr_offset   = TRODEFAULT (43/1125, 28/750; interlaced 20/525·2, 26/625·2, 22/1125·2 of the field period)
-trs         = frame_time × RACTIVE / NPACKETS        gapped RACTIVE even for ST21_PACING_WIDE
-start(N)    = N × frame_time + tr_offset − vrx × trs  narrow: VRX_FULL − compensations; wide: min(0.8·VRXW, 0.8·TRO/TRS)
-pkt j       = start(N) + j × trs
-RTP default = tai_to_media_clk(round_to_media_clk(start(N)))     TX-derived: E(N) + TRO − VRX0·TRS
-RTP EPOCH   = tai_to_media_clk(N × frame_time)                     ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH
-```
+| Term | Today's formula | Note |
+|---|---|---|
+| `frame_time` | `1e9 × den / mul` | double ns; the FIELD period for interlaced |
+| `tr_offset` | TRODEFAULT (43/1125, 28/750; interlaced 20/525·2, 26/625·2, 22/1125·2 of the field period) | |
+| `trs` | `frame_time × RACTIVE / NPACKETS` | gapped RACTIVE even for `ST21_PACING_WIDE` |
+| start(N) | `N × frame_time + tr_offset − vrx × trs` | vrx narrow: VRX_FULL − compensations; wide: `min(0.8·VRXW, 0.8·TRO/TRS)` |
+| packet j | `start(N) + j × trs` | |
+| RTP default | `tai_to_media_clk(round_to_media_clk(start(N)))` | TX-derived: `E(N) + TRO − VRX0·TRS` |
+| RTP EPOCH | `tai_to_media_clk(N × frame_time)` | `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH` |
 
 - The default video RTP sits after the frame epoch by `TRO − VRX0·TRS` (+54.4…+55.7 ticks at 1080p59.94 for VRX0 9…5).
   It passes JT-NM and the -10 §7.6.3 *shall*, not its *should*. ANC and audio TX stamp their epoch (`N × frame_time`,
@@ -753,23 +755,31 @@ What MTL must meet:
 
 ## 13. Synchronisation, latency and lip-sync
 
-- **Alignment is by RTP only.** "Inter-stream synchronization at a common destination relies on comparison of RTP Timestamp
-  values" (-10 §7.1); "Synchronization at the receiving device is achieved by the comparison of RTP timestamps with the
+- **Alignment is by RTP only.** Inter-stream synchronisation at a common destination compares RTP timestamp values (-10 §7.1); "Synchronization at the receiving device is achieved by the comparison of RTP timestamps with the
   common reference clock" (TR-03 §7). No ST 2110 field pairs essences: aligned means equal TAI instants after each RTP is
   unwrapped at its own rate. Audio packet boundaries almost never coincide with frame boundaries.
-- **Latency terms** (-10 §7.8, §8.7):
+- **Latency terms** (-10 §7.8, §8.7). The picture shows the three instants of packet j and the
+  delays between them; the table defines each.
 
-```text
-T_RTP(j)  time equivalent of packet j's RTP timestamp (first packet with that timestamp)
-T_TX(j)   transmission instant;   T_REC(j)  instant the media is reconstructed and "available for further use"
-D_TX  = T_TX(j) − T_RTP(j)        sender transmission delay, signalled as TSDELAY=<µs>
-D_NET = network delay ("can be very small")
-D_LO  = T_REC(j) − T_RTP(j)       receiver Link Offset Delay: "should be a constant value, designed or configured into
-                                  the Receiver"; receivers "should document their Link Offset Delay, and provide a means
-                                  to configure it"
-At T_NOW a receiver reconstructs the packet whose RTP time is T_NOW − D_LO. A packet "could arrive at the Receiver as
-early as T_RTP(j)", so the buffer holds every packet arriving during D_LO.
+```mermaid
+flowchart LR
+    RTP(("T_RTP(j)")) -->|"D_TX"| TX["T_TX(j)<br/>sender"]
+    TX -->|"D_NET"| RX["arrival<br/>receiver buffer"]
+    RX --> REC["T_REC(j)<br/>reconstructed"]
+    RTP -.->|"D_LO"| REC
 ```
+
+| Term | Definition | Note |
+|---|---|---|
+| T_RTP(j) | the time equivalent of packet j's RTP timestamp | the first packet with that timestamp |
+| T_TX(j) | the transmission instant | |
+| T_REC(j) | the instant the media is reconstructed and available for further use | |
+| D_TX | `T_TX(j) − T_RTP(j)` | the sender's transmission delay, signalled as `TSDELAY=<µs>` |
+| D_NET | the network delay | may be very small |
+| D_LO | `T_REC(j) − T_RTP(j)` | the receiver's Link Offset Delay: should be constant, designed or configured into the receiver, which should document it and let it be configured |
+
+At T_NOW a receiver reconstructs the packet whose RTP time is T_NOW − D_LO. A packet may arrive as
+early as T_RTP(j), so the buffer holds every packet arriving during D_LO.
 
 - TR-03 §10: the link offset "is determined by the receiver … Some receivers may support a configurable link offset such
   that inter-stream synchronization (e.g. lip sync) can be achieved". The IPMX form is §14.

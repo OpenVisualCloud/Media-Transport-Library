@@ -544,6 +544,21 @@ It returns the flags; `h` (152 B: `phase`, `reason`, `time_state`, counts, `olde
 is exactly when liveness matters. During close it reports `SHUTTING_DOWN` and masks `SCHED_STALLED`
 (stopped schedulers no longer loop); after close it returns `-MTL_ESHUTDOWN`.
 
+`h->phase` (`enum mtl_phase` in `mtl_observe.h`) is how far the instance got. The picture below is
+its life: `STARTING` is set in every state left of `READY`, and `SHUTDOWN` is reached from any of
+them.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> LINKS: open returns, devices up
+    LINKS --> TIME: links up
+    TIME --> READY: time base no longer acquiring
+    LINKS --> SHUTDOWN: close or shutdown
+    TIME --> SHUTDOWN: close or shutdown
+    READY --> SHUTDOWN: close or shutdown
+```
+
 | Bit (`MTL_HEALTH_`) | Liveness | Readiness | Source |
 |---|---|---|---|
 | `SCHED_STALLED` | ✓ | ✓ | a scheduler's last loop is older than `instance.stall_ns` (1 s). The heartbeat also advances on wake-ups and timer ticks, so a sleeping idle scheduler is not stalled; open rejects a `stall_ns` below twice the longest scheduler sleep. `MTL_EVENT_SCHED_STALLED` warns at 1/8, 1/4 and 1/2 of the limit. |
@@ -565,12 +580,16 @@ The library never kills anything. In thread mode on shared CPUs a 100 ms preempt
 why the liveness limit is 1 s.
 
 The application serves the probes itself (HTTP or gRPC); an exec probe would fork a process on
-exclusive CPUs every period. ex11 has the handler:
+exclusive CPUs every period. ex11 ([examples.md §13](examples.md#13-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown))
+has the handler, and answers as the table says:
 
-- **startup and liveness**: 503 until open returns, then on any liveness bit. The startup probe uses
-  the liveness rule, so a grandmaster or link outage at start does not crash-loop the pod;
-- **readiness**: 503 on any readiness bit;
-- **after shutdown began** (`-MTL_ESHUTDOWN`): liveness 200, readiness 503.
+| Probe | 503 when |
+|---|---|
+| startup, liveness | before open returns; any `MTL_HEALTH_LIVENESS` bit: `SCHED_STALLED`, `WORKER_STALLED`, `SESSION_LOST`, `DEVICE_FAULT`. After the shutdown began (`-MTL_ESHUTDOWN`): 200 until exit |
+| readiness | before open returns; any `MTL_HEALTH_READINESS` bit: the liveness bits and `STARTING`, `NO_LINK`, `TIME_UNLOCKED`, `MANAGER_LOST`, `SHUTTING_DOWN`; after the shutdown began (`-MTL_ESHUTDOWN`) |
+
+The startup probe uses the liveness rule, so a grandmaster or link outage at start does not
+crash-loop the pod.
 
 Stats for exporters: per scheduler `sched.loops`, `sched.last_loop_tai_ns`, `sched.busy_pct_x100`; per
 session `session.last_progress_tai_ns`, `session.leases_out`, `session.oldest_lease_ns`. The session keys

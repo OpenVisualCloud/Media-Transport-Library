@@ -549,15 +549,29 @@ engine.md §4.10 and §9; the pod hazards deployment.md §4.16.
 
 ### 4.1 Instance
 
-```text
-          mtl_init()                 mtl_start()              mtl_stop()
-(none) ─────────────► INITIALIZED ───────────────► STARTED ───────────────► INITIALIZED
-          ports started; admin,      schedulers run          schedulers stop; ports stay up
-          PTP, CNI, ARP up           tasklets
-          MTL_FLAG_DEV_AUTO_START_STOP: init calls start, mtl_stop() is a no-op
-mtl_uninit(): stop → free → rte_eal_cleanup() → no mtl_init again in this process
-mtl_abort(): an atomic store only
+An `mtl_handle` has two live states, as the picture shows: INITIALIZED (ports up, schedulers
+stopped) and STARTED (schedulers running). `mtl_uninit()` ends the process's use of DPDK for good.
+The unified calls that replace these are [migration.md §2](migration.md#2-call-map-per-legacy-family).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> INITIALIZED: mtl_init()
+    INITIALIZED --> STARTED: mtl_start()
+    STARTED --> INITIALIZED: mtl_stop()
+    INITIALIZED --> CLEANED: mtl_uninit()
+    STARTED --> CLEANED: mtl_uninit()
+    CLEANED --> [*]
+    note right of CLEANED: EAL cleaned up,<br/>no mtl_init again<br/>in this process
 ```
+
+| Call | Transition | What it does |
+|---|---|---|
+| `mtl_init()` | none → INITIALIZED | ports started; admin, PTP, CNI, ARP up. With `MTL_FLAG_DEV_AUTO_START_STOP` it also calls start |
+| `mtl_start()` | INITIALIZED → STARTED | schedulers run tasklets |
+| `mtl_stop()` | STARTED → INITIALIZED | schedulers stop; ports stay up. A no-op with `MTL_FLAG_DEV_AUTO_START_STOP` |
+| `mtl_uninit()` | either → CLEANED | stop → free → `rte_eal_cleanup()`; no `mtl_init` again in this process |
+| `mtl_abort()` | none | an atomic store only |
 
 | Fact | Evidence |
 |---|---|
@@ -659,15 +673,27 @@ Nothing tells "scheduler N has not looped for X ms" (EK11).
 
 ### 4.3 Sessions
 
-```text
-            *_create(mt, ops)                                   *_free(h)
-(none) ──────────────────────► ACTIVE (on a scheduler) ─────────────────► freed; handle dangles
-               no per-session start/stop; tasklet runs iff the instance runs
-               fatal error: s->active = false, ST_EVENT_FATAL_ERROR (TX video only)
+A legacy session has one live state, as the picture shows: from create to free it sits on a
+scheduler, and its tasklet runs if and only if the instance is STARTED (§4.1). The only other state
+is the fatal one, which TX video alone has.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> ACTIVE: *_create(mt, ops)
+    ACTIVE --> INACTIVE: fatal error
+    ACTIVE --> FREED: *_free(h)
+    INACTIVE --> FREED: *_free(h)
+    FREED --> [*]
+    note right of ACTIVE: on a scheduler
+    note right of INACTIVE: TX video only,<br/>active = false,<br/>ST_EVENT_FATAL_ERROR
+    note right of FREED: the handle dangles
 ```
 
 - No public per-session start or stop: only create, free, update, `wake_block`,
-  `set_block_timeout`, `put_frame_abort`. Pause is `mtl_stop()` for the whole instance.
+  `set_block_timeout`, `put_frame_abort`. The tasklet runs while the instance runs; pause is
+  `mtl_stop()` for the whole instance. Today `mtl_uninit` with live sessions may self-deadlock
+  (SP-01, the table below).
 - Create is serialised by the scheduler's manager mutex (`st_tx_video_session.c:4464-4491`); the
   tasklet reaches a session with `rte_spinlock_trylock` (`st_tx_video_session.h:31`); free removes it
   under that spinlock (`tv_mgr_detach`, `:3798-3816`), so no tasklet callback starts after `*_free`
@@ -713,6 +739,37 @@ the builder `pending` overwrite (sleep mode only, SF-08, §5.4); samples that te
 callbacks (§5.5).
 
 ### 5.1 Execution contexts today
+
+The picture shows where code runs today: application threads call in, the pinned lcores run the
+tasklets and, from them (or from the RX video packet lcore), the user callbacks with the session
+spinlock held (H1, §5.2); the library's
+own pthreads and the plugin threads run beside them. The table after it lists every context with
+its evidence; what changes is [engine.md §2](engine.md#2-the-pinned-core-rules).
+
+```mermaid
+flowchart LR
+    APP["application threads:<br/>create, free, update;<br/>get, put, mbuf;<br/>wait BLOCK_GET"]
+    subgraph PIN["pinned EAL lcores (default)"]
+        direction TB
+        SCH["lcore k: mtl_sch loop over tasklets:<br/>video builder and transmitter,<br/>RX video, audio, ANC, fastmeta,<br/>CNI, PTP, SRSS, user tasklets"]
+        PKT["lcore m: rv_pkt_lcore_func<br/>(ST20_RX_FLAG_USE_MULTI_THREADS)"]
+        CB["user callbacks: get_next_frame,<br/>notify_*, query_ext_frame;<br/>session spinlock held (H1)"]
+        TAP["lcore t: TAP background thread"]
+    end
+    subgraph OTHER["unpinned threads"]
+        direction TB
+        ADM["library pthreads: mtl_admin (6 s),<br/>stat, CNI, SRSS, socket TX and RX"]
+        EAL["TSC calibration at init,<br/>EAL interrupt and alarm thread"]
+        PLG["plugin threads: ST22 encoders,<br/>decoders, converters"]
+    end
+    APP -->|"API calls"| SCH
+    SCH -->|"calls"| CB
+    PKT -->|"calls"| CB
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class APP,CB app
+    class SCH,PKT,TAP,ADM,EAL mtl
+```
 
 | ID | Context | Created at | Pinned | Notes |
 |---|---|---|---|---|
@@ -816,7 +873,26 @@ syscall without waiters, with one it issues `FUTEX_WAKE` (about 1–3 µs and an
 (`st20_pipeline_tx.c:775-789`), so a preempted app thread puts the pinned core to sleep in
 `FUTEX_WAIT` (priority inversion). Lost wake-ups do not happen: RX sets `block_wake_pending` under
 the mutex (`st20_pipeline_rx.c:32`), TX re-claims on every wake. Destroy uses the same signal
-(`mt_handle_guard.h:38-46`).
+(`mt_handle_guard.h:38-46`). The picture shows the st20p TX case (`st20_pipeline_tx.c:29-34`,
+`:41-43`, `:774-789`): the tasklet's lock step is where the pinned core can sleep.
+
+```mermaid
+sequenceDiagram
+    participant A as App thread (st20p_tx_get_frame)
+    participant T as Tasklet (frame done)
+    A->>A: claim FREE to IN_USER (CAS) fails
+    A->>A: lock block_wake_mutex
+    A->>A: claim again, then cond_timedwait (releases the mutex)
+    T->>T: store FREE (release)
+    T->>T: user notify_frame_available, user code on the pinned core
+    T->>T: lock block_wake_mutex: may FUTEX_WAIT while the app holds it
+    T->>A: cond_signal: FUTEX_WAKE syscall if a waiter
+    T->>T: unlock: FUTEX_WAKE if contended
+```
+
+The core replaces this with the armed wait and `mt_wake()`
+([engine.md §7.2](engine.md#72-the-deferred-wake)): no lock and no condition variable on the
+tasklet.
 
 ### 5.4 Scheduler details beyond engine.md
 
@@ -952,9 +1028,42 @@ build states `WAIT_FRAME → SENDING_PKTS → WAIT_FRAME` (`st_tx_video_session.
 `:1709`), with no builder-held reference, so the free callback fires whenever it touches 0
 (whether that can happen mid-frame in a slice-mode stall: **[unknown]**, MF7); port R packets
 share the P chain mbuf (`rte_mbuf_refcnt_update(pkt_chain, 1)`, `:1353-1357`), so the callback
-waits for both NICs. **RX video frame**: `rv_get_frame` scans and increments
-(`:205-220`); completion waits for `mt_dma_empty()` (`:1507-1528`, `:1845`); recycled frames keep the
-previous bytes in gaps.
+waits for both NICs. The first picture follows one TX frame through its `refcnt` and `sh_info`.
+
+```mermaid
+flowchart LR
+    E["EXT only: the app sets<br/>the frame, st20_tx_set_ext_frame<br/>(:4502)"] --> F["FREE<br/>refcnt 0"]
+    F -->|"builder get_next_frame:<br/>refcnt 0 checked<br/>(:1936-1944), inc (:1963)"| S["SENDING<br/>refcnt 1"]
+    S --> P["per packet: attach_extbuf,<br/>sh_info + 1<br/>(:1293-1298),<br/>or a copy into the mbuf"]
+    P --> CB["sh_info reaches 0:<br/>DPDK calls tv_frame_free_cb<br/>(:116-141):<br/>notify_frame_done, refcnt - 1"]
+    CB --> F
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class E app
+    class F,S,P,CB mtl
+```
+
+With no chain, `tv_frame_free_cb` is called directly after the last packet is built (`:2130-2134`).
+Recovery and stop force `tv_notify_frame_done`, `refcnt--` and `sh_info = 0` (`:4295-4300`), the
+double-completion window SF-39 and the zeroed count SF-41 of
+[engine.md §5.3](engine.md#53-every-completing-context).
+
+**RX video frame**: `rv_get_frame` scans and increments (`:205-220`); completion waits for
+`mt_dma_empty()` (`:1507-1528`, `:1845`); recycled frames keep the previous bytes in gaps. The
+second picture shows the RX frame's states (`st_rx_video_session.c` lines).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> FREE
+    FREE --> ASSEMBLING: rv_get_frame scan,<br/>refcnt + 1 (:205-220)
+    ASSEMBLING --> APP: complete,<br/>notify_frame_ready(addr)
+    ASSEMBLING --> FREE: incomplete without<br/>RECEIVE_INCOMPLETE,<br/>or dynamic ext query failed
+    APP --> FREE: st20_rx_put_framebuff(addr) (:4692),<br/>rv_put_frame refcnt - 1 (:222-232)
+```
+
+A negative `notify_frame_ready` return puts a complete frame back (`:937-944`); on an incomplete
+frame the return is ignored (`:978`). The dynamic ext-frame query is at `:1259`.
 
 **Pipeline states**: st20p TX FREE, READY, IN_CONVERTING, CONVERTED, DROPPED, IN_USER,
 IN_TRANSMITTING (`st20_pipeline_tx.h:11-20`); IN_TRANSMITTING → FREE, or → IN_USER with
@@ -969,7 +1078,22 @@ no mutex; the pipeline sets slot state before the callback (`st20_pipeline_tx.c:
 ext "done" points: derive → after NIC completion (reusable); internal converter →
 `notify_frame_done(src)` at once in the caller (network not done); plugin converter → after
 `convert_put_frame` (network not done); the header claims tasklet-only for `notify_frame_done`
-(`include/st_pipeline_api.h:925-926`).
+(`include/st_pipeline_api.h:925-926`). The picture shows the three `put_ext_frame` paths; the
+pipeline states map onto the seven slot states of [engine.md §3.2](engine.md#32-the-slot-table).
+
+```mermaid
+flowchart LR
+    P["put_ext_frame"] -->|"derive"| D["st20_tx_set_ext_frame"] --> CV["CONVERTED"] --> IT["IN_TRANSMITTING"] --> ND["NIC done:<br/>frame_done,<br/>notify_frame_done"]
+    P -->|"internal converter"| IC["convert in the caller thread"] --> NI["notify_frame_done(src) at once:<br/>network not done"]
+    P -->|"plugin converter"| RD["READY"] --> PC["plugin converts,<br/>convert_put_frame"] --> NP["notify_frame_done(src):<br/>network not done"]
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    class P app
+    class D,CV,IT,ND,IC,NI,RD,PC,NP mtl
+```
+
+In the two converter paths the source frame is reusable before the network is done with the
+converted one; the unified result is the transport outcome on every path.
 
 **Gaps a binding must handle.** No retained memory object; unmapping memory still in flight is
 undetected. The callback runs before `refcnt--` and the clear (SF-05, MF1). Done is path-dependent
@@ -1150,6 +1274,48 @@ floor(now / T)`, `next = cur_epochs + 1`:
 | `now_epoch > next` | `now_epoch` | `stat_epoch_drop += now_epoch − next`, `notify_frame_late(skipped)` | RTP jumps; immediate if the start passed |
 | interlaced, parity ≠ `second_field`, not EXACT | `epoch + 1` | — | waits one field (`:709-713`, `7058bed0`) |
 
+The picture draws one frame period of epoch N at 1080p59.94 (gapped, 4320 packets, TSC pacing
+with the default bulk 4, so VRX = 6; `tv_init_pacing`, `st_tx_video_session.c:494-611`). The axis
+is in milliseconds after the epoch boundary N·T; T is the field period if interlaced. Packet 0's
+target is `start_N` (`transmission_start_time`, `:63-70`, the `tsc_time_cursor`), not N·T. Near
+the end of the period the builder already picks frame N+1.
+
+```mermaid
+gantt
+    title Epoch N at 1080p59.94, ms after N·T
+    dateFormat x
+    axisFormat %S.%L
+    section Grid
+    epoch boundary N·T            :milestone, 0, 0ms
+    frame period T = 16.683 ms    :t, 0, 16683
+    next boundary (N+1)·T         :milestone, 16683, 0ms
+    section Wire
+    TR_OFFSET − VRX·TRS = 0.615 ms :w, 0, 615
+    start_N packet 0               :milestone, 615, 0ms
+    active, 4320 × TRS = 16.016 ms :a, 615, 16631
+    idle 0.052 ms                  :i, 16631, 16683
+    section RTP
+    EPOCH flag round(90k × N·T)    :milestone, 0, 0ms
+    default round_tick(start_N)    :milestone, 615, 0ms
+    section Builder
+    get_next_frame picks N+1       :milestone, 14733, 0ms
+    ring, ≤ 512 packets = 1.898 ms :r, 14733, 16631
+```
+
+| Term | Formula (code) | 1080p59.94 |
+|---|---|---|
+| T | `frame_time = 10⁹ × den / mul` ns (`:499`) | 16 683.333 µs |
+| epoch boundary | N·T (`tai_from_frame_count`, `:50-58`, `nextafterl`) | 0 |
+| TR_OFFSET | `T × 43 / 1125` for height ≥ 1080, else `T × 28 / 750`; interlaced `T × 22 / 1125 × 2` (480: 20/525, 576: 26/625) (`:506-518`) | 637.665 µs |
+| TRS | `T × (1080 / 1125) / total_pkts` (`:519`) | 3.7074 µs |
+| VRX | `st21_vrx_narrow` = max(8, total_pkts / (27000 × T)) = 9, minus bulk − 1 for TSC (6), minus 4 for RL (5), unchanged for TSC_NARROW (9) (`:566-578`, `:3365`) | 6 (TSC) |
+| start_N | N·T + TR_OFFSET − VRX·TRS (`:63-70`) | 615.42 µs (RL 619.1, TSC_NARROW 604.3) |
+| active | total_pkts × TRS = `T × 1080 / 1125` | 16 016.0 µs, to 16 631.4 µs |
+| idle | (N+1)·T − start_N − active | 51.9 µs |
+| RTP, default | `round_tick(start_N)`, not N·T: the start is rounded to the media clock (`st_tai_round_to_media_clk_ns`, `:729`) and the RTP is taken from it (`:790-797`) | N·T + 615.4 µs |
+| RTP, `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH` | `round(90k × N·T)` (`:790-792`) | N·T |
+| builder decides N+1 | at `get_next_frame()`, about `ring_count` (≤ 512 packets, `ST_TX_VIDEO_SESSIONS_RING_SIZE`, `:3408-3412`) × TRS before frame N's last packet leaves | ≈ 14 733 µs, 1.898 ms before the end of active |
+
 So "late" is measured at the epoch boundary: a frame picked in `(start_N, (N+1)·T)` leaves up to a
 frame late with no counter, in epoch N at once (RTP continuity over ST 2110-21 conformance).
 `stat_epoch_troffset_mismatch` has no writer and video never writes `stat_epoch_mismatch` (SF-25);
@@ -1222,9 +1388,27 @@ tick, so the first sample needs a floor or round rule (timing.md §3.4, §8).
 `tests/unit/session/multi_essence_sync_test.cpp` proves only that the sessions map one
 USER_TIMESTAMP to one TAI/RTP; nothing covers pipelines, wire timing or cross-essence TX.
 
-**Latency and buffering.** TX video stages: framebuffers (FIFO by `seq`) → converter →
-builder `get_next_frame` (epoch decided) → ring (≤ 512 packets, about 1.9 ms at 1080p60) →
-transmitter wait → NIC queue (`nb_tx_desc` 512) → shaper. Frames leave CONVERTED one per epoch; the
+**Latency and buffering.** The TX video stages are in the picture, from `put_frame` to the wire;
+the epoch is decided at the builder (§7.3).
+
+```mermaid
+flowchart LR
+    A["app put_frame"] --> F["framebuffs:<br/>FIFO by seq"]
+    F --> C["converter or plugin<br/>(optional): CONVERTED"]
+    C --> B["builder get_next_frame:<br/>the epoch is decided here"]
+    B --> R["rte_ring, up to 512 packets<br/>(about 1.9 ms at 1080p60)"]
+    R --> T["transmitter:<br/>TSC, RL or TSN wait"]
+    T --> Q["NIC TX queue<br/>nb_tx_desc, default 512"]
+    Q --> W(("RL shaper, wire"))
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    classDef net fill:#f3f4f6,stroke:#6b7280,color:#111827
+    class A app
+    class F,C,B,R,T,Q mtl
+    class W net
+```
+
+Frames leave CONVERTED one per epoch; the
 builder pulls k + 1 only when k's last bulk is in the ring, so "evaluation time" is about one ring
 depth before k ends, invisible to the app; the onward limit is 1 s; no "expected TX time if I put
 now" or queue-depth query. Audio runs up to `fifo_size` ahead, with unpaced queueing in the
