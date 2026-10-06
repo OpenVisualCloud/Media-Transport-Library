@@ -138,7 +138,7 @@ int open_timecode(mtl_instance_h mt, mtl_session_h* s) {
   sc.anc.video.height = 1080;
   sc.anc.video.scan = MTL_INTERLACED;
   sc.anc.video.fps = mtl_fps_rational(MTL_FPS_29_97); /* frames, not fields */
-  sc.anc.max_packets = 2; /* small slots: 2 entries, 510 words */
+  sc.anc.max_packets = 2; /* small slots: 2 entries, 255 words */
   return mtl_session_open(mt, &sc, s);
 }
 int send_timecode(mtl_session_h s, int64_t field) {

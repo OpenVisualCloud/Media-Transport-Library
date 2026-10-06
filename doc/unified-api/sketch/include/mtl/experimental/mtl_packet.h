@@ -32,6 +32,10 @@
  * and on RX removes duplicates by sequence number and RTP timestamp, within
  * rx.skew_budget_ns of packets (ST 2022-7 Annex A). No DPDK buffer is ever exposed and no
  * application code runs on a tasklet.
+ *
+ * For the application's own packetiser and parser: the RTP and payload header layouts with
+ * fixed-offset accessors (inline), and the RFC 8331 codec of ST 2110-40 payloads (exported:
+ * a parser of bytes from the network is never inline, sketch/README.md).
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_PACKET_H
@@ -174,6 +178,70 @@ struct mtl_st41_hdr {
   uint8_t bits[4]; /* data item type (22 bits), K bit, data item length in words (big endian) */
 };
 
+/* ---- RFC 8331 (ST 2110-40) codec ------------------------------------------------------ */
+
+/* Exported, never inline: the decode parses bytes from the network, so libmtl and every
+   application run the one implementation, a fix reaches them all by updating libmtl, and a
+   fuzz harness covers it (D-195). The library's ANC frame units use the same two
+   functions (submit encodes, dequeue decodes), so a packet-unit relay and a frame-unit
+   receiver of one process agree on every entry. The bit helpers (mtl_anc_udw_get,
+   mtl_anc_parity, mtl_anc_checksum, mtl_anc_rfc8331_bytes) stay inline in mtl_util.h. */
+
+/* What a decode found. */
+struct mtl_anc_decode_info {
+  uint32_t pkts;      /* entries written */
+  uint32_t udw_words; /* words written (RAW: the runs' words) */
+  uint32_t skipped;   /* corrupt ANC packets skipped, every cause together */
+  uint16_t truncated; /* well-formed ANC packets beyond max_pkts or the words' capacity */
+  uint16_t gap_after; /* 1: a gap is still pending (packets were skipped or truncated
+                         after the last entry written, or gap_in was set and no entry was
+                         written): the caller's next entry carries MTL_ANCF_GAP_BEFORE */
+};
+/* The ANC packets of one RTP packet to table entries and their words, as the library's
+   dequeue does for frame units: `data` is the RFC 8331 Length bytes after struct
+   mtl_rfc8331_hdr, anc_count its ANC_Count, word_mode the session's (0 = 8-bit). It reads at
+   most len bytes of data whatever they hold, and writes at most max_pkts entries, udw_cap
+   words and, RAW, max_pkts x 4 header words. Decoding stops after anc_count packets, so
+   word_align padding or trailing bytes are never read as packets. User data words go to
+   `words` back to back; each entry's udw_offset counts words from `words`; RAW also writes four
+   words per entry to raw_hdr. Outside RAW a corrupt packet is skipped and counted in skipped:
+   DID, SDID or Data_Count parity, the checksum, DID 00h or a Type 2 SDID 00h (ST 291-1 §6.1,
+   §6.2), a 10-bit word 000h-003h or 3FCh-3FFh (§9.1), an 8-bit word whose b8/b9 are not its
+   parity, or past Length; a Data_Count parity error or a packet past Length also skips the
+   rest of ANC_Count, as the next start is unknown. In RAW only a packet past Length is skipped,
+   and the others are delivered with MTL_ANCF_PARITY_ERR or MTL_ANCF_CHECKSUM_ERR. The library's
+   dequeue also counts each cause in the session's anc.pkts_skipped{cause} stats key
+   (contract.md §11.3). A packet that does not fit is counted in truncated and decoding goes
+   on. The first entry carries MTL_ANCF_GAP_BEFORE when gap_in is set, and an entry after
+   skipped or truncated packets always does. rtp_index is 0. 0, or -MTL_EINVAL (info zeroed)
+   for a word_mode above MTL_ANC_WORDS_RAW or RAW without raw_hdr. Never sets
+   mtl_last_error(). AS. (MS4) */
+MTL_API_AS(4) int mtl_anc_rfc8331_decode(const uint8_t* data, uint32_t len, uint32_t anc_count,
+                                         uint32_t word_mode, int gap_in,
+                                         struct mtl_anc_packet* pkts, uint32_t max_pkts,
+                                         void* words, uint32_t udw_cap,
+                                         uint16_t* MTL_NULLABLE raw_hdr,
+                                         struct mtl_anc_decode_info* info);
+/* The reverse, for the ANC packets of one RTP packet (n_pkts is its ANC_Count, <= 255), as the
+   library's submit does for frame units: table entries, their user data words (udw_cap words at
+   `words`) and, RAW, their four header words (raw_hdr, n_pkts x 4) to RFC 8331 ANC data
+   packets; *len receives the bytes written. One pass: each entry and its four RAW header words
+   are read once into locals and every word is checked as it is read, then written, so on a
+   failure the payload holds a partial write and must not be sent. Outside RAW it writes DID,
+   SDID, DC with parity, 8-bit words with parity and the checksum; in RAW the ten bits of every
+   word as given. -MTL_ENOSPC if cap is short; -MTL_EINVAL for n_pkts above 255, a word range
+   outside udw_cap, a line or hoffset outside its field, a stream above 127, a flag above
+   MTL_ANCF_CHECKSUM_ERR or a non-zero reserved; outside RAW a DID of 00h or a Type 2 SDID of
+   00h (ST 291-1 §6.1, §6.2) and, 10-bit, a protected word (000h-003h, 3FCh-3FFh, §9.1); in RAW
+   a word above 3FFh, a missing raw_hdr, or header words whose low bytes are not the entry's
+   did, sdid, udw_count. The raster order and the field of located packets (ST 2110-40 §5.2.2)
+   depend on the format and are the caller's. Never sets mtl_last_error(). AS. (MS4) */
+MTL_API_AS(4) int mtl_anc_rfc8331_encode(const struct mtl_anc_packet* pkts, uint32_t n_pkts,
+                                         uint32_t word_mode, const void* words,
+                                         uint32_t udw_cap,
+                                         const uint16_t* MTL_NULLABLE raw_hdr,
+                                         uint8_t* payload, uint32_t cap, uint32_t* len);
+
 MTL_SIZE_CHECK(mtl_pkt_tx, 16);
 MTL_SIZE_CHECK(mtl_pkt_rx, 40);
 MTL_SIZE_CHECK(mtl_rtp_hdr, 12);
@@ -182,6 +250,7 @@ MTL_SIZE_CHECK(mtl_rfc4175_srd, 6);
 MTL_SIZE_CHECK(mtl_rfc9134_hdr, 4);
 MTL_SIZE_CHECK(mtl_rfc8331_hdr, 8);
 MTL_SIZE_CHECK(mtl_st41_hdr, 4);
+MTL_SIZE_CHECK(mtl_anc_decode_info, 16);
 
 #if defined(__cplusplus)
 }

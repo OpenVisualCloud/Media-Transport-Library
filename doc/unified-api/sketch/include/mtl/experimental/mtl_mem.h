@@ -158,7 +158,9 @@ struct mtl_buffer_requirements {
   uint32_t meta_capacity;
   uint32_t direct_possible;
   uint64_t unit_bytes;
-  uint64_t internal_bytes; /* frames MTL allocates besides the pool (conversion) */
+  uint64_t internal_bytes; /* hugepage bytes MTL allocates for the session besides the
+                              pool: internal frames, mempools, the slot table, stats blocks,
+                              ANC wire areas (contract.md §9.4) */
   int64_t completion_latency_ns;
 };
 

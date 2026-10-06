@@ -25,7 +25,7 @@ reach memory, devices or CPUs it did not ask for.
 | Surface | New? | What can go wrong | Section |
 |---|---|---|---|
 | imported memory mapped into the IOMMU (`mtl_mem_import`) | yes | the NIC reads or writes memory the application did not mean to share; DMA into freed memory | §1.1 |
-| wait handles (eventfd, Windows event `HANDLE`) | yes | descriptor leaks across `fork`/`exec`; an application draining the library's eventfd loses wake-ups | §1.2 |
+| queue descriptors (eventfd, Windows event `HANDLE`; MS2a) | yes | descriptor leaks across `fork`/`exec`; an application draining a queue's eventfd loses wake-ups | §1.2 |
 | worker threads, affinity | yes | starvation of other threads; landing on a scheduler CPU | §1.3 |
 | handle table | yes | handle confusion across sessions | §1.4 |
 | null backend, test clock, fault injection | yes | a fake clock or fault injection in a production process | §1.5 |
@@ -69,22 +69,30 @@ files, pinned host memory), pins it and maps it into every port and DMA engine a
   (`REGION_BUDGET`) stop one process exhausting them. Pinning counts against `RLIMIT_MEMLOCK`; a failed
   pin is a clean `-MTL_ENOMEM`, never a partial mapping.
 
-### 1.2 Wait handles
+### 1.2 Queue descriptors
 
-`mtl_get_wait_handle` (`mtl_session_get_wait_handle`, `mtl_instance_get_wait_handle`) returns an
-`intptr_t`: a Linux eventfd (poll for `POLLIN`) or a Windows manual-reset event `HANDLE` (from MS2a).
+A queue (`mtl_queue_create`, MS2a) gives an event loop one descriptor for any number of sessions,
+in an `intptr_t`: a Linux eventfd (poll for `POLLIN`) or a Windows manual-reset event `HANDLE`. A
+call with a timeout needs none: the thread sleeps inside the call.
 
-The library **owns** it: the application may poll or wait on it, never read, write or close it. A
-call that finds nothing resets it (R2), so an application that reads or resets it steals a wake-up.
-It is close-on-exec and non-blocking (R8; fork: §4.4). It carries no data and grants no access: a
-write to it only causes a spurious wake-up, which every wait loop tolerates.
+The library **owns** it: the application may poll or wait on it, never read, write or close it.
+`mtl_queue_wait` resets it when it finds nothing, before it returns `-MTL_EAGAIN`. It is
+close-on-exec and non-blocking (R8; fork: §4.4). It carries no data and grants no access: a write
+to it only causes a spurious wake-up, which every wait loop tolerates.
+
+Queue descriptors: one eventfd per queue entry, kept while the process runs and reused by later
+queues (closed in a forked child); their number is the peak of live queues, under
+`DESCRIPTOR_LIMIT`. The legacy notifier's internal queue is one of them: one eventfd, and one of
+each legacy session's 4 queue attachments. An application that drains a queue's eventfd itself loses wake-ups. Remove the
+descriptor from the event loop before `mtl_queue_close`.
 
 ### 1.3 Threads, priorities and affinity
 
 - No library thread asks for a real-time priority: the workers, the admin thread and the log-sink
   thread run `SCHED_OTHER`. The wake-ups of the deferred wake run on each scheduler's own CPU,
-  after its tasklets, one object per iteration (D-142); a slack gate or a waker thread (W3) is built
-  only by D-142's rules. Threads that wait in MTL calls or on MTL wait handles run on CPUs disjoint
+  after its tasklets, a bounded number of objects and queues per iteration (D-142); D-170's
+  patterns, a slack gate, then the notifier thread (D-165) are built only by D-142's rules. Threads
+  that wait in MTL calls or on queue descriptors run on CPUs disjoint
   from the scheduler lcores: the kernel's wake-affine placement can otherwise put a woken thread on a
   scheduler's CPU and preempt it.
 - Affinity is explicit: every non-scheduler thread runs on `instance.main_lcore`, never on a scheduler
@@ -142,9 +150,10 @@ group (for example `mtl`), `SO_PEERCRED` identity, grants owned per client, SIGP
   fails with `-MTL_EEXIST` (`INSTANCE_MISMATCH`) (OI-49).
 - **One shared instance per process.** `MTL_INSTANCE_SHARED` gives the components of one process (a
   GStreamer element, an FFmpeg device, the application) one refcounted instance. Each open returns its
-  own reference handle. A later open that names ports, lcores, time source or options that differ from
-  the live instance fails with `-MTL_EEXIST` (`INSTANCE_MISMATCH`), so no component silently
-  reconfigures another's instance.
+  own reference handle. A later open may name a subset of the live instance's ports (its own);
+  a port the instance lacks, or lcores, time source or options that differ, fail with `-MTL_EEXIST`
+  (`INSTANCE_MISMATCH`), so no component silently reconfigures another's instance. A wrapper of a
+  legacy instance is the shared instance of its process ([contract.md §2.3](contract.md#23-shared-instance)).
 - **Separate processes share time, not state.** One process per essence aligns through the SMPTE
   epoch, on which every session runs, and `mtl_epoch_index_at` ([timing.md](timing.md)). CPUs between
   processes come from the affinity mask, OFD locks or MtlManager (§4.7).
@@ -228,8 +237,8 @@ int mtl_instance_shutdown(mtl_instance_h mt, uint64_t flags, int64_t timeout_ns,
   (`references_left` > 0). `MTL_SHUTDOWN_ALL_REFERENCES` shuts down the shared instance for every
   component of the process. The application that owns `main()` uses it on SIGTERM; a plugin never
   does. The other components' handles then get `-MTL_ESHUTDOWN`, and their close returns 0.
-- **Objects closed by the instance.** Sessions and regions still open are closed by it, sessions
-  in reverse attach order (a session over another session's pool before the owner).
+- **Objects closed by the instance.** Queues, sessions and regions still open are closed by it,
+  the queues first, sessions in reverse attach order (a session over another session's pool before the owner).
   Because handle slots are never freed (R4), their handles stay safe: data calls return
   `-MTL_ESHUTDOWN` (reason `INSTANCE_SHUTDOWN`), blocked waits wake with it, `mtl_session_close` returns
   0, and `mtl_rx_release`/`mtl_tx_release` of an earlier lease return 0.
@@ -331,10 +340,10 @@ step (`reason` names the first that did not finish; `ports_unquiesced` is a bit 
   default (`instance.telemetry`).
 - **AS calls at any time.** A handler may call `mtl_instance_interrupt(mt, 1)`, `mtl_instance_abort(mt)`,
   `mtl_session_interrupt(s, 1)` and `mtl_interrupt` with `MTL_INTR_ON` at any time, also during and
-  after close. Their state lives in the never-freed handle slot. Every AS call, every wake and every
-  syscall on a wait handle runs inside the slot's in-flight counter; retire marks the slot RETIRED
-  and waits for the counter before closing the descriptor, so a late signal never writes into a
-  recycled descriptor (in ex11 that descriptor number could have been `/dev/termination-log`). An AS
+  after close. Their state lives in the never-freed handle slot, and they touch only never-freed
+  words, so no AS call and no wake takes the slot's in-flight counter. A queue's descriptor is never
+  closed while the process runs (§1.2), so a late signal never writes into a recycled descriptor
+  (in ex11 that descriptor number could have been `/dev/termination-log`). An AS
   call keeps `errno` and never writes `mtl_last_error()`; in a `fork()`ed child it returns
   `-MTL_EBADF`.
 - **The recipe ([examples.md](examples.md), ex11).** Block SIGTERM and SIGINT before open and before any
@@ -349,7 +358,7 @@ Handle the pod's configured stop signal if it is not SIGTERM. Workers leave on t
 - **Fork.** An instance belongs to the process that opened it. Close-on-exec does nothing for a fork
   without exec: the child would keep the VFIO descriptors, the manager socket and the OFD CPU locks, and
   a SIGKILL of the parent would not release them. A `pthread_atfork` child handler therefore closes
-  every descriptor MTL tracks (VFIO, MtlManager, CPU locks, eventfds); this does not touch the parent's
+  every descriptor MTL tracks (VFIO, MtlManager, CPU locks, queue eventfds); this does not touch the parent's
   device. In the child every call returns `-MTL_EBADF` (reason `FORKED`) except close, which drops local
   state only. Library memory is `MADV_DONTFORK`, so a child that touches it segfaults: the intended
   failure. Since about Linux 5.12 the kernel copies pinned anonymous pages early at fork, so the parent
@@ -372,7 +381,7 @@ not recover, while the process runs. Owners: **K** kernel, **L** library, **M** 
 | library pools (hugepages, `--in-memory`) | freed, slot by slot as leases return | freed by the kernel; with an IOMMU, pinned pages outlive the DMA | not freed under a lease | L / K |
 | imported regions | unmapped from the device before `mtl_mem_close` returns 0 | IOMMU unmap after DMA is off; the memory dies with the process | the removed port's mapping goes with its VFIO descriptor | L / K |
 | **no-IOMMU mode** | as (a) | **no guarantee: DMA may hit freed pages** | **no guarantee** | refused unless `instance.allow_noiommu` |
-| wait handles (eventfds) | closed once the last async-signal-safe caller left | closed by the kernel | stay; the instance's handle delivers `PORT_REMOVED` | L / K |
+| queue descriptors (eventfds) | kept open while the process runs, reused by later queues (§1.2) | closed by the kernel | stay; the instance's events deliver `PORT_REMOVED` | L / K |
 | codec plugins | `stop` called; threads joined or counted unjoined | gone | sessions ERROR; plugin stopped as in (a) | L / A |
 | CPUs, Guaranteed pod | nothing to release: the cpuset is the lease | nothing | — | O |
 | CPUs, MtlManager | returned on socket close, after the schedulers stopped | returned at socket EOF | — | M / K |
@@ -454,6 +463,12 @@ namespace look dead).
 | `_PHC`, `_CLOCK_TAI`, `_USER` | as named; read only. `CLOCK_TAI` is rejected while the kernel offset is 0. |
 | `_PTP_BUILTIN` | only when named, never by AUTO. On a PF that MTL owns it disciplines the PHC. On a VF it runs as today in software mode (`ptp->no_timesync`, `mt_ptp.c:1390-1393`): it disciplines MTL's own software time base, never the VF's PHC. `CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own. |
 | built-in phc2sys (`time.phc2sys`) | steers the node's `CLOCK_REALTIME`: never in a pod; restores the frequency at close. |
+
+**The clocksource.** `CLOCK_TAI` and `CLOCK_REALTIME` are vDSO reads only on a clocksource the
+vDSO can read (`tsc`, `kvm-clock`, `hyperv_clocksource_tsc_page`, `arch_sys_counter`). On any other
+(`hpet`, `acpi_pm`, a guest without a stable TSC) each read is a syscall of about 0.5–2 µs on the
+tasklet, once per TX frame and RX unit: open warns and sets bit 2 of
+`caps.backend_syscalls_on_tasklet`. Give the node a TSC clocksource where its TSC is invariant.
 
 Built-in PTP on a VF needs PTP multicast to reach the VF (224.0.1.129 over UDP or 01:1B:19:00:00:00
 over layer 2, each a MAC filter of the budget in §4.9, and a switch that forwards PTP to the VLAN),
@@ -805,7 +820,7 @@ Two facts that are easy to get wrong: manager-less native AF_XDP with libxdp loa
 program is unreachable at HEAD, because native AF_XDP needs MtlManager (`dev/mt_af_xdp.c:727-733`);
 and `mtl_abort` is a plain atomic store (`mt_main.c:747-757`), so it is already AS-safe. The
 inventory per backend, the threads and the time to ready: [legacy-internals.md](legacy-internals.md);
-the H-K rows with their severity: [engine.md](engine.md) §12.3.
+the H-K rows with their severity: [engine.md](engine.md) §7.3.
 
 ### 4.17 Open points
 
@@ -825,34 +840,58 @@ The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 
 ## 5. Hugepage budgeting
 
-- **Per session.** `mtl_session_query` (dry run) and `mtl_session_get_info` give the pool (`pool_count`,
-  `unit_bytes`, `pool_slot_pitch`); `struct mtl_buffer_requirements.internal_bytes` and the stat
-  `info.internal_bytes` give the frames MTL allocates besides the pool. A converting session holds
-  `pool_count` app-format frames and as many transport frames. Example: 4K 4:2:2 10-bit with
-  `pool_count` 3 holds 3 transport frames (20.7 MB each) and 3 `MTL_APP_YUV422P10LE` frames (33.2 MB
-  each): 162 MB against 62 MB direct; 30 such sessions need 4.9 GB of hugepages against 1.9 GB
-  (st20p passes its own frame count to the transport, `st20_pipeline_tx.c:455`, RX
-  `st20_pipeline_rx.c:564`).
-- **Per instance**, per NUMA node (stats `mem.*`, scope `numa=N`): `hugepage_size`, `hugepages_total`,
-  `hugepages_free`, `library_bytes`, `internal_bytes`, `imported_bytes`, `largest_free_segment`; in a
-  pod also the cgroup's `hugetlb_limit_bytes{size}` and `hugetlb_usage_bytes{size}` (§4.11).
-- **Sizing.** Σ(pool + internal) per node, plus the instance's fixed cost (mempools, rings) reported at
-  open, plus headroom for recovery: a recovering TX session creates its new mempool before the old one
-  is freed (mempool names carry the `recovery_idx` suffix). In a pod the limit is the container's
-  `hugepages-<size>` request, which must equal its limit.
+- **Per session.** `mtl_session_query` (dry run) and `mtl_session_get_info` give the pool
+  (`pool_count`, `unit_bytes`, `pool_slot_pitch`) and `internal_bytes`
+  (`struct mtl_buffer_requirements.internal_bytes`, the stat `info.internal_bytes`): every other
+  hugepage byte MTL allocates for the session ([contract.md](contract.md) §9.4). The parts:
+
+  | Part | Bytes | Note |
+  |---|---|---|
+  | the pool | `pool_count` × `pool_slot_pitch` | library pools; an attached pool is the application's memory; a converting TX session with `MTL_SESSION_TX_SRC_PLANES` has no app-format planes |
+  | internal frames | converting sessions: `pool_count` transport frames | |
+  | mempools | TX: a header pool per leg and a payload pool; n mbufs asked hold 2^k − 1 ≥ n, each about 192 B plus its data room, and a per-lcore cache table of about 1 MB, used or not | about 3.7 MB for a one-leg video sender, 5.7 MB with two legs, 4.5 MB for an audio sender *(est.)*; 0 with `port.tx_mono_pool` (2114), its shared pool is the instance's cost; RX uses the ports' queue pools |
+  | slot table, rings, stats | the slot table with its descriptor ring and meta areas (video 1 332 B per slot), three counter blocks of about 0.8 KB, one more per foreign scheduler that completes the session's units (engine.md §1.8) | about 10–35 KB per video session *(est.)* |
+  | ANC wire areas | `pool_count` × round_up(16 × (P + 2) + min(328 × P, 13 × P + ⌈5 × W / 4⌉), 64) | 8 960 B at the defaults |
+
+  The mempools of today's engines: `st_tx_video_session.c:2929-2995`, `st_tx_audio_session.c:1836`,
+  `:1863`, `st_tx_ancillary_session.c:1505`, `:1531`, `st_tx_fastmetadata_session.c:1252`, `:1278`.
+  A pool holds 2 047 mbufs at today's sizes (`mt_util.c:533`), and its cache table is
+  `RTE_MAX_LCORE` (128) × 8 256 B (`MT_MBUF_CACHE_SIZE` 128).
+- **Examples** *(est.)*. A 2160p 4:2:2 10-bit sender converting from `MTL_APP_YUV422P10LE` with
+  `pool_count` 3 holds 3 transport frames (20.7 MB each) and 3 app-format frames (33.2 MB each):
+  162 MB against 62 MB direct, and 62 MB with `MTL_SESSION_TX_SRC_PLANES`, the FFmpeg and GStreamer
+  sinks that copy from their own frames; 30 such sessions need 4.9 GB, or 1.9 GB (st20p passes its
+  own frame count to the transport, `st20_pipeline_tx.c:455`, RX `st20_pipeline_rx.c:564`). 512
+  audio senders with their own pools need about 2.3 GB, almost all of it mempools; with
+  `port.tx_mono_pool` about 10 MB. For dense audio and ANC set `port.tx_mono_pool` and
+  `port.rx_mono_pool` (2117); engine change E17 (MS4) drops the cache tables of the
+  low-rate essences' own pools.
+- **Per instance**, per NUMA node (stats `mem.*`, scope `numa=N`): `hugepage_size`,
+  `hugepages_total`, `hugepages_free`, `library_bytes`, `internal_bytes`, `imported_bytes`,
+  `mempool_bytes` (every DPDK mempool MTL created on the node, cache tables included: the ports'
+  queue pools, the system and mono pools, the sessions' pools), `largest_free_segment`; in a pod
+  also the cgroup's `hugetlb_limit_bytes{size}` and `hugetlb_usage_bytes{size}` (§4.11).
+  The session and queue entries are in no `mem.*` figure: they live in never-freed chunks of
+  ordinary pages, not hugepages (core.md §4.7).
+- **Sizing.** Σ(pool + `internal_bytes`) per node, plus the instance's fixed cost
+  (`mem.mempool_bytes` and `mem.library_bytes` right after open, before any session), plus
+  headroom for recovery: a recovering TX session creates its new mempools before it frees the old
+  ones (their names carry the `recovery_idx` suffix), so add the mempool part of every session that
+  may recover at the same time. In a pod the limit is the container's `hugepages-<size>` request,
+  which must equal its limit.
 - **Failure** is `-MTL_ENOMEM` at create with the node in `mtl_last_error`, never a crash.
 - **NUMA.** `info.numa_mismatch` flags a pool on another node than its ports; for imports,
   `MTL_MEM_NUMA_CHECK` turns a mismatch into a failure. A mismatch roughly doubles DMA latency.
 
 ## 6. Windows
 
-- **Stance.** The unified headers are one ABI on every OS (D-43). A wait handle is
+- **Stance.** The unified headers are one ABI on every OS (D-159). A queue's descriptor is
   a manual-reset event `HANDLE` (from MS2a) in the same `intptr_t`; error codes are `MTL_E*` constants equal to the
   Linux errno values on every OS, also where the UCRT lacks the name (`ESHUTDOWN`, `ESTALE`) or gives
   it another value, so Windows code compares against `MTL_E*` only; values ≥ 1000 are reserved for
   future MTL-only codes. Flags are plain integer literals.
 - **Waits (from MS2a).** `WaitForMultipleObjects` takes at most 64 handles; a framework with more
-  sessions uses thread-pool waits. Sub-millisecond timeouts round up to 1 ms, and the 15.6 ms tick
+  sessions arms them on one queue, or uses thread-pool waits. Sub-millisecond timeouts round up to 1 ms, and the 15.6 ms tick
   applies unless `timeBeginPeriod` is set.
 - **v1 commitment.** A compile-only CI job builds the headers and the examples with MSVC and MinGW.
   Runtime support follows the legacy library's Windows support; two of the eleven open issues at the
@@ -862,15 +901,34 @@ The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 
 Tags follow `vYY.MM` (v25.02, v25.12-rc1, v26.01; PR #1768 prepares v26.09).
 
-**Before the freeze.** The unified API ships inside libmtl in one symbol version node per
-milestone, `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, all renamed together on every incompatible
-change. `ld.so` rejects a binary linked against an older revision at load, and also a binary that
-needs a node the library lacks. A node is frozen at its milestone's exit. A function added to the
-open node after a release fails only at its first call (or at load with `BIND_NOW`), so a binary
-built against a later snapshot of the same milestone has no load-time guarantee. `MTL_LEVEL` in
-`mtl.h` names the last milestone whose exit passed. There is no compatibility promise and no
-deprecation period for the unified API before the freeze. libmtl itself gets a soname and the
-`MTL_LEGACY` node in MS3.
+**Before the freeze.** The unified API ships inside libmtl in symbol version nodes per milestone,
+`MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, and `_MSn.1`, `_MSn.2`, … when releases are cut while
+milestone n is open. All nodes are renamed together on every incompatible change, a new revision.
+Every node a release carries is sealed: its names never change ([migration.md](migration.md)
+§7.2). So `ld.so` refuses at load a binary linked against another revision, or one that needs a
+node the library lacks (an older release), and a binary never fails at a call for a missing
+function. `MTL_LEVEL` in `mtl.h` names the last milestone whose exit passed. There is no
+compatibility promise across revisions and no deprecation period for the unified API before the
+freeze. libmtl itself gets a soname and the `MTL_LEGACY` node in MS3.
+
+**Shipping before MS7.** A product may ship on the experimental API. Five rules keep it from
+failing in the field:
+
+1. **Link against a release, never a `.DEV` build.** A binary linked against release R loads on R
+   and on every later release of the same revision. `ld.so` refuses, at load, an older release or
+   another revision. A `.DEV` build carries an open node without that guarantee.
+2. **Require that release.** Ship libmtl with the product, or require the package at R or later and
+   check the revision in the release notes; a revision change is refused at load, never
+   misbehaves.
+3. **Build with `MTL_TARGET_LEVEL`** at the release's `MTL_LEVEL`. Use `MTL_LEVEL + 1` only to call
+   the open milestone's functions that this release exports; the link fails for those it lacks.
+4. **Check at start.** Log `mtl_library_version_num()`. A value of an exported call (a flag, an
+   option key) that the running library does not build yet returns `-MTL_ENOTSUP`
+   (`NOT_IMPLEMENTED`), so a product checks the values it depends on at start
+   (`mtl_session_query` for a configuration), not in the middle of a stream.
+5. **Relink at a revision change and at F.** Not on every release. At F the experimental nodes
+   become `MTL_1.0` (one relink), and `<mtl/experimental/…>` keeps compiling until F+2 through
+   forwarding stubs ([migration.md](migration.md) §7.2).
 
 **Targets.** The maintainer publishes, in this section and in the release notes of the MS3
 release, the `vYY.MM` of three releases:

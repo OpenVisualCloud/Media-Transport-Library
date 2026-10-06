@@ -5,9 +5,10 @@
    (check.sh lint 5). */
 /* clang-format off */
 /*
- * mtl_options.h - option keys of the unified MTL API, revision 0.2. The library's option
- * table (lib/src/unified/mtl_options.def) is checked against this header by a U test (task
- * H1b); the keys and their rules are described in contract.md §12.
+ * mtl_options.h - option keys of the unified MTL API, revision 0.2. From task H1b the key
+ * enum below is generated from lib/src/unified/mtl_options.def, which also builds the
+ * library's option table; contract.md §12.6 is the same table. Edit the .def, never the
+ * enum (doc/unified-api/README.md §1). The rules of the keys are contract.md §12.
  *
  * An option is a tuning knob that most applications never touch. It is absent by default,
  * and absent means the documented default; a present option is literal (0 means 0). Pass
@@ -22,7 +23,11 @@
  * 7: also at the boundary of the mtl_session_update() whose config carries it; until then
  * a changed R key in an update is -MTL_ENOTSUP)], then P for a provisional key. Keys
  * marked "per port", "per leg" or "per scheduler" take a scope (0 = all, else MTL_INDEX(i)).
- * Option names and stats names (mtl_observe.h) are separate registries. A session key set
+ * Option names and stats names (mtl_observe.h) are separate registries. Each key applies
+ * to the object kind, essences, directions and units its mtl_option_desc names: a session
+ * key passed to a session it does not apply to, or an instance or port key passed to a
+ * session, is -MTL_EINVAL (NOT_APPLICABLE); a session key set on the instance is the
+ * default only for the sessions it applies to. A session key set
  * on the instance (mtl_instance_params.options, or mtl_set_option on the instance) is the
  * default for that instance's sessions, as legacy instance-wide settings were (so there
  * is no instance twin of a session key: session.tx_queue and session.migrate on the
@@ -50,6 +55,8 @@
 extern "C" {
 #endif
 
+/* BEGIN TABLE option-enum: lib/src/unified/mtl_options.def; gen_api_doc.py writes this
+   region once that file exists (README §1) */
 enum mtl_option_key {
   /* Retired before MS1, never reused: 106 (now mtl_session_config.tsmode), 112 and 214
      (troffset_us of the video and rtp configs), 304 (the field
@@ -304,6 +311,7 @@ enum mtl_option_key {
                                       frequency only, bounded; 0 = never (0) R (Phase 7) */
 #endif
 };
+/* END TABLE option-enum */
 
 /* Values of enumerated keys (zero is never "derived": absence is). */
 enum mtl_late_policy {
@@ -413,6 +421,12 @@ struct mtl_option_desc {
   uint32_t when;        /* MTL_OPTION_* */
   uint32_t scope_kind;  /* enum mtl_option_scope */
   uint32_t flags;       /* MTL_OPTION_PROVISIONAL, MTL_OPTION_DEPRECATED */
+  uint16_t essence_mask; /* session keys: bit (1u << e) for each enum mtl_essence e the key
+                            applies to; 0 for instance and port keys */
+  uint8_t dir_mask;      /* session keys: MTL_TX | MTL_RX (the enum mtl_dir values) it
+                            applies to; 0 for instance and port keys */
+  uint8_t unit_mask;     /* session keys: bit (1u << u) for each enum mtl_unit_kind u */
+  uint32_t reserved;
   int64_t min;
   int64_t max;
   int64_t def;                 /* the default; derived defaults read as INT64_MIN */
@@ -443,7 +457,7 @@ MTL_API_AS(1) int mtl_option_find(const char* name, struct mtl_option_desc* d, s
    AS. (MS2) */
 MTL_API_AS(2) int mtl_option_parse(const char* name, const char* value, struct mtl_option* out);
 
-MTL_SIZE_CHECK(mtl_option_desc, 104);
+MTL_SIZE_CHECK(mtl_option_desc, 112);
 
 #if defined(__cplusplus)
 }

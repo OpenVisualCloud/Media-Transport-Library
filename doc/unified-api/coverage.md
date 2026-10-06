@@ -4,11 +4,13 @@
 |---|---|
 | Status | Maintained. The headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) are normative: where this page and a header disagree, the header wins |
 | Date | 2026-10-02 |
-| Baseline | `main` @ `545a266a`; legacy headers in `include/`; the 14 unified headers (their function counts, per header and per milestone tag: `sketch/check.sh`) |
+| Baseline | `main` @ `545a266a`; legacy headers in `include/`; the 15 unified headers (their function counts, per header and per milestone tag: `sketch/check.sh`) |
 
 This page is the safety net of port first (D-98): every use case today's public API offers, the
 unified symbol that reaches it, and the milestone that brings it ([implementation-plan.md](implementation-plan.md)
-§1.2). The U-row is the one home of a feature's milestone (D-137): other documents link it.
+§1.2). The U-row is the one home of a feature's milestone (D-137): other documents link it. A
+function's milestone is its header tag and a value's its row in the data tables (README §4); a
+U-row carries the latest of those it names.
 Nothing may be lost: a capability has a home and a milestone, or it is on the cut list
 (§4.5, D-87); nothing else is cut (D-112). §2 is the inventory, one row per use case (U-001 …
 U-420), grouped by area; §4 is the inventory behind hiding the session-level headers. The
@@ -31,10 +33,10 @@ call sites. A feature described only in prose, with no symbol to request it, has
 
 A row served by a function carries the milestone tag that ends the function's comment in the
 headers (two functions: both tags, the later one named). A row served by a value of an exported
-call (a flag, an option key, an enum value) carries the milestone that implements the value: MS1
-when the scope of MS1 names it or when RxTxApp or KahawaiTest sets it; any other ST 2110-20 value
-is MS2, whose exit criterion is a unified path for every ST20 capability except packet units (MS5)
-and the timing subset (MS3).
+call (a flag, an option key, an enum value) carries the milestone of the value's row in
+`availability.def` or `mtl_options.def` (README §4), which wins if they differ. Until H1b the rule
+for those rows is: MS1 when the scope of MS1 names it or when RxTxApp or KahawaiTest sets it; any
+other ST 2110-20 value MS2.
 
 **Consumer codes** (number = files): SMP `app/` (samples, perf, tools), RXTX `tests/tools/RxTxApp`,
 FF FFmpeg plugin, GST GStreamer plugin, OBS OBS plugin, MXL `ecosystem/MTL_with_MXL`, PLG
@@ -56,7 +58,7 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-001 | open an instance on a list of ports: `mtl_init`, `mtl_init_params.port[]`, `num_ports` | `mtl_instance_open(&ip, &mt)`, `ip.ports[].name`, `ip.port_count`; `MTL_PORTS` environment fallback | MS1 | C; every consumer (SMP 51, KT 8, MXL 8, PY 7, FF 4) |
 | U-002 | close: `mtl_uninit` | `mtl_instance_close(mt, timeout_ns)` (closes the sessions and regions still open; 1 while memory is still referenced: call it again to poll) | MS1 | C; every consumer |
 | U-003 | re-open in the same process (#1341, broken today) | open after close works by design (EAL keeps its arguments; same ports, a subset of the CPUs) | MS1 | Co; FF, GST, dvled work around it. CHANGED |
-| U-004 | share one instance between components (`mtl_common.c:25-28`, `gst_mtl_common.c:12-18`) | `MTL_INSTANCE_SHARED`; a differing later open is `-MTL_EEXIST` (`INSTANCE_MISMATCH`) | MS2 | Co; FF, GST, ext dvled. OBS and FFmpeg settings that break sharing: OI-43 |
+| U-004 | share one instance between components (`mtl_common.c:25-28`, `gst_mtl_common.c:12-18`) | `MTL_INSTANCE_SHARED`; a later open asking for a port the instance lacks, or other settings, is `-MTL_EEXIST` (`INSTANCE_MISMATCH`); a wrapper is the shared instance (D-192) | MS2 | Co; FF, GST, ext dvled. OBS and FFmpeg settings that break sharing: OI-43 |
 | U-005 | device start/stop, auto start/stop: `mtl_start`, `mtl_stop`, `MTL_FLAG_DEV_AUTO_START_STOP` | no instance start; `mtl_session_start/stop`, `mtl_session_open` (create + start) | MS1 | C; SMP 35, KT 31, FF 6, MXL 7, PY 7. CHANGED; bridged instance before `mtl_start()`: OI-2 |
 | U-006 | abort from a signal handler: `mtl_abort` | `mtl_instance_abort` (AS) and `mtl_instance_interrupt(mt, 1)` (AS) | MS1 | Co; SMP 3, RXTX 1 |
 | U-007 | static source IP per port: `sip_addr[]`, `mtl_para_sip_set` | `mtl_port_spec.sip` | MS1 | C; all |
@@ -169,7 +171,7 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-100 | reset port counters: `mtl_reset_port_stats` | none: cumulative counters, deltas by the reader | MS1 | R; RXTX 1. CHANGED |
 | U-101 | interface IP helper: `mtl_get_if_ip` | none | removed (D-87, CUT-8) | L; 0 consumers |
 | U-102 | init-param setters for bindings: `mtl_para_*_set/get`, `mtl_p_port`, `mtl_r_port`, `mtl_p/r_sip_addr` | plain POD fields, `MTL_ADDR(T)`, `MTL_PORTS` | MS1 | Co; PY 7, MXL 6, SMP 1, RXTX 1. CHANGED; spec strings are gone (D-97) |
-| U-103 | Windows (DPDK only), `lib/windows/` | `mtl_session_get_wait_handle` = a manual-reset event `HANDLE` from MS2a; Linux errno values on every OS; compile-only CI (G-74) | MS2 | R; MSVC sample |
+| U-103 | Windows (DPDK only), `lib/windows/` | a queue's descriptor (`mtl_queue_create`) = a manual-reset event `HANDLE` (MS2a); Linux errno values on every OS; compile-only CI (G-74) | MS2 | R; MSVC sample |
 | U-104 | many processes on one NIC (SR-IOV + MtlManager) | manager model unchanged; `MTL_OPT_CPU_ARBITRATION` | MS1 | Co; every multi-app deployment |
 
 ### 2.6 Memory, DMA and zero-copy plumbing
@@ -204,8 +206,8 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-132 | callback private pointer: `priv` | per-unit `u.cookie`; the session is `mtl_tx_result.session` / the event origin | MS1 | C; every callback user. CHANGED: a per-unit cookie only (OI-42) |
 | U-133 | per-session NUMA: `*_FLAG_FORCE_NUMA` + `socket_id` (not ST40/41) | `MTL_OPT_NUMA` | MS1 | R; RXTX 11 |
 | U-134 | dedicated TX queue for audio, ANC, fastmeta: `ST30/40/41(P)_TX_FLAG_DEDICATE_QUEUE` | `MTL_OPT_TX_QUEUE = MTL_TXQ_DEDICATED` | MS4 | R; RXTX 1, KT 1 |
-| U-135 | change TX destination at runtime: `st*_tx_update_destination`, `st_tx_dest_info` | `mtl_session_update(s, &sc, MTL_UPDATE_FLOWS, &when, &planned)` (every leg atomically) | MS5 | Co; MXL 1, KT 1; t |
-| U-136 | change RX source at runtime: `st*_rx_update_source`, `st_rx_source_info` | `mtl_session_update(…, MTL_UPDATE_FLOWS, …)` | MS5 | Co; KT 1; t |
+| U-135 | change TX destination at runtime: `st*_tx_update_destination`, `st_tx_dest_info` | `mtl_session_update(s, &sc, MTL_UPDATE_FLOWS, &when, &planned)` (every leg atomically) | MS5 (CREATED and STOPPED: MS3) | Co; MXL 1, KT 1; t |
+| U-136 | change RX source at runtime: `st*_rx_update_source`, `st_rx_source_info` | `mtl_session_update(…, MTL_UPDATE_FLOWS, …)` | MS5 (CREATED and STOPPED: MS3) | Co; KT 1; t |
 | U-137 | RX burst size: `rx_burst_size` | `MTL_OPT_RX_BURST` | MS1 | R; SMP 2, RXTX 3, PY 1 |
 | U-138 | number of frame buffers: `framebuff_cnt` | `sc.pool_count`; `info.max_count` | MS1 | C; all |
 | U-139 | app-managed flows and IGMP; queue IDs: `*_RX_FLAG_DATA_PATH_ONLY`, `*_rx_get_queue_meta`, `st_queue_meta` | none | removed (D-87, CUT-9) | L; flag: none; queue meta KT 3; t. Suspected NULL dereference (`mt_queue.c:56`, SP-02) |
@@ -241,12 +243,12 @@ because the pipeline ops and frame structs embed these types (§4).
 |---|---|---|---|---|
 | U-170 | blocking get with a timeout: `*P_*_FLAG_BLOCK_GET`, `*_set_block_timeout` | the `timeout_ns` argument of `mtl_tx_acquire`, `mtl_rx_dequeue` | MS1 | C; SMP 4, RXTX, FF, GST, PY 3, MXL 2, KT |
 | U-171 | wake a blocked getter: `*_wake_block` | `mtl_session_interrupt(s, 1)` (sticky `-MTL_ECANCELED`, cleared with 0) | MS1 | C; SMP 4, RXTX, MXL 2, KT, ext NUDA9A |
-| U-172 | non-blocking poll (get without BLOCK_GET → NULL) | timeout 0 → `-MTL_EAGAIN` (the target armed only if it is in the wait handle's mask, R2) | MS1 | Co; GST st40p (1 ms poll) |
-| U-173 | "frame available": `notify_frame_available` | `mtl_session_get_wait_handle` (eventfd, HANDLE), `mtl_session_wait` | MS1 | Co; SMP 10, OBS 1, MXL 1, PLG 2, RS 1, KT 4 |
+| U-172 | non-blocking poll (get without BLOCK_GET → NULL) | timeout 0 → `-MTL_EAGAIN` (R2) | MS1 | Co; GST st40p (1 ms poll) |
+| U-173 | "frame available": `notify_frame_available` | `mtl_session_wait`; for an event loop a queue report (`mtl_queue_arm`; eventfd, HANDLE) | MS1 (WT), MS2a (queues) | Co; SMP 10, OBS 1, MXL 1, PLG 2, RS 1, KT 4 |
 | U-174 | pipeline TX done with status: `notify_frame_done(priv, st_frame*)` | `MTL_SESSION_RESULTS` + `mtl_tx_reap` (`mtl_tx_result.status`) | MS1 | Co; SMP 14, GST 1, MXL 1, KT 10 |
 | U-175 | session TX done by index: `notify_frame_done(priv, idx, meta)` | `mtl_tx_result.slot`, `mtl_tx_reap` | MS1 | Co; SMP, RXTX 5, RS 1; S! |
 | U-176 | zero-hop callback on the tasklet | `mtl_session_set_inline_notify` (`mtl_events.h`, `MTL_LATER`, D-04); meanwhile busy polling with timeout 0 | LATER | R; MXL (bridge), ext:bobi (slice); S! (H-15) |
-| U-177 | session event callback: `notify_event(priv, st_event, args)` | `mtl_session_read_events` (one wait handle per session; an event loop polls the handles of many sessions) | MS3 | Co; RXTX 2, KT 2; t |
+| U-177 | session event callback: `notify_event(priv, st_event, args)` | `mtl_session_read_events` (an event loop arms many sessions on one queue, MS2a) | MS3 | Co; RXTX 2, KT 2; t |
 | U-178 | abort a got frame: `*_put_frame_abort` | `mtl_tx_release`, `mtl_rx_release` | MS1 | Co; KT 1, UT 2 |
 
 ### 2.10 ST 2110-20 video TX
@@ -346,8 +348,8 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-ID | Legacy | Unified home | When | Notes |
 |---|---|---|---|---|
 | U-260 | ANC TX/RX with a packet table + UDW: `st40p_*`, `st40_frame_info`, `struct st40_meta` | `MTL_ANC`: plane 0 = `struct mtl_anc_packet` table, plane 1 = the words, plane 2 (RAW) = the header words, `u.used` = entries (contract §5.7) | MS4a2 | Co; SMP 1, RXTX 1, GST 1, KT 3; t. CHANGED (the table moved from the meta area to plane 0). `stream` byte: bit 7 = S, bits 0–6 = StreamNum |
-| U-261 | packets per frame: `ST40_MAX_META = 20` (excess truncated) | `n.max_packets` (1–65 535, default 255) | MS4a2 | Co; all ANC; t. CHANGED |
-| U-262 | UDW capacity: `max_udw_buff_size`, `framebuff_size`, `st40p_*_max_udw_buff_size`, `get_udw_buff_addr` | `n.max_udw_words` (0 = 255 × `max_packets`), `u.plane[1]`, `info.buffer_capacity_bytes` | MS4a2 | Co; SMP 2, RXTX 2, GST 2, KT 2 |
+| U-261 | packets per frame: `ST40_MAX_META = 20` (excess truncated) | `n.max_packets` (1–65 535, default 32) | MS4a2 | Co; all ANC; t. CHANGED |
+| U-262 | UDW capacity: `max_udw_buff_size`, `framebuff_size`, `st40p_*_max_udw_buff_size`, `get_udw_buff_addr` | `n.max_udw_words` (0 = max(255, 32 × `max_packets`)), `u.plane[1]`, `info.buffer_capacity_bytes` | MS4a2 | Co; SMP 2, RXTX 2, GST 2, KT 2 |
 | U-263 | one ANC packet per RTP packet: `ST40(P)_TX_FLAG_SPLIT_ANC_BY_PKT` | `MTL_ANCF_NEW_RTP` per entry | MS4a2 | Co; SMP 1, GST 2, KT 1; t. CHANGED (flag → per entry) |
 | U-264 | RX interlace auto-detect and its off switch: `ST40(P)_RX_FLAG_DISABLE_AUTO_DETECT` | `sc.anc.detect` (`MTL_DETECT_AUTO` = on; `MTL_DETECT_OFF`) | MS4 | Co; GST 1. A typed field like `v.detect` (D-105) |
 | U-265 | interlaced ANC TX (`second_field`) | `n.video.scan` + index parity | MS4 | Co; RXTX, KT |
@@ -589,7 +591,8 @@ The U-row of §2 gives the symbol and the milestone.
 The acceptance suite hard-codes `.local_install` and RxTxApp's legacy JSON kinds, and an `#error`
 at stage F+1 breaks builds that include a legacy header only for a type (GStreamer
 `st20_rx_frame_meta`), so the F+1 CI job runs on the ecosystem trees first.
-`mtl_instance_from_legacy` stays exported for the whole legacy window.
+`mtl_instance_from_legacy` stays exported for the whole legacy window. It is in its own node,
+never in `MTL_1.0`, and leaves with `mtl_init` (D-190).
 
 ### 4.4 Pre-hide gaps H-01…H-19
 

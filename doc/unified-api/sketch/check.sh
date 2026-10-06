@@ -5,7 +5,9 @@
 # headers) and C++17, with gcc and, when present, clang; each example to object code at the
 # level its "Needs: MSn" names. Lints: size checks, the include layering, the packet-mode
 # naming rule, the milestone of every exported function (comment tag = call-class
-# argument), the availability probes, and the examples copied verbatim into examples.md.
+# argument), the availability probes, the examples copied verbatim into examples.md, the
+# reasons table, one home per load-bearing number (numbers.txt) and a migration.md §6.5 row
+# for every legacy mode of the core.
 # Prints the exported functions per header, per call class and per milestone, and the
 # number of frozen names: the one place the documents take these counts from.
 # check.sh --tags prints "name<TAB>milestone<TAB>header" per exported function and exits
@@ -46,6 +48,17 @@ fi
 # An example compiles to object code at the milestone its "Needs: MSn" names, so a call to a
 # function of a later milestone fails there (the error attribute acts at code generation).
 eflags=(-std=c99 -Wall -Wextra -Wpadded -Werror -c -o /dev/null -I "$inc")
+# The legacy headers, for an example that includes <mtl_api.h> (ex16, the bridge) and for the
+# mixed-header check below: the repository's include/ and the build tree's
+# mtl_build_config.h, or without a build tree a stub with the values that header defines.
+legacy="$here/../../../include"
+cfg="$here/../../../build"
+if [ ! -f "$cfg/mtl_build_config.h" ]; then
+	cfg="$(mktemp -d)"
+	printf '#pragma once\n#define MTL_VERSION_MAJOR 0\n#define MTL_VERSION_MINOR 0\n#define MTL_VERSION_LAST 0\n#define MTL_VERSION_EXTRA "DEV"\n#define MTL_COMPILER "check.sh"\n' >"$cfg/mtl_build_config.h"
+fi
+lflags=(-isystem "$legacy" -isystem "$cfg")
+uses_legacy() { grep -q '^#include <mtl_api.h>' "$1"; }
 exxflags=(-std=c++17 -Wall -Wextra -Werror -c -o /dev/null -I "$inc")
 needs() { # file: the n of its first "Needs: MSn"
 	tr '\n' ' ' <"$1" | grep -oE 'Needs:[ /*]*MS[1-7]' | head -1 | grep -oE '[1-7]$'
@@ -78,7 +91,9 @@ for cc in "${compilers_c[@]}"; do
 		done
 	done
 	for f in "$here"/examples/*.c; do
-		run "$cc C99 $(basename "$f") at MS$(needs "$f")" "$cc" "${eflags[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f"
+		extra=()
+		uses_legacy "$f" && extra=("${lflags[@]}")
+		run "$cc C99 $(basename "$f") at MS$(needs "$f")" "$cc" "${eflags[@]}" "${extra[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f"
 	done
 done
 
@@ -89,13 +104,10 @@ run "gcc C99 all headers reversed" sh -c "echo '$all' | tac | gcc ${cflags[*]} -
 run "g++ C++17 all headers" sh -c "echo '$all' | g++ ${cxxflags[*]} -pedantic -x c++ -"
 
 # The legacy headers and the new ones in one file, as a gradual port needs: no tag or name
-# clash. Runs when a configured build tree (build/mtl_build_config.h) is present.
-legacy="$here/../../../include"
-if [ -f "$here/../../../build/mtl_build_config.h" ]; then
-	both="$(printf '#include <%s>\n' mtl_api.h st_pipeline_api.h st20_api.h st30_api.h st40_api.h st41_api.h st30_pipeline_api.h st40_pipeline_api.h)
+# clash.
+both="$(printf '#include <%s>\n' mtl_api.h st_pipeline_api.h st20_api.h st30_api.h st40_api.h st41_api.h st30_pipeline_api.h st40_pipeline_api.h)
 $all"
-	run "gcc legacy and new headers together" sh -c "echo '$both' | gcc -std=gnu11 -fsyntax-only -I '$inc' -I '$legacy' -I '$here/../../../build' -x c -"
-fi
+run "gcc legacy and new headers together" sh -c "echo '$both' | gcc -std=gnu11 -fsyntax-only -I '$inc' -I '$legacy' -I '$cfg' -x c -"
 
 # MTL_SAME on two handle types must not compile cleanly (-Werror in C, an error in C++).
 probe='#include <mtl/experimental/mtl.h>
@@ -198,12 +210,59 @@ if cat "$hdr"/*.h "$here"/examples/* 2>/dev/null | grep -qiE '(_passthrough|pass
 	fail=1
 fi
 
-# Lint 4: examples.md shows every example verbatim (the header and files win).
+# Lint 4: examples.md shows every example verbatim (the header and files win), and
+# concepts.md its copies of ex01 (§3) and ex02 (§4).
 doc="$here/../examples.md"
 if [ -f "$doc" ] && command -v python3 >/dev/null 2>&1; then
 	for f in "$here"/examples/*; do
 		if ! python3 -c 'import sys; sys.exit(open(sys.argv[1]).read().rstrip("\n") not in open(sys.argv[2]).read())' "$f" "$doc"; then
 			echo "FAIL: $(basename "$f") is not copied verbatim into examples.md"
+			fail=1
+		fi
+	done
+fi
+
+doc2="$here/../concepts.md"
+if [ -f "$doc2" ] && command -v python3 >/dev/null 2>&1; then
+	for f in "$here"/examples/ex01_tx_video.c "$here"/examples/ex02_rx_video.c; do
+		if ! python3 -c 'import sys; sys.exit(open(sys.argv[1]).read().rstrip("\n") not in open(sys.argv[2]).read())' "$f" "$doc2"; then
+			echo "FAIL: $(basename "$f") is not copied verbatim into concepts.md"
+			fail=1
+		fi
+	done
+fi
+
+# Lint 6 (until H1b's tables commit replaces it with gen_api_doc.py --check): the reasons of
+# mtl_reasons.h, in ascending order, are exactly the rows of contract.md §8.3's marked table.
+hdr_reasons="$(grep -oE 'MTL_REASON_[A-Z0-9_]+ = [0-9]+' "$hdr/mtl_reasons.h" | sed -E 's/MTL_REASON_([A-Z0-9_]+) = ([0-9]+)/\2 \1/')"
+if ! printf '%s\n' "$hdr_reasons" | awk 'NR > 1 && $1 + 0 <= prev { print "FAIL: mtl_reasons.h: " $2 " out of ascending order"; bad = 1 } { prev = $1 + 0 } END { exit bad }'; then
+	fail=1
+fi
+doc_reasons="$(awk '/<!-- BEGIN TABLE reasons/ { on = 1; next } /<!-- END TABLE reasons/ { on = 0 } on && /^\| [0-9]+ \| `[A-Z0-9_]+` \|/ { gsub(/`/, ""); print $2, $4 }' "$here/../contract.md")"
+if [ "$(printf '%s\n' "$hdr_reasons" | sort)" != "$(printf '%s\n' "$doc_reasons" | sort)" ]; then
+	echo "FAIL: mtl_reasons.h and contract.md §8.3 (the marked table) list different reasons:"
+	diff <(printf '%s\n' "$hdr_reasons" | sort) <(printf '%s\n' "$doc_reasons" | sort) | head -20
+	fail=1
+fi
+
+# Lint 7: one home per load-bearing number (README §1, numbers.txt).
+docs="$(cd "$here/.." && pwd)"
+while IFS=$'\t' read -r name home re; do
+	case "$name" in '#'* | '') continue ;; esac
+	hits="$(grep -rniE --include='*.md' -- "$re" "$docs" | sed "s|^$docs/||" | grep -v "^$home:")"
+	if [ -n "$hits" ]; then
+		echo "FAIL: '$name' is stated outside its home $home (say it in words and link the home):"
+		echo "$hits" | cut -c1-160 | head -20
+		fail=1
+	fi
+done <"$here/numbers.txt"
+
+# Lint 8: every legacy mode of the core (ST_CORE_LEGACY_*) has its row in migration.md §6.5.
+core="$here/../../../lib/src/st2110/core"
+if [ -d "$core" ]; then
+	for m in $(grep -rhoE 'ST_CORE_LEGACY_[A-Z0-9_]+' "$core" | sort -u); do
+		if ! grep -q "\`$m\`" "$docs/migration.md"; then
+			echo "FAIL: $m (lib/src/st2110/core/) has no row in migration.md §6.5"
 			fail=1
 		fi
 	done
@@ -255,7 +314,7 @@ fake="$(mktemp -d)"
 printf '#define UINTPTR_MAX 0xFFFFFFFFFFFFFFFFu\n' >"$fake/stdint.h"
 : >"$fake/stddef.h"
 : >"$fake/string.h"
-frozen_src="$(for h in "${headers[@]}"; do [ "$h" = mtl_debug.h ] || echo "#include <mtl/experimental/$h>"; done)"
+frozen_src="$(for h in "${headers[@]}"; do case "$h" in mtl_debug.h | mtl_legacy.h) ;; *) echo "#include <mtl/experimental/$h>" ;; esac; done)"
 pp="$(echo "$frozen_src" | gcc -E -P -nostdinc -I "$fake" -I "$inc" -x c - | tr '\n' ' ')"
 n_macros="$(echo "$frozen_src" | gcc -E -dM -nostdinc -I "$fake" -I "$inc" -x c - |
 	awk '{ name = $2; sub(/\(.*/, "", name) } name ~ /^(MTL|mtl)_/ && name !~ /^MTL_EXPERIMENTAL_.*_H$/ && name !~ /_$/ {n++} END {print n + 0}')"
@@ -263,7 +322,7 @@ rm -rf "$fake"
 n_enums="$(echo "$pp" | grep -oE 'enum [a-z0-9_]* ?\{[^}]*\}' | grep -oE 'MTL_[A-Z0-9_]+ *=' | sort -u | wc -l)"
 n_structs="$(echo "$pp" | grep -oE 'struct mtl_[a-z0-9_]+ \{' | sort -u | wc -l)"
 n_inline="$(echo "$pp" | grep -oE 'static inline [^(;{]*\(' | sed -E 's/.*[ *]([a-z0-9_]+) *\($/\1/' | sort -u | wc -l)"
-n_exported="$(printf '%s\n' "$tags" | awk -F'\t' '$2 ~ /^MS/ {n++} END {print n + 0}')"
+n_exported="$(printf '%s\n' "$tags" | awk -F'\t' '$2 ~ /^MS/ && $4 !~ /mtl_(debug|legacy)\.h$/ {n++} END {print n + 0}')"
 printf 'frozen names: %d (exported functions %d, inline functions %d, enum constants %d, macros %d, structs %d)\n' \
 	"$((n_exported + n_inline + n_enums + n_macros + n_structs))" "$n_exported" "$n_inline" "$n_enums" "$n_macros" "$n_structs"
 

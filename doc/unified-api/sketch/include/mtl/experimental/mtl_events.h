@@ -10,7 +10,7 @@
  * Events say that something changed (a link, the time base, a session's state, a flow);
  * every state they report also has a getter, so a lost event loses nothing. A session
  * keeps its own events; the instance keeps the port, time, scheduler, health, manager and
- * region events. Both are read here, behind the object's one wait handle
+ * region events. Both are read here, and waited on with mtl_wait or a queue
  * (MTL_WAIT_EVENTS, mtl.h). Events are coalesced and may overflow (MTL_EVENT_OVERFLOW).
  * Reads return a count >= 1, or -MTL_EAGAIN when there is nothing (mtl.h R2).
  */
@@ -100,87 +100,6 @@ static inline int mtl_instance_read_events(mtl_instance_h mt, struct mtl_event* 
                                            uint32_t max, int64_t timeout_ns) {
   return mtl_read_events(MTL_OBJ_OF_INSTANCE(mt), ev, sizeof(*ev), max, timeout_ns);
 }
-
-#if defined(MTL_LATER)
-/* ---- Shared queues (later) -------------------------------------------------------------- */
-
-/* A queue gathers the TX results, RX readiness and events of many sessions, plus port,
-   time and instance events, behind one wait handle; results stay lossless and ordered per
-   session. */
-typedef struct mtl_queue_h {
-  uint64_t id;
-} mtl_queue_h;
-#define MTL_OBJ_OF_QUEUE(q) mtl_obj(MTL_OBJ_QUEUE, 0, (q).id)
-
-/* Instance-wide event subscriptions (mtl_queue_config.subscribe) */
-#define MTL_SUB_PORT 0x1u     /* PORT_LINK, PORT_RESET, PORT_REMOVED, PORT_ADDRESS */
-#define MTL_SUB_TIME 0x2u     /* TIME_STATE, TIME_STEP, GRANDMASTER */
-#define MTL_SUB_INSTANCE 0x4u /* MANAGER_LOST, SCHED_OVERLOAD, SCHED_STALLED, HEALTH,
-                                 REGION_RELEASED */
-#define MTL_SUB_SESSIONS 0x8u /* SESSION_STATE of every session */
-struct mtl_queue_config {
-  uint32_t struct_size;
-  uint32_t event_capacity; /* records per producer; 0 = 64 */
-  uint64_t subscribe;      /* MTL_SUB_* */
-  uint64_t reserved[4];
-};
-/* CP. (later) */
-MTL_API_CP(LATER) int mtl_queue_create(mtl_instance_h mt, const struct mtl_queue_config* c,
-                                       mtl_queue_h* out);
-/* Unbinds every session (their results and events return to them) and retires the
-   queue. 0 for a null handle. CP. */
-static inline int mtl_queue_close(mtl_queue_h q) {
-  return mtl_close(MTL_OBJ_OF_QUEUE(q), 0);
-}
-
-/* mtl_queue_bind() parts */
-#define MTL_BIND_RESULTS 0x1u /* TX results go to the queue instead of the session */
-#define MTL_BIND_READY 0x2u   /* RX readiness is reported by mtl_queue_ready() */
-#define MTL_BIND_EVENTS 0x4u  /* a copy of the session's events */
-/* CREATED or STOPPED; parts 0 unbinds. CP. (later) */
-MTL_API_CP(LATER) int mtl_queue_bind(mtl_queue_h q, mtl_session_h s, uint64_t parts);
-
-/* TX results of bound sessions (mtl_tx_result.session says whose), per session in
-   submission order. A count >= 1, or -MTL_EAGAIN. WT. */
-static inline int mtl_queue_reap(mtl_queue_h q, struct mtl_tx_result* r, uint32_t max,
-                                 int64_t timeout_ns) {
-  return mtl_reap(MTL_OBJ_OF_QUEUE(q), r, sizeof(*r), max, timeout_ns);
-}
-/* Up to max bound RX sessions with a unit ready to dequeue. A count >= 1, or -MTL_EAGAIN.
-   WT. (later) */
-MTL_API_WT(LATER) int mtl_queue_ready(mtl_queue_h q, mtl_session_h* s, uint32_t max,
-                                      int64_t timeout_ns);
-static inline int mtl_queue_read_events(mtl_queue_h q, struct mtl_event* ev, uint32_t max,
-                                        int64_t timeout_ns) {
-  return mtl_read_events(MTL_OBJ_OF_QUEUE(q), ev, sizeof(*ev), max, timeout_ns);
-}
-
-/* Waiting on a queue: the session rules of mtl.h with MTL_WAIT_RESULTS, MTL_WAIT_DEQUEUE
-   (some bound RX session is ready) and MTL_WAIT_EVENTS. */
-static inline int mtl_queue_wait(mtl_queue_h q, uint64_t mask, int64_t timeout_ns) {
-  return mtl_wait(MTL_OBJ_OF_QUEUE(q), mask, timeout_ns);
-}
-static inline int mtl_queue_get_wait_handle(mtl_queue_h q, uint64_t mask, intptr_t* native) {
-  return mtl_get_wait_handle(MTL_OBJ_OF_QUEUE(q), mask, native);
-}
-/* Waits on this queue only. AS with on = 1, CP with on = 0. */
-static inline int mtl_queue_interrupt(mtl_queue_h q, int on) {
-  return mtl_interrupt(MTL_OBJ_OF_QUEUE(q), on ? MTL_INTR_ON : MTL_INTR_OFF, 0);
-}
-
-/* fn set: a library thread (never a tasklet) reads q and calls fn for each result and
-   event. fn may make any call except close, stop or update of a session bound to q,
-   mtl_queue_close(q), mtl_queue_dispatch(q, ...), and the instance's close and shutdown
-   (-MTL_EDEADLK there). A slow fn delays only this queue. fn NULL stops the thread and
-   waits for a running fn, so `user` may be freed after it returns. CP. (later) */
-typedef void (*mtl_queue_fn)(void* user, const struct mtl_tx_result* MTL_NULLABLE result,
-                             const struct mtl_event* MTL_NULLABLE event);
-MTL_API_CP(LATER) int mtl_queue_dispatch(mtl_queue_h q, mtl_queue_fn MTL_NULLABLE fn,
-                                         void* MTL_NULLABLE user);
-
-MTL_SIZE_CHECK(mtl_queue_h, 8);
-MTL_SIZE_CHECK(mtl_queue_config, 48);
-#endif
 
 #if defined(MTL_LATER)
 /* Reserved: opt-in notification on the completing context, for latency parity with

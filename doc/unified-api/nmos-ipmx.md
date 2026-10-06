@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | §1–§7: NMOS and IPMX explained, every feature MTL provides with its API and milestone, the open-source NMOS stacks, the integration and a demo plan. §8–§23: the design of **Phase 7** (after MS7, D-98), declared under `MTL_LATER` until its milestone (D-134). Earlier: `mtl_session_update` and TX sender reports in **MS5**, `MTL_TIME_SOURCE_FREERUN` in **MS6** (§8) |
+| Status | §1–§7: NMOS and IPMX explained, every feature MTL provides with its API and milestone, the open-source NMOS stacks, the integration and a demo plan. §8–§23: the design of **Phase 7** (after MS7, D-98), declared under `MTL_LATER` until its milestone (D-134). Earlier: `mtl_session_update` in **MS3** (running: MS5), TX sender reports in **MS5**, `MTL_TIME_SOURCE_FREERUN` in **MS6** (§8) |
 | Date | 2026-10-05 |
-| Headers | `mtl.h` (update contract, legs, status), [mtl_ipmx.h](sketch/include/mtl/experimental/mtl_ipmx.h) (SDP, RTCP sender reports, PEP), `mtl_options.h` (113, 201–213, 1000–1039), `mtl_sync.h`, `mtl_format.h`, `mtl_events.h` (events 26–30), `mtl_packet.h` |
+| Headers | `mtl.h` (update contract, legs, status), [mtl_ipmx.h](sketch/include/mtl/experimental/mtl_ipmx.h) (RTCP sender reports, PEP), [mtl_sdp.h](sketch/include/mtl/experimental/mtl_sdp.h) (SDP, libmtl_sdp), `mtl_options.h` (113, 201–213, 1000–1039), `mtl_sync.h`, `mtl_format.h`, `mtl_events.h` (events 26–30), `mtl_packet.h` |
 | Reads with | [requirements.md](requirements.md) §6 (N-REQ) and §7 (I-REQ); [standards.md](standards.md) (specification URLs) |
 
 NMOS (the AMWA Networked Media Open Specifications) is how an ST 2110 device is found, connected
@@ -735,17 +735,22 @@ with care [verified in `lib/`; effort I]:
 
 ### 5.2 On the unified API
 
-Before MS5 the unified API is a step back for an NMOS Node: it has no update, so every
-activation is a stop, close and create, where the legacy `update_*` calls change a running
-session. A Node that must run before MS5 stays on the legacy API.
+Before MS3 the unified API is a step back for an NMOS Node: every activation is a stop, close
+and create (close the old session and wait until its close returns 0, since a create with a
+live name is `-MTL_EEXIST`; or create the new one first under another name, `<uuid>.b`), where
+the legacy `update_*` calls change a running session. From MS3 an activation is stop,
+`mtl_session_update` and start (§11.5): the session keeps its handle, name, SSRC and counters,
+and a scheduled one starts at `MTL_AT_TAI`; the stream pauses from the stop to the start until
+MS5 updates a running session at the index boundary. A Node that must switch without a pause
+before MS5 stays on the legacy API.
 
 | Milestone | What a Node gains |
 |---|---|
-| MS1 | sessions with `sc.name`, granted values in `mtl_session_info`, DSCP for video, stop and start: a Node works with create-on-activation |
+| MS1 | sessions with `sc.name`, granted values in `mtl_session_info`, DSCP for video, stop and start: a Node works with create-on-activation and the name rule above |
 | MS2 | `mtl_port_get_spec()` (the MAC with NX-3), `mtl_time_set_reference()` for ptp4l, stats for BCP-008 |
-| MS3 | events, `MTL_AT_TAI` starts, format detection |
+| MS3 | events, `MTL_AT_TAI` starts, format detection; `mtl_session_update` in CREATED and STOPPED: stop, update, start keeps the session |
 | MS4 | audio, ANC, JPEG XS, any raster |
-| MS5 | `mtl_session_update()`: exact immediate and scheduled activations, per-leg enable, no ARP wait; sender reports with the library's Info Block; the link monitor; with NX-3 also mute, reserved legs, cancel and re-apply, which leaves only dry runs and port changes for Phase 7 |
+| MS5 | `mtl_session_update()` while running: exact immediate and scheduled activations, per-leg enable, no ARP wait; sender reports with the library's Info Block; the link monitor; with NX-3 also mute, reserved legs, cancel and re-apply, which leaves only dry runs and port changes for Phase 7 |
 | MS6 | the free-running clock, the PHC time source and a PTP lock state that clears (E9), the link offset |
 | Phase 7 | the rest of IPMX: profile, IGMPv2, `mediaclk:sender` on RX, the application's Info Block entries, PEP, SDP helpers |
 
@@ -808,7 +813,8 @@ built; NX-7 and NX-9 are upstream work in nmos-cpp; NX-8 is documentation. Costs
     anyway.
 - **NX-4 SDP from one source of values** (keys with the essence; the helper Phase 7). In C++, use
   nmos-cpp's SDP code and expose MTL's values as `info.*` keys. For C users, base
-  `mtl_sdp_render()` and `mtl_sdp_parse()` on the BSD-3 dtnmos codec (it reads and writes
+  `mtl_sdp_render()` and `mtl_sdp_parse()` on the BSD-3 dtnmos codec, in the companion library
+  libmtl_sdp (§12), so it can ship after MS5 with NX-2 without waiting for Phase 7 (it reads and writes
   ST 2110-20, -22, -30, -40 and 2022-7 pairs, but lacks `mediaclk:sender` and the IPMX fmtp
   lines) rather than writing one, and render `measuredpixclk`, `htotal`, `vtotal` from the
   values the MIB uses.
@@ -908,18 +914,18 @@ the optional parts.
 
 | Item | When | Notes |
 |---|---|---|
-| atomic `mtl_session_update` (today's `update_destination` / `update_source`), `planned_tai_ns`, `status.update_*`, `MTL_EVENT_UPDATE`, the switch at the index boundary by the clock, a past instant means now | **MS5** | it replaces an existing call; the contract costs nothing extra once the update is atomic |
+| atomic `mtl_session_update` (today's `update_destination` / `update_source`), `planned_tai_ns`, `status.update_*`, `MTL_EVENT_UPDATE`, the switch at the index boundary by the clock, a past instant means now | **MS5** (CREATED and STOPPED: **MS3**) | it replaces an existing call; the contract costs nothing extra once the update is atomic |
 | per-leg enable and disable (`legs_disabled`, `MTL_UPDATE_LEGS`) | **MS5** | today's redundancy legs |
-| the rest of the NMOS contract: `MTL_UPDATE_REAPPLY`, `MTL_UPDATE_DRY_RUN`, cancel, mute (every leg disabled), reserved legs, port changes while running, R options at the boundary, `rx.join_lead_ns` | 7 | an NMOS Node can be built on MS5 with stop, update and start (§11.5) |
+| the rest of the NMOS contract: `MTL_UPDATE_REAPPLY`, `MTL_UPDATE_DRY_RUN`, cancel, mute (every leg disabled), reserved legs, port changes while running, R options at the boundary, `rx.join_lead_ns` | 7 | an NMOS Node can be built on MS3 with stop, update and start, and on MS5 without the stop (§11.5) |
 | `mtl_flow.dscp` into the IP TOS of every leg | **MS1** video, **MS4** the other essences | with the bindings; the IPMX profile's DSCP defaults and `MTL_FLOWF_DSCP_LITERAL` are 7 |
 | any raster and frame rate (the engine's rate table becomes rationals) | **MS2a** video, **MS4** the other essences | until then a rate outside the legacy table is `-MTL_ENOTSUP` (GI-7) |
 | `mtl_time_set_reference()` and `time.phc_trust` | **MS2** | the pod time rules need them: the application tells MTL the node lost its grandmaster ([deployment.md](deployment.md)) |
 | the other IS-04 values: colorimetry fields, the port MAC, the `info.*`, `time.gm_*` and BCP-008 keys; the IS-04 use of events 27 (`MTL_EVENT_GRANDMASTER`, posted from MS3 with `mtl_time_set_reference`) and 28 (`MTL_EVENT_PORT_ADDRESS`, posted with `port.dhcp`, a ported feature) | 7 | declared outside `MTL_LATER` already; not scheduled before Phase 7 unless pulled forward |
-| SDP render and parse (`mtl_sdp_render`, `mtl_sdp_parse`, `mtl_ipmx.h`) | 7 | first in Phase 7, with the NMOS contract |
+| SDP render and parse (`mtl_sdp_render`, `mtl_sdp_parse`, `mtl_sdp.h`, the companion library libmtl_sdp) | 7, or with NX-4 | outside libmtl; first in Phase 7 unless NX-4 pulls it forward |
 | RTCP sender reports on TX: `rtcp.sr`, `rtcp.cname`, `rtcp.dst_port`, the Info Block the library builds (§17) | **MS5** | their names leave `MTL_LATER` there |
 | `MTL_TIME_SOURCE_FREERUN`, with the published time base (E9) | **MS6** | its name leaves `MTL_LATER` there |
 | IPMX timing: AUTO at runtime, `MTL_MEDIA_SENDER`, `MTL_SUBMIT_SENDER_TIME`; the application's Info Block entries and received reports (`mtl_rtcp_set_info`, `mtl_rtcp_read`, `rtcp.rx`, `mtl_ipmx.h`) | 7 | second |
-| IPMX profile and wire: `session.profile`, IGMPv2, `tx.precede`, `video.vtotal`/`htotal`, `cvideo.max_bitrate_bps` (RX header extensions, SF-68: an engine fix in MS2 for video and MS4 for the rest, engine.md §11 RXHDR) | 7 | third |
+| IPMX profile and wire: `session.profile`, IGMPv2, `tx.precede`, `video.vtotal`/`htotal`, `cvideo.max_bitrate_bps` (RX header extensions, SF-68: an engine fix in MS2 for video and MS4 for the rest, engine.md §6 RXHDR) | 7 | third |
 | PEP (`mtl_crypto_set_key`, `mtl_ipmx.h`) | 7 | last, after its cost spike |
 
 Phase 7 starts after the ABI freeze (MS7). Its functions, values, option keys, enums and events
@@ -1153,7 +1159,7 @@ The PATCH handler, on parameters already merged into the staged set:
    Read `status.update_seq`.
 5. Scheduled: answer 202 with `planned`. Immediate: wait for `MTL_EVENT_UPDATE` of that seq (or poll
    the status; timeout 1 s), then answer 200 with `update_applied_tai_ns`. An immediate activation
-   applies within one unit period plus the command acknowledgement, which is bounded at 100 ms.
+   applies within one unit period plus the command acknowledgement, which the fixed ack timeout bounds (D-48).
 6. On APPLIED (both cases): commit `/active` with the granted values (`info.leg[i].udp_src_port`,
    the port's `sip`, the group), regenerate the SDP, bump the IS-04 `version`, take the BCP-008
    baseline. On FAILED `/active` keeps the old values; if the session went to ERROR,
@@ -1189,9 +1195,15 @@ within `MAX_TIME_SYNC_OFFSET` (0.1 s).
 
 Without the Phase 7 extras a Node still works:
 
+- From MS3 to MS5 (the update only in CREATED and STOPPED), an immediate activation is
+  `mtl_session_stop(&s, 1, MTL_STOP_FLUSH, MTL_MS(100))`,
+  `mtl_session_update(s, &sc, MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS, NULL, NULL)`,
+  `mtl_session_start(&s, 1, NULL, NULL)`, answered 200; a scheduled one runs the same three calls
+  from a Node timer before t with the start at `MTL_AT_TAI` t, or uses the A/B swap below for no
+  pause. From MS5 one update while running replaces the three calls.
 - `master_enable = false`: stop the session; re-enable starts it, with `AT_TAI` when scheduled.
-- Re-activation: an update with the same flows; IGMP is not re-sent.
-- Format change (IS-11, new SDP), immediate: `mtl_session_stop(&s, 1, MTL_STOP_FLUSH, MTL_MS(100))`,
+- Re-activation: an update with the same flows; IGMP is not re-sent (while running: MS5).
+- Format change (IS-11, new SDP), immediate, from MS3: `mtl_session_stop(&s, 1, MTL_STOP_FLUSH, MTL_MS(100))`,
   `mtl_session_update(s, &sc, MTL_UPDATE_MEDIA | MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS, NULL, NULL)`,
   `mtl_session_start(&s, 1, NULL, NULL)`; identity, stats and the monitor survive; answer 200. A TX
   format change at a time is the same, started at the activation time.
@@ -1209,13 +1221,17 @@ Without the Phase 7 extras a Node still works:
 
 1. `mtl_instance_open()`; read `instance.port_count`; per port, `mtl_port_get_spec()` gives
    `interfaces[p]` (`name`, `port_id` = `mac`, `chassis_id` = null); `clocks[0]` from
-   `time.grandmaster_id`, `time.state` and `time.gm_traceable`. Put the instance's wait handle
-   (`mtl_instance_get_wait_handle`) in the Node's event loop for port and time events.
+   `time.grandmaster_id`, `time.state` and `time.gm_traceable`. Create the Node's queue
+   (`mtl_queue_create`) with its descriptor in the Node's event loop, and arm the instance with
+   `MTL_WAIT_EVENTS` on the Node's queue (`mtl_queue_arm`) for port and time events.
 2. Per Sender or Receiver: `MTL_INIT(&sc)`, direction, essence, the essence member with
    `colorimetry`, `tcs`, `range`; `sc.name` = the UUID; every leg reserved and disabled (`flows[i]`
    all zero, `legs_disabled` = 0x1 or 0x3); option `caps.pacing` with
-   `caps.pacing_req` = `MTL_REQ_REQUIRE` (BCP-004-02). `mtl_session_create()`, its wait handle into the event loop,
-   `mtl_session_start(&s, 1, NULL, NULL)`: RUNNING and muted, nothing on the wire.
+   `caps.pacing_req` = `MTL_REQ_REQUIRE` (BCP-004-02). `mtl_session_create()`, arm it on the Node's queue,
+   `mtl_session_start(&s, 1, NULL, NULL)`: RUNNING and muted, nothing on the wire. A report
+   disarms: the loop serves the reported object with timeout-0 calls and arms it again. An
+   activation (a stop, an update and a start) keeps the session armed: arming succeeds in every
+   state but CLOSING and RETIRED, and a state change reports once (D-169).
 3. Publish the IS-04 resources with `subscription.active = false` and `version` = now. Flow:
    `grain_rate` = the raster rate, `frame_*` = the raster, `interlace_mode` = the scan, `colorspace`
    = the colorimetry, `components` from `mtl_format_describe()` (`sdp`), `bit_rate` =
@@ -1223,14 +1239,20 @@ Without the Phase 7 extras a Node still works:
    `bit_rate` = `info.wire_kbps`, `st2110_21_sender_type` = `info.sender_type`, `manifest_href` →
    `mtl_sdp_render()`.
 
-## 12. SDP helper (`mtl_ipmx.h`, `MTL_LATER`)
+## 12. SDP helper (`mtl_sdp.h`, libmtl_sdp, `MTL_LATER`)
 
 Every NMOS sender publishes an SDP on every activation and grandmaster change, and every receiver
 reads one. Without a helper each Node repeats the same mistakes (a missing `TROFF`, an unreduced
-`exactframerate`, `traceable` claimed without the accuracy check). The helper uses public calls only
-and allocates nothing. Non-goal NG3 (no SDP parsing inside `lib/`; the library itself never needs
-SDP, and `mtl_session_get_info` returns every SDP-relevant value) still holds: the helper is built on
-public calls only (D-94).
+`exactframerate`, `traceable` claimed without the accuracy check).
+The helper is its own library, `libmtl_sdp` (`ecosystem/sdp/`, pkg-config `mtl-sdp`, header
+`mtl_sdp.h`), built only on libmtl's public calls (`mtl_session_get_info`, the `info.*` and
+`time.*` stats keys, `mtl_get_option`), and it allocates nothing. libmtl exports none of it, so
+non-goal NG3 (no SDP parsing inside `lib/`; the library itself never needs SDP) holds, and an SDP
+rule (a new fmtp parameter, a TR-10 revision) changes in a libmtl_sdp release, outside libmtl's
+frozen set (D-94). Its functions are exported, never inline, because parse reads text from the
+network. It is built with NX-4 (§6), which bases it on the dtnmos codec, when the maintainer
+schedules NX-4; otherwise in Phase 7. A companion library cannot write libmtl's
+`mtl_last_error()`: parse names the attribute at fault in `meta.error`.
 
 **`mtl_sdp_render(s, meta, buf, cap)`** (CP) writes what a created session is now:
 
@@ -1243,7 +1265,7 @@ public calls only (D-94).
 - `a=source-filter`, unless `MTL_SDP_NO_SOURCE_FILTER` (not allowed under IPMX).
 
 It returns the length written (without the NUL), `-MTL_ENOSPC` if `cap` is short, or `-MTL_EBUSY`
-(`WRONG_STATE`) while a value it needs is unknown (an ANC raster before start). The `o=` version
+while a value it needs is unknown (an ANC raster before start). The `o=` version
 changes on every activation, grandmaster change and Info Block change; a sender re-renders on
 `MTL_EVENT_GRANDMASTER` and `MTL_EVENT_RTCP_INFO`, so a change of clock source changes SDP, NMOS
 and the reports together (TR-10-9 §12).
@@ -1284,7 +1306,7 @@ for TR-10-7 VBR. `a=privacy` and `a=infoframe` are open (§23).
   `fmtp_extra` (profile, level, sublevel, PAR, DID_SDID, measured values).
 
 It returns the leg count. Unknown attributes are ignored; a malformed required one is `-MTL_EINVAL`
-naming it. `struct mtl_sdp_meta` is 608 B with fixed string arrays, copied and NUL-terminated
+with its name in `meta.error`. `struct mtl_sdp_meta` is 608 B with fixed string arrays, copied and NUL-terminated
 (`-MTL_ENOSPC` names a field that does not fit). NMOS JSON stays outside MTL.
 
 ## 13. IS-08 and IS-11
@@ -1439,7 +1461,8 @@ latest per leg, and maps each unit's RTP onto the sender's clock
 (`unit.media_tai_ns` flagged `MTL_UNITF_SENDER_TIME`).
 
 - `mtl_rtcp_read()` (WT) gives the oldest unread `struct mtl_rtcp_report` (56 B) and copies its Info
-  Block. It returns 1, or `-MTL_EAGAIN` with `MTL_WAIT_RTCP` (in `mtl.h`) armed. A full ring drops
+  Block. It returns 1, or `-MTL_EAGAIN`; an event loop arms `MTL_WAIT_RTCP` (in `mtl.h`) on a queue
+  (`mtl_queue_arm`). A full ring drops
   the oldest (`rx.rtcp_sr_dropped`).
 - `mtl_rtcp_mib_next()` (inline) iterates the Media Info Blocks, from the report's `mib_offset`.
 - An HDMI-out receiver recovers the source clock from the reports and `rx.sender_rate_ppb`
@@ -1634,6 +1657,7 @@ adds moves `min_submit_lead_ns` (in `mtl_session_info`).
 | Path | TX | RX |
 |---|---|---|
 | frame and row units, library pool | in the caller during `mtl_tx_submit` (DPC), in place, per packet region; rows per submitted range | the tasklet lands ciphertext and stores each packet's ctr in the slot's packet table (8 B per packet); `mtl_rx_dequeue` decrypts in place in the caller (DPC), then zero-fills gaps; rows in `mtl_rx_wait_rows` |
+| cvideo (codec on the transform state) and video with a converter plugin | the last transform stage ([core.md](core.md) §3.1), after the encoder's or converter's done, on the codec or `crypto.workers` thread; never in submit, where the codestream does not exist yet | the first RX stage, before decode or conversion, on the same threads |
 | attached application memory | a copy to a library shadow slot while encrypting, unless `crypto.in_place`; `MTL_SESSION_REQUIRE_DIRECT` without it fails at create | as library pools: ciphertext sits in the application's slot until dequeue |
 | `unit.hold` (RX to TX zero copy) | the copy path (in place would corrupt the shared RX slot) | — |
 | packet units | per packet at submit (DPC); or the application encrypts and writes its own extension with `packet.set_fields` verbatim | `MTL_PKT_RX_LEND` and the application decrypts, or the library decrypts at dequeue |
@@ -1702,7 +1726,7 @@ also uses packet units, because frame units deliver ciphertext pixels and no ext
 | G-N14 LLDP | **deferred**: `chassis_id = null` is allowed; topology tools read the switch | — | later |
 | G-N15 bit rate, sizes | adopted | `info.*` keys | 7 |
 | G-N16 late counters | adopted | `leg.pkts_late`, `rx.units_late_presentation` | 7 |
-| G-N17 SDP | adopted as an optional helper | `mtl_sdp_render`, `mtl_sdp_parse` (`mtl_ipmx.h`) | 7 |
+| G-N17 SDP | adopted as an optional helper | `mtl_sdp_render`, `mtl_sdp_parse` (`mtl_sdp.h`, libmtl_sdp) | 7 |
 | G-N18 offsets at an activation, announce timeout | adopted: R options in the update's config apply at its boundary | `mtl_session_update`, `time.ptp_announce_timeout` (2209) | 7 |
 | G-N19 DID/SDID seen | adopted | `anc.did_sdid_seen` | 7 |
 | G-N20 RTCP | adopted through GI-1…3, IPMX reports only | `mtl_rtcp_set_info`, `mtl_rtcp_read` (`mtl_ipmx.h`) | 7 |
@@ -1729,7 +1753,7 @@ also uses packet units, because frame units deliver ciphertext pixels and no ext
 | GI-11 HDCP cipher plugin | **later**; packet units until then | — | later |
 | GI-12 IGMPv2 | adopted, merged with K-REQ-20 | `port.igmp_version` | 7 |
 | GI-13 link offset while active | adopted | `rx.link_offset_ns` R, `MTL_LINK_OFFSET_AUTO` | 7 |
-| GI-14 InfoFrames first | adopted: shared queue, the video's RTP and media time | `tx.precede` | 7 |
+| GI-14 InfoFrames first | adopted: shared TX queue, the video's RTP and media time | `tx.precede` | 7 |
 | GI-15 FEC Profile A | **later** | — | later |
 | GI-16 profile | adopted | `session.profile` (on the instance: its default) | 7 |
 | GI-17 keys | adopted | `tx.f2f_pp_ns`, `rx.sender_rate_ppb`, `rx.rtcp_info_version`, `rx.crypto_auth_fail` | 7 |
@@ -1863,7 +1887,7 @@ Phase 7 starts, against the headers of that day:
 | the privacy block | MIB 0x0011 needs privacy_version; no option carries it or the key identity |
 | IPMX SDP values | `mtl_sdp_render()` leaves `measuredpixclk`, `htotal`, `vtotal` and `measuredsamplerate` to `fmtp_extra`, though MTL writes the same values into MIB 0x0001 and the test plan checks that the two agree: render them from the MIB's values |
 | link offset on a new stream | TR-10-8 §8 keeps the current value unless it falls outside the new stream's constraints, but `rx.link_offset_min_ns` and `_max_ns` are known only after the stream arrives: say how the Node clamps (apply, read the gauges after the first units, update the R key) |
-| a Sender with no address | IS-05 wants 404 on the transport file until something is active; `mtl_sdp_render()` on a session whose legs are all reserved is undefined: return `-MTL_EBUSY` (`WRONG_STATE`) |
+| a Sender with no address | IS-05 wants 404 on the transport file until something is active; `mtl_sdp_render()` on a session whose legs are all reserved is undefined: return `-MTL_EBUSY` |
 | `time.ptp_announce_timeout` | key 2209 has no milestone tag; N-REQ-55 and G-N18 disagree (v1 or 7) |
 | `wire_bps` and BCP-006-01 | the Sender `bit_rate` counts IP packets (RTP, UDP and IP headers); `mtl_session_info.wire_bps` says "on the wire, headers included": say whether Ethernet framing is in it |
 | time steps | units in flight across an AUTO time step are not addressed |

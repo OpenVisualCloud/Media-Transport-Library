@@ -1,4 +1,4 @@
-/* Real-kernel stress test of the wait protocol (engine.md §7) on this host (x86, Linux):
+/* Real-kernel stress test of the wait protocol (core.md §6) on this host (x86, Linux):
  * futex (FUTEX_WAIT_BITSET / FUTEX_WAKE_BITSET), eventfd, epoll LT or EPOLLONESHOT.
  * One object, lanes 0 and 1. Threads per round:
  *   2 producers (direct-context EVENT + WAKE_NOW, random lanes),

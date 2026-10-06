@@ -172,8 +172,8 @@ Marker bit and keep-alive per essence (what `MTL_PKT_SET_MARKER` and `MTL_PKT_TX
   Every value applies to the whole stream (every sample, row, field and frame).
 - **SDP today.** MTL's `lib/`, `include/`, `app/` and `ecosystem/` contain no `TSMODE`, `TROFF`, `TP=` or `mediaclk`
   string (grep): the library generates no SDP, so every timing promise must be expressible in the SDP the application
-  writes. The values are `info.*` stats in the unified API; SDP rendering is Phase 7 (`mtl_sdp_render` in `mtl_ipmx.h`,
-  `MTL_LATER`).
+  writes. The values are `info.*` stats in the unified API; SDP rendering is Phase 7 (`mtl_sdp_render` in `mtl_sdp.h`,
+  the companion library libmtl_sdp, `MTL_LATER`).
 
 ## 6. ST 2110-21, receivers and what compliance tools measure
 
@@ -927,7 +927,7 @@ The source URLs are §16.
 | 10 | audio RTP vs launch | first-sample instant; JT-NM "not in the future" | launch exactly at the RTP instant; the contract draft anchors audio RTP at the first TX request | `D_a` (timing.md §5.3); RTP from the sample index |
 | 11 | ns rounding ties | — | contract draft: ties to the later ns; code `st_muldiv_u64_round_closest` (`st_fmt.c:951`): ties down | open ([timing.md §16.2](timing.md#162-oracle-and-contract)) |
 | 12 | RX parser | ST 2110-21:2022 §6.6 VRX and CINST; RP 2110-25:2023 §4.4, §4.9.2 | per-frame CINST reset, TROFF ignored, floor frame index, `double` (as LIST); height-switched SD constants | §6.4 table; the parser is kept |
-| 13 | SDP | `ts-refclk`, `mediaclk` and TP required, TROFF when not the default, TSMODE and TSDELAY recommended (ST 2110-10:2022 §8.2, §8.3, §8.7; ST 2110-21:2022 §6.2, §8.1) | none emitted; apps can query little beyond `st20_tx_get_pacing_params()` | `info.*` stats; `mtl_sdp_render` (`mtl_ipmx.h`) Phase 7 |
+| 13 | SDP | `ts-refclk`, `mediaclk` and TP required, TROFF when not the default, TSMODE and TSDELAY recommended (ST 2110-10:2022 §8.2, §8.3, §8.7; ST 2110-21:2022 §6.2, §8.1) | none emitted; apps can query little beyond `st20_tx_get_pacing_params()` | `info.*` stats; `mtl_sdp_render` (`mtl_sdp.h`) Phase 7 |
 | 14 | ANC keep-alive | one RTP packet per frame, field or PsF segment; without ANC, `ANC_Count` = 0 with the marker set (-40:2023 §5.5) | nothing sent when the app has no ANC frame (`st_tx_ancillary_session.c:942-946`) | E7, G-61 |
 | 15 | ANC transmit window | no later than TFST + TEPO + TD (1 ms CTM, 8 lines LLTM) and no earlier than one frame before (-40:2023 §6.4, §6.5) | packets spread over the whole frame period (`st_tx_ancillary_session.c:1108`) | E7 (timing.md §9.2) |
 | 16 | ST22 packet count | constant bytes and packets per frame (-22:2022 §4); `b=AS` from the constant frame size (§7.3) | packets follow the codestream (`st_tx_video_session.c:2481-2485`), TRS recomputed per frame (`:750-757`) | `MTL_CVIDEO_CBR` default (timing.md §5.3) |
@@ -1033,7 +1033,7 @@ semantics; per-leg observed times; an RX common link offset per group.
 | RFC 8759 (TTML over RTP), RFC 3190 (`channel-order`), W3C TTML2 and IMSC 1.2 | not read; <https://www.rfc-editor.org/rfc/rfc8759>, <https://www.w3.org/TR/ttml2/>, <https://www.w3.org/TR/ttml-imsc1.2/> | §8, §10.1 |
 | RFC 7273 (`mediaclk`, `ts-refclk`) | `https://www.rfc-editor.org/rfc/rfc7273` | §3 |
 | RFC 3376 (IGMPv3) | <https://www.rfc-editor.org/rfc/rfc3376> | deployment.md §4.5 |
-| RFC 4566 (SDP), RFC 4570 (source filters), RFC 7104 (duplication grouping), RFC 3605 (`a=rtcp`) | not read | nmos-ipmx.md, `mtl_ipmx.h` |
+| RFC 4566 (SDP), RFC 4570 (source filters), RFC 7104 (duplication grouping), RFC 3605 (`a=rtcp`) | not read | nmos-ipmx.md, `mtl_sdp.h` |
 | RFC 8285 (header extensions), RFC 6184 (H.264), RFC 7798 (H.265), RFC 3640 (MPEG-4 audio) | not read | nmos-ipmx.md, packet units |
 | VSF TR-03 | 2015-11-12, <https://static.vsf.tv/download/technical_recommendations/VSF_TR-03_2015-11-12.pdf> | §3, §13 |
 | VSF TR-10-1 (IPMX system timing) | 2024-02-23, <https://static.vsf.tv/download/technical_recommendations/VSF_TR-10-1_2024-02-23.pdf> | §14; nmos-ipmx.md |

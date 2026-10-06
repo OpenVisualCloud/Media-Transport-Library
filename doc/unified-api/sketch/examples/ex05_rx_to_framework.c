@@ -4,11 +4,11 @@
    sink, a queue or an appsink application may hold the buffer after the element is gone.
    Library slots are packed (FFmpeg av_image_fill_arrays with align 1) and end in
    MTL_RX_TAIL_BYTES zero bytes (AV_INPUT_BUFFER_PADDING_SIZE). The slots MTL needs for
-   units not yet handed on are reserved (migration.md §12.8:
-   reserve = ceil((L + copy) / U) + 1); once downstream holds the rest, the next unit is
-   copied, so a slow consumer costs a copy, never a lost unit. GStreamer unlock() and
-   unlock_stop() run on another thread and map to mtl_session_interrupt(s, 1) and (s, 0).
-   Needs: MS1. */
+   units not yet handed on are reserved (mtl_rx_reserve, migration.md §12.8); once
+   downstream holds the rest, the next unit is copied, so a slow consumer costs a copy,
+   never a lost unit. GStreamer unlock() and unlock_stop() run on another thread and map
+   to mtl_session_interrupt(s, 1) and (s, 0). Needs: MS1. */
+#include <mtl/experimental/mtl_util.h>
 #include <stdlib.h>
 
 #include "ex_common.h"
@@ -35,11 +35,21 @@ static void release_cb(void* p) { /* any thread, any order, also after close */
   free(ref);
 }
 
+/* At start and at each GST_EVENT_LATENCY: the slots to keep for MTL. latency_ns: the
+   pipeline's configured latency; copy_ns: the measured copy of one unit (about 1 ms at
+   1080p). A pool_count below this + the units held downstream (a sink's last sample, an
+   aggregator pad) makes the copy path run: log the pool_count it needs once. */
+int rx_reserve(mtl_session_h s, int64_t latency_ns, int64_t copy_ns) {
+  struct mtl_session_info info;
+  int ret = mtl_session_get_info(s, &info, sizeof(info));
+  return ret < 0 ? ret : mtl_rx_reserve(&info, NULL, latency_ns, copy_ns);
+}
+
 /* GstBaseSrc::create on the streaming thread: 0 = one buffer handed on; EX_FLUSHING after
    unlock() or a stop, without waiting for unlock_stop(): the framework calls create again
    once it has run; a negative code on an error. unit_bytes: mtl_session_info.unit_bytes
-   (with detection, the sum of stride x rows over the unit's planes); reserve: the slots
-   kept for MTL, recomputed at each latency change. */
+   (with detection, the sum of stride x rows over the unit's planes); reserve: the last
+   rx_reserve(). */
 int rx_create(mtl_session_h s, uint64_t unit_bytes, uint32_t pool_count,
               uint32_t reserve) {
   struct mtl_unit u;

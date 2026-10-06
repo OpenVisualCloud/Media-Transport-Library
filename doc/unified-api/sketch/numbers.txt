@@ -1,0 +1,12 @@
+# One home per load-bearing number (README §1). Each line: a name, the one document where the
+# number may be stated (its home), and an extended regex (grep -iE). check.sh fails when the
+# regex matches any other document of doc/unified-api/. Elsewhere state the rule in words and
+# link the home. Add a number when a second document starts to repeat it.
+flush bound	decisions.md	32 without|at most 32 (objects|whose)|(wakes|at most) one (marked )?object|one object.s wake|and 32 whose
+ack timeout	decisions.md	(fixed|bounded) (at )?100 ms
+commit cap	decisions.md	(≤|under about|over|of at most|outside the) 1\.5 k
+slot word layout	decisions.md	state:4
+wait word layouts	core.md	seq:32|head:20|count:7
+sleepers per target	contract.md	127 (threads|sleepers|waiters)|beyond 127|128th
+queues per object	contract.md	(at most|on) 4 queues|four queues
+instance walk budget	implementation-plan.md	2 ms (plus|\+) 3 µs|3 µs per (sleeper|waiting object)

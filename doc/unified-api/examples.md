@@ -28,42 +28,51 @@ integrator. The section of each example opens with its picture; a few examples a
 |---|---|---|---|---|---|
 | [ex01_tx_video.c](sketch/examples/ex01_tx_video.c) | P1 | the smallest sender: ports from `MTL_PORTS`, a typed config, `mtl_session_open`, acquire → draw → submit, close | `mtl.h` | MS1 | [§3](#3-send-video-smallest-program); one frame's life: [concepts.md §5.1](concepts.md#51-tx) |
 | [ex02_rx_video.c](sketch/examples/ex02_rx_video.c) | P1 | a receiver on two ST 2022-7 legs; lost packets read as zero (library pools, from MS2) | `mtl.h` | MS1 | [§4](#4-receive-video-on-two-st-2022-7-legs) |
-| [ex03_event_loop.c](sketch/examples/ex03_event_loop.c) | P2, P7 | a sender in the application's own epoll loop, a result per frame | `mtl.h` | MS1 | [§5](#5-a-sender-in-the-applications-epoll-loop) |
+| [ex03_event_loop.c](sketch/examples/ex03_event_loop.c) | P2, P7 | senders in the application's own epoll loop on one queue, beside their source's descriptor, a result per frame | `mtl.h` | MS2a | [§5](#5-senders-in-the-applications-epoll-loop) |
 | [ex04_zero_copy_tx.c](sketch/examples/ex04_zero_copy_tx.c) | P2, P5 | a framework's pool attached in one call; surface i = slot i; close returns 0 when the memory is free | `mtl_mem.h` | MS2b | [§6](#6-zero-copy-from-a-frameworks-pool); a session's life: [concepts.md §5.3](concepts.md#53-a-sessions-life) |
-| [ex05_rx_to_framework.c](sketch/examples/ex05_rx_to_framework.c) | P2 | received frames lent to a framework, released on any thread; GStreamer `unlock` | `mtl.h` | MS1 | [§7](#7-received-frames-lent-to-a-framework) |
+| [ex05_rx_to_framework.c](sketch/examples/ex05_rx_to_framework.c) | P2 | received frames lent to a framework, released on any thread; the slots kept for MTL (`mtl_rx_reserve`); GStreamer `unlock` | `mtl_util.h` | MS1 | [§7](#7-received-frames-lent-to-a-framework) |
 | [ex06_mxl_ring.c](sketch/examples/ex06_mxl_ring.c) | P5 | frame k lands in MXL grain k mod 8 | `mtl_mem.h` | MS2b | [§8](#8-receive-into-an-mxl-ring-by-frame-number) |
 | [ex07_av_anc_playout.c](sketch/examples/ex07_av_anc_playout.c) | P3 | video, audio and captions from one file, started together with `MTL_WHEN_ORIGIN`, exact RTP | `mtl_util.h` | MS6 | [§9](#9-video-audio-and-captions-from-one-file); media time and launch time: [concepts.md §7.1](concepts.md#71-two-times-not-one) |
 | [ex08_progressive_rows.c](sketch/examples/ex08_progressive_rows.c) | P4 | rows leave before the frame is finished (SDI-to-IP gateway) | `mtl_sync.h` | MS3 (rows MS2a, INDEX and `mtl_tx_get_next` MS3) | [§10](#10-rows-that-leave-before-the-frame-is-finished) |
 | [ex09_split_forwarder.c](sketch/examples/ex09_split_forwarder.c) | P5 | one 4K frame in, four HD streams out, no copy | `mtl_util.h` (includes `mtl_mem.h`) | MS2b | [§11](#11-one-4k-frame-in-four-hd-streams-out-no-copy) |
-| [ex10_processor.c](sketch/examples/ex10_processor.c) | P5 | a processor that keeps the input's media time and RTP | `mtl_util.h` | MS4a (`process_video`: MS1) | [§12](#12-a-processor-that-keeps-the-inputs-timing); media time and launch time: [concepts.md §7.1](concepts.md#71-two-times-not-one) |
+| [ex10_processor.c](sketch/examples/ex10_processor.c) | P5 | a processor that keeps the input's media time and RTP | `mtl_util.h` | MS6 (`process_video`: MS1; `pass_anc`: MS4a2) | [§12](#12-a-processor-that-keeps-the-inputs-timing); media time and launch time: [concepts.md §7.1](concepts.md#71-two-times-not-one) |
 | [ex11_signal.c](sketch/examples/ex11_signal.c) | P9, any service | a service in a Kubernetes pod: SIGTERM, probes from health, a bounded network-first shutdown with a report | `mtl_observe.h` | MS3 | [§13](#13-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown) |
 | [ex12_rtp_packets.c](sketch/examples/ex12_rtp_packets.c) | P5, P7 | RTP passthrough: app-built packets, library pacing, both legs; RX packet chunks | `mtl_packet.h` | MS5 | [§14](#14-rtp-passthrough-the-application-builds-the-packets) |
 | [ex13_nmos_switch.c](sketch/examples/ex13_nmos_switch.c) | P9 | one IS-05 PATCH as one update: destinations and `rtp_enabled` on both legs at one instant; the planned instant (the 202 response) and the applied one (in `/active`) | `mtl.h` | MS5; mute (every leg disabled) is Phase 7 | [§15](#15-nmos-is-05-switch-destinations-at-one-instant) |
 | [ex14_anc.c](sketch/examples/ex14_anc.c) | P3, P5 | ANC units: a caption inserter, an SCTE-104 relay, a raw relay, timecode in both fields, a dump | `mtl_observe.h`, `mtl_util.h` | MS4a2 (the dump's detail: MS2) | [§17](#17-anc-captions-an-scte-104-relay-a-raw-relay-timecode-and-a-dump) |
+| [ex15_live_sink.c](sketch/examples/ex15_live_sink.c) | P2, P3 | a live framework sink in TAI mode: presentation time to TAI, the declared latency, a copy from the framework's buffer, a report per buffer, EOS and seek | `mtl_sync.h`, `mtl_reasons.h` | MS3 (TAI and the copy: MS1; discard: MS2) | [§18](#18-a-live-sink-presentation-time-to-media-time) |
+| [ex16_legacy_bridge.c](sketch/examples/ex16_legacy_bridge.c) | P1, P4 | MS1 on a VF: ex01's sender on a legacy `mtl_init`, wrapped; the clock the wrapper needs | `mtl_legacy.h`, with the legacy `mtl_api.h` | MS1 | [§3.1](#31-ms1-on-a-nic-the-legacy-bridge) |
+| [ex17_audio_rx.c](sketch/examples/ex17_audio_rx.c) | P2, P4 | audio received as host PCM: the wire's sample layout and byte order, the first sample's index, lost time | `mtl.h` | MS4 (audio MS4a1) | [§19](#19-audio-received-as-host-pcm) |
 | [examples_cpp.cpp](sketch/examples/examples_cpp.cpp) | P2 (bindings) | the same API from C++17: `MTL_INIT`, an option, an RAII lease guard, a stride-safe result read | `mtl.h`, `mtl_options.h` | MS5 (`cpp_sender`: MS1) | [§16](#16-the-same-api-from-c) |
 | [ex_common.h](sketch/examples/ex_common.h) | all | `ex_fail()`: the code, reason, field and detail of a failure | `mtl.h` | MS1 | [§2](#2-shared-by-the-examples); what a return code tells you: [concepts.md §6.4](concepts.md#64-errors) |
-| (no file) | P1, P2 | an st20p program side by side with the unified calls | — | — | [§18](#18-an-st20p-program-side-by-side) |
+| (no file) | P1, P2 | an st20p program side by side with the unified calls | — | — | [§20](#20-an-st20p-program-side-by-side) |
 
 ## 1. The headers
 
-A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, and adds one job.
+A program includes `mtl.h`. Every other header is optional and includes `mtl.h` (`mtl_util.h`
+through `mtl_mem.h` and `mtl_sync.h`, whose calls its helpers make); the table gives each one's
+jobs. `mtl.h` holds the frame-unit layout of every essence, the ANC packet table included;
+`mtl_packet.h` holds the packet-unit tables. `mtl_observe.h` is what a service's operations side
+needs: stats, full results and RX detail, enumeration and ports, logs, capture, health and
+shutdown. `mtl_sdp.h` belongs to the companion library libmtl_sdp, not to libmtl.
 
 | Header | Job |
 |---|---|
-| [`mtl.h`](sketch/include/mtl/experimental/mtl.h) | instance, session config and lifecycle, the unit, TX and RX verbs, results, waiting, errors; the object verbs (close, interrupt, wait, reap, release) |
+| [`mtl.h`](sketch/include/mtl/experimental/mtl.h) | instance, session config and lifecycle, the unit and the frame-unit layout of every essence (the ANC packet table too), TX and RX verbs, results, waiting, errors; the object verbs (close, interrupt, wait, reap) and the lease release; queues for event loops (MS2) |
 | [`mtl_mem.h`](sketch/include/mtl/experimental/mtl_mem.h) | regions, attached pools, named slots; the requirements struct |
 | [`mtl_sync.h`](sketch/include/mtl/experimental/mtl_sync.h) | epoch index arithmetic, media clock ticks, the next-unit record, row deadlines and RX row waits, A/V alignment, clocks, the time reference |
-| [`mtl_events.h`](sketch/include/mtl/experimental/mtl_events.h) | the events of a session and of an instance |
-| [`mtl_packet.h`](sketch/include/mtl/experimental/mtl_packet.h) | packet tables, RTP and payload header layouts for `MTL_UNIT_PACKETS` |
-| [`mtl_observe.h`](sketch/include/mtl/experimental/mtl_observe.h) | stats registry, full results, RX detail and timing, enumeration, ports, logging, capture, health, shutdown |
+| [`mtl_events.h`](sketch/include/mtl/experimental/mtl_events.h) | the events of a session and of an instance (the inline notify: `MTL_LATER`) |
+| [`mtl_packet.h`](sketch/include/mtl/experimental/mtl_packet.h) | packet tables, RTP and payload header layouts and the RFC 8331 codec for `MTL_UNIT_PACKETS` |
+| [`mtl_observe.h`](sketch/include/mtl/experimental/mtl_observe.h) | a service's operations side: stats registry, full results, RX detail and timing, enumeration, ports, logging, capture, health, shutdown |
 | [`mtl_options.h`](sketch/include/mtl/experimental/mtl_options.h) | option keys and their value enums; set, reset, get, list, find |
 | [`mtl_reasons.h`](sketch/include/mtl/experimental/mtl_reasons.h) | the reason codes |
 | [`mtl_format.h`](sketch/include/mtl/experimental/mtl_format.h) | application formats, colorimetry, format descriptions; standalone colour and audio conversion |
-| [`mtl_util.h`](sketch/include/mtl/experimental/mtl_util.h) | inline helpers: copy path, one-call slot send, unit and plane copies, meta records, ANC and RFC 8331 |
+| [`mtl_util.h`](sketch/include/mtl/experimental/mtl_util.h) | inline helpers (it includes `mtl_mem.h` and `mtl_sync.h`): copy path, one-call slot send, unit and plane copies, meta records, ANC tables and words, the RX reserve |
 | [`mtl_plugin.h`](sketch/include/mtl/experimental/mtl_plugin.h) | codec and converter plugin ABI v2 |
-| [`mtl_legacy.h`](sketch/include/mtl/experimental/mtl_legacy.h) | bridge from a legacy `mtl_handle` |
+| [`mtl_legacy.h`](sketch/include/mtl/experimental/mtl_legacy.h) | bridge from a legacy `mtl_handle`; legacy enum values as unified ones |
 | [`mtl_debug.h`](sketch/include/mtl/experimental/mtl_debug.h) | fault injection and the test clock (debug builds) |
-| [`mtl_ipmx.h`](sketch/include/mtl/experimental/mtl_ipmx.h) | RTCP sender reports and the Info Block, SDP, payload encryption (Phase 7, under `MTL_LATER`) |
+| [`mtl_ipmx.h`](sketch/include/mtl/experimental/mtl_ipmx.h) | RTCP sender reports and the Info Block, payload encryption (Phase 7, under `MTL_LATER`) |
+| [`mtl_sdp.h`](sketch/include/mtl/experimental/mtl_sdp.h) | SDP render and parse, in the companion library libmtl_sdp (Phase 7, under `MTL_LATER`) |
 
 [`sketch/check.sh`](sketch/check.sh) prints the exported functions per header, per call class and per milestone, and the number of frozen names.
 
@@ -71,12 +80,14 @@ A program includes `mtl.h`. Every other header is optional, includes `mtl.h`, an
 
 - **Returns.** 0 or a count or mask on success, a negative `MTL_E*` (Linux errno values on every OS) on failure. `mtl_last_error()` adds the reason and the name of the field or option at fault; a call that succeeds never overwrites it.
   A function exists from the milestone that implements it (the tag at the end of its comment); a known flag, enum value or option key not implemented yet is `-MTL_ENOTSUP` with reason `NOT_IMPLEMENTED`.
-- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN` and arms its target (with timeout 0 only if it is in the wait handle's mask, R2), so a loop drains until `-MTL_EAGAIN` and then sleeps in `epoll`. `-MTL_ETIMEDOUT` is only for a DRAIN stop
+- **Timeouts** are the last argument in ns: 0 = do not wait, `MTL_FOREVER` = no limit. A data call that finds nothing, now or by its timeout, returns `-MTL_EAGAIN`; with timeout 0 it tries once and changes no wait state,
+  and an event loop sleeps on a queue's descriptor only after `mtl_queue_wait` returned
+  `-MTL_EAGAIN` ([§5](#5-senders-in-the-applications-epoll-loop)). `-MTL_ETIMEDOUT` is only for a DRAIN stop
   that missed its deadline; closes return 0 or 1 (`mtl_instance_close` also `-MTL_EIO` when a port
   could not be stopped).
 - **Submit** hands the unit over; on failure the slot goes back to the pool without a result (except `-MTL_EBADF` and `-MTL_ESTALE`, which change nothing), so no loop needs a release on the failure path. **Close** drains, destroys and waits for retirement in one call; it returns 1 while the object still retires, calling it again polls, and it accepts a null handle.
 - **Structs.** Input structs start with `struct_size`; `MTL_INIT(&s)` zero-fills them and sets it, and zero in every other field is the default (`struct_size` 0 is `-MTL_EINVAL`). Output structs are filled up to the size the caller passes.
-- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease. Verbs several objects share (close, interrupt, wait, wait handle, reap, read events) are one exported function over `struct mtl_object` each, called through typed inline wrappers such as `mtl_session_close` and `mtl_tx_reap`.
+- **Handles** are typed 64-bit values, 0 is null; a buffer is named by its slot index, access to it by a lease. Verbs several objects share (close, interrupt, wait, reap, read events) are one exported function over `struct mtl_object` each, called through typed inline wrappers such as `mtl_session_close` and `mtl_tx_reap`.
 - **Times** are `int64_t` TAI nanoseconds, valid only when their flag says so.
 - **Call classes.** CP may block; DP is O(1) and never takes a lock a pinned core takes; DPC does work in the caller (copy, conversion); WT waits; AS is async-signal-safe. No application code runs on a pinned core; only the log-sink thread (and codec plugins) call your functions.
 - **Options.** Every tuning knob is a key in `mtl_options.h`: absent means the default, present is literal.
@@ -95,7 +106,10 @@ Every field is typed: enums and defines, no strings. Where a legacy enum exists 
 keeps its order, with `+ 1` where 0 must mean "not set" (`MTL_FPS_59_94`, the input of `mtl_fps_rational()`, is `ST_FPS_P59_94 +
 1`, `MTL_YUV422_10` is `ST20_FMT_YUV_422_10BIT + 1`) and the same values where 0 is a real
 default (`enum mtl_sender_type` is `enum st21_pacing`, `enum mtl_packing` is `enum
-st20_packing`), so porting a legacy `ops` struct is a field-by-field copy ([migration.md](migration.md)).
+st20_packing`), so porting a legacy `ops` struct is a field-by-field copy ([migration.md](migration.md))
+through the inline converters of `mtl_legacy.h` (`mtl_video_format_from_legacy()`,
+`mtl_packing_from_legacy()`, …), never by hand: a value copied by the wrong rule is still valid
+and changes the wire.
 `mtl_flow_ipv4()` fills a flow from four address bytes and a UDP port.
 
 ## 2. Shared by the examples
@@ -167,7 +181,8 @@ the session. What happens to one frame between acquire and the wire:
 ```c
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
    Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
-   results off. Needs: MS1.
+   results off. Needs: MS1 (null: and kernel: ports; a VF from MS2a, or in MS1 through
+   the legacy bridge, ex16).
  */
 #include "ex_common.h"
 
@@ -207,6 +222,135 @@ int main(void) {
   if (ret < 0) ex_fail("mtl", ret);
   mtl_session_close(s, MTL_SEC(1));   /* sends what is queued, then retires */
   mtl_instance_close(mt, MTL_SEC(1)); /* leaves groups, stops the devices */
+  return ret < 0;
+}
+```
+
+### 3.1 MS1 on a NIC: the legacy bridge
+
+In MS1 `mtl_instance_open` opens `null:` and `kernel:` ports. A PCI port (a VF) or a
+`native_af_xdp:` port is `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) until MS2a, and the failure's detail
+names the way out: [ex16_legacy_bridge.c](sketch/examples/ex16_legacy_bridge.c). The legacy
+`mtl_init` opens the VF, `mtl_start` starts it, `mtl_instance_from_legacy` wraps it, and ex01's loop
+runs unchanged on the wrapper, as the picture below shows. The `legacy_bridge` sample
+([implementation-plan.md §4.2](implementation-plan.md#42-samples)) is this program. From MS2a, ex01
+with `MTL_PORTS=0000:af:01.0=192.168.1.10/24` does the same without the legacy headers.
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant L as legacy API
+    participant U as unified API
+    App->>L: mtl_init, ptp_get_time_fn on CLOCK_TAI
+    App->>L: mtl_start
+    App->>U: mtl_instance_from_legacy
+    U-->>App: the wrapper mt
+    App->>U: mtl_session_open, then ex01's loop
+    App->>U: mtl_session_close, then mtl_instance_close
+    App->>L: mtl_uninit
+```
+
+The wrapper differs from an instance that `mtl_instance_open` made in three ways
+([contract.md §2.8](contract.md#28-legacy-bridge)):
+
+- **The clock.** The wrapper runs on the legacy clock of port P. The legacy default is
+  `CLOCK_REALTIME`, UTC read as TAI (`MTL_TIMEF_UTC`), so its RTP is about 37 s off a PTP
+  receiver. ex16 installs `ptp_get_time_fn` on `CLOCK_TAI`, as the FFmpeg plugin does (ptp4l and
+  phc2sys keep `CLOCK_TAI` on the host); the legacy PTP client (`MTL_FLAG_PTP_ENABLE`) is the other
+  choice. The function runs on MTL's tasklets, the one exception to "no application code on the
+  pinned cores" (R6), so it must not block.
+- **"Now".** With either clock, `mtl_time_now` is `-MTL_ENOTSUP` until MS2a. A sender in AUTO
+  mode does not need it; a TAI-mode program on ex16's clock reads `CLOCK_TAI`, the clock the
+  wrapper runs on.
+- **The order.** `mtl_start` comes before the first unified start (`-MTL_EBUSY`, `WRONG_STATE`
+  before it). At the end the wrapper closes first, then `mtl_uninit` stops the devices; it returns
+  `-EBUSY` while a wrapper is open.
+
+The program includes the legacy `mtl_api.h` next to the unified headers, which is allowed
+([migration.md §6.1](migration.md#61-both-header-sets-in-one-file)).
+
+```c
+/* ex16 — MS1 on a NIC: ex01's sender on a VF that the legacy mtl_init() opened.
+   Until MS2a mtl_instance_open() opens null: and kernel: ports only, so a VF is opened
+   with mtl_init() and wrapped (mtl_legacy.h). The wrapper runs on the legacy clock: the
+   legacy default is UTC read as TAI, 37 s off a PTP receiver, so this program installs
+   ptp_get_time_fn on CLOCK_TAI, as the FFmpeg plugin does (the host needs ptp4l and
+   phc2sys). That function runs on MTL's tasklets. With it mtl_time_now() is -MTL_ENOTSUP
+   until MS2a; read CLOCK_TAI, the same clock. Run: ex16 0000:af:01.0 192.168.1.10.
+   Needs: MS1 and the legacy headers (mtl_api.h).
+ */
+#define _POSIX_C_SOURCE 200809L
+#include <arpa/inet.h>
+#include <mtl/experimental/mtl_legacy.h>
+#include <mtl_api.h>
+#include <time.h>
+
+#include "ex_common.h"
+
+void render(void* addr, uint32_t stride, int64_t frame);
+
+/* Called on MTL's tasklets: a vDSO read, no lock, no allocation. */
+static uint64_t tai_now(void* priv) {
+  struct timespec ts;
+  (void)priv;
+  if (clock_gettime(CLOCK_TAI, &ts) < 0) return 0;
+  return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
+}
+
+int main(int argc, char** argv) {
+  struct mtl_init_params p;
+  mtl_handle legacy = NULL;
+  mtl_instance_h mt = MTL_NULL(mtl_instance_h);
+  mtl_session_h s = MTL_NULL(mtl_session_h);
+  struct mtl_session_config sc;
+  struct mtl_unit u;
+  MTL_INIT(&sc);
+  MTL_INIT(&u);
+  memset(&p, 0, sizeof(p));
+  if (argc < 3) return 2;
+
+  snprintf(p.port[MTL_PORT_P], sizeof(p.port[MTL_PORT_P]), "%s", argv[1]);
+  p.pmd[MTL_PORT_P] = mtl_pmd_by_port_name(argv[1]);
+  if (inet_pton(AF_INET, argv[2], p.sip_addr[MTL_PORT_P]) != 1) return 2;
+  p.num_ports = 1;
+  p.tx_queues_cnt[MTL_PORT_P] = 1;
+  p.log_level = MTL_LOG_LEVEL_INFO;
+  p.ptp_get_time_fn = tai_now; /* without it: UTC read as TAI (MTL_TIMEF_UTC) */
+
+  sc.direction = MTL_TX;
+  sc.essence = MTL_VIDEO;
+  /* flows[0] is on instance port 0, which is the legacy MTL_PORT_P */
+  mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
+  sc.video.raster.width = 1920;
+  sc.video.raster.height = 1080;
+  sc.video.raster.fps = mtl_fps_rational(MTL_FPS_59_94);
+  sc.video.format = MTL_YUV422_10;
+
+  /* mtl_init() returns NULL on failure (its log says why); mtl_start() comes before the
+     first unified start; the wrap returns after the TSC calibration. */
+  int ret = -MTL_EIO;
+  legacy = mtl_init(&p);
+  if (legacy && mtl_start(legacy) == 0) ret = mtl_instance_from_legacy(legacy, &mt);
+  if (ret >= 0) ret = mtl_session_open(mt, &sc, &s);
+
+  for (int64_t k = 0; ret >= 0 && g_running;) { /* ex01's loop */
+    ret = mtl_tx_acquire(s, &u, MTL_MS(100));
+    if (ret == -MTL_EAGAIN) {
+      ret = 0;
+      continue;
+    }
+    if (ret == 0) {
+      render(u.plane[0].addr, u.plane[0].stride, k++);
+      ret = mtl_tx_submit(s, &u);
+    }
+  }
+
+  if (ret < 0) ex_fail("mtl", ret);
+  /* The wrapper first (it never stops the legacy devices), then the legacy instance:
+     mtl_uninit() is -EBUSY while a wrapper lives. */
+  mtl_session_close(s, MTL_SEC(1));
+  mtl_instance_close(mt, MTL_SEC(1));
+  if (legacy) mtl_uninit(legacy);
   return ret < 0;
 }
 ```
@@ -252,7 +396,8 @@ int rx_video(mtl_instance_h mt) {
 
   sc.direction = MTL_RX;
   sc.essence = MTL_VIDEO;
-  /* two flows = two legs on instance ports 0 and 1; packets merge by sequence */
+  /* two flows = two legs on instance ports 0 and 1 (two ports, e.g.
+     MTL_PORTS=null:1,null:2); packets merge by sequence */
   mtl_flow_ipv4(&sc.flows[0], 239, 168, 85, 20, 20000);
   mtl_flow_ipv4(&sc.flows[1], 239, 168, 86, 20, 20000);
   sc.video.raster.width = 1920;
@@ -280,79 +425,140 @@ int rx_video(mtl_instance_h mt) {
 }
 ```
 
-## 5. A sender in the application's epoll loop
+## 5. Senders in the application's epoll loop
 
-[ex03_event_loop.c](sketch/examples/ex03_event_loop.c) is a sender in the application's own
-`epoll` loop. The session is created with `MTL_SESSION_RESULTS`, and
-`mtl_session_get_wait_handle(s, MTL_WAIT_ACQUIRE | MTL_WAIT_RESULTS, &fd)` gives an eventfd. The
-loop has the two steps of the picture: drain, then sleep.
+[ex03_event_loop.c](sketch/examples/ex03_event_loop.c) (MS2a: queues) is a set of senders in the
+application's own `epoll` loop. Each session is created with `MTL_SESSION_RESULTS`.
+`mtl_queue_create(mt, 0, &q, &fd)` gives one queue and its descriptor for all of them. The source
+of the frames (a decoder thread, a socket reader) has a descriptor of its own, an eventfd it writes
+after it queues a frame, and both descriptors are in one `epoll` set, as in the picture: every
+source of work the loop serves is in the set.
 
 ```mermaid
 flowchart LR
-    D["drain: reap results,<br/>acquire, fill, submit"]:::app -->|"until -MTL_EAGAIN"| E["epoll_wait on<br/>the session's wait handle"]:::app
-    E -->|"woken"| D
+    S["your source:<br/>a frame queued"]:::app -->|"its eventfd"| E["epoll_wait on<br/>both descriptors"]:::app
+    M["MTL: a result or a free<br/>slot of an armed session"]:::mtl -->|"the queue's<br/>descriptor"| E
+    E -->|"woken"| W["mtl_queue_wait:<br/>the reports"]:::app
+    W -->|"each reported session"| D["serve it: reap,<br/>acquire, fill, submit"]:::app
+    D -->|"arm what it<br/>wants next"| A["mtl_queue_arm"]:::mtl
+    W -->|"-MTL_EAGAIN:<br/>sleep"| E
     classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
 ```
 
-Every data call that finds nothing returns `-MTL_EAGAIN` and arms its target before it returns,
-here always in the wait handle's mask (R2). So the loop drains (results, then free slots) until
-`-MTL_EAGAIN`, sleeps in `epoll`, and never misses a wake-up. The slot is acquired before the
-source frame is taken, so no frame is taken without a place to go. Results come back in submission
-order, each with the `u.cookie` of its unit. What happens inside MTL before the eventfd fires:
-[concepts.md §2.2](concepts.md#22-the-app-pushes-mtl-never-calls-back).
+`mtl_queue_arm(q, s, targets, user)` arms what the loop wants to hear about. The first change of an
+armed target reports the session once, with its `user` (here the session's index), and the report
+disarms it. So the loop serves a reported session with timeout-0 calls (it reaps the results, then
+acquires and submits while a source frame waits) and arms it again: `MTL_WAIT_RESULTS` always,
+`MTL_WAIT_ACQUIRE` only while a frame waits for a free slot, so a sender whose source is dry never
+spins on free slots. An arm that finds a target ready reports the session at once, so nothing is
+missed and nothing needs draining. The loop sleeps in `epoll` only after `mtl_queue_wait` returned
+`-MTL_EAGAIN`, which arms the queue's descriptor, and it leaves on `-MTL_ECANCELED`
+(`mtl_queue_interrupt`) or `-MTL_ESHUTDOWN`. The source's eventfd is read before the sessions are
+served, so a frame queued meanwhile wakes the loop, and the slot is acquired before the frame is
+taken, so no frame is taken without a place to go. The 100 ms timeout only polls `g_running`.
+Results come back in submission order, each with the `u.cookie` of its unit. The descriptor leaves
+the `epoll` set before the queue closes. What happens inside MTL before the descriptor fires:
+[concepts.md §2.2](concepts.md#22-the-app-pushes-mtl-never-calls-back); the rules:
+[contract.md §7.2](contract.md#72-queues-ms2).
 
 ```c
-/* ex03 — a sender in the application's own epoll loop, reading a result per frame.
-   s: a started TX session created with MTL_SESSION_RESULTS in sc.flags. A data call on a
-   target of the handle's mask that finds nothing returns -MTL_EAGAIN and arms the wait
-   handle, so the loop is "call every target until -MTL_EAGAIN, then sleep in epoll". A
-   loop of per-target timeout-0 calls never sees an interrupt: to react to one, sweep with
-   mtl_wait(o, mask, 0) or also wait on a descriptor of your own; this loop ends on
-   g_running instead. Needs: MS1. */
+/* ex03 — senders in the application's own epoll loop, reading a result per frame. One
+   queue tells the loop which of its sessions changed, through one descriptor for all of
+   them, and the source's eventfd says a frame is ready: every source of work is in one
+   epoll set. s[i]: started TX sessions created with MTL_SESSION_RESULTS in sc.flags. A
+   report disarms its session: the loop serves it with timeout-0 calls, then arms it again
+   with what it wants next, its results always and a free slot only while a source frame
+   waits for one, so a sender limited by its source never spins on free slots. The loop
+   sleeps in epoll only after mtl_queue_wait() returned -MTL_EAGAIN, and leaves on a code:
+   -MTL_ECANCELED after mtl_queue_interrupt(), -MTL_ESHUTDOWN when the queue closes.
+   Needs: MS2 (MS2a: queues). */
+#include <errno.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 
 #include "ex_common.h"
 
-int next_source_frame(uint64_t* id, const void** data); /* 0 = one taken */
+/* The source (decoder threads, socket readers): one eventfd (EFD_NONBLOCK) it writes
+   after it queues a frame for any session, and a queue of frames per session. */
+int source_eventfd(void);
+int source_frame_waiting(int i);                               /* 1: a frame for s[i] */
+int next_source_frame(int i, uint64_t* id, const void** data); /* 0 = one taken */
 void fill(struct mtl_unit* u, const void* data);
-void source_frame_done(uint64_t id, uint32_t status, int64_t margin_ns);
+void source_frame_done(int i, uint64_t id, uint32_t status, int64_t margin_ns);
 
-static int drain(mtl_session_h s) {
+/* Why drain() stopped: the example's own values, not library names. */
+enum { EX_DRAINED_NO_FRAME = 0, EX_DRAINED_NO_SLOT = 1 };
+
+/* Results, then a slot for each frame that waits: the slot first, so no frame is taken
+   without a place to go. */
+static int drain(mtl_session_h s, int i) {
   struct mtl_tx_result r[16];
   struct mtl_unit u;
   int n;
   MTL_INIT(&u);
   while ((n = mtl_tx_reap(s, r, 16, 0)) > 0) /* in submission order */
-    for (int i = 0; i < n; i++)
-      source_frame_done(r[i].cookie, r[i].status, r[i].margin_ns);
+    for (int k = 0; k < n; k++)
+      source_frame_done(i, r[k].cookie, r[k].status, r[k].margin_ns);
   if (n != -MTL_EAGAIN) return n;
-  for (;;) { /* slot first, then the source frame: none is taken without a place to go */
+  while (source_frame_waiting(i)) {
     uint64_t id;
     const void* data;
     int ret = mtl_tx_acquire(s, &u, 0);
-    if (ret < 0) return ret == -MTL_EAGAIN ? 0 : ret;
-    if (next_source_frame(&id, &data) != 0) return mtl_tx_release(s, u.lease);
+    if (ret == -MTL_EAGAIN) return EX_DRAINED_NO_SLOT;
+    if (ret < 0) return ret;
+    if (next_source_frame(i, &id, &data) != 0) { /* taken meanwhile: the slot goes back */
+      ret = mtl_tx_release(s, u.lease);
+      return ret < 0 ? ret : EX_DRAINED_NO_FRAME;
+    }
     fill(&u, data);
     u.cookie = id; /* comes back in the result */
     ret = mtl_tx_submit(s, &u);
     if (ret < 0) return ret;
   }
+  return EX_DRAINED_NO_FRAME;
 }
 
-int event_loop(mtl_session_h s) {
-  intptr_t fd;
-  struct epoll_event ev = {.events = EPOLLIN};
+/* Serves s[i], then arms what it wants next. */
+static int serve(mtl_queue_h q, mtl_session_h* s, int i) {
+  int d = drain(s[i], i);
+  if (d < 0) return d;
+  uint64_t want = MTL_WAIT_RESULTS | (d == EX_DRAINED_NO_SLOT ? MTL_WAIT_ACQUIRE : 0);
+  int ret = mtl_queue_arm(q, MTL_OBJ_OF_SESSION(s[i]), want, (uint64_t)i);
+  return ret > 0 ? 0 : ret; /* 1: a report of s[i] is on its way, with this user */
+}
+
+int event_loop(mtl_instance_h mt, mtl_session_h* s, int n) {
+  struct mtl_ready r[16];
+  struct epoll_event ev = {.events = EPOLLIN}, ready[2];
+  intptr_t qfd = -1;
+  mtl_queue_h q = MTL_NULL(mtl_queue_h);
+  int src = source_eventfd();
   int ep = epoll_create1(0);
-  int ret =
-      ep < 0 ? -MTL_ENOMEM
-             : mtl_session_get_wait_handle(s, MTL_WAIT_ACQUIRE | MTL_WAIT_RESULTS, &fd);
-  if (ret >= 0 && epoll_ctl(ep, EPOLL_CTL_ADD, (int)fd, &ev) < 0) ret = -MTL_EINVAL;
+  int ret = ep < 0 ? -MTL_ENOMEM : mtl_queue_create(mt, 0, &q, &qfd);
+  if (ret >= 0 && (epoll_ctl(ep, EPOLL_CTL_ADD, (int)qfd, &ev) < 0 ||
+                   epoll_ctl(ep, EPOLL_CTL_ADD, src, &ev) < 0))
+    ret = -MTL_EINVAL;
+  for (int i = 0; ret >= 0 && i < n; i++) ret = serve(q, s, i);
   while (ret >= 0 && g_running) {
-    ret = drain(s);
-    if (ret >= 0) epoll_wait(ep, &ev, 1, 100);
+    int k = mtl_queue_wait(q, r, sizeof(r[0]), 16, 0);
+    if (k == -MTL_EAGAIN) {          /* the descriptor is armed: sleep now */
+      epoll_wait(ep, ready, 2, 100); /* the 100 ms only poll g_running */
+      k = 0;
+    }
+    if (k < 0) {
+      ret = k; /* -MTL_ECANCELED, -MTL_ESHUTDOWN: leave */
+      break;
+    }
+    uint64_t frames; /* read before serving, so a frame queued meanwhile wakes the loop */
+    if (read(src, &frames, sizeof(frames)) < 0 && errno != EAGAIN) ret = -MTL_EIO;
+    for (int j = 0; ret >= 0 && j < k; j++) ret = serve(q, s, (int)r[j].user);
+    for (int i = 0; ret >= 0 && i < n; i++) /* armed for results only, a frame came */
+      if (source_frame_waiting(i)) ret = serve(q, s, i);
   }
-  if (ep >= 0) close(ep);
+  if (ep >= 0)
+    close(ep); /* the descriptor out of the epoll set before the queue closes */
+  mtl_queue_close(q);
   return ret < 0 ? ex_fail("loop", ret) : 0;
 }
 ```
@@ -485,7 +691,13 @@ and `(s, 0)`: the interrupted dequeue returns `-MTL_ECANCELED` at once, `create`
 without waiting for `unlock_stop`, and the framework calls it again after `unlock_stop`; the
 streaming thread never waits for it. `-MTL_ESHUTDOWN` means the element stopped or closed the
 session. `mtl_session_close(s, 0)` returns 1 while downstream still holds frames, which is not a
-failure; the session retires on the last release, and a later close returns 0.
+failure; the session retires on the last release, and a later close returns 0. The source keeps R
+slots for MTL, so that downstream never holds the whole pool: `mtl_rx_reserve(&info, NULL,
+latency, copy_ns)` (`mtl_util.h`) gives R = ceil((L + c) / U) + 1 from the session's
+`latency_min_ns`, `convert_ns` and unit period, the framework's latency and the source's copy time
+([migration.md §12.8](migration.md#128-rx-sources-zero-copy-pool-size-and-latency)). Once
+`pool_count` − R units are lent out, the next one is copied; a `pool_count` of R + H, H the units
+held downstream at once, never copies.
 
 ```c
 /* ex05 — RX frames lent to a framework (GstBuffer, AVBufferRef) with no copy: dequeue on
@@ -494,11 +706,11 @@ failure; the session retires on the last release, and a later close returns 0.
    sink, a queue or an appsink application may hold the buffer after the element is gone.
    Library slots are packed (FFmpeg av_image_fill_arrays with align 1) and end in
    MTL_RX_TAIL_BYTES zero bytes (AV_INPUT_BUFFER_PADDING_SIZE). The slots MTL needs for
-   units not yet handed on are reserved (migration.md §12.8:
-   reserve = ceil((L + copy) / U) + 1); once downstream holds the rest, the next unit is
-   copied, so a slow consumer costs a copy, never a lost unit. GStreamer unlock() and
-   unlock_stop() run on another thread and map to mtl_session_interrupt(s, 1) and (s, 0).
-   Needs: MS1. */
+   units not yet handed on are reserved (mtl_rx_reserve, migration.md §12.8); once
+   downstream holds the rest, the next unit is copied, so a slow consumer costs a copy,
+   never a lost unit. GStreamer unlock() and unlock_stop() run on another thread and map
+   to mtl_session_interrupt(s, 1) and (s, 0). Needs: MS1. */
+#include <mtl/experimental/mtl_util.h>
 #include <stdlib.h>
 
 #include "ex_common.h"
@@ -525,11 +737,21 @@ static void release_cb(void* p) { /* any thread, any order, also after close */
   free(ref);
 }
 
+/* At start and at each GST_EVENT_LATENCY: the slots to keep for MTL. latency_ns: the
+   pipeline's configured latency; copy_ns: the measured copy of one unit (about 1 ms at
+   1080p). A pool_count below this + the units held downstream (a sink's last sample, an
+   aggregator pad) makes the copy path run: log the pool_count it needs once. */
+int rx_reserve(mtl_session_h s, int64_t latency_ns, int64_t copy_ns) {
+  struct mtl_session_info info;
+  int ret = mtl_session_get_info(s, &info, sizeof(info));
+  return ret < 0 ? ret : mtl_rx_reserve(&info, NULL, latency_ns, copy_ns);
+}
+
 /* GstBaseSrc::create on the streaming thread: 0 = one buffer handed on; EX_FLUSHING after
    unlock() or a stop, without waiting for unlock_stop(): the framework calls create again
    once it has run; a negative code on an error. unit_bytes: mtl_session_info.unit_bytes
-   (with detection, the sum of stride x rows over the unit's planes); reserve: the slots
-   kept for MTL, recomputed at each latency change. */
+   (with detection, the sum of stride x rows over the unit's planes); reserve: the last
+   rx_reserve(). */
 int rx_create(mtl_session_h s, uint64_t unit_bytes, uint32_t pool_count,
               uint32_t reserve) {
   struct mtl_unit u;
@@ -972,7 +1194,8 @@ int split_forward(mtl_session_h rx, mtl_session_h* tx) {
 
 ## 12. A processor that keeps the input's timing
 
-[ex10_processor.c](sketch/examples/ex10_processor.c) (MS4a; `process_video`: MS1) keeps the input's
+[ex10_processor.c](sketch/examples/ex10_processor.c) (MS6: audio in TAI mode; `process_video`: MS1;
+`pass_anc`: MS4a2) keeps the input's
 timing: each output unit is submitted with the media time M of the input unit it came from, as in
 the picture.
 
@@ -1000,7 +1223,7 @@ template.
    the pipeline budget: one frame period (RX completion) + processing + the pick-up lead,
    so the delay is fixed and, for a compliant input, every output RTP equals the input
    RTP. A received unit is a valid send template: its RX-only flags are ignored. Needs:
-   MS4a (process_video alone: MS1). */
+   MS6 (audio TAI; process_video alone: MS1, pass_anc: MS4a2). */
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
@@ -1100,8 +1323,8 @@ stopped: exit now); the report's summary goes to the termination message. A seco
 `mtl_instance_get_health`: liveness fails only on what a restart can fix (`MTL_HEALTH_LIVENESS`),
 readiness also on no link, no time lock and shutdown (`MTL_HEALTH_READINESS`); after the shutdown
 began (`-MTL_ESHUTDOWN`) liveness stays 200 while readiness answers 503. The whole order is in
-[deployment.md §4.2](deployment.md#42-shutdown) and
-[deployment.md §4.2](deployment.md#42-shutdown).
+[deployment.md §4.2](deployment.md#42-shutdown), the probes in
+[deployment.md §4.10](deployment.md#410-health-and-probes).
 
 ```c
 /* ex11 — a service in a Kubernetes pod. SIGTERM interrupts every data wait (async-signal
@@ -1768,7 +1991,7 @@ int open_timecode(mtl_instance_h mt, mtl_session_h* s) {
   sc.anc.video.height = 1080;
   sc.anc.video.scan = MTL_INTERLACED;
   sc.anc.video.fps = mtl_fps_rational(MTL_FPS_29_97); /* frames, not fields */
-  sc.anc.max_packets = 2; /* small slots: 2 entries, 510 words */
+  sc.anc.max_packets = 2; /* small slots: 2 entries, 255 words */
   return mtl_session_open(mt, &sc, s);
 }
 int send_timecode(mtl_session_h s, int64_t field) {
@@ -1818,14 +2041,276 @@ int dump_anc(mtl_session_h rx) {
 }
 ```
 
-## 18. An st20p program side by side
+## 18. A live sink: presentation time to media time
+
+[ex15_live_sink.c](sketch/examples/ex15_live_sink.c) (MS3: `media_time_offset_ns`; TAI mode and
+the copy: MS1; discard: MS2) is the TX side of a framework (a GStreamer sink with `sync=TRUE`, `ffmpeg -re`, an
+OBS output) or of a playout engine on a wall clock. Each buffer comes with a presentation time on
+`CLOCK_MONOTONIC`; the picture follows one buffer from the framework to the wire and back to its
+report.
+
+```mermaid
+flowchart LR
+    B["framework buffer,<br/>pts on CLOCK_MONOTONIC"]:::app --> T["mtl_time_convert<br/>to TAI, + the phase"]:::mtl
+    T --> S["acquire, submit with<br/>MTL_SUBMIT_SRC_PLANES:<br/>the planes are copied"]:::mtl
+    S --> W(("sent at the frame time<br/>of TAI + the latency")):::net
+    S --> R["reap: the buffer's<br/>result, by cookie"]:::mtl
+    R --> Q["QoS, counters"]:::app
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    classDef net fill:#f3f4f6,stroke:#6b7280,color:#111827
+```
+
+The session is `MTL_MEDIA_TAI` with snap NEAREST, the default, and `MTL_SESSION_RESULTS`. Its
+`media_time_offset_ns` declares the producer's latency D: a buffer handed over just in time,
+about at its presentation time, still meets the frame time D later, and the RTP stays that frame
+time's. D must cover `latency_min_ns` (how long before its frame time MTL takes a unit) plus
+`convert_ns` (the copy inside submit) plus a margin: `sink_start` reads both from
+`mtl_session_get_info`, and when the framework's latency is short of them, it closes the CREATED
+session, which retires at once, and creates it again with enough; the sink reports D as its
+latency. The phase from `mtl_grid_offset`, computed once at the first buffer, puts the buffers on
+frame times, so that two of them land on one frame time only when the producer runs fast: the
+second is `DROPPED` with `SNAP_COLLISION`, and one that came after its frame time's pick-up with
+`TOO_LATE`; the sink counts both and reports each buffer by its `cookie`. `MTL_SUBMIT_SRC_PLANES`
+copies the framework's planes during submit, so the buffer is the framework's again when render
+returns, and the slot stays the back-pressure token. EOS is a DRAIN stop, a seek a discard;
+`unlock` is the interrupt. The numbers and the GStreamer render-delay variant:
+[migration.md §12.1](migration.md#121-live-sinks-gstreamer-synctrue-ffmpeg--re-obs-output),
+[timing.md §10.5](timing.md#105-recipes).
+
+```c
+/* ex15 — a live sink (GStreamer sync=TRUE, ffmpeg -re, an OBS output, a playout engine on
+   a wall clock): each buffer's presentation time on CLOCK_MONOTONIC becomes its TAI media
+   time, and the session declares the producer's latency (media_time_offset_ns), so a
+   buffer handed over just in time still makes its frame time. Submit copies the
+   framework's planes (MTL_SUBMIT_SRC_PLANES), so the buffer is the framework's again when
+   render returns; the result, by cookie, is that buffer's report (QoS). EOS drains; a
+   seek discards. Needs: MS3 (media_time_offset_ns; TAI mode and the copy: MS1; discard:
+   MS2). */
+#include <mtl/experimental/mtl_reasons.h>
+#include <mtl/experimental/mtl_sync.h>
+
+#include "ex_common.h"
+
+/* The framework's buffer: planes in its own memory, a presentation time on
+   CLOCK_MONOTONIC (GStreamer: base_time + running time + latency; FFmpeg:
+   start_time_realtime + pts), and the id its report names. */
+struct fw_buffer {
+  uint64_t id;
+  int64_t pts_monotonic_ns;
+  const void* plane[MTL_MAX_PLANES];
+  uint32_t stride[MTL_MAX_PLANES];
+};
+/* The framework's QoS for one buffer (GStreamer: a QoS event when it was dropped). */
+void fw_report(uint64_t id, uint32_t status, uint32_t reason, int64_t margin_ns);
+
+struct live_sink {
+  mtl_instance_h mt;
+  mtl_session_h s;
+  struct mtl_rational fps; /* the session's raster.fps */
+  int64_t offset_ns;       /* the declared latency, media_time_offset_ns */
+  int64_t phase_ns;        /* mtl_grid_offset at the first buffer; -1 before it */
+  uint64_t collisions;     /* DROPPED, SNAP_COLLISION: two buffers for one frame time */
+  uint64_t late;           /* DROPPED, TOO_LATE: the latency did not cover the producer */
+};
+
+/* base: flows, raster, format and app_format from the framework's caps. */
+static int sink_create(struct live_sink* k, const struct mtl_session_config* base) {
+  struct mtl_session_config sc = *base;
+  sc.media_mode = MTL_MEDIA_TAI;   /* snapped to the nearest frame time, the default */
+  sc.flags |= MTL_SESSION_RESULTS; /* a result per buffer, by cookie */
+  sc.media_time_offset_ns = k->offset_ns;
+  return mtl_session_create(k->mt, &sc, &k->s);
+}
+
+/* set_caps or write_header. upstream_ns: the latency the framework allows (GStreamer: its
+   pipeline latency; FFmpeg: -muxdelay). The declared latency must cover what MTL needs
+   before a frame time (latency_min_ns) and the copy inside submit (convert_ns, calibrated
+   at create); when upstream_ns is short of it, the CREATED session, which retires at
+   once, is created again with enough. *latency_ns: the latency the sink reports. */
+int sink_start(struct live_sink* k, mtl_instance_h mt,
+               const struct mtl_session_config* base, int64_t upstream_ns,
+               int64_t* latency_ns) {
+  struct mtl_session_info info;
+  k->mt = mt;
+  k->fps = base->video.raster.fps;
+  k->offset_ns = upstream_ns;
+  k->phase_ns = -1;
+  k->collisions = k->late = 0;
+  int ret = sink_create(k, base);
+  if (ret >= 0) ret = mtl_session_get_info(k->s, &info, sizeof(info));
+  if (ret >= 0 && info.latency_min_ns + info.convert_ns + MTL_MS(1) > k->offset_ns) {
+    mtl_session_close(k->s, 0);
+    k->offset_ns = info.latency_min_ns + info.convert_ns + MTL_MS(1);
+    ret = sink_create(k, base);
+  }
+  if (ret >= 0) ret = mtl_session_start(&k->s, 1, NULL, NULL);
+  *latency_ns = k->offset_ns;
+  return ret < 0 ? ex_fail("sink start", ret) : 0;
+}
+
+static int sink_reap(struct live_sink* k) {
+  struct mtl_tx_result r[8];
+  int n;
+  while ((n = mtl_tx_reap(k->s, r, 8, 0)) > 0)
+    for (int i = 0; i < n; i++) {
+      if (r[i].status == MTL_TX_DROPPED && r[i].reason == MTL_REASON_SNAP_COLLISION)
+        k->collisions++;
+      if (r[i].status == MTL_TX_DROPPED && r[i].reason == MTL_REASON_TOO_LATE) k->late++;
+      fw_report(r[i].cookie, r[i].status, r[i].reason, r[i].margin_ns);
+    }
+  return n == -MTL_EAGAIN ? 0 : n;
+}
+
+/* render, show_frame or write_packet: 0 = handed over (its report follows);
+   -MTL_ECANCELED after unlock (the framework's FLUSHING); another negative code on an
+   error. */
+int sink_render(struct live_sink* k, const struct fw_buffer* buf) {
+  struct mtl_unit u;
+  int64_t tai = 0;
+  int ret;
+  MTL_INIT(&u);
+  do { /* a full pool waits; unread results would block acquire, so reap in between */
+    ret = sink_reap(k);
+    if (ret >= 0) ret = mtl_tx_acquire(k->s, &u, MTL_MS(20));
+  } while (ret == -MTL_EAGAIN && g_running);
+  if (ret < 0) return ret;
+  ret = mtl_time_convert(k->mt, buf->pts_monotonic_ns, MTL_CLOCK_MONOTONIC, MTL_CLOCK_TAI,
+                         &tai);
+  /* once: the phase that puts the first buffer, after the declared latency, on a frame
+     time, so buffers that follow at the frame rate snap to their own frame times
+     (timing.md §10.5) */
+  if (ret >= 0 && k->phase_ns < 0)
+    ret = mtl_grid_offset(tai + k->offset_ns, k->fps, &k->phase_ns);
+  if (ret < 0) {
+    mtl_tx_release(k->s, u.lease);
+    return ret;
+  }
+  u.media_tai_ns = tai + k->phase_ns; /* MTL adds media_time_offset_ns, then snaps */
+  u.flags = MTL_SUBMIT_SRC_PLANES;    /* the framework's planes: submit copies them */
+  u.cookie = buf->id;
+  for (uint32_t i = 0; i < u.plane_count; i++) {
+    u.plane[i].addr = (void*)buf->plane[i];
+    u.plane[i].stride = buf->stride[i];
+  }
+  return mtl_tx_submit(k->s, &u); /* on a failure the slot goes back, without a result */
+}
+
+/* EOS: every queued buffer is sent and reported, then the framework posts EOS. A seek
+   after it finds the session STOPPED: start it again with the next buffer. */
+int sink_eos(struct live_sink* k) {
+  int ret = mtl_session_stop(&k->s, 1, MTL_STOP_DRAIN, MTL_SEC(2));
+  int r = sink_reap(k);
+  return ret < 0 ? ret : r;
+}
+
+/* FLUSH_STOP (a seek): queued buffers are FLUSHED (DISCARD) and reported; TAI needs no
+   rebase, and the phase stays. */
+int sink_flush(struct live_sink* k) {
+  int ret = mtl_session_discard(k->s, 0, 0);
+  int r = sink_reap(k);
+  return ret < 0 ? ret : r;
+}
+
+/* unlock (on = 1) and unlock_stop (on = 0), from another thread: an acquire waiting in
+   sink_render returns -MTL_ECANCELED at once. */
+int sink_unlock(struct live_sink* k, int on) {
+  return mtl_session_interrupt(k->s, on);
+}
+
+/* stop: sends what is queued, then retires. */
+int sink_stop(struct live_sink* k) {
+  if (k->collisions || k->late)
+    fprintf(stderr, "sink: %llu buffers shared a frame time, %llu came too late\n",
+            (unsigned long long)k->collisions, (unsigned long long)k->late);
+  int ret = mtl_session_close(k->s, MTL_SEC(1));
+  return ret < 0 ? ret : 0; /* MTL_RETIRING: it retires on its own */
+}
+```
+
+## 19. Audio received as host PCM
+
+[ex17_audio_rx.c](sketch/examples/ex17_audio_rx.c) (MS4; `media_index` from MS3) reads audio
+units the way an AES67 or ST 2110-30 bridge, or a framework's audio source, needs them: as
+samples in the host's byte order, with the index of the first one. The picture is one unit.
+
+```mermaid
+flowchart LR
+    N(("ST 2110-30<br/>packets")):::net --> D["dequeue a unit:<br/>samples as on the wire"]:::mtl
+    D --> C["L24 big-endian<br/>to host int32"]:::app
+    C --> L["release"]:::mtl
+    L --> P["push to the framework:<br/>first sample = media_index"]:::app
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
+    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
+    classDef net fill:#f3f4f6,stroke:#6b7280,color:#111827
+```
+
+Plane 0 has one row per sample time (`row_bytes` = channels × bytes per sample), the channels
+interleaved and each sample big-endian, as on the wire; MTL never swaps them. `u.used` counts the
+bytes, so the unit holds `u.used / row_bytes` sample times (`sc.audio.unit_samples` at most).
+`u.media_index`, valid with `MTL_UNITF_INDEX_VALID`, is the unit's first sample on the epoch at
+the sample rate, so the next unit starts at `media_index` + those sample times. A jump in it is
+lost time: `u.missed_before` counts the units a full pool could not take, and packets lost inside
+a unit read as zero, silence, with `u.status == MTL_RX_INCOMPLETE`. The samples are copied out
+before the release, so the lease goes back at once.
+
+```c
+/* ex17 — audio received as host PCM (an AES67 or ST 2110-30 bridge, a framework audio
+   source). Plane 0 holds the samples as on the wire: one row per sample time, the
+   channels interleaved, each sample big-endian (L24: three bytes); MTL never swaps them,
+   so the reader does. media_index is the unit's first sample, counted on the epoch at the
+   sample rate, so a jump in it is lost time: missed_before counts the units a full pool
+   could not take, and the packets lost inside a unit read as zero, silence, with status
+   MTL_RX_INCOMPLETE. s: a started RX session, MTL_AUDIO with MTL_PCM24. Needs: MS4 (audio
+   MS4a1; media_index valid from MS3). */
+#include "ex_common.h"
+
+/* The framework's push: frames of interleaved int32 samples; first = the epoch index of
+   the first sample (-1 = unknown); discont = 1 after lost time (GStreamer DISCONT). */
+int push_pcm(const int32_t* pcm, uint32_t frames, int64_t first, int discont);
+
+/* pcm: room for cap samples (frames x channels). */
+int rx_audio(mtl_session_h s, int32_t* pcm, uint32_t cap) {
+  struct mtl_unit u;
+  int64_t next = -1; /* the sample expected next */
+  int ret = 0;
+  MTL_INIT(&u);
+  while (ret >= 0 && g_running) {
+    ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
+    if (ret == -MTL_EAGAIN) { /* no signal */
+      ret = 0;
+      continue;
+    }
+    if (ret < 0) break;
+    const struct mtl_plane* p = &u.plane[0];
+    uint32_t channels = p->row_bytes / 3, got = u.used / p->row_bytes; /* sample times */
+    uint32_t frames = got * channels > cap ? cap / channels : got;
+    for (uint32_t f = 0; f < frames; f++) {
+      const uint8_t* b = (const uint8_t*)p->addr + (size_t)f * p->stride;
+      for (uint32_t c = 0; c < channels; c++, b += 3) /* L24 big-endian, left-justified */
+        pcm[f * channels + c] =
+            (int32_t)((uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8);
+    }
+    int valid = (u.flags & MTL_UNITF_INDEX_VALID) != 0;
+    int discont = u.missed_before > 0 || (u.flags & MTL_UNITF_DISCONTINUITY) ||
+                  (valid && next >= 0 && u.media_index != next);
+    int64_t first = valid ? u.media_index : -1;
+    next = valid ? first + got : -1;
+    ret = mtl_rx_release(s, u.lease); /* copied: release before the push */
+    if (ret >= 0) ret = push_pcm(pcm, frames, first, discont);
+  }
+  return ret < 0 ? ex_fail("audio rx", ret) : 0;
+}
+```
+
+## 20. An st20p program side by side
 
 | st20p today | Unified API |
 |---|---|
 | `mtl_init(&mtl_init_params)` | `mtl_instance_open(&params, &mt)`; `MTL_INSTANCE_SHARED` for plugins sharing one instance |
 | `st20p_tx_create(mt, &ops)` returns a handle or NULL | `mtl_session_open(mt, &sc, &s)` (or `create` + `start`) returns an `MTL_E*` code; `mtl_last_error()` names the field |
 | live immediately | `mtl_session_start` (now, at a TAI instant, or at a media index), several sessions at once |
-| `st20p_tx_get_frame` → NULL for timeout, stop or destroy | `mtl_tx_acquire` → `-MTL_EAGAIN` (nothing yet), `-MTL_ESHUTDOWN` (you stopped it), `-MTL_EIO` (it failed) |
+| `st20p_tx_get_frame` → NULL for timeout, stop or destroy | `mtl_tx_acquire` → `-MTL_EAGAIN` (nothing yet), `-MTL_ESHUTDOWN` (you, or the process's owner, stopped or closed it), `-MTL_EIO` (it failed) |
 | `frame->addr[]`, `frame->linesize[]` | `u.plane[i].addr`, `u.plane[i].stride` |
 | `frame->timestamp`, `tfmt`, `USER_PACING`, `USER_TIMESTAMP` | `sc.media_mode` + `u.media_index` or `u.media_tai_ns`; `MTL_SUBMIT_NOT_BEFORE`/`EXACT` + `u.launch_tai_ns`; `MTL_SUBMIT_RTP_TS` + `u.rtp` |
 | `st20p_tx_put_frame`, `st20p_tx_put_frame_abort` | `mtl_tx_submit`, `mtl_tx_release` |
@@ -1836,8 +2321,9 @@ int dump_anc(mtl_session_h rx) {
 | `st20p_tx_free` | `mtl_session_close(s, timeout)`: drain, destroy, wait for retirement |
 | `st20p_tx_get_session_stats` | `mtl_stat_read` / `mtl_stat_get` (`mtl_observe.h`), cumulative, by name |
 | `st*_update_destination` / `update_source` | `mtl_session_update(s, &sc, MTL_UPDATE_FLOWS, &when, NULL)`, atomic across legs |
-| `ST20_TYPE_RTP_LEVEL` + `st20_tx_get_mbuf`/`put_mbuf` | `unit = MTL_UNIT_PACKETS` + `mtl_tx_acquire`/`mtl_tx_submit` (example 14) |
-| `ST20_TYPE_SLICE_LEVEL` | `unit = MTL_UNIT_ROWS` (example 10) |
+| `ST20_TYPE_RTP_LEVEL` + `st20_tx_get_mbuf`/`put_mbuf` | `unit = MTL_UNIT_PACKETS` + `mtl_tx_acquire`/`mtl_tx_submit` ([§14](#14-rtp-passthrough-the-application-builds-the-packets), ex12) |
+| `ST20_TYPE_SLICE_LEVEL` | `unit = MTL_UNIT_ROWS` ([§10](#10-rows-that-leave-before-the-frame-is-finished), ex08) |
 | `ST_EVENT_VSYNC` | `MTL_EVENT_EPOCH_TICK` with the option `session.epoch_tick` |
 | `ST20P_TX_FLAG_*` tuning bits, `mtl_init_params` tuning fields | option keys `MTL_OPT_*` (`mtl_options.h`) in the config's `options` array |
 | `ops.fps`, `ops.interlaced` | `mtl_raster_from_legacy(ops.fps, ops.interlaced, &raster)`: a rational frame rate; interlaced, legacy `ops.fps` counts fields and the helper halves it |
+| `ops.transport_fmt`, `input_fmt`, `transport_packing`, `transport_pacing` | `mtl_video_format_from_legacy`, `mtl_app_format_from_legacy`, `mtl_packing_from_legacy`, `mtl_sender_type_from_legacy` (`mtl_legacy.h`, inline): +1 for the formats, the same values for packing and sender type |

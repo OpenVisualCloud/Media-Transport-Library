@@ -21,8 +21,10 @@ EXAMPLES = os.path.join(HERE, "examples")
 JOBS = [
     (
         "mtl.h",
-        "instance, session config and lifecycle, the unit, TX and RX verbs, "
-        "results, waiting, errors; the object verbs (close, interrupt, wait, reap, release)",
+        "instance, session config and lifecycle, the unit and the frame-unit layout of every "
+        "essence (the ANC packet table too), TX and RX verbs, results, waiting, errors; the "
+        "object verbs (close, interrupt, wait, reap) and the lease release; queues for event "
+        "loops (MS2)",
     ),
     (
         "mtl_mem.h",
@@ -33,14 +35,18 @@ JOBS = [
         "epoch index arithmetic, media clock ticks, the next-unit record, row deadlines and RX row "
         "waits, A/V alignment, clocks, the time reference",
     ),
-    ("mtl_events.h", "the events of a session and of an instance"),
+    (
+        "mtl_events.h",
+        "the events of a session and of an instance (the inline notify: `MTL_LATER`)",
+    ),
     (
         "mtl_packet.h",
-        "packet tables, RTP and payload header layouts for " "`MTL_UNIT_PACKETS`",
+        "packet tables, RTP and payload header layouts and the RFC 8331 codec for "
+        "`MTL_UNIT_PACKETS`",
     ),
     (
         "mtl_observe.h",
-        "stats registry, full results, RX detail and timing, "
+        "a service's operations side: stats registry, full results, RX detail and timing, "
         "enumeration, ports, logging, capture, health, shutdown",
     ),
     ("mtl_options.h", "option keys and their value enums; set, reset, get, list, find"),
@@ -52,15 +58,20 @@ JOBS = [
     ),
     (
         "mtl_util.h",
-        "inline helpers: copy path, one-call slot send, unit and plane copies, meta "
-        "records, ANC and RFC 8331",
+        "inline helpers (it includes `mtl_mem.h` and `mtl_sync.h`): copy path, one-call slot "
+        "send, unit and plane copies, meta records, ANC tables and words, the RX reserve",
     ),
     ("mtl_plugin.h", "codec and converter plugin ABI v2"),
-    ("mtl_legacy.h", "bridge from a legacy `mtl_handle`"),
+    ("mtl_legacy.h", "bridge from a legacy `mtl_handle`; legacy enum values as unified ones"),
     ("mtl_debug.h", "fault injection and the test clock (debug builds)"),
     (
         "mtl_ipmx.h",
-        "RTCP sender reports and the Info Block, SDP, payload encryption "
+        "RTCP sender reports and the Info Block, payload encryption "
+        "(Phase 7, under `MTL_LATER`)",
+    ),
+    (
+        "mtl_sdp.h",
+        "SDP render and parse, in the companion library libmtl_sdp "
         "(Phase 7, under `MTL_LATER`)",
     ),
 ]

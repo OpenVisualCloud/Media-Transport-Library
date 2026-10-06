@@ -82,8 +82,8 @@ flowchart LR
   `mt_ptp.c:1038`) or reconfigured leaves SYSTEM_TAI 1 s off TAI from then on.
 
 **The clock in MS1.** An instance the unified API opens installs its clock as the engine's time
-function (`ptp_get_time_fn`), so the video TX binding's index math (§6.8) and the engine's pacing read
-one clock; today's default is `CLOCK_REALTIME`, 37 s behind TAI ([engine.md](engine.md) §4.13).
+function (`ptp_get_time_fn`), so the launch decision's index math (§6.8) and the engine's pacing read
+one clock; today's default is `CLOCK_REALTIME`, 37 s behind TAI ([engine.md](engine.md) §2.12).
 With AUTO that clock is `CLOCK_TAI` when it is valid, else `SYSTEM_TAI`; `PTP_BUILTIN` keeps
 today's PTP time function. A wrapper keeps the legacy time function; `mtl_time_now` reads its
 default and TSC clocks directly in MS1 and the others through a snapshot from MS2a
@@ -608,7 +608,7 @@ muxer takes `frame_size` from its `bpp` option (`ecosystem/ffmpeg_plugin/mtl_st2
 - `MTL_SUBMIT_EXACT` + t: the first packet leaves at t, the rest follow the read schedule from there. Not ST 2110-21 in general (TROFFSET is not constant); counted as non-compliant (`MTL_INFO_NON_COMPLIANT`).
 - **Exact launch is a session property.** The engine starts every frame of a session at its given
   launch or none of them (`ST20_TX_FLAG_EXACT_USER_PACING` is read from the session's ops,
-  [engine.md](engine.md) §4.13), so only a session created with `MTL_SESSION_EXACT_LAUNCH` admits
+  [engine.md](engine.md) §2.12), so only a session created with `MTL_SESSION_EXACT_LAUNCH` admits
   `MTL_SUBMIT_EXACT`; on any other session it is `-MTL_EINVAL`. On such a session every unit without
   EXACT starts at its launch index's first-packet time `TVD(N) − VRX0·TRS`, which the binding computes and
   passes (§6.8). EXACT on video is task B3 of MS1 (a stretch), else MS2a.
@@ -651,13 +651,14 @@ Classes stay per port; sessions request and see the grant (D-19).
   Standard UDP Size Limit), `PM`, `SSN`, `exactframerate`, `interlace` and `segmented`, `PAR` (ST
   2110-20 §7, ST 2110-21 §8, ST 2110-10 §8.6); `TSMODE` and `TSDELAY` (ST 2110-10 §8.7); the
   per-essence lists are in [standards.md §5](standards.md#5-tsmode-tsdelay-derived-signals-and-sdp).
-  MTL renders SDP only in Phase 7 (`mtl_sdp_render` in `mtl_ipmx.h`, `MTL_LATER`).
+  MTL renders SDP only in Phase 7 (`mtl_sdp_render` in `mtl_sdp.h`, the companion library
+  libmtl_sdp, `MTL_LATER`).
 
 ## 6. Admission and lateness
 
 ### 6.1 Where the decision happens
 
-The video TX binding decides a unit's launch index when the engine **picks the unit up**: the builder asks for the next frame (`get_next_frame`) only between frames and polls while it waits, and the launch index is fixed in that call (§6.8). The decision must come early enough for the first bulk to reach the transmitter in time.
+The core decides a unit's launch index when the binding **picks the unit up** (`st_core_admit`, §6.8): the builder asks for the next frame (`get_next_frame`) only between frames and polls while it waits, and the launch index is fixed in that call (§6.8). The decision must come early enough for the first bulk to reach the transmitter in time.
 
 The picture shows the instants of one TX unit in order, with the intervals the results report on
 the edges; the table gives each formula.
@@ -694,7 +695,7 @@ flowchart LR
   | RL warm-up lead | `warm_pkts × TRS` |
   | warm_pkts | `min(128, 0.8 × TRO/TRS)` |
 
-  About 0.475 ms with RL (128 × 3.7074 µs at 1080p59.94) and about 20 µs with TSC, which holds a bulk until its target; S0 measures the scheduler term; audio adds one packet (the carry, §8). It is not the builder ring depth: 512 packets × TRS ≈ 1.9 ms at 1080p59.94 is how far the builder may run ahead once it has the frame, information only. Code evidence: [engine.md](engine.md) §4.13.
+  About 0.475 ms with RL (128 × 3.7074 µs at 1080p59.94) and about 20 µs with TSC, which holds a bulk until its target; S0 measures the scheduler term; audio adds one packet (the carry, §8). It is not the builder ring depth: 512 packets × TRS ≈ 1.9 ms at 1080p59.94 is how far the builder may run ahead once it has the frame, information only. Code evidence: [engine.md](engine.md) §2.12.
 - **`min_submit_lead_ns`** (`mtl_session_info.min_submit_lead_ns`) = `M − deadline` = `pickup_lead_ns − (scheduled_first − M)`, constant for on-grid media. It is the one number a producer needs: **submit unit k before `M(k) − min_submit_lead_ns`**.
   It is negative when the deadline falls after the media time: for playback video on either
   pacing class, and for a capture producer. A framework's minimum latency is never negative:
@@ -793,37 +794,58 @@ implements it in MS2 (D-101).
   `query_frame_lines_ready` can only say "not yet", and the builder asks again on the next
   iteration, so a producer that stops mid-frame stalls the session; the engine gains a return code
   that ends the frame after the rows already handed over (about 30 lines) ([engine.md](engine.md)
-  §4.14).
+  §2.13).
 - `mtl_tx_row_deadline(s, k, row, &tai_ns)` returns the latest publish time of `row` for index k, with the engine's math. Planar formats count a row when every plane's row is written.
 - **Interlaced rows are kept**: the legacy engine slices each field (`height / 2` lines), and rows count field lines.
 - **TR offset.** `sc.video.troffset_us` (0 = TRODEFAULT, else whole µs) is a new engine item: today the TR offset comes from a fixed table. It comes with the cap VRX0 ≤ floor(TROFFSET / TRS) for every sender type, so a short TR offset never puts the first packet before the epoch (T7).
 - Rows reach gateway latency (L = 0 for a producer that delivers rows as they are captured) with MS3's INDEX and TAI modes and `mtl_tx_get_next`.
-- RX: a unit dequeued with `MTL_UNITF_PARTIAL` grows while held; `mtl_rx_wait_rows(s, lease, min_rows, &rows, timeout)`, wake-ups every `rx.rows_step` rows (64).
+- RX: a unit dequeued with `MTL_UNITF_PARTIAL` grows while held; `mtl_rx_wait_rows(s, lease, min_rows, &rows, timeout)` is woken once, when `min_rows` rows are complete or the unit ends, whatever `rx.rows_step` is (D-163).
 
-### 6.8 The launch decision of the video TX binding
+### 6.8 The launch decision
 
-The video TX binding owns the launch decision (MS1, D-131). When the engine asks for the next frame
-(`get_next_frame`), the binding computes the launch index N of the unit with exact rational math on the
-instance clock (§2.2) and hands the engine a frame that already names it. The engine session is
-created with `ST20_TX_FLAG_USER_PACING | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`, and each frame carries a
-TAI timestamp `required_tai = N·T` (T the index period; interlaced: `second_field = N & 1`). The
-engine then starts the frame at N's first-packet time and stamps N's epoch RTP. It never refuses a
-late slot itself, so every lateness rule below is the binding's; `notify_frame_late` never fires for
-core sessions. Code evidence: [engine.md](engine.md) §4.13.
+The launch decision is one core function for every TX essence, `st_core_admit`
+([core.md](core.md) §3.2; D-131, D-173). The TX binding calls it at pick-up, when the engine
+asks for its next unit (`get_next_frame`), and supplies only its essence's grid (the second table);
+the rules of the first table are the same for every essence. The video binding then hands the
+engine a frame that already names N: the engine session is created with
+`ST20_TX_FLAG_USER_PACING | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`, and each frame carries a TAI
+timestamp `required_tai = N·T` (T the index period; interlaced: `second_field = N & 1`). The engine
+then starts the frame at N's first-packet time and stamps N's epoch RTP. It never refuses a late
+slot itself, so every lateness rule below is the core's; `notify_frame_late` never fires for core
+sessions. Code evidence: [engine.md](engine.md) §2.12.
 
 | Unit | Launch index N | Outcome |
 |---|---|---|
-| AUTO | the next feasible index: last N + 1 if its pick-up deadline is still ahead, else the first index whose deadline is | `ON_TIME`; an index later than last N + 1 is `ON_TIME` with `MTL_TXR_DEFERRED` and `indices_skipped_before` |
+| AUTO | the next feasible index: the last N plus the last unit's span if its pick-up deadline is still ahead, else the first index whose deadline is, moved by whole `defer_step`s | `ON_TIME`; a later index is `ON_TIME` with `MTL_TXR_DEFERRED` and `indices_skipped_before` |
 | AUTO + `MTL_SUBMIT_NOT_BEFORE` t | the first feasible index whose first-packet time is ≥ t | as AUTO |
 | TAI (`media_tai_ns` = M, after `media_time_offset_ns`) | the index nearest M (§4.3) | `ON_TIME`; `DROPPED` with `SNAP_COLLISION` (N equal to the last), `BEHIND` (N before the last) or `TOO_LATE` (N's pick-up deadline has passed) |
-| `MTL_SUBMIT_EXACT` (launch t), on a session with `MTL_SESSION_EXACT_LAUNCH` | as the media mode gives | the binding checks t against [now + RL warm-up lead, now + 1 s] itself, the window outside which the engine would silently fall back; outside it, `LAUNCH_IN_PAST` or `BEYOND_HORIZON`. The frame starts at t |
-| any unit without EXACT on a session with `MTL_SESSION_EXACT_LAUNCH` | as the media mode gives | the binding passes N's first-packet time `TVD(N) − VRX0·TRS` instead of N·T; the RTP still maps to N because TROFFSET − VRX0·TRS < T/2 |
+| `MTL_SUBMIT_EXACT` (launch t), on a session with `MTL_SESSION_EXACT_LAUNCH` | as the media mode gives | the core checks t against the grid's EXACT window, outside which the engine would silently fall back; outside it, `LAUNCH_IN_PAST` or `BEYOND_HORIZON`. The frame starts at t |
+| video: a unit without EXACT on a session with `MTL_SESSION_EXACT_LAUNCH` | as the media mode gives | the binding passes N's first-packet time `TVD(N) − VRX0·TRS` instead of N·T; the RTP still maps to N because TROFFSET − VRX0·TRS < T/2 |
 | `MTL_SUBMIT_RTP_TS`; TAI with NOT_BEFORE or EXACT that lands in another index than M's | — | `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) until E1 carries media time and launch separately (MS3) |
 | `MTL_MEDIA_INDEX` | — | MS3 |
 
-- **Interlaced AUTO**: fields alternate in submission order, and a defer skips whole frames, so the parity of N always matches the field.
-- **RTP in MS1** is the epoch RTP of N with today's engine rounding (`tai_from_frame_count`); `floor(M × R)` comes with E2 (MS3, or MS2a with the stretch task X). G-20 asserts the epoch RTP accordingly.
-- The binding reads the same clock as the engine's pacing (§2.2), so its N and the engine's frame count agree: the engine maps any timestamp within half a frame of N·T to N.
+The grid (`struct st_core_grid`) per essence:
+
+| Essence | Index rate | `first_off_ns` (first-packet time − M(N)) | `lead_ns` | EXACT window, from now | `defer_step` | `index_bytes` | From |
+|---|---|---|---|---|---|---|---|
+| video | frames; fields when interlaced | `scheduled_first − M` of §5.3, per parity | `pickup_lead_ns` (§6.1) | [RL warm-up lead, 1 s] | 1; 2 for fields | 0 | MS1 |
+| cvideo | as video | `TVD(N) − M` (VRX0 = 0, §5.3) | as video | as video | as video | 0 | MS4b |
+| audio | the sample rate | `D_a` (§5.3) | §6.1's, plus one packet time (§8) | MS6 | 1 | channels × bytes per sample | MS4a1 |
+| ANC | the video's | the window target of §9.2, per parity | its builder's, measured in MS4a2 | MS6 | 1; 2 for fields | 0 | MS4a2 |
+| fastmeta | the video's, or its own rate when free running | `D_fmd` (§5.3) | its builder's, measured in MS4a1 | MS6 | as ANC | 0 | MS4a1 |
+| null (the test substrate) | the essence's | 0 | 0 | [0, 1 s] | the essence's | the essence's | MS1 |
+
+- **Interlaced AUTO**: fields alternate in submission order, and a defer skips whole frames
+  (`defer_step` 2), so the parity of N always matches the field.
+- **Audio AUTO**: a unit spans `used / index_bytes` indices, its samples, so the next unit starts
+  after the last one's last sample.
+- **RTP in MS1** is the epoch RTP of N with today's engine rounding (`tai_from_frame_count`);
+  `floor(M × R)` comes with E2 (MS3, or MS2a with the stretch task X). G-20 asserts the epoch RTP
+  accordingly.
+- The binding reads the same clock as the engine's pacing (§2.2), so its N and the engine's frame
+  count agree: the engine maps any timestamp within half a frame of N·T to N.
+- On `null:` a unit completes at the launch instant of the null grid, so the U tier runs the
+  function B1 runs.
 
 ## 7. Start
 
@@ -904,10 +926,10 @@ feasible epoch index with its `tx.index_offset` and L_v.
   encodes** (DPC, D-146): it claims the lease, checks the unit in place and encodes it into the
   session's private wire area, so its RTP packets are built from the wire area only and writes to
   the planes after submit never reach the wire; dequeue decodes.
-- Limits checked at submit with `-MTL_EINVAL`: entries per unit ≤ `anc.max_packets` (default 255,
+- Limits checked at submit with `-MTL_EINVAL`: entries per unit ≤ `anc.max_packets` (default 32,
   ≤ 65 535, OI-78; create also checks that the link can carry the capacity, §9.2); `udw_count` ≤ 255
   by its type (ST 291-1 §6.5; today's `st40_rfc8331_encode_packet` already rejects more,
-  `include/st40_api.h:901`); words within plane 1; exact lines in raster order and in the unit's
+  `include/st40_api.h:901`); the entries' `udw_count` summed ≤ `anc.max_udw_words`; words within plane 1; exact lines in raster order and in the unit's
   field unless `MTL_ANCF_AS_IS` (ST 2110-40 §5.2.2, §9.2). Today the TX meta array is capped at
   `ST40_MAX_META` = 20 (`include/st40_api.h:308`, E12); the legacy TX frame path drops ANC packets
   beyond its estimated RTP count (SF-87), and an entry with more than 255 user data words fails the
@@ -1013,18 +1035,18 @@ flowchart LR
   end of the frame, earlier by at most C_cap; they stay within their window, which is one frame
   wide (ST 2110-40 §6.4 and §6.5 bound only the packet's own time). Units that end early in the
   frame are unchanged.
-- **The create check.** A unit of capacity P has at most P + 2 RTP packets and at most 328·P
-  payload bytes, each RTP packet at most `sc.max_udp_payload` − 20 B:
+- **The create check.** A unit of capacity P has at most P + 2 RTP packets and at most B = min(328·P, 13·P + ⌈5·W/4⌉)
+  payload bytes (W = `anc.max_udw_words`), each RTP packet at most `sc.max_udp_payload` − 20 B:
 
   | Term | Formula |
   |---|---|
-  | k | `min(P + 2, ⌈328·P / 1432⌉)` |
+  | k | `min(P + 2, ⌈B / 1432⌉)` |
   | C_cap | `k · max(w_full, s) + (P + 2 − k) · max(w_empty, s)` |
   | create check | refuses (`-MTL_EINVAL`, `"anc.max_packets"`) unless `2·C_cap ≤ TFRAME − 3·TLINE − ε` |
 
-  At P = 255, C_cap is 216.8 µs at 10 Gb/s and 188.5 µs (s-bound) at 25 and 100 Gb/s; create
+  At P = 255 and W = 255·P, C_cap is 216.8 µs at 10 Gb/s and 188.5 µs (s-bound) at 25 and 100 Gb/s; create
   admits up to P = 9 855 at 1080p59.94 and 10 Gb/s (11 336 at 25 and 100 Gb/s), 4 924 at
-  1080p119.88 and 10 Gb/s (5 664).
+  1080p119.88 and 10 Gb/s (5 664) (W = 255·P).
 - **Burst.** The engine sends every RTP packet whose launch has come, up to 16 per tasklet call;
   the shared-queue transmitter drains at most max(`max_idx`, 32) packets per call in a manager with
   unified sessions. ε, the late error the bound reserves, is one full call plus one scheduler loop:
@@ -1169,7 +1191,8 @@ whose header comes first). `tx.phase_of` is not offered.
   `sync=TRUE`, basesink hands each buffer over D early and adds D to its latency. Without basesink
   sync, use `media_tai_ns = TAI(base_time + running_time)` and `media_time_offset_ns = D`, with D ≥
   upstream latency + `latency_min_ns` + `convert_ns` + margin, reported as latency. Seeks are harmless:
-  the clock-time mapping stays monotonic, so TAI never repeats.
+  the clock-time mapping stays monotonic, so TAI never repeats. The variant without basesink sync is
+  [ex15](sketch/examples/ex15_live_sink.c).
 - **FFmpeg muxer, live (`-re`).** `media_tai_ns = TAI(start_time_realtime) + rescale(pts) + δ`, `media_time_offset_ns` = max(`-muxdelay`, `latency_min_ns` + `convert_ns` + margin). With `CLOCK_TAI` and no ptp4l the source is SYSTEM_TAI, ESTIMATED, and the status carries reason `TIME_ESTIMATED`.
 - **OBS output.** The same, with `mtl_time_convert(MONOTONIC → TAI)` of the OBS timestamp (today's `tfmt = MEDIA_CLK` with a monotonic value is a bug).
 - NEAREST adapts a free-running camera or a 30.000 fps source on a 29.97 session by occasional `SNAP_COLLISION` drops or gaps and never locks out; `alsasrc` jitter is absorbed (§8).
@@ -1202,7 +1225,7 @@ ANC/fastmeta sessions' `tx.index_offset` to the video's new value (§10.3). A st
 
 ## 11. RX timing
 
-Start and arm (IGMP join at the first start, ARMED = joined and discarding) are in [contract.md](contract.md); the tasklet hook that enforces the due time is in [engine.md](engine.md).
+Start and arm (IGMP join at the first start, ARMED = joined and discarding) are in [contract.md](contract.md); the tasklet hook that enforces the due time is in [core.md](core.md).
 
 ### 11.1 The epoch and the media clock on RX
 
@@ -1261,7 +1284,7 @@ A flow change `mtl_session_update(..., MTL_UPDATE_FLOWS, &when)` with `MTL_AT_TA
   ticks, or when every enabled leg is stale. The next complete unit is delivered with
   `MTL_UNITF_DISCONTINUITY` and `MTL_UNITF_RELOCKED`, and `media_index` may go backwards
   (`rx.discontinuities`
-  counts). This replaces today's packet-count rule: 20 packets of every leg on an already delivered frame (`ST_SESSION_REDUNDANT_ERROR_THRESHOLD`, `st_header.h:81`, `st_rx_video_session.c:1187-1197`), reset by any other packet of the leg, blind to the skew, and never met by a backward RTP step (SF-71; [engine.md](engine.md) §4.15).
+  counts). This replaces today's packet-count rule: 20 packets of every leg on an already delivered frame (`ST_SESSION_REDUNDANT_ERROR_THRESHOLD`, `st_header.h:81`, `st_rx_video_session.c:1187-1197`), reset by any other packet of the leg, blind to the skew, and never met by a backward RTP step (SF-71; [engine.md](engine.md) §2.14).
 - A receiver does not seek; it follows the sender.
 
 ### 11.6 A/V alignment on receive
@@ -1320,7 +1343,11 @@ Today a unit completes only when full (`st_rx_video_session.c:1855`) or when a n
 
 On the unit: `rtp`, `media_index`, `media_tai_ns`, flags. `mtl_rx_get_detail(s, lease, &d, size)` (DP) for a held unit:
 
-- `arrival_first_tai_ns[leg]`, `arrival_last_tai_ns[leg]` per 2022-7 leg: `MTL_RXF_HW_ARRIVAL` with `MTL_INSTANCE_HW_TIMESTAMP` on a port whose PMD has the RX timestamp offload (`mt_dev.c:2422-2440`), else processing time (today taken on port P whatever the RX port, `mt_ptp.c:1635-1641`);
+- `arrival_first_tai_ns[leg]`, `arrival_last_tai_ns[leg]` per 2022-7 leg: `MTL_RXF_HW_ARRIVAL` with `MTL_INSTANCE_HW_TIMESTAMP` on a port whose PMD has the RX timestamp
+  offload (`mt_dev.c:2422-2440`), else processing time (today taken on port P whatever the RX port,
+  `mt_ptp.c:1635-1641`). Processing time is one TSC read per RX burst, stored per slot and leg and
+  converted to TAI once, when the unit completes, with the one clock read per unit the engine makes
+  today (`st_rx_video_session.c:1293-1294`): no clock read per packet;
 - `presentation_tai_ns` (media + link offset), `delivered_tai_ns` (when the unit became ready), `media_phase_ticks`, `units_missing_before`; completeness: `pkts_expected`, `pkts_received[leg]`, `pkts_recovered`, `missing_ranges`.
 
 Latency = `arrival_first − media` (sender offset plus network; JT-NM expects [0, 1 ms] for playback video); it is not stored. With `rx.timing_parser`, the detail's `timing[leg]` (`mtl_rx_get_detail`, flagged `MTL_RXF_TIMING_LEG0`/`LEG1`) holds the ST 2110-21 measures per leg (compliance narrow/wide, CINST, VRX, FPT, latency, RTP
@@ -1473,7 +1500,7 @@ E1 media time and launch carried separately (§4.2); E2 exact epoch math, floor 
 (§5.1); E6 audio (§8); E7 ANC (§9); E8 RX timing (§11); E9 time sources and the published time base (§2, §12); E10 cvideo rate modes (§5.3); E13 fastmeta (§9.3).
 
 The core carries these rules for its sessions, by milestone: MS1 the ST20 frame path with
-`MTL_MEDIA_AUTO` and `MTL_MEDIA_TAI` through the binding's launch decision (§6.8), the MS1 clock (§2.2),
+`MTL_MEDIA_AUTO` and `MTL_MEDIA_TAI` through the core's launch decision (`st_core_admit`, §6.8), the MS1 clock (§2.2),
 DSCP, and `info.tolerated_skew_ns` (E2 with the stretch task X, committed in MS2a); MS2 the RX due time in the `tick` hook
 (E8's deadline part), the RX relock rule (§11.5) and rows (§6.7), and in MS2a any rational video
 frame rate and the sender grants; MS3 the ST20 timing subset (INDEX,

@@ -3,7 +3,7 @@
    the pipeline budget: one frame period (RX completion) + processing + the pick-up lead,
    so the delay is fixed and, for a compliant input, every output RTP equals the input
    RTP. A received unit is a valid send template: its RX-only flags are ignored. Needs:
-   MS4a (process_video alone: MS1). */
+   MS6 (audio TAI; process_video alone: MS1, pass_anc: MS4a2). */
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"

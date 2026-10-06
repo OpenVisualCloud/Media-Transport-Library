@@ -42,6 +42,8 @@ enum mtl_fault {
      only advances by CLOCK_ADVANCE when rate is {0, 0} */
   MTL_FAULT_TEST_CLOCK = 12,
   MTL_FAULT_CLOCK_ADVANCE = 13, /* instance: advance the test clock by step_ns */
+  MTL_FAULT_DUMP_STATE = 14,    /* any object: log every field of its state register
+                                   at err level; changes nothing (engine.md §1.8) */
 };
 enum mtl_tx_mutation {
   MTL_TX_MUTATE_NO_MARKER = 1,

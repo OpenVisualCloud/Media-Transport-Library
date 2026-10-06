@@ -10,10 +10,11 @@
  * Every function here is static inline and built only on public calls of mtl.h, mtl_mem.h
  * and mtl_sync.h; an application could write it itself, and the library exports none of
  * them. They exist so that common code is written once: the copy path for byte-stream
- * essences, one-call sends from named slots, plane copies, meta records, ANC units and
- * the ST 2110-40 user-data-word arithmetic. A failure a helper detects itself (a bound, a malformed
- * payload) returns its code without setting mtl_last_error(); a failure of a call it makes
- * keeps that call's. A helper works from the milestone of the latest function it calls:
+ * essences, one-call sends from named slots, plane copies, meta records, ANC units, the
+ * ST 2110-40 user-data-word arithmetic and the RX reserve of a framework source. A parser of
+ * bytes from the network is never here (the RFC 8331 codec is exported, mtl_packet.h). A
+ * failure a helper detects itself (a bound, a malformed record) returns its code without
+ * setting mtl_last_error(); a failure of a call it makes keeps that call's. A helper works from the milestone of the latest function it calls:
  * mtl_tx_write from MS3 (mtl_tx_get_next), mtl_tx_send_slot from MS2
  * (mtl_tx_acquire_slot), the others from MS1; before that, a call to it fails to compile,
  * naming the function it calls (mtl.h, MTL_LEVEL).
@@ -152,6 +153,35 @@ static inline int mtl_unit_copy_plane_out(const struct mtl_unit* u, uint32_t pla
     memcpy((uint8_t*)dst + r * dst_stride, (const uint8_t*)p->addr + (size_t)r * p->stride,
            p->row_bytes);
   return 0;
+}
+
+/* ---- RX sources that lend library slots (migration.md §12.8, D-150) ------------------- */
+
+/* The slots R a framework source keeps for MTL: R = ceil((L + c) / U) + 1, with
+   L = max(latency_ns, info->latency_min_ns + info->convert_ns), latency_ns the framework's
+   configured latency (GStreamer: GST_EVENT_LATENCY; 0 = none), c = copy_ns, the source's
+   measured copy of one unit, and U the unit period: 1 / rate->fps, half of it when rate->scan
+   is MTL_INTERLACED. rate NULL = info->raster (video, cvideo, ANC, fastmeta); a detect session
+   passes the unit's mtl_rx_detail.raster, and audio a raster with fps = {sample_rate,
+   unit_samples}. The source copies into a buffer of its own once pool_count - R units are lent
+   out, so a slow consumer costs a copy, never a lost unit; a pool_count of R + H, H the units
+   held downstream at once, never copies. Call it again at every latency or format change.
+   R >= 1, or -MTL_EINVAL: an fps term 0 or above 4194303, latency_ns or copy_ns negative or
+   above 1000 s, or R above 65535. AS. */
+static inline int mtl_rx_reserve(const struct mtl_session_info* info,
+                                 const struct mtl_raster* MTL_NULLABLE rate, int64_t latency_ns,
+                                 int64_t copy_ns) {
+  const struct mtl_raster* r = rate ? rate : &info->raster;
+  uint64_t num = r->fps.num, den = r->fps.den;
+  int64_t lib = info->latency_min_ns + info->convert_ns, l = latency_ns > lib ? latency_ns : lib;
+  if (num == 0 || den == 0 || num > 4194303u || den > 4194303u || latency_ns < 0 ||
+      copy_ns < 0 || l > MTL_SEC(1000) || copy_ns > MTL_SEC(1000))
+    return -MTL_EINVAL;
+  if (r->scan == MTL_INTERLACED) num *= 2; /* field units */
+  uint64_t t = (uint64_t)(l + copy_ns) * num; /* (L + c) / U = t / q, t < 2^64 */
+  uint64_t q = den * 1000000000u;
+  uint64_t n = t / q + (t % q != 0) + 1;
+  return n > 65535u ? -MTL_EINVAL : (int)n;
 }
 
 /* ---- Meta records (frame and row units, mtl.h) ---------------------------------------- */
@@ -295,193 +325,6 @@ static inline uint16_t mtl_anc_checksum(const uint8_t* udw_run, uint32_t udw_cou
 static inline uint32_t mtl_anc_rfc8331_bytes(uint32_t udw_count) {
   return 4 + ((((4 + udw_count) * 10 + 7) / 8 + 3) & ~3u);
 }
-/* What a decode found. */
-struct mtl_anc_decode_info {
-  uint32_t pkts;      /* entries written */
-  uint32_t udw_words; /* words written (RAW: the runs' words) */
-  uint32_t skipped;   /* corrupt ANC packets skipped, every cause together */
-  uint16_t truncated; /* well-formed ANC packets beyond max_pkts or the words' capacity */
-  uint16_t gap_after; /* 1: a gap is still pending (packets were skipped or truncated
-                         after the last entry written, or gap_in was set and no entry was
-                         written): the caller's next entry carries MTL_ANCF_GAP_BEFORE */
-};
-/* The ANC packets of one RTP packet to table entries and their words, as the library's
-   dequeue does for frame units: `data` is the RFC 8331 Length bytes after struct
-   mtl_rfc8331_hdr (mtl_packet.h), anc_count its ANC_Count, word_mode the session's (0 = 8-bit).
-   Decoding stops after anc_count packets, so word_align padding or trailing bytes are never read
-   as packets. User data words go to `words` back to back, udw_cap words at most; each entry's
-   udw_offset counts words from `words`; RAW also writes four words per entry to raw_hdr
-   (max_pkts x 4). Outside RAW a corrupt packet is skipped and counted in skipped: DID, SDID or
-   Data_Count parity, the checksum, DID 00h or a Type 2 SDID 00h (ST 291-1 §6.1, §6.2), a 10-bit
-   word 000h-003h or 3FCh-3FFh (§9.1), an 8-bit word whose b8/b9 are not its parity, or past
-   Length; a Data_Count parity error or a packet past Length also skips the rest of ANC_Count, as
-   the next start is unknown. In RAW only a packet past Length is skipped, and the others are
-   delivered with MTL_ANCF_PARITY_ERR or MTL_ANCF_CHECKSUM_ERR. The library's dequeue also
-   counts each cause in the session's anc.pkts_skipped{cause} stats key (contract.md §11.3). A
-   packet that does not fit is counted in truncated and decoding goes on. The first entry carries
-   MTL_ANCF_GAP_BEFORE when gap_in is set, and an entry after skipped or truncated packets always
-   does. rtp_index is 0. 0. */
-static inline int mtl_anc_rfc8331_decode(const uint8_t* data, uint32_t len, uint32_t anc_count,
-                                         uint32_t word_mode, int gap_in,
-                                         struct mtl_anc_packet* pkts, uint32_t max_pkts,
-                                         void* words, uint32_t udw_cap,
-                                         uint16_t* MTL_NULLABLE raw_hdr,
-                                         struct mtl_anc_decode_info* info) {
-  uint32_t off = 0, gap = gap_in ? 1 : 0, raw = word_mode == MTL_ANC_WORDS_RAW;
-  uint32_t ten = word_mode == MTL_ANC_WORDS_10BIT;
-  memset(info, 0, sizeof(*info));
-  for (uint32_t k = 0; k < anc_count; k++) {
-    const uint8_t* p = data + off;
-    const uint8_t* w = p + 4;
-    uint32_t count = 0, bytes = 0, bad = 0, eflags = 0;
-    uint16_t dc = 0;
-    if (len - off >= mtl_anc_rfc8331_bytes(0)) {
-      dc = mtl_anc_udw_get(w, 2);
-      count = dc & 0xff;
-      bytes = mtl_anc_rfc8331_bytes(count);
-    }
-    if (bytes == 0 || bytes > len - off || (!raw && !mtl_anc_parity_ok(dc))) {
-      info->skipped += anc_count - k; /* the next packet's start is unknown */
-      gap = 1;
-      break;
-    }
-    off += bytes;
-    uint16_t did = mtl_anc_udw_get(w, 0), sdid = mtl_anc_udw_get(w, 1);
-    uint16_t cs = mtl_anc_udw_get(w, 3 + count);
-    if (!mtl_anc_parity_ok(did) || !mtl_anc_parity_ok(sdid) || !mtl_anc_parity_ok(dc))
-      bad = 1, eflags |= MTL_ANCF_PARITY_ERR;
-    if (cs != mtl_anc_checksum(w, 3 + count)) {
-      bad = 1, eflags |= MTL_ANCF_CHECKSUM_ERR;
-    }
-    if ((did & 0xff) == 0 || ((did & 0x80) == 0 && (sdid & 0xff) == 0)) bad = 1;
-    for (uint32_t i = 0; i < count && !bad && !raw; i++) {
-      uint16_t udw = mtl_anc_udw_get(w, 3 + i);
-      if (ten ? (udw < 0x004 || udw > 0x3fb) : !mtl_anc_parity_ok(udw))
-        bad = 1;
-    }
-    if (!raw && bad) {
-      info->skipped++;
-      gap = 1;
-      continue;
-    }
-    if (info->pkts == max_pkts || count > udw_cap - info->udw_words) {
-      info->truncated++;
-      gap = 1;
-      continue;
-    }
-    uint32_t idx = info->pkts++;
-    struct mtl_anc_packet* a = &pkts[idx];
-    uint32_t w0 = (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
-    a->did = (uint8_t)did;
-    a->sdid = (uint8_t)sdid;
-    a->udw_count = (uint8_t)count;
-    a->flags = (uint8_t)((w0 >> 31 ? MTL_ANCF_C : 0) | (w0 & 0x80 ? MTL_ANCF_S : 0) |
-                         (gap ? MTL_ANCF_GAP_BEFORE : 0) | (raw ? eflags : 0));
-    a->line = (uint16_t)((w0 >> 20) & 0x7ff);
-    a->hoffset = (uint16_t)((w0 >> 8) & 0xfff);
-    a->stream = (uint8_t)(w0 & 0x7f);
-    a->reserved = 0;
-    a->rtp_index = 0;
-    a->udw_offset = info->udw_words;
-    if (raw) {
-      raw_hdr[idx * 4] = did;
-      raw_hdr[idx * 4 + 1] = sdid;
-      raw_hdr[idx * 4 + 2] = dc;
-      raw_hdr[idx * 4 + 3] = cs;
-    }
-    for (uint32_t i = 0; i < count; i++) {
-      uint16_t udw = mtl_anc_udw_get(w, 3 + i);
-      if (raw || ten)
-        ((uint16_t*)words)[info->udw_words + i] = udw;
-      else
-        ((uint8_t*)words)[info->udw_words + i] = (uint8_t)udw;
-    }
-    info->udw_words += count;
-    gap = 0;
-  }
-  info->gap_after = (uint16_t)gap;
-  return 0;
-}
-/* The reverse, for the ANC packets of one RTP packet (n_pkts is its ANC_Count, <= 255), as the
-   library's submit does for frame units: table entries, their user data words (udw_cap words at
-   `words`) and, RAW, their four header words (raw_hdr, n_pkts x 4) to RFC 8331 ANC data
-   packets; *len receives the bytes written. One pass: each entry and its four RAW header words
-   are read once into locals and every word is checked as it is read, then written,
-   so on a failure the payload holds a partial write and must not be sent. Outside RAW it writes
-   DID, SDID, DC with parity, 8-bit words with parity and the checksum; in RAW the ten bits of
-   every word as given. -MTL_ENOSPC if cap is short; -MTL_EINVAL for n_pkts above 255, a word
-   range outside udw_cap, a line or hoffset outside its field, a stream above 127, a flag above
-   MTL_ANCF_CHECKSUM_ERR or a non-zero reserved; outside RAW a DID of 00h or a Type 2 SDID of
-   00h (ST 291-1 §6.1, §6.2) and, 10-bit, a protected word (000h-003h, 3FCh-3FFh, §9.1); in RAW
-   a word above 3FFh, a missing raw_hdr, or header words whose low bytes are not the entry's
-   did, sdid, udw_count. The raster order and the field of located packets (ST 2110-40 §5.2.2)
-   depend on the format and are the caller's. */
-static inline int mtl_anc_rfc8331_encode(const struct mtl_anc_packet* pkts, uint32_t n_pkts,
-                                         uint32_t word_mode, const void* words,
-                                         uint32_t udw_cap,
-                                         const uint16_t* MTL_NULLABLE raw_hdr,
-                                         uint8_t* payload, uint32_t cap, uint32_t* len) {
-  uint32_t total = 0, raw = word_mode == MTL_ANC_WORDS_RAW;
-  uint32_t ten = word_mode == MTL_ANC_WORDS_10BIT;
-  const uint16_t* w16 = (const uint16_t*)words;
-  const uint8_t* w8 = (const uint8_t*)words;
-  if (n_pkts > 255 || word_mode > MTL_ANC_WORDS_RAW || (raw && !raw_hdr)) return -MTL_EINVAL;
-  uint8_t* p = payload;
-  for (uint32_t k = 0; k < n_pkts; k++) {
-    const struct mtl_anc_packet e = pkts[k]; /* read once: what is checked is what is written */
-    const struct mtl_anc_packet* a = &e;
-    uint32_t count = a->udw_count, bytes = mtl_anc_rfc8331_bytes(count);
-    uint16_t h[4] = {0, 0, 0, 0};
-    if (raw) memcpy(h, raw_hdr + (size_t)k * 4, sizeof(h));
-    if ((uint64_t)a->udw_offset + count > udw_cap || a->line > 0x7ff || a->hoffset > 0xfff ||
-        a->stream > 0x7f || a->reserved || a->flags > 0x7f)
-      return -MTL_EINVAL;
-    if (raw ? (h[0] > 0x3ff || h[1] > 0x3ff || h[2] > 0x3ff || h[3] > 0x3ff ||
-               (h[0] & 0xff) != a->did || (h[1] & 0xff) != a->sdid || (h[2] & 0xff) != count)
-            : (a->did == 0 || (a->did < 0x80 && a->sdid == 0)))
-      return -MTL_EINVAL;
-    if (bytes > cap - total) return -MTL_ENOSPC;
-    uint32_t w0 = (uint32_t)(a->flags & MTL_ANCF_C) << 31 | (uint32_t)a->line << 20 |
-                  (uint32_t)a->hoffset << 8 | (a->flags & MTL_ANCF_S ? 0x80u : 0) | a->stream;
-    p[0] = (uint8_t)(w0 >> 24);
-    p[1] = (uint8_t)(w0 >> 16);
-    p[2] = (uint8_t)(w0 >> 8);
-    p[3] = (uint8_t)w0;
-    uint8_t* o = p + 4;
-    uint64_t acc = 0;
-    uint32_t bits = 0, sum = 0;
-    for (uint32_t i = 0; i < count + 4; i++) { /* 10-bit words, big endian */
-      uint32_t word;
-      if (i < 3)
-        word = raw ? h[i] : mtl_anc_parity(i == 0 ? a->did : i == 1 ? a->sdid : (uint8_t)count);
-      else if (i < count + 3) {
-        if (raw || ten) {
-          word = w16[a->udw_offset + i - 3];
-          if (word > 0x3ff || (ten && (word < 0x004 || word > 0x3fb))) return -MTL_EINVAL;
-        } else {
-          word = mtl_anc_parity(w8[a->udw_offset + i - 3]);
-        }
-      } else {
-        word = raw ? h[3] : (sum & 0x1ff) | ((((sum >> 8) & 1) ^ 1) << 9);
-      }
-      sum += word & 0x1ff;
-      acc = acc << 10 | word;
-      bits += 10;
-      while (bits >= 8) {
-        bits -= 8;
-        *o++ = (uint8_t)(acc >> bits);
-      }
-    }
-    if (bits) *o++ = (uint8_t)(acc << (8 - bits));
-    while (o < p + bytes) *o++ = 0; /* word_align */
-    p += bytes;
-    total += bytes;
-  }
-  *len = total;
-  return 0;
-}
-
-MTL_SIZE_CHECK(mtl_anc_decode_info, 16);
 
 #if defined(__cplusplus)
 }

@@ -116,10 +116,10 @@ MTL_API_DP(3) int mtl_tx_get_next(mtl_session_h s, struct mtl_tx_next* n, size_t
 MTL_API_DP(2) int mtl_tx_row_deadline(mtl_session_h s, int64_t k, uint32_t row,
                                       int64_t* tai_ns);
 /* Rows units, RX: a unit dequeued with MTL_UNITF_PARTIAL grows while it is held; wait until
-   at least min_rows rows are complete (or the unit ends). *rows gets the rows ready; the
-   option rx.rows_step sets how often a wake-up happens. -MTL_EAGAIN by the timeout. WT: it
-   sleeps on the session like the other waits (mtl.h), is interrupted with
-   MTL_WAIT_DEQUEUE, and never arms the wait handle. (MS2) */
+   at least min_rows rows are complete (or the unit ends). *rows gets the rows ready; a
+   sleeping call is woken when min_rows rows are complete or the unit ends, whatever
+   rx.rows_step is. -MTL_EAGAIN by the timeout. WT: it sleeps on the session like the other
+   waits (mtl.h) and is interrupted with MTL_WAIT_DEQUEUE. (MS2) */
 MTL_API_WT(2) int mtl_rx_wait_rows(mtl_session_h s, mtl_lease_h lease, uint32_t min_rows,
                                    uint32_t* rows, int64_t timeout_ns);
 

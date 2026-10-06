@@ -1,37 +1,71 @@
 # The wait protocol: pause-hook tests and models
 
-This file carries the evidence of G-52, G-95 and G-142 (D-141, D-142) that the plan cites:
-the deterministic pause-hook tests WH1–WH21, WH13b and WH14b, and the models in
-[models/](models/). It is a design record: C1w, C1h, C2 and MS2 copy from it, and
+This file carries the evidence of G-52, G-95 and G-142 (D-142, D-158–D-169) that the plan cites:
+the deterministic pause-hook tests (WH, WC and QW) and the models in [models/](models/). It is a
+design record: C1w, C2, C1q1, C1q2 and MS2 copy from it, and
 [implementation-plan.md](../implementation-plan.md) §8.2 ("The wait evidence") says which job runs
-what. The protocol and its step labels (T1–T12, D1–D10, K1–K6, R1–R2, H1–H3, W0–W6, P1, S1, Q1–Q8,
-Q5a, F1–F8, G1–G5, N0', N1–N12, X1–X4, Y1) are those of [engine.md](../engine.md) §7.1–§7.3; a
-step label is local to its procedure and is not a test.
+what. The protocol and its step labels (E1–E4, M1, K1–K2, F1–F8, T1–T9, D1–D2, Q1–Q3, RW1–RW2,
+N0', N1–N9, V1–V2, X1–X4, Y1, P1–P3, U1–U2, A1–A11, J1–J10, C1–C5, Y2, DV1–DV3) are those of
+[core.md](../core.md) §6.1–§6.3 and §6.6; a step label is local to its procedure and is not a
+test.
 
-Random stress caught 1 of 4 mutants, so G-52, G-95 and G-142 rest on two pieces of deterministic
-evidence: **the models, run in CI**, and **pause-hook tests that replay the models'
+Random stress caught 1 of 4 mutants of an earlier protocol, so G-52, G-95 and G-142 rest on two
+pieces of deterministic evidence: **the model, run in CI**, and **pause-hook tests that replay its
 counterexamples**. Random stress (`stress.c`) is a nightly smoke test only.
 
 ## 1. The models
 
 They need only the Python 3 standard library (`stress.c`: a C compiler and Linux). Each explores
 every interleaving under sequential consistency; every atomic operation and every syscall is one
-step. Weak-memory orderings are argued in engine.md §7.1, not modelled.
+step. Weak-memory orderings are argued in core.md §6.1, not modelled.
 
 | File | What it checks | Run |
 |---|---|---|
-| [wait_model.py](models/wait_model.py) | the 16 cases of the first model: one-shot consumers beside a sleeping loop (N9), single sweeps (I3), shared handles (L10), WT waiters beside loops (I1, I1', I2), interrupts (I2b, F1), and the review's protocol (h) for comparison; LOST and SPIN | `python3 wait_model.py [CASE...]`; `--v1` checks the first version (no always-drain); exit 1 on a design violation |
-| [wait_model2.py](models/wait_model2.py) | the extended model, 62 cases: split WAKE_NOW, application wakers, session and instance interrupts, close, spurious returns and timeouts, `mtl_wait(o, m, 0)` loops (Q), EPOLLONESHOT, killed threads, the M4 variant (V1, V2), the v2.1 cases N1–N6 and the edge-triggered (ET) cases with their no-edge-rule mutants (ETm); LOST, SPIN, LEAK | `python3 wait_model2.py [CASE...] [key=0\|1 ...]`; exit 1 if a case gives other than its expected result |
-| [wait_reuse.py](models/wait_reuse.py) | retire and reuse (Y1) racing a WAKE_NOW of the old session; LOST and a write to the old descriptor (UAF); v1, always-drain with v1's guard, and v2 | `python3 wait_reuse.py`; v2 must print 0 violations for mask {1} and {0,1} |
-| [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, WT waiters arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
-| [wait_mutants.py](models/wait_mutants.py) | five mutants of the handle path of `wait_model.py`: no drain without a taken bit, no re-signal after the read, no arm on a miss, no re-check after the arm, no re-post | `python3 wait_mutants.py`; exit 1 if a mutant is not killed |
-| [wait_cycles.py](models/wait_cycles.py) | the exact busy-loop check: the full state graph of a `wait_model2.py` case with the loops' idle counters zeroed, every strongly connected component, and whether a weakly fair scheduler can stay in it | `python3 wait_cycles.py CASE...`; a busy loop prints `fair_livelock` > 0 |
-| [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT) with the mutants `-DNO_REPOST`, `-DNO_E2`, `-DNO_HSIG`, `-DNO_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
+| [final_model.py](models/final_model.py) | both paths of core.md §6: the object path (cases o1–o7) and the queue path (q1–q11, r1–r4); 19 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT (below) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its expected result and every mutant is killed (5.5 s) |
+| [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, sleepers arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return; from M0 a queue entry among the marked entries and `wake_k` 1 and 4 | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
+| [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT). Until M0 it still drives the superseded per-object handle (D-159); M0 rewrites it onto the event word and a queue consumer, with the mutants `-DBITS`, `-DLOAD_AFTER_ATTEMPT`, `-DNO_EXIT_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
 | [provide_model.py](models/provide_model.py) | the `mtl_rx_provide` hand-back of D-152 (contract.md §9.11): every interleaving of providers, hand-backs and a taking unit; the ledger rule | `python3 provide_model.py`; MS2b copies it into `tests/unit/core/` |
 
-C1w copies the six `wait_*.py` files into `tests/unit/core/wait_model/` with a runner that fails
-on any result other than the expected one; a changed protocol step changes the model in the same
-commit, and the reviewer compares engine.md §7.1's step numbers with the model's states.
+`final_model.py`'s object path covers the event word with counts, calls with a timeout,
+interrupts and their clearing (`MTL_INTR_OFF`, then a new call: o7), close and row waits; its
+queue path the push and claim, the reset and arm, the write-back rule, queue interrupts, their
+clearing (q11) and close, detach, a stale claimer and queue entry reuse. Its checks:
+LOST (a sleeper whose condition holds), LEAK (a count that does not match its sleepers), OVER (an
+attachment in two places), SPIN (a cycle in the state graph), XQ (a push onto a reused queue), RPT
+(a report popped after its detach returned).
+
+Not modelled, and argued in core.md §6.1 instead: weak memory, the instance walk, state-change
+reports (an EVENT with every lane), J5's return 1 (lock serialisation), the delivery count of the
+detach (DV1–DV3), descriptors kept for the process's life, the flush bound (`wait_flush.py`), and
+the retire and reuse of an object's entry (X1–X4, Y1) under a stale K1 or interrupt (argued in
+core.md §6.1 "Lifetime" and by the generation in `intr`; tests WH12 and WC3). `final_model.py`'s
+`NOT_MODELLED` list names the labels it does not model (N1, N0', N2, N3, T1, T5, C3–C5, X3, Y1,
+Y2, J1–J6, DV1–DV3) with the reason for each.
+
+The two paths are explored apart: no case has a sleeper in a call with a timeout on an object
+that is also armed on a queue. They meet only on `ec`, whose every write is an RMW (T7, T9, E2,
+E4, J8), so the single-location lemma of core.md §6.1 covers both. A T7 or J8 CAS that fails
+because of the other path reloads `ec` and retries; neither path clears the other's bits. Task M0
+adds a joint case to `final_model.py`: a W on lane 0 and an E with the object armed for ACQUIRE,
+one P unit; both return (one report, one wake).
+
+epoll registrations other than level-triggered are not modelled either: an `EPOLLONESHOT` or
+`EPOLLEXCLUSIVE` registration shared by several threads and an `EPOLLET` one (contract.md §7.2
+"Any epoll mode works") are argued from A7 and A10. Every sleep follows a reset, and every signal
+a call took is written back on every exit but its own `-MTL_EAGAIN`, so each later write is a new
+edge, and a one-shot registration is re-armed by the thread that consumed it. Task M0 adds
+ONESHOT and ET variants of q5 and q9 to `final_model.py`.
+
+The model has no consumer that leaves a ready target untaken (a sender without a source frame).
+The earlier handle protocol's model drained every ready target and so missed that ex03 spun. Here
+"arm ACQUIRE only with a frame" is a user rule (contract.md §7.2), pinned by QW10, not by the
+model.
+
+Task M0 adds `check_labels.py` (the label sets of core.md §6.1 and §6.6, of the model and of
+`st_core_wait.c` once it exists must agree, minus the `NOT_MODELLED` list) and `run_models.py`, the
+model job's one entry point. C1w copies the model files into `tests/unit/core/wait_model/` with
+`run_models.py`; a changed protocol step changes the model in the same commit, and
+`check_labels.py` compares the labels. The reviewer does not.
 
 ## 2. Mechanism
 
@@ -42,28 +76,30 @@ commit, and the reviewer compares engine.md §7.1's step numbers with the model'
 - The pause hooks wait on a raw futex word (`syscall(SYS_futex, &w, FUTEX_WAIT_PRIVATE, …)`), never
   on `sem_wait`, which is itself a cancellation point.
 - No test sleeps to provoke a race, and every wait has a 1 s ceiling. A test asserts on event
-  counts (wakes, `read()`s, epoll returns, results), never on short wall-clock times.
+  counts (wakes, `read()`s, `write()`s, epoll returns, reports, results), never on short wall-clock
+  times.
 
 ## 3. The hook points
 
 | Point | Where |
 |---|---|
-| `WT_BEFORE_SLEEP` | after T9 |
-| `WT_AFTER_RECHECK` | between T8 and T9 |
-| `DP_AFTER_ATTEMPT` | after D2 |
-| `DP_AFTER_CONSUME` | after K2 |
-| `DP_BEFORE_READ` | before R1 |
-| `DP_AFTER_READ` | between R1 and R2 |
-| `DP_AFTER_ARM` | after H3 |
-| `WAKE_AFTER_TAKE` | after W2 |
-| `WAKE_BEFORE_WRITE` | after step P1, before step S1 |
+| `WT_BEFORE_ARM` | between T4 and T7 |
+| `WT_BEFORE_SLEEP` | between T7 and T8 |
 | `FLUSH_AFTER_XCHG` | after F6 |
-| `INTR_AFTER_SET` | after N7 |
+| `WAKE_BEFORE_SYSCALL` | in K1 and K2, before the syscall |
+| `INTR_AFTER_STATE` | after N3 |
 | `RETIRE_AFTER_STATE` | after X1 |
+| `PUSH_BEFORE_CAS` | in P2, before the CAS (MS2a) |
+| `QW_AFTER_RESET` | after A7's `read()` (MS2a) |
+| `QW_AFTER_ARM` | after A8 (MS2a) |
+| `QW_AFTER_POP` | after A5, before A10 (MS2a) |
+| `QA_AFTER_LOAD` | after J7 (MS2a) |
+| `Q_AFTER_ENTER` | after A1 and after J1 (MS2a) |
 
 ## 4. Where they run
 
-- Binary `UnifiedUnitTest`, suite `WaitHook`, a parameterised fixture with two bindings:
+- Binary `UnifiedUnitTest`, suite `WaitHook` (object path) and `QueueHook` (queue path), a
+  parameterised fixture with two bindings:
   - **`TestBinding`:** a counter-based core binding, from C1w;
   - **`NullBinding`:** `null:1` with the test clock, from C2. The same schedules then run on the
     production null path, including the test clock's FLUSH under ADVANCE.
@@ -71,43 +107,62 @@ commit, and the reviewer compares engine.md §7.1's step numbers with the model'
   real `sch_tasklet_func`.
 
 **Gate 2.** Each test must fail with the step it pins reverted locally (the plan's existing Gate 2
-practice). The "Kills" column names that step. No mutant code is added to the library.
+practice). The "Kills" column names that step or the model's mutant. No mutant code is added to the
+library.
 
 ## 5. The tests
 
-The labels in parentheses in the Schedule column name what a test replays (§7).
+### 5.1 The object path (MS1, MS2)
 
-| Test | Schedule (replays) | Asserts | Kills | Task |
+| Test | Schedule | Asserts | Kills | Task |
 |---|---|---|---|---|
-| WH1 `WaitHook.wt_ignores_handle_drain` | W in `acquire(∞)` parked at `WT_BEFORE_SLEEP`; complete and flush; B runs `reap(0)` with a RESULTS handle and drains; resume W (I1) | W returns the slot; 1 wake | a WT call that consumes the handle | C1w |
-| WH2 `WaitHook.wseq_before_recheck` | W parked at `WT_AFTER_RECHECK`; complete and flush (a bump); resume (F3) | W returns, no sleep | loading `v` after T8 | C1w |
-| WH3 `WaitHook.lanes_do_not_steal` | A and D in `acquire(∞)`, C in `reap(∞)`, all asleep; publish a result only (I2) | C returns; A and D woken 0 times (a futex-return counter) | a broadcast or a lane-free bitset | C1w |
-| WH4 `WaitHook.sweep_keeps_result` | mask ACQUIRE\|RESULTS; reap(0) misses; a completion frees a slot and makes a result, flushed; acquire(0) succeeds, then misses (I3) | `poll(fd, 0)` = POLLIN; the next sweep returns the result and leaves the fd unreadable | consuming the handle on success | C1w |
-| WH5 `WaitHook.stale_write_drained` | the flush parked at `WAKE_BEFORE_WRITE`; the sweep takes the lane, drains (nothing to read) and arms; resume the flush (N1; `wait_mutants.py`'s `mut_drain_only_if_took` on `wait_model.py` case 2) | the loop wakes once; the next sweep leaves the fd unreadable; epoll returns ≤ 2 | draining only after taking a bit | C1w |
-| WH6 `WaitHook.resignal_after_read` | E parked at `DP_BEFORE_READ` with nothing pending; P publishes, posts and writes; resume E: its read consumes that write (mutant `mut_no_resignal`) | after E's call the fd is readable and the unit is still ready | no re-signal after the read | C1w |
-| WH7 `WaitHook.arm_then_recheck` | E parked at `DP_AFTER_CONSUME`, before ARM_H; complete and flush; resume (I4; mutants `mut_no_arm`, `mut_no_recheck`) | the call returns the unit, or the fd is readable | no arm; no re-check | C1w |
-| WH8 `WaitHook.repost_after_take` | E asleep; X's `acquire(0)` parked at `DP_AFTER_READ` after taking the bit; P publishes two units (H clear, no wake); resume X (N3; mutant `repost_off` on case 0) | X takes one; the fd is readable; E wakes and takes the other | no re-post | C1w |
-| WH9 `WaitHook.slot_variant_reposts` | X in `acquire_slot(busy slot)` takes lane 0's bit while another slot is free beside a sleeping `acquire` loop (M4; `wait_model2.py` V1) | the fd is readable | a re-post by the call's predicate | MS2 (`acquire_slot`) |
-| WH10 `WaitHook.interrupt_vs_sleep` | W parked at `WT_BEFORE_SLEEP`; an instance interrupt from another thread, and from a signal handler sent to W itself; resume (F1). Variant: ACQUIRE only, with a reaper asleep | `-MTL_ECANCELED`; the reaper woken 0 times | the walk without a bump; W's `intr` load before its fence | C1w |
+| WH2 `WaitHook.load_before_attempt` | W parked at `WT_BEFORE_ARM`; complete and flush; resume | W returns without sleeping | T2 after T4 (`load_after_attempt`); arming without the compare | C1w |
+| WH3 `WaitHook.lanes_do_not_steal` | A and D in `acquire(∞)`, C in `reap(∞)`, all asleep; publish a result only | C returns; A and D woken 0 times (a futex-return counter) | a broadcast or a lane-free bitset | C1w |
+| WH10 `WaitHook.interrupt_vs_sleep` | W parked at `WT_BEFORE_SLEEP`; an instance interrupt from another thread, and from a signal handler sent to W itself; resume. Variant: ACQUIRE only, with a reaper asleep | `-MTL_ECANCELED`; the reaper woken 0 times | N6 without E2 (`intr_no_bump`); a wake through M1 | C1w |
 | WH11 `WaitHook.close_vs_sleep` | W parked at `WT_BEFORE_SLEEP`; close, or stop FLUSH under acquire; resume | `-MTL_ESHUTDOWN` | a state change without a wake | C1w (close); C2 (`FORCE_ERROR` → `-MTL_EIO`) |
-| WH12 `WaitHook.retire_vs_wake` | a WAKE_NOW of session S parked at `WAKE_AFTER_TAKE`; another thread closes and retires S, then creates S' on the reused entry with mask {RESULTS} (M1; `wait_reuse.py`) | retire does not complete while the wake is parked; after resume, S' sweeps, a result on S' makes its fd readable | WAKE_NOW outside the in-flight counter; Y1 order | C1w |
-| WH13 `WaitHook.mtl_wait_cancel_level` | Q sweeps with `mtl_wait(o, A\|R, 0)` and sleeps; interrupt ACQUIRE ON (M2) | Q's `mtl_wait` returns `-MTL_ECANCELED` and the fd stays readable; after OFF, a sweep returns `-MTL_EAGAIN` and the fd is unreadable; with a DP loop E on the same handle, E's units are not lost (V3) | Q7 while cancelled; consuming on `-MTL_ECANCELED` | C1w |
-| WH13b `WaitHook.wait0_intr_after_arm` | WAIT0 parked at `DP_AFTER_CONSUME`; interrupt; resume (`wait_model2.py` N1, N1m) | `-MTL_ECANCELED`; the fd is readable | a removed Q5a | C1w (C1h if split) |
-| WH14 `WaitHook.no_cancellation_point` | a thread with a deferred cancel pending, parked at `DP_BEFORE_READ` and then `DP_AFTER_READ` (M3) | the call completes and returns; the thread dies only at the test's own `pthread_testcancel()`; no lane is stranded | libc `read`/`write` | C1w |
-| WH14b (a `WaitHook` case; C1w names it) | a thread cancelled while blocked in `acquire(∞)`; then `mtl_interrupt` (M3) | it stays blocked until the interrupt, returns `-MTL_ECANCELED`, dies at its next cancellation point; the in-flight count reads 0 | a cancellation point in a WT call; a leaked in-flight count | C1w |
-| WH15 `WaitHook.fork_child_interrupt` | `fork()`; the child calls `mtl_instance_interrupt` and `mtl_session_interrupt` (eng M4) | `-MTL_EBADF`, no crash, `errno` kept | a missing N0' | C1w |
-| WH16 `WaitFlush.count_bound` (UnitTest) | 512 marked objects with a counting syscall shim; objects 0–63 re-marked every iteration (`wait_flush.py`) | ≤ 1 object with a syscall per iteration; every object woken within 512 iterations; the loop never sleeps while marked | a lost return value; no cursor | C1w |
-| WH17 `WaitHook.test_clock_flush` | a WT waiter on `null:1`; the test thread calls `MTL_FAULT_CLOCK_ADVANCE` (eng M5) | the waiter returns after ADVANCE returns; two runs give the same wake order (G-92) | ADVANCE calling WAKE_NOW directly instead of FLUSH | C2 |
-| WH18 `WaitHook.mask_fixed` | `mtl_get_wait_handle` twice with the same mask, then with another (eng M3) | the same fd; then `-MTL_EBUSY` | the union | C1w |
-| WH19 `WaitHook.accounting` | 10^5 timeouts, interrupts and closes; then 10^6 units with no waiter and no handle | every lane count 0; 0 futex and 0 eventfd syscalls (counters) | a leaked count; a wake with nobody armed | C2 |
+| WH12 `WaitHook.stale_wake_reused` | a K1 parked at `WAKE_BEFORE_SYSCALL` after F6 on S; S retires and S' reuses the entry; resume | S' sleepers return at most once spuriously; retire never waits for the wake | a wake that reads freed or reused state; Y1 order | C1w |
+| WH14b (a `WaitHook` case) | a thread cancelled while blocked in `acquire(∞)`; then `mtl_interrupt` | it stays blocked until the interrupt, returns `-MTL_ECANCELED`, dies at its next cancellation point; the in-flight count reads 0 | a cancellation point in a WT call; a leaked in-flight count | C1w |
+| WH15 `WaitHook.fork_child_interrupt` | `fork()`; the child calls `mtl_instance_interrupt`, `mtl_session_interrupt` and, from MS2a, `mtl_queue_wait` | `-MTL_EBADF`, no crash, `errno` kept | a missing N0' | C1w, C1q2 |
+| WH16 `WaitFlush.count_bound` (UnitTest) | 512 marked entries with a counting syscall shim; entries 0–63 re-marked every iteration; run with `wake_k` 1 and 4; from MS2a queues among them | ≤ `wake_k` entries with a syscall per iteration; every entry woken within 512 iterations; the loop never sleeps while marked | a lost return value; no cursor | C1w |
+| WH17 `WaitHook.test_clock_flush` | a WT sleeper on `null:1`; the test thread calls `MTL_FAULT_CLOCK_ADVANCE` | the sleeper returns after ADVANCE returns; two runs give the same wake order (G-92) | ADVANCE calling WAKE_NOW directly instead of FLUSH | C2 |
+| WH19 `WaitHook.accounting` | 10^5 timeouts, interrupts and closes; 10^5 timed-out calls, then 10^5 completions; 10^6 units with no sleeper and no armed queue | every lane count 0; 0 futex and 0 eventfd syscalls (counters) | a leaked count (`no_dec`); a wake with nobody counted | C2 |
 | WH20 `WaitHook.timeouts` | a 1 ms wait; `MTL_FAULT_TIME_STEP` during a wait | the return is ≥ 1 ms and < the 1 s ceiling; the step changes nothing | a deadline on TAI | C2 |
-| WH21 `WaitHook.as_paths` (non-ASan job) | the interrupt from a handler delivered to a WT waiter, to a thread inside chunk growth, to a thread inside a DP call, and to a thread in RETIRE's wait | completes; `errno` unchanged; a `malloc` hook that aborts is never hit | TLS or allocation on the AS path | C1w |
+| WH21 `WaitHook.as_paths` (non-ASan job) | the interrupt from a handler delivered to a WT sleeper, to a thread inside chunk growth, to a thread inside a DP call, to a thread in RETIRE's wait and, from MS2a, a queue interrupt | completes; `errno` unchanged; a `malloc` hook that aborts is never hit | TLS or allocation on the AS path | C1w, C1q2 |
+| WC1 `WaitHook.no_clear_by_producer` | the model's o1 trace with W2 parked at `WT_BEFORE_SLEEP` | W2 returns both units | a producer-cleared bit (`bits`) | C1w |
+| WC2 `WaitHook.waiter_removes_its_count` | 10^4 sleepers time out; publish | 0 futex wakes, counts 0 | `no_dec` | C1w |
+| WC3 `WaitHook.interrupt_generation` | an interrupt parked at `INTR_AFTER_STATE` across retire and reuse | `-MTL_EBADF`; S' untouched | N5 without the generation | C1w |
+| WC4 `WaitHook.rows_want` | `rows_step` 34 over 2160 rows; readers for 540 and 1080 | 0 wakes before 540, one each after | `want_store`; RW1 firing per step | MS2 |
+| WC5 `WaitHook.sleeper_beyond_count` | one sleeper more than a lane's count holds, on one target; one unit | the last returns within 2 ms; no thread spins | T6 returning at once | C1w |
+| WC6 `WaitHook.slot_beside_acquire` | a sleeper in `mtl_tx_acquire_slot(s, i, ∞)` with slot i busy and a sleeper in `mtl_tx_acquire(∞)`, both on lane 0; release another slot | `acquire` returns that slot; `acquire_slot` returns only when slot i is free; no thread spins | a K1 that wakes one sleeper of the lane | MS2 (`acquire_slot`) |
 
-**Public forms** (A2a):
+### 5.2 The queue path (MS2a)
 
-- ex03 on `null:1` with two event-loop threads on one handle;
-- `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex11's
-  shape).
+| Test | Schedule | Asserts | Kills | Task |
+|---|---|---|---|---|
+| WH14 `QueueHook.no_cancellation_point` | a thread with a deferred cancel pending, parked at `QW_AFTER_RESET`, then in A10's write-back and in A11's `ppoll` | the call completes and returns; the thread dies only at the test's own `pthread_testcancel()`; no signal is stranded | libc `read`, `write`, `ppoll` | C1q2 |
+| QW1 `QueueHook.arm_validates` | J8 parked at `QA_AFTER_LOAD`; publish; resume | reported | `arm_no_validate` | C1q1 |
+| QW2 `QueueHook.claim_once` | a completion and an application release race on one armed object | one report | `claim_by_load` | C1q1 |
+| QW3 `QueueHook.reset_before_arm` | parked at `QW_AFTER_RESET`; push and write; resume | a report, not `-MTL_EAGAIN` | `reset_after_arm` | C1q1 |
+| QW4 `QueueHook.resignal_after_steal` | E in epoll; a one-off poller parked at `QW_AFTER_RESET`; a push | the poller reports; the descriptor is readable | `no_resignal` | C1q1 |
+| QW5 `QueueHook.stale_write_once` | K2 parked at `WAKE_BEFORE_SYSCALL`; the consumer finds the work itself | one empty return, then unreadable | `no_reset` | C1q1 |
+| QW6 `QueueHook.interrupt_pair` | parked at `QW_AFTER_ARM`, and before A8 | `-MTL_ECANCELED` both ways | `intr_no_claim`, `no_intr_recheck` | C1q2 |
+| QW7 `QueueHook.close_waits_calls` | a sleeper inside `mtl_queue_wait(∞)`; close, then create on the entry | the sleeper returns `-MTL_ESHUTDOWN`; the new queue starts unreadable | `close_no_wait` | C1q1 |
+| QW8 `QueueHook.closing_never_reported` | close a session whose node is listed | no report; the slot DEAD, then FREE at the pop; a reused entry gets another slot | X3, A5's state check | C1q2 |
+| QW9 `QueueHook.instance_interrupt_queues` | `mtl_instance_interrupt` from a handler, sleepers on 3 queues | every one `-MTL_ECANCELED`; no `malloc` | V2's queue branch | C1q2 |
+| QW10 `QueueHook.one_shot_mask` | RESULTS armed, slots free, no frame | 0 reports, 0 wakes over 10^4 completions | a level report | C1q1 |
+| QW11 `QueueHook.burst_one_write` | 128 armed sessions complete in one iteration | one `write()`, 128 reports | a write per object | C1q1 |
+| QW12 `QueueHook.exit_writes_back` | E in epoll; a poller parked at `QW_AFTER_RESET` while an interrupt (and, as a variant, a close) writes | E wakes and returns the code; close does not hang | `no_exit_resignal` | C1q1 |
+| QW13 `QueueHook.detach_vs_pop` | `mtl_queue_arm(q, o, 0, 0)` against a pop of o, both orders | no report with o's user popped after the detach returned | `no_dead` | C1q2 |
+| QW14 `QueueHook.stale_claimer` | a claimer parked at `PUSH_BEFORE_CAS` across close and create | the new queue never sees the node; the slot FREE | `no_qgen` | C1q1 |
+| QW15 `QueueHook.state_edge` | DRAIN stop, update, start of an armed session; ERROR, stop, start | one STATE report per change; the session stays armed and reports its next unit | a code that detaches | C1q2 |
+| QW16 `QueueHook.rearm_in_flight` | J5 against an E4 claim | returns 1; the report carries the new user | J5's silent 0 | C1q2 |
+| QW17 `QueueHook.detach_waits_delivery` | a consumer parked at `QW_AFTER_POP` with a report of o; another thread detaches o (variant: closes o); then 4 consumers loop on the queue while a fifth detaches and re-arms 10^4 times | the detach and the close return only after the parked consumer returned; every detach returns within 1 ms (no starvation) | no DV1–DV3; one phase only | C1q2 |
+| QW18 `QueueHook.stale_caller_ebadf` | a `mtl_queue_wait` and a `mtl_queue_arm` parked at `Q_AFTER_ENTER` across the queue's close and a create on the entry | both return `-MTL_EBADF`; the new queue's list and descriptor are untouched | A3 and J2 testing CLOSED only | C1q1 |
+| QW19 `QueueHook.descriptors_kept` | an AS `mtl_instance_interrupt` parked at `WAKE_BEFORE_SYSCALL` in U2's write while the last `mtl_instance_close` runs; then the test opens a socket | the write lands on the kept eventfd (the socket reads nothing); `/proc/self/fd` still lists the queues' eventfds, at most the peak of live queues | closing queue descriptors at the last instance close | C1q2 |
+
+**Public forms** (C1q2): ex03 on `null:1` with two event-loop threads on one queue and a one-off
+poller; `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex11's
+shape, A2a).
 
 **Nightly smoke** (MS2a): [models/stress.c](models/stress.c) (LT and ONESHOT, 2 000 rounds each).
 
@@ -117,39 +172,25 @@ Each test lands with the task that makes it runnable:
 
 | Task | Tests |
 |---|---|
-| C1w | WH1–WH8, WH10, WH11 (close and stop), WH12–WH16, WH13b, WH14b, WH18, WH21, on `TestBinding` |
+| C1w | WH2, WH3, WH10, WH11 (close and stop), WH12, WH14b, WH15, WH16, WH21, WC1–WC3, WC5, on `TestBinding` |
 | C2 | WH11 (ERROR), WH17, WH19, WH20, and the `NullBinding` runs |
-| A2a | the public forms |
-| MS2 | WH9 |
-| C1h (only if C1w splits, MS2a) | WH1's handle half, WH4–WH8, WH12, WH13, WH13b, WH18 |
+| A2a | ex11's SIGTERM form |
+| MS2 | WC4 |
+| C1q1 (MS2a) | QW1–QW5, QW7, QW10–QW12, QW14, QW18 |
+| C1q2 (MS2a) | WH14, QW6, QW8, QW9, QW13, QW15–QW17, QW19; WH15's and WH21's queue parts; ex03's public form |
+
+Retired with the per-object descriptor that queues replaced ([D-159](../decisions.md)): WH1,
+WH4–WH9, WH13, WH13b and WH18.
+Totals: 16 tests in MS1, 2 in MS2, 20 in MS2a.
 
 ## 7. What the schedules replay
 
-- **Model cases.** I1, I1', I2, I2b, I3, F1, N9, L10 and `(h) …` are case names in
-  `wait_model.py`; R*, X*, V*, N1–N6 and ET* are case names in `wait_model2.py`. Each is a
-  configuration whose interleavings the model explores.
-- **The first review's interleaving classes** (the cases above are named after them):
-  - I1: a WT acquire in `poll()` while a DP reap drains the shared descriptor;
-  - I2: two WT waiters, one draining the other's wake;
-  - I3: a single thread whose drain in the middle of the sweep strands a result;
-  - I4: a DP miss that arms with no re-check;
-  - F1: the instance interrupt waking without changing the compared word;
-  - F3: the order of the `wseq` load (after the fence, before the T8 re-check);
-  - N1: a drain clearing the last pending bit before the flush's `write()` lands, so a call that
-    drains only when it clears a bit never drains again (a busy loop with one thread);
-  - N3: a call that takes a pending bit and returns a unit without re-arming or re-posting (a lost
-    wake-up for another thread asleep on the handle).
-- **The formal review's majors:**
-  - M1: a WAKE_NOW outside the in-flight counter straddles retire and reuse and posts a stale lane
-    into the new session (closed by W0, W6 and the Y1 order);
-  - M2: `mtl_wait(o, m, 0)` under an interrupt never ends the sweep (closed by Q2 and Q5a: the
-    interrupt is level for `mtl_wait`);
-  - M3: libc `read`/`write` are cancellation points (closed by raw `syscall()`);
-  - M4: `acquire_slot` takes lane 0's bit with a narrower predicate and does not re-post (closed by
-    D8 and Q7 re-posting by the lane predicate).
-- **The engineering review's items:**
-  - eng M3: the union of handle masks (the mask is fixed by the first `mtl_get_wait_handle`);
-  - eng M4: the AS path in a `fork()`ed child (N0' by `getpid`);
-  - eng M5: the test clock skipping the production flush (ADVANCE runs FLUSH).
-- **Mutants.** `mut_drain_only_if_took`, `mut_no_resignal`, `mut_no_arm`, `mut_no_recheck` and
-  `repost_off` are the mutants of `wait_mutants.py`; it prints the cases that kill each one.
+- **Model cases.** o1–o7, q1–q11 and r1–r4 are case names in `final_model.py`; each is a
+  configuration whose interleavings the model explores, and `--trace CASE MUTANT` prints the
+  counterexample a test replays.
+- **Mutants.** `bits`, `no_arm`, `load_after_attempt`, `producer_skip`, `intr_no_bump`, `no_dec`,
+  `want_store`, `no_resignal`, `no_exit_resignal`, `reset_after_arm`, `no_reset`, `arm_store`,
+  `arm_no_validate`, `claim_by_load`, `intr_no_claim`, `no_intr_recheck`, `no_qgen`, `no_dead` and
+  `close_no_wait`; the model prints the cases that kill each one.
+- **Argued and tested, not modelled**: the delivery count (QW17), the generation check of A3 and J2
+  (QW18; the model checks it), the descriptors kept for the process's life (QW19).

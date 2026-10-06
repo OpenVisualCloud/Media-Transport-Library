@@ -11,8 +11,8 @@
  * implemented. This file is normative for names, types, layouts and call classes; where
  * the prose disagrees, the header wins (sketch/README.md).
  *
- * libmtl exports this API in one symbol version node per milestone (migration.md §7.2). A
- * function is exported from the milestone its comment ends with, (MS1) to (MS7), which is
+ * libmtl exports this API in symbol version nodes per milestone, and a node that a release
+ * carries never changes again (migration.md §7.2). A function is exported from the milestone its comment ends with, (MS1) to (MS7), which is
  * also the argument of its call-class macro, MTL_API_CP(n) and the others; this header
  * declares the whole design, and a call to a function of a milestone above MTL_LEVEL fails
  * to compile, naming the milestone (the availability block below). A function tagged
@@ -29,14 +29,18 @@
  *   mtl_mem.h      imported memory, attached pools, named slots
  *   mtl_sync.h     media-index arithmetic, the next TX unit, clocks and the time reference
  *   mtl_events.h   the events of a session and of an instance
- *   mtl_packet.h   packet tables and RTP header layouts for unit = MTL_UNIT_PACKETS
- *   mtl_observe.h  stats registry, full result records, diagnostics, logging, capture
- *   mtl_options.h  option keys for every tuning knob (generated)
- *   mtl_reasons.h  the reason codes (generated)
+ *   mtl_packet.h   packet tables, RTP header layouts and the RFC 8331 codec for
+ *                  unit = MTL_UNIT_PACKETS
+ *   mtl_observe.h  stats registry, full result records, diagnostics, logging, capture,
+ *                  health and shutdown
+ *   mtl_options.h  option keys for every tuning knob (key enum from mtl_options.def)
+ *   mtl_reasons.h  the reason codes (enum from reasons.def)
  *   mtl_format.h   application formats, format descriptions, standalone conversion
- *   mtl_util.h     inline helpers built only on public calls (copy path, meta, ANC)
- *   mtl_ipmx.h     RTCP sender reports and the Info Block, SDP, payload encryption (Phase 7)
- *   mtl_plugin.h   codec and converter plugin ABI      mtl_legacy.h  legacy mtl_handle
+ *   mtl_util.h     inline helpers built only on public calls (copy path, meta, ANC, RX reserve)
+ *   mtl_ipmx.h     RTCP sender reports and the Info Block, payload encryption (Phase 7)
+ *   mtl_sdp.h      SDP render and parse, in the companion library libmtl_sdp (Phase 7)
+ *   mtl_plugin.h   codec and converter plugin ABI
+ *   mtl_legacy.h   legacy mtl_handle, legacy enum values
  *   mtl_debug.h    tests only
  *
  * Rules
@@ -51,16 +55,12 @@
  *     a timeout below MTL_FOREVER is -MTL_EINVAL. A timeout is a duration on
  *     CLOCK_MONOTONIC fixed at entry, never changed by a step of the time base. A data call
  *     (acquire, dequeue, reap, read, wait) that finds nothing, now or by its timeout, returns
- *     -MTL_EAGAIN; a read that returns a count returns at least 1. A call with a timeout
- *     sleeps on its object, never on the wait handle, so any number of threads may wait on
- *     any targets of one object. Arming: every -MTL_EAGAIN arms the call's target for the
- *     object's wait handle when the target is in the handle's mask (mtl_get_wait_handle);
- *     the first wake of an armed target clears that arming and makes the handle readable,
- *     and a call that finds nothing resets it once no target is pending. So "call every
- *     target of the mask until -MTL_EAGAIN, then sleep on the wait handle" never misses a
- *     wake-up, also with several threads on one handle, and an application that never
- *     sleeps never causes a wake-up syscall. A completing tasklet never makes the syscall
- *     itself: its scheduler wakes after its handler loop. -MTL_EAGAIN sets only code and
+ *     -MTL_EAGAIN; a read that returns a count returns at least 1.
+ *     With timeout 0 a data call tries once and changes no wait state. A call with a
+ *     timeout sleeps on its object, so any number of threads may wait on any targets of
+ *     one object; an event loop waits on a queue (mtl_queue_create, MS2). An application
+ *     that never sleeps never causes a wake-up syscall. A completing tasklet never makes
+ *     the syscall itself: its scheduler wakes after its handler loop. -MTL_EAGAIN sets only code and
  *     reason in mtl_last_error(). -MTL_ETIMEDOUT is for control-plane deadlines (stop).
  * R3  Input structs start with uint32_t struct_size. MTL_INIT(&s) zero-fills a struct and
  *     sets its struct_size; zero in every other field is the default (struct_size 0 is
@@ -75,8 +75,9 @@
  *     on failure. Close is idempotent: it returns 1 while the object retires and 0 once it
  *     retired, also when called again on the same handle and for a null handle; no other
  *     call is valid on a closing handle except mtl_session_get_status (CLOSING, RETIRED),
- *     mtl_release of a lease taken before the close (retirement waits for it), and
- *     mtl_interrupt (AS; a no-op that returns 0). A
+ *     mtl_release of a lease taken before the close (retirement waits for it),
+ *     mtl_interrupt (AS; a no-op that returns 0), and on a queue an mtl_queue_wait already
+ *     in progress, which returns -MTL_ESHUTDOWN (a later call on the handle: -MTL_EBADF). A
  *     stale or foreign handle fails with -MTL_EBADF, a lease already returned with
  *     -MTL_ESTALE; the one exception is mtl_instance_get_health on an instance consumed by
  *     close or shutdown, which returns -MTL_ESHUTDOWN, so a probe racing the close sees
@@ -92,20 +93,20 @@
  *     an RX value on the sender's clock
  *     is flagged SENDER_TIME (Phase 7, mtl_ipmx.h).
  * R6  Call classes: CP control plane (may allocate and block); DP data plane (O(1), no
- *     allocation, lock a tasklet takes or logging; its only syscalls are on its own object:
- *     resetting the wait handle when it finds nothing and signalling it again on a race or
- *     after taking a ready target, and one wake when it makes a target ready for a waiter;
+ *     allocation, lock a tasklet takes or logging; its only syscalls are one wake when it
+ *     makes a target ready for a sleeper (a futex wake, or a write() of a queue);
  *     DP, WT and AS calls are not cancellation points); DPC data plane that does work in
- *     the caller (copy, conversion); WT wait, DP when timeout is 0; AS async-signal-safe
+ *     the caller (copy, conversion); WT wait, DP when timeout is 0 (mtl_queue_wait's
+ *     timeout 0 arms its queue); AS async-signal-safe
  *     (atomics, the futex call and write() only; errno kept; never mtl_last_error()). An
  *     application thread may busy-poll the DP calls and the WT calls with timeout 0. No
  *     application code ever runs on an MTL tasklet, and the library
  *     calls application code only from the one log thread that runs the log sinks
  *     (mtl_log_add_sink(), mtl_observe.h) and, for codec plugins, from their own threads.
- *     One exception: on a wrapper of a legacy instance (mtl_legacy.h), the legacy
- *     ptp_get_time_fn runs on tasklets, as legacy does, and from MS2a also on the
- *     wrapper's time thread. Those threads may not open, close or shut down the instance
- *     (close and shutdown join them): -MTL_EDEADLK.
+ *     A wrapper of a legacy instance adds the one exception, stated in mtl_legacy.h, and
+ *     the exception ends with that header, which is not part of MTL_1.0. Those threads may
+ *     not open, close or shut down the instance (close and shutdown join them):
+ *     -MTL_EDEADLK.
  * R7  Tuning knobs are options (mtl_options.h): absent means the documented default.
  * R8  Process: the library installs no signal handler and no atexit (DPDK's own SIGBUS
  *     handlers, held while it grows its heap and installed by instance.hotplug, are the
@@ -113,7 +114,7 @@
  *     may call the AS functions only, at any time, also during and after close. Every
  *     descriptor MTL or DPDK opens for it is close-on-exec. An instance belongs to the
  *     process that opened it: in a fork()ed child MTL closes the descriptors it tracks
- *     (VFIO, MtlManager, CPU locks, eventfds) at once, every call returns -MTL_EBADF
+ *     (VFIO, MtlManager, CPU locks, queue descriptors) at once, every call returns -MTL_EBADF
  *     (reason FORKED) except close, which drops local state only, and library memory is
  *     MADV_DONTFORK. What MTL holds outside the process (device DMA, queues, CPUs, kernel
  *     programs, MtlManager grants) is tied to a descriptor the kernel closes at exit or
@@ -190,15 +191,19 @@ extern "C" {
    older Clang, SWIG, bindgen and -fsyntax-only report nothing, and the call fails at link
    time. MTL_TARGET_LEVEL (0 to 8, default MTL_LEVEL): lower, to find the calls a library at
    that level lacks; MTL_LEVEL + 1 for the library's own tree, which builds the milestone
-   under way. A build that emits unused inline functions (GCC -fkeep-inline-functions, Clang
+   under way: libmtl, its unit tests and each in-tree consumer project, set in its own
+   meson.build, never in mtl.pc (implementation-plan.md §4). A build that emits unused inline functions (GCC -fkeep-inline-functions, Clang
    -femit-all-decls) sets MTL_TARGET_LEVEL to 7: every helper is then compiled, and a later
    call fails at link time. Declarations under MTL_LATER (design checks only) take LATER:
    a call fails to compile where the attribute exists, else to link; names under MTL_LATER
    may change in any release. After the freeze, n = 8 and up are reserved for MTL_1.(n - 7)
    (MTL_SINCE_8_ and a wider range are added then). The exits that set MTL_LEVEL are those
-   of MS1, MS2b (2), MS3, MS4b (4), MS5, MS6 and MS7: the exits of MS2a and MS4a leave it
-   unchanged, and the MS2 and MS4 nodes stay open, still growing, across the releases cut
-   after them. The macros ending in "_" are internal. */
+   of MS1, MS2b (2), MS3, MS4b (4), MS5, MS6 and MS7; the exits of MS2a and MS4a leave it
+   unchanged. A release cut while milestone MTL_LEVEL + 1 is open exports the functions of
+   that milestone built so far: MTL_TARGET_LEVEL = MTL_LEVEL + 1 compiles every call to
+   them, and the link against that release fails for any it lacks. Every version node a
+   release carries is sealed, so ld.so refuses at load, never at a call, a library that
+   lacks a function the binary was linked with. The macros ending in "_" are internal. */
 #define MTL_LEVEL 0
 #ifndef MTL_TARGET_LEVEL
 #define MTL_TARGET_LEVEL MTL_LEVEL
@@ -296,8 +301,7 @@ extern "C" {
 #define MTL_EIO 5         /* it failed: a session in ERROR, or a device that could not be
                              stopped; the reason says why */
 #define MTL_EBADF 9       /* null, foreign or closed handle */
-#define MTL_EAGAIN 11     /* nothing now, or by the timeout; the target is armed for the
-                             wait handle if it is in the handle's mask (R2) */
+#define MTL_EAGAIN 11     /* nothing now, or by the timeout */
 #define MTL_ENOMEM 12     /* allocation failed */
 #define MTL_EBUSY 16      /* in use, or not allowed in this state */
 #define MTL_EEXIST 17     /* name in use with another configuration */
@@ -402,9 +406,7 @@ enum mtl_object_kind {
 #endif
   MTL_OBJ_REGION = 5,
   MTL_OBJ_SCHED = 6, /* index = scheduler, id = the instance */
-#if defined(MTL_LATER)
-  MTL_OBJ_QUEUE = 7,
-#endif
+  MTL_OBJ_QUEUE = 7, /* mtl_queue_create (MS2) */
   MTL_OBJ_PLUGIN = 8, /* mtl_plugin.h */
   MTL_OBJ_LOG_SINK = 9, /* mtl_observe.h; closed by mtl_log_remove_sink() */
 };
@@ -442,8 +444,8 @@ static inline void mtl_struct_init(void* p, size_t size) {
    data path below; reading events is mtl_read_events() (mtl_events.h). */
 /* What close returns while the object retires; call close again to poll. */
 #define MTL_RETIRING 1
-/* Closes o: an instance, session, region, plugin or log sink. MTL_RETIRING: still
-   retiring; 0: retired. Calling it again on the same handle polls (0 or MTL_RETIRING),
+/* Closes o: an instance, session, region, plugin, log sink or queue. A queue closes at
+   once (0) and never reads timeout_ns. MTL_RETIRING: still retiring; 0: retired. Calling it again on the same handle polls (0 or MTL_RETIRING),
    never -MTL_EBADF; 0 for a null object. Retirement needs no further call: the last
    release or reference completes it. From the first call on, the only other valid calls
    on the handle are mtl_session_get_status, mtl_release of a lease taken before the close
@@ -459,11 +461,14 @@ MTL_API_CP(1) int mtl_close(struct mtl_object o, int64_t timeout_ns);
 /* Interrupts the waits of o on targets (MTL_WAIT_*; 0 = every target): on a session its
    own, on an instance its own and the selected waits of every session. While ON, every
    call with a timeout on a selected target, and mtl_wait() with any timeout, returns
-   -MTL_ECANCELED; a call blocked in one returns at once; o's wait handle is signalled
-   (an instance signals its own handle, not its sessions'). A GStreamer unlock interrupts
+   -MTL_ECANCELED; a call blocked in one returns at once; on a queue (targets 0) every
+   mtl_queue_wait returns -MTL_ECANCELED; an instance's interrupt reaches the waits of its
+   sessions and of its queues; a session's interrupt does not reach its queues. A
+   GStreamer unlock interrupts
    acquire (MTL_INTR_ON, MTL_WAIT_ACQUIRE) without making a reaper of the same session
    spin. Stop and close still work. -MTL_EINVAL for an unknown mode, a bit not declared
-   outside MTL_LATER, ABORT with targets, and ABORT on a session; -MTL_ENOTSUP for a
+   outside MTL_LATER, ABORT with targets, ABORT on a session or a queue, and targets on a
+   queue; -MTL_ENOTSUP for a
    declared bit of a later milestone (R1). These are checked first, so on a closing or
    retired handle a valid call is a no-op that returns 0 (R4); -MTL_EBADF for a stale
    generation or in a fork()ed child. AS with ON and ABORT: atomics, the futex call and
@@ -773,19 +778,24 @@ struct mtl_instance_params {
    deployment convenience so the same test or pod image runs on any host; with no port at
    all, -MTL_EINVAL naming "ports". In a set-uid process MTL_PORTS and env: ports are
    -MTL_EINVAL.
-   MTL_INSTANCE_SHARED: the first open creates the process-wide instance, later ones join
-   it; each open returns its own reference handle (MTL_SAME is false between two), and
-   every call accepts any live reference; a later open that names ports, lcores, time
-   source or options that differ from the live instance fails with -MTL_EEXIST
-   (INSTANCE_MISMATCH). log_level is process-wide: a non-zero value that differs from the
+   MTL_INSTANCE_SHARED (MS2a): the first open creates the process-wide instance and later
+   ones join it, as they join a wrapper of a legacy instance (mtl_legacy.h); each open
+   returns its own reference handle (MTL_SAME is false between two), and every call accepts
+   any live reference. A joining open's ports (from p, or MTL_PORTS when p names none; none
+   at all joins every port) are a subset of the live instance's, matched by normalised
+   name, and an address, prefix, gateway or numa it sets equals the live port's; a port
+   keeps the instance's index (mtl_port_find, mtl_observe.h). A port the instance lacks, or
+   lcores, time source, other flags or options it sets that differ from the live
+   instance's, fail with -MTL_EEXIST (INSTANCE_MISMATCH, the detail naming the first
+   difference). log_level is process-wide: a non-zero value that differs from the
    threshold another open instance (shared, exclusive or bridged) set is -MTL_EEXIST
-   (INSTANCE_MISMATCH, field "log_level"); 0 never conflicts. Every check that needs no device runs before any device is
-   touched, so a misconfigured pod fails at once with one reason and a one-line detail
-   (mtl_last_error) fit for a termination message. Open does not wait for links,
-   neighbours or time lock: mtl_instance_get_health() (mtl_observe.h) reports them. After
-   a close in the same process, open works again on the same ports and a subset of the
-   first open's CPUs (EAL keeps its arguments); a port quarantined by an earlier close is
-   -MTL_EBUSY (QUEUE_QUARANTINED) until exit. CP. (MS1) */
+   (INSTANCE_MISMATCH, field "log_level"); 0 never conflicts. Every check that needs no
+   device runs before any device is touched, so a misconfigured pod fails at once with one
+   reason and a one-line detail (mtl_last_error) fit for a termination message. Open does
+   not wait for links, neighbours or time lock: mtl_instance_get_health() (mtl_observe.h)
+   reports them. After a close in the same process, open works again on the same ports and
+   a subset of the first open's CPUs (EAL keeps its arguments); a port quarantined by an
+   earlier close is -MTL_EBUSY (QUEUE_QUARANTINED) until exit. CP. (MS1) */
 MTL_API_CP(1) int mtl_instance_open(const struct mtl_instance_params* MTL_NULLABLE p,
                                     mtl_instance_h* out);
 /* Drops this reference. The last reference shuts the instance down within timeout_ns,
@@ -795,7 +805,8 @@ MTL_API_CP(1) int mtl_instance_open(const struct mtl_instance_params* MTL_NULLAB
    stop; this instance's queued log lines reach the sinks, and the log thread is joined
    when no sink and no other instance remain; MtlManager grants are returned; memory is
    released.
-   Sessions and regions still open are closed by it (R4). 0: retired. 1: quiesced: no
+   Queues, sessions and regions still open are closed by it, the queues first (R4). 0:
+   retired. 1: quiesced: no
    device can reach any memory, but leases or regions are still referenced, or a library
    thread is still in application code past the deadline (counted; its memory is kept);
    call it again to poll. A slot's memory is freed by the next control-plane call of the
@@ -810,8 +821,8 @@ static inline int mtl_instance_close(mtl_instance_h mt, int64_t timeout_ns) {
   return mtl_close(MTL_OBJ_OF_INSTANCE(mt), timeout_ns);
 }
 /* on = 1: every wait of the instance and of every session returns -MTL_ECANCELED until
-   on = 0, and blocked calls return at once; the instance's wait handle is signalled, the
-   sessions' are not; stop and close still work. For signal handlers: AS with on = 1, CP
+   on = 0, and blocked calls return at once; so do the waits on its queues; stop and close
+   still work. For signal handlers: AS with on = 1, CP
    with on = 0. */
 static inline int mtl_instance_interrupt(mtl_instance_h mt, int on) {
   return mtl_interrupt(MTL_OBJ_OF_INSTANCE(mt), on ? MTL_INTR_ON : MTL_INTR_OFF, 0);
@@ -843,7 +854,8 @@ static inline int mtl_instance_abort(mtl_instance_h mt) {
    The RTP identity (SSRC, payload type) is the session's, the same on every leg (ST
    2022-7). Fixed size. */
 struct mtl_flow {
-  uint32_t port;         /* 0 = the leg's own instance port, else MTL_INDEX(port) */
+  uint32_t port;         /* 0 = the leg's own instance port, else MTL_INDEX(port):
+                            mtl_flow_on_port() */
   uint8_t ip_family;     /* 0 = IPv4 (bytes 0..3), 6 = IPv6 */
   uint8_t dscp;          /* TX: into the IP TOS; 0 = CS0 (the IPMX profile's defaults,
                             Phase 7, differ) */
@@ -869,6 +881,12 @@ static inline void mtl_flow_ipv4(struct mtl_flow* f, uint8_t a, uint8_t b, uint8
   f->ip[2] = c;
   f->ip[3] = d;
   f->udp_port = udp_port;
+}
+/* Puts the leg on instance port `port` (0-based): f->port = MTL_INDEX(port). The field holds
+   MTL_INDEX(port), and 0 is the leg's own port (leg i on port i), so a literal
+   flows[1].port = 1 puts leg 1 on port 0, beside leg 0 (MTL_INFO_LEGS_SHARE_PORT). */
+static inline void mtl_flow_on_port(struct mtl_flow* f, uint32_t port) {
+  f->port = MTL_INDEX(port);
 }
 /* A flow from text: "239.1.1.1:20000", or "239.1.1.1:20000@10.0.0.5" with the source of a
    source-specific group. Sets ip, udp_port and source_filter only. 0, or -MTL_EINVAL for
@@ -1090,12 +1108,15 @@ struct mtl_anc_config {
   struct mtl_raster video; /* the video it belongs to: fps and scan; all zero = the raster
                               and launch delay of the first video session of its start
                               (-MTL_EINVAL, FIELD_REQUIRED, if there is none) */
-  uint32_t max_udw_words;  /* plane 1 rows per unit; 0 = 255 x max_packets */
+  uint32_t max_udw_words;  /* plane 1 rows per unit, at most 255 x max_packets; 0 =
+                              max(255, 32 x max_packets), 1024 at the default; a unit's
+                              entries use at most this many words in all (a shared word
+                              counts once per entry) */
   uint32_t detect;         /* RX: enum mtl_detect (AUTO: on) */
   uint32_t timing_model;   /* TX: enum mtl_anc_timing_model; 0 = CTM paced, no TM in the
                               SDP (receivers presume CTM, ST 2110-40 §7); RX: 0 */
   uint16_t max_packets;    /* plane 0 rows: ANC packets per unit, 1-65535 (create also
-                              checks the link can carry it); 0 = 255 */
+                              checks the link can carry it); 0 = 32 (legacy: 20) */
   uint8_t word_mode;       /* enum mtl_anc_word_mode; 0 = MTL_ANC_WORDS_8BIT */
   uint8_t reserved1;
   uint64_t reserved[10];
@@ -1200,6 +1221,12 @@ enum mtl_tsmode { MTL_TSMODE_SAMP = 1, MTL_TSMODE_NEW = 2, MTL_TSMODE_PRES = 3 }
    transport session); the other units of such a session start at their launch index's
    first-packet time. Without it, MTL_SUBMIT_EXACT is -MTL_EINVAL. */
 #define MTL_SESSION_EXACT_LAUNCH 0x80u
+/* TX, a converting library pool (video.app_format other than the transport format): every
+   submit names caller planes (MTL_SUBMIT_SRC_PLANES), so the pool allocates no app-format
+   planes; acquire returns the slot's layout with null plane addresses, and a submit
+   without MTL_SUBMIT_SRC_PLANES is -MTL_EINVAL. Any other session: -MTL_EINVAL at create.
+   (MS2) */
+#define MTL_SESSION_TX_SRC_PLANES 0x100u
 
 /* One stream of one essence in one direction. The member for `essence` is read; the
    other essence members must stay zero. MTL_INIT it, set direction, essence, flows[0] and
@@ -1300,6 +1327,9 @@ struct mtl_leg_info {
 /* latency_max_ns < latency_min_ns: pool_count >= ceil(latency_min_ns / U) + 1, U the unit
    period, makes it feasible; a consumer adds the units it holds (contract §3.5) */
 #define MTL_INFO_LATENCY_INFEASIBLE 0x40u
+/* both legs on one instance port: ST 2022-7 then covers loss on the network paths, not a
+   NIC or link failure. Create accepts it and logs one WARNING line (contract.md §14.1) */
+#define MTL_INFO_LEGS_SHARE_PORT 0x80u
 struct mtl_session_info {
   uint32_t direction;
   uint32_t essence;
@@ -1402,7 +1432,9 @@ MTL_API_CP(1) int mtl_session_start(const mtl_session_h* s, uint32_t n,
 /* mode: enum mtl_stop_mode; the session can be started again. Stop arrays may mix
    directions. -MTL_ETIMEDOUT if DRAIN missed the deadline: the rest became FLUSHED
    (reason STOP_TIMEOUT); units already handed to the device get their result when the
-   device releases them, and the session stays FLUSHING until then. CP. (MS1) */
+   device releases them, and the session stays FLUSHING until then. -MTL_EIO if a fault
+   entered ERROR during the drain or flush: the stop still ends in STOPPED, and
+   mtl_last_error() names the fault. CP. (MS1) */
 MTL_API_CP(1) int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t mode,
                                    int64_t timeout_ns);
 
@@ -1443,9 +1475,10 @@ MTL_API_CP(1) int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t 
    A pending update fails (TIME_STEP) if the time base steps. Returns once the change is
    posted; planned_tai_ns (may be NULL) receives the media time of the boundary, and
    status.update_* and MTL_EVENT_UPDATE report when it applied. In CREATED and STOPPED it
-   applies during the call and planned = applied = now. update_seq counts posted updates.
-   CP. (MS5) */
-MTL_API_CP(5) int mtl_session_update(mtl_session_h s,
+   applies during the call and planned = applied = now (MS3, every part); in ARMED and
+   RUNNING it is -MTL_ENOTSUP (NOT_IMPLEMENTED, field "state") until MS5. update_seq counts
+   posted updates. CP. (MS3) */
+MTL_API_CP(3) int mtl_session_update(mtl_session_h s,
                                      const struct mtl_session_config* MTL_NULLABLE sc,
                                      uint64_t parts, const struct mtl_when* MTL_NULLABLE when,
                                      int64_t* MTL_NULLABLE planned_tai_ns);
@@ -1730,9 +1763,11 @@ MTL_API_DPC(1) int mtl_tx_submit(mtl_session_h s, const struct mtl_unit* u);
 /* RX: a received unit, in delivery order. Missing packets read as zero (library pools)
    and `status` says so. Video and cvideo library pools: the MTL_RX_TAIL_BYTES after the
    unit (video: plane 0 + the sum of stride x rows; cvideo: plane 0 + used) are zero when
-   it returns. WT (Waiting, below); DPC for packet units without MTL_PKT_RX_LEND (mtl_packet.h),
-   which copy the packets in the caller, and when video.app_format converts, because the
-   conversion runs in the caller's dequeue. (MS1) */
+   it returns. WT (Waiting, below); DPC when it works on the unit in the caller: packet
+   units without MTL_PKT_RX_LEND (mtl_packet.h), which it copies; a video.app_format
+   conversion; ANC units, which it decodes; the zero fill of a library-pool unit with lost
+   packets (MS2). It claims the unit first and works outside every lock, so concurrent
+   dequeues of one session work in parallel. (MS1) */
 MTL_API_WT(1) int mtl_rx_dequeue(mtl_session_h s, struct mtl_unit* u, int64_t timeout_ns);
 
 /* Returns a lease to s. TX: an acquired, unsubmitted one, with no result (a submitted one
@@ -1804,44 +1839,86 @@ static inline int mtl_tx_reap(mtl_session_h s, struct mtl_tx_result* r, uint32_t
 #define MTL_WAIT_RTCP 0x20u    /* RX: mtl_rtcp_read() would return a report (mtl_ipmx.h,
                                   Phase 7) */
 #endif
-/* Wait targets. A call with a timeout (acquire, dequeue, reap, read, wait) sleeps on its
-   object, never on the wait handle: any number of threads may block on one object, on one
-   target or on different ones, and a wake reaches every thread blocked on its target and
-   no other. It returns when its target is ready, its timeout passes, it is interrupted, or
-   the state ends it (contract.md §7.5). A call with a timeout is not ended by
-   pthread_cancel: end a wait with mtl_interrupt(), and never longjmp out of an MTL call. */
+/* Wait targets. With timeout 0 a data call (acquire, dequeue, reap, read, wait) tries once
+   and changes no wait state. With a timeout it sleeps on its object: any number of threads
+   may block on one object, on one target or on different ones, and a wake reaches every
+   thread blocked on its target and no other (beyond 127 on one target, the others re-check
+   every 1 ms). It returns when its target is ready, its timeout passes, it is interrupted,
+   or the state ends it (contract.md §7.4). A call with a timeout is not ended by
+   pthread_cancel: end a wait with mtl_interrupt(), and never longjmp out of an MTL call.
+   An event loop waits on a queue (below). */
 /* Waits on a session, or on an instance (MTL_WAIT_EVENTS only: its port, time, scheduler,
-   health and manager events). > 0: the ready subset of mask. Nothing ready by the
-   timeout: -MTL_EAGAIN, with the targets armed for the wait handle (R2). An interrupted
-   target of mask returns -MTL_ECANCELED with any timeout, and leaves the wait handle
-   readable until the interrupt is cleared. -MTL_ESHUTDOWN, -MTL_EIO, ...; mask 0 or a bit
-   not declared outside MTL_LATER: -MTL_EINVAL (0 = "every target" is mtl_interrupt's
-   only); a declared bit of a later milestone: -MTL_ENOTSUP (R1). WT. (MS1) */
+   health and manager events). > 0: the ready subset of mask, consuming nothing. Nothing
+   ready by the timeout: -MTL_EAGAIN. An interrupted target of mask returns -MTL_ECANCELED
+   with any timeout. -MTL_ESHUTDOWN, -MTL_EIO, ...; mask 0 or a bit not declared outside
+   MTL_LATER: -MTL_EINVAL (0 = "every target" is mtl_interrupt's only); a declared bit of a
+   later milestone: -MTL_ENOTSUP (R1). WT. (MS1) */
 MTL_API_WT(1) int mtl_wait(struct mtl_object o, uint64_t mask, int64_t timeout_ns);
-/* The one wait handle of a session or an instance, for an event loop: a Linux eventfd
-   (poll POLLIN; a Windows manual-reset event HANDLE from MS2a), created by the first call,
-   which fixes mask: the same mask returns the same handle, another is -MTL_EBUSY;
-   -MTL_ENOSPC without a descriptor. Calls with a timeout never use it. Each -MTL_EAGAIN
-   arms its target for the handle; a wake of an armed target makes the handle readable,
-   and a call that finds nothing resets it (one read()) once no target is pending; a state
-   code leaves it readable while it holds, and so does an interrupt if every thread
-   sweeping it uses mtl_wait(). The application never reads, writes or resets it. After
-   getting it and after every wake-up, sweep: call every target of the mask until
-   -MTL_EAGAIN (or mtl_wait(o, mask, 0) until -MTL_EAGAIN or -MTL_ECANCELED), then wait
-   again; no wake-up is lost, and a wake-up with nothing ready costs one sweep, never a
-   busy loop. Level-triggered, one-shot or exclusive with any number of threads, if each
-   sweeps every target of the mask; edge-triggered with one thread per handle. Remove it
-   from the event loop before closing o. CP. (MS1) */
-MTL_API_CP(1) int mtl_get_wait_handle(struct mtl_object o, uint64_t mask, intptr_t* native);
 static inline int mtl_session_wait(mtl_session_h s, uint64_t mask, int64_t timeout_ns) {
   return mtl_wait(MTL_OBJ_OF_SESSION(s), mask, timeout_ns);
 }
-static inline int mtl_session_get_wait_handle(mtl_session_h s, uint64_t mask,
-                                              intptr_t* native) {
-  return mtl_get_wait_handle(MTL_OBJ_OF_SESSION(s), mask, native);
+
+/* ---- Queues (MS2) -------------------------------------------------------------------- */
+
+/* A queue tells an event loop, or a pool of threads, which of its objects changed, through
+   one descriptor for any number of sessions and the instance. */
+typedef struct mtl_queue_h {
+  uint64_t id;
+} mtl_queue_h;
+#define MTL_OBJ_OF_QUEUE(q) mtl_obj(MTL_OBJ_QUEUE, 0, (q).id)
+/* mtl_ready.fired: o's state changed since the arm (start, stop, the end of DRAIN or FLUSH,
+   ERROR, a recovery); mtl_session_get_status says to what. o stays attached. */
+#define MTL_READY_STATE 0x80000000u
+/* One report. */
+struct mtl_ready {
+  struct mtl_object o; /* the session or the instance */
+  uint64_t user;       /* from the last mtl_queue_arm of o on this queue */
+  uint32_t fired;      /* the armed MTL_WAIT_* targets whose change reported o, and
+                          MTL_READY_STATE; 0 is possible: try every armed target */
+  uint32_t reserved;   /* 0 */
+};
+/* Creates a queue of mt. native not NULL: the queue's descriptor, written to *native (a
+   Linux eventfd, poll POLLIN; from MS2a a Windows manual-reset event HANDLE); the
+   application never reads or writes it, and removes it from its event loop before
+   mtl_queue_close(q). MTL keeps the descriptor open while the process runs (a forked
+   child closes it) and gives it to a later queue, so their number is bounded by the peak
+   number of live queues. native NULL: a queue without a descriptor, for a consumer that
+   polls it on its own timer: mtl_queue_wait on it takes timeout 0, and it never costs a
+   wake-up. flags: 0. -MTL_ENOSPC without a descriptor (DESCRIPTOR_LIMIT). CP. (MS2) */
+MTL_API_CP(2) int mtl_queue_create(mtl_instance_h mt, uint32_t flags, mtl_queue_h* out,
+                                   intptr_t* MTL_NULLABLE native);
+/* Arms targets (MTL_WAIT_*) of o, a session or the instance of q, on q: the first change of
+   one of them, or of o's state, reports o once, with user; a target ready now reports o at
+   once. A report disarms o on q: serve it with timeout-0 calls, then arm it again with the
+   targets you want next (a sender limited by its source arms MTL_WAIT_ACQUIRE only while a
+   frame waits). 0: armed. 1: a report of o is already on its way; it carries this user,
+   and o is armed again only by the next call after it. targets 0 detaches o and returns
+   once every mtl_queue_wait that was handing out a report of o has returned: no report
+   carrying its user is returned after that, nor after o's close returned, so user may be
+   freed then. A target armed on another queue: -MTL_EBUSY; o on 4 queues: -MTL_ENOSPC; o
+   closing or closed: -MTL_ESHUTDOWN (or -MTL_EBADF, R4) and o is detached. Arming succeeds
+   in every other state. No syscall, except one write() when it reports o at once to a
+   sleeping queue. DP. (MS2) */
+MTL_API_DP(2) int mtl_queue_arm(mtl_queue_h q, struct mtl_object o, uint64_t targets,
+                                uint64_t user);
+/* Up to max reports, each r_size bytes apart, oldest first, each object once. A count >= 1;
+   -MTL_EAGAIN: nothing by the timeout, and q's descriptor is armed (timeout 0 costs one
+   read() of it): sleep on the descriptor only after -MTL_EAGAIN. On a queue without a
+   descriptor: timeout 0 only (else -MTL_EINVAL), and nothing is armed. -MTL_ECANCELED
+   while q or its instance is interrupted, with any timeout; -MTL_ESHUTDOWN for a wait in
+   progress when q closes. Any number of threads may call it; each report goes to one of
+   them. WT; with timeout 0 one read() and at most one write() of the descriptor. (MS2) */
+MTL_API_WT(2) int mtl_queue_wait(mtl_queue_h q, struct mtl_ready* r, size_t r_size,
+                                 uint32_t max, int64_t timeout_ns);
+/* Detaches every object and ends the waits in progress on q with -MTL_ESHUTDOWN; later
+   calls on q are -MTL_EBADF. 0 for a null handle. CP. */
+static inline int mtl_queue_close(mtl_queue_h q) {
+  return mtl_close(MTL_OBJ_OF_QUEUE(q), 0);
 }
-static inline int mtl_instance_get_wait_handle(mtl_instance_h mt, intptr_t* native) {
-  return mtl_get_wait_handle(MTL_OBJ_OF_INSTANCE(mt), MTL_WAIT_EVENTS, native);
+/* on = 1: every mtl_queue_wait on q returns -MTL_ECANCELED until on = 0. AS with on = 1, CP
+   with on = 0. */
+static inline int mtl_queue_interrupt(mtl_queue_h q, int on) {
+  return mtl_interrupt(MTL_OBJ_OF_QUEUE(q), on ? MTL_INTR_ON : MTL_INTR_OFF, 0);
 }
 /* on = 1: every wait on s returns -MTL_ECANCELED until on = 0 (GStreamer unlock and
    unlock_stop; mtl_interrupt() limits it to some targets); on a closing session it does
@@ -1856,6 +1933,8 @@ MTL_SIZE_CHECK(mtl_error_info, 184);
 MTL_SIZE_CHECK(mtl_instance_h, 8);
 MTL_SIZE_CHECK(mtl_session_h, 8);
 MTL_SIZE_CHECK(mtl_lease_h, 8);
+MTL_SIZE_CHECK(mtl_queue_h, 8);
+MTL_SIZE_CHECK(mtl_ready, 32);
 MTL_SIZE_CHECK(mtl_region_h, 8);
 #if defined(MTL_LATER)
 MTL_SIZE_CHECK(mtl_timeline_h, 8);

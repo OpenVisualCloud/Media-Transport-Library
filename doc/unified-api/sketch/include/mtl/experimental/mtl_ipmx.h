@@ -5,8 +5,8 @@
    (check.sh lint 5). */
 /* clang-format off */
 /*
- * mtl_ipmx.h - RTCP sender reports and the IPMX Info Block, SDP, and payload encryption
- * (IPMX PEP), revision 0.2. Phase 7 (implementation-plan.md §6.7): everything here is
+ * mtl_ipmx.h - RTCP sender reports and the IPMX Info Block, and payload encryption (IPMX
+ * PEP), revision 0.2. Phase 7 (implementation-plan.md §6.7): everything here is
  * under MTL_LATER, with the option keys rtcp.*, crypto.* and session.profile
  * (mtl_options.h). TX sender reports driven by the rtcp.* options, with the library's own
  * Info Block, come in MS5.
@@ -28,15 +28,7 @@
  * retransmission (options rtx.*) shares the port; payload types tell them apart.
  * MTL_WAIT_RTCP is in mtl.h (under MTL_LATER).
  *
- * SDP (RFC 4566, 4570, 7104, 7273) for ST 2110, ST 2022-6 and IPMX sessions. Built only on
- * public calls, like mtl_util.h, and allocates nothing: MTL itself never needs SDP. Render
- * writes what a created session is now: granted values, every existing leg (a muted
- * session renders its legs as configured) (ST 2022-7 as two m-lines under a=group:DUP,
- * ST 2110-10 §8.5), the time reference, colorimetry (always, as ST 2110-20 requires), the
- * IPMX keyword and TP under the IPMX profile, a=rtcp, and the a=privacy and a=extmap lines
- * of the crypto.* options. An NMOS or IPMX sender re-renders on every activation and on
- * MTL_EVENT_GRANDMASTER or MTL_EVENT_RTCP_INFO, and the o= version then changes. Parse
- * fills a session configuration for a receiver. NMOS JSON stays outside MTL.
+ * SDP is mtl_sdp.h, the header of the companion library libmtl_sdp.
  *
  * Encryption (TR-10-13). Set the option crypto.scheme (mtl_options.h, keys crypto.*) and
  * the session encrypts (TX) or decrypts (RX) its payloads with AES in counter mode. The
@@ -69,22 +61,11 @@ extern "C" {
 /* Iterates Media Info Blocks (a 16-bit type and a 16-bit body length in 32-bit words, big
    endian, then the body): *offset starts at mtl_rtcp_report.mib_offset in the Info Block
    mtl_rtcp_read() copied. 1 with the next block's type and body, 0 at the end, -MTL_EINVAL
-   if malformed. */
-static inline int mtl_rtcp_mib_next(const void* info, size_t len, size_t* offset,
-                                    uint16_t* type, const void** body,
-                                    uint32_t* body_bytes) {
-  const uint8_t* p = (const uint8_t*)info;
-  size_t o = *offset;
-  if (o == len) return 0;
-  if (o > len || len - o < 4) return -MTL_EINVAL;
-  uint32_t bytes = ((uint32_t)p[o + 2] << 8 | p[o + 3]) * 4;
-  if (len - o - 4 < bytes) return -MTL_EINVAL;
-  *type = (uint16_t)(p[o] << 8 | p[o + 1]);
-  *body = p + o + 4;
-  *body_bytes = bytes;
-  *offset = o + 4 + bytes;
-  return 1;
-}
+   if malformed. Exported: it parses bytes from the network (sketch/README.md). AS.
+   (Phase 7) */
+MTL_API_AS(LATER) int mtl_rtcp_mib_next(const void* info, size_t len, size_t* offset,
+                                        uint16_t* type, const void** body,
+                                        uint32_t* body_bytes);
 
 /* ---- Encryption: values of crypto.scheme and crypto.mode ------------------------------ */
 
@@ -147,48 +128,9 @@ struct mtl_rtcp_report {
   uint32_t reserved0;
 };
 /* The oldest unread report; a full ring drops the oldest ("rx.rtcp_sr_dropped"). 1, or
-   -MTL_EAGAIN (MTL_WAIT_RTCP is then armed). WT. (Phase 7) */
+   -MTL_EAGAIN; an event loop arms MTL_WAIT_RTCP on a queue (mtl_queue_arm). WT. (Phase 7) */
 MTL_API_WT(LATER) int mtl_rtcp_read(mtl_session_h s, struct mtl_rtcp_report* rpt, size_t rpt_size,
                                     void* MTL_NULLABLE buf, size_t cap, int64_t timeout_ns);
-
-/* ---- SDP ------------------------------------------------------------------------------ */
-
-#define MTL_SDP_NO_SOURCE_FILTER 0x1u /* render: omit a=source-filter (not under IPMX) */
-#define MTL_SDP_IPMX 0x2u             /* parse output: the stream declares IPMX */
-/* What MTL does not know; all optional ("" and 0 = the default). Render reads it; parse
-   fills it, every string copied and NUL-terminated (-MTL_ENOSPC naming a field that does
-   not fit). */
-struct mtl_sdp_meta {
-  uint32_t struct_size;
-  uint32_t sdp_flags;       /* MTL_SDP_* */
-  uint64_t session_id;      /* o=; 0 = from the session's creation time */
-  uint64_t session_version; /* o=; 0 = a counter of activations and clock or Info Block
-                               changes */
-  char session_name[64];      /* s=; "" = the session name */
-  char mid[MTL_MAX_LEGS][16]; /* a=mid; "" = "primary", "secondary" */
-  char channel_order[64];     /* audio */
-  char ts_refclk[64];         /* parse output: the sender's reference clock */
-  char fmtp_extra[128];       /* appended to a=fmtp / read from it: profile, level,
-                                 sublevel, PAR, DID_SDID, measuredpixclk */
-  uint32_t rtcp_port;         /* parse output: a=rtcp; 0 = none */
-  uint32_t option_count;      /* parse output: entries of options */
-  struct mtl_option options[8]; /* parse output: the per-stream option keys */
-  uint64_t reserved[4];
-};
-/* The SDP of a created session as it is now. The length written (without the NUL),
-   -MTL_ENOSPC if cap is short, -MTL_EBUSY (WRONG_STATE) while a value it needs is not
-   known yet (an ANC raster before start). CP. (Phase 7) */
-MTL_API_CP(LATER) int mtl_sdp_render(mtl_session_h s, const struct mtl_sdp_meta* MTL_NULLABLE meta,
-                                     char* buf, size_t cap);
-/* An SDP into sc (direction as given; flows, payload types, source filters, the essence
-   member) and meta (rx.rtp_offset, rx.mediaclk and the crypto.* options into
-   meta.options, for the caller to pass in sc->options). Legs from a=group:DUP, as two
-   m-lines or one m-line with two source filters; legs beyond those parsed are zeroed and
-   their legs_disabled bits set (reserved), so a one-leg SDP never leaves a stale second
-   leg. The leg count; unknown attributes are ignored, a malformed required one is
-   -MTL_EINVAL naming it. CP. (Phase 7) */
-MTL_API_CP(LATER) int mtl_sdp_parse(const char* sdp, size_t len, struct mtl_session_config* sc,
-                                    struct mtl_sdp_meta* MTL_NULLABLE meta);
 
 /* ---- Encryption: keys ------------------------------------------------------------------ */
 
@@ -206,7 +148,6 @@ MTL_API_CP(LATER) int mtl_crypto_set_key(mtl_session_h s, uint32_t key_version,
 
 MTL_SIZE_CHECK(mtl_rtcp_info, 144);
 MTL_SIZE_CHECK(mtl_rtcp_report, 56);
-MTL_SIZE_CHECK(mtl_sdp_meta, 608);
 #endif
 
 #if defined(__cplusplus)

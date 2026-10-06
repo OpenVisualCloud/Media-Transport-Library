@@ -326,8 +326,9 @@ MTL_API_CP(2) int mtl_instance_list_sessions(mtl_instance_h mt, mtl_session_h* s
 MTL_API_CP(2) int mtl_port_get_spec(mtl_instance_h mt, uint32_t port, struct mtl_port_spec* out,
                                  size_t size);
 /* A port by its name (PCI BDF, "kernel:<ifname>", ...) or its IPv4 address in dotted
-   form; its caps, status and counters are "caps.*", "port.*". -MTL_EINVAL if none
-   matches. CP. */
+   form; its caps, status and counters are "caps.*", "port.*". A component that joined a
+   shared instance naming some of its ports finds their indices here (mtl.h). -MTL_EINVAL
+   if none matches. CP. */
 static inline int mtl_port_find(mtl_instance_h mt, const char* name, uint32_t* port) {
   uint8_t ip[4] = {0, 0, 0, 0};
   int is_ip = 1;

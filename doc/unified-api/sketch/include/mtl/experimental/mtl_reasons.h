@@ -5,9 +5,10 @@
    (check.sh lint 5). */
 /* clang-format off */
 /*
- * mtl_reasons.h - reason codes of the unified MTL API, revision 0.2. The library's reasons
- * table (names for mtl_reason_name()) is checked against this header by a U test (task
- * H1b); the table, with each reason's trigger, is contract.md §8.3.
+ * mtl_reasons.h - reason codes of the unified MTL API, revision 0.2. From task H1b the enum
+ * below is generated from lib/src/unified/reasons.def, which also builds mtl_reason_name()
+ * and the G-57 trigger list; contract.md §8.3 is the same table with each reason's codes
+ * and trigger. Edit the .def, never the enum (doc/unified-api/README.md §1).
  *
  * One vocabulary for mtl_error_info.reason, status.reason/.error_reason, event reasons and
  * TX result reasons. Grouped by hundreds so each group can grow; values are frozen once
@@ -18,6 +19,8 @@
 #ifndef MTL_EXPERIMENTAL_MTL_REASONS_H
 #define MTL_EXPERIMENTAL_MTL_REASONS_H
 
+/* BEGIN TABLE reason-enum: lib/src/unified/reasons.def; gen_api_doc.py writes this region
+   once that file exists (README §1) */
 enum mtl_reason {
   MTL_REASON_NONE = 0,
   /* 1-99: lifecycle */
@@ -81,13 +84,13 @@ enum mtl_reason {
 #endif
   MTL_REASON_START_SET_MIXED = 222, /* a start array mixes directions, or holds an AUTO TX
                                        session */
-  MTL_REASON_LIBRARY_THREAD = 227,   /* -MTL_EDEADLK: open, close or shutdown from a library
-                                        thread */
   MTL_REASON_PORT_CHANGE_NEEDS_STOP = 224,
 #if defined(MTL_LATER)
   MTL_REASON_GRID_MISMATCH = 225, /* a unit period that does not fit a timeline's grid */
 #endif
   MTL_REASON_PKT_CONFIG = 226, /* packet sizes or counts do not fit the port or pacing */
+  MTL_REASON_LIBRARY_THREAD = 227,   /* -MTL_EDEADLK: open, close or shutdown from a library
+                                        thread */
   MTL_REASON_NOT_IMPLEMENTED = 228, /* -MTL_ENOTSUP: a known item this library does not
                                        implement yet; field names it (mtl.h R1) */
   MTL_REASON_RASTER_MISMATCH = 229, /* an ANC or grid-fastmeta raster that differs from the
@@ -102,6 +105,11 @@ enum mtl_reason {
   MTL_REASON_FIELD_RATE = 233,       /* -MTL_EINVAL: an interlaced or PsF raster.fps above 30
                                         frames per second, a field rate given as the frame
                                         rate */
+  MTL_REASON_NOT_APPLICABLE = 234,   /* -MTL_EINVAL: a session key whose essence, direction
+                                        or unit mask excludes the session, an instance or
+                                        port key on a session (mtl_options.h), or a flag or
+                                        value outside the essences and directions it
+                                        applies to; field names it */
   /* 300-399: capacity and memory */
   MTL_REASON_CAPACITY_TX_QUEUES = 300,
   MTL_REASON_CAPACITY_RX_QUEUES = 301,
@@ -184,9 +192,10 @@ enum mtl_reason {
                                                read */
   MTL_REASON_CLOCK_NOT_OWNED = 614,   /* -MTL_EINVAL: PTP_BUILTIN asked to steer a PHC MTL
                                          does not own */
-  MTL_REASON_DESCRIPTOR_LIMIT = 615,  /* -MTL_ENOSPC: no descriptor for a wait handle
+  MTL_REASON_DESCRIPTOR_LIMIT = 615,  /* -MTL_ENOSPC: no descriptor for a queue
                                          (RLIMIT_NOFILE or the system's file limit) */
 };
+/* END TABLE reason-enum */
 
 /* clang-format on */
 #endif /* MTL_EXPERIMENTAL_MTL_REASONS_H */

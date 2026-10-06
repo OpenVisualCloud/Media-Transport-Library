@@ -33,7 +33,7 @@ RTP passthrough without mbufs · nothing on the pinned cores
 - **Send their own RTP packets cleanly**: mbufs, tasklet callbacks, no ST 2022-6
 - **Tell errors apart**: `NULL` for timeout, stop and destroy alike
 
-<!-- Each point is verified in code, with path:line: legacy-internals.md and the known defects of engine.md §12. -->
+<!-- Each point is verified in code, with path:line: legacy-internals.md and the known defects of engine.md §7. -->
 
 ---
 
@@ -98,18 +98,19 @@ pipelines run on the same core.
   - seven states for TX and RX: FREE, APP, QUEUED, XFORM, ENGINE, PUBLISHED, HELD
   - an order ring: pick-up, result and reap order are one sequence
   - the completion CAS is the claim, so a unit completes exactly once
-  - the armed wait and one deferred `mt_wake()`
+  - one event word per session for its waiters, and one deferred `mt_wake()`
 - **Bindings**, one per essence and direction (+ packet, null), implement the callbacks the
   engines already call: `get_next_frame`, `notify_frame_done`, `query_ext_frame`,
   `notify_frame_ready`, `notify_slice_ready`, …
   - no new engine entry point for frames and rows
 - **API shell** `lib/src/unified/`, compiled into libmtl with one version node per milestone,
-  `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`: config → `ops` through the option table, reasons,
+  `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`: config and
+  options validated through the option table (the bindings build the engine `ops`), reasons,
   call classes; no data-path state
 - **Legacy**: `st*p_*` become wrappers on the core (st20p MS2, the others MS4); the session API
   stays as the engines' interface
 
-<!-- The binding *is* get_next_frame, so the meta it writes is the meta the engine keeps: a facade over the session layer cannot lose the application's timing. Details: engine.md §1 and §3. -->
+<!-- The binding *is* get_next_frame, so the meta it writes is the meta the engine keeps: a facade over the session layer cannot lose the application's timing. Details: core.md §1 and §3. -->
 
 ---
 
@@ -134,12 +135,12 @@ Five essences + generic RTP · frames, rows or packets · one struct, `mtl_unit`
 | All headers | `mtl.h` and optional headers, one job each; `sketch/check.sh` prints the functions per header and per milestone |
 | Today's public surface | four frame-exchange models, per-essence verbs and structs |
 | Init functions | none: `MTL_INIT(&s)` |
-| Shared verbs | `mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_get_wait_handle`, `mtl_reap`, `mtl_read_events`, `mtl_release`, with typed inline wrappers (`mtl_session_close`, `mtl_tx_reap`, …) |
+| Shared verbs | `mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_reap`, `mtl_read_events` over any object, and `mtl_release(s, lease)`, with typed inline wrappers (`mtl_session_close`, `mtl_tx_reap`, …); an event loop's queue is `mtl_queue_*` (MS2) |
 | Exports | a function is exported in the milestone that builds it; a known value not built yet is `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED` |
 
 Rare knobs are **named options**: absent unless set, listable by name.
 
-<!-- Phase 7 and later names are declared only under MTL_LATER: SDP, the RTCP MIB calls and PEP of mtl_ipmx.h, shared queues, created timelines. Per-acquire layouts and per-unit RX destinations come in MS2. -->
+<!-- Phase 7 and later names are declared only under MTL_LATER: SDP in mtl_sdp.h (the companion library libmtl_sdp), the RTCP MIB calls and PEP of mtl_ipmx.h, created timelines. Queues for event loops, per-acquire layouts and per-unit RX destinations come in MS2. -->
 
 ---
 
@@ -163,18 +164,56 @@ sequenceDiagram
     participant T as MTL tasklet (pinned)
     participant L as Scheduler loop (same core)
     participant A as Your thread
-    T->>T: frame sent: completion CAS + fence
-    T->>L: armed: the session's pending bit
+    T->>T: frame sent: PUBLISHED,<br/>one RMW of the event word
+    T->>L: a sleeper or an armed queue:<br/>the session is marked
     Note over T,L: the handler loop ends
-    L->>A: one non-blocking eventfd write
-    A->>A: read the result
+    L->>A: one futex wake,<br/>or one write() of the queue
+    A->>A: reap the result
 ```
 
 - no mutex, allocation, log formatting or app code on a pinned core
 - recovery, ARP, flows, IGMP on worker threads
-- a call that finds nothing arms its target (with timeout 0 only if it is in your wait handle's mask): drain, then `epoll`
+- a call with timeout 0 tries once and arms nothing; a thread that never sleeps causes no wake-up syscall
 
-<!-- D-68: W2-deferred. A completing context never makes a syscall inside a tasklet handler; the scheduler loop writes each flagged session's eventfd once per iteration, after its handlers. A waker thread draining the same bitmap (W3) is built only if spike S1 shows the writes harm pacing (D-102). -->
+<!--
+D-68: W2-deferred. A completing context never makes a syscall inside a tasklet handler; the
+scheduler loop wakes flagged sessions after its handlers, a bounded number per iteration (D-142).
+One event word per session orders the publish and the waiter's arming in one location (D-158). If
+spike S1 shows the wakes harm pacing after the dense patterns (D-170) and the slack gate, the wake
+moves to one notifier thread per instance (D-165).
+-->
+
+---
+
+## Waiting: a timeout, or a queue
+
+- **A call with a timeout** sleeps on the session's event word: `mtl_tx_acquire(s, &u, MTL_MS(100))`,
+  `mtl_session_wait` (MS1)
+- **An event loop** arms its sessions and the instance on one queue, one descriptor for all (MS2a):
+
+```mermaid
+sequenceDiagram
+    participant A as Your event loop
+    participant M as MTL
+    A->>M: mtl_queue_arm(q, s, RESULTS, s)
+    A->>M: mtl_queue_wait(q, r, size, 16, 0)
+    M-->>A: -MTL_EAGAIN: the descriptor is armed
+    A->>A: epoll_wait
+    M-->>A: a completion: one write()
+    A->>M: mtl_queue_wait: report {s, fired}
+    A->>M: serve s, then arm it again
+```
+
+- **a report disarms**: arm what you want next; sleep only after `-MTL_EAGAIN`
+- sessions that change before you come back cost one `write()` together
+
+<!--
+D-159, D-160. One-shot reports need no draining: an arm that finds a target ready reports at once.
+A sender limited by its source arms ACQUIRE only while a frame waits. A start, a stop or a recovery
+reports once with MTL_READY_STATE, and arming works in every state but CLOSING and RETIRED, so an
+IS-05 activation never silences a session (D-169). A dense consumer polls a queue without a
+descriptor on its own timer (D-170). ex03 is the pattern; contract.md §7 has the rules.
+-->
 
 ---
 
@@ -239,7 +278,7 @@ flowchart LR
 
 | Code | Meaning |
 |---|---|
-| `-MTL_EAGAIN` | nothing yet; the target is armed (with timeout 0 only if it is in your wait handle's mask) |
+| `-MTL_EAGAIN` | nothing now, or by the timeout |
 | `-MTL_ECANCELED` | interrupted (GStreamer `unlock`) |
 | `-MTL_ESHUTDOWN` | **you** stopped or closed it |
 | `-MTL_EIO` | it failed: the reason is in the status |
@@ -305,7 +344,8 @@ deployment.md has the rules.
 
 ## NMOS and IPMX: port first, the rest in Phase 7
 
-- **MS5: one IS-05 PATCH = one `mtl_session_update`**: flows and legs, all or nothing
+- **MS3: an activation is stop, `mtl_session_update`, start**: handle, name, SSRC and counters kept
+- **MS5: one IS-05 PATCH = one `mtl_session_update`** while running: flows and legs, all or nothing
   - the call returns the planned instant (202); `status.update_*` says when it applied (200)
   - the switch is at the index boundary by the clock, unit or not
 - **MS5: RTCP sender reports on TX**, driven by the `rtcp.*` options, Info Block built by MTL
@@ -313,18 +353,18 @@ deployment.md has the rules.
 - **Phase 7, after MS7** (declared under `MTL_LATER`, the design kept):
   - `REAPPLY`, `DRY_RUN`, cancel; every leg disabled = muted, still RUNNING
   - IPMX: `session.profile`, `MTL_MEDIA_SENDER`
-  - one optional header, `mtl_ipmx.h`, only for NMOS and IPMX programs:
+  - two optional headers, only for NMOS and IPMX programs:
 
-| Part | Does |
-|---|---|
-| SDP | render and parse SDP, both 2022-7 legs |
-| RTCP | the application's Info Block entries; receiving sender reports |
-| PEP | IPMX encryption; parameters as `crypto.*` options, keys by `mtl_crypto_set_key` |
+| Part | Header | Does |
+|---|---|---|
+| SDP | `mtl_sdp.h`, the companion library libmtl_sdp (Phase 7, or with NX-4) | render and parse SDP, both 2022-7 legs |
+| RTCP | `mtl_ipmx.h` | the application's Info Block entries; receiving sender reports |
+| PEP | `mtl_ipmx.h` | IPMX encryption; parameters as `crypto.*` options, keys by `mtl_crypto_set_key` |
 
 <!--
 MTL is the transport, not the Node: the registry, REST and master_enable stay with the application
 or nmos-cpp. Port first (D-98): MS1-MS7 port today's functionality, so an NMOS Node is built on
-MS5 with stop, update and start; the extras land in Phase 7. A Phase 7 name leaves MTL_LATER in
+MS3 with stop, update and start, and on MS5 without the stop; the extras land in Phase 7. A Phase 7 name leaves MTL_LATER in
 the milestone that builds it (D-134). IPMX is session.profile = IPMX, which changes zero defaults
 and labels only. Without PTP, MTL_TIME_SOURCE_FREERUN never steps; async sources use
 MTL_MEDIA_SENDER. ex13 is one update per PATCH; nmos-ipmx.md has the rest.
@@ -367,20 +407,20 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 
 | Week | Tasks |
 |---|---|
-| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header |
+| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header; M0 the wait models' tooling (docs) |
 | 2 | C1a handles, states, close; C1w the wait protocol; C1b slot table, descriptor ring, results; A1 instance; the gtest and RxTxApp copies |
 | 3 | C2 null binding, test clock and rate rules, B1 video TX binding, B2 video RX binding, A2a session, data and wait calls, A2c info, status and latency fields |
 | 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, P1 acceptance smoke set, baseline CI entries and the samples `tx_video`, `rx_video`, `legacy_bridge`; stretch A2b, B3, X written if the gates allow, committed in MS2a |
 
-- one signed-off commit per task, at most 1.5 k changed lines with its tests; the maintainer
-  reviews and pushes
+- one signed-off commit per task, or a short series, each under the commit cap (D-107) with its
+  tests; four review units a week; the maintainer reviews and pushes
 - exit: SHA-256 equal across the two APIs in both directions, one and two legs; `St20p*` green in
   `UnifiedKahawaiTest` next to `KahawaiTest`; the acceptance smoke set passes on `rxtxapp` and
-  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02, ex03 and ex05 run on `null:1`; with
+  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02 and ex05 run on `null:1`; with
   them the samples `tx_video`, `rx_video` and `legacy_bridge` call every function of the MS1 node,
   the rest listed in ms1-status
 
-<!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → R1 and I1 → P1, with C0 → C1a, C1w → C1b → C2 and E1 → B1/B2 beside it; A2c after A2a, before P1. Four reviewed commits a week (C0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
+<!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 → C1a, M0 → C1w → C1b → C2 and P0 → S0 → E1 → B1/B2 beside it. Four review units a week (C0, M0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
 
 ---
 
@@ -393,8 +433,8 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 | 6 | `mtl-system-admin` | `KahawaiTest` and `UnifiedKahawaiTest` on real VFs (`run_gtest` `binary`), for data-plane changes |
 | every milestone | the legacy gate | legacy KahawaiTest and acceptance unchanged |
 
-One commit per task, at most 1.5 k changed lines with its tests; the headers in `sketch/` are
-normative, and `check.sh` stays green.
+One commit per task, or a short series, each under the commit cap (D-107) with its tests; the
+headers in `sketch/` are normative, and `check.sh` stays green.
 
 ---
 
@@ -403,7 +443,7 @@ normative, and `check.sh` stays green.
 - `concepts.md`: the model in one sitting
 - `examples.md` and `sketch/`: the headers and the examples that compile
 - `contract.md`, `timing.md`: the exact behaviour
-- `engine.md`, `implementation-plan.md`: how it is built, ST20 first
+- `core.md`, `engine.md`, `implementation-plan.md`: how it is built, ST20 first
 - `legacy-internals.md`, `standards.md`: today's code and the standards it must meet
 - `migration.md`, `coverage.md`: from today's API, field by field and capability by capability
 - `deployment.md`, `nmos-ipmx.md`: Kubernetes pods; NMOS and IPMX (later)
