@@ -71,15 +71,15 @@ static inline bool tx_video_session_is_cpu_busy(struct st_tx_video_session_impl*
 }
 
 static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_impl* s) {
-  return s->cpu_busy_score;
+  return (float)s->cpu_busy_score;
 }
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
 
-int st20_pacing_static_profiling(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port);
+uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
+                                      struct st_tx_video_session_impl* s,
+                                      enum mtl_session_port s_port);
 
 void st_tx_video_transmitter_state_cleanup(struct st_tx_video_session_impl* s);
 

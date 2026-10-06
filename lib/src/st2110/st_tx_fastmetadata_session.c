@@ -185,7 +185,8 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   rtp->base.version = ST_RVRTP_VERSION_2;
   rtp->base.marker = 0;
   rtp->base.payload_type =
-      ops->payload_type ? ops->payload_type : ST_RFMDRTP_PAYLOAD_TYPE_FASTMETADATA;
+      (ops->payload_type ? ops->payload_type : ST_RFMDRTP_PAYLOAD_TYPE_FASTMETADATA) &
+      0x7FU;
   uint32_t ssrc = ops->ssrc ? ops->ssrc : (uint32_t)s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st41_seq_id = 0;
@@ -208,7 +209,7 @@ static int tx_fastmetadata_session_init_pacing(
   pacing->frame_time = frame_time;
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
-  pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time; /* 1s */
+  pacing->max_onward_epochs = (uint32_t)((double)(NS_PER_S * 1) / frame_time); /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
   info("%s[%02d], frame_time %Lf frame_time_sampling %Lf\n", __func__, idx,
@@ -220,19 +221,19 @@ static int tx_fastmetadata_session_reset_pacing_epoch(
     struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
+  pacing->cur_epochs = (uint64_t)(ptp_time / pacing->frame_time);
   return 0;
 }
 
 static inline uint64_t tx_fastmetadata_pacing_time(
     struct st_tx_fastmetadata_session_pacing* pacing, uint64_t epochs) {
-  return nextafterl((long double)epochs * pacing->frame_time, INFINITY);
+  return (uint64_t)nextafterl((long double)epochs * pacing->frame_time, INFINITY);
 }
 
 static inline uint32_t tx_fastmetadata_pacing_time_stamp(
     struct st_tx_fastmetadata_session_pacing* pacing, uint64_t epochs) {
-  uint64_t tmstamp64 = epochs * pacing->frame_time_sampling;
-  uint32_t tmstamp32 = tmstamp64;
+  uint64_t tmstamp64 = (uint64_t)(epochs * pacing->frame_time_sampling);
+  uint32_t tmstamp32 = (uint32_t)tmstamp64;
 
   return tmstamp32;
 }
@@ -262,7 +263,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
                                                bool sync, uint64_t required_tai,
                                                bool second_field) {
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
-  double frame_time = pacing->frame_time;
+  double frame_time = (double)pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
@@ -271,15 +272,15 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = (required_tai + frame_time / 2) / frame_time;
+    uint64_t ptp_epochs = (uint64_t)((double)ptp_time / frame_time);
+    epochs = (uint64_t)(((double)required_tai + frame_time / 2) / frame_time);
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
       s->port_user_stats.common.stat_error_user_timestamp++;
     }
   } else {
-    epochs = ptp_time / frame_time;
+    epochs = (uint64_t)((double)ptp_time / frame_time);
   }
 
   dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
@@ -326,7 +327,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   if (sync) {
     dbg("%s(%d), delay to epoch_time %Lf, cur %" PRIu64 "\n", __func__, s->idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
-    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
+    mt_tsc_delay_to(impl, (uint64_t)pacing->tsc_time_cursor);
   }
 
   return 0;
@@ -382,9 +383,9 @@ static int tx_fastmetadata_session_update_redundant(
   /* update the hdr: eth, ip, udp */
   mt_memcpy(hdr, &s->hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
-  ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
+  ipv4->total_length = htons((uint16_t)(pkt_r->pkt_len - pkt_r->l2_len));
 
-  udp->dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
+  udp->dgram_len = htons((uint16_t)(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len));
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
@@ -429,12 +430,12 @@ static void tx_fastmetadata_session_build_packet(
 
   /* Set place for payload just behind rtp header */
   struct st_frame_trans* frame_info = &s->st41_frames[s->st41_frame_idx];
-  uint32_t offset = s->st41_pkt_idx * s->max_pkt_len;
+  uint32_t offset = (uint32_t)s->st41_pkt_idx * s->max_pkt_len;
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
   uint16_t data_item_length_bytes = src->data_item_length_bytes;
-  uint16_t data_item_length =
-      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  /* expressed in number of 4-byte words */
+  uint16_t data_item_length = (uint16_t)((data_item_length_bytes + 3) / 4);
 
   if (rte_pktmbuf_tailroom(pkt) + rte_pktmbuf_data_len(pkt) <
       sizeof(*hdr) + data_item_length_bytes) {
@@ -454,17 +455,17 @@ static void tx_fastmetadata_session_build_packet(
     }
   }
 
-  pkt->data_len += sizeof(struct st41_rtp_hdr) + data_item_length * 4;
+  pkt->data_len += (uint16_t)(sizeof(struct st41_rtp_hdr) + data_item_length * 4);
   pkt->pkt_len = pkt->data_len;
-  rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit;
-  rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
-  rtp->st41_hdr_chunk.data_item_length = data_item_length;
+  rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit & 0x3FFFFFU;
+  rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit & 0x1U;
+  rtp->st41_hdr_chunk.data_item_length = data_item_length & 0x1FFU;
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
   dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx,
       data_item_length_bytes);
 
-  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
-  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - pkt->l2_len - pkt->l3_len));
+  ipv4->total_length = htons((uint16_t)(pkt->pkt_len - pkt->l2_len));
 
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P]) {
     /* generate cksum if no offload */
@@ -489,12 +490,12 @@ static void tx_fastmetadata_session_build_rtp_packet(
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st41_frames[s->st41_frame_idx];
-  uint32_t offset = s->st41_pkt_idx * s->max_pkt_len;
+  uint32_t offset = (uint32_t)s->st41_pkt_idx * s->max_pkt_len;
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
   uint16_t data_item_length_bytes = src->data_item_length_bytes;
-  uint16_t data_item_length =
-      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  /* expressed in number of 4-byte words */
+  uint16_t data_item_length = (uint16_t)((data_item_length_bytes + 3) / 4);
 
   if (!(data_item_length_bytes > s->max_pkt_len)) {
     int offset = 0;
@@ -507,11 +508,11 @@ static void tx_fastmetadata_session_build_rtp_packet(
     }
   }
 
-  pkt->data_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
+  pkt->data_len = (uint16_t)(sizeof(struct st41_rtp_hdr) + data_item_length * 4);
   pkt->pkt_len = pkt->data_len;
-  rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit;
-  rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
-  rtp->st41_hdr_chunk.data_item_length = data_item_length;
+  rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit & 0x3FFFFFU;
+  rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit & 0x1U;
+  rtp->st41_hdr_chunk.data_item_length = data_item_length & 0x1FFU;
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
 
   dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx,
@@ -544,7 +545,7 @@ static int tx_fastmetadata_session_rtp_update_packet(
     s->st41_pkt_idx = 0;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
-    s->st41_rtp_time = rtp->tmstamp;
+    s->st41_rtp_time = (int)rtp->tmstamp;
     bool second_field = false;
 
     tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
@@ -558,8 +559,8 @@ static int tx_fastmetadata_session_rtp_update_packet(
   mt_mbuf_init_ipv4(pkt);
 
   /* update udp header */
-  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
-  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - pkt->l2_len - pkt->l3_len));
+  ipv4->total_length = htons((uint16_t)(pkt->pkt_len - pkt->l2_len));
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
@@ -594,7 +595,7 @@ static int tx_fastmetadata_session_build_packet_chain(
         /* start of a new frame */
         s->st41_pkt_idx = 0;
         s->port_user_stats.common.port[s_port].frames++;
-        s->st41_rtp_time = rtp->base.tmstamp;
+        s->st41_rtp_time = (int)rtp->base.tmstamp;
         bool second_field = false;
         tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
       }
@@ -614,8 +615,8 @@ static int tx_fastmetadata_session_build_packet_chain(
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
 
-  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
-  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - pkt->l2_len - pkt->l3_len));
+  ipv4->total_length = htons((uint16_t)(pkt->pkt_len - pkt->l2_len));
   if (!s->eth_ipv4_cksum_offload[s_port]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
@@ -717,7 +718,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     if (time_measure) tsc_start = mt_get_tsc(impl);
     ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
     if (time_measure) {
-      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
       s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
     }
     if (ret < 0) { /* no frame ready from app */
@@ -742,8 +743,8 @@ static int tx_fastmetadata_session_tasklet_frame(
     data_item_length_bytes += src->data_item_length_bytes;
     int total_size = data_item_length_bytes;
     s->st41_pkt_idx = 0;
-    s->st41_total_pkts = total_size / s->max_pkt_len;
-    if (total_size % s->max_pkt_len) s->st41_total_pkts++;
+    s->st41_total_pkts = total_size / (int)s->max_pkt_len;
+    if (total_size % (int)s->max_pkt_len) s->st41_total_pkts++;
     /* how do we split if it need two or more pkts? */
     dbg("%s(%d), st41_total_pkts %d data_item_length_bytes %d src %p\n", __func__, idx,
         s->st41_total_pkts, data_item_length_bytes, src);
@@ -771,7 +772,7 @@ static int tx_fastmetadata_session_tasklet_frame(
       pacing->rtp_time_stamp = (uint32_t)frame->tf_meta.timestamp;
     }
     frame->tf_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->tf_meta.timestamp = pacing->ptp_time_cursor;
+    frame->tf_meta.timestamp = (uint64_t)pacing->ptp_time_cursor;
     frame->tf_meta.rtp_timestamp = pacing->rtp_time_stamp;
     /* init to next field */
     if (ops->interlaced) {
@@ -781,7 +782,7 @@ static int tx_fastmetadata_session_tasklet_frame(
   }
 
   uint64_t cur_tsc = mt_get_tsc(impl);
-  uint64_t target_tsc = pacing->tsc_time_cursor;
+  uint64_t target_tsc = (uint64_t)pacing->tsc_time_cursor;
   if (cur_tsc < target_tsc) {
     uint64_t delta = target_tsc - cur_tsc;
     // dbg("%s(%d), cur_tsc %"PRIu64" target_tsc %"PRIu64"\n", __func__, idx, cur_tsc,
@@ -843,14 +844,14 @@ static int tx_fastmetadata_session_tasklet_frame(
     }
   }
 
-  st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
-  st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  st_tx_mbuf_set_idx(pkt, (uint32_t)s->st41_pkt_idx);
+  st_tx_mbuf_set_tsc(pkt, (uint64_t)pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
-    st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
-    st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    st_tx_mbuf_set_idx(pkt_r, (uint32_t)s->st41_pkt_idx);
+    st_tx_mbuf_set_tsc(pkt_r, (uint64_t)pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
@@ -889,7 +890,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     if (s->ops.notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st41_frame_idx, tf_meta);
     if (time_measure) {
-      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
     rte_atomic32_dec(&frame->refcnt);
@@ -952,7 +953,7 @@ static int tx_fastmetadata_session_tasklet_rtp(
   }
 
   uint64_t cur_tsc = mt_get_tsc(impl);
-  uint64_t target_tsc = pacing->tsc_time_cursor;
+  uint64_t target_tsc = (uint64_t)pacing->tsc_time_cursor;
   if (cur_tsc < target_tsc) {
     uint64_t delta = target_tsc - cur_tsc;
     // dbg("%s(%d), cur_tsc %"PRIu64" target_tsc %"PRIu64"\n", __func__, idx, cur_tsc,
@@ -1005,8 +1006,8 @@ static int tx_fastmetadata_session_tasklet_rtp(
   } else {
     tx_fastmetadata_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
   }
-  st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
-  st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  st_tx_mbuf_set_idx(pkt, (uint32_t)s->st41_pkt_idx);
+  st_tx_mbuf_set_tsc(pkt, (uint64_t)pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
@@ -1025,8 +1026,8 @@ static int tx_fastmetadata_session_tasklet_rtp(
       tx_fastmetadata_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,
                                                  MTL_SESSION_PORT_R);
     }
-    st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
-    st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    st_tx_mbuf_set_idx(pkt_r, (uint32_t)s->st41_pkt_idx);
+    st_tx_mbuf_set_tsc(pkt_r, (uint64_t)pacing->tsc_time_cursor);
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].packets++;
     s->port_user_stats.common.port[MTL_SESSION_PORT_R].bytes += pkt_r->pkt_len;
@@ -1172,7 +1173,8 @@ static int tx_fastmetadata_session_flush(struct st_tx_fastmetadata_sessions_mgr*
     if (pool && rte_mempool_in_use_count(pool) &&
         rte_atomic32_read(&mgr->transmitter_started)) {
       info("%s(%d,%d), start to flush port %d\n", __func__, mgr_idx, s_idx, i);
-      tx_fastmetadata_session_sq_flush_port(mgr, mt_port_logic2phy(s->port_maps, i));
+      tx_fastmetadata_session_sq_flush_port(
+          mgr, mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i));
       info("%s(%d,%d), flush port %d end\n", __func__, mgr_idx, s_idx, i);
 
       int retry = 100; /* max 1000ms */
@@ -1235,7 +1237,7 @@ static int tx_fastmetadata_session_mempool_init(
   }
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_hdr[i] = mt_sys_tx_mempool(impl, port);
@@ -1369,7 +1371,7 @@ static int tx_fastmetadata_session_uinit_queue(
   MTL_MAY_UNUSED(impl);
 
   for (int i = 0; i < s->ops.num_port; i++) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     if (s->queue[i]) {
       mt_txq_flush(s->queue[i], mt_get_pad(impl, port));
@@ -1387,7 +1389,7 @@ static int tx_fastmetadata_session_init_queue(struct mtl_main_impl* impl,
   uint16_t queue_id;
 
   for (int i = 0; i < s->ops.num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -1439,13 +1441,14 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   if (ops->flags & ST41_TX_FLAG_DEDICATE_QUEUE) s->shared_queue = false;
 
   for (int i = 0; i < num_port; i++) {
-    s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx * 2);
+    s->st41_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(10200 + idx * 2);
     if (mt_user_random_src_port(impl))
       s->st41_src_port[i] = mt_random_port(s->st41_dst_port[i]);
     else
       s->st41_src_port[i] =
           (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st41_dst_port[i];
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
 
@@ -1492,7 +1495,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   tx_fastmetadata_session_reset_pacing_epoch(impl, s);
 
   for (int i = 0; i < num_port; i++) {
-    ret = tx_fastmetadata_session_init_hdr(impl, mgr, s, i);
+    ret = tx_fastmetadata_session_init_hdr(impl, mgr, s, (enum mtl_session_port)i);
     if (ret < 0) {
       err("%s(%d), port(%d) init hdr fail %d\n", __func__, idx, i, ret);
       return ret;
@@ -1532,7 +1535,7 @@ static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl*
 
   uint64_t frames_p = us->common.port[MTL_SESSION_PORT_P].frames -
                       snap->common.port[MTL_SESSION_PORT_P].frames;
-  double framerate = frames_p / time_sec;
+  double framerate = (double)frames_p / time_sec;
   uint64_t pkts_p = us->common.port[MTL_SESSION_PORT_P].build -
                     snap->common.port[MTL_SESSION_PORT_P].build;
   uint64_t pkts_r = us->common.port[MTL_SESSION_PORT_R].build -
@@ -1615,12 +1618,13 @@ static int tx_fastmetadata_session_update_dst(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dest->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dest->udp_port[i];
-    s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
+    s->st41_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(30000 + idx * 2);
     s->st41_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st41_dst_port[i];
 
     /* update hdr */
-    ret = tx_fastmetadata_session_init_hdr(impl, mgr, s, i);
+    ret = tx_fastmetadata_session_init_hdr(impl, mgr, s, (enum mtl_session_port)i);
     if (ret < 0) {
       err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
       return ret;
@@ -1818,7 +1822,7 @@ static int tx_fastmetadata_sessions_mgr_uinit(
   }
 
   for (int i = 0; i < mt_num_ports(impl); i++) {
-    tx_fastmetadata_sessions_mgr_uinit_hw(mgr, i);
+    tx_fastmetadata_sessions_mgr_uinit_hw(mgr, (enum mtl_port)i);
   }
 
   info("%s(%d), succ\n", __func__, m_idx);
@@ -1863,7 +1867,7 @@ static int tx_fastmetadata_ops_prune_down_ports(struct mtl_main_impl* impl,
   if (num_ports < ops->num_port) {
     info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
          ops->num_port, num_ports);
-    ops->num_port = num_ports;
+    ops->num_port = (uint8_t)num_ports;
   }
 
   return 0;
@@ -2096,7 +2100,8 @@ int st41_tx_put_mbuf(st41_tx_handle handle, void* mbuf, uint16_t len) {
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
-  pkt->data_len = pkt->pkt_len = len;
+  pkt->data_len = len;
+  pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring\n", __func__, idx);
