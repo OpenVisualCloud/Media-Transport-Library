@@ -307,12 +307,12 @@ static int xdp_umem_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.flags = XDP_UMEM_UNALIGNED_CHUNK_FLAG;
 
   cfg.frame_size = mt_mempool_obj_size(pool);
-  cfg.frame_headroom = pool->header_size + sizeof(struct rte_mbuf) +
-                       rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
+  cfg.frame_headroom = (__u32)(pool->header_size + sizeof(struct rte_mbuf) +
+                               rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM);
 
   base_addr = mt_mempool_mem_addr(pool);
   aligned_base_addr = (void*)((uint64_t)base_addr & ~(mtl_page_size(xdp->parent) - 1));
-  umem_size = mt_mempool_mem_size(pool) + base_addr - aligned_base_addr;
+  umem_size = mt_mempool_mem_size(pool) + (uint64_t)(base_addr - aligned_base_addr);
   dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, aligned_base_addr,
       umem_size);
   ret = xsk_umem__create(&xq->umem, aligned_base_addr, umem_size, &xq->rx_prod,
@@ -340,7 +340,7 @@ static inline int xdp_rx_prod_reserve(struct mt_xdp_queue* xq, struct rte_mbuf**
   struct xsk_ring_prod* pq = &xq->rx_prod;
   int ret;
 
-  ret = xsk_ring_prod__reserve(pq, sz, &idx);
+  ret = (int)xsk_ring_prod__reserve(pq, sz, &idx);
   if (ret < 0) {
     err("%s(%d,%u), prod reserve %u fail %d\n", __func__, port, q, sz, ret);
     return ret;
@@ -372,7 +372,7 @@ static int xdp_rx_prod_init(struct mt_xdp_queue* xq) {
     return ret;
   }
 
-  ret = xdp_rx_prod_reserve(xq, mbufs, ring_sz);
+  ret = xdp_rx_prod_reserve(xq, mbufs, (uint16_t)ring_sz);
   if (ret < 0) {
     err("%s(%d,%u), fill fail %d\n", __func__, port, q, ret);
     return ret;
@@ -443,7 +443,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
 copy_mode:
   /* try copy mode */
   if (ret < 0) {
-    cfg.bind_flags &= ~XDP_ZEROCOPY; /* clear zero copy */
+    cfg.bind_flags &= (__u16)~XDP_ZEROCOPY; /* clear zero copy */
     ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons,
                              &xq->tx_prod, &cfg);
     if (ret < 0) {
@@ -522,7 +522,7 @@ static inline void xdp_tx_check_free(struct mt_xdp_queue* xq) {
 
 static void xdp_tx_wakeup(struct mt_xdp_queue* xq) {
   if (xsk_ring_prod__needs_wakeup(&xq->tx_prod)) {
-    int ret = send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
+    int ret = (int)send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
     xq->stat_tx_wakeup++;
     dbg("%s(%d, %u), wake up %d\n", __func__, xq->port, xq->q, ret);
     if (ret < 0) {
@@ -686,10 +686,10 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
     offset = xsk_umem__extract_offset(addr);
     addr = xsk_umem__extract_addr(addr);
     struct rte_mbuf* pkt = xsk_umem__get_data(xq->umem_buffer, addr + mp->header_size);
-    pkt->data_off =
-        offset - sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp) - mp->header_size;
+    pkt->data_off = (uint16_t)(offset - sizeof(struct rte_mbuf) -
+                               rte_pktmbuf_priv_size(mp) - mp->header_size);
     rte_pktmbuf_pkt_len(pkt) = len;
-    rte_pktmbuf_data_len(pkt) = len;
+    rte_pktmbuf_data_len(pkt) = (uint16_t)len;
     if (entry->skip_all_check || xdp_rx_check_pkt(entry, pkt)) {
       rx_pkts[valid_rx] = pkt;
       valid_rx++;
@@ -701,7 +701,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
   }
 
   xsk_ring_cons__release(rx_cons, rx);
-  ret = xdp_rx_prod_reserve(xq, fill, rx);
+  ret = xdp_rx_prod_reserve(xq, fill, (uint16_t)rx);
   if (ret < 0) { /* should never happen */
     err("%s(%d, %u), prod fill bulk %u fail\n", __func__, port, q, rx);
     xq->stat_rx_prod_reserve_fail++;
@@ -714,7 +714,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
   xq->stat_rx_pkts += rx;
   xq->stat_rx_bytes += rx_bytes;
 
-  return valid_rx;
+  return (uint16_t)valid_rx;
 }
 
 int mt_dev_xdp_init(struct mt_interface* inf) {
@@ -740,7 +740,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->parent = impl;
   xdp->port = port;
   xdp->ifindex = if_nametoindex(mt_kernel_if_name(impl, port));
-  xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
+  xdp->queues_cnt = (uint16_t)RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   xdp->has_ctrl = true;
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
@@ -763,7 +763,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
 
     struct mt_xdp_queue* xq = &xdp->queues_info[i];
     xq->port = port;
-    xq->q = q;
+    xq->q = (uint16_t)q;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
     xq->tx_free_thresh = 0; /* default check free always */
     xq->tx_full_thresh = 1;
@@ -791,7 +791,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
 
   if (0 == strncmp(xdp->drv, "ice", sizeof("ice"))) xdp_parse_pacing_ice(xdp);
 
-  inf->port_id = inf->port;
+  inf->port_id = (uint16_t)inf->port;
   inf->xdp = xdp;
   inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
   info("%s(%d), cnt %u\n", __func__, port, xdp->queues_cnt);
@@ -868,7 +868,7 @@ struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   if (xdp->flags & XDP_F_RATE_LIMIT) {
     uint32_t rate_kbps = 0;
     if (mt_if(impl, port)->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-      rate_kbps = flow->bytes_per_sec / 1000 * 8;
+      rate_kbps = (uint32_t)(flow->bytes_per_sec / 1000 * 8);
     }
     xdp_queue_tx_max_rate(xdp, xq, rate_kbps);
   }
@@ -910,7 +910,7 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, int ifindex,
+static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, unsigned int ifindex,
                                        uint16_t dp, bool add) {
   return mt_instance_update_udp_dp_filter(impl, ifindex, dp, add);
 }

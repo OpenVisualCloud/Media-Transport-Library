@@ -170,7 +170,7 @@ bool mt_bitmap_test_and_set(uint8_t* bitmap, size_t size, int idx) {
   if (bits & (0x1 << off)) return true;
 
   /* set the bit */
-  bitmap[pos] = bits | (0x1 << off);
+  bitmap[pos] = (uint8_t)(bits | (0x1 << off));
   return false;
 }
 
@@ -252,7 +252,7 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
     int j;
     for (j = 0; j < main_num_ports; j++) {
       if (0 == strncmp(p->port[j], ports[i], MTL_PORT_MAX_LEN)) {
-        maps[i] = j;
+        maps[i] = (enum mtl_port)j;
         break;
       }
     }
@@ -293,7 +293,7 @@ int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port 
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval) {
+    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval != 0) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
     }
@@ -344,7 +344,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
 
   if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
-    line1_offset &= ~ST20_SRD_OFFSET_CONTINUATION;
+    line1_offset &= (uint16_t)~ST20_SRD_OFFSET_CONTINUATION;
     extra_rtp = (struct st20_rfc4175_extra_rtp_hdr*)&rtp[1];
   }
 
@@ -537,7 +537,7 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
   n = ret - 1;
 
   if (cache_size && (element_size % cache_size)) /* align to cache size */
-    element_size = (element_size / cache_size + 1) * cache_size;
+    element_size = (uint16_t)((element_size / cache_size + 1) * cache_size);
 
   snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, impl->mempool_idx++);
   data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
@@ -604,7 +604,7 @@ uint16_t mt_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
   /* fold to 16 */
   sum = (sum >> 16) + (sum & 0xffff);
   sum += (sum >> 16);
-  check_sum = ~sum;
+  check_sum = (uint16_t)~sum;
 
   return check_sum;
 }
@@ -612,7 +612,7 @@ uint16_t mt_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
 struct mt_u64_fifo* mt_u64_fifo_init(int size, int soc_id) {
   struct mt_u64_fifo* fifo = mt_rte_zmalloc_socket(sizeof(*fifo), soc_id);
   if (!fifo) return NULL;
-  uint64_t* data = mt_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
+  uint64_t* data = mt_rte_zmalloc_socket(sizeof(*data) * (size_t)size, soc_id);
   if (!data) {
     mt_rte_free(fifo);
     return NULL;
@@ -660,7 +660,7 @@ int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
 }
 
 int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32_t n) {
-  if (fifo->used + n > (uint32_t)fifo->size) {
+  if ((uint32_t)fifo->used + n > (uint32_t)fifo->size) {
     dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
   }
@@ -670,7 +670,7 @@ int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32
     fifo->write_idx++;
     if (fifo->write_idx >= fifo->size) fifo->write_idx = 0;
   }
-  fifo->used += n;
+  fifo->used += (int)n;
   return 0;
 }
 
@@ -685,7 +685,7 @@ int mt_u64_fifo_get_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n) 
     fifo->read_idx++;
     if (fifo->read_idx >= fifo->size) fifo->read_idx = 0;
   }
-  fifo->used -= n;
+  fifo->used -= (int)n;
   return 0;
 }
 
@@ -730,7 +730,7 @@ int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_
     dbg("%s, fail as no enough item\n", __func__);
     return -EIO;
   }
-  if (skip < 0 || skip + n > (uint32_t)fifo->used) {
+  if (skip < 0 || (uint32_t)skip + n > (uint32_t)fifo->used) {
     dbg("%s, fail as skip(%d)/n(%u) is invalid\n", __func__, skip, n);
     return -EIO;
   }
@@ -764,9 +764,9 @@ struct mt_cvt_dma_ctx* mt_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_n
 
   ctx->fifo = mt_u64_fifo_init(fifo_size, soc_id);
   if (!ctx->fifo) goto fail;
-  ctx->tran = mt_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
+  ctx->tran = mt_rte_zmalloc_socket(sizeof(*ctx->tran) * (size_t)type_num, soc_id);
   if (!ctx->tran) goto fail;
-  ctx->done = mt_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
+  ctx->done = mt_rte_zmalloc_socket(sizeof(*ctx->done) * (size_t)type_num, soc_id);
   if (!ctx->done) goto fail;
 
   return ctx;
@@ -788,7 +788,7 @@ int mt_cvt_dma_ctx_uinit(struct mt_cvt_dma_ctx* ctx) {
 }
 
 int mt_cvt_dma_ctx_push(struct mt_cvt_dma_ctx* ctx, int type) {
-  int ret = mt_u64_fifo_put(ctx->fifo, type);
+  int ret = mt_u64_fifo_put(ctx->fifo, (uint64_t)type);
   if (ret < 0) return ret;
   ctx->tran[type]++;
   dbg("%s, tran %d for type %d\n", __func__, ctx->tran[type], type);
@@ -816,7 +816,7 @@ int mt_run_cmd(const char* cmd, char* out, size_t out_len) {
 
   if (out) {
     out[0] = 0;
-    ret = fgets(out, out_len, fp);
+    ret = fgets(out, (int)out_len, fp);
     if (!ret) {
       warn("%s, cmd %s read return fail\n", __func__, cmd);
       pclose(fp);
@@ -929,12 +929,13 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) 
   uint64_t next_epoch;
   uint64_t to_next_epochs;
 
-  next_epoch = ptp_time / vsync->meta.frame_time + 1;
+  next_epoch = (uint64_t)((double)ptp_time / vsync->meta.frame_time + 1);
   if (next_epoch == vsync->meta.epoch) {
     dbg("%s, ptp_time still in current epoch\n", __func__);
     next_epoch++; /* sync to next */
   }
-  to_next_epochs = next_epoch * vsync->meta.frame_time - ptp_time;
+  to_next_epochs =
+      (uint64_t)((double)next_epoch * vsync->meta.frame_time - (double)ptp_time);
   vsync->meta.epoch = next_epoch;
   vsync->next_epoch_tsc = mt_get_tsc(impl) + to_next_epochs;
 
@@ -945,8 +946,8 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) 
 uint16_t mt_random_port(uint16_t base_port) {
   uint16_t port = base_port;
 
-  srand(mt_get_monotonic_time());
-  uint8_t r = rand() & 0xFF;
+  srand((unsigned int)mt_get_monotonic_time());
+  uint8_t r = (uint8_t)(rand() & 0xFF);
 
   /* todo: random generation with awareness of other sessions */
   if (r & 0x80) {
@@ -1102,7 +1103,7 @@ double mt_calculate_cpu_usage(struct mt_cpu_usage* prev, struct mt_cpu_usage* cu
   uint64_t totald = curr_total - prev_total;
   uint64_t idled = curr_idle - prev_idle;
 
-  return 100.0 * (totald - idled) / totald;
+  return 100.0 * (double)(totald - idled) / (double)totald;
 }
 
 bool mt_file_exists(const char* filename) {

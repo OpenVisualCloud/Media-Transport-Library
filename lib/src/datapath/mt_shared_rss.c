@@ -401,7 +401,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
   struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
 
-  for (int port = 0; port < num_ports; port++) {
+  for (enum mtl_port port = 0; port < (enum mtl_port)num_ports; port++) {
     if (!mt_has_srss(impl, port)) continue;
 
     impl->srss[port] =
@@ -420,7 +420,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     srss->nb_rx_q = mt_if(impl, port)->nb_rx_q;
 
     srss->lists_sz = 64 - 1; /* use odd count for better distribution */
-    srss->lists = mt_rte_zmalloc_socket(sizeof(*srss->lists) * srss->lists_sz,
+    srss->lists = mt_rte_zmalloc_socket(sizeof(*srss->lists) * (size_t)srss->lists_sz,
                                         mt_socket_id(impl, port));
     if (!srss->lists) {
       err("%s(%d), lists malloc fail\n", __func__, port);
@@ -447,7 +447,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     srss->schs_cnt = p->rss_sch_nb[port];
     if (!srss->schs_cnt) srss->schs_cnt = 1;
     if (srss->schs_cnt > srss->nb_rx_q) srss->schs_cnt = srss->nb_rx_q;
-    srss->schs = mt_rte_zmalloc_socket(sizeof(*srss->schs) * srss->schs_cnt,
+    srss->schs = mt_rte_zmalloc_socket(sizeof(*srss->schs) * (size_t)srss->schs_cnt,
                                        mt_socket_id(impl, port));
     if (!srss->schs) {
       err("%s(%d), schs malloc fail\n", __func__, port);
@@ -463,8 +463,8 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     }
     mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
     uint16_t q_idx = 0;
-    uint16_t q_per_sch = srss->nb_rx_q / srss->schs_cnt;
-    uint16_t q_remaining = srss->nb_rx_q % srss->schs_cnt;
+    uint16_t q_per_sch = (uint16_t)(srss->nb_rx_q / srss->schs_cnt);
+    uint16_t q_remaining = (uint16_t)(srss->nb_rx_q % srss->schs_cnt);
     for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
       struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
       srss_sch->parent = srss;

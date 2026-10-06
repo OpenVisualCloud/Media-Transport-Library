@@ -36,7 +36,7 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
   char pool_name[ST_MAX_NAME_LEN];
   snprintf(pool_name, sizeof(pool_name), "mt_pcap_p%di%d", port, fd);
   pcap->mp = mt_mempool_create(impl, port, pool_name, 512, MT_MBUF_CACHE_SIZE, 0,
-                               rte_pcapng_mbuf_size(pcap->max_len));
+                               (uint16_t)rte_pcapng_mbuf_size(pcap->max_len));
   if (!pcap->mp) {
     err("%s(%d,%d), failed to create mempool\n", __func__, port, fd);
     mt_pcap_close(pcap);
@@ -51,7 +51,7 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
   }
 
 #if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
-  for (int i = 0; i < mt_num_ports(impl); i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)mt_num_ports(impl); i++) {
     ret = rte_pcapng_add_interface(pcap->pcapng, mt_port_id(impl, i), DLT_EN10MB, NULL,
                                    NULL, NULL);
     if (ret < 0) {
@@ -75,7 +75,7 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
 uint16_t mt_pcap_dump(struct mtl_main_impl* impl, enum mtl_port port,
                       struct mt_pcap* pcap, struct rte_mbuf** mbufs, uint16_t nb) {
   struct rte_mbuf* pcapng_mbuf[nb];
-  int pcapng_mbuf_cnt = 0;
+  uint16_t pcapng_mbuf_cnt = 0;
   uint16_t port_id = mt_port_id(impl, port);
   struct rte_mbuf* pkt;
   struct rte_mbuf* mc;

@@ -339,7 +339,8 @@ uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, struct rte_mbuf** rx_pkts,
   if (!rsq_try_lock(rsq_queue)) return 0;
   rsq_rx(rsq_queue);
   rsq_unlock(rsq_queue);
-  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
+  uint16_t n =
+      (uint16_t)rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
 
   return n;
@@ -349,7 +350,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     if (!mt_user_shared_rxq(impl, i)) continue;
     impl->rsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->rsq[i]), mt_socket_id(impl, i));
     if (!impl->rsq[i]) {
@@ -518,13 +519,13 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   uint16_t q = 0;
   /* queue zero is reserved for system queue */
   if (!(flow->flags & MT_TXQ_FLOW_F_SYS_QUEUE)) {
-    q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->nb_tsq_queues - 1) + 1;
+    q = (uint16_t)((hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->nb_tsq_queues - 1) + 1);
   }
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[q];
 
   if (tsq_queue->fatal_error) {
     /* try to find one valid queue */
-    uint16_t q_b = rand() % (tsqm->nb_tsq_queues - 1) + 1;
+    uint16_t q_b = (uint16_t)(rand() % (tsqm->nb_tsq_queues - 1) + 1);
     tsq_queue = &tsqm->tsq_queues[q];
 
     if (tsq_queue->fatal_error) { /* loop to find a valid queue*/
@@ -658,7 +659,7 @@ uint16_t mt_tsq_burst_busy(struct mtl_main_impl* impl, struct mt_tsq_entry* entr
   /* Send this vector with busy looping */
   while (sent < nb_pkts) {
     if (timeout_ms > 0) {
-      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      int ms = (int)((mt_get_tsc(impl) - start_ts) / NS_PER_MS);
       if (ms > timeout_ms) {
         warn("%s(%u), fail as timeout to %d ms\n", __func__, mt_tsq_queue_id(entry),
              timeout_ms);
@@ -695,7 +696,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     if (!mt_user_shared_txq(impl, i)) continue;
     impl->tsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->tsq[i]), mt_socket_id(impl, i));
     if (!impl->tsq[i]) {

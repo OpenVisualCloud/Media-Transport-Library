@@ -123,7 +123,7 @@ static inline int mt_pthread_cond_wait_init(pthread_cond_t* cond) {
 }
 
 static inline void timespec_add_ns(struct timespec* time, uint64_t ns) {
-  time->tv_nsec += ns;
+  time->tv_nsec += (long)ns;
   while (time->tv_nsec >= 1000000000L) {
     time->tv_nsec -= 1000000000L;
     time->tv_sec++;

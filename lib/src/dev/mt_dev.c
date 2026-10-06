@@ -130,16 +130,16 @@ static void dev_eth_xstat(uint16_t port_id) {
 
   /* Get id-name lookup table */
   struct rte_eth_xstat_name names[cnt];
-  memset(names, 0, cnt * sizeof(names[0]));
-  if (cnt != rte_eth_xstats_get_names(port_id, &names[0], cnt)) {
+  memset(names, 0, (size_t)cnt * sizeof(names[0]));
+  if (cnt != rte_eth_xstats_get_names(port_id, &names[0], (unsigned int)cnt)) {
     err("%s(%u), get cnt names fail\n", __func__, port_id);
     return;
   }
 
   /* Get stats themselves */
   struct rte_eth_xstat xstats[cnt];
-  memset(xstats, 0, cnt * sizeof(xstats[0]));
-  if (cnt != rte_eth_xstats_get(port_id, &xstats[0], cnt)) {
+  memset(xstats, 0, (size_t)cnt * sizeof(xstats[0]));
+  if (cnt != rte_eth_xstats_get(port_id, &xstats[0], (unsigned int)cnt)) {
     err("%s(%u), cnt mismatch\n", __func__, port_id);
     return;
   }
@@ -344,7 +344,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   argv[argc] = "--in-memory";
   argc++;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     pmd = p->pmd[i];
     if (pmd == MTL_PMD_KERNEL_SOCKET) {
       const char* if_name = mt_kernel_port2if(p->port[i]);
@@ -375,7 +375,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     port_param = port_params[i];
     memset(port_param, 0, sizeof(port_params[i]));
 
-    uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
+    uint16_t queue_pair_cnt = (uint16_t)RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       const char* if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
@@ -403,7 +403,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   }
 
   /* amend dma dev port */
-  uint8_t num_dma_dev_port = RTE_MIN(p->num_dma_dev_port, MTL_DMA_DEV_MAX);
+  uint8_t num_dma_dev_port = (uint8_t)RTE_MIN(p->num_dma_dev_port, MTL_DMA_DEV_MAX);
   dbg("%s, dma dev no %u\n", __func__, p->num_dma_dev_port);
   for (uint8_t i = 0; i < num_dma_dev_port; i++) {
     argv[argc] = "-a";
@@ -541,7 +541,7 @@ int dev_rx_runtime_queue_start(struct mtl_main_impl* impl, enum mtl_port port) {
 
 /* flush all the old bufs in the rx queue already */
 static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queue) {
-  int mbuf_size = 128;
+  uint16_t mbuf_size = 128;
   int loop = inf->nb_rx_desc / mbuf_size;
   struct rte_mbuf* mbuf[mbuf_size];
   uint16_t rv;
@@ -614,7 +614,7 @@ static struct mt_rl_shaper* dev_rl_shaper_add(struct mt_interface* inf, uint64_t
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (shapers[i].rl_bps) continue;
 
-    shaper_profile_id = ST_SHAPER_PROFILE_ID + i;
+    shaper_profile_id = ST_SHAPER_PROFILE_ID + (uint32_t)i;
 
     /* shaper profile with bandwidth */
     memset(&sp, 0, sizeof(sp));
@@ -839,7 +839,7 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   int err;
-  int interval_ms =
+  unsigned int interval_ms =
       relaxed ? MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED : MT_DEV_LINK_POLL_INTERVAL_MS;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
@@ -927,7 +927,7 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   for (int i = 0; i < reta_group_size; i++) {
     entries[i].mask = UINT64_MAX;
     for (int j = 0; j < RTE_ETH_RETA_GROUP_SIZE; j++) {
-      entries[i].reta[j] = (i * RTE_ETH_RETA_GROUP_SIZE + j) % inf->nb_rx_q;
+      entries[i].reta[j] = (uint16_t)((i * RTE_ETH_RETA_GROUP_SIZE + j) % inf->nb_rx_q);
     }
   }
   ret = rte_eth_dev_rss_reta_update(inf->port_id, entries, reta_size);
@@ -1063,7 +1063,8 @@ static int dev_config_port(struct mt_interface* inf) {
     set_ptypes[i] = ptypes[i];
   }
   if (num_ptypes >= 5) {
-    ret = rte_eth_dev_set_ptypes(port_id, ptype_mask, set_ptypes, num_ptypes);
+    ret =
+        rte_eth_dev_set_ptypes(port_id, ptype_mask, set_ptypes, (unsigned int)num_ptypes);
     if (ret < 0) {
       err("%s(%d), rte_eth_dev_set_ptypes fail %d\n", __func__, port, ret);
       return ret;
@@ -1179,7 +1180,7 @@ static int dev_start_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
-  int socket_id = inf->socket_id;
+  unsigned int socket_id = (unsigned int)inf->socket_id;
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
   uint16_t nb_rx_desc = mt_if_nb_rx_desc(impl, port);
   uint16_t nb_tx_desc = mt_if_nb_tx_desc(impl, port);
@@ -1787,7 +1788,7 @@ uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* q
   /* Send this vector with busy looping */
   while (sent < nb_pkts) {
     if (timeout_ms > 0) {
-      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      int ms = (int)((mt_get_tsc(impl) - start_ts) / NS_PER_MS);
       if (ms > timeout_ms) {
         warn("%s(%u), fail as timeout to %d ms\n", __func__, mt_dev_tx_queue_id(queue),
              timeout_ms);
@@ -1957,11 +1958,11 @@ static int dev_sch_init(struct mtl_main_impl* impl) {
 
   /* init sch with one lcore scheduler */
   if (mt_user_quota_active(impl)) {
-    data_quota_mbs_per_sch = mt_get_user_params(impl)->data_quota_mbs_per_sch;
+    data_quota_mbs_per_sch = (int)mt_get_user_params(impl)->data_quota_mbs_per_sch;
   } else {
     /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
     data_quota_mbs_per_sch =
-        ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        (int)(ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps());
   }
   ret = mt_sch_mrg_init(impl, data_quota_mbs_per_sch);
   if (ret < 0) {
@@ -1986,7 +1987,7 @@ static int dev_all_ports_down_check(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_interface* inf;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
     if (!(inf->status & MT_IF_STAT_PORT_DOWN)) {
       return 0;
@@ -2004,7 +2005,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   enum mt_port_type port_type;
   bool allow_port_down;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
     port_type = inf->drv_info.port_type;
     allow_port_down = mt_if_allow_port_down(impl, i);
@@ -2100,7 +2101,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 err_exit:
   if (impl->main_sch) mt_sch_put(impl->main_sch, 0);
   for (int i = num_ports - 1; i >= 0; i--) {
-    inf = mt_if(impl, i);
+    inf = mt_if(impl, (enum mtl_port)i);
     dev_stop_port(inf);
   }
   return ret;
@@ -2112,7 +2113,7 @@ int mt_dev_free(struct mtl_main_impl* impl) {
 
   mt_sch_mrg_uinit(impl);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
 
     mt_stat_unregister(impl, dev_inf_stat, inf);
@@ -2204,7 +2205,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl), ret;
   struct mt_interface* inf;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
 
     if (mt_pmd_is_native_af_xdp(impl, i)) {
@@ -2253,7 +2254,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
   struct mt_interface* inf;
   int ret;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
     dev_info = &inf->dev_info;
     inf->port = i;
@@ -2261,7 +2262,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     /* parse port id */
     if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
       port = impl->kport_info.kernel_if[i];
-      port_id = i;
+      port_id = (uint16_t)i;
     } else {
       if (mt_pmd_is_kernel_based(impl, i))
         port = impl->kport_info.dpdk_port[i];
@@ -2323,7 +2324,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     info("%s(%d), user request queues tx %u rx %u\n", __func__, i, p->tx_queues_cnt[i],
          p->rx_queues_cnt[i]);
-    uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
+    uint16_t queue_pair_cnt = (uint16_t)RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     if (!queue_pair_cnt) queue_pair_cnt = 1; /* at least 1 queue pair */
     /* set max tx/rx queues */
     if (mt_pmd_is_kernel_socket(impl, i)) {
@@ -2345,7 +2346,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     } else if (mt_pmd_is_native_af_xdp(impl, i)) {
       /* todo: handle for rss */
       /* one more for the sys tx queue */
-      queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
+      queue_pair_cnt = (uint16_t)RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
 
       inf->nb_tx_q = queue_pair_cnt;
       inf->nb_rx_q = queue_pair_cnt;
@@ -2381,12 +2382,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
         dev_info->max_tx_queues);
     if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
       /* max tx/rx queues don't exceed dev limit */
-      inf->nb_tx_q = RTE_MIN(inf->nb_tx_q, dev_info->max_tx_queues);
-      inf->nb_rx_q = RTE_MIN(inf->nb_rx_q, dev_info->max_rx_queues);
+      inf->nb_tx_q = (uint16_t)RTE_MIN(inf->nb_tx_q, dev_info->max_tx_queues);
+      inf->nb_rx_q = (uint16_t)RTE_MIN(inf->nb_rx_q, dev_info->max_rx_queues);
     }
     /* when using IAVF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      inf->nb_tx_q = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
+      inf->nb_tx_q = (uint16_t)RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
       inf->nb_rx_q = inf->nb_tx_q;
     }
     dbg("%s(%d), tx_queues %u rx queues %u\n", __func__, i, inf->nb_tx_q, inf->nb_rx_q);
@@ -2511,7 +2512,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mbuf_elements = inf->nb_tx_desc + 1024;
     if (mt_user_tx_mono_pool(impl)) {
       /* append as tx queues, double as tx ring */
-      mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
+      mbuf_elements += (unsigned int)inf->nb_tx_q * inf->nb_tx_desc * 2;
     }
     snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
@@ -2588,7 +2589,7 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
     impl->main_sch = NULL;
   }
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
 
     if (mt_has_virtio_user(impl, i)) {
@@ -2607,14 +2608,14 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
 uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                uint32_t hash) {
   struct mt_interface* inf = mt_if(impl, port);
-  return (hash % inf->dev_info.reta_size) % inf->nb_rx_q;
+  return (uint16_t)((hash % inf->dev_info.reta_size) % inf->nb_rx_q);
 }
 
 int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_interface* inf;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     inf = mt_if(impl, i);
 
     /* tsc stable now */
@@ -2628,7 +2629,7 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
 int mt_update_admin_port_stats(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
-  for (int port = 0; port < num_ports; port++) {
+  for (enum mtl_port port = 0; port < (enum mtl_port)num_ports; port++) {
     struct mt_interface* inf = mt_if(impl, port);
     dev_inf_get_stat(inf);
   }
@@ -2638,7 +2639,7 @@ int mt_update_admin_port_stats(struct mtl_main_impl* impl) {
 int mt_reset_admin_port_stats(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
-  for (int port = 0; port < num_ports; port++) {
+  for (enum mtl_port port = 0; port < (enum mtl_port)num_ports; port++) {
     struct mt_interface* inf = mt_if(impl, port);
     memset(&inf->stats_admin, 0, sizeof(inf->stats_admin));
   }

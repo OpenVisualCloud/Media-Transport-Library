@@ -50,10 +50,10 @@ static inline uint32_t mt_ip_to_u32(uint8_t ip[MTL_IP_ADDR_LEN]) {
 }
 
 static inline void mt_u32_to_ip(uint32_t group, uint8_t ip[MTL_IP_ADDR_LEN]) {
-  ip[0] = group >> 0;
-  ip[1] = group >> 8;
-  ip[2] = group >> 16;
-  ip[3] = group >> 24;
+  ip[0] = (uint8_t)(group >> 0);
+  ip[1] = (uint8_t)(group >> 8);
+  ip[2] = (uint8_t)(group >> 16);
+  ip[3] = (uint8_t)(group >> 24);
 }
 
 /* size is the length of bitmap in bytes, idx the bit to address */

@@ -12,9 +12,9 @@ static int config_parse_plugins(struct mtl_main_impl* impl, json_object* plugins
     return -EIO;
   }
 
-  int num_plugins = json_object_array_length(plugins_array);
-  dbg("%s, num_plugins %d\n", __func__, num_plugins);
-  for (int i = 0; i < num_plugins; i++) {
+  size_t num_plugins = json_object_array_length(plugins_array);
+  dbg("%s, num_plugins %zu\n", __func__, num_plugins);
+  for (size_t i = 0; i < num_plugins; i++) {
     json_object* plugin_obj = json_object_array_get_idx(plugins_array, i);
     if (!plugin_obj) continue;
     json_object* obj;

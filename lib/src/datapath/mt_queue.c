@@ -251,7 +251,7 @@ uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts
   /* Send this vector with busy looping */
   while (sent < nb_pkts) {
     if (timeout_ms > 0) {
-      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      int ms = (int)((mt_get_tsc(impl) - start_ts) / NS_PER_MS);
       if (ms > timeout_ms) {
         warn("%s(%u), fail as timeout to %d ms\n", __func__, entry->queue_id, timeout_ms);
         return sent;
@@ -268,7 +268,7 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
   struct mt_dp_impl* dp;
   int num_ports = mt_num_ports(impl);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     dp = mt_rte_zmalloc_socket(sizeof(*dp), mt_socket_id(impl, i));
     if (!dp) {
       err("%s(%d), dp malloc fail\n", __func__, i);
@@ -298,7 +298,7 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     dp = impl->dp[i];
     /* no sys tx queue */
     if (mt_drv_no_sys_txq(impl, i)) continue;
@@ -322,7 +322,7 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
 int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_dp_impl* dp = impl->dp[i];
     if (!dp) continue;
 

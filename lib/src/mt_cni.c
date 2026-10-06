@@ -341,7 +341,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   uint16_t rx;
   bool done = true;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     cni = cni_get_entry(impl, i);
     if (!cni->rxq) continue;
     if (rte_atomic32_read(&impl->inf[i].resetting)) continue;
@@ -371,7 +371,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
       if (pcap->required_pkts) {
         if (pcap->dumped_pkts < pcap->required_pkts) {
           cni_dump_pcap(cni, pkts_rx,
-                        RTE_MIN(rx, pcap->required_pkts - pcap->dumped_pkts));
+                        (uint16_t)RTE_MIN(rx, pcap->required_pkts - pcap->dumped_pkts));
         } else { /* got enough packets, stop dumping */
           cni_stop_pcap(cni);
         }
@@ -396,7 +396,7 @@ static void* cni_traffic_thread(void* arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
     ret = cni_traffic(impl);
-    if (MTL_TASKLET_ALL_DONE == ret) mt_sleep_ms(cni->thread_sleep_ms);
+    if (MTL_TASKLET_ALL_DONE == ret) mt_sleep_ms((unsigned int)cni->thread_sleep_ms);
   }
   info("%s, stop\n", __func__);
 
@@ -460,7 +460,7 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_cni_entry* cni;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     cni = cni_get_entry(impl, i);
 
     if (cni->rxq) {
@@ -482,7 +482,7 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
     return 0;
   }
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     cni = cni_get_entry(impl, i);
     inf = mt_if(impl, i);
 
@@ -582,7 +582,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   rte_atomic32_set(&cni_impl->stop_thread, 0);
   cni_impl->thread_sleep_ms = 1;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
     cni->port = i;
     cni->impl = impl;
@@ -640,7 +640,7 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_udp_detect_entry* udp_detect;
   struct mt_csq_entry* csq;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
 
     cni_stop_pcap(cni);
@@ -759,7 +759,8 @@ int mt_csq_put(struct mt_csq_entry* entry) {
 
 uint16_t mt_csq_burst(struct mt_csq_entry* entry, struct rte_mbuf** rx_pkts,
                       uint16_t nb_pkts) {
-  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
+  uint16_t n =
+      (uint16_t)rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
   return n;
 }

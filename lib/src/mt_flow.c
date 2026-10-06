@@ -342,7 +342,7 @@ int mt_flow_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_flow_impl* flow;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     flow = mt_rte_zmalloc_socket(sizeof(*flow), mt_socket_id(impl, i));
     if (!flow) {
       err("%s(%d), flow malloc fail\n", __func__, i);

@@ -109,7 +109,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
     dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, sch->idx, end,
         sch->sleep_ratio_start_ns);
     sch->sleep_ratio_score =
-        (float)sch->sleep_ratio_sleep_ns * 100.0 / sleep_ratio_dur_ns;
+        (float)((float)sch->sleep_ratio_sleep_ns * 100.0 / (double)sleep_ratio_dur_ns);
     sch->sleep_ratio_sleep_ns = 0;
     sch->sleep_ratio_start_ns = end;
   }
@@ -128,9 +128,9 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
 static bool sch_set_local_mempolicy(struct mtl_sch_impl* sch) {
 #ifndef WINDOWSENV
   int mode;
-  int ret = get_mempolicy(&mode, NULL, 0, NULL, 0);
+  int ret = (int)get_mempolicy(&mode, NULL, 0, NULL, 0);
   if (!ret && mode != MPOL_DEFAULT) return false;
-  if (!ret) ret = set_mempolicy(MPOL_LOCAL, NULL, 0);
+  if (!ret) ret = (int)set_mempolicy(MPOL_LOCAL, NULL, 0);
   if (!ret) return true;
   if (errno == ENOSYS)
     dbg("%s(%d), no NUMA mempolicy support\n", __func__, sch->idx);
@@ -492,7 +492,7 @@ static int sch_stat(void* priv) {
            sch->stat_sleep_ns_max / NS_PER_US);
     sch->stat_sleep_ns = 0;
     sch->stat_sleep_cnt = 0;
-    sch->stat_sleep_ns_min = -1;
+    sch->stat_sleep_ns_min = UINT64_MAX;
     sch->stat_sleep_ns_max = 0;
   }
   if (!mt_sch_started(sch)) {
@@ -714,8 +714,9 @@ again:
     do {
       cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          sch_socket_match(rte_lcore_to_socket_id(cur_lcore), socket, skip_numa_check)) {
-        ret = mt_instance_get_lcore(impl, cur_lcore);
+          sch_socket_match((int)rte_lcore_to_socket_id(cur_lcore), socket,
+                           skip_numa_check)) {
+        ret = mt_instance_get_lcore(impl, (uint16_t)cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
           rte_atomic32_inc(&impl->lcore_cnt);
@@ -746,7 +747,8 @@ again:
       shm_entry = &lcore_shm->lcores_info[cur_lcore];
 
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          sch_socket_match(rte_lcore_to_socket_id(cur_lcore), socket, skip_numa_check)) {
+          sch_socket_match((int)rte_lcore_to_socket_id(cur_lcore), socket,
+                           skip_numa_check)) {
         lcore_shm_check_and_clean(shm_entry, info);
         if (!shm_entry->active) {
           *lcore = cur_lcore;
@@ -795,7 +797,7 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   if (mt_is_manager_connected(impl)) {
-    ret = mt_instance_put_lcore(impl, lcore);
+    ret = mt_instance_put_lcore(impl, (uint16_t)lcore);
     if (ret == 0) {
       rte_atomic32_dec(&impl->lcore_cnt);
       mgr->local_lcores_active[lcore] = false;
@@ -914,7 +916,7 @@ int mtl_sch_unregister_tasklet(mtl_tasklet_handle tasklet) {
 
   int max_idx = 0;
   for (uint32_t i = 0; i < sch->nb_tasklets; i++) {
-    if (sch->tasklet[i]) max_idx = i + 1;
+    if (sch->tasklet[i]) max_idx = (int)i + 1;
   }
   sch->max_tasklet_idx = max_idx;
 
@@ -998,7 +1000,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     mt_pthread_cond_wait_init(&sch->sleep_wake_cond);
     mt_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
 
-    sch->stat_sleep_ns_min = -1;
+    sch->stat_sleep_ns_min = UINT64_MAX;
     /* init mgr lock for video */
     mt_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
     mt_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);

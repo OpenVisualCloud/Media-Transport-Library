@@ -105,7 +105,7 @@ int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LE
       for (int i = 0; i < MTL_IP_ADDR_LEN; ++i) {
         int byte;
         sscanf(gway + (MTL_IP_ADDR_LEN - 1 - i) * 2, "%2x", &byte);
-        gateway[i] = byte;
+        gateway[i] = (uint8_t)byte;
       }
       fclose(fp);
       return 0;
@@ -256,7 +256,7 @@ static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
     return ret;
   }
 
-  ifr = malloc(conf.ifc_len);
+  ifr = malloc((size_t)conf.ifc_len);
   if (!ifr) {
     err("%s, malloc fail\n", __func__);
     close(sock);
@@ -272,7 +272,7 @@ static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
     return ret;
   }
 
-  int numif = conf.ifc_len / sizeof(*ifr);
+  int numif = conf.ifc_len / (int)sizeof(*ifr);
   for (int i = 0; i < numif; i++) {
     struct ifreq* r = &ifr[i];
     struct sockaddr_in* sin = (struct sockaddr_in*)&r->ifr_addr;
@@ -343,7 +343,7 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
       info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],
            dip[2], dip[3]);
     }
-    mt_sleep_ms(sleep_interval_ms);
+    mt_sleep_ms((unsigned int)sleep_interval_ms);
   }
 
   close(sock);
@@ -418,7 +418,7 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
     mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dst_port, false);
   }
 
-  return mt_instance_del_flow(impl, if_nametoindex(if_name), flow_id);
+  return mt_instance_del_flow(impl, if_nametoindex(if_name), (uint32_t)flow_id);
 }
 
 int mt_socket_fd_join_multicast(struct mtl_main_impl* impl, enum mtl_port port,
